@@ -1,7 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-export const maxDuration = 60; // Allow up to 60 seconds for processing
+export const maxDuration = 60; 
+
+// Helper to get image dimensions from Buffer
+function getImageDimensions(buffer: Buffer) {
+  // Simple PNG dimension reader
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+    const width = buffer.readInt32BE(16);
+    const height = buffer.readInt32BE(20);
+    return { width, height };
+  }
+  // Simple JPEG dimension reader
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    while (offset < buffer.length) {
+      const marker = buffer.readUInt16BE(offset);
+      offset += 2;
+      if (marker === 0xffc0 || marker === 0xffc2) {
+        offset += 3;
+        const height = buffer.readUInt16BE(offset);
+        offset += 2;
+        const width = buffer.readUInt16BE(offset);
+        return { width, height };
+      } else {
+        offset += buffer.readUInt16BE(offset);
+      }
+    }
+  }
+  return { width: 1000, height: 1000 }; // Fallback
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,104 +42,89 @@ export async function POST(req: NextRequest) {
     }
 
     if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'YOUR_GEMINI_API_KEY_HERE') {
-      return NextResponse.json({ error: 'GEMINI_API_KEY is not configured in .env.local' }, { status: 500 });
+      return NextResponse.json({ error: 'GEMINI_API_KEY is not configured' }, { status: 500 });
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-    // Convert file to base64
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    const { width, height } = getImageDimensions(buffer);
     const base64Data = buffer.toString('base64');
     
     const columns = columnsStr ? JSON.parse(columnsStr) : [];
     const columnNames = columns.map((c: any) => `'${c.label}' (key: ${c.key})`).join(', ');
 
     const prompt = `
-You are a payroll document parser. Extract data from this table image into structured JSON.
+You are a precision payroll document parser. Extract data from this table image into structured JSON.
 
-Expected columns to look for: ${columnNames}
+Expected columns: ${columnNames}
 
-Rules:
-1. Find the table rows. Each row typically starts with a name.
-2. For each row, identify the person's name and the values for the columns.
-3. Return the results in this exact JSON structure:
+Rules for Extraction:
+1. Identify every row in the table.
+2. For each row, provide the name and the numeric values for each column.
+3. CRITICAL: For each row, you MUST provide "y_top" and "y_bottom" as integers (0-100).
+   - "y_top" is the vertical percentage where the row's text starts.
+   - "y_bottom" is the vertical percentage where the row's text ends.
+   - These MUST be accurate so that cropping the image between y_top and y_bottom shows ONLY that specific row of text.
+   - Do NOT include the table header in these coordinates.
+
+Return results in this structure:
 {
   "structured": [
     {
-      "name": "Full Name",
-      "values": { "column_key": 10000 },
-      "y_top": 10,
-      "y_bottom": 15
+      "name": "NAME",
+      "values": { "key": 123 },
+      "y_top": 25,
+      "y_bottom": 28
     }
   ]
 }
 
-4. 'y_top' and 'y_bottom' should be integers from 0 to 100 representing the approximate vertical percentage position of the row in the image.
-5. If a value is missing or represented by a dash '-', use 0.
-6. Names might be slightly misspelled due to scan quality, extract them as accurately as possible.
-7. Return ONLY the JSON object, no markdown formatting or extra text.
+Return ONLY the JSON object.
 `;
 
     const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
     
-    try {
-      const result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: file.type || 'image/png'
-          }
-        }
-      ]);
-
-      let textResponse = result.response.text();
-      
-      // Clean JSON response
-      if (textResponse.includes('```json')) {
-        textResponse = textResponse.split('```json')[1].split('```')[0].trim();
-      } else if (textResponse.includes('```')) {
-        textResponse = textResponse.split('```')[1].split('```')[0].trim();
-      }
-
-      let parsedJson;
-      try {
-        parsedJson = JSON.parse(textResponse);
-      } catch (e) {
-        const start = textResponse.indexOf('{');
-        const end = textResponse.lastIndexOf('}');
-        if (start !== -1 && end !== -1) {
-          parsedJson = JSON.parse(textResponse.substring(start, end + 1));
-        } else {
-          throw new Error('Failed to parse JSON response from Gemini');
+    const result = await model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          data: base64Data,
+          mimeType: file.type || 'image/png'
         }
       }
+    ]);
 
-      return NextResponse.json({
-        data: {
-          structured: parsedJson.structured || [],
-          img_w: 1000, 
-          img_h: 1000
-        }
-      });
-    } catch (genError: any) {
-      if (genError.message?.includes('404')) {
-        // Fetch available models to help debug
-        const models = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`)
-          .then(res => res.json())
-          .catch(() => ({}));
-        
-        const modelNames = models.models?.map((m: any) => m.name) || [];
-        return NextResponse.json({ 
-          error: `Model not found. Available models for your key: ${modelNames.join(', ')}` 
-        }, { status: 404 });
-      }
-      throw genError;
+    let textResponse = result.response.text();
+    if (textResponse.includes('```json')) {
+      textResponse = textResponse.split('```json')[1].split('```')[0].trim();
+    } else if (textResponse.includes('```')) {
+      textResponse = textResponse.split('```')[1].split('```')[0].trim();
     }
+
+    let parsedJson;
+    try {
+      parsedJson = JSON.parse(textResponse);
+    } catch (e) {
+      const start = textResponse.indexOf('{');
+      const end = textResponse.lastIndexOf('}');
+      if (start !== -1 && end !== -1) {
+        parsedJson = JSON.parse(textResponse.substring(start, end + 1));
+      } else {
+        throw new Error('Failed to parse JSON');
+      }
+    }
+
+    return NextResponse.json({
+      data: {
+        structured: parsedJson.structured || [],
+        img_w: width,
+        img_h: height
+      }
+    });
 
   } catch (error: any) {
     console.error('OCR Error:', error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Internal Error' }, { status: 500 });
   }
 }
