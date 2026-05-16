@@ -43,6 +43,7 @@ import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianE
 import PaySlipDialog, { SlipState } from '@/components/PaySlipDialog';
 import LegalitasPimpinanDialog from '@/components/LegalitasPimpinanDialog';
 import { generateRekapGajiPekaryaPdf, RekapGajiPekaryaData, RekapCategoryData } from '@/utils/generateRekapGajiPekaryaPdf';
+import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
 
 import { 
   calculateTotalEarnings, 
@@ -163,6 +164,53 @@ export default function PayrollValidationDashboard() {
     };
 
     generateRekapGajiPekaryaPdf(data);
+  };
+
+  const handlePrintPayrollStatement = () => {
+    const activeEmployees = employees.filter(e => e.isActive);
+    
+    const roleOrder = ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'PONTI'];
+    const sortedEmployees = [...activeEmployees].sort((a, b) => {
+      const roleA = roleOrder.indexOf(a.role) !== -1 ? roleOrder.indexOf(a.role) : 99;
+      const roleB = roleOrder.indexOf(b.role) !== -1 ? roleOrder.indexOf(b.role) : 99;
+      if (roleA !== roleB) return roleA - roleB;
+      return a.name.localeCompare(b.name);
+    });
+    
+    let totalNetSalary = 0;
+    const stmtEmployees: PayrollStatementEmployee[] = sortedEmployees.map((emp, idx) => {
+      const cat = emp.role;
+      const periodKey = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+      const uraianDoc = uraianMap[`${periodKey}_${cat}`];
+      const gapok = calculateGapok(emp, salaryMatrix, targetDate);
+      const uraianEntry = uraianDoc?.entries?.[emp.id];
+      
+      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry);
+      const totalDeductions = calculateTotalDeductions(emp.raw);
+      const netSalary = calculateNetSalary(earnings, totalDeductions);
+      
+      totalNetSalary += netSalary;
+
+      let satker = cat;
+      if (satker === 'KEBERSIHAN_IC') satker = 'KEBERSIHAN IC';
+      if (satker === 'KEBERSIHAN_PT') satker = 'KEBERSIHAN PONDOK TINGGI';
+
+      return {
+        no: idx + 1,
+        name: emp.name,
+        satker: satker,
+        accountNumber: emp.raw.bankAccount?.accountNumber || '',
+        netSalary
+      };
+    });
+
+    const data: PayrollStatementData = {
+      period: getPayrollPeriod(targetDate),
+      employees: stmtEmployees,
+      totalNetSalary
+    };
+
+    generatePayrollStatementPdf(data);
   };
 
   const handleSort = (key: string) => {
@@ -399,6 +447,13 @@ export default function PayrollValidationDashboard() {
               className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all"
             >
               <Printer className="w-4 h-4 mr-2" /> Cetak Rekap
+            </Button>
+            <Button 
+              onClick={handlePrintPayrollStatement}
+              variant="outline" 
+              className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all"
+            >
+              <Printer className="w-4 h-4 mr-2" /> Cetak Payroll
             </Button>
             <Link href="/dashboard/employees">
               <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">

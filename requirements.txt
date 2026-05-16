@@ -1,0 +1,5 @@
+easyocr
+pypdfium2
+numpy
+Pillow
+python-multipart
