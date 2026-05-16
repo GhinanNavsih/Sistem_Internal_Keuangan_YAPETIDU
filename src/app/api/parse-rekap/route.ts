@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     const columns = columnsStr ? JSON.parse(columnsStr) : [];
     const columnNames = columns.map((c: any) => `'${c.label}' (key: ${c.key})`).join(', ');
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
     
     const prompt = `
 You are a payroll document parser. Extract data from this table image into structured JSON.
