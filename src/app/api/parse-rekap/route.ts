@@ -53,7 +53,7 @@ Rules:
 7. Return ONLY the JSON object, no markdown formatting or extra text.
 `;
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
     
     try {
       const result = await model.generateContent([
