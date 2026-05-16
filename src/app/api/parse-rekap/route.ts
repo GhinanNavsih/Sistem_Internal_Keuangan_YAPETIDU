@@ -115,6 +115,16 @@ Return ONLY the JSON object.
       }
     }
 
+    if (parsedJson.structured && Array.isArray(parsedJson.structured)) {
+      parsedJson.structured = parsedJson.structured.map((row: any) => ({
+        ...row,
+        // Convert the 0-100 percentage to absolute pixel coordinates 
+        // to match what the frontend expects for its slicing logic
+        y_top: typeof row.y_top === 'number' ? Math.round((row.y_top / 100) * height) : undefined,
+        y_bottom: typeof row.y_bottom === 'number' ? Math.round((row.y_bottom / 100) * height) : undefined,
+      }));
+    }
+
     return NextResponse.json({
       data: {
         structured: parsedJson.structured || [],
