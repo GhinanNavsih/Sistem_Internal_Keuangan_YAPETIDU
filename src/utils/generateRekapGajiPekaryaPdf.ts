@@ -70,19 +70,19 @@ export function generateRekapGajiPekaryaPdf(data: RekapGajiPekaryaData): void {
 
   const head = [
     [
-      { content: 'NO', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'URAIAN', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'JUMLAH', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'POTONGAN', colSpan: 6, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'GAJI BERSIH', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+      { content: 'NO', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'URAIAN', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'JUMLAH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'POTONGAN', colSpan: 6, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'GAJI BERSIH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
     ],
     [
-      { content: 'BPJS', styles: { halign: 'center', valign: 'middle' } },
-      { content: 'KOP ROCHMAD', styles: { halign: 'center', valign: 'middle' } },
-      { content: 'KOP. REJOSO GEMILANG', styles: { halign: 'center', valign: 'middle' } },
-      { content: 'TUNAI', styles: { halign: 'center', valign: 'middle' } },
-      { content: 'DANA SOSIAL', styles: { halign: 'center', valign: 'middle' } },
-      { content: 'JML POTONGAN', styles: { halign: 'center', valign: 'middle' } },
+      { content: 'BPJS', styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'KOP ROCHMAD', styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'KOP. REJOSO GEMILANG', styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'TUNAI', styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'DANA SOSIAL', styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'JML POTONGAN', styles: { halign: 'center' as const, valign: 'middle' as const } },
     ],
   ];
 
@@ -91,16 +91,16 @@ export function generateRekapGajiPekaryaPdf(data: RekapGajiPekaryaData): void {
   // Data Rows
   data.categories.forEach((cat, idx) => {
     body.push([
-      { content: (idx + 1).toString(), styles: { halign: 'center' } },
+      { content: (idx + 1).toString(), styles: { halign: 'center' as const } },
       { content: cat.categoryName },
-      { content: formatIDR(cat.totalEarnings), styles: { halign: 'right' } },
-      { content: formatIDR(cat.bpjs), styles: { halign: 'right' } },
-      { content: formatIDR(cat.kopRochmad), styles: { halign: 'right' } },
-      { content: formatIDR(cat.kopUnipdu), styles: { halign: 'right' } },
-      { content: formatIDR(cat.tunai), styles: { halign: 'right' } },
-      { content: formatIDR(cat.danaSosial), styles: { halign: 'right' } },
-      { content: formatIDR(cat.totalDeductions), styles: { halign: 'right' } },
-      { content: formatIDR(cat.netSalary), styles: { halign: 'right' } },
+      { content: formatIDR(cat.totalEarnings), styles: { halign: 'right' as const } },
+      { content: formatIDR(cat.bpjs), styles: { halign: 'right' as const } },
+      { content: formatIDR(cat.kopRochmad), styles: { halign: 'right' as const } },
+      { content: formatIDR(cat.kopUnipdu), styles: { halign: 'right' as const } },
+      { content: formatIDR(cat.tunai), styles: { halign: 'right' as const } },
+      { content: formatIDR(cat.danaSosial), styles: { halign: 'right' as const } },
+      { content: formatIDR(cat.totalDeductions), styles: { halign: 'right' as const } },
+      { content: formatIDR(cat.netSalary), styles: { halign: 'right' as const } },
     ]);
   });
 
@@ -108,20 +108,20 @@ export function generateRekapGajiPekaryaPdf(data: RekapGajiPekaryaData): void {
   body.push([
     { content: '', styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255] } },
     { content: 'JUMLAH', styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255] } },
-    { content: formatIDR(grandTotal.totalEarnings), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' } },
-    { content: formatIDR(grandTotal.bpjs), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' } },
-    { content: formatIDR(grandTotal.kopRochmad), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' } },
-    { content: formatIDR(grandTotal.kopUnipdu), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' } },
-    { content: formatIDR(grandTotal.tunai), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' } },
-    { content: formatIDR(grandTotal.danaSosial), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' } },
-    { content: formatIDR(grandTotal.totalDeductions), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' } },
-    { content: formatIDR(grandTotal.netSalary), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' } },
+    { content: formatIDR(grandTotal.totalEarnings), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
+    { content: formatIDR(grandTotal.bpjs), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
+    { content: formatIDR(grandTotal.kopRochmad), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
+    { content: formatIDR(grandTotal.kopUnipdu), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
+    { content: formatIDR(grandTotal.tunai), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
+    { content: formatIDR(grandTotal.danaSosial), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
+    { content: formatIDR(grandTotal.totalDeductions), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
+    { content: formatIDR(grandTotal.netSalary), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
   ]);
 
   autoTable(doc, {
     startY: y,
-    head: head,
-    body: body,
+    head: head as any,
+    body: body as any,
     theme: 'grid',
     headStyles: {
       fillColor: [255, 255, 255],

@@ -340,7 +340,7 @@ export async function detectBestRotation(
 ): Promise<number> {
   const rotations = [270, 90, 0, 180];
   for (const rot of rotations) {
-    const canvas = await renderPdfToCanvas(file, rot);
+    const canvas = await renderFileToCanvas(file, rot);
     const { text } = await runOcr(canvas, (p) => { if (onProgress) onProgress(p); });
     const upperText = text.toUpperCase();
     const matchCount = ANCHOR_KEYWORDS.filter(k => upperText.includes(k)).length;

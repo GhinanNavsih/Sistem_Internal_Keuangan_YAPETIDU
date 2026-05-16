@@ -86,8 +86,8 @@ export function generatePayrollStatementPdf(data: PayrollStatementData): void {
 
   autoTable(doc, {
     startY: y,
-    head: head,
-    body: body,
+    head: head as any,
+    body: body as any,
     theme: 'grid',
     headStyles: {
       textColor: [0, 0, 0],

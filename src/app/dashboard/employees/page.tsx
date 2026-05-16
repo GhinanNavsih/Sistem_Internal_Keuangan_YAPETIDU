@@ -404,7 +404,16 @@ export default function EmployeesPage() {
                 <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Pekerjaan</h3>
                 <div className="space-y-2">
                   <Label>Kategori</Label>
-                  <Select value={formData.employment?.jobCategory} onValueChange={val => setFormData({ ...formData, employment: { ...formData.employment!, jobCategory: val } })}>
+                  <Select 
+                    value={formData.employment?.jobCategory} 
+                    onValueChange={val => setFormData(prev => ({ 
+                      ...prev, 
+                      employment: {
+                        ...(prev.employment || { status: 'active', startDate: '', endDate: null }),
+                        jobCategory: val
+                      } as any
+                    }))}
+                  >
                     <SelectTrigger className="rounded-xl border-slate-200"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {JOB_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
@@ -413,11 +422,34 @@ export default function EmployeesPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="startDate">Tanggal Mulai</Label>
-                  <Input id="startDate" type="date" value={formData.employment?.startDate || ''} onChange={e => setFormData({ ...formData, employment: { ...formData.employment!, startDate: e.target.value } })} className="rounded-xl border-slate-200" />
+                  <Input 
+                    id="startDate" 
+                    type="date" 
+                    value={formData.employment?.startDate || ''} 
+                    onChange={e => setFormData(prev => ({ 
+                      ...prev, 
+                      employment: {
+                        ...(prev.employment || { status: 'active', jobCategory: 'OTHER', endDate: null }),
+                        startDate: e.target.value
+                      } as any
+                    }))} 
+                    className="rounded-xl border-slate-200" 
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Golongan (Grade)</Label>
-                  <Input value={formData.salaryProfile?.salaryGradeCode || ''} onChange={e => setFormData({ ...formData, salaryProfile: { ...formData.salaryProfile!, salaryGradeCode: e.target.value } })} className="rounded-xl border-slate-200" placeholder="D, F, K..." />
+                  <Input 
+                    value={formData.salaryProfile?.salaryGradeCode || ''} 
+                    onChange={e => setFormData(prev => ({ 
+                      ...prev, 
+                      salaryProfile: {
+                        ...(prev.salaryProfile || { baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' }),
+                        salaryGradeCode: e.target.value
+                      } as any
+                    }))} 
+                    className="rounded-xl border-slate-200" 
+                    placeholder="D, F, K..." 
+                  />
                 </div>
               </div>
 
@@ -434,7 +466,18 @@ export default function EmployeesPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Kode Koperasi Rochmad</Label>
-                  <Input type="number" value={formData.deductions?.koperasiRochmad ?? 0} onChange={e => setFormData({ ...formData, deductions: { ...formData.deductions!, koperasiRochmad: Number(e.target.value) } })} className="rounded-xl border-slate-200" />
+                  <Input 
+                    type="number" 
+                    value={formData.deductions?.koperasiRochmad ?? 0} 
+                    onChange={e => setFormData(prev => ({ 
+                      ...prev, 
+                      deductions: {
+                        ...(prev.deductions || {}),
+                        koperasiRochmad: Number(e.target.value)
+                      } as any
+                    }))} 
+                    className="rounded-xl border-slate-200" 
+                  />
                 </div>
               </div>
 
@@ -445,7 +488,14 @@ export default function EmployeesPage() {
                   <p className="text-xs text-slate-500">Tentukan apakah pegawai masih aktif.</p>
                 </div>
                 <Badge
-                  onClick={() => setFormData({ ...formData, flags: { ...formData.flags!, isActive: !formData.flags?.isActive, isPayrollEligible: !formData.flags?.isActive } })}
+                  onClick={() => setFormData(prev => ({ 
+                    ...prev, 
+                    flags: { 
+                      ...prev.flags!, 
+                      isActive: !prev.flags?.isActive, 
+                      isPayrollEligible: !prev.flags?.isActive 
+                    } 
+                  }))}
                   className={`cursor-pointer px-4 py-1.5 rounded-xl border-none ${formData.flags?.isActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-200 text-slate-600'}`}
                 >
                   {formData.flags?.isActive ? 'Aktif' : 'Non-Aktif'}

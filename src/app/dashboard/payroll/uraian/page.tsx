@@ -540,7 +540,7 @@ export default function UraianPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Select value={String(month)} onValueChange={(v) => setMonth(parseInt(v))}>
+            <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
               <SelectTrigger className="w-40 bg-white">
                 <SelectValue>{month} ({MONTHS_ID[month - 1]})</SelectValue>
               </SelectTrigger>
@@ -552,7 +552,7 @@ export default function UraianPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={String(year)} onValueChange={(v) => setYear(parseInt(v))}>
+            <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
               <SelectTrigger className="w-28 bg-white">
                 <SelectValue />
               </SelectTrigger>

@@ -95,26 +95,26 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
 
   const head = [
     [
-      { content: 'NO', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'NIK', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'NAMA', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'GAPOK', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'VAKASI', colSpan: earningLabels.length, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'JUMLAH', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'POTONGAN', colSpan: deductionLabels.length, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'JUMLAH POTONGAN', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'GAJI BERSIH', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } }
+      { content: 'NO', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'NIK', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'NAMA', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'GAPOK', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'VAKASI', colSpan: earningLabels.length, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'JUMLAH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'POTONGAN', colSpan: deductionLabels.length, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'JUMLAH POTONGAN', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'GAJI BERSIH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } }
     ],
     [
-      ...earningLabels.map(l => ({ content: l.toUpperCase(), styles: { halign: 'center', valign: 'middle' } })),
-      ...deductionLabels.map(l => ({ content: l.toUpperCase(), styles: { halign: 'center', valign: 'middle' } }))
+      ...earningLabels.map(l => ({ content: l.toUpperCase(), styles: { halign: 'center' as const, valign: 'middle' as const } })),
+      ...deductionLabels.map(l => ({ content: l.toUpperCase(), styles: { halign: 'center' as const, valign: 'middle' as const } }))
     ]
   ];
 
   autoTable(doc, {
     startY: y,
-    head: head,
-    body: body,
+    head: head as any,
+    body: body as any,
     theme: 'grid',
     headStyles: {
       fillColor: [255, 255, 255],
