@@ -60,13 +60,14 @@ You are a precision payroll document parser. Extract data from this table image 
 Expected columns: ${columnNames}
 
 Rules for Extraction:
-1. Identify every row in the table.
-2. For each row, provide the name and the numeric values for each column.
+1. Identify every data row in the table. Ignore the table header row.
+2. For each data row, provide the name and the numeric values for each column.
 3. CRITICAL: For each row, you MUST provide "y_top" and "y_bottom" as integers from 0 to 1000.
    - 0 represents the absolute top of the image, 1000 represents the absolute bottom.
-   - "y_top" is the vertical position where the row's text starts.
-   - "y_bottom" is the vertical position where the row's text ends.
-   - These MUST tightly bound ONLY that specific row of text, excluding the table header.
+   - "y_top" MUST be the exact vertical position where the employee's name starts.
+   - "y_bottom" MUST be the exact vertical position where the row's text ends.
+   - WARNING: Do NOT assign the coordinates of the row above! Ensure the coordinates perfectly frame the text of the CURRENT employee's row.
+   - Double-check that your first data row's coordinates do NOT frame the table header.
 
 Return results in this structure:
 {
