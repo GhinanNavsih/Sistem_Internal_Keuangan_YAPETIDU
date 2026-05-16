@@ -79,7 +79,7 @@ export function generateRekapGajiPekaryaPdf(data: RekapGajiPekaryaData): void {
     [
       { content: 'BPJS', styles: { halign: 'center', valign: 'middle' } },
       { content: 'KOP ROCHMAD', styles: { halign: 'center', valign: 'middle' } },
-      { content: 'KOPERASI UNIPDU REJOSO GEMILANG', styles: { halign: 'center', valign: 'middle' } },
+      { content: 'KOP. REJOSO GEMILANG', styles: { halign: 'center', valign: 'middle' } },
       { content: 'TUNAI', styles: { halign: 'center', valign: 'middle' } },
       { content: 'DANA SOSIAL', styles: { halign: 'center', valign: 'middle' } },
       { content: 'JML POTONGAN', styles: { halign: 'center', valign: 'middle' } },
