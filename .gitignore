@@ -39,3 +39,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Secrets
+service-account.json
+
+# Python
+venv/
+.venv/
+__pycache__/
+
+# Temporary/Doc files
+tmp/
+*.pdf
+*.xlsx
+*.csv
+handoff.md
+scripts/output/

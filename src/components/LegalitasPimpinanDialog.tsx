@@ -1,0 +1,214 @@
+"use client";
+
+import React, { useState } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { FileText, Printer } from 'lucide-react';
+import { BlueCollarEmployee, SalaryMatrix, UraianGajiDocument } from '@/types';
+import { calculateTotalEarnings, calculateTotalDeductions, calculateNetSalary } from '@/utils/salaryCalculator';
+import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
+import { PaySlipField } from '@/utils/generatePaySlipPdf';
+import { generateLegalitasPimpinanPdf, LegalitasEmployeeData, LegalitasPimpinanData } from '@/utils/generateLegalitasPimpinanPdf';
+import { calculateGapok } from '@/utils/payrollLogic';
+
+interface EmployeeRow {
+  id: string;
+  name: string;
+  role: string;
+  gradeLevel: string;
+  joinDate: Date;
+  isActive: boolean;
+  raw: BlueCollarEmployee;
+  rowIndex: number;
+}
+
+interface LegalitasPimpinanDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  employees: EmployeeRow[];
+  categories: string[];
+  salaryMatrix: SalaryMatrix;
+  targetDate: Date;
+  uraianMap: Record<string, UraianGajiDocument>;
+  periodName: string;
+}
+
+function buildInitialEarnings(emp: BlueCollarEmployee, gapok: number, uraian?: any): PaySlipField[] {
+  const earnings: PaySlipField[] = [];
+  const jobCategory = emp.employment?.jobCategory || '';
+  const columns = REKAP_COLUMNS[jobCategory];
+
+  // Gapok
+  earnings.push({ label: 'Gapok', amount: gapok });
+
+  if (columns && uraian) {
+    for (const col of columns) {
+      if (col.slipLabel) {
+        let amount = 0;
+        if (col.type === 'count' && uraian.counts && uraian.counts[col.key] !== undefined) {
+          amount = computeSlipAmount(col, uraian.counts[col.key]);
+        } else {
+          amount = uraian.values[col.key] ?? 0;
+        }
+        earnings.push({ label: col.slipLabel, amount });
+      }
+    }
+  } else {
+    earnings.push({ label: 'Vakasi Harian', amount: 0 });
+    earnings.push({ label: "Bonus Jum'at", amount: 0 });
+    earnings.push({ label: 'Lembur', amount: 0 });
+    earnings.push({ label: 'Bonus Finger', amount: 0 });
+    earnings.push({ label: 'Bonus presensi', amount: 0 });
+  }
+
+  if (emp.bpjs?.allowanceAmount) {
+    earnings.push({ label: 'BPJS (Tunjangan)', amount: Math.round(emp.bpjs.allowanceAmount) });
+  }
+
+  earnings.push({ 
+    label: 'Tunjangan Beras', 
+    amount: emp.salaryProfile?.tunjanganBeras ?? 0 
+  });
+
+  return earnings;
+}
+
+function buildInitialDeductions(emp: BlueCollarEmployee): PaySlipField[] {
+  const deductions: PaySlipField[] = [];
+
+  if (emp.bpjs?.deductionAmount) {
+    deductions.push({ label: 'BPJS', amount: Math.round(emp.bpjs.deductionAmount) });
+  }
+
+  if (emp.deductions?.koperasiRochmad) {
+    deductions.push({ label: 'Kop. Rochmad', amount: emp.deductions.koperasiRochmad });
+  }
+
+  deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+
+  return deductions;
+}
+
+export default function LegalitasPimpinanDialog({
+  open,
+  onOpenChange,
+  employees,
+  categories,
+  salaryMatrix,
+  targetDate,
+  uraianMap,
+  periodName,
+}: LegalitasPimpinanDialogProps) {
+  const [selectedCategory, setSelectedCategory] = useState<string>(categories[0] || '');
+
+  const handlePrint = () => {
+    if (!selectedCategory) return;
+
+    const filteredEmployees = employees.filter(emp => emp.role === selectedCategory && emp.isActive);
+    const periodKey = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+    const uraianDoc = uraianMap[`${periodKey}_${selectedCategory}`];
+
+    const legalitasEmployees: LegalitasEmployeeData[] = filteredEmployees.map((emp, idx) => {
+      const gapok = calculateGapok(emp, salaryMatrix, targetDate);
+      const uraianEntry = uraianDoc?.entries?.[emp.id];
+      
+      const earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry);
+      const deductions = buildInitialDeductions(emp.raw);
+
+      const totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
+      const totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
+      const netSalary = totalEarnings - totalDeductions;
+
+      return {
+        employeeNo: idx + 1,
+        nik: emp.raw.nik || '',
+        name: emp.name,
+        gapok,
+        earnings,
+        totalEarnings,
+        deductions,
+        totalDeductions,
+        netSalary
+      };
+    });
+
+    const data: LegalitasPimpinanData = {
+      jobCategory: selectedCategory,
+      period: periodName,
+      employees: legalitasEmployees,
+    };
+
+    generateLegalitasPimpinanPdf(data);
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md rounded-[28px] border-none shadow-2xl p-0 bg-white">
+        <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-indigo-50/80 to-purple-50/60 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-sm">
+              <FileText className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <DialogTitle className="text-xl font-bold tracking-tight text-slate-800">
+                Cetak Legalitas Pimpinan
+              </DialogTitle>
+              <DialogDescription className="text-sm text-slate-500 mt-0.5">
+                Pilih kategori jabatan untuk dicetak
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <div className="p-6">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Kategori Jabatan
+              </label>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full bg-white border border-slate-200 text-slate-600 text-sm font-semibold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer"
+              >
+                {categories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+            <p className="text-xs text-slate-500">
+              Dokumen yang dicetak akan merangkum semua komponen gaji karyawan pada kategori yang dipilih.
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter className="p-6 pt-4 bg-slate-50/50 border-t border-slate-100">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            className="rounded-xl text-slate-500"
+          >
+            Batal
+          </Button>
+          <Button
+            type="button"
+            onClick={handlePrint}
+            className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 shadow-md shadow-indigo-200 px-6"
+          >
+            <Printer className="w-4 h-4 mr-2" />
+            Cetak PDF
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
