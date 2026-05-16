@@ -62,11 +62,11 @@ Expected columns: ${columnNames}
 Rules for Extraction:
 1. Identify every row in the table.
 2. For each row, provide the name and the numeric values for each column.
-3. CRITICAL: For each row, you MUST provide "y_top" and "y_bottom" as integers (0-100).
-   - "y_top" is the vertical percentage where the row's text starts.
-   - "y_bottom" is the vertical percentage where the row's text ends.
-   - These MUST be accurate so that cropping the image between y_top and y_bottom shows ONLY that specific row of text.
-   - Do NOT include the table header in these coordinates.
+3. CRITICAL: For each row, you MUST provide "y_top" and "y_bottom" as integers from 0 to 1000.
+   - 0 represents the absolute top of the image, 1000 represents the absolute bottom.
+   - "y_top" is the vertical position where the row's text starts.
+   - "y_bottom" is the vertical position where the row's text ends.
+   - These MUST tightly bound ONLY that specific row of text, excluding the table header.
 
 Return results in this structure:
 {
@@ -74,8 +74,8 @@ Return results in this structure:
     {
       "name": "NAME",
       "values": { "key": 123 },
-      "y_top": 25,
-      "y_bottom": 28
+      "y_top": 250,
+      "y_bottom": 280
     }
   ]
 }
@@ -119,9 +119,18 @@ Return ONLY the JSON object.
       parsedJson.structured = parsedJson.structured.map((row: any) => {
         const parseCoord = (val: any) => {
           if (val === undefined || val === null) return undefined;
-          const num = Number(val);
+          let num = Number(val);
           if (isNaN(num)) return undefined;
-          return Math.round((num / 100) * height);
+          
+          // Gemini is now instructed to return 0-1000 scale.
+          // Convert the 0-1000 scale to absolute pixels for the frontend.
+          // Fallback: If it somehow returns 0-100 percentage, scale it up.
+          if (num <= 100 && num > 0) {
+            // It likely gave a percentage anyway
+            return Math.round((num / 100) * height);
+          }
+          
+          return Math.round((num / 1000) * height);
         };
 
         return {
