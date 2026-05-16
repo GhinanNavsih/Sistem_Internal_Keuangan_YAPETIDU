@@ -116,13 +116,20 @@ Return ONLY the JSON object.
     }
 
     if (parsedJson.structured && Array.isArray(parsedJson.structured)) {
-      parsedJson.structured = parsedJson.structured.map((row: any) => ({
-        ...row,
-        // Convert the 0-100 percentage to absolute pixel coordinates 
-        // to match what the frontend expects for its slicing logic
-        y_top: typeof row.y_top === 'number' ? Math.round((row.y_top / 100) * height) : undefined,
-        y_bottom: typeof row.y_bottom === 'number' ? Math.round((row.y_bottom / 100) * height) : undefined,
-      }));
+      parsedJson.structured = parsedJson.structured.map((row: any) => {
+        const parseCoord = (val: any) => {
+          if (val === undefined || val === null) return undefined;
+          const num = Number(val);
+          if (isNaN(num)) return undefined;
+          return Math.round((num / 100) * height);
+        };
+
+        return {
+          ...row,
+          y_top: parseCoord(row.y_top),
+          y_bottom: parseCoord(row.y_bottom),
+        };
+      });
     }
 
     return NextResponse.json({
