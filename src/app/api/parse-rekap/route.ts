@@ -27,8 +27,6 @@ export async function POST(req: NextRequest) {
     const columns = columnsStr ? JSON.parse(columnsStr) : [];
     const columnNames = columns.map((c: any) => `'${c.label}' (key: ${c.key})`).join(', ');
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-001' });
-    
     const prompt = `
 You are a payroll document parser. Extract data from this table image into structured JSON.
 
@@ -55,46 +53,62 @@ Rules:
 7. Return ONLY the JSON object, no markdown formatting or extra text.
 `;
 
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: base64Data,
-          mimeType: file.type || 'image/png'
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    
+    try {
+      const result = await model.generateContent([
+        prompt,
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: file.type || 'image/png'
+          }
+        }
+      ]);
+
+      let textResponse = result.response.text();
+      
+      // Clean JSON response
+      if (textResponse.includes('```json')) {
+        textResponse = textResponse.split('```json')[1].split('```')[0].trim();
+      } else if (textResponse.includes('```')) {
+        textResponse = textResponse.split('```')[1].split('```')[0].trim();
+      }
+
+      let parsedJson;
+      try {
+        parsedJson = JSON.parse(textResponse);
+      } catch (e) {
+        const start = textResponse.indexOf('{');
+        const end = textResponse.lastIndexOf('}');
+        if (start !== -1 && end !== -1) {
+          parsedJson = JSON.parse(textResponse.substring(start, end + 1));
+        } else {
+          throw new Error('Failed to parse JSON response from Gemini');
         }
       }
-    ]);
 
-    let textResponse = result.response.text();
-    
-    // Clean JSON response (remove markdown if present)
-    if (textResponse.includes('```json')) {
-      textResponse = textResponse.split('```json')[1].split('```')[0].trim();
-    } else if (textResponse.includes('```')) {
-      textResponse = textResponse.split('```')[1].split('```')[0].trim();
-    }
-
-    let parsedJson;
-    try {
-      parsedJson = JSON.parse(textResponse);
-    } catch (e) {
-      // Fallback extraction
-      const start = textResponse.indexOf('{');
-      const end = textResponse.lastIndexOf('}');
-      if (start !== -1 && end !== -1) {
-        parsedJson = JSON.parse(textResponse.substring(start, end + 1));
-      } else {
-        throw new Error('Failed to parse JSON response from Gemini');
+      return NextResponse.json({
+        data: {
+          structured: parsedJson.structured || [],
+          img_w: 1000, 
+          img_h: 1000
+        }
+      });
+    } catch (genError: any) {
+      if (genError.message?.includes('404')) {
+        // Fetch available models to help debug
+        const models = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`)
+          .then(res => res.json())
+          .catch(() => ({}));
+        
+        const modelNames = models.models?.map((m: any) => m.name) || [];
+        return NextResponse.json({ 
+          error: `Model not found. Available models for your key: ${modelNames.join(', ')}` 
+        }, { status: 404 });
       }
+      throw genError;
     }
-
-    return NextResponse.json({
-      data: {
-        structured: parsedJson.structured || [],
-        img_w: 1000, 
-        img_h: 1000
-      }
-    });
 
   } catch (error: any) {
     console.error('OCR Error:', error);
