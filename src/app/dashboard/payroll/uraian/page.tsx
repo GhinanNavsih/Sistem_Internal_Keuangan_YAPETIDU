@@ -387,6 +387,7 @@ export default function UraianPage() {
       const blob = await new Promise<Blob>((resolve) => targetCanvas.toBlob((b) => resolve(b!), 'image/png'));
       const formData = new FormData();
       formData.append('file', blob, 'cropped.png');
+      formData.append('columns', JSON.stringify(columns.map(c => ({ key: c.key, label: c.label }))));
       const res = await fetch('/api/parse-rekap', { method: 'POST', body: formData });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));

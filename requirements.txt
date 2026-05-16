@@ -1,5 +1,3 @@
-easyocr
-pypdfium2
-numpy
-Pillow
+google-generativeai
 python-multipart
+Pillow
