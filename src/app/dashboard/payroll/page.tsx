@@ -48,10 +48,10 @@ import CetakPayrollDialog from '@/components/CetakPayrollDialog';
 import { generateRekapGajiPekaryaPdf, RekapGajiPekaryaData, RekapCategoryData } from '@/utils/generateRekapGajiPekaryaPdf';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
 
-import { 
-  calculateTotalEarnings, 
-  calculateTotalDeductions, 
-  calculateNetSalary 
+import {
+  calculateTotalEarnings,
+  calculateTotalDeductions,
+  calculateNetSalary
 } from '@/utils/salaryCalculator';
 
 function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | 'desc' | null }) {
@@ -118,7 +118,7 @@ export default function PayrollValidationDashboard() {
   const handlePrintRekap = () => {
     const activeEmployees = employees.filter(e => e.isActive);
     const categoriesMap: Record<string, RekapCategoryData> = {};
-    
+
     categories.forEach(cat => {
       categoriesMap[cat] = {
         categoryName: `VAKASI ${cat}`,
@@ -139,15 +139,15 @@ export default function PayrollValidationDashboard() {
       const uraianDoc = uraianMap[`${periodKey}_${cat}`];
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
       const uraianEntry = uraianDoc?.entries?.[emp.id];
-      
+
       const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry);
-      
+
       const bpjs = emp.raw.bpjs?.deductionAmount ? Math.round(emp.raw.bpjs.deductionAmount) : 0;
       const kopRochmad = emp.raw.deductions?.koperasiRochmad || 0;
-      const kopUnipdu = 0; 
-      const tunai = 0; 
-      const danaSosial = 0; 
-      
+      const kopUnipdu = 0;
+      const tunai = 0;
+      const danaSosial = 0;
+
       const totalDeductions = calculateTotalDeductions(emp.raw);
       const netSalary = calculateNetSalary(earnings, totalDeductions);
 
@@ -173,7 +173,7 @@ export default function PayrollValidationDashboard() {
 
   const handlePrintPayrollStatement = () => {
     const activeEmployees = employees.filter(e => e.isActive);
-    
+
     const roleOrder = ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'PONTI'];
     const sortedEmployees = [...activeEmployees].sort((a, b) => {
       const roleA = roleOrder.indexOf(a.role) !== -1 ? roleOrder.indexOf(a.role) : 99;
@@ -181,7 +181,7 @@ export default function PayrollValidationDashboard() {
       if (roleA !== roleB) return roleA - roleB;
       return a.name.localeCompare(b.name);
     });
-    
+
     let totalNetSalary = 0;
     const stmtEmployees: PayrollStatementEmployee[] = sortedEmployees.map((emp, idx) => {
       const cat = emp.role;
@@ -189,11 +189,11 @@ export default function PayrollValidationDashboard() {
       const uraianDoc = uraianMap[`${periodKey}_${cat}`];
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
       const uraianEntry = uraianDoc?.entries?.[emp.id];
-      
+
       const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry);
       const totalDeductions = calculateTotalDeductions(emp.raw);
       const netSalary = calculateNetSalary(earnings, totalDeductions);
-      
+
       totalNetSalary += netSalary;
 
       let satker = cat;
@@ -447,23 +447,23 @@ export default function PayrollValidationDashboard() {
             </Button>
           </div>
           <div className="flex gap-3">
-            <Button 
+            <Button
               onClick={() => setLegalitasDialogOpen(true)}
-              variant="outline" 
+              variant="outline"
               className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all"
             >
               <Printer className="w-4 h-4 mr-2" /> Cetak Legalitas
             </Button>
-            <Button 
+            <Button
               onClick={handlePrintRekap}
-              variant="outline" 
+              variant="outline"
               className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all"
             >
               <Printer className="w-4 h-4 mr-2" /> Cetak Rekap
             </Button>
-            <Button 
+            <Button
               onClick={() => setCetakPayrollDialogOpen(true)}
-              variant="outline" 
+              variant="outline"
               className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all"
             >
               <Printer className="w-4 h-4 mr-2" /> Cetak Payroll
@@ -494,16 +494,16 @@ export default function PayrollValidationDashboard() {
               <div>
                 <div className="flex items-center gap-3 mb-4">
                   <div className="flex items-center gap-3 filter drop-shadow-sm">
-                    <img 
-                      src="/Logo YAPETIDU (Transparent bg).png" 
-                      alt="Logo YAPETIDU" 
-                      className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer" 
+                    <img
+                      src="/Logo YAPETIDU (Transparent bg).png"
+                      alt="Logo YAPETIDU"
+                      className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
                     />
                     <div className="w-px h-6 bg-slate-200" />
-                    <img 
-                      src="/Logo UNIPDU.png" 
-                      alt="Logo UNIPDU" 
-                      className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer" 
+                    <img
+                      src="/Logo UNIPDU.png"
+                      alt="Logo UNIPDU"
+                      className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
                     />
                   </div>
                   <h1 className="text-2xl font-bold tracking-tight ml-2">BAK UNIPDU Payroll</h1>
@@ -516,8 +516,8 @@ export default function PayrollValidationDashboard() {
                     <button
                       onClick={() => setActivityFilter('active')}
                       className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${activityFilter === 'active'
-                          ? 'bg-white text-indigo-600 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-700'
+                        ? 'bg-white text-indigo-600 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
                         }`}
                     >
                       Aktif
@@ -525,8 +525,8 @@ export default function PayrollValidationDashboard() {
                     <button
                       onClick={() => setActivityFilter('all')}
                       className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${activityFilter === 'all'
-                          ? 'bg-white text-indigo-600 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-700'
+                        ? 'bg-white text-indigo-600 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
                         }`}
                     >
                       Semua
@@ -580,8 +580,8 @@ export default function PayrollValidationDashboard() {
                   key={tab.name}
                   onClick={() => setActiveTab(tab.name)}
                   className={`flex items-center pb-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === tab.name
-                      ? 'border-indigo-500 text-indigo-700'
-                      : 'border-transparent text-slate-500 hover:text-slate-700'
+                    ? 'border-indigo-500 text-indigo-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-700'
                     }`}
                 >
                   <span className={`${activeTab === tab.name ? 'text-indigo-500' : 'text-slate-400'}`}>

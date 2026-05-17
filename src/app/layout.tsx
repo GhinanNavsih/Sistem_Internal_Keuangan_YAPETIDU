@@ -11,6 +11,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "BAK UNIPDU Payroll",
   description: "Internal payroll system for BAK UNIPDU",
+  icons: {
+    icon: "/Logo YAPETIDU (Transparent bg).png",
+    shortcut: "/Logo YAPETIDU (Transparent bg).png",
+    apple: "/Logo YAPETIDU (Transparent bg).png",
+  }
 };
 
 export default function RootLayout({
