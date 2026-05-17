@@ -42,6 +42,7 @@ import { db } from '@/lib/firebase';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
 import PaySlipDialog, { SlipState } from '@/components/PaySlipDialog';
 import LegalitasPimpinanDialog from '@/components/LegalitasPimpinanDialog';
+import CetakPayrollDialog from '@/components/CetakPayrollDialog';
 import { generateRekapGajiPekaryaPdf, RekapGajiPekaryaData, RekapCategoryData } from '@/utils/generateRekapGajiPekaryaPdf';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
 
@@ -109,6 +110,7 @@ export default function PayrollValidationDashboard() {
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
 
   const [legalitasDialogOpen, setLegalitasDialogOpen] = useState(false);
+  const [cetakPayrollDialogOpen, setCetakPayrollDialogOpen] = useState(false);
 
   const handlePrintRekap = () => {
     const activeEmployees = employees.filter(e => e.isActive);
@@ -449,7 +451,7 @@ export default function PayrollValidationDashboard() {
               <Printer className="w-4 h-4 mr-2" /> Cetak Rekap
             </Button>
             <Button 
-              onClick={handlePrintPayrollStatement}
+              onClick={() => setCetakPayrollDialogOpen(true)}
               variant="outline" 
               className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all"
             >
@@ -762,6 +764,17 @@ export default function PayrollValidationDashboard() {
         targetDate={targetDate}
         uraianMap={uraianMap}
         periodName={payrollPeriod}
+      />
+
+      <CetakPayrollDialog
+        open={cetakPayrollDialogOpen}
+        onOpenChange={setCetakPayrollDialogOpen}
+        employees={employees}
+        salaryMatrix={salaryMatrix}
+        targetDate={targetDate}
+        uraianMap={uraianMap}
+        periodName={payrollPeriod}
+        onPrintPdf={handlePrintPayrollStatement}
       />
     </div>
   );
