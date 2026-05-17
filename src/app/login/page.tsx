@@ -136,9 +136,19 @@ export default function LoginPage() {
 
         <div className="relative z-10 text-center max-w-md">
           {/* Logo */}
-          <div className="flex justify-center mb-10">
-            <div className="w-20 h-20 rounded-3xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-2xl">
-              <Hexagon className="w-10 h-10 text-white" />
+          <div className="flex justify-center mb-12">
+            <div className="flex gap-6 items-center filter drop-shadow-[0_10px_15px_rgba(0,0,0,0.18)]">
+              <img
+                src="/Logo YAPETIDU (Transparent bg).png"
+                alt="Logo YAPETIDU"
+                className="h-32 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
+              />
+              <div className="w-px h-10 bg-white/30" />
+              <img
+                src="/Logo UNIPDU.png"
+                alt="Logo UNIPDU"
+                className="h-32 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
+              />
             </div>
           </div>
 
@@ -175,8 +185,18 @@ export default function LoginPage() {
         <div className="relative w-full max-w-md">
           {/* Mobile logo */}
           <div className="flex lg:hidden items-center gap-3 mb-10">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-md">
-              <Hexagon className="w-5 h-5 text-white" />
+            <div className="flex items-center gap-3 filter drop-shadow-sm">
+              <img
+                src="/Logo YAPETIDU (Transparent bg).png"
+                alt="Logo YAPETIDU"
+                className="h-10 w-auto object-contain"
+              />
+              <div className="w-px h-6 bg-slate-200" />
+              <img
+                src="/Logo UNIPDU.png"
+                alt="Logo UNIPDU"
+                className="h-10 w-auto object-contain"
+              />
             </div>
             <span className="text-lg font-bold text-slate-800">BAK UNIPDU</span>
           </div>

@@ -36,9 +36,11 @@ import {
   CircleCheck,
   ScanLine,
   Upload,
+  LogOut,
 } from 'lucide-react';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useAuth } from '@/lib/AuthContext';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
 import PaySlipDialog, { SlipState } from '@/components/PaySlipDialog';
 import LegalitasPimpinanDialog from '@/components/LegalitasPimpinanDialog';
@@ -87,6 +89,7 @@ interface EmployeeRow extends Employee {
 }
 
 export default function PayrollValidationDashboard() {
+  const { logout } = useAuth();
   const [targetDate] = useState(new Date('2026-05-01'));
   const [activeTab, setActiveTab] = useState('Tagihan');
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
@@ -434,6 +437,14 @@ export default function PayrollValidationDashboard() {
                 ← Kembali
               </Button>
             </Link>
+            <Button
+              variant="outline"
+              onClick={logout}
+              className="rounded-xl shadow-sm bg-white border-slate-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Keluar
+            </Button>
           </div>
           <div className="flex gap-3">
             <Button 
@@ -482,10 +493,20 @@ export default function PayrollValidationDashboard() {
             <div className="flex justify-between items-start mb-6">
               <div>
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-400 flex items-center justify-center">
-                    <Hexagon className="w-5 h-5 text-white" />
+                  <div className="flex items-center gap-3 filter drop-shadow-sm">
+                    <img 
+                      src="/Logo YAPETIDU (Transparent bg).png" 
+                      alt="Logo YAPETIDU" 
+                      className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer" 
+                    />
+                    <div className="w-px h-6 bg-slate-200" />
+                    <img 
+                      src="/Logo UNIPDU.png" 
+                      alt="Logo UNIPDU" 
+                      className="h-10 w-auto object-contain hover:scale-105 transition-transform duration-300 cursor-pointer" 
+                    />
                   </div>
-                  <h1 className="text-2xl font-bold tracking-tight">BAK UNIPDU Payroll</h1>
+                  <h1 className="text-2xl font-bold tracking-tight ml-2">BAK UNIPDU Payroll</h1>
                   <div className="w-2.5 h-2.5 rounded-full bg-red-500 mt-1"></div>
                 </div>
 
