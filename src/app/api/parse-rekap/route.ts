@@ -159,6 +159,11 @@ Return ONLY the JSON object.
 
   } catch (error: any) {
     console.error('OCR Error:', error);
-    return NextResponse.json({ error: error.message || 'Internal Error' }, { status: 500 });
+    return NextResponse.json({
+      error: error.message || 'Internal Error',
+      errorType: error.constructor?.name,
+      errorDetails: error?.errorDetails ?? error?.cause ?? null,
+      stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined,
+    }, { status: 500 });
   }
 }
