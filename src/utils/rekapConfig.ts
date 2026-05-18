@@ -3,6 +3,10 @@ import { RekapColumn } from '@/types';
 // ─── Hardcoded multiplier rates ─────────────────────────────────────────────
 export const RATE_HARIAN = 12_500;
 export const RATE_JUMAT  = 25_000;
+export const RATE_LEMBUR_SENDIRI = 30_000;
+export const RATE_LEMBUR_COVER = 50_000;
+export const RATE_BONUS_MUTLAK = 50_000;
+export const RATE_BONUS_BULANAN = 17_500;
 
 // ─── Column configs per job category ────────────────────────────────────────
 // Each category can have a different set of columns.
@@ -10,24 +14,37 @@ export const RATE_JUMAT  = 25_000;
 // 'currency' columns are direct Rp amounts from the rekap.
 
 export const REKAP_COLUMNS: Record<string, RekapColumn[]> = {
+  SATPAM: [
+    { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
+    { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
+    { key: 'lemburSendiri',      label: 'Lembur Sendiri',         type: 'count',    multiplier: RATE_LEMBUR_SENDIRI, slipLabel: 'Lembur Sendiri' },
+    { key: 'lemburCover',        label: 'Lembur Cover',           type: 'count',    multiplier: RATE_LEMBUR_COVER,   slipLabel: 'Lembur Cover' },
+    { key: 'bonusPresensi',      label: 'Bonus Presensi',         type: 'currency',                                  slipLabel: 'Bonus Presensi' },
+    { key: 'bonusMutlak',        label: 'Bonus Mutlak',           type: 'count',    multiplier: RATE_BONUS_MUTLAK,   slipLabel: 'Bonus Mutlak' },
+    { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
+    { key: 'tunjanganJabatan',   label: 'Tunjangan Jabatan',      type: 'currency',                                  slipLabel: 'Tunjangan Jabatan' },
+    { key: 'bonusBulanan',       label: 'Bonus Bulanan',          type: 'count',    multiplier: RATE_BONUS_BULANAN,  slipLabel: 'Bonus Bulanan' },
+  ],
   KEBERSIHAN: [
-    { key: 'harian',          label: 'Harian',           type: 'count',    multiplier: RATE_HARIAN, slipLabel: 'Vakasi Harian' },
-    { key: 'jumatLibur',      label: "Jum'at/H.Libur",   type: 'count',    multiplier: RATE_JUMAT,  slipLabel: "Bonus Jum'at" },
-    { key: 'ijinSakit',       label: 'Ijin/Sakit',       type: 'count' },
-    { key: 'bonusPresensi',   label: 'Bonus Presensi',   type: 'currency', slipLabel: 'Bonus presensi' },
-    { key: 'bonusFinger',     label: 'Bonus Finger',     type: 'currency', slipLabel: 'Bonus Finger' },
-    { key: 'bonusTriwulan',   label: 'Bonus Triwulan',   type: 'currency', slipLabel: 'bonus triwulan' },
-    { key: 'lemburSPJ',       label: 'SPJ/Lainnya',      type: 'currency', slipLabel: 'Blangko Lembur / lembur SPJ' },
-    { key: 'tunjanganKhusus', label: 'Tunj. Khusus',     type: 'currency', slipLabel: 'Tunj. Khusus' },
+    { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
+    { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
+    { key: 'bonusPresensi',      label: 'Bonus Presensi',         type: 'currency',                                  slipLabel: 'Bonus Presensi' },
+    { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
+    { key: 'tunjanganKhusus',    label: 'Tunjangan Khusus',       type: 'currency',                                  slipLabel: 'Tunjangan Khusus' },
+  ],
+  TEKNISI: [
+    { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
+    { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
+    { key: 'bonusMutlak',        label: 'Bonus Mutlak',           type: 'count',    multiplier: RATE_BONUS_MUTLAK,   slipLabel: 'Bonus Mutlak' },
+    { key: 'lembur',             label: 'Lembur',                 type: 'currency',                                  slipLabel: 'Lembur' },
+    { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
   ],
   SOPIR: [
-    { key: 'harian',          label: 'Harian',           type: 'currency', slipLabel: 'Presensi Harian' },
-    { key: 'jumatLibur',      label: 'Bonus Jumat',      type: 'currency', slipLabel: 'Bonus Jumat' },
-    { key: 'bonusPresensi',   label: 'Bonus Presensi',   type: 'currency', slipLabel: 'Bonus Presensi' },
-    { key: 'piket',           label: 'Piket',            type: 'currency', slipLabel: 'Piket' },
-    { key: 'praktek',         label: 'Praktek',          type: 'currency', slipLabel: 'Praktek' },
-    { key: 'lemburSPJ',       label: 'SPJ Sopir',        type: 'currency', slipLabel: 'SPJ Sopir' },
-    { key: 'tunjanganKhusus', label: 'Tunjangan',        type: 'currency', slipLabel: 'Tunjangan' },
+    { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
+    { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
+    { key: 'piket',              label: 'Piket',                  type: 'currency',                                  slipLabel: 'Piket' },
+    { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
+    { key: 'tunjangan',          label: 'Tunjangan',              type: 'currency',                                  slipLabel: 'Tunjangan' },
   ],
 };
 

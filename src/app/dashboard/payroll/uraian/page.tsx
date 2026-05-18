@@ -25,7 +25,7 @@ import {
 import {
   ArrowLeft, Upload, ScanLine, Loader2, CheckCircle2,
   FileText, AlertCircle, ImageIcon, Trash2, Eye, RotateCw, Sparkles, X,
-  Crop, Building2, Code2, Database,
+  Crop, Building2, Code2, Database, ShieldCheck, Hash, Banknote,
 } from 'lucide-react';
 import {
   collection, getDocs, doc, setDoc, getDoc, serverTimestamp, query, where,
@@ -33,7 +33,6 @@ import {
 import { db } from '@/lib/firebase';
 import { 
   REKAP_COLUMNS, SUPPORTED_CATEGORIES, MONTHS_ID,
-  RATE_HARIAN, RATE_JUMAT,
 } from '@/utils/rekapConfig';
 import { 
   renderFileToCanvas, runOcr, parseRekapRows, matchEmployee, cropCanvas,
@@ -57,6 +56,7 @@ export default function UraianPage() {
   const [lastScanResult, setLastScanResult] = useState<any>(null);
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showSavePreview, setShowSavePreview] = useState(false);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [employees, setEmployees] = useState<BlueCollarEmployee[]>([]);
   const [tableData, setTableData] = useState<Record<string, Record<string, number>>>({});
   const [rowBounds, setRowBounds] = useState<Record<string, { top: number, bottom: number }>>({});
@@ -87,7 +87,7 @@ export default function UraianPage() {
   // ── File state
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [rotation, setRotation] = useState(270); 
+  const [rotation, setRotation] = useState(0); 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -135,11 +135,10 @@ export default function UraianPage() {
             const rawValues = { ...entry.values };
             const empCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
             empCols.forEach(col => {
-              const isHarianOrJumat = col.key === 'harian' || col.key === 'jumatLibur';
-              const multiplier = col.multiplier || (col.key === 'harian' ? RATE_HARIAN : RATE_JUMAT);
-              if (isHarianOrJumat && multiplier) {
+              const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan'].includes(col.key);
+              if (isDualMap && col.multiplier) {
                 if (entry.counts?.[col.key] !== undefined) rawValues[col.key] = entry.counts[col.key];
-                else if (rawValues[col.key] && rawValues[col.key] > 31) rawValues[col.key] = Math.round(rawValues[col.key] / multiplier);
+                else if (rawValues[col.key] && rawValues[col.key] > 31) rawValues[col.key] = Math.round(rawValues[col.key] / col.multiplier);
               } else if (col.type === 'count' && col.multiplier) {
                 if (entry.counts?.[col.key] !== undefined) rawValues[col.key] = entry.counts[col.key];
                 else if (rawValues[col.key]) rawValues[col.key] = rawValues[col.key] / col.multiplier;
@@ -358,11 +357,11 @@ export default function UraianPage() {
       const storedCounts: Record<string, number> = {};
       const empCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
       empCols.forEach(col => {
-        const rawVal = storedValues[col.key]; if (!rawVal) return;
-        if (col.key === 'harian' || col.key === 'jumatLibur') {
-          const multiplier = col.multiplier || (col.key === 'harian' ? RATE_HARIAN : RATE_JUMAT);
-          if (rawVal > 31) { storedCounts[col.key] = Math.round(rawVal / multiplier); storedValues[col.key] = rawVal; }
-          else { storedCounts[col.key] = rawVal; storedValues[col.key] = rawVal * multiplier; }
+        const rawVal = storedValues[col.key]; if (rawVal === undefined || rawVal === null) return;
+        const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan'].includes(col.key);
+        if (isDualMap && col.multiplier) {
+          if (rawVal > 31) { storedCounts[col.key] = Math.round(rawVal / col.multiplier); storedValues[col.key] = rawVal; }
+          else { storedCounts[col.key] = rawVal; storedValues[col.key] = rawVal * col.multiplier; }
         } else if (col.type === 'count' && col.multiplier) { storedCounts[col.key] = rawVal; storedValues[col.key] = rawVal * col.multiplier; }
       });
       entries[emp.employeeId] = { employeeId: emp.employeeId, name: emp.name, values: storedValues, ...(Object.keys(storedCounts).length > 0 && { counts: storedCounts }) };
@@ -370,14 +369,48 @@ export default function UraianPage() {
     return { period, periodLabel, jobCategory: category, entries, updatedAt: "ServerTimestamp" };
   };
 
-  const handleSave = async () => {
+  // Opens the confirmation modal instead of writing directly
+  const handleSave = () => {
+    setShowSaveConfirm(true);
+  };
+
+  // Called only when user clicks "Konfirmasi & Simpan" inside the modal
+  const handleConfirmSave = async () => {
+    setShowSaveConfirm(false);
     setSaving(true);
     try {
       const payload = generateSavePayload();
       await setDoc(doc(db, 'UraianGaji', docId), { ...payload, updatedAt: serverTimestamp() }, { merge: true });
-      setMessage({ type: 'success', text: 'Data disimpan.' }); setSaved(true);
+      setMessage({ type: 'success', text: 'Data berhasil disimpan.' }); setSaved(true);
     } catch (err) { setMessage({ type: 'error', text: 'Gagal menyimpan.' }); }
     finally { setSaving(false); }
+  };
+
+  // Helper: format to IDR string (e.g. 250000 -> "Rp 250.000")
+  const fmtRp = (n: number) =>
+    'Rp\u00a0' + Math.round(n).toLocaleString('id-ID');
+
+  // Build the per-employee summary rows for the confirmation modal
+  const DUAL_MAP_KEYS = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan'] as const;
+
+  const buildConfirmRows = () => {
+    if (!category) return [];
+    const empCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+    return employees.map(emp => {
+      const rawValues = tableData[emp.employeeId] ?? {};
+      const fields = empCols.map(col => {
+        const rawVal = rawValues[col.key] ?? 0;
+        if (rawVal === 0) return { col, count: 0, value: 0, isDual: false };
+        const isDual = (DUAL_MAP_KEYS as readonly string[]).includes(col.key) && !!col.multiplier;
+        if (isDual && col.multiplier) {
+          const count = rawVal > 31 ? Math.round(rawVal / col.multiplier) : rawVal;
+          const value = rawVal > 31 ? rawVal : rawVal * col.multiplier;
+          return { col, count, value, isDual: true };
+        }
+        return { col, count: null, value: rawVal, isDual: false };
+      }).filter(f => f.value !== 0);
+      return { emp, fields };
+    }).filter(row => row.fields.length > 0);
   };
 
   const display = getDisplayRect();
@@ -410,7 +443,10 @@ export default function UraianPage() {
             )}
             <div className="flex gap-2 ml-2">
               <Button variant="outline" size="icon" onClick={() => setShowSavePreview(true)} disabled={!category || employees.length === 0} className="rounded-xl border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-200"><Database className="w-4 h-4" /></Button>
-              <Button onClick={handleSave} disabled={saving || !category || employees.length === 0} className="rounded-xl px-6 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300">Simpan</Button>
+              <Button onClick={handleSave} disabled={saving || !category || employees.length === 0} className="rounded-xl px-6 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                Simpan
+              </Button>
             </div>
           </div>
         </div>
@@ -597,7 +633,7 @@ export default function UraianPage() {
       </Dialog>
 
       <Dialog open={showDebugModal} onOpenChange={setShowDebugModal}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col p-0 border-none bg-slate-900 shadow-2xl rounded-3xl">
+        <DialogContent className="sm:max-w-3xl max-w-full max-h-[85vh] overflow-hidden flex flex-col p-0 border-none bg-slate-900 shadow-2xl rounded-3xl">
           <DialogHeader className="p-6 pb-4 bg-slate-800/50 backdrop-blur-md border-b border-white/5"><DialogTitle className="text-white flex items-center gap-3 font-bold text-xl"><Code2 className="w-6 h-6 text-indigo-400" />Raw AI Capture Output</DialogTitle></DialogHeader>
           <div className="flex-1 overflow-auto p-6 bg-[#0B0E14]"><pre className="p-4 rounded-2xl text-[12px] font-mono text-indigo-300/90 leading-relaxed overflow-x-auto whitespace-pre-wrap selection:bg-indigo-500/30">{JSON.stringify(lastScanResult, null, 2)}</pre></div>
           <div className="p-4 bg-slate-900 border-t border-white/5 flex justify-end gap-3">
@@ -608,12 +644,123 @@ export default function UraianPage() {
       </Dialog>
 
       <Dialog open={showSavePreview} onOpenChange={setShowSavePreview}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col p-0 border-none bg-[#0F172A] shadow-2xl rounded-3xl">
+        <DialogContent className="sm:max-w-3xl max-w-full max-h-[85vh] overflow-hidden flex flex-col p-0 border-none bg-[#0F172A] shadow-2xl rounded-3xl">
           <DialogHeader className="p-6 pb-4 bg-slate-800/50 border-b border-white/5"><DialogTitle className="text-white flex items-center gap-3 font-bold text-xl"><Database className="w-6 h-6 text-emerald-400" />Preview Database Payload</DialogTitle></DialogHeader>
           <div className="flex-1 overflow-auto p-6 bg-[#020617]"><pre className="p-4 rounded-2xl text-[12px] font-mono text-emerald-300/90 leading-relaxed overflow-x-auto whitespace-pre-wrap">{JSON.stringify(generateSavePayload(), null, 2)}</pre></div>
           <div className="p-4 bg-slate-900 border-t border-white/5 flex justify-end gap-3">
             <Button variant="ghost" className="text-slate-400 hover:text-white hover:bg-white/5 font-bold" onClick={() => { navigator.clipboard.writeText(JSON.stringify(generateSavePayload(), null, 2)); setMessage({ type: 'success', text: 'Payload copied' }); }}>Copy Payload</Button>
             <Button onClick={() => setShowSavePreview(false)} className="bg-emerald-600 text-white px-8 font-bold rounded-xl hover:bg-emerald-700 transition-all">Understood</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Save Confirmation Modal ──────────────────────────────────────────── */}
+      <Dialog open={showSaveConfirm} onOpenChange={setShowSaveConfirm}>
+        <DialogContent className="sm:max-w-3xl max-w-full max-h-[88vh] overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl">
+          {/* Header */}
+          <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-t-3xl shrink-0">
+            <DialogTitle className="text-white flex items-center gap-3 font-bold text-xl">
+              <ShieldCheck className="w-6 h-6" />
+              Konfirmasi Penyimpanan Data
+            </DialogTitle>
+            <p className="text-indigo-100 text-sm mt-1">
+              Tinjau hasil kalkulasi di bawah sebelum menyimpan ke database.
+            </p>
+          </DialogHeader>
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 bg-[#F8FAFC]">
+            {/* Period badge */}
+            <div className="flex items-center gap-2 text-xs text-slate-500 font-semibold uppercase tracking-wider mb-2">
+              <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full border border-indigo-100">
+                {MONTHS_ID[month - 1]} {year}
+              </span>
+              <span className="px-3 py-1 bg-violet-50 text-violet-600 rounded-full border border-violet-100">
+                {category}
+              </span>
+            </div>
+
+            {buildConfirmRows().length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-slate-400 space-y-2">
+                <AlertCircle className="w-10 h-10 opacity-40" />
+                <p className="font-medium">Tidak ada data untuk ditampilkan.</p>
+              </div>
+            ) : (
+              buildConfirmRows().map(({ emp, fields }) => (
+                <div key={emp.employeeId} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  {/* Employee name bar */}
+                  <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 bg-slate-50/60">
+                    <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white text-xs font-bold flex items-center justify-center shrink-0">
+                      {emp.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800 leading-none">{emp.name}</p>
+                      <p className="text-[10px] text-slate-400 font-mono mt-0.5">{emp.employeeId}</p>
+                    </div>
+                  </div>
+
+                  {/* Fields grid */}
+                  <div className="divide-y divide-slate-50">
+                    {fields.map(({ col, count, value, isDual }) => (
+                      <div key={col.key} className="flex items-center px-4 py-3 gap-4">
+                        {/* Label */}
+                        <span className="text-xs font-semibold text-slate-600 w-36 shrink-0">{col.label}</span>
+
+                        {isDual && count !== null ? (
+                          /* Dual-map: show count pill → Rp value */
+                          <div className="flex items-center gap-2 flex-1 flex-wrap">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold">
+                              <Hash className="w-3 h-3" />
+                              {count} hari
+                            </span>
+                            <span className="text-slate-300 text-sm">→</span>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold">
+                              <Banknote className="w-3 h-3" />
+                              {fmtRp(value)}
+                            </span>
+                            <span className="text-[10px] text-slate-400 ml-auto">
+                              @{fmtRp(col.multiplier ?? 0)}/hari
+                            </span>
+                          </div>
+                        ) : (
+                          /* Regular currency field */
+                          <div className="flex-1 flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold">
+                              <Banknote className="w-3 h-3" />
+                              {fmtRp(value)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Footer actions */}
+          <div className="shrink-0 p-5 bg-white border-t border-slate-100 flex items-center justify-between gap-3 rounded-b-3xl">
+            <p className="text-xs text-slate-400 leading-snug max-w-[55%]">
+              Pastikan semua angka sudah benar sebelum menyimpan.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowSaveConfirm(false)}
+                className="rounded-xl border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+              >
+                Batal
+              </Button>
+              <Button
+                onClick={handleConfirmSave}
+                disabled={saving}
+                className="rounded-xl px-6 bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all flex items-center gap-2"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                Konfirmasi &amp; Simpan
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

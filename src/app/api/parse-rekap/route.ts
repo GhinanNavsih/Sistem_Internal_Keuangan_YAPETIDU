@@ -70,6 +70,11 @@ Rules for Extraction:
 
 4. IMPORTANT: Identify the horizontal order of the data columns in the header from left to right (after the Name column).
 
+5. VALUE EXTRACTION: Extract the exact numerical value present in each cell.
+   - Some fields are dual-mapped and may contain either a small count (e.g., 5, 12, 20) or a large monetary amount (e.g., 150000, 300000).
+   - Extract EXACTLY the number you see. Do NOT perform any math or conversions.
+   - Remove any currency symbols (Rp) and thousands separators. Return as a raw integer.
+
 Return results in this structure:
 {
   "detected_column_order": ["key1", "key2", ...],
