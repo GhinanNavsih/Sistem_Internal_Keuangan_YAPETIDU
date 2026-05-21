@@ -13,6 +13,7 @@ export interface PayrollStatementData {
   period: string;
   employees: PayrollStatementEmployee[];
   totalNetSalary: number;
+  title?: string;
 }
 
 export function generatePayrollStatementPdf(data: PayrollStatementData): void {
@@ -38,7 +39,7 @@ export function generatePayrollStatementPdf(data: PayrollStatementData): void {
   doc.setFontSize(11);
   doc.text('UNIVERSITAS PESANTREN TINGGI DARUL ULUM JOMBANG', 14, y);
   y += 5;
-  doc.text('PAYROLL PEKARYA', 14, y);
+  doc.text(data.title || 'PAYROLL PEKARYA', 14, y);
   y += 10;
 
   const head = [

@@ -1,19 +1,30 @@
 "use client";
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { Loader2 } from 'lucide-react';
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.replace('/login');
+    if (!loading) {
+      if (!user) {
+        router.replace('/login');
+      } else if (profile) {
+        // Enforce role-based route access
+        if (profile.role === 'satker_head') {
+          // SatKer Heads are ONLY allowed to access /dashboard/payroll/uraian
+          if (pathname !== '/dashboard/payroll/uraian') {
+            router.replace('/dashboard/payroll/uraian');
+          }
+        }
+      }
     }
-  }, [user, loading, router]);
+  }, [user, profile, loading, router, pathname]);
 
   if (loading) {
     return (
@@ -28,7 +39,13 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     );
   }
 
-  if (!user) return null;
+  if (!user || !profile) return null;
+
+  // Additional block in case they somehow render before the useEffect redirect completes
+  if (profile.role === 'satker_head' && pathname !== '/dashboard/payroll/uraian') {
+    return null;
+  }
 
   return <>{children}</>;
 }
+

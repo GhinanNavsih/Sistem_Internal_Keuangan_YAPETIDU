@@ -53,6 +53,7 @@ import {
   setDoc,
   deleteDoc,
   serverTimestamp,
+  Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { BlueCollarEmployee } from '@/types';
@@ -69,43 +70,85 @@ const JOB_ICONS: Record<string, React.ReactNode> = {
 
 const COLLAR_TABS = [
   { key: 'blue', label: 'Blue Collar', collection: 'Employees_BlueCollar', prefix: 'BC' },
-  // { key: 'white', label: 'White Collar', collection: 'Employees_WhiteCollar', prefix: 'WC' },
+  { key: 'loyalis', label: 'White Collar (Loyalis)', collection: 'Employees_Loyalis', prefix: 'Loyalis' },
 ];
 
-type FormData = Partial<BlueCollarEmployee>;
+type FormData = any;
+
+// Helper getters to unify rendering between blue collar and Loyalis white collar records
+const getEmpId = (emp: any) => emp.employeeId || emp.id || '';
+const getEmpName = (emp: any) => emp.personal_info?.name || emp.name || '';
+const getEmpNikOrNiy = (emp: any) => emp.personal_info?.employee_id_niy || emp.nik || '';
+const getEmpCategory = (emp: any) => emp.employment_profile?.job_role || emp.employment?.jobCategory || '';
+const getEmpGrade = (emp: any) => emp.academic_and_tier?.level_code || emp.salaryProfile?.salaryGradeCode || '';
+const getEmpIsActive = (emp: any) => {
+  if (emp.personal_info?.status !== undefined) {
+    return emp.personal_info.status === 'AKTIF';
+  }
+  return emp.flags?.isActive ?? true;
+};
+const getEmpStartDate = (emp: any) => {
+  if (emp.employment_profile?.date_of_hire) {
+    const d = emp.employment_profile.date_of_hire;
+    if (d && typeof d.toDate === 'function') {
+      return d.toDate().toISOString().split('T')[0];
+    }
+    return d;
+  }
+  return emp.employment?.startDate || '';
+};
 
 export default function EmployeesPage() {
-  const [activeTab] = useState('blue');
-  const [employees, setEmployees] = useState<BlueCollarEmployee[]>([]);
+  const [activeTab, setActiveTab] = useState('blue');
+  const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingEmployee, setEditingEmployee] = useState<BlueCollarEmployee | null>(null);
+  const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const currentTab = COLLAR_TABS.find(t => t.key === activeTab)!;
 
-  const [formData, setFormData] = useState<FormData>({
-    name: '',
-    nik: '',
-    collarType: 'blue_collar',
-    employment: {
-      status: 'active',
-      jobCategory: 'OTHER',
-      startDate: '',
-      endDate: null,
-    },
-    salaryProfile: {
-      salaryGradeCode: '',
-      baseSalaryAmount: 0,
-      salaryMatrixVersion: '2026_v1',
-    },
-    bankAccount: { bankName: 'BSI', accountNumber: '', accountHolderName: '' },
-    bpjs: { allowanceAmount: 0, deductionAmount: 0 },
-    deductions: { koperasiRochmad: 0 },
-    flags: { isActive: true, isPayrollEligible: true },
-  });
+  const resetForm = (tab: string): any => {
+    if (tab === 'loyalis') {
+      return {
+        personal_info: { name: '', employee_id_niy: '', tax_id_npwp: '', status: 'AKTIF' },
+        banking_info: { bank_name: 'BSI', account_number: '' },
+        employment_profile: { job_role: '', department_unit: '', date_of_hire: '', date_recognized: '', date_exit: '' },
+        academic_and_tier: { education_level: '', education_code: '', functional_tier: '', level_code: '', base_salary_tier: '' },
+        family_allowance_metrics: { spouse_count: 0, children_sd: 0, children_sltp: 0, children_slta: 0, children_pt: 0 },
+      };
+    }
+    return {
+      name: '',
+      nik: '',
+      collarType: 'blue_collar',
+      employment: { status: 'active', jobCategory: 'OTHER', startDate: '', endDate: null },
+      salaryProfile: { salaryGradeCode: '', baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' },
+      bankAccount: { bankName: 'BSI', accountNumber: '', accountHolderName: '' },
+      bpjs: { allowanceAmount: 0, deductionAmount: 0 },
+      deductions: { koperasiRochmad: 0 },
+      flags: { isActive: true, isPayrollEligible: true },
+    };
+  };
+
+  const [formData, setFormData] = useState<FormData>(resetForm('blue'));
+
+  const updateNestedField = (section: string, field: string, value: any) => {
+    setFormData((prev: any) => ({
+      ...prev,
+      [section]: {
+        ...(prev[section] || {}),
+        [field]: value
+      }
+    }));
+  };
+
+  // Sync default form data when active tab changes
+  useEffect(() => {
+    setFormData(resetForm(activeTab));
+  }, [activeTab]);
 
   useEffect(() => { fetchEmployees(); }, [activeTab]);
 
@@ -113,8 +156,8 @@ export default function EmployeesPage() {
     try {
       setLoading(true);
       const snap = await getDocs(collection(db, currentTab.collection));
-      const list = snap.docs.map(d => d.data() as BlueCollarEmployee);
-      setEmployees(list.sort((a, b) => a.employeeId.localeCompare(b.employeeId)));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setEmployees(list.sort((a, b) => getEmpId(a).localeCompare(getEmpId(b))));
     } catch (err) {
       console.error('Error fetching employees:', err);
     } finally {
@@ -122,27 +165,36 @@ export default function EmployeesPage() {
     }
   };
 
-  const resetForm = (): FormData => ({
-    name: '',
-    nik: '',
-    collarType: 'blue_collar',
-    employment: { status: 'active', jobCategory: 'OTHER', startDate: '', endDate: null },
-    salaryProfile: { salaryGradeCode: '', baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' },
-    bankAccount: { bankName: 'BSI', accountNumber: '', accountHolderName: '' },
-    bpjs: { allowanceAmount: 0, deductionAmount: 0 },
-    deductions: { koperasiRochmad: 0 },
-    flags: { isActive: true, isPayrollEligible: true },
-  });
-
   const handleOpenAdd = () => {
     setEditingEmployee(null);
-    setFormData(resetForm());
+    setFormData(resetForm(activeTab));
     setIsDialogOpen(true);
   };
 
-  const handleOpenEdit = (emp: BlueCollarEmployee) => {
+  const formatTimestampForInput = (ts: any) => {
+    if (!ts) return '';
+    if (ts.toDate && typeof ts.toDate === 'function') {
+      return ts.toDate().toISOString().split('T')[0];
+    }
+    if (typeof ts === 'string') return ts.split('T')[0];
+    return '';
+  };
+
+  const handleOpenEdit = (emp: any) => {
     setEditingEmployee(emp);
-    setFormData({ ...emp });
+    if (activeTab === 'loyalis') {
+      setFormData({
+        ...emp,
+        employment_profile: {
+          ...emp.employment_profile,
+          date_of_hire: formatTimestampForInput(emp.employment_profile?.date_of_hire),
+          date_recognized: formatTimestampForInput(emp.employment_profile?.date_recognized),
+          date_exit: formatTimestampForInput(emp.employment_profile?.date_exit),
+        }
+      });
+    } else {
+      setFormData({ ...emp });
+    }
     setIsDialogOpen(true);
   };
 
@@ -152,31 +204,78 @@ export default function EmployeesPage() {
       setSaving(true);
       setMessage(null);
 
-      let employeeId = editingEmployee?.employeeId;
+      let employeeId = editingEmployee ? getEmpId(editingEmployee) : '';
       if (!employeeId) {
-        const sorted = [...employees].sort((a, b) => b.employeeId.localeCompare(a.employeeId));
-        const lastNum = sorted.length > 0 ? parseInt(sorted[0].employeeId.split('_')[1]) : 0;
+        const sorted = [...employees].sort((a, b) => getEmpId(b).localeCompare(getEmpId(a)));
+        const lastNum = sorted.length > 0 ? parseInt(getEmpId(sorted[0]).split('_')[1]) : 0;
         employeeId = `${currentTab.prefix}_${String(lastNum + 1).padStart(3, '0')}`;
       }
 
-      const final: BlueCollarEmployee = {
-        ...(formData as BlueCollarEmployee),
-        employeeId,
-        collarType: 'blue_collar',
-        bankAccount: {
-          ...formData.bankAccount!,
-          accountHolderName: formData.name || '',
-        },
-        flags: {
-          isActive: formData.flags?.isActive ?? true,
-          isPayrollEligible: formData.flags?.isActive ?? true,
-        },
-        // @ts-ignore
-        audit: {
-          updatedAt: serverTimestamp(),
-          ...(editingEmployee ? {} : { createdAt: serverTimestamp(), sourceFile: 'Web Dashboard' }),
-        },
-      };
+      let final: any;
+
+      if (activeTab === 'loyalis') {
+        const toTimestamp = (dateString: string) => {
+          if (!dateString) return null;
+          const d = new Date(dateString);
+          return isNaN(d.getTime()) ? null : Timestamp.fromDate(d);
+        };
+
+        final = {
+          personal_info: {
+            name: formData.personal_info?.name || '',
+            employee_id_niy: formData.personal_info?.employee_id_niy || null,
+            tax_id_npwp: formData.personal_info?.tax_id_npwp || null,
+            status: formData.personal_info?.status || 'AKTIF',
+          },
+          banking_info: {
+            bank_name: formData.banking_info?.bank_name || null,
+            account_number: formData.banking_info?.account_number || null,
+          },
+          employment_profile: {
+            job_role: formData.employment_profile?.job_role || null,
+            department_unit: formData.employment_profile?.department_unit || null,
+            date_of_hire: toTimestamp(formData.employment_profile?.date_of_hire || ''),
+            date_recognized: toTimestamp(formData.employment_profile?.date_recognized || ''),
+            date_exit: toTimestamp(formData.employment_profile?.date_exit || ''),
+          },
+          academic_and_tier: {
+            education_level: formData.academic_and_tier?.education_level || null,
+            education_code: formData.academic_and_tier?.education_code !== undefined && formData.academic_and_tier?.education_code !== '' ? Number(formData.academic_and_tier.education_code) : null,
+            functional_tier: formData.academic_and_tier?.functional_tier !== undefined && formData.academic_and_tier?.functional_tier !== '' ? Number(formData.academic_and_tier.functional_tier) : null,
+            level_code: formData.academic_and_tier?.level_code || null,
+            base_salary_tier: formData.academic_and_tier?.base_salary_tier !== undefined && formData.academic_and_tier?.base_salary_tier !== '' ? Number(formData.academic_and_tier.base_salary_tier) : null,
+          },
+          family_allowance_metrics: {
+            spouse_count: Number(formData.family_allowance_metrics?.spouse_count) || 0,
+            children_sd: Number(formData.family_allowance_metrics?.children_sd) || 0,
+            children_sltp: Number(formData.family_allowance_metrics?.children_sltp) || 0,
+            children_slta: Number(formData.family_allowance_metrics?.children_slta) || 0,
+            children_pt: Number(formData.family_allowance_metrics?.children_pt) || 0,
+          },
+          audit: {
+            updatedAt: serverTimestamp(),
+            ...(editingEmployee ? {} : { createdAt: serverTimestamp(), sourceFile: 'Web Dashboard' }),
+          }
+        };
+      } else {
+        final = {
+          ...(formData as BlueCollarEmployee),
+          employeeId,
+          collarType: 'blue_collar',
+          bankAccount: {
+            ...formData.bankAccount!,
+            accountHolderName: formData.name || '',
+          },
+          flags: {
+            isActive: formData.flags?.isActive ?? true,
+            isPayrollEligible: formData.flags?.isActive ?? true,
+          },
+          audit: {
+            updatedAt: serverTimestamp(),
+            ...(editingEmployee ? {} : { createdAt: serverTimestamp(), sourceFile: 'Web Dashboard' }),
+          },
+        };
+      }
 
       await setDoc(doc(db, currentTab.collection, employeeId), final, { merge: true });
 
@@ -208,17 +307,22 @@ export default function EmployeesPage() {
     }
   };
 
-  const filtered = employees.filter(emp =>
-    emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (emp.nik && emp.nik.includes(searchQuery)) ||
-    emp.employeeId.includes(searchQuery)
-  );
+  const filtered = employees.filter(emp => {
+    const name = getEmpName(emp);
+    const nik = getEmpNikOrNiy(emp);
+    const id = getEmpId(emp);
+    return (
+      name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (nik && String(nik).includes(searchQuery)) ||
+      id.includes(searchQuery)
+    );
+  });
 
   const statsCards = [
     { label: 'Total Pegawai', value: employees.length, icon: <Users className="w-5 h-5" />, color: 'indigo' },
-    { label: 'Aktif', value: employees.filter(e => e.flags.isActive).length, icon: <CheckCircle2 className="w-5 h-5" />, color: 'emerald' },
-    { label: 'Non-Aktif', value: employees.filter(e => !e.flags.isActive).length, icon: <AlertCircle className="w-5 h-5" />, color: 'amber' },
-    { label: 'Payroll Eligible', value: employees.filter(e => e.flags.isPayrollEligible).length, icon: <CreditCard className="w-5 h-5" />, color: 'purple' },
+    { label: 'Aktif', value: employees.filter(e => getEmpIsActive(e)).length, icon: <CheckCircle2 className="w-5 h-5" />, color: 'emerald' },
+    { label: 'Non-Aktif', value: employees.filter(e => !getEmpIsActive(e)).length, icon: <AlertCircle className="w-5 h-5" />, color: 'amber' },
+    { label: 'Payroll Eligible', value: employees.filter(e => activeTab === 'loyalis' ? getEmpIsActive(e) : (e.flags?.isPayrollEligible ?? true)).length, icon: <CreditCard className="w-5 h-5" />, color: 'purple' },
   ];
 
   return (
@@ -244,9 +348,8 @@ export default function EmployeesPage() {
 
           <div className="flex items-center gap-3">
             {message && (
-              <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium ${
-                message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-              }`}>
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                }`}>
                 {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
                 {message.text}
               </div>
@@ -269,13 +372,17 @@ export default function EmployeesPage() {
         {/* Collar type tabs */}
         <div className="flex gap-2 mb-6">
           {COLLAR_TABS.map(tab => (
-            <div key={tab.key} className="px-4 py-1.5 rounded-full text-sm font-medium bg-indigo-600 text-white shadow-md shadow-indigo-100">
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeTab === tab.key
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                }`}
+            >
               {tab.label}
-            </div>
+            </button>
           ))}
-          <div className="px-4 py-1.5 rounded-full text-sm font-medium bg-slate-100 text-slate-400 cursor-not-allowed">
-            White Collar <span className="text-xs ml-1">(coming soon)</span>
-          </div>
         </div>
 
         {/* Stats */}
@@ -300,8 +407,8 @@ export default function EmployeesPage() {
               <TableHeader className="bg-slate-50/50">
                 <TableRow className="border-slate-100">
                   <TableHead className="w-24 font-semibold text-slate-900 pl-8">ID</TableHead>
-                  <TableHead className="font-semibold text-slate-900">Nama Lengkap</TableHead>
-                  <TableHead className="font-semibold text-slate-900">Kategori</TableHead>
+                  <TableHead className="font-semibold text-slate-900 w-[320px]">Nama Lengkap</TableHead>
+                  <TableHead className="font-semibold text-slate-900 w-[320px]">Kategori</TableHead>
                   <TableHead className="font-semibold text-slate-900">Gol.</TableHead>
                   <TableHead className="font-semibold text-slate-900 text-center">Status</TableHead>
                   <TableHead className="font-semibold text-slate-900">Mulai Kerja</TableHead>
@@ -325,36 +432,37 @@ export default function EmployeesPage() {
                     </TableCell>
                   </TableRow>
                 ) : filtered.map(emp => (
-                  <TableRow key={emp.employeeId} className="hover:bg-slate-50/30 transition-colors border-slate-50">
-                    <TableCell className="font-bold text-slate-400 pl-8 font-mono text-xs">{emp.employeeId}</TableCell>
-                    <TableCell>
+                  <TableRow key={getEmpId(emp)} className="hover:bg-slate-50/30 transition-colors border-slate-50">
+                    <TableCell className="font-bold text-slate-400 pl-8 font-mono text-xs">{getEmpId(emp)}</TableCell>
+                    <TableCell className="w-[320px] max-w-[320px]">
                       <div className="flex flex-col">
-                        <span className="font-bold text-slate-900">{emp.name}</span>
-                        <span className="text-xs text-slate-400 font-mono">NIK: {emp.nik || '-'}</span>
+                        <span className="font-bold text-slate-900 block truncate" title={getEmpName(emp)}>{getEmpName(emp)}</span>
+                        <span className="text-xs text-slate-400 font-mono">
+                          {activeTab === 'loyalis' ? 'NIY' : 'NIK'}: {getEmpNikOrNiy(emp) || '-'}
+                        </span>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="w-[320px] max-w-[320px]">
                       <div className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                        {JOB_ICONS[emp.employment.jobCategory] || null}
-                        {emp.employment.jobCategory}
+                        <span className="shrink-0">{JOB_ICONS[getEmpCategory(emp)] || null}</span>
+                        <span className="truncate" title={getEmpCategory(emp)}>{getEmpCategory(emp)}</span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      {emp.salaryProfile.salaryGradeCode
-                        ? <span className="font-bold text-indigo-600">{emp.salaryProfile.salaryGradeCode}</span>
+                      {getEmpGrade(emp)
+                        ? <span className="font-bold text-indigo-600">{getEmpGrade(emp)}</span>
                         : <span className="text-slate-300">-</span>
                       }
                     </TableCell>
                     <TableCell className="text-center">
-                      <Badge className={`rounded-full px-3 font-normal border-none ${
-                        emp.flags.isActive ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
-                      }`}>
-                        {emp.flags.isActive ? 'Aktif' : 'Non-Aktif'}
+                      <Badge className={`rounded-full px-3 font-normal border-none ${getEmpIsActive(emp) ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                        {getEmpIsActive(emp) ? 'Aktif' : 'Non-Aktif'}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-slate-500 text-sm">
-                      {emp.employment.startDate
-                        ? new Date(emp.employment.startDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'short' })
+                      {getEmpStartDate(emp)
+                        ? new Date(getEmpStartDate(emp)).toLocaleDateString('id-ID', { year: 'numeric', month: 'short' })
                         : '-'}
                     </TableCell>
                     <TableCell className="text-right pr-8">
@@ -362,7 +470,7 @@ export default function EmployeesPage() {
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(emp)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-lg">
                           <Pencil className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(emp.employeeId)} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-lg">
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(emp))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-lg">
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
@@ -382,104 +490,213 @@ export default function EmployeesPage() {
             <DialogHeader className="p-6 bg-slate-50/50 border-b border-slate-100">
               <DialogTitle className="text-xl font-bold flex items-center gap-2">
                 {editingEmployee ? <Pencil className="w-5 h-5 text-indigo-500" /> : <UserPlus className="w-5 h-5 text-indigo-500" />}
-                {editingEmployee ? 'Edit Data Pegawai' : 'Tambah Pegawai Blue Collar'}
+                {editingEmployee
+                  ? `Edit Data Karyawan (${activeTab === 'loyalis' ? 'White Collar' : 'Blue Collar'})`
+                  : `Tambah Karyawan ${activeTab === 'loyalis' ? 'White Collar (Loyalis)' : 'Blue Collar'}`
+                }
               </DialogTitle>
             </DialogHeader>
 
             <div className="p-8 grid grid-cols-2 gap-6 max-h-[70vh] overflow-y-auto">
-              {/* Basic Info */}
-              <div className="col-span-2 grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Nama Lengkap</Label>
-                  <Input id="name" required value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="rounded-xl border-slate-200" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="nik">NIK (Nomor Induk Kependudukan)</Label>
-                  <Input id="nik" value={formData.nik || ''} onChange={e => setFormData({ ...formData, nik: e.target.value })} className="rounded-xl border-slate-200" />
-                </div>
-              </div>
+              {activeTab === 'loyalis' ? (
+                <>
+                  {/* Personal Info */}
+                  <div className="col-span-2 space-y-4">
+                    <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Identitas Pegawai</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="name">Nama Lengkap</Label>
+                        <Input id="name" required value={formData.personal_info?.name || ''} onChange={e => updateNestedField('personal_info', 'name', e.target.value)} className="rounded-xl border-slate-200" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="niy">NIY (Nomor Induk Yayasan)</Label>
+                        <Input id="niy" value={formData.personal_info?.employee_id_niy || ''} onChange={e => updateNestedField('personal_info', 'employee_id_niy', e.target.value)} className="rounded-xl border-slate-200" />
+                      </div>
+                      <div className="space-y-2 col-span-2">
+                        <Label htmlFor="npwp">NPWP (Nomor Pokok Wajib Pajak)</Label>
+                        <Input id="npwp" value={formData.personal_info?.tax_id_npwp || ''} onChange={e => updateNestedField('personal_info', 'tax_id_npwp', e.target.value)} className="rounded-xl border-slate-200" />
+                      </div>
+                    </div>
+                  </div>
 
-              {/* Employment */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Pekerjaan</h3>
-                <div className="space-y-2">
-                  <Label>Kategori</Label>
-                  <Select 
-                    value={formData.employment?.jobCategory} 
-                    onValueChange={val => setFormData(prev => ({ 
-                      ...prev, 
-                      employment: {
-                        ...(prev.employment || { status: 'active', startDate: '', endDate: null }),
-                        jobCategory: val
-                      } as any
-                    }))}
-                  >
-                    <SelectTrigger className="rounded-xl border-slate-200"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {JOB_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="startDate">Tanggal Mulai</Label>
-                  <Input 
-                    id="startDate" 
-                    type="date" 
-                    value={formData.employment?.startDate || ''} 
-                    onChange={e => setFormData(prev => ({ 
-                      ...prev, 
-                      employment: {
-                        ...(prev.employment || { status: 'active', jobCategory: 'OTHER', endDate: null }),
-                        startDate: e.target.value
-                      } as any
-                    }))} 
-                    className="rounded-xl border-slate-200" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Golongan (Grade)</Label>
-                  <Input 
-                    value={formData.salaryProfile?.salaryGradeCode || ''} 
-                    onChange={e => setFormData(prev => ({ 
-                      ...prev, 
-                      salaryProfile: {
-                        ...(prev.salaryProfile || { baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' }),
-                        salaryGradeCode: e.target.value
-                      } as any
-                    }))} 
-                    className="rounded-xl border-slate-200" 
-                    placeholder="D, F, K..." 
-                  />
-                </div>
-              </div>
+                  {/* Pekerjaan */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Pekerjaan</h3>
+                    <div className="space-y-2">
+                      <Label htmlFor="job_role">Peran / Jabatan</Label>
+                      <Input id="job_role" value={formData.employment_profile?.job_role || ''} onChange={e => updateNestedField('employment_profile', 'job_role', e.target.value)} className="rounded-xl border-slate-200" placeholder="DOSEN, TENDIK, dll." />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="department_unit">Departemen / Unit</Label>
+                      <Input id="department_unit" value={formData.employment_profile?.department_unit || ''} onChange={e => updateNestedField('employment_profile', 'department_unit', e.target.value)} className="rounded-xl border-slate-200" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="date_of_hire">Tanggal Mulai Kerja</Label>
+                      <Input id="date_of_hire" type="date" value={formData.employment_profile?.date_of_hire || ''} onChange={e => updateNestedField('employment_profile', 'date_of_hire', e.target.value)} className="rounded-xl border-slate-200" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="date_recognized">TMT Golongan (SK)</Label>
+                      <Input id="date_recognized" type="date" value={formData.employment_profile?.date_recognized || ''} onChange={e => updateNestedField('employment_profile', 'date_recognized', e.target.value)} className="rounded-xl border-slate-200" />
+                    </div>
+                  </div>
 
-              {/* Financial */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Finansial</h3>
-                <div className="space-y-2">
-                  <Label>Nama Bank</Label>
-                  <Input value={formData.bankAccount?.bankName || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, bankName: e.target.value } })} className="rounded-xl border-slate-200" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Nomor Rekening</Label>
-                  <Input value={formData.bankAccount?.accountNumber || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, accountNumber: e.target.value } })} className="rounded-xl border-slate-200" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Kode Koperasi Rochmad</Label>
-                  <Input 
-                    type="number" 
-                    value={formData.deductions?.koperasiRochmad ?? 0} 
-                    onChange={e => setFormData(prev => ({ 
-                      ...prev, 
-                      deductions: {
-                        ...(prev.deductions || {}),
-                        koperasiRochmad: Number(e.target.value)
-                      } as any
-                    }))} 
-                    className="rounded-xl border-slate-200" 
-                  />
-                </div>
-              </div>
+                  {/* Akademik & Finansial */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Akademik & Finansial</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="education_level">Pendidikan</Label>
+                        <Input id="education_level" value={formData.academic_and_tier?.education_level || ''} onChange={e => updateNestedField('academic_and_tier', 'education_level', e.target.value)} className="rounded-xl border-slate-200" placeholder="S1, S2, D3" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="level_code">Golongan (Grade)</Label>
+                        <Input id="level_code" value={formData.academic_and_tier?.level_code || ''} onChange={e => updateNestedField('academic_and_tier', 'level_code', e.target.value)} className="rounded-xl border-slate-200" placeholder="Gol. G" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="education_code">Kode Pendidikan</Label>
+                        <Input id="education_code" type="number" value={formData.academic_and_tier?.education_code ?? ''} onChange={e => updateNestedField('academic_and_tier', 'education_code', e.target.value)} className="rounded-xl border-slate-200" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="functional_tier">Tunj. Kofu</Label>
+                        <Input id="functional_tier" type="number" value={formData.academic_and_tier?.functional_tier ?? ''} onChange={e => updateNestedField('academic_and_tier', 'functional_tier', e.target.value)} className="rounded-xl border-slate-200" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bank_name">Nama Bank</Label>
+                      <Input id="bank_name" value={formData.banking_info?.bank_name || ''} onChange={e => updateNestedField('banking_info', 'bank_name', e.target.value)} className="rounded-xl border-slate-200" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="account_number">Nomor Rekening</Label>
+                      <Input id="account_number" value={formData.banking_info?.account_number || ''} onChange={e => updateNestedField('banking_info', 'account_number', e.target.value)} className="rounded-xl border-slate-200" />
+                    </div>
+                  </div>
+
+                  {/* Metrik Keluarga */}
+                  <div className="col-span-2 space-y-4">
+                    <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Tanggungan Keluarga (Untuk Tunjangan)</h3>
+                    <div className="grid grid-cols-5 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="spouse_count">Pasangan</Label>
+                        <Input id="spouse_count" type="number" value={formData.family_allowance_metrics?.spouse_count ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'spouse_count', e.target.value)} className="rounded-xl border-slate-200" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="children_sd">Anak SD</Label>
+                        <Input id="children_sd" type="number" value={formData.family_allowance_metrics?.children_sd ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_sd', e.target.value)} className="rounded-xl border-slate-200" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="children_sltp">Anak SLTP</Label>
+                        <Input id="children_sltp" type="number" value={formData.family_allowance_metrics?.children_sltp ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_sltp', e.target.value)} className="rounded-xl border-slate-200" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="children_slta">Anak SLTA</Label>
+                        <Input id="children_slta" type="number" value={formData.family_allowance_metrics?.children_slta ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_slta', e.target.value)} className="rounded-xl border-slate-200" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="children_pt">Anak Kuliah</Label>
+                        <Input id="children_pt" type="number" value={formData.family_allowance_metrics?.children_pt ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_pt', e.target.value)} className="rounded-xl border-slate-200" />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Basic Info */}
+                  <div className="col-span-2 grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Nama Lengkap</Label>
+                      <Input id="name" required value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="rounded-xl border-slate-200" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="nik">NIK (Nomor Induk Kependudukan)</Label>
+                      <Input id="nik" value={formData.nik || ''} onChange={e => setFormData({ ...formData, nik: e.target.value })} className="rounded-xl border-slate-200" />
+                    </div>
+                  </div>
+
+                  {/* Employment */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Pekerjaan</h3>
+                    <div className="space-y-2">
+                      <Label>Kategori</Label>
+                      <Select
+                        value={formData.employment?.jobCategory}
+                        onValueChange={val => setFormData((prev: any) => ({
+                          ...prev,
+                          employment: {
+                            ...(prev.employment || { status: 'active', startDate: '', endDate: null }),
+                            jobCategory: val
+                          } as any
+                        }))}
+                      >
+                        <SelectTrigger className="rounded-xl border-slate-200"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {JOB_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="startDate">Tanggal Mulai</Label>
+                      <Input
+                        id="startDate"
+                        type="date"
+                        value={formData.employment?.startDate || ''}
+                        onChange={e => setFormData((prev: any) => ({
+                          ...prev,
+                          employment: {
+                            ...(prev.employment || { status: 'active', jobCategory: 'OTHER', endDate: null }),
+                            startDate: e.target.value
+                          } as any
+                        }))}
+                        className="rounded-xl border-slate-200"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Golongan (Grade)</Label>
+                      <Input
+                        value={formData.salaryProfile?.salaryGradeCode || ''}
+                        onChange={e => setFormData((prev: any) => ({
+                          ...prev,
+                          salaryProfile: {
+                            ...(prev.salaryProfile || { baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' }),
+                            salaryGradeCode: e.target.value
+                          } as any
+                        }))}
+                        className="rounded-xl border-slate-200"
+                        placeholder="D, F, K..."
+                      />
+                    </div>
+                  </div>
+
+                  {/* Financial */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Finansial</h3>
+                    <div className="space-y-2">
+                      <Label>Nama Bank</Label>
+                      <Input value={formData.bankAccount?.bankName || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, bankName: e.target.value } })} className="rounded-xl border-slate-200" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Nomor Rekening</Label>
+                      <Input value={formData.bankAccount?.accountNumber || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, accountNumber: e.target.value } })} className="rounded-xl border-slate-200" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Kode Koperasi Rochmad</Label>
+                      <Input
+                        type="number"
+                        value={formData.deductions?.koperasiRochmad ?? 0}
+                        onChange={e => setFormData((prev: any) => ({
+                          ...prev,
+                          deductions: {
+                            ...(prev.deductions || {}),
+                            koperasiRochmad: Number(e.target.value)
+                          } as any
+                        }))}
+                        className="rounded-xl border-slate-200"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Status toggle */}
               <div className="col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
@@ -487,19 +704,31 @@ export default function EmployeesPage() {
                   <h4 className="font-bold text-slate-800">Status Kepegawaian</h4>
                   <p className="text-xs text-slate-500">Tentukan apakah pegawai masih aktif.</p>
                 </div>
-                <Badge
-                  onClick={() => setFormData(prev => ({ 
-                    ...prev, 
-                    flags: { 
-                      ...prev.flags!, 
-                      isActive: !prev.flags?.isActive, 
-                      isPayrollEligible: !prev.flags?.isActive 
-                    } 
-                  }))}
-                  className={`cursor-pointer px-4 py-1.5 rounded-xl border-none ${formData.flags?.isActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-200 text-slate-600'}`}
-                >
-                  {formData.flags?.isActive ? 'Aktif' : 'Non-Aktif'}
-                </Badge>
+                {activeTab === 'loyalis' ? (
+                  <Badge
+                    onClick={() => updateNestedField('personal_info', 'status', formData.personal_info?.status === 'AKTIF' ? 'KELUAR' : 'AKTIF')}
+                    className={`cursor-pointer px-4 py-1.5 rounded-xl border-none transition-all ${formData.personal_info?.status === 'AKTIF'
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100'
+                      : 'bg-slate-200 text-slate-600'
+                      }`}
+                  >
+                    {formData.personal_info?.status === 'AKTIF' ? 'Aktif' : 'Non-Aktif / Keluar'}
+                  </Badge>
+                ) : (
+                  <Badge
+                    onClick={() => setFormData((prev: any) => ({
+                      ...prev,
+                      flags: {
+                        ...prev.flags!,
+                        isActive: !prev.flags?.isActive,
+                        isPayrollEligible: !prev.flags?.isActive
+                      }
+                    }))}
+                    className={`cursor-pointer px-4 py-1.5 rounded-xl border-none transition-all ${formData.flags?.isActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-200 text-slate-600'}`}
+                  >
+                    {formData.flags?.isActive ? 'Aktif' : 'Non-Aktif'}
+                  </Badge>
+                )}
               </div>
             </div>
 

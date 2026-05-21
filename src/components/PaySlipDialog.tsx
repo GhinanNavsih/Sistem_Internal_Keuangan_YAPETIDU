@@ -46,7 +46,7 @@ interface PaySlipDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: 'create' | 'review';
-  employee: BlueCollarEmployee | null;
+  employee: any | null;
   employeeNo: number;
   gapok: number;
   period: string; // e.g. "Mei 2026"
@@ -54,6 +54,7 @@ interface PaySlipDialogProps {
   onSlipGenerated: (employeeId: string, state: SlipState) => void;
   onSlipConfirmed: (employeeId: string) => void;
   uraianEntry?: UraianEntry; // from UraianGaji collection
+  activeTab?: string;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -70,48 +71,72 @@ const formatIDR = (amount: number) => {
 /**
  * Build initial earnings rows from whatever we know about the employee.
  */
-function buildInitialEarnings(emp: BlueCollarEmployee, gapok: number, uraian?: UraianEntry): PaySlipField[] {
+function buildInitialEarnings(emp: any, gapok: number, activeTab?: string, uraian?: UraianEntry): PaySlipField[] {
   const earnings: PaySlipField[] = [];
-  const jobCategory = emp.employment?.jobCategory || '';
-  const columns = REKAP_COLUMNS[jobCategory];
 
-  // Gapok – always known
-  earnings.push({ label: 'Gapok', amount: gapok });
-
-  if (columns && uraian) {
-    // Auto-fill from UraianGaji data using column config
-    for (const col of columns) {
-      if (col.slipLabel) {
-        // If it's a count column and we have the raw count, compute it.
-        // Otherwise, use the value from the values map (which is already a nominal currency amount).
-        let amount = 0;
-        if (col.type === 'count' && uraian.counts && uraian.counts[col.key] !== undefined) {
-          amount = computeSlipAmount(col, uraian.counts[col.key]);
-        } else {
-          amount = uraian.values[col.key] ?? 0;
-        }
-        earnings.push({ label: col.slipLabel, amount });
-      }
+  if (activeTab === 'loyalis') {
+    // White Collar / Loyalis calculations
+    earnings.push({ label: 'Gaji Pokok', amount: gapok });
+    
+    // Tunjangan Keluarga formula
+    const metrics = emp.family_allowance_metrics;
+    let spouseCount = 0, sd = 0, sltp = 0, slta = 0, pt = 0;
+    if (metrics) {
+      spouseCount = Number(metrics.spouse_count) || 0;
+      sd = Number(metrics.children_sd) || 0;
+      sltp = Number(metrics.children_sltp) || 0;
+      slta = Number(metrics.children_slta) || 0;
+      pt = Number(metrics.children_pt) || 0;
     }
+    const familyPct = (spouseCount * 0.05) + (sd * 0.05) + (sltp * 0.075) + (slta * 0.1) + (pt * 0.125);
+    const tunjKeluarga = Math.round(gapok * familyPct);
+    earnings.push({ label: 'Tunjangan Keluarga', amount: tunjKeluarga });
+
+    // Tunjangan Jabatan (Kofu)
+    const tunjJabatan = Number(emp.academic_and_tier?.functional_tier) || 0;
+    earnings.push({ label: 'Tunjangan Jabatan', amount: tunjJabatan });
   } else {
-    // Fallback: generic placeholder rows when no UraianGaji data exists
-    earnings.push({ label: 'Vakasi Harian', amount: 0 });
-    earnings.push({ label: "Bonus Jum'at", amount: 0 });
-    earnings.push({ label: 'Lembur', amount: 0 });
-    earnings.push({ label: 'Bonus Finger', amount: 0 });
-    earnings.push({ label: 'Bonus presensi', amount: 0 });
-  }
+    const jobCategory = emp.employment?.jobCategory || '';
+    const columns = REKAP_COLUMNS[jobCategory];
 
-  // BPJS Allowance – we have this
-  if (emp.bpjs?.allowanceAmount) {
-    earnings.push({ label: 'BPJS (Tunjangan)', amount: Math.round(emp.bpjs.allowanceAmount) });
-  }
+    // Gapok – always known
+    earnings.push({ label: 'Gapok', amount: gapok });
 
-  // Tunjangan Beras
-  earnings.push({ 
-    label: 'Tunjangan Beras', 
-    amount: emp.salaryProfile?.tunjanganBeras ?? 0 
-  });
+    if (columns && uraian) {
+      // Auto-fill from UraianGaji data using column config
+      for (const col of columns) {
+        if (col.slipLabel) {
+          // If it's a count column and we have the raw count, compute it.
+          // Otherwise, use the value from the values map (which is already a nominal currency amount).
+          let amount = 0;
+          if (col.type === 'count' && uraian.counts && uraian.counts[col.key] !== undefined) {
+            amount = computeSlipAmount(col, uraian.counts[col.key]);
+          } else {
+            amount = uraian.values[col.key] ?? 0;
+          }
+          earnings.push({ label: col.slipLabel, amount });
+        }
+      }
+    } else {
+      // Fallback: generic placeholder rows when no UraianGaji data exists
+      earnings.push({ label: 'Vakasi Harian', amount: 0 });
+      earnings.push({ label: "Bonus Jum'at", amount: 0 });
+      earnings.push({ label: 'Lembur', amount: 0 });
+      earnings.push({ label: 'Bonus Finger', amount: 0 });
+      earnings.push({ label: 'Bonus presensi', amount: 0 });
+    }
+
+    // BPJS Allowance – we have this
+    if (emp.bpjs?.allowanceAmount) {
+      earnings.push({ label: 'BPJS (Tunjangan)', amount: Math.round(emp.bpjs.allowanceAmount) });
+    }
+
+    // Tunjangan Beras
+    earnings.push({ 
+      label: 'Tunjangan Beras', 
+      amount: emp.salaryProfile?.tunjanganBeras ?? 0 
+    });
+  }
 
   return earnings;
 }
@@ -119,21 +144,28 @@ function buildInitialEarnings(emp: BlueCollarEmployee, gapok: number, uraian?: U
 /**
  * Build initial deductions rows from whatever we know about the employee.
  */
-function buildInitialDeductions(emp: BlueCollarEmployee): PaySlipField[] {
+function buildInitialDeductions(emp: any, activeTab?: string): PaySlipField[] {
   const deductions: PaySlipField[] = [];
 
-  // BPJS deduction
-  if (emp.bpjs?.deductionAmount) {
-    deductions.push({ label: 'BPJS', amount: Math.round(emp.bpjs.deductionAmount) });
-  }
+  if (activeTab === 'loyalis') {
+    // White Collar / Loyalis deductions
+    deductions.push({ label: 'BPJS', amount: 0 });
+    deductions.push({ label: 'Kop. Rochmad', amount: 0 });
+    deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+  } else {
+    // BPJS deduction
+    if (emp.bpjs?.deductionAmount) {
+      deductions.push({ label: 'BPJS', amount: Math.round(emp.bpjs.deductionAmount) });
+    }
 
-  // Koperasi Rochmad
-  if (emp.deductions?.koperasiRochmad) {
-    deductions.push({ label: 'Kop. Rochmad', amount: emp.deductions.koperasiRochmad });
-  }
+    // Koperasi Rochmad
+    if (emp.deductions?.koperasiRochmad) {
+      deductions.push({ label: 'Kop. Rochmad', amount: emp.deductions.koperasiRochmad });
+    }
 
-  // Koperasi Unipdu from sample – we may not have data yet
-  deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+    // Koperasi Unipdu from sample – we may not have data yet
+    deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+  }
 
   return deductions;
 }
@@ -152,6 +184,7 @@ export default function PaySlipDialog({
   onSlipGenerated,
   onSlipConfirmed,
   uraianEntry,
+  activeTab = 'blue',
 }: PaySlipDialogProps) {
   const [earnings, setEarnings] = useState<PaySlipField[]>([]);
   const [deductions, setDeductions] = useState<PaySlipField[]>([]);
@@ -161,13 +194,13 @@ export default function PaySlipDialog({
     if (!open || !employee) return;
 
     if (mode === 'create') {
-      setEarnings(buildInitialEarnings(employee, gapok, uraianEntry));
-      setDeductions(buildInitialDeductions(employee));
+      setEarnings(buildInitialEarnings(employee, gapok, activeTab, uraianEntry));
+      setDeductions(buildInitialDeductions(employee, activeTab));
     } else if (mode === 'review' && slipState) {
       setEarnings([...slipState.earnings]);
       setDeductions([...slipState.deductions]);
     }
-  }, [open, employee, mode, gapok, slipState]);
+  }, [open, employee, mode, gapok, slipState, activeTab]);
 
   // ─── Field Mutators ───────────────────────────────────────────
 
@@ -209,10 +242,12 @@ export default function PaySlipDialog({
     if (!employee) return;
 
     const slipData: PaySlipData = {
-      employeeName: employee.name,
+      employeeName: activeTab === 'loyalis' ? (employee.personal_info?.name || '') : employee.name,
       employeeNo: employeeNo,
       period: period.toUpperCase(),
-      jobCategory: `VAKASI ${employee.employment.jobCategory}`,
+      jobCategory: activeTab === 'loyalis'
+        ? `STAF ${employee.employment_profile?.job_role || ''}`
+        : `VAKASI ${employee.employment?.jobCategory || ''}`,
       earnings,
       deductions,
     };
@@ -226,7 +261,7 @@ export default function PaySlipDialog({
       generatedAt: new Date().toISOString(),
     };
 
-    onSlipGenerated(employee.employeeId, newState);
+    onSlipGenerated(employee.employeeId || employee.id, newState);
     onOpenChange(false);
   };
 
@@ -235,10 +270,12 @@ export default function PaySlipDialog({
 
     // Re-generate the PDF with updated values
     const slipData: PaySlipData = {
-      employeeName: employee.name,
+      employeeName: activeTab === 'loyalis' ? (employee.personal_info?.name || '') : employee.name,
       employeeNo: employeeNo,
       period: period.toUpperCase(),
-      jobCategory: `VAKASI ${employee.employment.jobCategory}`,
+      jobCategory: activeTab === 'loyalis'
+        ? `STAF ${employee.employment_profile?.job_role || ''}`
+        : `VAKASI ${employee.employment?.jobCategory || ''}`,
       earnings,
       deductions,
     };
@@ -252,7 +289,7 @@ export default function PaySlipDialog({
       generatedAt: new Date().toISOString(),
     };
 
-    onSlipGenerated(employee.employeeId, newState);
+    onSlipGenerated(employee.employeeId || employee.id, newState);
     onOpenChange(false);
   };
 
@@ -272,7 +309,7 @@ export default function PaySlipDialog({
                 {mode === 'create' ? 'Buat Slip Gaji' : 'Tinjau Slip Gaji'}
               </DialogTitle>
               <DialogDescription className="text-sm text-slate-500 mt-0.5">
-                {employee.name} — {period}
+                {(activeTab === 'loyalis' ? employee.personal_info?.name : employee.name) || ''} — {period}
               </DialogDescription>
             </div>
           </div>
@@ -280,10 +317,10 @@ export default function PaySlipDialog({
           {/* Employee summary badges */}
           <div className="flex flex-wrap gap-2 mt-3">
             <Badge variant="secondary" className="bg-white/80 text-slate-600 rounded-full border border-slate-200 font-normal shadow-none">
-              {employee.employment.jobCategory}
+              {activeTab === 'loyalis' ? (employee.employment_profile?.job_role || 'Staf') : employee.employment?.jobCategory}
             </Badge>
             <Badge variant="secondary" className="bg-white/80 text-slate-600 rounded-full border border-slate-200 font-normal shadow-none">
-              Gol. {employee.salaryProfile?.salaryGradeCode || '-'}
+              Gol. {activeTab === 'loyalis' ? (employee.academic_and_tier?.level_code || '-') : (employee.salaryProfile?.salaryGradeCode || '-')}
             </Badge>
             <Badge variant="secondary" className="bg-white/80 text-slate-600 rounded-full border border-slate-200 font-normal shadow-none">
               No. {employeeNo}

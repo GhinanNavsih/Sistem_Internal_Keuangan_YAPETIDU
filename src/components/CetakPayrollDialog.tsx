@@ -21,7 +21,7 @@ interface EmployeeRow {
   gradeLevel: string;
   joinDate: Date;
   isActive: boolean;
-  raw: BlueCollarEmployee;
+  raw: any;
   rowIndex: number;
 }
 
@@ -50,7 +50,7 @@ export default function CetakPayrollDialog({
   const handleExportXlsx = () => {
     const activeEmployees = employees.filter(e => e.isActive);
     
-    const roleOrder = ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'PONTI'];
+    const roleOrder = ['REKTORAT', 'DOSEN', 'TENDIK', 'STAF', 'SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'PONTI'];
     const sortedEmployees = [...activeEmployees].sort((a, b) => {
       const roleA = roleOrder.indexOf(a.role) !== -1 ? roleOrder.indexOf(a.role) : 99;
       const roleB = roleOrder.indexOf(b.role) !== -1 ? roleOrder.indexOf(b.role) : 99;
@@ -77,7 +77,7 @@ export default function CetakPayrollDialog({
         'No': idx + 1,
         'Nama Karyawan': emp.name,
         'Satuan Kerja': satker,
-        'No. Rekening': emp.raw.bankAccount?.accountNumber || '',
+        'No. Rekening': emp.raw.banking_info?.account_number || emp.raw.bankAccount?.accountNumber || '',
         'Gaji Bersih': netSalary
       };
     });

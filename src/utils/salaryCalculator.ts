@@ -5,7 +5,32 @@ import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
  * Calculates the total earnings for a blue collar employee.
  * Includes Gapok, Uraian components, BPJS allowance, and Tunjangan Beras.
  */
-export function calculateTotalEarnings(emp: BlueCollarEmployee, gapok: number, uraian?: UraianEntry): number {
+export function calculateTotalEarnings(emp: any, gapok: number, uraian?: UraianEntry): number {
+  if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
+    // White Collar / Loyalis calculations
+    let total = gapok;
+
+    // Tunjangan Keluarga formula
+    const metrics = emp.family_allowance_metrics;
+    let spouseCount = 0, sd = 0, sltp = 0, slta = 0, pt = 0;
+    if (metrics) {
+      spouseCount = Number(metrics.spouse_count) || 0;
+      sd = Number(metrics.children_sd) || 0;
+      sltp = Number(metrics.children_sltp) || 0;
+      slta = Number(metrics.children_slta) || 0;
+      pt = Number(metrics.children_pt) || 0;
+    }
+    const familyPct = (spouseCount * 0.05) + (sd * 0.05) + (sltp * 0.075) + (slta * 0.1) + (pt * 0.125);
+    const tunjKeluarga = Math.round(gapok * familyPct);
+    total += tunjKeluarga;
+
+    // Tunjangan Jabatan (Kofu)
+    const tunjJabatan = Number(emp.academic_and_tier?.functional_tier) || 0;
+    total += tunjJabatan;
+
+    return total;
+  }
+
   let total = gapok;
   const jobCategory = emp.employment?.jobCategory || '';
   const columns = REKAP_COLUMNS[jobCategory];
@@ -41,7 +66,12 @@ export function calculateTotalEarnings(emp: BlueCollarEmployee, gapok: number, u
  * Calculates the total deductions for a blue collar employee.
  * Includes BPJS deductions and Koperasi Rochmad.
  */
-export function calculateTotalDeductions(emp: BlueCollarEmployee): number {
+export function calculateTotalDeductions(emp: any): number {
+  if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
+    // White Collar / Loyalis deductions initially default to 0
+    return 0;
+  }
+
   let total = 0;
 
   if (emp.bpjs?.deductionAmount) {
@@ -63,3 +93,4 @@ export function calculateTotalDeductions(emp: BlueCollarEmployee): number {
 export function calculateNetSalary(earnings: number, deductions: number): number {
   return earnings - deductions;
 }
+

@@ -25,7 +25,7 @@ interface EmployeeRow {
   gradeLevel: string;
   joinDate: Date;
   isActive: boolean;
-  raw: BlueCollarEmployee;
+  raw: any;
   rowIndex: number;
 }
 
@@ -40,8 +40,34 @@ interface LegalitasPimpinanDialogProps {
   periodName: string;
 }
 
-function buildInitialEarnings(emp: BlueCollarEmployee, gapok: number, uraian?: any): PaySlipField[] {
+function buildInitialEarnings(emp: any, gapok: number, uraian?: any): PaySlipField[] {
   const earnings: PaySlipField[] = [];
+
+  if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
+    // White Collar / Loyalis calculations
+    earnings.push({ label: 'Gaji Pokok', amount: gapok });
+    
+    // Tunjangan Keluarga formula
+    const metrics = emp.family_allowance_metrics;
+    let spouseCount = 0, sd = 0, sltp = 0, slta = 0, pt = 0;
+    if (metrics) {
+      spouseCount = Number(metrics.spouse_count) || 0;
+      sd = Number(metrics.children_sd) || 0;
+      sltp = Number(metrics.children_sltp) || 0;
+      slta = Number(metrics.children_slta) || 0;
+      pt = Number(metrics.children_pt) || 0;
+    }
+    const familyPct = (spouseCount * 0.05) + (sd * 0.05) + (sltp * 0.075) + (slta * 0.1) + (pt * 0.125);
+    const tunjKeluarga = Math.round(gapok * familyPct);
+    earnings.push({ label: 'Tunjangan Keluarga', amount: tunjKeluarga });
+
+    // Tunjangan Jabatan (Kofu)
+    const tunjJabatan = Number(emp.academic_and_tier?.functional_tier) || 0;
+    earnings.push({ label: 'Tunjangan Jabatan', amount: tunjJabatan });
+
+    return earnings;
+  }
+
   const jobCategory = emp.employment?.jobCategory || '';
   const columns = REKAP_COLUMNS[jobCategory];
 
@@ -80,8 +106,16 @@ function buildInitialEarnings(emp: BlueCollarEmployee, gapok: number, uraian?: a
   return earnings;
 }
 
-function buildInitialDeductions(emp: BlueCollarEmployee): PaySlipField[] {
+function buildInitialDeductions(emp: any): PaySlipField[] {
   const deductions: PaySlipField[] = [];
+
+  if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
+    // White Collar / Loyalis deductions
+    deductions.push({ label: 'BPJS', amount: 0 });
+    deductions.push({ label: 'Kop. Rochmad', amount: 0 });
+    deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+    return deductions;
+  }
 
   if (emp.bpjs?.deductionAmount) {
     deductions.push({ label: 'BPJS', amount: Math.round(emp.bpjs.deductionAmount) });
@@ -128,7 +162,7 @@ export default function LegalitasPimpinanDialog({
 
       return {
         employeeNo: idx + 1,
-        nik: emp.raw.nik || '',
+        nik: emp.raw.personal_info?.employee_id_niy || emp.raw.nik || '',
         name: emp.name,
         gapok,
         earnings,

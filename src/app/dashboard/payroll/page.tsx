@@ -37,6 +37,11 @@ import {
   ScanLine,
   Upload,
   LogOut,
+  UserCog,
+  Award,
+  FileSpreadsheet,
+  Banknote,
+  ChevronRight,
 } from 'lucide-react';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -45,6 +50,7 @@ import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianE
 import PaySlipDialog, { SlipState } from '@/components/PaySlipDialog';
 import LegalitasPimpinanDialog from '@/components/LegalitasPimpinanDialog';
 import CetakPayrollDialog from '@/components/CetakPayrollDialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { generateRekapGajiPekaryaPdf, RekapGajiPekaryaData, RekapCategoryData } from '@/utils/generateRekapGajiPekaryaPdf';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
 
@@ -84,12 +90,12 @@ function getPayrollPeriod(date: Date): string {
 
 // ─── Extended employee with raw data ────────────────────────────
 interface EmployeeRow extends Employee {
-  raw: BlueCollarEmployee;
+  raw: any;
   rowIndex: number;
 }
 
 export default function PayrollValidationDashboard() {
-  const { logout } = useAuth();
+  const { profile, logout } = useAuth();
   const [targetDate] = useState(new Date('2026-05-01'));
   const [activeTab, setActiveTab] = useState('Tagihan');
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
@@ -97,9 +103,17 @@ export default function PayrollValidationDashboard() {
   const [loading, setLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' | null }>({ key: '', direction: null });
 
+  // Collar type state (Lapangan / Blue Collar vs Kantor / White Collar Loyalis)
+  const [payrollCollar, setPayrollCollar] = useState<'blue' | 'loyalis'>('blue');
+
   // ─── Filters ───────────────────────────────────────────────────
   const [activityFilter, setActivityFilter] = useState<'active' | 'all'>('active');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
+  // Reset category filter when switching collars
+  useEffect(() => {
+    setCategoryFilter('all');
+  }, [payrollCollar]);
 
   // ─── Slip status state (keyed by employeeId) ───────────────────
   const [slipStates, setSlipStates] = useState<Record<string, SlipState>>({});
@@ -114,6 +128,7 @@ export default function PayrollValidationDashboard() {
 
   const [legalitasDialogOpen, setLegalitasDialogOpen] = useState(false);
   const [cetakPayrollDialogOpen, setCetakPayrollDialogOpen] = useState(false);
+  const [printSelectorOpen, setPrintSelectorOpen] = useState(false);
 
   const handlePrintRekap = () => {
     const activeEmployees = employees.filter(e => e.isActive);
@@ -121,7 +136,7 @@ export default function PayrollValidationDashboard() {
 
     categories.forEach(cat => {
       categoriesMap[cat] = {
-        categoryName: `VAKASI ${cat}`,
+        categoryName: payrollCollar === 'loyalis' ? `STAF ${cat}` : `VAKASI ${cat}`,
         totalEarnings: 0,
         bpjs: 0,
         kopRochmad: 0,
@@ -142,8 +157,8 @@ export default function PayrollValidationDashboard() {
 
       const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry);
 
-      const bpjs = emp.raw.bpjs?.deductionAmount ? Math.round(emp.raw.bpjs.deductionAmount) : 0;
-      const kopRochmad = emp.raw.deductions?.koperasiRochmad || 0;
+      const bpjs = payrollCollar === 'loyalis' ? 0 : (emp.raw.bpjs?.deductionAmount ? Math.round(emp.raw.bpjs.deductionAmount) : 0);
+      const kopRochmad = payrollCollar === 'loyalis' ? 0 : (emp.raw.deductions?.koperasiRochmad || 0);
       const kopUnipdu = 0;
       const tunai = 0;
       const danaSosial = 0;
@@ -174,7 +189,9 @@ export default function PayrollValidationDashboard() {
   const handlePrintPayrollStatement = () => {
     const activeEmployees = employees.filter(e => e.isActive);
 
-    const roleOrder = ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'PONTI'];
+    const roleOrder = payrollCollar === 'loyalis'
+      ? ['REKTORAT', 'DOSEN', 'TENDIK', 'STAF']
+      : ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'PONTI'];
     const sortedEmployees = [...activeEmployees].sort((a, b) => {
       const roleA = roleOrder.indexOf(a.role) !== -1 ? roleOrder.indexOf(a.role) : 99;
       const roleB = roleOrder.indexOf(b.role) !== -1 ? roleOrder.indexOf(b.role) : 99;
@@ -204,7 +221,7 @@ export default function PayrollValidationDashboard() {
         no: idx + 1,
         name: emp.name,
         satker: satker,
-        accountNumber: emp.raw.bankAccount?.accountNumber || '',
+        accountNumber: payrollCollar === 'loyalis' ? (emp.raw.banking_info?.account_number || '') : (emp.raw.bankAccount?.accountNumber || ''),
         netSalary
       };
     });
@@ -212,7 +229,8 @@ export default function PayrollValidationDashboard() {
     const data: PayrollStatementData = {
       period: getPayrollPeriod(targetDate),
       employees: stmtEmployees,
-      totalNetSalary
+      totalNetSalary,
+      title: payrollCollar === 'loyalis' ? 'PAYROLL STAF LOYALIS' : 'PAYROLL PEKARYA'
     };
 
     generatePayrollStatementPdf(data);
@@ -259,11 +277,13 @@ export default function PayrollValidationDashboard() {
           break;
         case 'earnings': {
           const gapokA = calculateGapok(a, salaryMatrix, targetDate);
-          const uraianA = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${a.raw.employment?.jobCategory}`]?.entries?.[a.id];
+          const roleKeyA = payrollCollar === 'loyalis' ? a.role : a.raw.employment?.jobCategory;
+          const uraianA = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyA}`]?.entries?.[a.id];
           aValue = calculateTotalEarnings(a.raw, gapokA, uraianA);
 
           const gapokB = calculateGapok(b, salaryMatrix, targetDate);
-          const uraianB = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${b.raw.employment?.jobCategory}`]?.entries?.[b.id];
+          const roleKeyB = payrollCollar === 'loyalis' ? b.role : b.raw.employment?.jobCategory;
+          const uraianB = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyB}`]?.entries?.[b.id];
           bValue = calculateTotalEarnings(b.raw, gapokB, uraianB);
           break;
         }
@@ -273,13 +293,15 @@ export default function PayrollValidationDashboard() {
           break;
         case 'net': {
           const gapokA = calculateGapok(a, salaryMatrix, targetDate);
-          const uraianA = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${a.raw.employment?.jobCategory}`]?.entries?.[a.id];
+          const roleKeyA = payrollCollar === 'loyalis' ? a.role : a.raw.employment?.jobCategory;
+          const uraianA = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyA}`]?.entries?.[a.id];
           const earningsA = calculateTotalEarnings(a.raw, gapokA, uraianA);
           const deductionsA = calculateTotalDeductions(a.raw);
           aValue = calculateNetSalary(earningsA, deductionsA);
 
           const gapokB = calculateGapok(b, salaryMatrix, targetDate);
-          const uraianB = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${b.raw.employment?.jobCategory}`]?.entries?.[b.id];
+          const roleKeyB = payrollCollar === 'loyalis' ? b.role : b.raw.employment?.jobCategory;
+          const uraianB = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyB}`]?.entries?.[b.id];
           const earningsB = calculateTotalEarnings(b.raw, gapokB, uraianB);
           const deductionsB = calculateTotalDeductions(b.raw);
           bValue = calculateNetSalary(earningsB, deductionsB);
@@ -305,19 +327,28 @@ export default function PayrollValidationDashboard() {
       try {
         setLoading(true);
 
-        // 1. Fetch Blue Collar Employees
-        const empSnapshot = await getDocs(collection(db, 'Employees_BlueCollar'));
+        const isLoyalis = payrollCollar === 'loyalis';
+        const empCollName = isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar';
+        const matrixCollName = isLoyalis ? 'SalaryMatrix_WhiteCollar' : 'SalaryMatrix';
+
+        // 1. Fetch Employees
+        const empSnapshot = await getDocs(collection(db, empCollName));
         let index = 1;
         const empList = empSnapshot.docs
           .map(docSnap => {
-            const data = docSnap.data() as BlueCollarEmployee;
+            const data = docSnap.data();
+
+            const joinDateVal = isLoyalis
+              ? (data.employment_profile?.date_of_hire?.toDate?.() || (data.employment_profile?.date_of_hire ? new Date(data.employment_profile.date_of_hire) : new Date()))
+              : (data.employment?.startDate ? new Date(data.employment.startDate) : new Date());
+
             const row: EmployeeRow = {
               id: docSnap.id,
-              name: data.name,
-              role: data.employment?.jobCategory || '',
-              gradeLevel: data.salaryProfile?.salaryGradeCode || '',
-              joinDate: data.employment?.startDate ? new Date(data.employment.startDate) : new Date(),
-              isActive: data.flags?.isActive ?? true,
+              name: isLoyalis ? (data.personal_info?.name || '') : (data.name || ''),
+              role: isLoyalis ? (data.employment_profile?.job_role || '') : (data.employment?.jobCategory || ''),
+              gradeLevel: isLoyalis ? (data.academic_and_tier?.level_code || '') : (data.salaryProfile?.salaryGradeCode || ''),
+              joinDate: joinDateVal,
+              isActive: isLoyalis ? (data.personal_info?.status === 'AKTIF') : (data.flags?.isActive ?? true),
               raw: { ...data, employeeId: docSnap.id },
               rowIndex: index++,
             };
@@ -326,7 +357,7 @@ export default function PayrollValidationDashboard() {
         setEmployees(empList);
 
         // 2. Fetch Active Salary Matrix Version
-        const matrixRootRef = doc(db, 'SalaryMatrix', '_config');
+        const matrixRootRef = doc(db, matrixCollName, '_config');
         const matrixRootSnap = await getDoc(matrixRootRef);
 
         let activeVersion = '2026_v1';
@@ -335,18 +366,13 @@ export default function PayrollValidationDashboard() {
         }
 
         // 3. Fetch Salary Matrix Rows for Active Version
-        const matrixSnapshot = await getDocs(collection(db, 'SalaryMatrix', activeVersion, 'rows'));
+        const matrixSnapshot = await getDocs(collection(db, matrixCollName, activeVersion, 'rows'));
         const matrix: SalaryMatrix = {};
 
         matrixSnapshot.docs.forEach(matrixDoc => {
           const data = matrixDoc.data();
           const tahun = data.tahun;
           const grades = data.salaries || {};
-
-          // Reconstruct the SalaryMatrix object [gradeLevel][yearsOfService]
-          // Our local calculateGapok logic expects: matrix[gradeLevel][years]
-          // But the Firestore structure is: rows/{tahun}/salaries/{gradeCode}
-          // We need to pivot this for the existing calculateGapok utility.
 
           Object.entries(grades).forEach(([grade, amount]) => {
             if (!matrix[grade]) matrix[grade] = {};
@@ -363,7 +389,7 @@ export default function PayrollValidationDashboard() {
     };
 
     fetchData();
-  }, []);
+  }, [payrollCollar]);
 
   // ─── Fetch UraianGaji for current period ───────────────────────
   useEffect(() => {
@@ -448,26 +474,19 @@ export default function PayrollValidationDashboard() {
           </div>
           <div className="flex gap-3">
             <Button
-              onClick={() => setLegalitasDialogOpen(true)}
+              onClick={() => setPrintSelectorOpen(true)}
               variant="outline"
-              className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all"
+              className="rounded-xl shadow-sm bg-white border-slate-200 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50/50 hover:border-indigo-200 transition-all font-semibold"
             >
-              <Printer className="w-4 h-4 mr-2" /> Cetak Legalitas
+              <Printer className="w-4 h-4 mr-2" /> Cetak Dokumen
             </Button>
-            <Button
-              onClick={handlePrintRekap}
-              variant="outline"
-              className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all"
-            >
-              <Printer className="w-4 h-4 mr-2" /> Cetak Rekap
-            </Button>
-            <Button
-              onClick={() => setCetakPayrollDialogOpen(true)}
-              variant="outline"
-              className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all"
-            >
-              <Printer className="w-4 h-4 mr-2" /> Cetak Payroll
-            </Button>
+            {profile?.role === 'super_admin' && (
+              <Link href="/dashboard/users">
+                <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50/50 hover:border-indigo-200 transition-all font-bold">
+                  <UserCog className="w-4 h-4 mr-2" /> Manajemen Akses
+                </Button>
+              </Link>
+            )}
             <Link href="/dashboard/employees">
               <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">
                 <Users className="w-4 h-4 mr-2" /> Data Pegawai
@@ -512,6 +531,28 @@ export default function PayrollValidationDashboard() {
 
                 {/* Filter Controls */}
                 <div className="flex flex-wrap items-center gap-4 mb-6">
+                  {/* Collar Switch Toggle */}
+                  <div className="flex bg-slate-100 p-1 rounded-xl">
+                    <button
+                      onClick={() => setPayrollCollar('blue')}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${payrollCollar === 'blue'
+                        ? 'bg-white text-indigo-600 shadow-sm font-bold'
+                        : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                    >
+                      Pekarya (Blue Collar)
+                    </button>
+                    <button
+                      onClick={() => setPayrollCollar('loyalis')}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${payrollCollar === 'loyalis'
+                        ? 'bg-white text-indigo-600 shadow-sm font-bold'
+                        : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                    >
+                      Staf (White Collar)
+                    </button>
+                  </div>
+
                   <div className="flex bg-slate-100 p-1 rounded-xl">
                     <button
                       onClick={() => setActivityFilter('active')}
@@ -612,13 +653,13 @@ export default function PayrollValidationDashboard() {
               <Table>
                 <TableHeader className="bg-slate-50/50">
                   <TableRow className="border-slate-100">
-                    <TableHead className="font-medium text-slate-500 pl-8 cursor-pointer hover:text-indigo-600 transition-colors" onClick={() => handleSort('name')}>
+                    <TableHead className="font-medium text-slate-500 pl-8 cursor-pointer hover:text-indigo-600 transition-colors w-[320px]" onClick={() => handleSort('name')}>
                       <div className="flex items-center gap-1">
                         Nama Karyawan
                         <SortIcon active={sortConfig.key === 'name'} direction={sortConfig.direction} />
                       </div>
                     </TableHead>
-                    <TableHead className="font-medium text-slate-500 cursor-pointer hover:text-indigo-600 transition-colors" onClick={() => handleSort('role')}>
+                    <TableHead className="font-medium text-slate-500 cursor-pointer hover:text-indigo-600 transition-colors w-[320px]" onClick={() => handleSort('role')}>
                       <div className="flex items-center gap-1">
                         Jabatan / Golongan
                         <SortIcon active={sortConfig.key === 'role'} direction={sortConfig.direction} />
@@ -653,18 +694,20 @@ export default function PayrollValidationDashboard() {
 
                     return (
                       <TableRow key={emp.id} className="border-slate-100 hover:bg-slate-50/50 transition-colors">
-                        <TableCell className="font-medium pl-8 py-4">{emp.name}</TableCell>
-                        <TableCell className="py-4">
+                        <TableCell className="font-medium pl-8 py-4 w-[320px] max-w-[320px]">
+                          <span className="block truncate" title={emp.name}>{emp.name}</span>
+                        </TableCell>
+                        <TableCell className="py-4 w-[320px] max-w-[320px]">
                           <div className="flex flex-col">
                             <div className="flex items-center gap-2">
-                              <span>{emp.role}</span>
+                              <span className="block truncate max-w-[280px]" title={emp.role}>{emp.role}</span>
                               {!emp.isActive && (
-                                <Badge variant="secondary" className="bg-slate-100 text-slate-500 text-[10px] h-4 px-1.5 font-normal uppercase">
+                                <Badge variant="secondary" className="bg-slate-100 text-slate-500 text-[10px] h-4 px-1.5 font-normal uppercase shrink-0">
                                   Keluar
                                 </Badge>
                               )}
                             </div>
-                            <span className="text-xs text-slate-500">Golongan {emp.gradeLevel}</span>
+                            <span className="text-xs text-slate-500 truncate max-w-[300px]" title={`Golongan ${emp.gradeLevel}`}>Golongan {emp.gradeLevel}</span>
                           </div>
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
@@ -767,6 +810,7 @@ export default function PayrollValidationDashboard() {
         slipState={selectedEmployee ? slipStates[selectedEmployee.id] ?? null : null}
         onSlipGenerated={handleSlipGenerated}
         onSlipConfirmed={handleSlipConfirmed}
+        activeTab={payrollCollar}
         uraianEntry={(() => {
           if (!selectedEmployee) return undefined;
           const cat = selectedEmployee.raw.employment?.jobCategory;
@@ -797,6 +841,97 @@ export default function PayrollValidationDashboard() {
         periodName={payrollPeriod}
         onPrintPdf={handlePrintPayrollStatement}
       />
+
+      {/* ─── Print Selection Dialog ─────────────────────────────────── */}
+      <Dialog open={printSelectorOpen} onOpenChange={setPrintSelectorOpen}>
+        <DialogContent className="sm:max-w-[460px] p-6 rounded-2xl bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
+                <Printer className="w-5 h-5" />
+              </div>
+              Cetak Dokumen Payroll
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 mt-2 text-sm">
+              Pilih format dokumen payroll yang ingin Anda cetak atau unduh untuk periode <span className="font-semibold text-slate-700">{payrollPeriod}</span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3.5 mt-4">
+            {/* Card 1: Cetak Legalitas Pimpinan */}
+            <button
+              onClick={() => {
+                setPrintSelectorOpen(false);
+                setLegalitasDialogOpen(true);
+              }}
+              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
+            >
+              <div className="flex-shrink-0 p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
+                <Award className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-indigo-900 transition-colors">
+                  Legalitas Pimpinan
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  Cetak slip validasi pimpinan untuk keperluan pengesahan resmi.
+                </p>
+              </div>
+              <div className="flex-shrink-0 self-center pl-2">
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all duration-200" />
+              </div>
+            </button>
+
+            {/* Card 2: Cetak Rekap Gaji */}
+            <button
+              onClick={() => {
+                setPrintSelectorOpen(false);
+                handlePrintRekap();
+              }}
+              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-emerald-50/30 hover:border-emerald-100 transition-all duration-200 text-left outline-none cursor-pointer"
+            >
+              <div className="flex-shrink-0 p-3 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100/70 transition-colors">
+                <FileSpreadsheet className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-emerald-900 transition-colors">
+                  Rekapitulasi Gaji
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  Unduh laporan rekap vakasi total berdasarkan masing-masing divisi.
+                </p>
+              </div>
+              <div className="flex-shrink-0 self-center pl-2">
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all duration-200" />
+              </div>
+            </button>
+
+            {/* Card 3: Cetak Payroll Statement */}
+            <button
+              onClick={() => {
+                setPrintSelectorOpen(false);
+                setCetakPayrollDialogOpen(true);
+              }}
+              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-amber-50/30 hover:border-amber-100 transition-all duration-200 text-left outline-none cursor-pointer"
+            >
+              <div className="flex-shrink-0 p-3 rounded-xl bg-amber-50 text-amber-600 group-hover:bg-amber-100/70 transition-colors">
+                <Banknote className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-amber-900 transition-colors">
+                  Payroll Statement
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  Cetak rincian rekening bank dan surat pengantar transfer bank.
+                </p>
+              </div>
+              <div className="flex-shrink-0 self-center pl-2">
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-amber-500 group-hover:translate-x-1 transition-all duration-200" />
+              </div>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

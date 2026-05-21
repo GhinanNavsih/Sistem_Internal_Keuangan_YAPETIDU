@@ -13,7 +13,8 @@ export function calculateGapok(
   targetDate: Date
 ): number {
   const years = calculateYearsOfService(employee.joinDate, targetDate);
-  const gradeMatrix = matrix[employee.gradeLevel];
+  const gradeKey = employee.gradeLevel ? employee.gradeLevel.replace(/^Gol\.\s*/i, '') : '';
+  const gradeMatrix = matrix[gradeKey] || matrix[employee.gradeLevel];
   
   if (!gradeMatrix) return 0;
   
@@ -62,8 +63,12 @@ export async function getBaseSalary(tahun: number, gradeCode: string): Promise<n
 }
 
 export async function getEmployeeById(employeeId: string): Promise<any | null> {
-  // IDs prefixed BC_ are blue collar, WC_ are white collar
-  const collectionName = employeeId.startsWith('WC_') ? 'Employees_WhiteCollar' : 'Employees_BlueCollar';
+  let collectionName = 'Employees_BlueCollar';
+  if (employeeId.startsWith('WC_')) {
+    collectionName = 'Employees_WhiteCollar';
+  } else if (employeeId.startsWith('Loyalis_')) {
+    collectionName = 'Employees_Loyalis';
+  }
   try {
     const docRef = doc(db, collectionName, employeeId);
     const docSnap = await getDoc(docRef);

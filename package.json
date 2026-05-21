@@ -14,7 +14,8 @@
     "migrate:blue-collar": "tsx scripts/migrateBlueCollar.ts",
     "update:tunjangan-beras": "tsx scripts/addTunjanganBeras.ts",
     "reset:koperasi-rochmad": "tsx scripts/resetKoperasiRochmad.ts",
-    "migrate:koperasi-rochmad": "tsx scripts/migrateKoperasiRochmad.ts"
+    "migrate:koperasi-rochmad": "tsx scripts/migrateKoperasiRochmad.ts",
+    "seed:white-collar-matrix": "tsx scripts/seedWhiteCollarSalaryMatrix.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

@@ -25,8 +25,10 @@ import {
 import {
   ArrowLeft, Upload, ScanLine, Loader2, CheckCircle2,
   FileText, AlertCircle, ImageIcon, Trash2, Eye, RotateCw, Sparkles, X,
-  Crop, Building2, Code2, Database, ShieldCheck, Hash, Banknote,
+  Crop, Building2, Code2, Database, ShieldCheck, Hash, Banknote, LogOut,
+  FileDown,
 } from 'lucide-react';
+import { useAuth } from '@/lib/AuthContext';
 import {
   collection, getDocs, doc, setDoc, getDoc, serverTimestamp, query, where,
 } from 'firebase/firestore';
@@ -40,17 +42,36 @@ import {
 import type { 
   BlueCollarEmployee, UraianEntry, UraianGajiDocument, RekapColumn 
 } from '@/types';
+import {
+  generateRekapPresensiKebersihanyPdf,
+  type KebersihanyEmployee,
+} from '@/utils/generateRekapPresensiKebersihan';
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 
 export default function UraianPage() {
   const router = useRouter();
+  const { profile, logout } = useAuth();
 
   // ── Filters & UI State ────────────────────────────────────────────────────
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
   const [category, setCategory] = useState<string>(""); 
   const [dynamicCategories, setDynamicCategories] = useState<string[]>(SUPPORTED_CATEGORIES);
+
+  // Expose permitted categories only for SatKer Heads
+  const allowedCategories = useMemo(() => {
+    if (!profile) return [];
+    if (profile.role === 'super_admin') return dynamicCategories;
+    return dynamicCategories.filter(cat => profile.permittedCategories?.includes(cat));
+  }, [profile, dynamicCategories]);
+
+  // Set initial category to the first permitted one
+  useEffect(() => {
+    if (allowedCategories.length > 0 && (!category || !allowedCategories.includes(category))) {
+      setCategory(allowedCategories[0]);
+    }
+  }, [allowedCategories, category]);
   const [imageStats, setImageStats] = useState<{w:number, h:number, size:number, type:string} | null>(null);
   const [loadingEmps, setLoadingEmps] = useState(false);
   const [lastScanResult, setLastScanResult] = useState<any>(null);
@@ -117,6 +138,10 @@ export default function UraianPage() {
 
   useEffect(() => {
     if (!category) return;
+    // Security Access check: Make sure this category is allowed
+    if (profile && profile.role !== 'super_admin' && !profile.permittedCategories?.includes(category)) {
+      return;
+    }
     setDetectedColumnOrder(null); 
     const fetchData = async () => {
       setLoadingEmps(true);
@@ -416,13 +441,39 @@ export default function UraianPage() {
   const display = getDisplayRect();
   const hasScanData = Object.keys(rowBounds).length > 0;
 
+  // ── KEBERSIHAN PDF export ─────────────────────────────────────────────────
+  const isKebersihan = category === 'KEBERSIHAN' || category === 'KEBERSIHAN_IC';
+
+  const handleExportKebersihan = async () => {
+    if (!isKebersihan || employees.length === 0) return;
+
+    const empRows: KebersihanyEmployee[] = employees.map((emp, idx) => ({
+      no: idx + 1,
+      name: emp.name,
+      values: { ...(tableData[emp.employeeId] ?? {}) },
+    }));
+
+    await generateRekapPresensiKebersihanyPdf({
+      period: `${MONTHS_ID[month - 1]} ${year}`,
+      category,
+      employees: empRows,
+    });
+  };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] p-6 lg:p-8 font-sans selection:bg-indigo-100">
       <div className="max-w-[1600px] mx-auto space-y-8">
         
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
-            <Button variant="ghost" onClick={() => router.back()} className="group -ml-2 mb-2 text-slate-500 hover:text-indigo-600"><ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />Kembali</Button>
+            {profile?.role === 'super_admin' ? (
+              <Button variant="ghost" onClick={() => router.back()} className="group -ml-2 mb-2 text-slate-500 hover:text-indigo-600">
+                <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
+                Kembali
+              </Button>
+            ) : (
+              <div className="h-2" />
+            )}
             <h1 className="text-3xl font-bold text-slate-900">Rekap Presensi</h1>
             <p className="text-slate-500 text-sm">Upload rekap PDF/Gambar untuk auto-input</p>
           </div>
@@ -435,10 +486,10 @@ export default function UraianPage() {
               <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200"><SelectValue /></SelectTrigger>
               <SelectContent>{YEARS.map(y => (<SelectItem key={y} value={String(y)}>{y}</SelectItem>))}</SelectContent>
             </Select>
-            {category && (
+            {category && allowedCategories.length > 0 && (
               <Select value={category} onValueChange={(v) => v && setCategory(v)}>
                 <SelectTrigger className="w-48 bg-white shadow-sm border-slate-200"><SelectValue /></SelectTrigger>
-                <SelectContent>{dynamicCategories.map(c => (<SelectItem key={c} value={c}>{c}</SelectItem>))}</SelectContent>
+                <SelectContent>{allowedCategories.map(c => (<SelectItem key={c} value={c}>{c}</SelectItem>))}</SelectContent>
               </Select>
             )}
             <div className="flex gap-2 ml-2">
@@ -447,6 +498,27 @@ export default function UraianPage() {
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                 Simpan
               </Button>
+              {/* ── Export PDF button — KEBERSIHAN only, shown after a successful save ── */}
+              {isKebersihan && saved && (
+                <Button
+                  onClick={handleExportKebersihan}
+                  variant="outline"
+                  className="rounded-xl border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 transition-all font-semibold flex items-center gap-2 shadow-sm"
+                >
+                  <FileDown className="w-4 h-4" />
+                  Ekspor Laporan PDF
+                </Button>
+              )}
+              {profile?.role === 'satker_head' && (
+                <Button 
+                  variant="outline" 
+                  onClick={logout} 
+                  className="rounded-xl text-rose-600 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Keluar
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -537,7 +609,7 @@ export default function UraianPage() {
                     <SelectValue placeholder="Pilih Satuan Kerja" />
                   </SelectTrigger>
                   <SelectContent className="rounded-2xl border-slate-100 shadow-2xl overflow-hidden">
-                    {dynamicCategories.map(c => (
+                    {allowedCategories.map(c => (
                       <SelectItem key={c} value={c} className="py-3 focus:bg-indigo-50 focus:text-indigo-600 rounded-xl mx-1 my-0.5 transition-colors">
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full bg-indigo-400" />

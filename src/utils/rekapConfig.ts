@@ -42,6 +42,7 @@ export const REKAP_COLUMNS: Record<string, RekapColumn[]> = {
   SOPIR: [
     { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
     { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
+    { key: 'bonusMutlak',        label: 'Bonus Mutlak',           type: 'count',    multiplier: RATE_BONUS_MUTLAK,   slipLabel: 'Bonus Mutlak' },
     { key: 'piket',              label: 'Piket',                  type: 'currency',                                  slipLabel: 'Piket' },
     { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
     { key: 'tunjangan',          label: 'Tunjangan',              type: 'currency',                                  slipLabel: 'Tunjangan' },
