@@ -485,7 +485,7 @@ export default function EmployeesPage() {
 
       {/* CRUD Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl rounded-[28px] border-none shadow-2xl p-0 overflow-hidden bg-white">
+        <DialogContent className="!max-w-5xl w-[90vw] rounded-[28px] border-none shadow-2xl p-0 overflow-hidden bg-white">
           <form onSubmit={handleSubmit}>
             <DialogHeader className="p-6 bg-slate-50/50 border-b border-slate-100">
               <DialogTitle className="text-xl font-bold flex items-center gap-2">
@@ -497,239 +497,87 @@ export default function EmployeesPage() {
               </DialogTitle>
             </DialogHeader>
 
-            <div className="p-8 grid grid-cols-2 gap-6 max-h-[70vh] overflow-y-auto">
+            <div className="p-8 max-h-[75vh] overflow-y-auto">
               {activeTab === 'loyalis' ? (
-                <>
-                  {/* Personal Info */}
-                  <div className="col-span-2 space-y-4">
-                    <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Identitas Pegawai</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="name">Nama Lengkap</Label>
-                        <Input id="name" required value={formData.personal_info?.name || ''} onChange={e => updateNestedField('personal_info', 'name', e.target.value)} className="rounded-xl border-slate-200" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="niy">NIY (Nomor Induk Yayasan)</Label>
-                        <Input id="niy" value={formData.personal_info?.employee_id_niy || ''} onChange={e => updateNestedField('personal_info', 'employee_id_niy', e.target.value)} className="rounded-xl border-slate-200" />
-                      </div>
-                      <div className="space-y-2 col-span-2">
-                        <Label htmlFor="npwp">NPWP (Nomor Pokok Wajib Pajak)</Label>
-                        <Input id="npwp" value={formData.personal_info?.tax_id_npwp || ''} onChange={e => updateNestedField('personal_info', 'tax_id_npwp', e.target.value)} className="rounded-xl border-slate-200" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Pekerjaan */}
+                <div className="grid grid-cols-3 gap-6">
                   <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Pekerjaan</h3>
-                    <div className="space-y-2">
-                      <Label htmlFor="job_role">Peran / Jabatan</Label>
-                      <Input id="job_role" value={formData.employment_profile?.job_role || ''} onChange={e => updateNestedField('employment_profile', 'job_role', e.target.value)} className="rounded-xl border-slate-200" placeholder="DOSEN, TENDIK, dll." />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="department_unit">Departemen / Unit</Label>
-                      <Input id="department_unit" value={formData.employment_profile?.department_unit || ''} onChange={e => updateNestedField('employment_profile', 'department_unit', e.target.value)} className="rounded-xl border-slate-200" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="date_of_hire">Tanggal Mulai Kerja</Label>
-                      <Input id="date_of_hire" type="date" value={formData.employment_profile?.date_of_hire || ''} onChange={e => updateNestedField('employment_profile', 'date_of_hire', e.target.value)} className="rounded-xl border-slate-200" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="date_recognized">TMT Golongan (SK)</Label>
-                      <Input id="date_recognized" type="date" value={formData.employment_profile?.date_recognized || ''} onChange={e => updateNestedField('employment_profile', 'date_recognized', e.target.value)} className="rounded-xl border-slate-200" />
-                    </div>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Identitas</h3>
+                    <div className="space-y-2"><Label>Nama</Label><Input value={formData.personal_info?.name || ''} onChange={e => updateNestedField('personal_info', 'name', e.target.value)} /></div>
+                    <div className="space-y-2"><Label>NIY</Label><Input value={formData.personal_info?.employee_id_niy || ''} onChange={e => updateNestedField('personal_info', 'employee_id_niy', e.target.value)} /></div>
+                    <div className="space-y-2"><Label>NPWP</Label><Input value={formData.personal_info?.tax_id_npwp || ''} onChange={e => updateNestedField('personal_info', 'tax_id_npwp', e.target.value)} /></div>
                   </div>
-
-                  {/* Akademik & Finansial */}
                   <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Akademik & Finansial</h3>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="education_level">Pendidikan</Label>
-                        <Input id="education_level" value={formData.academic_and_tier?.education_level || ''} onChange={e => updateNestedField('academic_and_tier', 'education_level', e.target.value)} className="rounded-xl border-slate-200" placeholder="S1, S2, D3" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="level_code">Golongan (Grade)</Label>
-                        <Input id="level_code" value={formData.academic_and_tier?.level_code || ''} onChange={e => updateNestedField('academic_and_tier', 'level_code', e.target.value)} className="rounded-xl border-slate-200" placeholder="Gol. G" />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="education_code">Kode Pendidikan</Label>
-                        <Input id="education_code" type="number" value={formData.academic_and_tier?.education_code ?? ''} onChange={e => updateNestedField('academic_and_tier', 'education_code', e.target.value)} className="rounded-xl border-slate-200" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="functional_tier">Tunj. Kofu</Label>
-                        <Input id="functional_tier" type="number" value={formData.academic_and_tier?.functional_tier ?? ''} onChange={e => updateNestedField('academic_and_tier', 'functional_tier', e.target.value)} className="rounded-xl border-slate-200" />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="bank_name">Nama Bank</Label>
-                      <Input id="bank_name" value={formData.banking_info?.bank_name || ''} onChange={e => updateNestedField('banking_info', 'bank_name', e.target.value)} className="rounded-xl border-slate-200" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="account_number">Nomor Rekening</Label>
-                      <Input id="account_number" value={formData.banking_info?.account_number || ''} onChange={e => updateNestedField('banking_info', 'account_number', e.target.value)} className="rounded-xl border-slate-200" />
-                    </div>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Pekerjaan</h3>
+                    <div className="space-y-2"><Label>Jabatan</Label><Input placeholder="DOSEN, TENDIK, dll." value={formData.employment_profile?.job_role || ''} onChange={e => updateNestedField('employment_profile', 'job_role', e.target.value)} /></div>
+                    <div className="space-y-2"><Label>Departemen / Unit</Label><Input value={formData.employment_profile?.department_unit || ''} onChange={e => updateNestedField('employment_profile', 'department_unit', e.target.value)} /></div>
+                    <div className="space-y-2"><Label>Tanggal Mulai Kerja</Label><Input type="date" value={formData.employment_profile?.date_of_hire || ''} onChange={e => updateNestedField('employment_profile', 'date_of_hire', e.target.value)} /></div>
+                    <div className="space-y-2"><Label>TMT Golongan (SK)</Label><Input type="date" value={formData.employment_profile?.date_recognized || ''} onChange={e => updateNestedField('employment_profile', 'date_recognized', e.target.value)} /></div>
                   </div>
-
-                  {/* Metrik Keluarga */}
-                  <div className="col-span-2 space-y-4">
-                    <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Tanggungan Keluarga (Untuk Tunjangan)</h3>
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Akademik &amp; Finansial</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2"><Label>Pendidikan</Label><Input placeholder="S1, S2, D3" value={formData.academic_and_tier?.education_level || ''} onChange={e => updateNestedField('academic_and_tier', 'education_level', e.target.value)} /></div>
+                      <div className="space-y-2"><Label>Golongan</Label><Input placeholder="Gol. G" value={formData.academic_and_tier?.level_code || ''} onChange={e => updateNestedField('academic_and_tier', 'level_code', e.target.value)} /></div>
+                      <div className="space-y-2"><Label>Kode Pend.</Label><Input type="number" value={formData.academic_and_tier?.education_code ?? ''} onChange={e => updateNestedField('academic_and_tier', 'education_code', e.target.value)} /></div>
+                      <div className="space-y-2"><Label>Tunj. Kofu</Label><Input type="number" value={formData.academic_and_tier?.functional_tier ?? ''} onChange={e => updateNestedField('academic_and_tier', 'functional_tier', e.target.value)} /></div>
+                    </div>
+                    <div className="space-y-2"><Label>Nama Bank</Label><Input value={formData.banking_info?.bank_name || ''} onChange={e => updateNestedField('banking_info', 'bank_name', e.target.value)} /></div>
+                    <div className="space-y-2"><Label>Nomor Rekening</Label><Input value={formData.banking_info?.account_number || ''} onChange={e => updateNestedField('banking_info', 'account_number', e.target.value)} /></div>
+                  </div>
+                  <div className="col-span-3 pt-2 border-t border-slate-100 space-y-4">
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Tanggungan Keluarga (Untuk Tunjangan)</h3>
                     <div className="grid grid-cols-5 gap-3">
-                      <div className="space-y-2">
-                        <Label htmlFor="spouse_count">Pasangan</Label>
-                        <Input id="spouse_count" type="number" value={formData.family_allowance_metrics?.spouse_count ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'spouse_count', e.target.value)} className="rounded-xl border-slate-200" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="children_sd">Anak SD</Label>
-                        <Input id="children_sd" type="number" value={formData.family_allowance_metrics?.children_sd ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_sd', e.target.value)} className="rounded-xl border-slate-200" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="children_sltp">Anak SLTP</Label>
-                        <Input id="children_sltp" type="number" value={formData.family_allowance_metrics?.children_sltp ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_sltp', e.target.value)} className="rounded-xl border-slate-200" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="children_slta">Anak SLTA</Label>
-                        <Input id="children_slta" type="number" value={formData.family_allowance_metrics?.children_slta ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_slta', e.target.value)} className="rounded-xl border-slate-200" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="children_pt">Anak Kuliah</Label>
-                        <Input id="children_pt" type="number" value={formData.family_allowance_metrics?.children_pt ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_pt', e.target.value)} className="rounded-xl border-slate-200" />
-                      </div>
+                      <div className="space-y-2"><Label>Pasangan</Label><Input type="number" value={formData.family_allowance_metrics?.spouse_count ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'spouse_count', e.target.value)} className="rounded-xl border-slate-200" /></div>
+                      <div className="space-y-2"><Label>Anak SD</Label><Input type="number" value={formData.family_allowance_metrics?.children_sd ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_sd', e.target.value)} className="rounded-xl border-slate-200" /></div>
+                      <div className="space-y-2"><Label>Anak SLTP</Label><Input type="number" value={formData.family_allowance_metrics?.children_sltp ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_sltp', e.target.value)} className="rounded-xl border-slate-200" /></div>
+                      <div className="space-y-2"><Label>Anak SLTA</Label><Input type="number" value={formData.family_allowance_metrics?.children_slta ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_slta', e.target.value)} className="rounded-xl border-slate-200" /></div>
+                      <div className="space-y-2"><Label>Anak Kuliah</Label><Input type="number" value={formData.family_allowance_metrics?.children_pt ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_pt', e.target.value)} className="rounded-xl border-slate-200" /></div>
                     </div>
                   </div>
-                </>
+                  <div className="col-span-3">
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                      <div><h4 className="font-semibold text-slate-800 text-sm">Status Kepegawaian</h4><p className="text-xs text-slate-500 mt-0.5">Aktif atau sudah keluar?</p></div>
+                      <Badge onClick={() => updateNestedField('personal_info', 'status', formData.personal_info?.status === 'AKTIF' ? 'KELUAR' : 'AKTIF')} className={`cursor-pointer px-4 py-1.5 rounded-xl border-none transition-all ${formData.personal_info?.status === 'AKTIF' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-200 text-slate-600'}`}>
+                        {formData.personal_info?.status === 'AKTIF' ? 'Aktif' : 'Non-Aktif / Keluar'}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
               ) : (
-                <>
-                  {/* Basic Info */}
-                  <div className="col-span-2 grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Nama Lengkap</Label>
-                      <Input id="name" required value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="rounded-xl border-slate-200" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="nik">NIK (Nomor Induk Kependudukan)</Label>
-                      <Input id="nik" value={formData.nik || ''} onChange={e => setFormData({ ...formData, nik: e.target.value })} className="rounded-xl border-slate-200" />
-                    </div>
+                <div className="grid grid-cols-3 gap-6">
+                  <div className="col-span-3 grid grid-cols-3 gap-4">
+                    <div className="space-y-2"><Label htmlFor="name">Nama Lengkap</Label><Input id="name" required value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label htmlFor="nik">NIK (Nomor Induk Kependudukan)</Label><Input id="nik" value={formData.nik || ''} onChange={e => setFormData({ ...formData, nik: e.target.value })} className="rounded-xl border-slate-200" /></div>
                   </div>
-
-                  {/* Employment */}
                   <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Pekerjaan</h3>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Pekerjaan</h3>
                     <div className="space-y-2">
                       <Label>Kategori</Label>
-                      <Select
-                        value={formData.employment?.jobCategory}
-                        onValueChange={val => setFormData((prev: any) => ({
-                          ...prev,
-                          employment: {
-                            ...(prev.employment || { status: 'active', startDate: '', endDate: null }),
-                            jobCategory: val
-                          } as any
-                        }))}
-                      >
+                      <Select value={formData.employment?.jobCategory} onValueChange={val => setFormData((prev: any) => ({ ...prev, employment: { ...(prev.employment || { status: 'active', startDate: '', endDate: null }), jobCategory: val } as any }))}>
                         <SelectTrigger className="rounded-xl border-slate-200"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {JOB_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
-                        </SelectContent>
+                        <SelectContent>{JOB_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="startDate">Tanggal Mulai</Label>
-                      <Input
-                        id="startDate"
-                        type="date"
-                        value={formData.employment?.startDate || ''}
-                        onChange={e => setFormData((prev: any) => ({
-                          ...prev,
-                          employment: {
-                            ...(prev.employment || { status: 'active', jobCategory: 'OTHER', endDate: null }),
-                            startDate: e.target.value
-                          } as any
-                        }))}
-                        className="rounded-xl border-slate-200"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Golongan (Grade)</Label>
-                      <Input
-                        value={formData.salaryProfile?.salaryGradeCode || ''}
-                        onChange={e => setFormData((prev: any) => ({
-                          ...prev,
-                          salaryProfile: {
-                            ...(prev.salaryProfile || { baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' }),
-                            salaryGradeCode: e.target.value
-                          } as any
-                        }))}
-                        className="rounded-xl border-slate-200"
-                        placeholder="D, F, K..."
-                      />
-                    </div>
+                    <div className="space-y-2"><Label>Tanggal Mulai</Label><Input type="date" value={formData.employment?.startDate || ''} onChange={e => setFormData((prev: any) => ({ ...prev, employment: { ...(prev.employment || { status: 'active', jobCategory: 'OTHER', endDate: null }), startDate: e.target.value } as any }))} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label>Golongan (Grade)</Label><Input value={formData.salaryProfile?.salaryGradeCode || ''} onChange={e => setFormData((prev: any) => ({ ...prev, salaryProfile: { ...(prev.salaryProfile || { baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' }), salaryGradeCode: e.target.value } as any }))} className="rounded-xl border-slate-200" placeholder="D, F, K..." /></div>
                   </div>
-
-                  {/* Financial */}
                   <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider">Finansial</h3>
-                    <div className="space-y-2">
-                      <Label>Nama Bank</Label>
-                      <Input value={formData.bankAccount?.bankName || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, bankName: e.target.value } })} className="rounded-xl border-slate-200" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Nomor Rekening</Label>
-                      <Input value={formData.bankAccount?.accountNumber || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, accountNumber: e.target.value } })} className="rounded-xl border-slate-200" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Kode Koperasi Rochmad</Label>
-                      <Input
-                        type="number"
-                        value={formData.deductions?.koperasiRochmad ?? 0}
-                        onChange={e => setFormData((prev: any) => ({
-                          ...prev,
-                          deductions: {
-                            ...(prev.deductions || {}),
-                            koperasiRochmad: Number(e.target.value)
-                          } as any
-                        }))}
-                        className="rounded-xl border-slate-200"
-                      />
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Finansial</h3>
+                    <div className="space-y-2"><Label>Nama Bank</Label><Input value={formData.bankAccount?.bankName || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, bankName: e.target.value } })} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label>Nomor Rekening</Label><Input value={formData.bankAccount?.accountNumber || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, accountNumber: e.target.value } })} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label>Kode Koperasi Rochmad</Label><Input type="number" value={formData.deductions?.koperasiRochmad ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, deductions: { ...(prev.deductions || {}), koperasiRochmad: Number(e.target.value) } as any }))} className="rounded-xl border-slate-200" /></div>
+                  </div>
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Status</h3>
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                      <div><h4 className="font-semibold text-slate-800 text-sm">Status Kepegawaian</h4><p className="text-xs text-slate-500 mt-0.5">Aktif atau sudah keluar?</p></div>
+                      <Badge onClick={() => setFormData((prev: any) => ({ ...prev, flags: { ...prev.flags!, isActive: !prev.flags?.isActive, isPayrollEligible: !prev.flags?.isActive } }))} className={`cursor-pointer px-4 py-1.5 rounded-xl border-none transition-all ${formData.flags?.isActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-200 text-slate-600'}`}>
+                        {formData.flags?.isActive ? 'Aktif' : 'Non-Aktif'}
+                      </Badge>
                     </div>
                   </div>
-                </>
-              )}
-
-              {/* Status toggle */}
-              <div className="col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
-                <div>
-                  <h4 className="font-bold text-slate-800">Status Kepegawaian</h4>
-                  <p className="text-xs text-slate-500">Tentukan apakah pegawai masih aktif.</p>
                 </div>
-                {activeTab === 'loyalis' ? (
-                  <Badge
-                    onClick={() => updateNestedField('personal_info', 'status', formData.personal_info?.status === 'AKTIF' ? 'KELUAR' : 'AKTIF')}
-                    className={`cursor-pointer px-4 py-1.5 rounded-xl border-none transition-all ${formData.personal_info?.status === 'AKTIF'
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100'
-                      : 'bg-slate-200 text-slate-600'
-                      }`}
-                  >
-                    {formData.personal_info?.status === 'AKTIF' ? 'Aktif' : 'Non-Aktif / Keluar'}
-                  </Badge>
-                ) : (
-                  <Badge
-                    onClick={() => setFormData((prev: any) => ({
-                      ...prev,
-                      flags: {
-                        ...prev.flags!,
-                        isActive: !prev.flags?.isActive,
-                        isPayrollEligible: !prev.flags?.isActive
-                      }
-                    }))}
-                    className={`cursor-pointer px-4 py-1.5 rounded-xl border-none transition-all ${formData.flags?.isActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-200 text-slate-600'}`}
-                  >
-                    {formData.flags?.isActive ? 'Aktif' : 'Non-Aktif'}
-                  </Badge>
-                )}
-              </div>
+              )}
             </div>
 
             <DialogFooter className="p-6 bg-slate-50/50 border-t border-slate-100">

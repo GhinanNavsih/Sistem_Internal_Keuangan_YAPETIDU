@@ -121,6 +121,9 @@ export default function PayrollValidationDashboard() {
   // ─── UraianGaji state (keyed by docId e.g. "2026_05_KEBERSIHAN") ──
   const [uraianMap, setUraianMap] = useState<Record<string, UraianGajiDocument>>({});
 
+  // ─── VakasiTambahan state (keyed by employeeId) ─────────────────
+  const [vakasiTambahanMap, setVakasiTambahanMap] = useState<Record<string, number>>({});
+
   // ─── Dialog state ──────────────────────────────────────────────
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'review'>('create');
@@ -155,7 +158,7 @@ export default function PayrollValidationDashboard() {
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
       const uraianEntry = uraianDoc?.entries?.[emp.id];
 
-      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry);
+      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0);
 
       const bpjs = payrollCollar === 'loyalis' ? 0 : (emp.raw.bpjs?.deductionAmount ? Math.round(emp.raw.bpjs.deductionAmount) : 0);
       const kopRochmad = payrollCollar === 'loyalis' ? 0 : (emp.raw.deductions?.koperasiRochmad || 0);
@@ -207,7 +210,7 @@ export default function PayrollValidationDashboard() {
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
       const uraianEntry = uraianDoc?.entries?.[emp.id];
 
-      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry);
+      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0);
       const totalDeductions = calculateTotalDeductions(emp.raw);
       const netSalary = calculateNetSalary(earnings, totalDeductions);
 
@@ -279,12 +282,12 @@ export default function PayrollValidationDashboard() {
           const gapokA = calculateGapok(a, salaryMatrix, targetDate);
           const roleKeyA = payrollCollar === 'loyalis' ? a.role : a.raw.employment?.jobCategory;
           const uraianA = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyA}`]?.entries?.[a.id];
-          aValue = calculateTotalEarnings(a.raw, gapokA, uraianA);
+          aValue = calculateTotalEarnings(a.raw, gapokA, uraianA, vakasiTambahanMap[a.id] ?? 0);
 
           const gapokB = calculateGapok(b, salaryMatrix, targetDate);
           const roleKeyB = payrollCollar === 'loyalis' ? b.role : b.raw.employment?.jobCategory;
           const uraianB = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyB}`]?.entries?.[b.id];
-          bValue = calculateTotalEarnings(b.raw, gapokB, uraianB);
+          bValue = calculateTotalEarnings(b.raw, gapokB, uraianB, vakasiTambahanMap[b.id] ?? 0);
           break;
         }
         case 'deductions':
@@ -295,14 +298,14 @@ export default function PayrollValidationDashboard() {
           const gapokA = calculateGapok(a, salaryMatrix, targetDate);
           const roleKeyA = payrollCollar === 'loyalis' ? a.role : a.raw.employment?.jobCategory;
           const uraianA = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyA}`]?.entries?.[a.id];
-          const earningsA = calculateTotalEarnings(a.raw, gapokA, uraianA);
+          const earningsA = calculateTotalEarnings(a.raw, gapokA, uraianA, vakasiTambahanMap[a.id] ?? 0);
           const deductionsA = calculateTotalDeductions(a.raw);
           aValue = calculateNetSalary(earningsA, deductionsA);
 
           const gapokB = calculateGapok(b, salaryMatrix, targetDate);
           const roleKeyB = payrollCollar === 'loyalis' ? b.role : b.raw.employment?.jobCategory;
           const uraianB = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyB}`]?.entries?.[b.id];
-          const earningsB = calculateTotalEarnings(b.raw, gapokB, uraianB);
+          const earningsB = calculateTotalEarnings(b.raw, gapokB, uraianB, vakasiTambahanMap[b.id] ?? 0);
           const deductionsB = calculateTotalDeductions(b.raw);
           bValue = calculateNetSalary(earningsB, deductionsB);
           break;
@@ -409,6 +412,30 @@ export default function PayrollValidationDashboard() {
       }
     };
     fetchUraian();
+  }, [targetDate]);
+
+  // ─── Fetch VakasiTambahan for current period ───────────────────
+  useEffect(() => {
+    const fetchVakasiTambahan = async () => {
+      try {
+        const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+        const snapshot = await getDocs(collection(db, 'VakasiTambahan'));
+        const map: Record<string, number> = {};
+        snapshot.docs.forEach(d => {
+          const data = d.data();
+          if (data.period === periodToken) {
+            const workers = data.eventWorkers || {};
+            Object.entries(workers).forEach(([empId, w]: [string, any]) => {
+              map[empId] = (map[empId] || 0) + (w.payGiven || 0);
+            });
+          }
+        });
+        setVakasiTambahanMap(map);
+      } catch (err) {
+        console.error('Error fetching VakasiTambahan:', err);
+      }
+    };
+    fetchVakasiTambahan();
   }, [targetDate]);
 
   // ─── Slip Handlers ─────────────────────────────────────────────
@@ -716,7 +743,7 @@ export default function PayrollValidationDashboard() {
                             const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
                             const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
                             const gapokVal = calculateGapok(emp, salaryMatrix, targetDate);
-                            return formatIDR(calculateTotalEarnings(emp.raw, gapokVal, uraian));
+                            return formatIDR(calculateTotalEarnings(emp.raw, gapokVal, uraian, vakasiTambahanMap[emp.id] ?? 0));
                           })()}
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
@@ -728,7 +755,7 @@ export default function PayrollValidationDashboard() {
                             const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
                             const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
                             const gapokVal = calculateGapok(emp, salaryMatrix, targetDate);
-                            const earnings = calculateTotalEarnings(emp.raw, gapokVal, uraian);
+                            const earnings = calculateTotalEarnings(emp.raw, gapokVal, uraian, vakasiTambahanMap[emp.id] ?? 0);
                             const deductions = calculateTotalDeductions(emp.raw);
                             return formatIDR(calculateNetSalary(earnings, deductions));
                           })()}
@@ -818,6 +845,7 @@ export default function PayrollValidationDashboard() {
           const uraianDoc = uraianMap[`${period}_${cat}`];
           return uraianDoc?.entries?.[selectedEmployee.id] ?? undefined;
         })()}
+        vakasiTambahanSum={selectedEmployee ? vakasiTambahanMap[selectedEmployee.id] ?? 0 : 0}
       />
 
       <LegalitasPimpinanDialog
@@ -829,6 +857,7 @@ export default function PayrollValidationDashboard() {
         targetDate={targetDate}
         uraianMap={uraianMap}
         periodName={payrollPeriod}
+        vakasiTambahanMap={vakasiTambahanMap}
       />
 
       <CetakPayrollDialog
@@ -840,6 +869,7 @@ export default function PayrollValidationDashboard() {
         uraianMap={uraianMap}
         periodName={payrollPeriod}
         onPrintPdf={handlePrintPayrollStatement}
+        vakasiTambahanMap={vakasiTambahanMap}
       />
 
       {/* ─── Print Selection Dialog ─────────────────────────────────── */}

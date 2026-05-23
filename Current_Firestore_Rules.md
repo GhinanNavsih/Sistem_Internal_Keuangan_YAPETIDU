@@ -113,5 +113,11 @@ service cloud.firestore {
         )
       );
     }
+
+    // 5b. Vakasi Tambahan (Variable Payout Event Entries for Loyalis)
+    match /VakasiTambahan/{docId} {
+      // Authenticated users with a registered profile can read and write variable payouts
+      allow read, write: if isSuperAdmin() || hasProfile();
+    }
   }
 }

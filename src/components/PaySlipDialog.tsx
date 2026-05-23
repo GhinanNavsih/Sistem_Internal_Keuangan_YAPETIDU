@@ -55,6 +55,7 @@ interface PaySlipDialogProps {
   onSlipConfirmed: (employeeId: string) => void;
   uraianEntry?: UraianEntry; // from UraianGaji collection
   activeTab?: string;
+  vakasiTambahanSum?: number;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -71,7 +72,7 @@ const formatIDR = (amount: number) => {
 /**
  * Build initial earnings rows from whatever we know about the employee.
  */
-function buildInitialEarnings(emp: any, gapok: number, activeTab?: string, uraian?: UraianEntry): PaySlipField[] {
+function buildInitialEarnings(emp: any, gapok: number, activeTab?: string, uraian?: UraianEntry, vakasiTambahanSum?: number): PaySlipField[] {
   const earnings: PaySlipField[] = [];
 
   if (activeTab === 'loyalis') {
@@ -95,6 +96,9 @@ function buildInitialEarnings(emp: any, gapok: number, activeTab?: string, uraia
     // Tunjangan Jabatan (Kofu)
     const tunjJabatan = Number(emp.academic_and_tier?.functional_tier) || 0;
     earnings.push({ label: 'Tunjangan Jabatan', amount: tunjJabatan });
+
+    // Vakasi Tambahan
+    earnings.push({ label: 'Vakasi Tambahan', amount: vakasiTambahanSum ?? 0 });
   } else {
     const jobCategory = emp.employment?.jobCategory || '';
     const columns = REKAP_COLUMNS[jobCategory];
@@ -185,6 +189,7 @@ export default function PaySlipDialog({
   onSlipConfirmed,
   uraianEntry,
   activeTab = 'blue',
+  vakasiTambahanSum,
 }: PaySlipDialogProps) {
   const [earnings, setEarnings] = useState<PaySlipField[]>([]);
   const [deductions, setDeductions] = useState<PaySlipField[]>([]);
@@ -194,7 +199,7 @@ export default function PaySlipDialog({
     if (!open || !employee) return;
 
     if (mode === 'create') {
-      setEarnings(buildInitialEarnings(employee, gapok, activeTab, uraianEntry));
+      setEarnings(buildInitialEarnings(employee, gapok, activeTab, uraianEntry, vakasiTambahanSum));
       setDeductions(buildInitialDeductions(employee, activeTab));
     } else if (mode === 'review' && slipState) {
       setEarnings([...slipState.earnings]);

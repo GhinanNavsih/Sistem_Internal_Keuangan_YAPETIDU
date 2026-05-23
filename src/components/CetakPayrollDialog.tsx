@@ -34,6 +34,7 @@ interface CetakPayrollDialogProps {
   uraianMap: Record<string, UraianGajiDocument>;
   periodName: string;
   onPrintPdf: () => void;
+  vakasiTambahanMap?: Record<string, number>;
 }
 
 export default function CetakPayrollDialog({
@@ -45,6 +46,7 @@ export default function CetakPayrollDialog({
   uraianMap,
   periodName,
   onPrintPdf,
+  vakasiTambahanMap,
 }: CetakPayrollDialogProps) {
 
   const handleExportXlsx = () => {
@@ -64,8 +66,9 @@ export default function CetakPayrollDialog({
       const uraianDoc = uraianMap[`${periodKey}_${cat}`];
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
       const uraianEntry = uraianDoc?.entries?.[emp.id];
+      const vakasiSum = vakasiTambahanMap?.[emp.id] ?? 0;
       
-      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry);
+      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiSum);
       const totalDeductions = calculateTotalDeductions(emp.raw);
       const netSalary = calculateNetSalary(earnings, totalDeductions);
 

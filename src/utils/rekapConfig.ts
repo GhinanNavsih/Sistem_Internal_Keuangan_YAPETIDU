@@ -7,6 +7,8 @@ export const RATE_LEMBUR_SENDIRI = 30_000;
 export const RATE_LEMBUR_COVER = 50_000;
 export const RATE_BONUS_MUTLAK = 50_000;
 export const RATE_BONUS_BULANAN = 17_500;
+export const RATE_BONUS_PRESENSI_BULANAN = 100_000;
+export const RATE_BONUS_PRESENSI_TRIWULANAN = 300_000;
 
 // ─── Column configs per job category ────────────────────────────────────────
 // Each category can have a different set of columns.
@@ -15,15 +17,16 @@ export const RATE_BONUS_BULANAN = 17_500;
 
 export const REKAP_COLUMNS: Record<string, RekapColumn[]> = {
   SATPAM: [
-    { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
-    { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
-    { key: 'lemburSendiri',      label: 'Lembur Sendiri',         type: 'count',    multiplier: RATE_LEMBUR_SENDIRI, slipLabel: 'Lembur Sendiri' },
-    { key: 'lemburCover',        label: 'Lembur Cover',           type: 'count',    multiplier: RATE_LEMBUR_COVER,   slipLabel: 'Lembur Cover' },
-    { key: 'bonusPresensi',      label: 'Bonus Presensi',         type: 'currency',                                  slipLabel: 'Bonus Presensi' },
-    { key: 'bonusMutlak',        label: 'Bonus Mutlak',           type: 'count',    multiplier: RATE_BONUS_MUTLAK,   slipLabel: 'Bonus Mutlak' },
-    { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
-    { key: 'tunjanganJabatan',   label: 'Tunjangan Jabatan',      type: 'currency',                                  slipLabel: 'Tunjangan Jabatan' },
-    { key: 'bonusBulanan',       label: 'Bonus Bulanan',          type: 'count',    multiplier: RATE_BONUS_BULANAN,  slipLabel: 'Bonus Bulanan' },
+    { key: 'harian',                 label: 'Harian',                     type: 'count',    multiplier: RATE_HARIAN,                    slipLabel: 'Vakasi Harian' },
+    { key: 'jumatLibur',             label: 'Jumat & Libur',              type: 'count',    multiplier: RATE_JUMAT,                     slipLabel: 'Jumat & Libur' },
+    { key: 'lemburSendiri',          label: 'Lembur Sendiri',             type: 'count',    multiplier: RATE_LEMBUR_SENDIRI,            slipLabel: 'Lembur Sendiri' },
+    { key: 'lemburCover',            label: 'Lembur Cover',               type: 'count',    multiplier: RATE_LEMBUR_COVER,              slipLabel: 'Lembur Cover' },
+    { key: 'bonusPresensiBulanan',   label: 'Bonus Presensi Bulanan',     type: 'count',    multiplier: RATE_BONUS_PRESENSI_BULANAN,    slipLabel: 'Bonus Presensi Bulanan' },
+    { key: 'bonusPresensiTriwulanan', label: 'Bonus Presensi Triwulanan',   type: 'count',    multiplier: RATE_BONUS_PRESENSI_TRIWULANAN,  slipLabel: 'Bonus Presensi Triwulanan' },
+    { key: 'bonusMutlak',            label: 'Bonus Presensi Mutlak',      type: 'count',    multiplier: RATE_BONUS_MUTLAK,              slipLabel: 'Bonus Presensi Mutlak' },
+    { key: 'spj',                    label: 'SPJ',                        type: 'currency',                                             slipLabel: 'SPJ' },
+    { key: 'tunjanganJabatan',       label: 'Tunjangan Jabatan',          type: 'currency',                                             slipLabel: 'Tunjangan Jabatan' },
+    { key: 'bonusLainnya',           label: 'Bonus Lainnya',              type: 'count',    multiplier: RATE_BONUS_BULANAN,             slipLabel: 'Bonus Lainnya' },
   ],
   KEBERSIHAN: [
     { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },

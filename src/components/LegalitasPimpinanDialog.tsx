@@ -38,9 +38,10 @@ interface LegalitasPimpinanDialogProps {
   targetDate: Date;
   uraianMap: Record<string, UraianGajiDocument>;
   periodName: string;
+  vakasiTambahanMap?: Record<string, number>;
 }
 
-function buildInitialEarnings(emp: any, gapok: number, uraian?: any): PaySlipField[] {
+function buildInitialEarnings(emp: any, gapok: number, uraian?: any, vakasiTambahanSum?: number): PaySlipField[] {
   const earnings: PaySlipField[] = [];
 
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
@@ -64,6 +65,9 @@ function buildInitialEarnings(emp: any, gapok: number, uraian?: any): PaySlipFie
     // Tunjangan Jabatan (Kofu)
     const tunjJabatan = Number(emp.academic_and_tier?.functional_tier) || 0;
     earnings.push({ label: 'Tunjangan Jabatan', amount: tunjJabatan });
+
+    // Vakasi Tambahan
+    earnings.push({ label: 'Vakasi Tambahan', amount: vakasiTambahanSum ?? 0 });
 
     return earnings;
   }
@@ -139,6 +143,7 @@ export default function LegalitasPimpinanDialog({
   targetDate,
   uraianMap,
   periodName,
+  vakasiTambahanMap,
 }: LegalitasPimpinanDialogProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>(categories[0] || '');
 
@@ -152,8 +157,9 @@ export default function LegalitasPimpinanDialog({
     const legalitasEmployees: LegalitasEmployeeData[] = filteredEmployees.map((emp, idx) => {
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
       const uraianEntry = uraianDoc?.entries?.[emp.id];
+      const vakasiSum = vakasiTambahanMap?.[emp.id] ?? 0;
       
-      const earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry);
+      const earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum);
       const deductions = buildInitialDeductions(emp.raw);
 
       const totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);

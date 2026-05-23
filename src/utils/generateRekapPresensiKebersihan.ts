@@ -9,6 +9,7 @@ export interface KebersihanyEmployee {
   name: string;
   /** Raw monetary / count values keyed by RekapColumn.key */
   values: Record<string, number>;
+  counts?: Record<string, number>;
 }
 
 export interface RekapPresensiKebersihanyData {
@@ -17,6 +18,7 @@ export interface RekapPresensiKebersihanyData {
   /** Active category — drives which columns to render */
   category: string;
   employees: KebersihanyEmployee[];
+  isEmptyTemplate?: boolean;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -87,8 +89,9 @@ export async function generateRekapPresensiKebersihanyPdf(
   let y = logoY + 3;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10.5);
+  const catLabel = data.category.replace('_', ' ').toUpperCase();
   doc.text(
-    'REKAPITULASI  PRESENSI  BAGIAN  KEBERSIHAN',
+    `REKAPITULASI  PRESENSI  BAGIAN  ${catLabel}`,
     pageW / 2,
     y,
     { align: 'center' }
@@ -109,30 +112,34 @@ export async function generateRekapPresensiKebersihanyPdf(
   y += 8; // gap before table (no divider line)
 
   // ── Build table head ────────────────────────────────────────────────────────
-  const head: any[][] = [
-    [
-      {
-        content: 'No',
-        rowSpan: 2,
+  const headCells = [
+    {
+      content: 'No',
+      styles: { halign: 'center' as const, valign: 'middle' as const },
+    },
+    {
+      content: 'Nama',
+      styles: { halign: 'center' as const, valign: 'middle' as const },
+    },
+    ...activeCols.map((col) => {
+      const title = col.type === 'count' && col.multiplier
+        ? `${col.label}\n(xRp${col.multiplier.toLocaleString('id-ID')})`
+        : col.label;
+      return {
+        content: title,
         styles: { halign: 'center' as const, valign: 'middle' as const },
-      },
-      {
-        content: 'Nama',
-        rowSpan: 2,
-        styles: { halign: 'center' as const, valign: 'middle' as const },
-      },
-      ...activeCols.map((col) => ({
-        content: col.label,
-        rowSpan: 2,
-        styles: { halign: 'center' as const, valign: 'middle' as const },
-      })),
-      {
-        content: 'Jumlah',
-        rowSpan: 2,
-        styles: { halign: 'center' as const, valign: 'middle' as const },
-      },
-    ],
+      };
+    }),
   ];
+
+  if (!data.isEmptyTemplate) {
+    headCells.push({
+      content: 'Jumlah',
+      styles: { halign: 'center' as const, valign: 'middle' as const },
+    });
+  }
+
+  const head: any[][] = [headCells];
 
   // ── Build table body ────────────────────────────────────────────────────────
   const totals: Record<string, number> = {};
@@ -140,7 +147,6 @@ export async function generateRekapPresensiKebersihanyPdf(
   let totGrand = 0;
 
   const bodyRows: any[][] = data.employees.map((emp) => {
-    // Compute Rp total for this row (sum of all configured columns)
     let rowTotal = 0;
     const cells: any[] = [
       { content: String(emp.no), styles: { halign: 'center' as const } },
@@ -151,76 +157,87 @@ export async function generateRekapPresensiKebersihanyPdf(
     ];
 
     activeCols.forEach((col) => {
-      const raw = emp.values[col.key] ?? 0;
-      totals[col.key] += raw;
-
-      if (col.type === 'count') {
-        // raw may be stored as count or as monetary (count × rate)
-        const rate = col.multiplier ?? 1;
-        const count = raw > 31 ? Math.round(raw / rate) : raw;
-        const monetary = raw > 31 ? raw : raw * rate;
-        rowTotal += monetary;
+      if (data.isEmptyTemplate) {
         cells.push({
-          content: fmtCount(count),
-          styles: { halign: 'center' as const },
+          content: '',
+          styles: { halign: col.type === 'count' ? ('center' as const) : ('right' as const) },
         });
       } else {
-        rowTotal += raw;
-        cells.push({
-          content: fmtRp(raw),
-          styles: { halign: 'right' as const },
-        });
+        const raw = emp.values[col.key] ?? 0;
+        const countVal = emp.counts?.[col.key] ?? 0;
+
+        if (col.type === 'count') {
+          const rate = col.multiplier ?? 1;
+          const count = emp.counts ? countVal : (raw > 31 ? Math.round(raw / rate) : raw);
+          const monetary = emp.counts ? raw : (raw > 31 ? raw : raw * rate);
+          totals[col.key] += monetary;
+          rowTotal += monetary;
+          cells.push({
+            content: fmtCount(count),
+            styles: { halign: 'center' as const },
+          });
+        } else {
+          totals[col.key] += raw;
+          rowTotal += raw;
+          cells.push({
+            content: fmtRp(raw),
+            styles: { halign: 'right' as const },
+          });
+        }
       }
     });
 
-    totGrand += rowTotal;
-    cells.push({
-      content: fmtRp(rowTotal),
-      styles: { halign: 'right' as const, fontStyle: 'bold' as const },
-    });
+    if (!data.isEmptyTemplate) {
+      totGrand += rowTotal;
+      cells.push({
+        content: fmtRp(rowTotal),
+        styles: { halign: 'right' as const, fontStyle: 'bold' as const },
+      });
+    }
 
     return cells;
   });
 
-  // ── Grand total footer row ─────────────────────────────────────────────────
-  const totalRowCells: any[] = [
-    { content: '', styles: { halign: 'center' as const } },
-    {
-      content: 'JUMLAH',
-      styles: { halign: 'left' as const, fontStyle: 'bold' as const },
-    },
-  ];
+  if (!data.isEmptyTemplate) {
+    // ── Grand total footer row ─────────────────────────────────────────────────
+    const totalRowCells: any[] = [
+      { content: '', styles: { halign: 'center' as const } },
+      {
+        content: 'JUMLAH',
+        styles: { halign: 'left' as const, fontStyle: 'bold' as const },
+      },
+    ];
 
-  activeCols.forEach((col) => {
-    const tot = totals[col.key] ?? 0;
-    if (col.type === 'count') {
-      const rate = col.multiplier ?? 1;
-      const totCount = tot > 31 ? Math.round(tot / rate) : tot;
-      const totMonetary = tot > 31 ? tot : tot * rate;
-      // Show monetary sum (Rp) in the total row for count columns
-      totalRowCells.push({
-        content: fmtRp(totMonetary),
-        styles: { halign: 'right' as const, fontStyle: 'bold' as const },
-      });
-    } else {
-      totalRowCells.push({
-        content: fmtRp(tot),
-        styles: { halign: 'right' as const, fontStyle: 'bold' as const },
-      });
-    }
-  });
+    activeCols.forEach((col) => {
+      const tot = totals[col.key] ?? 0;
+      if (col.type === 'count') {
+        const rate = col.multiplier ?? 1;
+        const totCount = tot > 31 ? Math.round(tot / rate) : tot;
+        const totMonetary = tot > 31 ? tot : tot * rate;
+        // Show monetary sum (Rp) in the total row for count columns
+        totalRowCells.push({
+          content: fmtRp(totMonetary),
+          styles: { halign: 'right' as const, fontStyle: 'bold' as const },
+        });
+      } else {
+        totalRowCells.push({
+          content: fmtRp(tot),
+          styles: { halign: 'right' as const, fontStyle: 'bold' as const },
+        });
+      }
+    });
 
-  totalRowCells.push({
-    content: fmtRp(totGrand),
-    styles: { halign: 'right' as const, fontStyle: 'bold' as const },
-  });
+    totalRowCells.push({
+      content: fmtRp(totGrand),
+      styles: { halign: 'right' as const, fontStyle: 'bold' as const },
+    });
 
-  bodyRows.push(totalRowCells);
+    bodyRows.push(totalRowCells);
+  }
 
   // ── Column widths ──────────────────────────────────────────────────────────
-  // Fixed: No (8), Nama (40), dynamic cols, Total (32)
   const usableWidth = pageW - marginL - marginR;
-  const fixedWidth = 8 + 40 + 32;
+  const fixedWidth = data.isEmptyTemplate ? (8 + 40) : (8 + 40 + 32);
   const dynColWidth = Math.floor((usableWidth - fixedWidth) / activeCols.length);
 
   const columnStyles: Record<number, any> = {
@@ -233,7 +250,9 @@ export async function generateRekapPresensiKebersihanyPdf(
       halign: col.type === 'count' ? 'center' : 'right',
     };
   });
-  columnStyles[activeCols.length + 2] = { cellWidth: 32, halign: 'right' };
+  if (!data.isEmptyTemplate) {
+    columnStyles[activeCols.length + 2] = { cellWidth: 32, halign: 'right' };
+  }
 
   // ── Render table ───────────────────────────────────────────────────────────
   autoTable(doc, {
@@ -262,6 +281,52 @@ export async function generateRekapPresensiKebersihanyPdf(
     },
     columnStyles,
     margin: { left: marginL, right: marginR },
+    willDrawCell: (data) => {
+      if (data.row.section === 'head' && data.column.index >= 2) {
+        const col = activeCols[data.column.index - 2];
+        if (col && col.type === 'count' && col.multiplier) {
+          data.cell.text = []; // Clear standard text drawing
+        }
+      }
+    },
+    didDrawCell: (data) => {
+      if (data.row.section === 'head' && data.column.index >= 2) {
+        const col = activeCols[data.column.index - 2];
+        if (col && col.type === 'count' && col.multiplier) {
+          const cell = data.cell;
+          const doc = data.doc;
+          
+          const padding = cell.styles.cellPadding as any;
+          const leftPadding = typeof padding === 'object' ? padding.left ?? 0 : (typeof padding === 'number' ? padding : 0);
+          const rightPadding = typeof padding === 'object' ? padding.right ?? 0 : (typeof padding === 'number' ? padding : 0);
+          const maxTextWidth = cell.width - (leftPadding + rightPadding);
+          const titleLines = doc.splitTextToSize(col.label, maxTextWidth);
+          const multText = `(xRp${col.multiplier.toLocaleString('id-ID')})`;
+          
+          const titleLineHeight = 3.2;
+          const multLineHeight = 3.0;
+          const totalTextHeight = (titleLines.length * titleLineHeight) + multLineHeight;
+          
+          let currentY = cell.y + (cell.height - totalTextHeight) / 2 + 2.5;
+          const textX = cell.x + cell.width / 2;
+          
+          // Draw label in black and bold
+          doc.setTextColor(0, 0, 0);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7.5);
+          titleLines.forEach((line: string) => {
+            doc.text(line, textX, currentY, { align: 'center' });
+            currentY += titleLineHeight;
+          });
+          
+          // Draw multiplier in blue and italic
+          doc.setTextColor(29, 78, 216); // text-blue-700 equivalent: RGB [29, 78, 216]
+          doc.setFont('helvetica', 'italic');
+          doc.setFontSize(7);
+          doc.text(multText, textX, currentY, { align: 'center' });
+        }
+      }
+    },
   });
 
   // ── Signature block ────────────────────────────────────────────────────────
@@ -282,12 +347,20 @@ export async function generateRekapPresensiKebersihanyPdf(
   doc.line(sigX - 28, sigLineY, sigX + 28, sigLineY);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.text('Harun Arrosyid, S. Pd. I', sigX, sigLineY + 5, { align: 'center' });
+
+  const isSatpam = data.category === 'SATPAM';
+  const sigName = isSatpam ? 'H. Rohmatul Akbar, ST' : 'Harun Arrosyid, S. Pd. I';
+  const sigTitle = isSatpam ? 'Majlis Kamtib' : 'KA. Biro Administrasi Umum';
+
+  doc.text(sigName, sigX, sigLineY + 5, { align: 'center' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text('KA. Biro Administrasi Umum', sigX, sigLineY + 10, { align: 'center' });
+  doc.text(sigTitle, sigX, sigLineY + 10, { align: 'center' });
 
   // ── Save ───────────────────────────────────────────────────────────────────
   const safePeriod = data.period.replace(/\s+/g, '_');
-  doc.save(`Rekap_Presensi_Kebersihan_${safePeriod}.pdf`);
+  const filename = data.isEmptyTemplate 
+    ? `Template_Kosong_${data.category}_${safePeriod}.pdf`
+    : `Rekap_Presensi_${data.category}_${safePeriod}.pdf`;
+  doc.save(filename);
 }
