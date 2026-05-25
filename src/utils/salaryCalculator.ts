@@ -5,7 +5,13 @@ import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
  * Calculates the total earnings for a blue collar employee.
  * Includes Gapok, Uraian components, BPJS allowance, and Tunjangan Beras.
  */
-export function calculateTotalEarnings(emp: any, gapok: number, uraian?: UraianEntry, vakasiTambahanSum?: number): number {
+export function calculateTotalEarnings(
+  emp: any,
+  gapok: number,
+  uraian?: UraianEntry,
+  vakasiTambahanSum?: number,
+  tunjanganFungsional?: number
+): number {
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
     // White Collar / Loyalis calculations
     let total = gapok;
@@ -24,9 +30,11 @@ export function calculateTotalEarnings(emp: any, gapok: number, uraian?: UraianE
     const tunjKeluarga = Math.round(gapok * familyPct);
     total += tunjKeluarga;
 
-    // Tunjangan Jabatan (Kofu)
-    const tunjJabatan = Number(emp.academic_and_tier?.functional_tier) || 0;
-    total += tunjJabatan;
+    // Tunjangan Jabatan (Kofu) - use passed tunjanganFungsional or fallback
+    const fAllowance = tunjanganFungsional !== undefined 
+      ? tunjanganFungsional 
+      : (Number(emp.academic_and_tier?.functional_tier) || 0);
+    total += fAllowance;
 
     // Vakasi Tambahan (Loyalis)
     if (vakasiTambahanSum) {

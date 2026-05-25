@@ -39,9 +39,16 @@ interface LegalitasPimpinanDialogProps {
   uraianMap: Record<string, UraianGajiDocument>;
   periodName: string;
   vakasiTambahanMap?: Record<string, number>;
+  functionalAllowanceMap?: Record<string, number>;
 }
 
-function buildInitialEarnings(emp: any, gapok: number, uraian?: any, vakasiTambahanSum?: number): PaySlipField[] {
+function buildInitialEarnings(
+  emp: any,
+  gapok: number,
+  uraian?: any,
+  vakasiTambahanSum?: number,
+  tunjanganFungsional?: number
+): PaySlipField[] {
   const earnings: PaySlipField[] = [];
 
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
@@ -63,8 +70,10 @@ function buildInitialEarnings(emp: any, gapok: number, uraian?: any, vakasiTamba
     earnings.push({ label: 'Tunjangan Keluarga', amount: tunjKeluarga });
 
     // Tunjangan Jabatan (Kofu)
-    const tunjJabatan = Number(emp.academic_and_tier?.functional_tier) || 0;
-    earnings.push({ label: 'Tunjangan Jabatan', amount: tunjJabatan });
+    const fAllowance = tunjanganFungsional !== undefined 
+      ? tunjanganFungsional 
+      : (Number(emp.academic_and_tier?.functional_tier) || 0);
+    earnings.push({ label: 'Tunjangan Jabatan', amount: fAllowance });
 
     // Vakasi Tambahan
     earnings.push({ label: 'Vakasi Tambahan', amount: vakasiTambahanSum ?? 0 });
@@ -144,13 +153,26 @@ export default function LegalitasPimpinanDialog({
   uraianMap,
   periodName,
   vakasiTambahanMap,
+  functionalAllowanceMap,
 }: LegalitasPimpinanDialogProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>(categories[0] || '');
+
+  // Synchronize selectedCategory with categories when the dialog opens
+  React.useEffect(() => {
+    if (open && categories.length > 0) {
+      setSelectedCategory(categories[0]);
+    }
+  }, [open, categories]);
 
   const handlePrint = () => {
     if (!selectedCategory) return;
 
     const filteredEmployees = employees.filter(emp => emp.role === selectedCategory && emp.isActive);
+    if (filteredEmployees.length === 0) {
+      alert(`Tidak ada karyawan aktif untuk kategori "${selectedCategory}"`);
+      return;
+    }
+
     const periodKey = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
     const uraianDoc = uraianMap[`${periodKey}_${selectedCategory}`];
 
@@ -159,7 +181,8 @@ export default function LegalitasPimpinanDialog({
       const uraianEntry = uraianDoc?.entries?.[emp.id];
       const vakasiSum = vakasiTambahanMap?.[emp.id] ?? 0;
       
-      const earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum);
+      const fAllowance = functionalAllowanceMap?.[emp.id] ?? 0;
+      const earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance);
       const deductions = buildInitialDeductions(emp.raw);
 
       const totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);

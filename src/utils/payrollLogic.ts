@@ -102,3 +102,37 @@ export async function getActiveEmployeesByJobCategory(
     throw error;
   }
 }
+
+export function matchFunctionalAllowance(
+  educationLevel: string | undefined | null,
+  functionalTier: number | string | undefined | null,
+  functionalMatrix: Record<string, { base_value: number; functional_tiers: Record<string, number> }>
+): number {
+  if (!educationLevel) return 0;
+  
+  // Clean educationLevel and take 6-char prefix
+  const cleanEmpPrefix = educationLevel.trim().substring(0, 6).toUpperCase();
+  
+  // Find matching row in matrix
+  const matchedKey = Object.keys(functionalMatrix).find(key => 
+    key.trim().substring(0, 6).toUpperCase() === cleanEmpPrefix
+  );
+  
+  if (!matchedKey) return 0;
+  
+  const row = functionalMatrix[matchedKey];
+  const tierStr = String(functionalTier || '').trim();
+  
+  // If functionalTier is empty/null/0, default to base_value
+  if (!tierStr || tierStr === '0' || tierStr === 'null' || tierStr === 'undefined') {
+    return row.base_value;
+  }
+  
+  // If tier is in functional_tiers, return it
+  if (row.functional_tiers[tierStr] !== undefined) {
+    return row.functional_tiers[tierStr];
+  }
+  
+  // Fallback to base_value
+  return row.base_value;
+}

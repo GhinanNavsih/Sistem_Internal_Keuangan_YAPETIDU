@@ -195,7 +195,7 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
   doc.text(dateStr, pageWidth - 20, finalY - 5, { align: 'right' });
   
   const isSatpam = data.jobCategory.toUpperCase() === 'SATPAM';
-  const rightTitle = isSatpam ? 'Majlis Kamtib' : 'Ketua Biro Administasi Umum';
+  const rightTitle = isSatpam ? 'Majlis Kamtib' : 'Ketua Biro Administrasi Umum';
   const rightName = isSatpam ? 'H. Rohmatul Akbar, ST' : 'H. Harun Ar Rasyid, S.Pd.I.';
 
   doc.text(rightTitle, pageWidth - 20, finalY, { align: 'right' });

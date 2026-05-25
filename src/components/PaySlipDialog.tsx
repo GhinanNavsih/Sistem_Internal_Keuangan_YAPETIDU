@@ -56,6 +56,8 @@ interface PaySlipDialogProps {
   uraianEntry?: UraianEntry; // from UraianGaji collection
   activeTab?: string;
   vakasiTambahanSum?: number;
+  vakasiTambahanList?: { eventName: string; payGiven: number }[];
+  tunjanganFungsional?: number;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -72,7 +74,15 @@ const formatIDR = (amount: number) => {
 /**
  * Build initial earnings rows from whatever we know about the employee.
  */
-function buildInitialEarnings(emp: any, gapok: number, activeTab?: string, uraian?: UraianEntry, vakasiTambahanSum?: number): PaySlipField[] {
+function buildInitialEarnings(
+  emp: any,
+  gapok: number,
+  activeTab?: string,
+  uraian?: UraianEntry,
+  vakasiTambahanSum?: number,
+  vakasiTambahanList?: { eventName: string; payGiven: number }[],
+  tunjanganFungsional?: number
+): PaySlipField[] {
   const earnings: PaySlipField[] = [];
 
   if (activeTab === 'loyalis') {
@@ -91,14 +101,51 @@ function buildInitialEarnings(emp: any, gapok: number, activeTab?: string, uraia
     }
     const familyPct = (spouseCount * 0.05) + (sd * 0.05) + (sltp * 0.075) + (slta * 0.1) + (pt * 0.125);
     const tunjKeluarga = Math.round(gapok * familyPct);
-    earnings.push({ label: 'Tunjangan Keluarga', amount: tunjKeluarga });
+    earnings.push({ label: 'T. Keluarga', amount: tunjKeluarga });
 
-    // Tunjangan Jabatan (Kofu)
-    const tunjJabatan = Number(emp.academic_and_tier?.functional_tier) || 0;
-    earnings.push({ label: 'Tunjangan Jabatan', amount: tunjJabatan });
+    // Tunjangan Jabatan (Kofu) -> mapped to T. Fungsional
+    earnings.push({ label: 'T. Fungsional', amount: tunjanganFungsional ?? 0 });
 
-    // Vakasi Tambahan
-    earnings.push({ label: 'Vakasi Tambahan', amount: vakasiTambahanSum ?? 0 });
+    // Kepangkatan
+    earnings.push({ label: 'Kepangkatan', amount: 0 });
+
+    // T. Hari Tua (10% of Gaji Pokok)
+    earnings.push({ label: 'T. Hari Tua', amount: Math.round(gapok * 0.1) });
+
+    // T. BPJS TK
+    earnings.push({ label: 'T. BPJS TK', amount: 0 });
+
+    // T. BPJS KES
+    earnings.push({ label: 'T. BPJS KES', amount: 0 });
+
+    // Beras
+    const tunjBeras = emp.salaryProfile?.tunjanganBeras || 0;
+    earnings.push({ label: 'Beras', amount: tunjBeras });
+
+    // Presensi
+    earnings.push({ label: 'Presensi', amount: 0 });
+
+    // Bonus Presensi
+    earnings.push({ label: 'Bonus Presensi', amount: 0 });
+
+    // Piket
+    earnings.push({ label: 'Piket', amount: 0 });
+
+    // Lembur
+    earnings.push({ label: 'Lembur', amount: 0 });
+
+    // Struktural
+    const structuralRole = emp.employment_profile?.department_unit || emp.employment_profile?.job_role || 'Struktural';
+    earnings.push({ label: `Struktural: ${structuralRole}`, amount: 0 });
+
+    // Vakasi Tambahan - show each event worked
+    if (vakasiTambahanList && vakasiTambahanList.length > 0) {
+      vakasiTambahanList.forEach((item) => {
+        earnings.push({ label: item.eventName, amount: item.payGiven });
+      });
+    } else if (vakasiTambahanSum && vakasiTambahanSum > 0) {
+      earnings.push({ label: 'Vakasi Tambahan', amount: vakasiTambahanSum });
+    }
   } else {
     const jobCategory = emp.employment?.jobCategory || '';
     const columns = REKAP_COLUMNS[jobCategory];
@@ -153,9 +200,16 @@ function buildInitialDeductions(emp: any, activeTab?: string): PaySlipField[] {
 
   if (activeTab === 'loyalis') {
     // White Collar / Loyalis deductions
+    deductions.push({ label: 'Koperasi Rochmad', amount: 0 });
     deductions.push({ label: 'BPJS', amount: 0 });
-    deductions.push({ label: 'Kop. Rochmad', amount: 0 });
+    deductions.push({ label: 'THT', amount: 0 });
+    deductions.push({ label: 'Tabungan', amount: 0 });
+    deductions.push({ label: 'ZIZ', amount: 0 });
+    deductions.push({ label: 'Revisi Gaji', amount: 0 });
+    deductions.push({ label: 'Pinlu/Tagihan', amount: 0 });
     deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+    deductions.push({ label: 'Potongan Presensi', amount: 0 });
+    deductions.push({ label: 'Potongan Bonus Presensi', amount: 0 });
   } else {
     // BPJS deduction
     if (emp.bpjs?.deductionAmount) {
@@ -190,6 +244,8 @@ export default function PaySlipDialog({
   uraianEntry,
   activeTab = 'blue',
   vakasiTambahanSum,
+  vakasiTambahanList = [],
+  tunjanganFungsional,
 }: PaySlipDialogProps) {
   const [earnings, setEarnings] = useState<PaySlipField[]>([]);
   const [deductions, setDeductions] = useState<PaySlipField[]>([]);
@@ -199,13 +255,13 @@ export default function PaySlipDialog({
     if (!open || !employee) return;
 
     if (mode === 'create') {
-      setEarnings(buildInitialEarnings(employee, gapok, activeTab, uraianEntry, vakasiTambahanSum));
+      setEarnings(buildInitialEarnings(employee, gapok, activeTab, uraianEntry, vakasiTambahanSum, vakasiTambahanList, tunjanganFungsional));
       setDeductions(buildInitialDeductions(employee, activeTab));
     } else if (mode === 'review' && slipState) {
       setEarnings([...slipState.earnings]);
       setDeductions([...slipState.deductions]);
     }
-  }, [open, employee, mode, gapok, slipState, activeTab]);
+  }, [open, employee, mode, gapok, slipState, activeTab, vakasiTambahanSum, vakasiTambahanList, uraianEntry, tunjanganFungsional]);
 
   // ─── Field Mutators ───────────────────────────────────────────
 
@@ -255,6 +311,10 @@ export default function PaySlipDialog({
         : `VAKASI ${employee.employment?.jobCategory || ''}`,
       earnings,
       deductions,
+      isLoyalis: activeTab === 'loyalis',
+      niy: activeTab === 'loyalis' ? employee.personal_info?.employee_id_niy || '' : '',
+      npwp: activeTab === 'loyalis' ? employee.personal_info?.tax_id_npwp || '' : '',
+      familyMetrics: activeTab === 'loyalis' ? employee.family_allowance_metrics : undefined,
     };
 
     generatePaySlipPdf(slipData);
@@ -283,6 +343,10 @@ export default function PaySlipDialog({
         : `VAKASI ${employee.employment?.jobCategory || ''}`,
       earnings,
       deductions,
+      isLoyalis: activeTab === 'loyalis',
+      niy: activeTab === 'loyalis' ? employee.personal_info?.employee_id_niy || '' : '',
+      npwp: activeTab === 'loyalis' ? employee.personal_info?.tax_id_npwp || '' : '',
+      familyMetrics: activeTab === 'loyalis' ? employee.family_allowance_metrics : undefined,
     };
 
     generatePaySlipPdf(slipData);

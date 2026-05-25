@@ -96,6 +96,16 @@ service cloud.firestore {
       }
     }
 
+    // 4c. Salary Matrix — Functional (Workload and education allowance configuration)
+    match /SalaryMatrix_Functional/{version} {
+      // Only Super Admins can read or write the functional salary configuration
+      allow read, write: if isSuperAdmin();
+      
+      match /rows/{rowId} {
+        allow read, write: if isSuperAdmin();
+      }
+    }
+
     // 5. Uraian Gaji (Attendance and Presensi Rekap Entries)
     match /UraianGaji/{docId} {
       // Standard users can only read presensi rekap for their assigned SatKers

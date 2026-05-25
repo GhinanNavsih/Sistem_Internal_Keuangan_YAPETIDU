@@ -196,7 +196,7 @@ export default function UraianPage() {
         updatedAt: serverTimestamp(),
       };
 
-      await setDoc(doc(db, 'VakasiTambahan', documentId), payload, { merge: true });
+      await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
       setMessage({ type: 'success', text: `Event "${eventName}" berhasil disimpan.` });
 
       setSelectedEventId(null);
@@ -240,6 +240,47 @@ export default function UraianPage() {
         nextInput.focus();
       }
     }, 50);
+  };
+
+  // Autosave Handler
+  const handleAutosave = async (currentRows = workerRows, currentEventName = eventName, activeId = selectedEventId) => {
+    if (!currentEventName.trim()) return;
+    const activeWorkers = currentRows.filter(w => w.employeeId);
+    const ids = activeWorkers.map(w => w.employeeId);
+    if (new Set(ids).size !== ids.length) return;
+
+    try {
+      const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+      const eventSeg = sanitizeEventId(currentEventName);
+      const documentId = activeId || `${periodToken}_${eventSeg}`;
+
+      let totalPayout = 0;
+      const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
+
+      activeWorkers.forEach(w => {
+        workersMap[w.employeeId] = {
+          employeeName: w.employeeName,
+          payGiven: w.payGiven,
+        };
+        totalPayout += w.payGiven;
+      });
+
+      const payload = {
+        eventName: currentEventName,
+        period: periodToken,
+        totalPayout,
+        eventWorkers: workersMap,
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
+      if (!activeId) {
+        setSelectedEventId(documentId);
+      }
+      fetchEvents();
+    } catch (err) {
+      console.error('Autosave error:', err);
+    }
   };
 
   const [imageStats, setImageStats] = useState<{ w: number, h: number, size: number, type: string } | null>(null);
@@ -1025,13 +1066,32 @@ export default function UraianPage() {
                   <div className="py-12 flex justify-center text-slate-400">
                     <Loader2 className="w-6 h-6 animate-spin" />
                   </div>
-                ) : existingEvents.length === 0 ? (
+                ) : existingEvents.length === 0 && selectedEventId !== null ? (
                   <div className="py-12 text-center text-slate-400 text-xs font-semibold">
                     <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     Belum ada kegiatan terdaftar di periode ini.
                   </div>
                 ) : (
                   <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                    {/* Empty / Draft Kegiatan Card */}
+                    {!selectedEventId && (
+                      <div
+                        className="p-4 rounded-2xl border bg-indigo-50/30 border-indigo-200 shadow-sm border-dashed animate-in fade-in"
+                      >
+                        <p className="font-bold text-indigo-600 text-sm line-clamp-1 italic">
+                          {eventName.trim() !== '' ? eventName : 'Kegiatan Baru (Tanpa Nama)'}
+                        </p>
+                        <div className="flex items-center justify-between mt-3">
+                          <span className="text-[10px] text-indigo-400 font-bold bg-indigo-50/50 px-2 py-0.5 rounded border border-indigo-100">
+                            {workerRows.filter(r => r.employeeId).length} Orang
+                          </span>
+                          <span className="text-xs font-bold text-indigo-600">
+                            {fmtRp(workerRows.reduce((sum, r) => sum + (r.payGiven || 0), 0))}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     {existingEvents.map(evt => {
                       const isActive = selectedEventId === evt.id;
                       return (
@@ -1103,6 +1163,9 @@ export default function UraianPage() {
                   placeholder="Contoh: Vakasi Kepanitiaan Kerja Praktek 2025/26"
                   value={eventName}
                   onChange={(e) => setEventName(e.target.value)}
+                  onBlur={() => {
+                    handleAutosave(workerRows, eventName, selectedEventId);
+                  }}
                   className="rounded-xl border-slate-200 font-bold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-11"
                 />
               </div>
@@ -1164,6 +1227,9 @@ export default function UraianPage() {
                                 searchText: emp.name,
                                 showDropdown: false,
                               };
+                              if (copy[index].employeeId && copy[index].payGiven > 0) {
+                                handleAutosave(copy, eventName, selectedEventId);
+                              }
                               return copy;
                             });
                             setTimeout(() => {
@@ -1208,9 +1274,15 @@ export default function UraianPage() {
                                       }, 200);
                                     }}
                                     onKeyDown={(e) => {
-                                      const filtered = loyalisEmployees.filter(emp =>
-                                        emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
-                                      );
+                                      const otherSelectedIds = workerRows
+                                        .filter((_, i) => i !== rowIdx)
+                                        .map(w => w.employeeId)
+                                        .filter(Boolean);
+                                      const filtered = loyalisEmployees
+                                        .filter(emp => !otherSelectedIds.includes(emp.id))
+                                        .filter(emp =>
+                                          emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
+                                        );
                                       if (row.showDropdown && filtered.length > 0) {
                                         if (e.key === 'ArrowDown') {
                                           e.preventDefault();
@@ -1231,9 +1303,22 @@ export default function UraianPage() {
                                   />
                                   {row.showDropdown && (
                                     <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
-                                      {loyalisEmployees
-                                        .filter(emp => emp.name.toLowerCase().includes((row.searchText || '').toLowerCase()))
-                                        .map((emp, empIdx) => {
+                                      {(() => {
+                                        const otherSelectedIds = workerRows
+                                          .filter((_, i) => i !== rowIdx)
+                                          .map(w => w.employeeId)
+                                          .filter(Boolean);
+                                        const filtered = loyalisEmployees
+                                          .filter(emp => !otherSelectedIds.includes(emp.id))
+                                          .filter(emp =>
+                                            emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
+                                          );
+                                        
+                                        if (filtered.length === 0) {
+                                          return <div className="p-4 text-center text-slate-400 text-xs font-semibold">Pegawai tidak ditemukan</div>;
+                                        }
+
+                                        return filtered.map((emp, empIdx) => {
                                           const isActive = empIdx === activeSuggestionIndex;
                                           return (
                                             <div
@@ -1249,10 +1334,8 @@ export default function UraianPage() {
                                               <p className={`text-[10px] font-mono mt-0.5 ${isActive ? 'text-indigo-400' : 'text-slate-400'}`}>{emp.role} · {emp.id}</p>
                                             </div>
                                           );
-                                        })}
-                                      {loyalisEmployees.filter(emp => emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())).length === 0 && (
-                                        <div className="p-4 text-center text-slate-400 text-xs font-semibold">Pegawai tidak ditemukan</div>
-                                      )}
+                                        });
+                                      })()}
                                     </div>
                                   )}
                                 </div>
@@ -1277,9 +1360,17 @@ export default function UraianPage() {
                                       return copy;
                                     });
                                   }}
+                                  onBlur={() => {
+                                    if (row.employeeId && row.payGiven > 0) {
+                                      handleAutosave(workerRows, eventName, selectedEventId);
+                                    }
+                                  }}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                       e.preventDefault();
+                                      if (row.employeeId && row.payGiven > 0) {
+                                        handleAutosave(workerRows, eventName, selectedEventId);
+                                      }
                                       handleAddRow();
                                     }
                                   }}
@@ -1296,7 +1387,13 @@ export default function UraianPage() {
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  onClick={() => setWorkerRows(prev => prev.filter((_, i) => i !== rowIdx))}
+                                  onClick={() => {
+                                    setWorkerRows(prev => {
+                                      const copy = prev.filter((_, i) => i !== rowIdx);
+                                      handleAutosave(copy, eventName, selectedEventId);
+                                      return copy;
+                                    });
+                                  }}
                                   className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl h-8 w-8"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />

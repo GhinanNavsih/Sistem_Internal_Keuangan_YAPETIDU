@@ -33,6 +33,13 @@ interface SalaryRow {
   salaries: Record<string, number>;
 }
 
+interface FunctionalRow {
+  id: string;
+  education_level: string;
+  base_value: number;
+  functional_tiers: Record<string, number>;
+}
+
 export default function SalaryMasterPage() {
   const [rows, setRows] = useState<SalaryRow[]>([]);
   const [gradeCodes, setGradeCodes] = useState<string[]>([]);
@@ -41,17 +48,20 @@ export default function SalaryMasterPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   
-  const [selectedTab, setSelectedTab] = useState<'blue_collar' | 'white_collar'>('blue_collar');
+  const [selectedTab, setSelectedTab] = useState<'blue_collar' | 'white_collar' | 'functional'>('blue_collar');
   const [whiteCollarRows, setWhiteCollarRows] = useState<SalaryRow[]>([]);
   const [whiteCollarGrades, setWhiteCollarGrades] = useState<string[]>([]);
   const [whiteCollarVersion, setWhiteCollarVersion] = useState<string>('');
+
+  const [functionalRows, setFunctionalRows] = useState<FunctionalRow[]>([]);
+  const [functionalVersion, setFunctionalVersion] = useState<string>('');
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         
-        // 1. Get Active Version
+        // 1. Get Active Version for Blue Collar
         const rootRef = doc(db, 'SalaryMatrix', '_config');
         const rootSnap = await getDoc(rootRef);
         
@@ -67,14 +77,12 @@ export default function SalaryMasterPage() {
           setGradeCodes(metaDoc.data().metadata?.gradeCodes || []);
         }
 
-        // 3. Fetch Salary Rows
+        // 3. Fetch Salary Rows for Blue Collar
         const rowsSnapshot = await getDocs(collection(db, 'SalaryMatrix', version, 'rows'));
         const rowsList = rowsSnapshot.docs.map(docSnapshot => ({
           id: docSnapshot.id,
           ...docSnapshot.data()
         })) as SalaryRow[];
-        
-        // Sort by year
         setRows(rowsList.sort((a, b) => a.tahun - b.tahun));
 
         // 4. Fetch White Collar Salary Matrix from Firestore
@@ -97,6 +105,22 @@ export default function SalaryMasterPage() {
           ...docSnapshot.data()
         })) as SalaryRow[];
         setWhiteCollarRows(wcRowsList.sort((a, b) => a.tahun - b.tahun));
+
+        // 5. Fetch Functional Salary Matrix from Firestore
+        const funcConfigRef = doc(db, 'SalaryMatrix_Functional', '_config');
+        const funcConfigSnap = await getDoc(funcConfigRef);
+        let funcVersion = '2026_v1';
+        if (funcConfigSnap.exists() && funcConfigSnap.data().activeVersion) {
+          funcVersion = funcConfigSnap.data().activeVersion;
+        }
+        setFunctionalVersion(funcVersion);
+
+        const funcRowsSnapshot = await getDocs(collection(db, 'SalaryMatrix_Functional', funcVersion, 'rows'));
+        const funcRowsList = funcRowsSnapshot.docs.map(docSnapshot => ({
+          id: docSnapshot.id,
+          ...docSnapshot.data()
+        })) as FunctionalRow[];
+        setFunctionalRows(funcRowsList.sort((a, b) => a.education_level.localeCompare(b.education_level)));
       } catch (error) {
         console.error("Error fetching salary matrix:", error);
       } finally {
@@ -122,7 +146,7 @@ export default function SalaryMasterPage() {
         }
         return row;
       }));
-    } else {
+    } else if (selectedTab === 'blue_collar') {
       setRows(prev => prev.map(row => {
         if (row.tahun === tahun) {
           return {
@@ -136,6 +160,26 @@ export default function SalaryMasterPage() {
         return row;
       }));
     }
+  };
+
+  const handleFunctionalChange = (id: string, field: 'base' | string, value: string) => {
+    const numValue = parseInt(value.replace(/[^0-9]/g, '')) || 0;
+    setFunctionalRows(prev => prev.map(row => {
+      if (row.id === id) {
+        if (field === 'base') {
+          return { ...row, base_value: numValue };
+        } else {
+          return {
+            ...row,
+            functional_tiers: {
+              ...row.functional_tiers,
+              [field]: numValue
+            }
+          };
+        }
+      }
+      return row;
+    }));
   };
 
   const saveChanges = async () => {
@@ -157,7 +201,7 @@ export default function SalaryMasterPage() {
         batch.update(metaRef, {
           'metadata.updatedAt': serverTimestamp(),
         });
-      } else {
+      } else if (selectedTab === 'blue_collar') {
         // Save blue collar rows
         rows.forEach(row => {
           const rowRef = doc(db, 'SalaryMatrix', activeVersion, 'rows', row.id);
@@ -167,6 +211,20 @@ export default function SalaryMasterPage() {
           });
         });
         const metaRef = doc(db, 'SalaryMatrix', activeVersion);
+        batch.update(metaRef, {
+          'metadata.updatedAt': serverTimestamp(),
+        });
+      } else if (selectedTab === 'functional') {
+        // Save functional allowance rows
+        functionalRows.forEach(row => {
+          const rowRef = doc(db, 'SalaryMatrix_Functional', functionalVersion, 'rows', row.id);
+          batch.update(rowRef, {
+            base_value: row.base_value,
+            functional_tiers: row.functional_tiers,
+            updatedAt: serverTimestamp()
+          });
+        });
+        const metaRef = doc(db, 'SalaryMatrix_Functional', functionalVersion);
         batch.update(metaRef, {
           'metadata.updatedAt': serverTimestamp(),
         });
@@ -201,7 +259,7 @@ export default function SalaryMasterPage() {
                 <FileSpreadsheet className="w-6 h-6 text-indigo-500" />
                 Master Data Gaji Pokok
               </h1>
-              <p className="text-slate-500 text-sm">Kelola matriks gaji berdasarkan golongan dan masa kerja</p>
+              <p className="text-slate-500 text-sm">Kelola matriks gaji berdasarkan golongan, masa kerja, dan tunjangan fungsional</p>
             </div>
           </div>
 
@@ -210,7 +268,7 @@ export default function SalaryMasterPage() {
               <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium animate-in fade-in slide-in-from-top-2 ${
                 message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
               }`}>
-                {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4 text-red-500" />}
                 {message.text}
               </div>
             )}
@@ -229,8 +287,8 @@ export default function SalaryMasterPage() {
         </div>
 
         {/* Segment Tabs Control */}
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
-          <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200/40 shadow-inner w-fit">
+        <div className="flex flex-col xl:flex-row xl:justify-between xl:items-center gap-4 mb-6">
+          <div className="flex flex-wrap bg-slate-100 p-1 rounded-2xl border border-slate-200/40 shadow-inner w-fit gap-1">
             <button
               onClick={() => setSelectedTab('blue_collar')}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
@@ -253,20 +311,99 @@ export default function SalaryMasterPage() {
               <Users className="w-4 h-4" />
               Pegawai Kantor (White Collar)
             </button>
+            <button
+              onClick={() => setSelectedTab('functional')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                selectedTab === 'functional'
+                  ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/20'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Tunjangan Fungsional (Staf)
+            </button>
           </div>
 
-          {(selectedTab === 'blue_collar' ? activeVersion : whiteCollarVersion) && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs sm:text-sm font-medium w-fit sm:w-auto">
-              Versi Aktif: {selectedTab === 'blue_collar' ? activeVersion : whiteCollarVersion}
-            </div>
-          )}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs sm:text-sm font-medium w-fit">
+            Versi Aktif: {selectedTab === 'blue_collar' ? activeVersion : selectedTab === 'white_collar' ? whiteCollarVersion : functionalVersion}
+          </div>
         </div>
-
-
 
         {/* Main Content */}
         <Card className="bg-white rounded-[24px] shadow-[0_8px_40px_-12px_rgba(0,0,0,0.1)] border-none overflow-hidden border border-slate-100">
           {(() => {
+            if (selectedTab === 'functional') {
+              return (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-slate-50/50 sticky top-0 z-10 backdrop-blur-sm">
+                      <TableRow className="border-slate-100">
+                        <TableHead rowSpan={2} className="w-56 font-semibold text-slate-900 bg-slate-50/80 pl-8 align-middle border-r border-slate-100 text-left min-w-[200px]">
+                          Tingkat Pendidikan
+                        </TableHead>
+                        <TableHead rowSpan={2} className="w-28 font-semibold text-slate-900 bg-slate-50/80 align-middle border-r border-slate-100 text-center min-w-[120px]">
+                          Base Value
+                        </TableHead>
+                        <TableHead colSpan={16} className="font-bold text-center text-indigo-900 bg-indigo-50 border-b border-slate-200 py-2.5 text-xs uppercase tracking-wider">
+                          Kewajiban Jam Mengajar / Beban Kerja (Pelayanan)
+                        </TableHead>
+                      </TableRow>
+                      <TableRow className="border-slate-100">
+                        {Array.from({ length: 16 }, (_, idx) => idx + 1).map((idx) => (
+                          <TableHead key={idx} className="min-w-[100px] font-bold text-center text-slate-600 bg-slate-50/80 py-2 text-xs border-b border-slate-100">
+                            Beban {idx}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {loading ? (
+                        <TableRow>
+                          <TableCell colSpan={18} className="h-64 text-center">
+                            <div className="flex flex-col items-center gap-3 text-slate-400">
+                              <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                              <p className="animate-pulse">Memuat matriks fungsional...</p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : functionalRows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={18} className="h-64 text-center text-slate-400">
+                            <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                            Tidak ada data fungsional untuk ditampilkan.
+                          </TableCell>
+                        </TableRow>
+                      ) : functionalRows.map((row) => (
+                        <TableRow key={row.id} className="hover:bg-slate-50/30 transition-colors border-slate-50">
+                          <TableCell className="font-bold text-slate-700 pl-8 text-left border-r border-slate-100 bg-slate-50/10 min-w-[200px]" title={row.education_level}>
+                            {row.education_level}
+                          </TableCell>
+                          <TableCell className="p-2 border-r border-slate-100 min-w-[120px]">
+                            <Input
+                              type="text"
+                              value={row.base_value?.toLocaleString('id-ID') || '0'}
+                              onChange={(e) => handleFunctionalChange(row.id, 'base', e.target.value)}
+                              className="text-center font-medium h-9 border-slate-100 focus:border-indigo-300 focus:ring-indigo-100 rounded-lg transition-all"
+                            />
+                          </TableCell>
+                          {Array.from({ length: 16 }, (_, idx) => String(idx + 1)).map((tierCode) => (
+                            <TableCell key={tierCode} className="p-2 min-w-[100px]">
+                              <Input
+                                type="text"
+                                value={row.functional_tiers[tierCode]?.toLocaleString('id-ID') || '0'}
+                                onChange={(e) => handleFunctionalChange(row.id, tierCode, e.target.value)}
+                                className="text-center font-medium h-9 border-slate-100 focus:border-indigo-300 focus:ring-indigo-100 rounded-lg transition-all"
+                              />
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              );
+            }
+
             const activeGrades = selectedTab === 'white_collar' ? whiteCollarGrades : gradeCodes;
             const activeRows = selectedTab === 'white_collar' ? whiteCollarRows : rows;
             return (

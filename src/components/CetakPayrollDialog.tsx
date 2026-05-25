@@ -35,6 +35,7 @@ interface CetakPayrollDialogProps {
   periodName: string;
   onPrintPdf: () => void;
   vakasiTambahanMap?: Record<string, number>;
+  functionalAllowanceMap?: Record<string, number>;
 }
 
 export default function CetakPayrollDialog({
@@ -47,6 +48,7 @@ export default function CetakPayrollDialog({
   periodName,
   onPrintPdf,
   vakasiTambahanMap,
+  functionalAllowanceMap,
 }: CetakPayrollDialogProps) {
 
   const handleExportXlsx = () => {
@@ -68,7 +70,8 @@ export default function CetakPayrollDialog({
       const uraianEntry = uraianDoc?.entries?.[emp.id];
       const vakasiSum = vakasiTambahanMap?.[emp.id] ?? 0;
       
-      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiSum);
+      const fAllowance = functionalAllowanceMap?.[emp.id] ?? 0;
+      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance);
       const totalDeductions = calculateTotalDeductions(emp.raw);
       const netSalary = calculateNetSalary(earnings, totalDeductions);
 
