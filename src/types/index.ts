@@ -4,6 +4,8 @@ export interface BlueCollarEmployee {
   employeeId: string;        // e.g. "BC_001"
   nik: string | null;        // National ID (NIK)
   name: string;
+  phoneNumber?: string;
+  email?: string;
   collarType: 'blue_collar';
   employment: {
     status: 'active' | 'inactive';
@@ -83,6 +85,8 @@ export interface Employee {
   gradeLevel: string;
   joinDate: Date;
   isActive: boolean;
+  phoneNumber?: string;
+  email?: string;
 }
 
 // ─── Rekap Presensi / Uraian Gaji ────────────────────────────────────────────

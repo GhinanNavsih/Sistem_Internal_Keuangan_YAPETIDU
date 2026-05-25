@@ -24,7 +24,7 @@ export interface PaySlipData {
   };
 }
 
-export function generatePaySlipPdf(data: PaySlipData): void {
+export function generatePaySlipPdf(data: PaySlipData, saveToFile = true): jsPDF {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -693,5 +693,8 @@ export function generatePaySlipPdf(data: PaySlipData): void {
 
   // ─── Save ────────────────────────────────────────────────────
   const filename = `Slip_Gaji_${data.employeeName.replace(/\s+/g, '_')}.pdf`;
-  doc.save(filename);
+  if (saveToFile) {
+    doc.save(filename);
+  }
+  return doc;
 }

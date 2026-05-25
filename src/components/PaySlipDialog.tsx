@@ -20,7 +20,10 @@ import {
   Trash2,
   ArrowRight,
   AlertCircle,
+  MessageCircle,
+  Loader2,
 } from 'lucide-react';
+import { generateWhatsAppPaySlipUrl, uploadPaySlipPdf } from '@/utils/whatsappHelper';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
 import { BlueCollarEmployee, UraianEntry } from '@/types';
 import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
@@ -249,6 +252,7 @@ export default function PaySlipDialog({
 }: PaySlipDialogProps) {
   const [earnings, setEarnings] = useState<PaySlipField[]>([]);
   const [deductions, setDeductions] = useState<PaySlipField[]>([]);
+  const [uploadingWa, setUploadingWa] = useState(false);
 
   // Initialize fields when dialog opens
   useEffect(() => {
@@ -360,6 +364,68 @@ export default function PaySlipDialog({
 
     onSlipGenerated(employee.employeeId || employee.id, newState);
     onOpenChange(false);
+  };
+
+  const handleSendWhatsApp = async () => {
+    if (!employee) return;
+    
+    const phone = employee.phoneNumber || '';
+    if (!phone) {
+      alert(`Karyawan "${activeTab === 'loyalis' ? (employee.personal_info?.name || '') : employee.name}" tidak memiliki nomor WhatsApp/telepon yang terdaftar.`);
+      return;
+    }
+
+    setUploadingWa(true);
+
+    try {
+      const name = activeTab === 'loyalis' ? (employee.personal_info?.name || '') : employee.name;
+      const slipData: PaySlipData = {
+        employeeName: name,
+        employeeNo: employeeNo,
+        period: period.toUpperCase(),
+        jobCategory: activeTab === 'loyalis'
+          ? `STAF ${employee.employment_profile?.job_role || ''}`
+          : `VAKASI ${employee.employment?.jobCategory || ''}`,
+        earnings,
+        deductions,
+        isLoyalis: activeTab === 'loyalis',
+        niy: activeTab === 'loyalis' ? employee.personal_info?.employee_id_niy || '' : '',
+        npwp: activeTab === 'loyalis' ? employee.personal_info?.tax_id_npwp || '' : '',
+        familyMetrics: activeTab === 'loyalis' ? employee.family_allowance_metrics : undefined,
+      };
+
+      let pdfUrl: string | undefined = undefined;
+      try {
+        // 1. Upload PDF and get download URL
+        pdfUrl = await uploadPaySlipPdf(slipData);
+      } catch (uploadErr) {
+        console.error('Failed to upload payslip PDF to storage:', uploadErr);
+        const confirmSendWithoutPdf = window.confirm(
+          'Gagal mengunggah file PDF slip gaji ke cloud (kemungkinan kendala billing/jaringan Firebase Storage).\n\nApakah Anda ingin tetap mengirimkan rincian slip gaji via WhatsApp tanpa link file PDF?'
+        );
+        if (!confirmSendWithoutPdf) {
+          return;
+        }
+      }
+
+      // 2. Generate WhatsApp prefilled URL (with or without PDF link)
+      const waUrl = generateWhatsAppPaySlipUrl(
+        phone,
+        name,
+        period,
+        earnings,
+        deductions,
+        netSalary,
+        pdfUrl
+      );
+
+      window.open(waUrl, '_blank');
+    } catch (err) {
+      console.error('Failed to process WhatsApp payslip:', err);
+      alert('Terjadi kesalahan saat memproses slip gaji.');
+    } finally {
+      setUploadingWa(false);
+    }
   };
 
   if (!employee) return null;
@@ -563,14 +629,35 @@ export default function PaySlipDialog({
               Konfirmasi Cetak
             </Button>
           ) : (
-            <Button
-              type="button"
-              onClick={handleSaveReview}
-              className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 shadow-md shadow-indigo-200 px-6"
-            >
-              <Printer className="w-4 h-4 mr-2" />
-              Simpan & Cetak Ulang
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                onClick={handleSendWhatsApp}
+                disabled={uploadingWa}
+                className="rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 shadow-md shadow-emerald-200 px-6 cursor-pointer"
+              >
+                {uploadingWa ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Mengunggah...
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Kirim WhatsApp
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSaveReview}
+                disabled={uploadingWa}
+                className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 shadow-md shadow-indigo-200 px-6"
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Simpan & Cetak Ulang
+              </Button>
+            </div>
           )}
         </DialogFooter>
       </DialogContent>

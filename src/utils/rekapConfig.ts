@@ -9,6 +9,7 @@ export const RATE_BONUS_MUTLAK = 50_000;
 export const RATE_BONUS_BULANAN = 17_500;
 export const RATE_BONUS_PRESENSI_BULANAN = 100_000;
 export const RATE_BONUS_PRESENSI_TRIWULANAN = 300_000;
+export const RATE_PIKET = 15_000;
 
 // ─── Column configs per job category ────────────────────────────────────────
 // Each category can have a different set of columns.
@@ -46,7 +47,8 @@ export const REKAP_COLUMNS: Record<string, RekapColumn[]> = {
     { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
     { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
     { key: 'bonusMutlak',        label: 'Bonus Mutlak',           type: 'count',    multiplier: RATE_BONUS_MUTLAK,   slipLabel: 'Bonus Mutlak' },
-    { key: 'piket',              label: 'Piket',                  type: 'currency',                                  slipLabel: 'Piket' },
+    { key: 'piket',              label: 'Piket',                  type: 'count',    multiplier: RATE_PIKET,          slipLabel: 'Piket' },
+    { key: 'praktek',            label: 'Praktek',                type: 'currency',                                  slipLabel: 'Praktek' },
     { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
     { key: 'tunjangan',          label: 'Tunjangan',              type: 'currency',                                  slipLabel: 'Tunjangan' },
   ],

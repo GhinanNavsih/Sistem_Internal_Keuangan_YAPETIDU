@@ -51,6 +51,7 @@ import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianE
 import PaySlipDialog, { SlipState } from '@/components/PaySlipDialog';
 import LegalitasPimpinanDialog from '@/components/LegalitasPimpinanDialog';
 import CetakPayrollDialog from '@/components/CetakPayrollDialog';
+import { generateWhatsAppPaySlipUrl, uploadPaySlipPdf } from '@/utils/whatsappHelper';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { generateRekapGajiPekaryaPdf, RekapGajiPekaryaData, RekapCategoryData } from '@/utils/generateRekapGajiPekaryaPdf';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
@@ -100,6 +101,7 @@ export default function PayrollValidationDashboard() {
   const [targetDate] = useState(new Date('2026-05-01'));
   const [activeTab, setActiveTab] = useState('Tagihan');
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
+  const [uploadingWa, setUploadingWa] = useState<Record<string, boolean>>({});
   const [salaryMatrix, setSalaryMatrix] = useState<SalaryMatrix>({});
   const [loading, setLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' | null }>({ key: '', direction: null });
@@ -365,6 +367,8 @@ export default function PayrollValidationDashboard() {
               gradeLevel: isLoyalis ? (data.academic_and_tier?.level_code || '') : (data.salaryProfile?.salaryGradeCode || ''),
               joinDate: joinDateVal,
               isActive: isLoyalis ? (data.personal_info?.status === 'AKTIF') : (data.flags?.isActive ?? true),
+              phoneNumber: isLoyalis ? (data.personal_info?.phone || '') : (data.phoneNumber || ''),
+              email: isLoyalis ? (data.personal_info?.email || '') : (data.email || ''),
               raw: { ...data, employeeId: docSnap.id },
               rowIndex: index++,
             };
@@ -507,6 +511,70 @@ export default function PayrollValidationDashboard() {
     setSelectedEmployee(emp);
     setDialogMode('review');
     setDialogOpen(true);
+  };
+
+  const handleSendWhatsApp = async (emp: EmployeeRow, slip: any) => {
+    const phone = emp.phoneNumber || emp.raw.phoneNumber || '';
+    if (!phone) {
+      alert(`Karyawan "${emp.name}" tidak memiliki nomor WhatsApp/telepon yang terdaftar.`);
+      return;
+    }
+
+    setUploadingWa(prev => ({ ...prev, [emp.id]: true }));
+
+    try {
+      const isLoyalis = payrollCollar === 'loyalis';
+      const slipData = {
+        employeeName: isLoyalis ? (emp.raw.personal_info?.name || '') : emp.name,
+        employeeNo: emp.rowIndex,
+        period: payrollPeriod.toUpperCase(),
+        jobCategory: isLoyalis
+          ? `STAF ${emp.raw.employment_profile?.job_role || ''}`
+          : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
+        earnings: slip.earnings,
+        deductions: slip.deductions,
+        isLoyalis: isLoyalis,
+        niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
+        npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
+        familyMetrics: isLoyalis ? emp.raw.family_allowance_metrics : undefined,
+      };
+
+      let pdfUrl: string | undefined = undefined;
+      try {
+        // 1. Upload PDF and get download URL (false = don't trigger browser save)
+        pdfUrl = await uploadPaySlipPdf(slipData);
+      } catch (uploadErr) {
+        console.error('Failed to upload payslip PDF to storage:', uploadErr);
+        const confirmSendWithoutPdf = window.confirm(
+          'Gagal mengunggah file PDF slip gaji ke cloud (kemungkinan kendala billing/jaringan Firebase Storage).\n\nApakah Anda ingin tetap mengirimkan rincian slip gaji via WhatsApp tanpa link file PDF?'
+        );
+        if (!confirmSendWithoutPdf) {
+          return;
+        }
+      }
+
+      // 2. Generate WhatsApp prefilled message with PDF URL included (or undefined if failed)
+      const totalEarnings = slip.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
+      const totalDeductions = slip.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
+      const netSalary = totalEarnings - totalDeductions;
+
+      const waUrl = generateWhatsAppPaySlipUrl(
+        phone,
+        emp.name,
+        payrollPeriod,
+        slip.earnings,
+        slip.deductions,
+        netSalary,
+        pdfUrl
+      );
+
+      window.open(waUrl, '_blank');
+    } catch (err) {
+      console.error('Failed to process WhatsApp payslip:', err);
+      alert('Terjadi kesalahan saat memproses slip gaji.');
+    } finally {
+      setUploadingWa(prev => ({ ...prev, [emp.id]: false }));
+    }
   };
 
   const handleSlipGenerated = (employeeId: string, state: SlipState) => {
@@ -873,16 +941,60 @@ export default function PayrollValidationDashboard() {
                                   <CircleCheck className="w-3.5 h-3.5" />
                                   Konfirmasi
                                 </button>
+                                <button
+                                  onClick={() => handleSendWhatsApp(emp, slip)}
+                                  disabled={uploadingWa[emp.id]}
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
+                                    bg-emerald-50 text-emerald-600 border border-emerald-200
+                                    hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-sm
+                                    transition-all duration-150 cursor-pointer ${uploadingWa[emp.id] ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                  title="Kirim slip gaji via WhatsApp"
+                                >
+                                  {uploadingWa[emp.id] ? (
+                                    <>
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      Mengunggah...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <MessageCircle className="w-3.5 h-3.5 fill-emerald-600/10" />
+                                      Kirim WA
+                                    </>
+                                  )}
+                                </button>
                               </>
                             )}
 
                             {/* ─── Stage 3: Confirmed ──────────────── */}
                             {slip && slip.status === 'confirmed' && (
-                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
-                                bg-emerald-100 text-emerald-700 border border-emerald-200">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                Lunas
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
+                                  bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  Lunas
+                                </span>
+                                <button
+                                  onClick={() => handleSendWhatsApp(emp, slip)}
+                                  disabled={uploadingWa[emp.id]}
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
+                                    bg-emerald-50 text-emerald-600 border border-emerald-200
+                                    hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-sm
+                                    transition-all duration-150 cursor-pointer ${uploadingWa[emp.id] ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                  title="Kirim slip gaji via WhatsApp"
+                                >
+                                  {uploadingWa[emp.id] ? (
+                                    <>
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      Mengunggah...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <MessageCircle className="w-3.5 h-3.5 fill-emerald-600/10" />
+                                      Kirim WA
+                                    </>
+                                  )}
+                                </button>
+                              </div>
                             )}
                           </div>
                         </TableCell>

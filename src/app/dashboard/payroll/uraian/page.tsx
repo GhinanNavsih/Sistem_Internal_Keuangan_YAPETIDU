@@ -374,7 +374,7 @@ export default function UraianPage() {
             const rawValues = { ...entry.values };
             const empCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
             empCols.forEach(col => {
-              const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan'].includes(col.key);
+              const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'].includes(col.key);
               if (isDualMap && col.multiplier) {
                 if (entry.counts?.[col.key] !== undefined) rawValues[col.key] = entry.counts[col.key];
                 else if (rawValues[col.key] && rawValues[col.key] > 31) rawValues[col.key] = Math.round(rawValues[col.key] / col.multiplier);
@@ -597,7 +597,7 @@ export default function UraianPage() {
       const empCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
       empCols.forEach(col => {
         const rawVal = storedValues[col.key]; if (rawVal === undefined || rawVal === null) return;
-        const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan'].includes(col.key);
+        const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'].includes(col.key);
         if (isDualMap && col.multiplier) {
           if (rawVal > 31) { storedCounts[col.key] = Math.round(rawVal / col.multiplier); storedValues[col.key] = rawVal; }
           else { storedCounts[col.key] = rawVal; storedValues[col.key] = rawVal * col.multiplier; }
@@ -634,7 +634,7 @@ export default function UraianPage() {
     'Rp\u00a0' + Math.round(n).toLocaleString('id-ID');
 
   // Build the per-employee summary rows for the confirmation modal
-  const DUAL_MAP_KEYS = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan'] as const;
+  const DUAL_MAP_KEYS = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'] as const;
 
   const buildConfirmRows = () => {
     if (!category) return [];
@@ -670,7 +670,7 @@ export default function UraianPage() {
       const empCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
       empCols.forEach(col => {
         const rawVal = computedValues[col.key]; if (rawVal === undefined || rawVal === null) return;
-        const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan'].includes(col.key);
+        const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'].includes(col.key);
         if (isDualMap && col.multiplier) {
           if (rawVal > 31) {
             computedCounts[col.key] = Math.round(rawVal / col.multiplier);
