@@ -19,6 +19,7 @@ export interface RekapPresensiKebersihanyData {
   category: string;
   employees: KebersihanyEmployee[];
   isEmptyTemplate?: boolean;
+  customColumns?: RekapColumn[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -48,8 +49,8 @@ export async function generateRekapPresensiKebersihanyPdf(
   data: RekapPresensiKebersihanyData
 ): Promise<void> {
   // ── Resolve columns from config — only what's in the preview table ──────────
-  const activeCols: RekapColumn[] =
-    REKAP_COLUMNS[data.category] ?? REKAP_COLUMNS['KEBERSIHAN'];
+  const baseCols = REKAP_COLUMNS[data.category] ?? REKAP_COLUMNS['KEBERSIHAN'];
+  const activeCols: RekapColumn[] = [...baseCols, ...(data.customColumns || [])];
 
   // ── Load logos ──────────────────────────────────────────────────────────────
   let logoYapetidu: string | null = null;
@@ -236,22 +237,22 @@ export async function generateRekapPresensiKebersihanyPdf(
   }
 
   // ── Column widths ──────────────────────────────────────────────────────────
-  const usableWidth = pageW - marginL - marginR;
+  const usableWidth = pageW - marginL - marginR - 2.5; // subtract 2.5mm safety margin to prevent jspdf-autotable overflow warnings
   const fixedWidth = data.isEmptyTemplate ? (8 + 40) : (8 + 40 + 32);
-  const dynColWidth = Math.floor((usableWidth - fixedWidth) / activeCols.length);
+  const dynColWidth = Math.floor(((usableWidth - fixedWidth) / activeCols.length) * 100) / 100; // floor to 2 decimal places
 
   const columnStyles: Record<number, any> = {
-    0: { cellWidth: 8, halign: 'center' },
+    0: { cellWidth: 8, halign: 'center' as const },
     1: { cellWidth: 40 },
   };
   activeCols.forEach((col, i) => {
     columnStyles[i + 2] = {
       cellWidth: dynColWidth,
-      halign: col.type === 'count' ? 'center' : 'right',
+      halign: col.type === 'count' ? ('center' as const) : ('right' as const),
     };
   });
   if (!data.isEmptyTemplate) {
-    columnStyles[activeCols.length + 2] = { cellWidth: 32, halign: 'right' };
+    columnStyles[activeCols.length + 2] = { cellWidth: 32, halign: 'right' as const };
   }
 
   // ── Render table ───────────────────────────────────────────────────────────

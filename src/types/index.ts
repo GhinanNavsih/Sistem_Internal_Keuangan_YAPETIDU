@@ -112,6 +112,7 @@ export interface UraianGajiDocument {
   jobCategory: string;         // "KEBERSIHAN"
   workingDaysInMonth: number;
   entries: Record<string, UraianEntry>; // employeeId → entry
+  customColumns?: RekapColumn[];
   createdAt?: any;
   updatedAt?: any;
 }

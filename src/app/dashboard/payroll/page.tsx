@@ -1243,6 +1243,10 @@ export default function PayrollValidationDashboard() {
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
                           {(() => {
+                            if (slip && slip.earnings) {
+                              const totalEarnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
+                              return formatIDR(totalEarnings);
+                            }
                             const cat = emp.raw.employment?.jobCategory;
                             const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
                             const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
@@ -1251,10 +1255,21 @@ export default function PayrollValidationDashboard() {
                           })()}
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
-                          {formatIDR(calculateTotalDeductions(emp.raw))}
+                          {(() => {
+                            if (slip && slip.deductions) {
+                              const totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
+                              return formatIDR(totalDeductions);
+                            }
+                            return formatIDR(calculateTotalDeductions(emp.raw));
+                          })()}
                         </TableCell>
                         <TableCell className="py-4 font-bold text-indigo-700">
                           {(() => {
+                            if (slip && slip.earnings && slip.deductions) {
+                              const totalEarnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
+                              const totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
+                              return formatIDR(totalEarnings - totalDeductions);
+                            }
                             const cat = emp.raw.employment?.jobCategory;
                             const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
                             const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
@@ -1346,6 +1361,13 @@ export default function PayrollValidationDashboard() {
         vakasiTambahanSum={selectedEmployee ? vakasiTambahanMap[selectedEmployee.id] ?? 0 : 0}
         vakasiTambahanList={selectedEmployee ? vakasiTambahanListMap[selectedEmployee.id] ?? [] : []}
         tunjanganFungsional={selectedEmployee ? functionalAllowanceMap[selectedEmployee.id] ?? 0 : 0}
+        customColumns={(() => {
+          if (!selectedEmployee) return undefined;
+          const cat = selectedEmployee.raw.employment?.jobCategory;
+          const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+          const uraianDoc = uraianMap[`${period}_${cat}`];
+          return uraianDoc?.customColumns ?? undefined;
+        })()}
       />
 
       <LegalitasPimpinanDialog

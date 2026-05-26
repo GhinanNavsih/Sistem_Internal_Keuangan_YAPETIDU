@@ -59,7 +59,7 @@ interface ManagedUser {
   uid: string;
   email: string;
   displayName?: string;
-  role: 'super_admin' | 'satker_head';
+  role: 'super_admin' | 'satker_head' | 'employee_admin';
   permittedCategories: string[];
   createdAt?: string;
 }
@@ -91,13 +91,13 @@ export default function UserManagementPage() {
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newDisplayName, setNewDisplayName] = useState('');
-  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head'>('satker_head');
+  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'employee_admin'>('satker_head');
   const [newPermitted, setNewPermitted] = useState<string[]>([]);
 
   // Edit User modal state
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [editDisplayName, setEditDisplayName] = useState('');
-  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head'>('satker_head');
+  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'employee_admin'>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
 
   // Delete User modal state
@@ -484,6 +484,22 @@ export default function UserManagementPage() {
 
                         <div
                           onClick={() => {
+                            setNewRole('employee_admin');
+                            setNewPermitted([]); // employee admin manages all, no unit restrictions needed
+                          }}
+                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${newRole === 'employee_admin' ? 'border-emerald-500 bg-emerald-50/20 ring-2 ring-emerald-500/10' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
+                        >
+                          <div className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 ${newRole === 'employee_admin' ? 'border-emerald-600' : 'border-slate-300'}`}>
+                            {newRole === 'employee_admin' && <div className="w-2.5 h-2.5 rounded-full bg-emerald-600" />}
+                          </div>
+                          <div>
+                            <span className="text-sm font-bold text-slate-900 block">Staf Master Data Pegawai (Employee Admin)</span>
+                            <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Hanya memiliki wewenang untuk mengelola data induk pegawai (Master Data Pegawai). Dilarang membuka menu payroll/uraian/lainnya.</span>
+                          </div>
+                        </div>
+
+                        <div
+                          onClick={() => {
                             setNewRole('super_admin');
                             setNewPermitted([]); // super admin inherits all, clear selections to avoid confusion
                           }}
@@ -509,6 +525,10 @@ export default function UserManagementPage() {
                       {newRole === 'super_admin' ? (
                         <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-100 text-amber-800 text-xs leading-relaxed font-medium">
                           Super Administrator secara otomatis memiliki akses penuh ke <strong>seluruh</strong> Satuan Kerja. Checkbox dinonaktifkan.
+                        </div>
+                      ) : newRole === 'employee_admin' ? (
+                        <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 text-emerald-800 text-xs leading-relaxed font-medium">
+                          Employee Administrator secara otomatis memiliki akses penuh ke <strong>seluruh</strong> data pegawai (Master Data Pegawai). Checkbox dinonaktifkan.
                         </div>
                       ) : (
                         <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 max-h-[160px] overflow-y-auto space-y-2.5">
@@ -621,7 +641,7 @@ export default function UserManagementPage() {
                         <TableRow key={u.uid} className="border-slate-50 hover:bg-slate-50/40 transition-colors">
                           <TableCell className="font-bold pl-8 py-4.5">
                             <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${u.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${u.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : u.role === 'employee_admin' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
                                 {(u.displayName || u.email).substring(0, 2).toUpperCase()}
                               </div>
                               <div>
@@ -636,6 +656,10 @@ export default function UserManagementPage() {
                               <Badge variant="secondary" className="bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Super Admin
                               </Badge>
+                            ) : u.role === 'employee_admin' ? (
+                              <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold px-2.5 py-0.5 rounded-full border-none">
+                                Employee Admin
+                              </Badge>
                             ) : (
                               <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Kepala SatKer
@@ -645,6 +669,8 @@ export default function UserManagementPage() {
                           <TableCell className="py-4.5">
                             {u.role === 'super_admin' ? (
                               <span className="text-xs text-amber-600 font-bold italic">Semua Unit (Akses Penuh)</span>
+                            ) : u.role === 'employee_admin' ? (
+                              <span className="text-xs text-emerald-600 font-bold italic">Pegawai (Akses Penuh)</span>
                             ) : (
                               <div className="flex flex-wrap gap-1 max-w-[320px]">
                                 {u.permittedCategories && u.permittedCategories.length > 0 ? (
@@ -721,13 +747,23 @@ export default function UserManagementPage() {
               {/* Role */}
               <div>
                 <Label className="text-xs font-semibold text-slate-500">Tingkat Otoritas</Label>
-                <div className="grid grid-cols-2 gap-2 mt-1.5">
+                <div className="grid grid-cols-3 gap-2 mt-1.5">
                   <button
                     type="button"
                     onClick={() => setEditRole('satker_head')}
-                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${editRole === 'satker_head' ? 'border-indigo-500 bg-indigo-50/10 text-indigo-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
+                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'satker_head' ? 'border-indigo-500 bg-indigo-50/10 text-indigo-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
                   >
                     Kepala SatKer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditRole('employee_admin');
+                      setEditPermitted([]); // clear categories
+                    }}
+                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'employee_admin' ? 'border-emerald-500 bg-emerald-50/10 text-emerald-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
+                  >
+                    Employee Admin
                   </button>
                   <button
                     type="button"
@@ -735,7 +771,7 @@ export default function UserManagementPage() {
                       setEditRole('super_admin');
                       setEditPermitted([]); // clear categories to avoid confusion
                     }}
-                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${editRole === 'super_admin' ? 'border-amber-500 bg-amber-50/10 text-amber-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
+                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'super_admin' ? 'border-amber-500 bg-amber-50/10 text-amber-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
                   >
                     Super Admin
                   </button>
@@ -748,6 +784,10 @@ export default function UserManagementPage() {
                 {editRole === 'super_admin' ? (
                   <div className="p-3 rounded-xl bg-amber-50 border border-amber-100 text-amber-800 text-[11px] font-medium leading-relaxed mt-1.5">
                     Super Administrator memiliki hak akses bypass ke seluruh unit. Pilihan dinonaktifkan.
+                  </div>
+                ) : editRole === 'employee_admin' ? (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-800 text-[11px] font-medium leading-relaxed mt-1.5">
+                    Employee Administrator memiliki hak akses penuh ke seluruh data pegawai. Pilihan dinonaktifkan.
                   </div>
                 ) : (
                   <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50 max-h-[140px] overflow-y-auto space-y-2 mt-1.5">

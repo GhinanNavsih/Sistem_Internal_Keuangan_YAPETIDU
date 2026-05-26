@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/AuthContext';
 import {
   Table,
   TableBody,
@@ -20,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import {
@@ -45,13 +48,19 @@ import {
   Wrench,
   Wind,
   Save,
+  FileSpreadsheet,
+  FileClock,
+  History,
+  ClipboardCheck,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import {
   collection,
   getDocs,
   doc,
   setDoc,
   deleteDoc,
+  addDoc,
   serverTimestamp,
   Timestamp,
 } from 'firebase/firestore';
@@ -98,7 +107,92 @@ const getEmpStartDate = (emp: any) => {
   return emp.employment?.startDate || '';
 };
 
+interface FieldChange {
+  field: string;
+  oldValue: any;
+  newValue: any;
+}
+
+interface PendingEdit {
+  employeeId: string;
+  name: string;
+  tab: string;
+  timestamp: string;
+  changes: FieldChange[];
+}
+
+function getObjectDiff(oldObj: any, newObj: any, prefix = ''): FieldChange[] {
+  const diffs: FieldChange[] = [];
+  
+  const getValueString = (val: any): any => {
+    if (val && typeof val.toDate === 'function') {
+      return val.toDate().toISOString().split('T')[0];
+    }
+    if (val && typeof val === 'object' && val.seconds !== undefined) {
+      return new Date(val.seconds * 1000).toISOString().split('T')[0];
+    }
+    return val;
+  };
+
+  const keys = new Set([...Object.keys(oldObj || {}), ...Object.keys(newObj || {})]);
+  
+  keys.forEach(key => {
+    if (key === 'audit' || key === 'id' || key === 'updatedAt' || key === 'createdAt') return;
+
+    const oldVal = oldObj ? oldObj[key] : undefined;
+    const newVal = newObj ? newObj[key] : undefined;
+
+    const resolvedOld = getValueString(oldVal);
+    const resolvedNew = getValueString(newVal);
+
+    if (resolvedOld === resolvedNew) return;
+
+    // If both are objects (and not null/timestamps), recurse
+    if (
+      resolvedOld && resolvedNew &&
+      typeof resolvedOld === 'object' && typeof resolvedNew === 'object' &&
+      !(oldVal && typeof oldVal.toDate === 'function') &&
+      !(newVal && typeof newVal.toDate === 'function') &&
+      !(oldVal && oldVal.seconds !== undefined) &&
+      !(newVal && newVal.seconds !== undefined)
+    ) {
+      diffs.push(...getObjectDiff(oldVal, newVal, prefix ? `${prefix}.${key}` : key));
+    } else {
+      diffs.push({
+        field: prefix ? `${prefix}.${key}` : key,
+        oldValue: resolvedOld === undefined ? null : resolvedOld,
+        newValue: resolvedNew === undefined ? null : resolvedNew,
+      });
+    }
+  });
+
+  return diffs;
+}
+
+function getLocalISOString(): string {
+  const date = new Date();
+  const tzo = -date.getTimezoneOffset();
+  const dif = tzo >= 0 ? '+' : '-';
+  const pad = (num: number) => String(Math.floor(Math.abs(num))).padStart(2, '0');
+  
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+  const ms = String(date.getMilliseconds()).padStart(3, '0');
+  
+  const offsetHours = pad(tzo / 60);
+  const offsetMinutes = pad(tzo % 60);
+  
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}${dif}${offsetHours}:${offsetMinutes}`;
+}
+
 export default function EmployeesPage() {
+  const router = useRouter();
+  const { user, profile, loading: authLoading } = useAuth();
+
   const [activeTab, setActiveTab] = useState('blue');
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,6 +201,30 @@ export default function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Edit Log States
+  const [pendingEdits, setPendingEdits] = useState<PendingEdit[]>([]);
+  const [isLogOpen, setIsLogOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  // Redirect if unauthorized
+  useEffect(() => {
+    if (!authLoading && (!user || (profile?.role !== 'super_admin' && profile?.role !== 'employee_admin'))) {
+      router.replace('/login');
+    }
+  }, [user, profile, authLoading, router]);
+
+  // Load pending edits on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('pending_employee_edits');
+    if (saved) {
+      try {
+        setPendingEdits(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to parse pending edits:', e);
+      }
+    }
+  }, []);
 
   const currentTab = COLLAR_TABS.find(t => t.key === activeTab)!;
 
@@ -281,6 +399,24 @@ export default function EmployeesPage() {
         };
       }
 
+      if (editingEmployee) {
+        const diffs = getObjectDiff(editingEmployee, final);
+        if (diffs.length > 0) {
+          const pendingChange: PendingEdit = {
+            employeeId,
+            name: getEmpName(editingEmployee),
+            tab: activeTab,
+            timestamp: getLocalISOString(),
+            changes: diffs
+          };
+          setPendingEdits(prev => {
+            const updated = [...prev, pendingChange];
+            localStorage.setItem('pending_employee_edits', JSON.stringify(updated));
+            return updated;
+          });
+        }
+      }
+
       await setDoc(doc(db, currentTab.collection, employeeId), final, { merge: true });
 
       setMessage({ type: 'success', text: `Karyawan ${editingEmployee ? 'diperbarui' : 'ditambahkan'}!` });
@@ -311,6 +447,44 @@ export default function EmployeesPage() {
     }
   };
 
+  const handleConfirmChanges = async () => {
+    if (pendingEdits.length === 0) return;
+    try {
+      setConfirming(true);
+      const logPayload = {
+        operatorEmail: user?.email || 'Unknown Operator',
+        operatorName: profile?.displayName || user?.displayName || 'Administrator',
+        timestamp: serverTimestamp(),
+        createdAt: getLocalISOString(),
+        editsCount: pendingEdits.length,
+        edits: pendingEdits
+      };
+
+      await addDoc(collection(db, 'EmpEditLog'), logPayload);
+      
+      setPendingEdits([]);
+      localStorage.removeItem('pending_employee_edits');
+      setIsLogOpen(false);
+      setMessage({ type: 'success', text: 'Perubahan berhasil dikonfirmasi & dicatat ke EmpEditLog!' });
+      setTimeout(() => setMessage(null), 4000);
+    } catch (err) {
+      console.error('Error writing edit log:', err);
+      setMessage({ type: 'error', text: 'Gagal menulis log ke EmpEditLog.' });
+      setTimeout(() => setMessage(null), 3000);
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  const handleClearChanges = () => {
+    if (!confirm('Hapus seluruh daftar perubahan tanpa menyimpannya ke EmpEditLog?')) return;
+    setPendingEdits([]);
+    localStorage.removeItem('pending_employee_edits');
+    setIsLogOpen(false);
+    setMessage({ type: 'success', text: 'Daftar perubahan berhasil dibersihkan.' });
+    setTimeout(() => setMessage(null), 3000);
+  };
+
   const filtered = employees.filter(emp => {
     const name = getEmpName(emp);
     const nik = getEmpNikOrNiy(emp);
@@ -321,6 +495,81 @@ export default function EmployeesPage() {
       id.includes(searchQuery)
     );
   });
+
+  const handleExportExcel = () => {
+    if (filtered.length === 0) {
+      alert('Tidak ada data pegawai yang dapat diexport.');
+      return;
+    }
+
+    let exportData: any[] = [];
+
+    if (activeTab === 'loyalis') {
+      exportData = filtered.map(emp => {
+        const metrics = emp.family_allowance_metrics || {};
+        return {
+          'ID Pegawai': getEmpId(emp),
+          'Nama Lengkap': getEmpName(emp),
+          'NIY': getEmpNikOrNiy(emp),
+          'NPWP': emp.personal_info?.tax_id_npwp || '',
+          'Status': getEmpIsActive(emp) ? 'Aktif' : 'Non-Aktif',
+          'Nomor Telepon': emp.personal_info?.phone || '',
+          'Email': emp.personal_info?.email || '',
+          'Jabatan': getEmpCategory(emp),
+          'Departemen/Unit': emp.employment_profile?.department_unit || '',
+          'Golongan / Level': getEmpGrade(emp),
+          'Mulai Kerja': getEmpStartDate(emp),
+          'Tgl Diakui': emp.employment_profile?.date_recognized || '',
+          'Nama Bank': emp.banking_info?.bank_name || '',
+          'Nomor Rekening': emp.banking_info?.account_number || '',
+          'Pendidikan': emp.academic_and_tier?.education_level || '',
+          'Pendidikan (Kode)': emp.academic_and_tier?.education_code || '',
+          'Jabatan Fungsional': emp.academic_and_tier?.functional_tier || '',
+          'Gaji Pokok Tier': emp.academic_and_tier?.base_salary_tier || '',
+          'Jumlah Suami/Istri': Number(metrics.spouse_count) || 0,
+          'Anak SD': Number(metrics.children_sd) || 0,
+          'Anak SLTP': Number(metrics.children_sltp) || 0,
+          'Anak SLTA': Number(metrics.children_slta) || 0,
+          'Anak Perguruan Tinggi': Number(metrics.children_pt) || 0,
+        };
+      });
+    } else {
+      exportData = filtered.map(emp => {
+        return {
+          'ID Pegawai': getEmpId(emp),
+          'Nama Lengkap': getEmpName(emp),
+          'NIK': getEmpNikOrNiy(emp),
+          'Status': getEmpIsActive(emp) ? 'Aktif' : 'Non-Aktif',
+          'Nomor Telepon': emp.phoneNumber || '',
+          'Email': emp.email || '',
+          'Kategori': getEmpCategory(emp),
+          'Golongan': getEmpGrade(emp),
+          'Mulai Kerja': getEmpStartDate(emp),
+          'Nama Bank': emp.bankAccount?.bankName || '',
+          'Nomor Rekening': emp.bankAccount?.accountNumber || '',
+          'Atas Nama Rekening': emp.bankAccount?.accountHolderName || '',
+        };
+      });
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    const sheetName = activeTab === 'loyalis' ? 'White Collar Loyalis' : 'Blue Collar';
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    
+    // Auto-fit column widths for premium, beautiful spreadsheet presentation!
+    const colWidths = Object.keys(exportData[0] || {}).map(key => {
+      const maxLength = Math.max(
+        key.toString().length,
+        ...exportData.map(row => (row[key] !== null && row[key] !== undefined ? row[key].toString().length : 0))
+      );
+      return { wch: maxLength + 3 };
+    });
+    worksheet['!cols'] = colWidths;
+
+    const fileLabel = activeTab === 'loyalis' ? 'White_Collar_Loyalis' : 'Blue_Collar';
+    XLSX.writeFile(workbook, `Master_Pegawai_YAPETIDU_${fileLabel}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   const statsCards = [
     { label: 'Total Pegawai', value: employees.length, icon: <Users className="w-5 h-5" />, color: 'indigo' },
@@ -367,7 +616,10 @@ export default function EmployeesPage() {
                 onChange={e => setSearchQuery(e.target.value)}
               />
             </div>
-            <Button onClick={handleOpenAdd} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 px-6">
+            <Button onClick={handleExportExcel} variant="outline" className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
+              <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" /> Export Excel
+            </Button>
+            <Button onClick={handleOpenAdd} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 px-6 cursor-pointer">
               <UserPlus className="w-4 h-4 mr-2" /> Tambah Pegawai
             </Button>
           </div>
@@ -596,6 +848,107 @@ export default function EmployeesPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sticky floating change log banner */}
+      {pendingEdits.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 text-white backdrop-blur-md rounded-2xl shadow-2xl border border-slate-800 px-6 py-4.5 flex items-center justify-between gap-8 max-w-xl w-[90vw] animate-in slide-in-from-bottom-5 duration-300">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+              <FileClock className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-100">Daftar Perubahan Belum Disimpan</p>
+              <p className="text-xs text-slate-400 mt-0.5">Terdapat <span className="font-semibold text-indigo-400">{pendingEdits.length}</span> perubahan data pegawai.</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="ghost"
+              onClick={() => setIsLogOpen(true)}
+              className="text-xs font-bold text-slate-300 hover:text-white rounded-xl hover:bg-slate-800"
+            >
+              Lihat Detail
+            </Button>
+            <Button
+              onClick={handleConfirmChanges}
+              disabled={confirming}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-500/10 flex items-center gap-1.5 px-4"
+            >
+              {confirming ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ClipboardCheck className="w-3.5 h-3.5" />}
+              Konfirmasi
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Detailed log viewer dialog */}
+      <Dialog open={isLogOpen} onOpenChange={setIsLogOpen}>
+        <DialogContent className="sm:max-w-2xl max-w-full rounded-[28px] border-none shadow-2xl p-0 overflow-hidden bg-white">
+          <DialogHeader className="p-6 bg-slate-50/50 border-b border-slate-100">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2 text-slate-900">
+              <History className="w-5.5 h-5.5 text-indigo-500" />
+              Detail Perubahan Pegawai
+            </DialogTitle>
+            <DialogDescription className="text-slate-500">
+              Berikut adalah daftar perubahan data pegawai dalam sesi ini yang siap disimpan ke Firebase root collection <strong className="font-semibold text-slate-800">EmpEditLog</strong>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-6 max-h-[50vh] overflow-y-auto space-y-4">
+            {pendingEdits.map((edit, idx) => (
+              <div key={idx} className="p-4 rounded-xl border border-slate-150 bg-slate-50/30 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">{edit.employeeId}</span>
+                    <span className="font-bold text-slate-900 text-sm">{edit.name}</span>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] font-bold uppercase bg-white px-2 py-0.5 border-slate-200">
+                    {edit.tab === 'loyalis' ? 'White Collar' : 'Blue Collar'}
+                  </Badge>
+                </div>
+                
+                <div className="space-y-2">
+                  {edit.changes.map((c, cIdx) => (
+                    <div key={cIdx} className="grid grid-cols-3 gap-2 text-xs items-center leading-normal">
+                      <span className="font-semibold text-slate-500 font-mono break-all">{c.field}</span>
+                      <div className="col-span-2 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded line-through max-w-[150px] truncate" title={String(c.oldValue)}>{String(c.oldValue) || 'empty'}</span>
+                        <span className="text-slate-400">➔</span>
+                        <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-semibold max-w-[150px] truncate" title={String(c.newValue)}>{String(c.newValue) || 'empty'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter className="p-6 bg-slate-50/50 border-t border-slate-100 flex justify-between gap-4 w-full">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleClearChanges}
+              className="rounded-xl font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 flex items-center gap-1.5"
+            >
+              <Trash2 className="w-4 h-4" />
+              Bersihkan Daftar
+            </Button>
+            
+            <div className="flex gap-2">
+              <Button type="button" variant="ghost" onClick={() => setIsLogOpen(false)} className="rounded-xl">Tutup</Button>
+              <Button
+                onClick={handleConfirmChanges}
+                disabled={confirming}
+                className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 flex items-center gap-1.5"
+              >
+                {confirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardCheck className="w-4 h-4" />}
+                Konfirmasi & Simpan Log
+              </Button>
+            </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

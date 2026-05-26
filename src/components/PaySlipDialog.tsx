@@ -24,7 +24,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
-import { BlueCollarEmployee, UraianEntry } from '@/types';
+import { BlueCollarEmployee, UraianEntry, RekapColumn } from '@/types';
 import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
 import { 
   calculateTotalEarnings, 
@@ -60,6 +60,7 @@ interface PaySlipDialogProps {
   vakasiTambahanSum?: number;
   vakasiTambahanList?: { eventName: string; payGiven: number }[];
   tunjanganFungsional?: number;
+  customColumns?: RekapColumn[];
 }
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -83,7 +84,8 @@ function buildInitialEarnings(
   uraian?: UraianEntry,
   vakasiTambahanSum?: number,
   vakasiTambahanList?: { eventName: string; payGiven: number }[],
-  tunjanganFungsional?: number
+  tunjanganFungsional?: number,
+  customColumns?: RekapColumn[]
 ): PaySlipField[] {
   const earnings: PaySlipField[] = [];
 
@@ -150,14 +152,15 @@ function buildInitialEarnings(
     }
   } else {
     const jobCategory = emp.employment?.jobCategory || '';
-    const columns = REKAP_COLUMNS[jobCategory];
+    const columns = REKAP_COLUMNS[jobCategory] || [];
+    const allCols = [...columns, ...(customColumns || [])];
 
     // Gapok – always known
     earnings.push({ label: 'Gapok', amount: gapok });
 
-    if (columns && uraian) {
+    if (allCols.length > 0 && uraian) {
       // Auto-fill from UraianGaji data using column config
-      for (const col of columns) {
+      for (const col of allCols) {
         if (col.slipLabel) {
           // If it's a count column and we have the raw count, compute it.
           // Otherwise, use the value from the values map (which is already a nominal currency amount).
@@ -248,6 +251,7 @@ export default function PaySlipDialog({
   vakasiTambahanSum,
   vakasiTambahanList = [],
   tunjanganFungsional,
+  customColumns,
 }: PaySlipDialogProps) {
   const [earnings, setEarnings] = useState<PaySlipField[]>([]);
   const [deductions, setDeductions] = useState<PaySlipField[]>([]);
@@ -257,13 +261,13 @@ export default function PaySlipDialog({
     if (!open || !employee) return;
 
     if (mode === 'create') {
-      setEarnings(buildInitialEarnings(employee, gapok, activeTab, uraianEntry, vakasiTambahanSum, vakasiTambahanList, tunjanganFungsional));
+      setEarnings(buildInitialEarnings(employee, gapok, activeTab, uraianEntry, vakasiTambahanSum, vakasiTambahanList, tunjanganFungsional, customColumns));
       setDeductions(buildInitialDeductions(employee, activeTab));
     } else if (mode === 'review' && slipState) {
       setEarnings([...slipState.earnings]);
       setDeductions([...slipState.deductions]);
     }
-  }, [open, employee, mode, gapok, slipState, activeTab, vakasiTambahanSum, vakasiTambahanList, uraianEntry, tunjanganFungsional]);
+  }, [open, employee, mode, gapok, slipState, activeTab, vakasiTambahanSum, vakasiTambahanList, uraianEntry, tunjanganFungsional, customColumns]);
 
   // ─── Field Mutators ───────────────────────────────────────────
 

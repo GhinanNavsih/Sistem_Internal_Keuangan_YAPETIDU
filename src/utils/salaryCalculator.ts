@@ -49,6 +49,7 @@ export function calculateTotalEarnings(
   const columns = REKAP_COLUMNS[jobCategory];
 
   if (columns && uraian) {
+    const processedKeys = new Set<string>();
     for (const col of columns) {
       if (col.slipLabel) {
         // If it's a count column and we have the raw count, compute it.
@@ -60,7 +61,17 @@ export function calculateTotalEarnings(
           amount = uraian.values[col.key] ?? 0;
         }
         total += amount;
+        processedKeys.add(col.key);
       }
+    }
+
+    // Automatically include any custom dynamic columns in the total earnings calculation!
+    if (uraian.values) {
+      Object.entries(uraian.values).forEach(([key, amount]) => {
+        if (!processedKeys.has(key) && key !== 'employeeId' && key !== 'name') {
+          total += amount;
+        }
+      });
     }
   }
 

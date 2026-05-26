@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import { LOGO_YAPETIDU_BASE64, LOGO_UNIPDU_BASE64 } from './logoConstants';
 
 export interface PaySlipField {
   label: string;
@@ -24,6 +25,39 @@ export interface PaySlipData {
   };
 }
 
+function spell(n: number): string {
+  const angka = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
+  let hasil = "";
+
+  if (n < 12) {
+    hasil = angka[n];
+  } else if (n < 20) {
+    hasil = spell(n - 10) + " belas";
+  } else if (n < 100) {
+    hasil = spell(Math.floor(n / 10)) + " puluh " + spell(n % 10);
+  } else if (n < 200) {
+    hasil = "seratus " + spell(n - 100);
+  } else if (n < 1000) {
+    hasil = spell(Math.floor(n / 100)) + " ratus " + spell(n % 100);
+  } else if (n < 2000) {
+    hasil = "seribu " + spell(n - 1000);
+  } else if (n < 1000000) {
+    hasil = spell(Math.floor(n / 1000)) + " ribu " + spell(n % 1000);
+  } else if (n < 1000000000) {
+    hasil = spell(Math.floor(n / 1000000)) + " juta " + spell(n % 1000000);
+  } else if (n < 1000000000000) {
+    hasil = spell(Math.floor(n / 1000000000)) + " milyar " + spell(n % 1000000000);
+  }
+
+  return hasil.replace(/\s+/g, " ").trim();
+}
+
+function terbilang(n: number): string {
+  const cleaned = spell(n);
+  if (!cleaned) return "Nol";
+  return cleaned.split(" ").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
+
 export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
   const pageWidth = doc.internal.pageSize.getWidth();
   const formatIDR = (amount: number): string => {
@@ -38,20 +72,34 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     // ─── LOYALIS (WHITE COLLAR) DOUBLE-COLUMN LAYOUT ─────────────────
     const marginLeft = 15;
     const marginRight = 15;
-    let y = 15;
+    // Header (Kop Surat)
+    doc.addImage(LOGO_YAPETIDU_BASE64, 'PNG', 15, 10, 14, 14);
+    doc.addImage(LOGO_UNIPDU_BASE64, 'PNG', 181, 10, 14, 14);
 
-    // Header
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('UNIVERSITAS PESANTREN TINGGI DARUL ULUM JOMBANG', marginLeft, y);
+    doc.setFontSize(9.5);
+    doc.text("YAYASAN PESANTREN TINGGI DARUL 'ULUM", pageWidth / 2, 13, { align: 'center' });
     
-    doc.setFont('helvetica', 'bolditalic');
-    doc.setFontSize(11);
-    doc.text(`GAJI BULAN  ${data.period.toUpperCase()}`, marginLeft, y + 6);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.text("UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM", pageWidth / 2, 17.5, { align: 'center' });
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text("Pondok Pesantren Darul 'Ulum Peterongan Jombang 61481 Telp. (0321) 873655", pageWidth / 2, 21.5, { align: 'center' });
+
+    // Double line divider
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.6);
+    doc.line(15, 26, 195, 26);
+    doc.setLineWidth(0.2);
+    doc.line(15, 27, 195, 27);
+
+    let y = 31;
 
     // Box top-right "NO URUT"
     const boxX = 155;
-    const boxY = y - 2;
+    const boxY = y;
     const boxW = 40;
     const boxH = 10;
     doc.setDrawColor(0);
@@ -64,6 +112,10 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     doc.text('NO URUT  :', boxX + 2, boxY + 6.5);
     doc.setFontSize(13);
     doc.text(data.employeeNo.toString(), boxX + 31, boxY + 7, { align: 'center' });
+
+    doc.setFont('helvetica', 'bolditalic');
+    doc.setFontSize(11);
+    doc.text(`SLIP GAJI BULAN ${data.period.toUpperCase()}`, marginLeft, y + 6.5);
 
     y += 13;
 
@@ -564,35 +616,61 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     const marginLeft = 35;
     const marginRight = 35;
     const contentWidth = pageWidth - marginLeft - marginRight;
-    let y = 15;
+    // Header (Kop Surat)
+    doc.addImage(LOGO_YAPETIDU_BASE64, 'PNG', 15, 10, 14, 14);
+    doc.addImage(LOGO_UNIPDU_BASE64, 'PNG', 181, 10, 14, 14);
 
-    // Header
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
+    doc.setFontSize(9.5);
+    doc.text("YAYASAN PESANTREN TINGGI DARUL 'ULUM", pageWidth / 2, 13, { align: 'center' });
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.text("UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM", pageWidth / 2, 17.5, { align: 'center' });
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text("Pondok Pesantren Darul 'Ulum Peterongan Jombang 61481 Telp. (0321) 873655", pageWidth / 2, 21.5, { align: 'center' });
+
+    // Double line divider
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.6);
+    doc.line(15, 26, 195, 26);
+    doc.setLineWidth(0.2);
+    doc.line(15, 27, 195, 27);
+
+    let y = 33;
+
+    // Title: SLIP GAJI
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12.5);
     doc.text('SLIP GAJI', pageWidth / 2, y, { align: 'center' });
-    y += 5;
+    y += 5.5;
 
-    // Grey Pill for Job Category
-    const pillHeight = 8;
-    const pillWidth = contentWidth * 0.8;
-    doc.setFillColor(235, 235, 235);
-    doc.roundedRect((pageWidth - pillWidth) / 2, y, pillWidth, pillHeight, 2, 2, 'F');
-    doc.setFontSize(14);
-    doc.text(data.jobCategory.toUpperCase(), pageWidth / 2, y + 6, { align: 'center' });
-    y += pillHeight + 5;
+    // Sleek Pill for Job Category
+    const pillHeight = 6.5;
+    const pillWidth = 70; // Elegant centered width
+    doc.setFillColor(242, 242, 242);
+    doc.roundedRect((pageWidth - pillWidth) / 2, y, pillWidth, pillHeight, 1.5, 1.5, 'F');
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.text(data.jobCategory.toUpperCase(), pageWidth / 2, y + 4.5, { align: 'center' });
+    y += pillHeight + 4;
 
-    doc.setFontSize(12);
-    doc.text(`BULAN ${data.period.toUpperCase()}`, pageWidth / 2, y, { align: 'center' });
-    y += 12;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.text(`BULAN: ${data.period.toUpperCase()}`, pageWidth / 2, y, { align: 'center' });
+    y += 9;
 
     // Employee Info
-    doc.setFontSize(14);
-    doc.text('NO', marginLeft, y);
-    doc.text(data.employeeNo.toString(), marginLeft + 40, y);
-    y += 8;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
     doc.text('NAMA', marginLeft, y);
-    doc.text(data.employeeName.toUpperCase(), marginLeft + 40, y);
-    y += 10;
+    doc.setFont('helvetica', 'normal');
+    doc.text(':', marginLeft + 20, y);
+    doc.text(data.employeeName.toUpperCase(), marginLeft + 23, y);
+    y += 8;
 
     // Table Setup
     const colWidths = {
@@ -626,30 +704,44 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     doc.text('TOTAL', startX + colWidths.no + colWidths.uraian + colWidths.jumlah + colWidths.total / 2, y + 5, { align: 'center' });
     y += headerHeight;
 
+    // Section Title: Penerimaan
+    const rowH = 6;
+    drawRow(y, rowH, false, true);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.text('I. PENERIMAAN', startX + 5, y + 4.5);
+    y += rowH;
+
     // Earnings
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    const rowH = 6;
     let totalEarnings = 0;
 
     data.earnings.forEach((item, index) => {
       drawRow(y, rowH);
-      doc.text((index + 1).toString(), startX + colWidths.no / 2, y + 4.5, { align: 'center' });
+      doc.text((index + 1).toString(), startX + colWidths.no / 2, y + 4.5, { align: 'center' as const });
       doc.text(item.label.toUpperCase(), startX + colWidths.no + 2, y + 4.5);
-      doc.text(formatIDR(item.amount), startX + colWidths.no + colWidths.uraian + colWidths.jumlah - 2, y + 4.5, { align: 'right' });
+      doc.text(formatIDR(item.amount), startX + colWidths.no + colWidths.uraian + colWidths.jumlah - 2, y + 4.5, { align: 'right' as const });
       totalEarnings += item.amount;
       y += rowH;
     });
 
-    // Empty row for spacing
-    drawRow(y, rowH);
-    y += rowH;
-
     // Earnings Total row
     doc.setFont('helvetica', 'bold');
     drawRow(y, rowH, false, true);
-    doc.text('JUMLAH', startX + (colWidths.no + colWidths.uraian + colWidths.jumlah) / 2, y + 4.5, { align: 'center' });
-    doc.text(formatIDR(totalEarnings), startX + tableWidth - 2, y + 4.5, { align: 'right' });
+    doc.text('JUMLAH PENERIMAAN', startX + 5, y + 4.5);
+    doc.text(formatIDR(totalEarnings), startX + tableWidth - 2, y + 4.5, { align: 'right' as const });
+    y += rowH;
+
+    // Empty row for spacing between sections
+    drawRow(y, rowH);
+    y += rowH;
+
+    // Section Title: Potongan
+    drawRow(y, rowH, false, true);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.text('II. POTONGAN', startX + 5, y + 4.5);
     y += rowH;
 
     // Deductions
@@ -658,22 +750,18 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
 
     data.deductions.forEach((item, index) => {
       drawRow(y, rowH);
-      doc.text((index + 1).toString(), startX + colWidths.no / 2, y + 4.5, { align: 'center' });
+      doc.text((index + 1).toString(), startX + colWidths.no / 2, y + 4.5, { align: 'center' as const });
       doc.text(item.label.toUpperCase(), startX + colWidths.no + 2, y + 4.5);
-      doc.text(formatIDR(item.amount), startX + colWidths.no + colWidths.uraian + colWidths.jumlah - 2, y + 4.5, { align: 'right' });
+      doc.text(formatIDR(item.amount), startX + colWidths.no + colWidths.uraian + colWidths.jumlah - 2, y + 4.5, { align: 'right' as const });
       totalDeductions += item.amount;
       y += rowH;
     });
 
-    // Empty row for spacing
-    drawRow(y, rowH);
-    y += rowH;
-
     // Deductions Total row
-    drawRow(y, rowH);
     doc.setFont('helvetica', 'bold');
+    drawRow(y, rowH, false, true);
     doc.text('JUMLAH POTONGAN', startX + 5, y + 4.5);
-    doc.text(formatIDR(totalDeductions), startX + tableWidth - 2, y + 4.5, { align: 'right' });
+    doc.text(formatIDR(totalDeductions), startX + tableWidth - 2, y + 4.5, { align: 'right' as const });
     y += rowH;
 
     // Net Salary
@@ -681,8 +769,37 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     drawRow(y, rowH + 1, false, true);
     doc.setFontSize(11);
     doc.text('GAJI BERSIH', startX + 5, y + 5);
-    doc.text(formatIDR(netSalary), startX + tableWidth - 2, y + 5, { align: 'right' });
-    y += rowH + 5;
+    doc.text(formatIDR(netSalary), startX + tableWidth - 2, y + 5, { align: 'right' as const });
+    y += rowH + 1;
+
+    // Terbilang Row (Spelled out numbers in Indonesian)
+    const words = `${terbilang(netSalary)} Rupiah`;
+    drawRow(y, rowH, false, false);
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8.5);
+    doc.text(`Terbilang: "${words}"`, startX + 5, y + 4.5);
+    y += rowH;
+
+    // Quote Row in Cream Color
+    const quoteText = '"Berimanlah kamu kepada Allah dan Rosulnya dan nafkahkanlah sebagian dari hartamu yang Allah telah menjadikan kamu menguasainya. Maka orang-orang yang beriman diantara kamu dan yang menafkahkankan sebagian dari hartanya memperoleh pahala yang besar."(QS.57.7)';
+    doc.setFont('times', 'italic');
+    doc.setFontSize(8.5);
+    const quoteLines = doc.splitTextToSize(quoteText, tableWidth - 10);
+    const quoteRowH = (quoteLines.length * 4.2) + 4;
+
+    doc.setFillColor(253, 238, 221); // Beautiful cream background
+    doc.rect(startX, y, tableWidth, quoteRowH, 'F');
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.2);
+    doc.rect(startX, y, tableWidth, quoteRowH);
+
+    doc.setTextColor(0);
+    let quoteY = y + 4.5;
+    quoteLines.forEach((line: string) => {
+      doc.text(line, startX + tableWidth / 2, quoteY, { align: 'center' });
+      quoteY += 4.2;
+    });
+    y += quoteRowH + 5;
   }
 }
 

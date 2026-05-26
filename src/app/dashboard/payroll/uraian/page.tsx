@@ -94,6 +94,14 @@ export default function UraianPage() {
     searchText?: string;
   }[]>([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
 
+  // ─── Custom Column Dialog States ──────────────────────────────────────────
+  const [customColumns, setCustomColumns] = useState<RekapColumn[]>([]);
+  const [isCustomColDialogOpen, setIsCustomColDialogOpen] = useState(false);
+  const [newColLabel, setNewColLabel] = useState('');
+  const [newColSlipLabel, setNewColSlipLabel] = useState('');
+  const [newColType, setNewColType] = useState<'count' | 'currency'>('currency');
+  const [newColMultiplier, setNewColMultiplier] = useState<number | ''>('');
+
   // ── Fetch Loyalis Employees ──
   useEffect(() => {
     const fetchLoyalis = async () => {
@@ -307,13 +315,14 @@ export default function UraianPage() {
   const columns = useMemo(() => {
     if (!category) return [];
     const baseCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+    const allCols = [...baseCols, ...customColumns];
     if (detectedColumnOrder) {
       return detectedColumnOrder
-        .map(key => baseCols.find(c => c.key === key))
+        .map(key => allCols.find(c => c.key === key))
         .filter((c): c is RekapColumn => !!c);
     }
-    return baseCols;
-  }, [category, detectedColumnOrder]);
+    return allCols;
+  }, [category, detectedColumnOrder, customColumns]);
 
   const docId = `${year}_${String(month).padStart(2, '0')}_${category}`;
 
@@ -369,10 +378,14 @@ export default function UraianPage() {
         const initialTable: Record<string, Record<string, number>> = {};
         const uraianSnap = await getDoc(doc(db, 'UraianGaji', docId));
         if (uraianSnap.exists()) {
-          const docData = uraianSnap.data() as UraianGajiDocument;
-          Object.values(docData.entries).forEach(entry => {
+          setSaved(true);
+          const docData = uraianSnap.data() as any;
+          const loadedCustomCols = docData.customColumns || [];
+          setCustomColumns(loadedCustomCols);
+
+          Object.values(docData.entries).forEach((entry: any) => {
             const rawValues = { ...entry.values };
-            const empCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+            const empCols = [...(REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN), ...loadedCustomCols];
             empCols.forEach(col => {
               const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'].includes(col.key);
               if (isDualMap && col.multiplier) {
@@ -385,6 +398,9 @@ export default function UraianPage() {
             });
             initialTable[entry.employeeId] = rawValues;
           });
+        } else {
+          setCustomColumns([]);
+          setSaved(false);
         }
         setTableData(initialTable);
       } catch (err) { console.error(err); }
@@ -594,7 +610,7 @@ export default function UraianPage() {
       const rawValues = tableData[emp.employeeId] ?? {};
       const storedValues = { ...rawValues };
       const storedCounts: Record<string, number> = {};
-      const empCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+      const empCols = [...(REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN), ...customColumns];
       empCols.forEach(col => {
         const rawVal = storedValues[col.key]; if (rawVal === undefined || rawVal === null) return;
         const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'].includes(col.key);
@@ -605,7 +621,20 @@ export default function UraianPage() {
       });
       entries[emp.employeeId] = { employeeId: emp.employeeId, name: emp.name, values: storedValues, ...(Object.keys(storedCounts).length > 0 && { counts: storedCounts }) };
     }
-    return { period, periodLabel, jobCategory: category, entries, updatedAt: "ServerTimestamp" };
+
+    // Sanitize customColumns to remove undefined properties (like multiplier: undefined) before writing to Firestore
+    const sanitizedCustomCols = customColumns.map(col => {
+      const cleaned = { ...col };
+      if (cleaned.multiplier === undefined) {
+        delete cleaned.multiplier;
+      }
+      if (cleaned.slipLabel === undefined) {
+        delete cleaned.slipLabel;
+      }
+      return cleaned;
+    });
+
+    return { period, periodLabel, jobCategory: category, entries, customColumns: sanitizedCustomCols, updatedAt: "ServerTimestamp" };
   };
 
   // Opens the confirmation modal instead of writing directly
@@ -633,12 +662,63 @@ export default function UraianPage() {
   const fmtRp = (n: number) =>
     'Rp\u00a0' + Math.round(n).toLocaleString('id-ID');
 
+  const handleAddCustomColumn = () => {
+    if (!newColLabel.trim()) {
+      alert('Nama kolom wajib diisi!');
+      return;
+    }
+    const cleanLabel = newColLabel.trim();
+    const cleanSlipLabel = newColSlipLabel.trim() || cleanLabel;
+    
+    // Generate a clean safe key
+    const uniqueKey = `custom_${cleanLabel.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now().toString().slice(-4)}`;
+
+    const newCol: RekapColumn = {
+      key: uniqueKey,
+      label: cleanLabel,
+      type: newColType,
+      multiplier: newColType === 'count' ? (Number(newColMultiplier) || 1) : undefined,
+      slipLabel: cleanSlipLabel,
+    };
+
+    setCustomColumns(prev => [...prev, newCol]);
+    
+    // Reset form states
+    setNewColLabel('');
+    setNewColSlipLabel('');
+    setNewColType('currency');
+    setNewColMultiplier('');
+    setIsCustomColDialogOpen(false);
+    
+    setMessage({ type: 'success', text: `Kolom kustom "${cleanLabel}" berhasil ditambahkan ke tabel.` });
+    setTimeout(() => setMessage(null), 3000);
+  };
+
+  const handleRemoveCustomColumn = (key: string) => {
+    if (window.confirm('Apakah Anda yakin ingin menghapus kolom kustom ini beserta semua data di dalamnya?')) {
+      setCustomColumns(prev => prev.filter(c => c.key !== key));
+      setTableData(prev => {
+        const copy = { ...prev };
+        Object.keys(copy).forEach(empId => {
+          if (copy[empId]) {
+            const rowCopy = { ...copy[empId] };
+            delete rowCopy[key];
+            copy[empId] = rowCopy;
+          }
+        });
+        return copy;
+      });
+      setSaved(false);
+    }
+  };
+
   // Build the per-employee summary rows for the confirmation modal
   const DUAL_MAP_KEYS = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'] as const;
 
   const buildConfirmRows = () => {
     if (!category) return [];
-    const empCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+    const baseCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+    const empCols = [...baseCols, ...customColumns];
     return employees.map(emp => {
       const rawValues = tableData[emp.employeeId] ?? {};
       const fields = empCols.map(col => {
@@ -659,7 +739,6 @@ export default function UraianPage() {
   const display = getDisplayRect();
   const hasScanData = Object.keys(rowBounds).length > 0;
 
-  // ── PDF export ────────────────────────────────────────────────────────────
   const handleExportPdf = async () => {
     if (!category || employees.length === 0) return;
 
@@ -667,7 +746,8 @@ export default function UraianPage() {
       const rawValues = tableData[emp.employeeId] ?? {};
       const computedValues = { ...rawValues };
       const computedCounts: Record<string, number> = {};
-      const empCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+      const baseCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+      const empCols = [...baseCols, ...customColumns];
       empCols.forEach(col => {
         const rawVal = computedValues[col.key]; if (rawVal === undefined || rawVal === null) return;
         const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'].includes(col.key);
@@ -697,6 +777,7 @@ export default function UraianPage() {
       period: `${MONTHS_ID[month - 1]} ${year}`,
       category,
       employees: empRows,
+      customColumns,
     });
   };
 
@@ -717,6 +798,7 @@ export default function UraianPage() {
       category,
       employees: empRows,
       isEmptyTemplate: true,
+      customColumns,
     });
   };
 
@@ -786,6 +868,15 @@ export default function UraianPage() {
                   >
                     <Sparkles className="w-4 h-4" />
                     Scan AI
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsCustomColDialogOpen(true)}
+                    disabled={!category || employees.length === 0}
+                    className="rounded-xl border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 flex items-center gap-2 font-semibold transition-all shadow-sm cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 text-indigo-500" />
+                    Tambah Kolom
                   </Button>
                   <Button variant="outline" size="icon" onClick={() => setShowSavePreview(true)} disabled={!category || employees.length === 0} className="rounded-xl border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-200"><Database className="w-4 h-4" /></Button>
                   <Button onClick={handleSave} disabled={saving || !category || employees.length === 0} className="rounded-xl px-6 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2">
@@ -960,13 +1051,25 @@ export default function UraianPage() {
                         <th className={`px-6 py-4 text-[10px] font-bold uppercase text-slate-950 tracking-wider ${!hasScanData ? 'border-b border-slate-300' : ''}`}>Nama</th>
                         {columns.map(col => {
                           const hasMultiplier = col.type === 'count' && col.multiplier;
+                          const isCustom = col.key.startsWith('custom_');
                           return (
                             <th
                               key={col.key}
                               className={`px-4 py-4 text-[10px] font-bold uppercase text-center tracking-wider ${!hasScanData ? 'border-b border-slate-300' : ''}`}
                             >
-                              <div className="flex flex-col items-center justify-center gap-0.5">
-                                <span className="text-slate-950">{col.label}</span>
+                              <div className="flex flex-col items-center justify-center gap-0.5 relative group/header">
+                                <div className="flex items-center justify-center gap-1">
+                                  <span className="text-slate-950">{col.label}</span>
+                                  {isCustom && (
+                                    <button
+                                      onClick={() => handleRemoveCustomColumn(col.key)}
+                                      className="text-slate-400 hover:text-red-500 rounded-full hover:bg-slate-100 p-0.5 transition-colors opacity-0 group-hover/header:opacity-100 cursor-pointer flex-shrink-0"
+                                      title="Hapus kolom kustom"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
                                 {hasMultiplier && (
                                   <span className="text-[9px] font-bold text-blue-700 normal-case tracking-normal italic">
                                     (xRp{col.multiplier?.toLocaleString('id-ID')})
@@ -1171,14 +1274,14 @@ export default function UraianPage() {
               </div>
 
               {/* Live Running Total header mockup in Excel screenshot */}
-              <div className="bg-[#0b172a] rounded-2xl p-6 text-white shadow-xl flex items-center justify-between border border-slate-800 transition-all duration-300">
+              <div className="bg-blue-50/20 backdrop-blur-sm rounded-2xl p-6 text-blue-900 shadow-[0_4px_20px_rgba(59,130,246,0.05)] flex items-center justify-between border-2 border-blue-500 transition-all duration-300">
                 <div>
-                  <span className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest">Aggregate Validation</span>
-                  <h4 className="text-xl font-bold mt-1 text-slate-200">JUMLAH</h4>
+                  <span className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">Aggregate Validation</span>
+                  <h4 className="text-xl font-black mt-1 text-blue-900">JUMLAH</h4>
                 </div>
                 <div className="text-right">
-                  <span className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest">Total Payout</span>
-                  <p className="text-3xl font-extrabold text-white mt-1 tracking-tight">
+                  <span className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">Total Payout</span>
+                  <p className="text-3xl font-black text-blue-800 mt-1 tracking-tight">
                     {fmtRp(workerRows.reduce((sum, r) => sum + (r.payGiven || 0), 0))}
                   </p>
                 </div>
@@ -1587,6 +1690,93 @@ export default function UraianPage() {
                 Konfirmasi &amp; Simpan
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add Custom Column Dialog ────────────────────────────────────────── */}
+      <Dialog open={isCustomColDialogOpen} onOpenChange={setIsCustomColDialogOpen}>
+        <DialogContent className="sm:max-w-md max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl animate-in fade-in duration-300">
+          <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-indigo-50/80 to-purple-50/60 border-b border-slate-100 shrink-0">
+            <DialogTitle className="text-slate-800 flex items-center gap-3 font-bold text-lg">
+              <Plus className="w-5 h-5 text-indigo-500" />
+              Tambah Kolom Kustom Baru
+            </DialogTitle>
+            <p className="text-slate-500 text-xs mt-1">
+              Tambahkan detail pembayaran kustom (tunjangan atau vakasi) ke dalam lembar payroll ini.
+            </p>
+          </DialogHeader>
+
+          <div className="p-6 space-y-4 bg-white">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nama Kolom (Label di Tabel)</label>
+              <Input
+                type="text"
+                placeholder="Contoh: Tunjangan Khusus"
+                value={newColLabel}
+                onChange={(e) => setNewColLabel(e.target.value)}
+                className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Label di Slip Gaji (Opsional)</label>
+              <Input
+                type="text"
+                placeholder="Contoh: T. Khusus (Kosongkan jika ingin disamakan)"
+                value={newColSlipLabel}
+                onChange={(e) => setNewColSlipLabel(e.target.value)}
+                className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Tipe Kolom</label>
+              <Select value={newColType} onValueChange={(v: any) => setNewColType(v)}>
+                <SelectTrigger className="w-full bg-white shadow-sm border-slate-200 rounded-xl h-10 text-slate-700 font-semibold">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-slate-100 shadow-xl">
+                  <SelectItem value="currency" className="py-2.5 rounded-lg mx-1 focus:bg-indigo-50">Nominal Uang Langsung (Rupiah)</SelectItem>
+                  <SelectItem value="count" className="py-2.5 rounded-lg mx-1 focus:bg-indigo-50">Jumlah Unit/Hari (Dikalikan Rate)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {newColType === 'count' && (
+              <div className="space-y-1.5 animate-in slide-in-from-top-1 duration-200">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Rate/Multiplier (Rp per Unit/Hari)</label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder="Contoh: 20000"
+                  value={newColMultiplier}
+                  onChange={(e) => {
+                    const rawVal = e.target.value.replace(/\D/g, '');
+                    setNewColMultiplier(parseInt(rawVal, 10) || '');
+                  }}
+                  className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10 text-right"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5 shrink-0 rounded-b-3xl">
+            <Button
+              variant="ghost"
+              onClick={() => setIsCustomColDialogOpen(false)}
+              className="rounded-xl text-slate-500 hover:bg-slate-100"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleAddCustomColumn}
+              className="rounded-xl px-6 bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Tambah Kolom
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

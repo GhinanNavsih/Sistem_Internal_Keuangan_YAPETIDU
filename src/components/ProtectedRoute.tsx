@@ -21,6 +21,11 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
           if (pathname !== '/dashboard/payroll/uraian') {
             router.replace('/dashboard/payroll/uraian');
           }
+        } else if (profile.role === 'employee_admin') {
+          // Employee Admins are ONLY allowed to access /dashboard/employees
+          if (pathname !== '/dashboard/employees') {
+            router.replace('/dashboard/employees');
+          }
         }
       }
     }
@@ -43,6 +48,9 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   // Additional block in case they somehow render before the useEffect redirect completes
   if (profile.role === 'satker_head' && pathname !== '/dashboard/payroll/uraian') {
+    return null;
+  }
+  if (profile.role === 'employee_admin' && pathname !== '/dashboard/employees') {
     return null;
   }
 
