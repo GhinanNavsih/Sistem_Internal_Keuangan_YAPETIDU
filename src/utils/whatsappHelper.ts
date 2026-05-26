@@ -1,6 +1,4 @@
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
-import { storage } from '@/lib/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 /**
  * Generates the payslip PDF in memory and uploads it to Firebase Storage,
@@ -11,18 +9,42 @@ export async function uploadPaySlipPdf(data: PaySlipData): Promise<string> {
   const doc = generatePaySlipPdf(data, false);
   const pdfBlob = doc.output('blob');
   
-  // Create a clean unique path in storage
-  const cleanName = data.employeeName.replace(/[^a-zA-Z0-9]/g, '_');
-  const cleanPeriod = data.period.replace(/[^a-zA-Z0-9]/g, '_');
-  const filePath = `payslips/${cleanPeriod}/${cleanName}_${Date.now()}.pdf`;
-  
-  const storageRef = ref(storage, filePath);
-  
-  // Upload and get download URL
-  await uploadBytes(storageRef, pdfBlob, { contentType: 'application/pdf' });
-  const downloadUrl = await getDownloadURL(storageRef);
-  
-  return downloadUrl;
+  // Convert PDF blob to base64 to send to our server API
+  const reader = new FileReader();
+  const base64Promise = new Promise<string>((resolve, reject) => {
+    reader.onloadend = () => {
+      const base64data = (reader.result as string).split(',')[1];
+      resolve(base64data);
+    };
+    reader.onerror = reject;
+  });
+  reader.readAsDataURL(pdfBlob);
+  const pdfBase64 = await base64Promise;
+
+  // Call our secure server-side upload API to bypass browser CORS preflight rules
+  const response = await fetch('/api/payroll/upload-pdf', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      pdfBase64,
+      employeeName: data.employeeName,
+      period: data.period,
+    }),
+  });
+
+  if (!response.ok) {
+    const errJson = await response.json().catch(() => ({}));
+    throw new Error(errJson.error || 'Gagal mengunggah PDF ke server.');
+  }
+
+  const resJson = await response.json();
+  if (!resJson.success || !resJson.pdfUrl) {
+    throw new Error(resJson.error || 'Server tidak mengembalikan URL PDF.');
+  }
+
+  return resJson.pdfUrl;
 }
 
 
@@ -62,12 +84,11 @@ export function generateWhatsAppPaySlipUrl(
   const cleanPhone = sanitizePhoneNumber(phone);
   
   const formatIDR = (amount: number): string => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
+    const formattedNum = new Intl.NumberFormat('id-ID', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
+    return `Rp${formattedNum}`;
   };
 
   const totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
@@ -75,7 +96,7 @@ export function generateWhatsAppPaySlipUrl(
 
   // Format the WhatsApp message with markdown styling
   let text = `*SLIP GAJI YAPETIDU - ${period.toUpperCase()}*\n\n`;
-  text += `Halo *${employeeName}*,\nBerikut adalah rincian gaji Anda untuk periode *${period}*:\n\n`;
+  text += `Kepada Yth. Sdr/Sdri. *${employeeName}*,\n\nBerikut adalah rincian slip gaji resmi Anda untuk periode *${period}*:\n\n`;
   
   text += `*PENDAPATAN:*\n`;
   earnings.forEach(e => {

@@ -113,7 +113,7 @@ export default function EmployeesPage() {
   const resetForm = (tab: string): any => {
     if (tab === 'loyalis') {
       return {
-        personal_info: { name: '', employee_id_niy: '', tax_id_npwp: '', status: 'AKTIF' },
+        personal_info: { name: '', employee_id_niy: '', tax_id_npwp: '', status: 'AKTIF', phone: '', email: '' },
         banking_info: { bank_name: 'BSI', account_number: '' },
         employment_profile: { job_role: '', department_unit: '', date_of_hire: '', date_recognized: '', date_exit: '' },
         academic_and_tier: { education_level: '', education_code: '', functional_tier: '', level_code: '', base_salary_tier: '' },
@@ -123,6 +123,8 @@ export default function EmployeesPage() {
     return {
       name: '',
       nik: '',
+      phoneNumber: '',
+      email: '',
       collarType: 'blue_collar',
       employment: { status: 'active', jobCategory: 'OTHER', startDate: '', endDate: null },
       salaryProfile: { salaryGradeCode: '', baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' },
@@ -226,6 +228,8 @@ export default function EmployeesPage() {
             employee_id_niy: formData.personal_info?.employee_id_niy || null,
             tax_id_npwp: formData.personal_info?.tax_id_npwp || null,
             status: formData.personal_info?.status || 'AKTIF',
+            phone: formData.personal_info?.phone || '',
+            email: formData.personal_info?.email || '',
           },
           banking_info: {
             bank_name: formData.banking_info?.bank_name || null,
@@ -502,9 +506,11 @@ export default function EmployeesPage() {
                 <div className="grid grid-cols-3 gap-6">
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Identitas</h3>
-                    <div className="space-y-2"><Label>Nama</Label><Input value={formData.personal_info?.name || ''} onChange={e => updateNestedField('personal_info', 'name', e.target.value)} /></div>
-                    <div className="space-y-2"><Label>NIY</Label><Input value={formData.personal_info?.employee_id_niy || ''} onChange={e => updateNestedField('personal_info', 'employee_id_niy', e.target.value)} /></div>
-                    <div className="space-y-2"><Label>NPWP</Label><Input value={formData.personal_info?.tax_id_npwp || ''} onChange={e => updateNestedField('personal_info', 'tax_id_npwp', e.target.value)} /></div>
+                    <div className="space-y-2"><Label>Nama</Label><Input value={formData.personal_info?.name || ''} onChange={e => updateNestedField('personal_info', 'name', e.target.value)} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label>NIY</Label><Input value={formData.personal_info?.employee_id_niy || ''} onChange={e => updateNestedField('personal_info', 'employee_id_niy', e.target.value)} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label>NPWP</Label><Input value={formData.personal_info?.tax_id_npwp || ''} onChange={e => updateNestedField('personal_info', 'tax_id_npwp', e.target.value)} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label>Nomor WhatsApp/HP</Label><Input value={formData.personal_info?.phone || ''} onChange={e => updateNestedField('personal_info', 'phone', e.target.value)} className="rounded-xl border-slate-200" placeholder="Contoh: 08123456789" /></div>
+                    <div className="space-y-2"><Label>Alamat Email</Label><Input type="email" value={formData.personal_info?.email || ''} onChange={e => updateNestedField('personal_info', 'email', e.target.value)} className="rounded-xl border-slate-200" placeholder="Contoh: nama@domain.com" /></div>
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Pekerjaan</h3>
@@ -545,9 +551,11 @@ export default function EmployeesPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-6">
-                  <div className="col-span-3 grid grid-cols-3 gap-4">
+                  <div className="col-span-3 grid grid-cols-4 gap-4">
                     <div className="space-y-2"><Label htmlFor="name">Nama Lengkap</Label><Input id="name" required value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="rounded-xl border-slate-200" /></div>
                     <div className="space-y-2"><Label htmlFor="nik">NIK (Nomor Induk Kependudukan)</Label><Input id="nik" value={formData.nik || ''} onChange={e => setFormData({ ...formData, nik: e.target.value })} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label htmlFor="phoneNumber">Nomor WhatsApp/HP</Label><Input id="phoneNumber" value={formData.phoneNumber || ''} onChange={e => setFormData({ ...formData, phoneNumber: e.target.value })} className="rounded-xl border-slate-200" placeholder="Contoh: 08123456789" /></div>
+                    <div className="space-y-2"><Label htmlFor="email">Alamat Email</Label><Input id="email" type="email" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} className="rounded-xl border-slate-200" placeholder="Contoh: nama@domain.com" /></div>
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Pekerjaan</h3>

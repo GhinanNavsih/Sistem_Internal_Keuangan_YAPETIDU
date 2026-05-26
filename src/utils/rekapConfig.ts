@@ -36,6 +36,10 @@ export const REKAP_COLUMNS: Record<string, RekapColumn[]> = {
     { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
     { key: 'tunjanganKhusus',    label: 'Tunjangan Khusus',       type: 'currency',                                  slipLabel: 'Tunjangan Khusus' },
   ],
+  KEBERSIHAN_IC: [
+    { key: 'presensi',           label: 'Presensi',               type: 'currency',                                  slipLabel: 'Presensi' },
+    { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
+  ],
   TEKNISI: [
     { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
     { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },

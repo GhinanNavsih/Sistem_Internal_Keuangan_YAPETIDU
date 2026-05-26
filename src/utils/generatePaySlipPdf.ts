@@ -24,13 +24,7 @@ export interface PaySlipData {
   };
 }
 
-export function generatePaySlipPdf(data: PaySlipData, saveToFile = true): jsPDF {
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  });
-
+export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
   const pageWidth = doc.internal.pageSize.getWidth();
   const formatIDR = (amount: number): string => {
     if (amount === 0) return '-';
@@ -690,9 +684,38 @@ export function generatePaySlipPdf(data: PaySlipData, saveToFile = true): jsPDF 
     doc.text(formatIDR(netSalary), startX + tableWidth - 2, y + 5, { align: 'right' });
     y += rowH + 5;
   }
+}
 
-  // ─── Save ────────────────────────────────────────────────────
-  const filename = `Slip_Gaji_${data.employeeName.replace(/\s+/g, '_')}.pdf`;
+export function generatePaySlipPdf(data: PaySlipData, saveToFile = true): jsPDF {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  drawPaySlip(doc, data);
+
+  if (saveToFile) {
+    const filename = `Slip_Gaji_${data.employeeName.replace(/\s+/g, '_')}.pdf`;
+    doc.save(filename);
+  }
+  return doc;
+}
+
+export function generateMultiPaySlipPdf(slips: PaySlipData[], filename = 'Multi_Slip_Gaji.pdf', saveToFile = true): jsPDF {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  slips.forEach((data, index) => {
+    if (index > 0) {
+      doc.addPage();
+    }
+    drawPaySlip(doc, data);
+  });
+
   if (saveToFile) {
     doc.save(filename);
   }

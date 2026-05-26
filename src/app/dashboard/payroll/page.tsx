@@ -43,8 +43,9 @@ import {
   Banknote,
   ChevronRight,
   Search,
+  Mail,
 } from 'lucide-react';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
@@ -52,6 +53,7 @@ import PaySlipDialog, { SlipState } from '@/components/PaySlipDialog';
 import LegalitasPimpinanDialog from '@/components/LegalitasPimpinanDialog';
 import CetakPayrollDialog from '@/components/CetakPayrollDialog';
 import { generateWhatsAppPaySlipUrl, uploadPaySlipPdf } from '@/utils/whatsappHelper';
+import { generatePaySlipPdf, generateMultiPaySlipPdf, PaySlipData } from '@/utils/generatePaySlipPdf';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { generateRekapGajiPekaryaPdf, RekapGajiPekaryaData, RekapCategoryData } from '@/utils/generateRekapGajiPekaryaPdf';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
@@ -138,6 +140,14 @@ export default function PayrollValidationDashboard() {
   const [legalitasDialogOpen, setLegalitasDialogOpen] = useState(false);
   const [cetakPayrollDialogOpen, setCetakPayrollDialogOpen] = useState(false);
   const [printSelectorOpen, setPrintSelectorOpen] = useState(false);
+
+  // New States for Email & Cetak/Kirim Fallbacks
+  const [cetakKirimOpen, setCetakKirimOpen] = useState(false);
+  const [sendingSingleEmail, setSendingSingleEmail] = useState(false);
+  const [sendingBulkEmail, setSendingBulkEmail] = useState(false);
+  const [bulkEmailProgress, setBulkEmailProgress] = useState(0);
+  const [emailTargetCount, setEmailTargetCount] = useState(0);
+  const [currentBulkEmailName, setCurrentBulkEmailName] = useState('');
 
   const handlePrintRekap = () => {
     const activeEmployees = employees.filter(e => e.isActive);
@@ -443,11 +453,13 @@ export default function PayrollValidationDashboard() {
     fetchData();
   }, [payrollCollar]);
 
-  // ─── Fetch UraianGaji for current period ───────────────────────
+  // ─── Fetch UraianGaji & persisted SlipStates for current period ──
   useEffect(() => {
-    const fetchUraian = async () => {
+    const fetchPeriodData = async () => {
       try {
         const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+        
+        // 1. Fetch UraianGaji
         const snapshot = await getDocs(collection(db, 'UraianGaji'));
         const map: Record<string, UraianGajiDocument> = {};
         snapshot.docs.forEach(d => {
@@ -456,11 +468,30 @@ export default function PayrollValidationDashboard() {
           }
         });
         setUraianMap(map);
+
+        // 2. Fetch persisted SlipStates for the current period
+        const slipStatesSnapshot = await getDocs(collection(db, 'PayrollSlipStates'));
+        const persistedStates: Record<string, SlipState> = {};
+        slipStatesSnapshot.docs.forEach(d => {
+          // Document ID format: {period}_{employeeId}
+          if (d.id.startsWith(period + '_')) {
+            const data = d.data();
+            const empId = d.id.substring(period.length + 1);
+            persistedStates[empId] = {
+              status: data.status,
+              earnings: data.earnings || [],
+              deductions: data.deductions || [],
+              generatedAt: data.generatedAt,
+              confirmedAt: data.confirmedAt,
+            };
+          }
+        });
+        setSlipStates(persistedStates);
       } catch (err) {
-        console.error('Error fetching UraianGaji:', err);
+        console.error('Error fetching period data:', err);
       }
     };
-    fetchUraian();
+    fetchPeriodData();
   }, [targetDate]);
 
   // ─── Fetch VakasiTambahan for current period ───────────────────
@@ -520,6 +551,9 @@ export default function PayrollValidationDashboard() {
       return;
     }
 
+    // Pre-open the window immediately on user click to bypass the browser's popup blocker
+    const newTab = window.open('about:blank', '_blank');
+
     setUploadingWa(prev => ({ ...prev, [emp.id]: true }));
 
     try {
@@ -541,14 +575,38 @@ export default function PayrollValidationDashboard() {
 
       let pdfUrl: string | undefined = undefined;
       try {
-        // 1. Upload PDF and get download URL (false = don't trigger browser save)
-        pdfUrl = await uploadPaySlipPdf(slipData);
+        // 1. Upload PDF and get download URL with a 5-second timeout race (false = don't trigger browser save)
+        const uploadPromise = uploadPaySlipPdf(slipData);
+        
+        // Attach a silent catch handler to prevent unhandled rejection overlays in Next.js development mode
+        uploadPromise.catch((err) => {
+          console.warn('Background Firebase upload failed/aborted after timeout:', err.message);
+        });
+
+        const timeoutPromise = new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), 5000)
+        );
+
+        const result = await Promise.race([uploadPromise, timeoutPromise]);
+        if (result === null) {
+          console.warn('Firebase Storage upload timed out');
+          const confirmSendWithoutPdf = window.confirm(
+            'Gagal mengunggah file PDF slip gaji ke cloud (Firebase Storage terblokir/timeout).\n\nApakah Anda ingin tetap mengirimkan rincian slip gaji via WhatsApp tanpa link file PDF?'
+          );
+          if (!confirmSendWithoutPdf) {
+            if (newTab) newTab.close();
+            return;
+          }
+        } else {
+          pdfUrl = result;
+        }
       } catch (uploadErr) {
-        console.error('Failed to upload payslip PDF to storage:', uploadErr);
+        console.error('Failed to upload payslip PDF to storage (error):', uploadErr);
         const confirmSendWithoutPdf = window.confirm(
-          'Gagal mengunggah file PDF slip gaji ke cloud (kemungkinan kendala billing/jaringan Firebase Storage).\n\nApakah Anda ingin tetap mengirimkan rincian slip gaji via WhatsApp tanpa link file PDF?'
+          'Gagal mengunggah file PDF slip gaji ke cloud (Firebase Storage terblokir/error).\n\nApakah Anda ingin tetap mengirimkan rincian slip gaji via WhatsApp tanpa link file PDF?'
         );
         if (!confirmSendWithoutPdf) {
+          if (newTab) newTab.close();
           return;
         }
       }
@@ -568,28 +626,307 @@ export default function PayrollValidationDashboard() {
         pdfUrl
       );
 
-      window.open(waUrl, '_blank');
+      if (newTab) {
+        newTab.location.href = waUrl;
+      } else {
+        window.open(waUrl, '_blank');
+      }
     } catch (err) {
       console.error('Failed to process WhatsApp payslip:', err);
       alert('Terjadi kesalahan saat memproses slip gaji.');
+      if (newTab) newTab.close();
     } finally {
       setUploadingWa(prev => ({ ...prev, [emp.id]: false }));
     }
   };
 
-  const handleSlipGenerated = (employeeId: string, state: SlipState) => {
-    setSlipStates(prev => ({ ...prev, [employeeId]: state }));
+  const handleSendSingleEmail = async (emp: EmployeeRow) => {
+    const email = emp.email || emp.raw.personal_info?.email || emp.raw.email || '';
+    if (!email) {
+      alert(`Karyawan "${emp.name}" tidak memiliki alamat email yang terdaftar.`);
+      return;
+    }
+
+    const slip = slipStates[emp.id];
+    if (!slip) {
+      alert(`Slip gaji untuk "${emp.name}" belum dikonfirmasi.`);
+      return;
+    }
+
+    setSendingSingleEmail(true);
+
+    try {
+      const isLoyalis = payrollCollar === 'loyalis';
+      const slipData = {
+        employeeName: isLoyalis ? (emp.raw.personal_info?.name || '') : emp.name,
+        employeeNo: emp.rowIndex,
+        period: payrollPeriod.toUpperCase(),
+        jobCategory: isLoyalis
+          ? `STAF ${emp.raw.employment_profile?.job_role || ''}`
+          : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
+        earnings: slip.earnings,
+        deductions: slip.deductions,
+        isLoyalis: isLoyalis,
+        niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
+        npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
+        familyMetrics: isLoyalis ? emp.raw.family_allowance_metrics : undefined,
+      };
+
+      // 1. Generate PDF in memory
+      const doc = generatePaySlipPdf(slipData, false);
+      const pdfBase64 = doc.output('datauristring').split(',')[1];
+
+      // 2. Format a clean text breakdown
+      const totalEarnings = slip.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
+      const totalDeductions = slip.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
+      const netSalary = totalEarnings - totalDeductions;
+      
+      const formatIDR = (amount: number): string => {
+        return new Intl.NumberFormat('id-ID', {
+          style: 'currency',
+          currency: 'IDR',
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        }).format(amount);
+      };
+
+      let textBreakdown = `PENDAPATAN:\n`;
+      slip.earnings.forEach((e: any) => {
+        textBreakdown += `• ${e.label}: ${formatIDR(e.amount)}\n`;
+      });
+      textBreakdown += `Total Pendapatan: ${formatIDR(totalEarnings)}\n\n`;
+
+      textBreakdown += `POTONGAN:\n`;
+      if (slip.deductions.length > 0) {
+        slip.deductions.forEach((d: any) => {
+          textBreakdown += `• ${d.label}: ${formatIDR(d.amount)}\n`;
+        });
+        textBreakdown += `Total Potongan: ${formatIDR(totalDeductions)}\n\n`;
+      } else {
+        textBreakdown += `• Tidak ada potongan\n\n`;
+      }
+      textBreakdown += `GAJI BERSIH (Diterima): ${formatIDR(netSalary)}`;
+
+      // 3. Post to backend API
+      const response = await fetch('/api/payroll/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          employeeName: slipData.employeeName,
+          period: payrollPeriod,
+          pdfBase64,
+          textBreakdown,
+        }),
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || 'Gagal mengirim email.');
+      }
+
+      alert(`Email slip gaji berhasil dikirim ke "${emp.name}" (${email})!`);
+      setCetakKirimOpen(false);
+    } catch (err: any) {
+      console.error('Failed to send single email:', err);
+      alert(err.message || 'Terjadi kesalahan saat mengirim email.');
+    } finally {
+      setSendingSingleEmail(false);
+    }
   };
 
-  const handleSlipConfirmed = (employeeId: string) => {
-    setSlipStates(prev => ({
-      ...prev,
-      [employeeId]: {
-        ...prev[employeeId],
-        status: 'confirmed',
-        confirmedAt: new Date().toISOString(),
-      },
-    }));
+  const handleBulkEmail = async () => {
+    const isLoyalis = payrollCollar === 'loyalis';
+    
+    // Get confirmed employees with valid emails in the active filter list
+    const confirmedEmployees = displayEmployees.filter(emp => {
+      const slip = slipStates[emp.id];
+      const hasEmail = emp.email || emp.raw.personal_info?.email || emp.raw.email || '';
+      return slip && slip.status === 'confirmed' && hasEmail;
+    });
+
+    if (confirmedEmployees.length === 0) {
+      alert('Tidak ada karyawan terkonfirmasi dengan email terdaftar untuk dikirimi slip gaji.');
+      return;
+    }
+
+    const confirmText = `Apakah Anda yakin ingin mengirimkan email slip gaji secara bulk ke ${confirmedEmployees.length} karyawan terkonfirmasi?`;
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+
+    setSendingBulkEmail(true);
+    setBulkEmailProgress(0);
+    setEmailTargetCount(confirmedEmployees.length);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    const formatIDR = (amount: number): string => {
+      return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(amount);
+    };
+
+    for (let i = 0; i < confirmedEmployees.length; i++) {
+      const emp = confirmedEmployees[i];
+      setCurrentBulkEmailName(emp.name);
+      
+      const email = emp.email || emp.raw.personal_info?.email || emp.raw.email || '';
+      const slip = slipStates[emp.id];
+
+      try {
+        const slipData = {
+          employeeName: isLoyalis ? (emp.raw.personal_info?.name || '') : emp.name,
+          employeeNo: emp.rowIndex,
+          period: payrollPeriod.toUpperCase(),
+          jobCategory: isLoyalis
+            ? `STAF ${emp.raw.employment_profile?.job_role || ''}`
+            : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
+          earnings: slip.earnings,
+          deductions: slip.deductions,
+          isLoyalis: isLoyalis,
+          niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
+          npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
+          familyMetrics: isLoyalis ? emp.raw.family_allowance_metrics : undefined,
+        };
+
+        // Generate PDF
+        const doc = generatePaySlipPdf(slipData, false);
+        const pdfBase64 = doc.output('datauristring').split(',')[1];
+
+        // Format breakdown
+        const totalEarnings = slip.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
+        const totalDeductions = slip.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
+        const netSalary = totalEarnings - totalDeductions;
+
+        let textBreakdown = `PENDAPATAN:\n`;
+        slip.earnings.forEach((e: any) => {
+          textBreakdown += `• ${e.label}: ${formatIDR(e.amount)}\n`;
+        });
+        textBreakdown += `Total Pendapatan: ${formatIDR(totalEarnings)}\n\n`;
+
+        textBreakdown += `POTONGAN:\n`;
+        if (slip.deductions.length > 0) {
+          slip.deductions.forEach((d: any) => {
+            textBreakdown += `• ${d.label}: ${formatIDR(d.amount)}\n`;
+          });
+          textBreakdown += `Total Potongan: ${formatIDR(totalDeductions)}\n\n`;
+        } else {
+          textBreakdown += `• Tidak ada potongan\n\n`;
+        }
+        textBreakdown += `GAJI BERSIH (Diterima): ${formatIDR(netSalary)}`;
+
+        // Send Email
+        const response = await fetch('/api/payroll/send-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email,
+            employeeName: slipData.employeeName,
+            period: payrollPeriod,
+            pdfBase64,
+            textBreakdown,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('API failed');
+        }
+
+        successCount++;
+      } catch (err) {
+        console.error(`Failed to send bulk email to ${emp.name}:`, err);
+        failCount++;
+      }
+
+      setBulkEmailProgress(i + 1);
+    }
+
+    setSendingBulkEmail(false);
+    alert(`Bulk sending selesai!\n\nBerhasil: ${successCount} email\nGagal: ${failCount} email`);
+  };
+
+  const handleBulkPdf = () => {
+    const isLoyalis = payrollCollar === 'loyalis';
+    
+    // We only compile slips for employees who have confirmed states
+    const confirmedEmployees = displayEmployees.filter(emp => {
+      const slip = slipStates[emp.id];
+      return slip && slip.status === 'confirmed';
+    });
+
+    if (confirmedEmployees.length === 0) {
+      alert('Tidak ada karyawan terkonfirmasi untuk dicetak slip gajinya.');
+      return;
+    }
+
+    const slipsToDraw: PaySlipData[] = confirmedEmployees.map(emp => {
+      const slip = slipStates[emp.id];
+      return {
+        employeeName: isLoyalis ? (emp.raw.personal_info?.name || '') : emp.name,
+        employeeNo: emp.rowIndex,
+        period: payrollPeriod.toUpperCase(),
+        jobCategory: isLoyalis
+          ? `STAF ${emp.raw.employment_profile?.job_role || ''}`
+          : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
+        earnings: slip.earnings,
+        deductions: slip.deductions,
+        isLoyalis: isLoyalis,
+        niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
+        npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
+        familyMetrics: isLoyalis ? emp.raw.family_allowance_metrics : undefined,
+      };
+    });
+
+    const categoryLabel = isLoyalis ? 'Staf_Loyalis' : `Vakasi_${categoryFilter !== 'all' ? categoryFilter : 'Pekarya'}`;
+    const filename = `Multi_Slip_Gaji_${categoryLabel}_${payrollPeriod.replace(/\s+/g, '_')}.pdf`;
+
+    alert(`Memulai proses penggabungan ${slipsToDraw.length} slip gaji menjadi 1 file PDF. Silakan tunggu sebentar.`);
+    generateMultiPaySlipPdf(slipsToDraw, filename, true);
+  };
+
+  const handleSlipGenerated = async (employeeId: string, state: SlipState) => {
+    // 1. Update React state immediately for snappy UI feel
+    setSlipStates(prev => ({ ...prev, [employeeId]: state }));
+
+    // 2. Persist to Cloud Firestore so status is saved permanently
+    try {
+      const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+      const docId = `${period}_${employeeId}`;
+      const slipRef = doc(db, 'PayrollSlipStates', docId);
+      
+      await setDoc(slipRef, {
+        employeeId,
+        period,
+        status: state.status,
+        earnings: state.earnings,
+        deductions: state.deductions,
+        generatedAt: state.generatedAt || new Date().toISOString(),
+        confirmedAt: state.confirmedAt || new Date().toISOString(),
+      });
+      console.log(`Successfully saved payslip state for employee: ${employeeId}`);
+    } catch (err) {
+      console.error('Error saving payslip state to Firestore:', err);
+    }
+  };
+
+  const handleSlipConfirmed = async (employeeId: string) => {
+    const prevSlip = slipStates[employeeId];
+    const updatedState: SlipState = {
+      status: 'confirmed',
+      earnings: prevSlip?.earnings || [],
+      deductions: prevSlip?.deductions || [],
+      confirmedAt: new Date().toISOString(),
+    };
+    await handleSlipGenerated(employeeId, updatedState);
   };
 
   // ─── Stats ─────────────────────────────────────────────────────
@@ -802,8 +1139,36 @@ export default function PayrollValidationDashboard() {
 
           {/* Table Section */}
           <div className="p-0">
-            <div className="px-8 py-4 font-semibold text-lg border-b border-slate-100">
-              Validasi Gaji
+            <div className="px-8 py-4 flex flex-wrap justify-between items-center gap-4 border-b border-slate-100">
+              <span className="font-semibold text-lg">Validasi Gaji</span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleBulkEmail}
+                  disabled={sendingBulkEmail}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${sendingBulkEmail ? 'opacity-70 cursor-not-allowed' : ''}`}
+                >
+                  {sendingBulkEmail ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                      Mengirim... ({bulkEmailProgress}/{emailTargetCount})
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-4 h-4 text-indigo-500" />
+                      Kirim Email ke Semua
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkPdf}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm"
+                >
+                  <Printer className="w-4 h-4 text-slate-500" />
+                  Cetak PDF Semua
+                </button>
+              </div>
             </div>
             {loading ? (
               <div className="p-20 flex flex-col items-center justify-center text-slate-400">
@@ -901,100 +1266,50 @@ export default function PayrollValidationDashboard() {
                         </TableCell>
                         <TableCell className="text-right pr-8 py-4">
                           <div className="flex justify-end gap-2">
-                            {/* ─── Stage 1: No slip yet ──────────────── */}
-                            {!slip && (
+                            {/* ─── Stage 1: Unchecked/Not confirmed ──────────────── */}
+                            {(!slip || slip.status !== 'confirmed') && (
                               <button
-                                id={`cetak-${emp.id}`}
+                                id={`periksa-${emp.id}`}
                                 onClick={() => openCreateDialog(emp)}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
                                   bg-indigo-50 text-indigo-600 border border-indigo-200
                                   hover:bg-indigo-100 hover:border-indigo-300 hover:shadow-sm
-                                  transition-all duration-150 cursor-pointer"
+                                  transition-all duration-150 cursor-pointer shadow-sm"
                               >
-                                <Printer className="w-3.5 h-3.5" />
-                                Cetak
+                                <Eye className="w-3.5 h-3.5" />
+                                Periksa
                               </button>
                             )}
 
-                            {/* ─── Stage 2: Slip printed, awaiting confirmation ── */}
-                            {slip && slip.status === 'printed' && (
+                            {/* ─── Stage 2: Confirmed (Checked & Ready) ──────────────── */}
+                            {slip && slip.status === 'confirmed' && (
                               <>
                                 <button
-                                  id={`tinjau-${emp.id}`}
+                                  id={`edit-${emp.id}`}
                                   onClick={() => openReviewDialog(emp)}
                                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
                                     bg-amber-50 text-amber-600 border border-amber-200
                                     hover:bg-amber-100 hover:border-amber-300 hover:shadow-sm
-                                    transition-all duration-150 cursor-pointer"
+                                    transition-all duration-150 cursor-pointer shadow-sm"
                                 >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  Tinjau
+                                  <Pencil className="w-3.5 h-3.5" />
+                                  Edit
                                 </button>
                                 <button
-                                  id={`konfirmasi-${emp.id}`}
-                                  onClick={() => handleSlipConfirmed(emp.id)}
+                                  id={`cetak-kirim-${emp.id}`}
+                                  onClick={() => {
+                                    setSelectedEmployee(emp);
+                                    setCetakKirimOpen(true);
+                                  }}
                                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
                                     bg-emerald-50 text-emerald-600 border border-emerald-200
                                     hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-sm
-                                    transition-all duration-150 cursor-pointer"
+                                    transition-all duration-150 cursor-pointer shadow-sm"
                                 >
-                                  <CircleCheck className="w-3.5 h-3.5" />
-                                  Konfirmasi
-                                </button>
-                                <button
-                                  onClick={() => handleSendWhatsApp(emp, slip)}
-                                  disabled={uploadingWa[emp.id]}
-                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
-                                    bg-emerald-50 text-emerald-600 border border-emerald-200
-                                    hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-sm
-                                    transition-all duration-150 cursor-pointer ${uploadingWa[emp.id] ? 'opacity-70 cursor-not-allowed' : ''}`}
-                                  title="Kirim slip gaji via WhatsApp"
-                                >
-                                  {uploadingWa[emp.id] ? (
-                                    <>
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      Mengunggah...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <MessageCircle className="w-3.5 h-3.5 fill-emerald-600/10" />
-                                      Kirim WA
-                                    </>
-                                  )}
+                                  <Share2 className="w-3.5 h-3.5" />
+                                  Cetak/Kirim
                                 </button>
                               </>
-                            )}
-
-                            {/* ─── Stage 3: Confirmed ──────────────── */}
-                            {slip && slip.status === 'confirmed' && (
-                              <div className="flex items-center gap-2">
-                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
-                                  bg-emerald-100 text-emerald-700 border border-emerald-200">
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  Lunas
-                                </span>
-                                <button
-                                  onClick={() => handleSendWhatsApp(emp, slip)}
-                                  disabled={uploadingWa[emp.id]}
-                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
-                                    bg-emerald-50 text-emerald-600 border border-emerald-200
-                                    hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-sm
-                                    transition-all duration-150 cursor-pointer ${uploadingWa[emp.id] ? 'opacity-70 cursor-not-allowed' : ''}`}
-                                  title="Kirim slip gaji via WhatsApp"
-                                >
-                                  {uploadingWa[emp.id] ? (
-                                    <>
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      Mengunggah...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <MessageCircle className="w-3.5 h-3.5 fill-emerald-600/10" />
-                                      Kirim WA
-                                    </>
-                                  )}
-                                </button>
-                              </div>
                             )}
                           </div>
                         </TableCell>
@@ -1144,6 +1459,129 @@ export default function PayrollValidationDashboard() {
               </div>
               <div className="flex-shrink-0 self-center pl-2">
                 <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-amber-500 group-hover:translate-x-1 transition-all duration-200" />
+              </div>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Cetak & Kirim Dialog ──────────────────────────────────── */}
+      <Dialog open={cetakKirimOpen} onOpenChange={setCetakKirimOpen}>
+        <DialogContent className="sm:max-w-[460px] p-6 rounded-2xl bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
+                <Share2 className="w-5 h-5" />
+              </div>
+              Cetak / Kirim Slip Gaji
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 mt-2 text-sm">
+              Pilih metode pengiriman slip gaji untuk <span className="font-semibold text-slate-700">{selectedEmployee?.name}</span> periode <span className="font-semibold text-slate-700">{payrollPeriod}</span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3.5 mt-4">
+            {/* 1. Kirim via WhatsApp */}
+            <button
+              type="button"
+              disabled={sendingSingleEmail}
+              onClick={async () => {
+                if (!selectedEmployee) return;
+                const slip = slipStates[selectedEmployee.id];
+                if (slip) {
+                  await handleSendWhatsApp(selectedEmployee, slip);
+                }
+              }}
+              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-emerald-50/30 hover:border-emerald-100 transition-all duration-200 text-left outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="flex-shrink-0 p-3 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100/70 transition-colors">
+                <MessageCircle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-emerald-900 transition-colors">
+                  Kirim via WhatsApp
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  Kirim rincian pendapatan & link PDF resmi langsung ke WhatsApp Karyawan.
+                </p>
+              </div>
+              <div className="flex-shrink-0 self-center pl-2">
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all duration-200" />
+              </div>
+            </button>
+
+            {/* 2. Kirim via Gmail / Email */}
+            <button
+              type="button"
+              disabled={sendingSingleEmail}
+              onClick={async () => {
+                if (selectedEmployee) {
+                  await handleSendSingleEmail(selectedEmployee);
+                }
+              }}
+              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="flex-shrink-0 p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
+                {sendingSingleEmail ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Mail className="w-5 h-5" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-indigo-900 transition-colors">
+                  Kirim via Email (Gmail)
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  Kirim slip gaji sebagai lampiran file PDF resmi langsung ke alamat email Karyawan.
+                </p>
+              </div>
+              <div className="flex-shrink-0 self-center pl-2">
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all duration-200" />
+              </div>
+            </button>
+
+            {/* 3. Cetak PDF Mandiri */}
+            <button
+              type="button"
+              disabled={sendingSingleEmail}
+              onClick={() => {
+                if (!selectedEmployee) return;
+                const slip = slipStates[selectedEmployee.id];
+                if (!slip) return;
+                const isLoyalis = payrollCollar === 'loyalis';
+                const slipData = {
+                  employeeName: isLoyalis ? (selectedEmployee.raw.personal_info?.name || '') : selectedEmployee.name,
+                  employeeNo: selectedEmployee.rowIndex,
+                  period: payrollPeriod.toUpperCase(),
+                  jobCategory: isLoyalis
+                    ? `STAF ${selectedEmployee.raw.employment_profile?.job_role || ''}`
+                    : `VAKASI ${selectedEmployee.raw.employment?.jobCategory || ''}`,
+                  earnings: slip.earnings,
+                  deductions: slip.deductions,
+                  isLoyalis: isLoyalis,
+                  niy: isLoyalis ? selectedEmployee.raw.personal_info?.employee_id_niy || '' : '',
+                  npwp: isLoyalis ? selectedEmployee.raw.personal_info?.tax_id_npwp || '' : '',
+                  familyMetrics: isLoyalis ? selectedEmployee.raw.family_allowance_metrics : undefined,
+                };
+                generatePaySlipPdf(slipData, true);
+                setCetakKirimOpen(false);
+              }}
+              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-slate-100 hover:border-slate-300 transition-all duration-200 text-left outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="flex-shrink-0 p-3 rounded-xl bg-slate-100 text-slate-600 group-hover:bg-slate-200 transition-colors">
+                <Printer className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-slate-900 transition-colors">
+                  Unduh / Cetak PDF
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  Unduh dokumen PDF slip gaji Karyawan secara langsung ke perangkat Anda.
+                </p>
+              </div>
+              <div className="flex-shrink-0 self-center pl-2">
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-600 group-hover:translate-x-1 transition-all duration-200" />
               </div>
             </button>
           </div>
