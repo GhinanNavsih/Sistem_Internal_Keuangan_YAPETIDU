@@ -49,13 +49,6 @@ export function generatePayrollStatementPdf(data: PayrollStatementData): void {
       { content: 'SATKER', styles: { halign: 'center', valign: 'middle', fillColor: [220, 220, 220] } },
       { content: 'NO. REK', styles: { halign: 'center', valign: 'middle', fillColor: [220, 220, 220] } },
       { content: 'JUMLAH GAJI\nBERSIH', styles: { halign: 'center', valign: 'middle', fillColor: [220, 220, 220] } },
-    ],
-    [
-      { content: '1', styles: { halign: 'center', valign: 'middle', fillColor: [0, 0, 0], textColor: [255, 255, 255] } },
-      { content: '2', styles: { halign: 'center', valign: 'middle', fillColor: [0, 0, 0], textColor: [255, 255, 255] } },
-      { content: '3', styles: { halign: 'center', valign: 'middle', fillColor: [0, 0, 0], textColor: [255, 255, 255] } },
-      { content: '', styles: { halign: 'center', valign: 'middle', fillColor: [0, 0, 0], textColor: [255, 255, 255] } },
-      { content: '4', styles: { halign: 'center', valign: 'middle', fillColor: [0, 0, 0], textColor: [255, 255, 255] } },
     ]
   ];
 
