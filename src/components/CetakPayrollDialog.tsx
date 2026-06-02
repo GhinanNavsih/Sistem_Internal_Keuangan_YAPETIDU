@@ -36,6 +36,7 @@ interface CetakPayrollDialogProps {
   onPrintPdf: () => void;
   vakasiTambahanMap?: Record<string, number>;
   functionalAllowanceMap?: Record<string, number>;
+  slipStates?: Record<string, any>;
 }
 
 export default function CetakPayrollDialog({
@@ -49,6 +50,7 @@ export default function CetakPayrollDialog({
   onPrintPdf,
   vakasiTambahanMap,
   functionalAllowanceMap,
+  slipStates,
 }: CetakPayrollDialogProps) {
 
   const handleExportXlsx = () => {
@@ -69,11 +71,22 @@ export default function CetakPayrollDialog({
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
       const uraianEntry = uraianDoc?.entries?.[emp.id];
       const vakasiSum = vakasiTambahanMap?.[emp.id] ?? 0;
-      
       const fAllowance = functionalAllowanceMap?.[emp.id] ?? 0;
-      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance);
-      const totalDeductions = calculateTotalDeductions(emp.raw);
-      const netSalary = calculateNetSalary(earnings, totalDeductions);
+      
+      const slip = slipStates?.[emp.id];
+      let earnings = 0;
+      let totalDeductions = 0;
+      let netSalary = 0;
+
+      if (slip && slip.earnings && slip.deductions) {
+        earnings = slip.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
+        totalDeductions = slip.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
+        netSalary = earnings - totalDeductions;
+      } else {
+        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance);
+        totalDeductions = calculateTotalDeductions(emp.raw);
+        netSalary = calculateNetSalary(earnings, totalDeductions);
+      }
 
       let satker = cat;
       if (satker === 'KEBERSIHAN_IC') satker = 'KEBERSIHAN IC';

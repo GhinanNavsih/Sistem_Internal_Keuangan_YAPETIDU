@@ -40,6 +40,7 @@ interface LegalitasPimpinanDialogProps {
   periodName: string;
   vakasiTambahanMap?: Record<string, number>;
   functionalAllowanceMap?: Record<string, number>;
+  slipStates?: Record<string, any>;
 }
 
 function buildInitialEarnings(
@@ -154,6 +155,7 @@ export default function LegalitasPimpinanDialog({
   periodName,
   vakasiTambahanMap,
   functionalAllowanceMap,
+  slipStates,
 }: LegalitasPimpinanDialogProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>(categories[0] || '');
 
@@ -180,20 +182,40 @@ export default function LegalitasPimpinanDialog({
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
       const uraianEntry = uraianDoc?.entries?.[emp.id];
       const vakasiSum = vakasiTambahanMap?.[emp.id] ?? 0;
-      
       const fAllowance = functionalAllowanceMap?.[emp.id] ?? 0;
-      const earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance);
-      const deductions = buildInitialDeductions(emp.raw);
 
-      const totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
-      const totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
-      const netSalary = totalEarnings - totalDeductions;
+      const slip = slipStates?.[emp.id];
+      let earnings: PaySlipField[] = [];
+      let deductions: PaySlipField[] = [];
+      let totalEarnings = 0;
+      let totalDeductions = 0;
+      let netSalary = 0;
+      let gapokVal = gapok;
+
+      if (slip && slip.earnings && slip.deductions) {
+        earnings = slip.earnings;
+        deductions = slip.deductions;
+        totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
+        totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
+        netSalary = totalEarnings - totalDeductions;
+        const gapokField = earnings.find(e => e.label === 'Gapok' || e.label === 'Gaji Pokok');
+        if (gapokField) {
+          gapokVal = gapokField.amount;
+        }
+      } else {
+        earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance);
+        deductions = buildInitialDeductions(emp.raw);
+        totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
+        totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
+        netSalary = totalEarnings - totalDeductions;
+        gapokVal = gapok;
+      }
 
       return {
         employeeNo: idx + 1,
         nik: emp.raw.personal_info?.employee_id_niy || emp.raw.nik || '',
         name: emp.name,
-        gapok,
+        gapok: gapokVal,
         earnings,
         totalEarnings,
         deductions,

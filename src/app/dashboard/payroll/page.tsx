@@ -17,6 +17,7 @@ import { Card } from '@/components/ui/card';
 import {
   CheckCircle2,
   Pencil,
+  AlertCircle,
   Globe,
   MessageCircle,
   Share2,
@@ -102,6 +103,11 @@ export default function PayrollValidationDashboard() {
   const { profile, logout } = useAuth();
   const [targetDate] = useState(new Date('2026-05-01'));
   const [activeTab, setActiveTab] = useState('Tagihan');
+  const [notification, setNotification] = useState<{
+    show: boolean;
+    type: 'success' | 'error';
+    message: string;
+  }>({ show: false, type: 'success', message: '' });
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [uploadingWa, setUploadingWa] = useState<Record<string, boolean>>({});
   const [salaryMatrix, setSalaryMatrix] = useState<SalaryMatrix>({});
@@ -174,16 +180,47 @@ export default function PayrollValidationDashboard() {
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
       const uraianEntry = uraianDoc?.entries?.[emp.id];
 
-      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0);
+      const slip = slipStates[emp.id];
+      let earnings = 0;
+      let bpjs = 0;
+      let kopRochmad = 0;
+      let kopUnipdu = 0;
+      let tunai = 0;
+      let danaSosial = 0;
+      let totalDeductions = 0;
 
-      const bpjs = payrollCollar === 'loyalis' ? 0 : (emp.raw.bpjs?.deductionAmount ? Math.round(emp.raw.bpjs.deductionAmount) : 0);
-      const kopRochmad = payrollCollar === 'loyalis' ? 0 : (emp.raw.deductions?.koperasiRochmad || 0);
-      const kopUnipdu = 0;
-      const tunai = 0;
-      const danaSosial = 0;
+      if (slip && slip.earnings && slip.deductions) {
+        earnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
+        slip.deductions.forEach(d => {
+          const label = d.label.toLowerCase();
+          const amount = d.amount || 0;
+          totalDeductions += amount;
 
-      const totalDeductions = calculateTotalDeductions(emp.raw);
-      const netSalary = calculateNetSalary(earnings, totalDeductions);
+          if (label === 'bpjs') {
+            bpjs += amount;
+          } else if (label.includes('rochmad')) {
+            kopRochmad += amount;
+          } else if (label.includes('unipdu') || label.includes('rejoso') || label.includes('gemilang')) {
+            kopUnipdu += amount;
+          } else if (label.includes('tunai') || label.includes('pinlu') || label.includes('tagihan') || label.includes('revisi')) {
+            tunai += amount;
+          } else if (label.includes('sosial') || label.includes('ziz')) {
+            danaSosial += amount;
+          } else {
+            tunai += amount;
+          }
+        });
+      } else {
+        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0);
+        bpjs = payrollCollar === 'loyalis' ? 0 : (emp.raw.bpjs?.deductionAmount ? Math.round(emp.raw.bpjs.deductionAmount) : 0);
+        kopRochmad = payrollCollar === 'loyalis' ? 0 : (emp.raw.deductions?.koperasiRochmad || 0);
+        kopUnipdu = 0;
+        tunai = 0;
+        danaSosial = 0;
+        totalDeductions = calculateTotalDeductions(emp.raw);
+      }
+
+      const netSalary = earnings - totalDeductions;
 
       if (categoriesMap[cat]) {
         categoriesMap[cat].totalEarnings += earnings;
@@ -226,9 +263,20 @@ export default function PayrollValidationDashboard() {
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
       const uraianEntry = uraianDoc?.entries?.[emp.id];
 
-      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0);
-      const totalDeductions = calculateTotalDeductions(emp.raw);
-      const netSalary = calculateNetSalary(earnings, totalDeductions);
+      const slip = slipStates[emp.id];
+      let earnings = 0;
+      let totalDeductions = 0;
+      let netSalary = 0;
+
+      if (slip && slip.earnings && slip.deductions) {
+        earnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
+        totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
+        netSalary = earnings - totalDeductions;
+      } else {
+        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0);
+        totalDeductions = calculateTotalDeductions(emp.raw);
+        netSalary = calculateNetSalary(earnings, totalDeductions);
+      }
 
       totalNetSalary += netSalary;
 
@@ -900,8 +948,10 @@ export default function PayrollValidationDashboard() {
     // 2. Persist to Cloud Firestore so status is saved permanently
     try {
       const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-      const docId = `${period}_${employeeId}`;
-      const slipRef = doc(db, 'PayrollSlipStates', docId);
+      const docId = `${period}_employeeId`;
+      // Let's use the actual document ID
+      const realDocId = `${period}_${employeeId}`;
+      const slipRef = doc(db, 'PayrollSlipStates', realDocId);
       
       await setDoc(slipRef, {
         employeeId,
@@ -912,9 +962,27 @@ export default function PayrollValidationDashboard() {
         generatedAt: state.generatedAt || new Date().toISOString(),
         confirmedAt: state.confirmedAt || new Date().toISOString(),
       });
+
+      setNotification({
+        show: true,
+        type: 'success',
+        message: 'Data slip gaji berhasil disimpan!'
+      });
+      setTimeout(() => {
+        setNotification(prev => ({ ...prev, show: false }));
+      }, 3000);
+
       console.log(`Successfully saved payslip state for employee: ${employeeId}`);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving payslip state to Firestore:', err);
+      setNotification({
+        show: true,
+        type: 'error',
+        message: `Gagal menyimpan data: ${err.message || 'Terjadi kesalahan sistem'}`
+      });
+      setTimeout(() => {
+        setNotification(prev => ({ ...prev, show: false }));
+      }, 5000);
     }
   };
 
@@ -1381,6 +1449,7 @@ export default function PayrollValidationDashboard() {
         periodName={payrollPeriod}
         vakasiTambahanMap={vakasiTambahanMap}
         functionalAllowanceMap={functionalAllowanceMap}
+        slipStates={slipStates}
       />
 
       <CetakPayrollDialog
@@ -1394,6 +1463,7 @@ export default function PayrollValidationDashboard() {
         onPrintPdf={handlePrintPayrollStatement}
         vakasiTambahanMap={vakasiTambahanMap}
         functionalAllowanceMap={functionalAllowanceMap}
+        slipStates={slipStates}
       />
 
       {/* ─── Print Selection Dialog ─────────────────────────────────── */}
@@ -1609,6 +1679,22 @@ export default function PayrollValidationDashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ─── Snackbar Notification ─────────────────────────── */}
+      {notification.show && (
+        <div className={`fixed top-5 right-5 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-lg transition-all duration-300 animate-in fade-in slide-in-from-top-4 ${
+          notification.type === 'success'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            : 'bg-rose-50 border-rose-200 text-rose-800'
+        }`}>
+          {notification.type === 'success' ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+          ) : (
+            <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+          )}
+          <span className="text-sm font-semibold">{notification.message}</span>
+        </div>
+      )}
     </div>
   );
 }
