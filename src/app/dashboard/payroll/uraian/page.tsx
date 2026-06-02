@@ -1046,16 +1046,16 @@ export default function UraianPage() {
               ) : (
                 <div className={`overflow-x-auto max-h-[700px] overflow-y-auto ${hasScanData ? 'bg-slate-50/50 p-6' : ''} transition-all duration-500`}>
                   <table className={`w-full text-left ${hasScanData ? 'border-separate border-spacing-y-4' : 'border-collapse'}`}>
-                    <thead className={hasScanData ? 'bg-transparent' : 'bg-[#F8FAFC]'}>
+                    <thead className="sticky top-0 z-20 bg-[#F8FAFC]">
                       <tr>
-                        <th className={`px-6 py-4 text-[10px] font-bold uppercase text-slate-950 tracking-wider ${!hasScanData ? 'border-b border-slate-300' : ''}`}>Nama</th>
+                        <th className={`px-6 py-4 text-[10px] font-bold uppercase text-slate-950 tracking-wider sticky top-0 z-20 bg-[#F8FAFC] ${!hasScanData ? 'border-b border-slate-300' : ''}`}>Nama</th>
                         {columns.map(col => {
                           const hasMultiplier = col.type === 'count' && col.multiplier;
                           const isCustom = col.key.startsWith('custom_');
                           return (
                             <th
                               key={col.key}
-                              className={`px-4 py-4 text-[10px] font-bold uppercase text-center tracking-wider ${!hasScanData ? 'border-b border-slate-300' : ''}`}
+                              className={`px-4 py-4 text-[10px] font-bold uppercase text-center tracking-wider sticky top-0 z-20 bg-[#F8FAFC] ${!hasScanData ? 'border-b border-slate-300' : ''}`}
                             >
                               <div className="flex flex-col items-center justify-center gap-0.5 relative group/header">
                                 <div className="flex items-center justify-center gap-1">
@@ -1079,7 +1079,7 @@ export default function UraianPage() {
                             </th>
                           );
                         })}
-                        {hasScanData && <th className="w-10"></th>}
+                        {hasScanData && <th className="w-10 sticky top-0 z-20 bg-[#F8FAFC]"></th>}
                       </tr>
                     </thead>
                     {employees.map((emp, empIdx) => {
