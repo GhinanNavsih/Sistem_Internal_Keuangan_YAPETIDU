@@ -4,11 +4,7 @@ import autoTable from 'jspdf-autotable';
 export interface RekapCategoryData {
   categoryName: string;
   totalEarnings: number; // JUMLAH
-  bpjs: number;
-  kopRochmad: number;
-  kopUnipdu: number;
-  tunai: number;
-  danaSosial: number;
+  deductions: Record<string, number>; // Maps sanitized deduction label to amount
   totalDeductions: number; // JML POTONGAN
   netSalary: number; // GAJI BERSIH
 }
@@ -16,6 +12,7 @@ export interface RekapCategoryData {
 export interface RekapGajiPekaryaData {
   period: string; // e.g. "APRIL 2026"
   categories: RekapCategoryData[];
+  deductionKeys: string[]; // Ordered list of deduction column headers (sanitized)
 }
 
 export function generateRekapGajiPekaryaPdf(data: RekapGajiPekaryaData): void {
@@ -47,22 +44,16 @@ export function generateRekapGajiPekaryaPdf(data: RekapGajiPekaryaData): void {
   const grandTotal = data.categories.reduce(
     (acc, cat) => {
       acc.totalEarnings += cat.totalEarnings;
-      acc.bpjs += cat.bpjs;
-      acc.kopRochmad += cat.kopRochmad;
-      acc.kopUnipdu += cat.kopUnipdu;
-      acc.tunai += cat.tunai;
-      acc.danaSosial += cat.danaSosial;
       acc.totalDeductions += cat.totalDeductions;
       acc.netSalary += cat.netSalary;
+      data.deductionKeys.forEach(key => {
+        acc.deductions[key] = (acc.deductions[key] || 0) + (cat.deductions[key] || 0);
+      });
       return acc;
     },
     {
       totalEarnings: 0,
-      bpjs: 0,
-      kopRochmad: 0,
-      kopUnipdu: 0,
-      tunai: 0,
-      danaSosial: 0,
+      deductions: {} as Record<string, number>,
       totalDeductions: 0,
       netSalary: 0,
     }
@@ -73,50 +64,64 @@ export function generateRekapGajiPekaryaPdf(data: RekapGajiPekaryaData): void {
       { content: 'NO', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
       { content: 'URAIAN', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
       { content: 'JUMLAH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'POTONGAN', colSpan: 6, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      { content: 'POTONGAN', colSpan: data.deductionKeys.length + 1, styles: { halign: 'center' as const, valign: 'middle' as const } },
       { content: 'GAJI BERSIH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
     ],
     [
-      { content: 'BPJS', styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'KOP ROCHMAD', styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'KOP. REJOSO GEMILANG', styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'TUNAI', styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'DANA SOSIAL', styles: { halign: 'center' as const, valign: 'middle' as const } },
+      ...data.deductionKeys.map(key => ({
+        content: key.toUpperCase(),
+        styles: { halign: 'center' as const, valign: 'middle' as const },
+      })),
       { content: 'JML POTONGAN', styles: { halign: 'center' as const, valign: 'middle' as const } },
     ],
   ];
 
-  const body = [];
+  const body: any[] = [];
 
   // Data Rows
   data.categories.forEach((cat, idx) => {
-    body.push([
+    const row: any[] = [
       { content: (idx + 1).toString(), styles: { halign: 'center' as const } },
       { content: cat.categoryName },
       { content: formatIDR(cat.totalEarnings), styles: { halign: 'right' as const } },
-      { content: formatIDR(cat.bpjs), styles: { halign: 'right' as const } },
-      { content: formatIDR(cat.kopRochmad), styles: { halign: 'right' as const } },
-      { content: formatIDR(cat.kopUnipdu), styles: { halign: 'right' as const } },
-      { content: formatIDR(cat.tunai), styles: { halign: 'right' as const } },
-      { content: formatIDR(cat.danaSosial), styles: { halign: 'right' as const } },
-      { content: formatIDR(cat.totalDeductions), styles: { halign: 'right' as const } },
-      { content: formatIDR(cat.netSalary), styles: { halign: 'right' as const } },
-    ]);
+    ];
+
+    // Add deductions
+    data.deductionKeys.forEach(key => {
+      row.push({ content: formatIDR(cat.deductions[key] || 0), styles: { halign: 'right' as const } });
+    });
+
+    // Add totalDeductions and netSalary
+    row.push({ content: formatIDR(cat.totalDeductions), styles: { halign: 'right' as const } });
+    row.push({ content: formatIDR(cat.netSalary), styles: { halign: 'right' as const } });
+
+    body.push(row);
   });
 
-  // Grand Total Row (Now at the bottom with mauve background)
-  body.push([
+  // Grand Total Row
+  const grandTotalRow: any[] = [
     { content: '', styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255] } },
     { content: 'JUMLAH', styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255] } },
     { content: formatIDR(grandTotal.totalEarnings), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
-    { content: formatIDR(grandTotal.bpjs), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
-    { content: formatIDR(grandTotal.kopRochmad), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
-    { content: formatIDR(grandTotal.kopUnipdu), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
-    { content: formatIDR(grandTotal.tunai), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
-    { content: formatIDR(grandTotal.danaSosial), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
-    { content: formatIDR(grandTotal.totalDeductions), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
-    { content: formatIDR(grandTotal.netSalary), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
-  ]);
+  ];
+
+  data.deductionKeys.forEach(key => {
+    grandTotalRow.push({
+      content: formatIDR(grandTotal.deductions[key] || 0),
+      styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const },
+    });
+  });
+
+  grandTotalRow.push({
+    content: formatIDR(grandTotal.totalDeductions),
+    styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const },
+  });
+  grandTotalRow.push({
+    content: formatIDR(grandTotal.netSalary),
+    styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const },
+  });
+
+  body.push(grandTotalRow);
 
   autoTable(doc, {
     startY: y,

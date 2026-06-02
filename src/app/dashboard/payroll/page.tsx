@@ -156,18 +156,100 @@ export default function PayrollValidationDashboard() {
   const [currentBulkEmailName, setCurrentBulkEmailName] = useState('');
 
   const handlePrintRekap = () => {
+    const sanitizeDeductionLabel = (label: string): string => {
+      const clean = label.trim();
+      const lower = clean.toLowerCase();
+      
+      if (lower.includes('bpjs')) {
+        return 'BPJS';
+      }
+      if (lower.includes('rochmad')) {
+        return 'Koperasi Rochmad';
+      }
+      if (lower.includes('unipdu') || lower.includes('rejoso') || lower.includes('gemilang')) {
+        return 'Kop. Rejoso Gemilang';
+      }
+      if (lower.includes('sosial') || lower.includes('ziz')) {
+        return 'Dana Sosial';
+      }
+      if (lower.includes('tunai')) {
+        return 'Tunai';
+      }
+      
+      // Title Case for any other custom label
+      return clean
+        .split(/\s+/)
+        .map(word => {
+          if (!word) return '';
+          return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+        })
+        .join(' ');
+    };
+
+    const getEmployeeDeductions = (emp: any, slip?: any, collar?: 'blue' | 'loyalis'): { label: string; amount: number }[] => {
+      if (slip && slip.deductions) {
+        return slip.deductions.map((d: any) => ({
+          label: d.label,
+          amount: d.amount || 0,
+        }));
+      }
+      
+      const deductions: { label: string; amount: number }[] = [];
+      if (collar === 'loyalis') {
+        deductions.push({ label: 'Koperasi Rochmad', amount: 0 });
+        deductions.push({ label: 'BPJS', amount: 0 });
+        deductions.push({ label: 'THT', amount: 0 });
+        deductions.push({ label: 'Tabungan', amount: 0 });
+        deductions.push({ label: 'ZIZ', amount: 0 });
+        deductions.push({ label: 'Revisi Gaji', amount: 0 });
+        deductions.push({ label: 'Pinlu/Tagihan', amount: 0 });
+        deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+        deductions.push({ label: 'Potongan Presensi', amount: 0 });
+        deductions.push({ label: 'Potongan Bonus Presensi', amount: 0 });
+      } else {
+        const bpjsAmount = emp.raw?.bpjs?.deductionAmount ? Math.round(emp.raw.bpjs.deductionAmount) : 0;
+        const kopRochmadAmount = emp.raw?.deductions?.koperasiRochmad || 0;
+        
+        deductions.push({ label: 'BPJS', amount: bpjsAmount });
+        deductions.push({ label: 'Kop. Rochmad', amount: kopRochmadAmount });
+        deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+      }
+      return deductions;
+    };
+
     const activeEmployees = employees.filter(e => e.isActive);
+
+    // Collect all unique deduction keys across all active employees
+    const customKeysSet = new Set<string>();
+    const standardKeys = ['BPJS', 'Koperasi Rochmad', 'Kop. Rejoso Gemilang', 'Tunai', 'Dana Sosial'];
+
+    activeEmployees.forEach(emp => {
+      const slip = slipStates[emp.id];
+      const deductionsList = getEmployeeDeductions(emp, slip, payrollCollar);
+      
+      deductionsList.forEach(d => {
+        const sanitized = sanitizeDeductionLabel(d.label);
+        if (!standardKeys.includes(sanitized) && d.amount > 0) {
+          customKeysSet.add(sanitized);
+        }
+      });
+    });
+
+    const customDeductionKeys = Array.from(customKeysSet).sort();
+    const allDeductionKeys = [...standardKeys, ...customDeductionKeys];
+
     const categoriesMap: Record<string, RekapCategoryData> = {};
 
     categories.forEach(cat => {
+      const deductionsInit: Record<string, number> = {};
+      allDeductionKeys.forEach(key => {
+        deductionsInit[key] = 0;
+      });
+
       categoriesMap[cat] = {
         categoryName: payrollCollar === 'loyalis' ? `STAF ${cat}` : `VAKASI ${cat}`,
         totalEarnings: 0,
-        bpjs: 0,
-        kopRochmad: 0,
-        kopUnipdu: 0,
-        tunai: 0,
-        danaSosial: 0,
+        deductions: deductionsInit,
         totalDeductions: 0,
         netSalary: 0,
       };
@@ -182,61 +264,60 @@ export default function PayrollValidationDashboard() {
 
       const slip = slipStates[emp.id];
       let earnings = 0;
-      let bpjs = 0;
-      let kopRochmad = 0;
-      let kopUnipdu = 0;
-      let tunai = 0;
-      let danaSosial = 0;
       let totalDeductions = 0;
+
+      // Temporary local map for this employee's deductions
+      const empDeductions: Record<string, number> = {};
+      allDeductionKeys.forEach(key => {
+        empDeductions[key] = 0;
+      });
 
       if (slip && slip.earnings && slip.deductions) {
         earnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
         slip.deductions.forEach(d => {
-          const label = d.label.toLowerCase();
+          const sanitized = sanitizeDeductionLabel(d.label);
           const amount = d.amount || 0;
           totalDeductions += amount;
-
-          if (label === 'bpjs') {
-            bpjs += amount;
-          } else if (label.includes('rochmad')) {
-            kopRochmad += amount;
-          } else if (label.includes('unipdu') || label.includes('rejoso') || label.includes('gemilang')) {
-            kopUnipdu += amount;
-          } else if (label.includes('tunai') || label.includes('pinlu') || label.includes('tagihan') || label.includes('revisi')) {
-            tunai += amount;
-          } else if (label.includes('sosial') || label.includes('ziz')) {
-            danaSosial += amount;
+          
+          if (empDeductions[sanitized] !== undefined) {
+            empDeductions[sanitized] += amount;
           } else {
-            tunai += amount;
+            empDeductions[sanitized] = amount;
           }
         });
       } else {
         earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0);
-        bpjs = payrollCollar === 'loyalis' ? 0 : (emp.raw.bpjs?.deductionAmount ? Math.round(emp.raw.bpjs.deductionAmount) : 0);
-        kopRochmad = payrollCollar === 'loyalis' ? 0 : (emp.raw.deductions?.koperasiRochmad || 0);
-        kopUnipdu = 0;
-        tunai = 0;
-        danaSosial = 0;
-        totalDeductions = calculateTotalDeductions(emp.raw);
+        
+        const defaultDeductions = getEmployeeDeductions(emp, undefined, payrollCollar);
+        defaultDeductions.forEach(d => {
+          const sanitized = sanitizeDeductionLabel(d.label);
+          const amount = d.amount || 0;
+          totalDeductions += amount;
+          if (empDeductions[sanitized] !== undefined) {
+            empDeductions[sanitized] += amount;
+          } else {
+            empDeductions[sanitized] = amount;
+          }
+        });
       }
 
       const netSalary = earnings - totalDeductions;
 
       if (categoriesMap[cat]) {
         categoriesMap[cat].totalEarnings += earnings;
-        categoriesMap[cat].bpjs += bpjs;
-        categoriesMap[cat].kopRochmad += kopRochmad;
-        categoriesMap[cat].kopUnipdu += kopUnipdu;
-        categoriesMap[cat].tunai += tunai;
-        categoriesMap[cat].danaSosial += danaSosial;
         categoriesMap[cat].totalDeductions += totalDeductions;
         categoriesMap[cat].netSalary += netSalary;
+        
+        allDeductionKeys.forEach(key => {
+          categoriesMap[cat].deductions[key] += empDeductions[key] || 0;
+        });
       }
     });
 
     const data: RekapGajiPekaryaData = {
       period: getPayrollPeriod(targetDate),
       categories: Object.values(categoriesMap).filter(c => c.totalEarnings > 0),
+      deductionKeys: allDeductionKeys,
     };
 
     generateRekapGajiPekaryaPdf(data);
