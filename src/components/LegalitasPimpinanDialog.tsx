@@ -10,12 +10,13 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { FileText, Printer } from 'lucide-react';
+import { FileText, Printer, FileSpreadsheet } from 'lucide-react';
 import { BlueCollarEmployee, SalaryMatrix, UraianGajiDocument } from '@/types';
 import { calculateTotalEarnings, calculateTotalDeductions, calculateNetSalary } from '@/utils/salaryCalculator';
 import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
 import { PaySlipField } from '@/utils/generatePaySlipPdf';
 import { generateLegalitasPimpinanPdf, LegalitasEmployeeData, LegalitasPimpinanData } from '@/utils/generateLegalitasPimpinanPdf';
+import { generateLegalitasPimpinanXlsx } from '@/utils/generateLegalitasPimpinanXlsx';
 import { calculateGapok } from '@/utils/payrollLogic';
 
 interface EmployeeRow {
@@ -166,7 +167,7 @@ export default function LegalitasPimpinanDialog({
     }
   }, [open, categories]);
 
-  const handlePrint = () => {
+  const handlePrint = (format: 'pdf' | 'xlsx') => {
     if (!selectedCategory) return;
 
     const filteredEmployees = employees.filter(emp => emp.role === selectedCategory && emp.isActive);
@@ -230,7 +231,11 @@ export default function LegalitasPimpinanDialog({
       employees: legalitasEmployees,
     };
 
-    generateLegalitasPimpinanPdf(data);
+    if (format === 'pdf') {
+      generateLegalitasPimpinanPdf(data);
+    } else {
+      generateLegalitasPimpinanXlsx(data);
+    }
     onOpenChange(false);
   };
 
@@ -286,11 +291,19 @@ export default function LegalitasPimpinanDialog({
           </Button>
           <Button
             type="button"
-            onClick={handlePrint}
+            onClick={() => handlePrint('pdf')}
             className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 shadow-md shadow-indigo-200 px-6"
           >
             <Printer className="w-4 h-4 mr-2" />
             Cetak PDF
+          </Button>
+          <Button
+            type="button"
+            onClick={() => handlePrint('xlsx')}
+            className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600 shadow-md shadow-emerald-200 px-6"
+          >
+            <FileSpreadsheet className="w-4 h-4 mr-2" />
+            Unduh Excel
           </Button>
         </DialogFooter>
       </DialogContent>

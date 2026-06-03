@@ -69,7 +69,6 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
   const body = data.employees.map(emp => {
     const row: any[] = [];
     row.push(emp.employeeNo.toString());
-    row.push(emp.nik || '-');
     row.push(emp.name);
     row.push(formatIDR(emp.gapok));
     
@@ -96,7 +95,6 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
   const head = [
     [
       { content: 'NO', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'NIK', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
       { content: 'NAMA', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
       { content: 'GAPOK', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
       { content: 'VAKASI', colSpan: earningLabels.length, styles: { halign: 'center' as const, valign: 'middle' as const } },
@@ -138,20 +136,19 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
     },
     columnStyles: {
       0: { halign: 'center' }, // NO
-      1: { halign: 'center' }, // NIK
-      2: { halign: 'left' },   // NAMA
-      3: { halign: 'right' },  // GAPOK
+      1: { halign: 'left' },   // NAMA
+      2: { halign: 'right' },  // GAPOK
     },
     didParseCell: (data) => {
       // Body columns alignment
-      if (data.section === 'body' && data.column.index > 2) {
+      if (data.section === 'body' && data.column.index > 1) {
         data.cell.styles.halign = 'right';
       }
       // Bold totals
       if (data.section === 'body') {
-        const isJumlah = data.column.index === 4 + earningLabels.length;
-        const isJumlahPotongan = data.column.index === 4 + earningLabels.length + 1 + deductionLabels.length;
-        const isGajiBersih = data.column.index === 4 + earningLabels.length + 1 + deductionLabels.length + 1;
+        const isJumlah = data.column.index === 3 + earningLabels.length;
+        const isJumlahPotongan = data.column.index === 3 + earningLabels.length + 1 + deductionLabels.length;
+        const isGajiBersih = data.column.index === 3 + earningLabels.length + 1 + deductionLabels.length + 1;
         if (isJumlah || isJumlahPotongan || isGajiBersih) {
           data.cell.styles.fontStyle = 'bold';
         }

@@ -57,6 +57,8 @@ import { generateWhatsAppPaySlipUrl, uploadPaySlipPdf } from '@/utils/whatsappHe
 import { generatePaySlipPdf, generateMultiPaySlipPdf, PaySlipData } from '@/utils/generatePaySlipPdf';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { generateRekapGajiPekaryaPdf, RekapGajiPekaryaData, RekapCategoryData } from '@/utils/generateRekapGajiPekaryaPdf';
+import { generateRekapGajiPekaryaXlsx } from '@/utils/generateRekapGajiPekaryaXlsx';
+import CetakRekapDialog from '@/components/CetakRekapDialog';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
 
 import {
@@ -145,6 +147,7 @@ export default function PayrollValidationDashboard() {
 
   const [legalitasDialogOpen, setLegalitasDialogOpen] = useState(false);
   const [cetakPayrollDialogOpen, setCetakPayrollDialogOpen] = useState(false);
+  const [cetakRekapDialogOpen, setCetakRekapDialogOpen] = useState(false);
   const [printSelectorOpen, setPrintSelectorOpen] = useState(false);
 
   // New States for Email & Cetak/Kirim Fallbacks
@@ -155,7 +158,7 @@ export default function PayrollValidationDashboard() {
   const [emailTargetCount, setEmailTargetCount] = useState(0);
   const [currentBulkEmailName, setCurrentBulkEmailName] = useState('');
 
-  const handlePrintRekap = () => {
+  const handlePrintRekap = (format: 'pdf' | 'xlsx') => {
     const sanitizeDeductionLabel = (label: string): string => {
       const clean = label.trim();
       const lower = clean.toLowerCase();
@@ -320,7 +323,11 @@ export default function PayrollValidationDashboard() {
       deductionKeys: allDeductionKeys,
     };
 
-    generateRekapGajiPekaryaPdf(data);
+    if (format === 'pdf') {
+      generateRekapGajiPekaryaPdf(data);
+    } else {
+      generateRekapGajiPekaryaXlsx(data);
+    }
   };
 
   const handlePrintPayrollStatement = () => {
@@ -1547,6 +1554,14 @@ export default function PayrollValidationDashboard() {
         slipStates={slipStates}
       />
 
+      <CetakRekapDialog
+        open={cetakRekapDialogOpen}
+        onOpenChange={setCetakRekapDialogOpen}
+        periodName={payrollPeriod}
+        onPrintPdf={() => handlePrintRekap('pdf')}
+        onExportXlsx={() => handlePrintRekap('xlsx')}
+      />
+
       {/* ─── Print Selection Dialog ─────────────────────────────────── */}
       <Dialog open={printSelectorOpen} onOpenChange={setPrintSelectorOpen}>
         <DialogContent className="sm:max-w-[460px] p-6 rounded-2xl bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
@@ -1591,7 +1606,7 @@ export default function PayrollValidationDashboard() {
             <button
               onClick={() => {
                 setPrintSelectorOpen(false);
-                handlePrintRekap();
+                setCetakRekapDialogOpen(true);
               }}
               className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-emerald-50/30 hover:border-emerald-100 transition-all duration-200 text-left outline-none cursor-pointer"
             >
