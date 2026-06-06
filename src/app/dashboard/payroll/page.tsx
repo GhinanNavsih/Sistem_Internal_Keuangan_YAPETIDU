@@ -1061,6 +1061,9 @@ export default function PayrollValidationDashboard() {
       }, 3000);
 
       console.log(`Successfully saved payslip state for employee: ${employeeId}`);
+      if (state.status === 'confirmed') {
+        setCetakKirimOpen(true);
+      }
     } catch (err: any) {
       console.error('Error saving payslip state to Firestore:', err);
       setNotification({
