@@ -15,15 +15,26 @@ export interface RekapGajiPekaryaData {
   deductionKeys: string[]; // Ordered list of deduction column headers (sanitized)
 }
 
-export function generateRekapGajiPekaryaPdf(data: RekapGajiPekaryaData): void {
+/** Fetch a public-folder image and return a base64 data-URL. */
+async function loadImageAsDataUrl(publicPath: string): Promise<string> {
+  const res = await fetch(publicPath);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+export async function generateRekapGajiPekaryaPdf(data: RekapGajiPekaryaData): Promise<void> {
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
-    format: 'a4',
+    format: [216, 330], // Folio paper dimensions (216x330mm)
   });
 
   const pageWidth = doc.internal.pageSize.getWidth();
-  let y = 15;
 
   const formatIDR = (amount: number): string => {
     if (amount === 0) return '0';
@@ -33,12 +44,36 @@ export function generateRekapGajiPekaryaPdf(data: RekapGajiPekaryaData): void {
     }).format(amount);
   };
 
+  // Load logos
+  let logoYapetidu: string | null = null;
+  let logoUnipdu: string | null = null;
+  try {
+    [logoYapetidu, logoUnipdu] = await Promise.all([
+      loadImageAsDataUrl('/Logo YAPETIDU (Transparent bg).png'),
+      loadImageAsDataUrl('/Logo UNIPDU.png'),
+    ]);
+  } catch {
+    // Continue without logos
+  }
+
+  const hasLogos = !!(logoYapetidu && logoUnipdu);
+  const marginLeft = hasLogos ? 48 : 5;
+  const marginRight = 5;
+  let y = hasLogos ? 16 : 15;
+
+  if (logoYapetidu) {
+    doc.addImage(logoYapetidu, 'PNG', 5, 8, 18, 18);
+  }
+  if (logoUnipdu) {
+    doc.addImage(logoUnipdu, 'PNG', 25, 8, 18, 18);
+  }
+
   // Header
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
-  doc.text('REKAPITULASI GAJI PEKARYA', 14, y);
-  doc.text(`BULAN ${data.period.toUpperCase()}`, pageWidth - 14, y, { align: 'right' });
-  y += 10;
+  doc.text('REKAPITULASI GAJI PEKARYA', marginLeft, y);
+  doc.text(`BULAN ${data.period.toUpperCase()}`, pageWidth - marginRight, y, { align: 'right' });
+  y += hasLogos ? 15 : 10;
 
   // Calculate Grand Totals
   const grandTotal = data.categories.reduce(
@@ -83,17 +118,17 @@ export function generateRekapGajiPekaryaPdf(data: RekapGajiPekaryaData): void {
     const row: any[] = [
       { content: (idx + 1).toString(), styles: { halign: 'center' as const } },
       { content: cat.categoryName },
-      { content: formatIDR(cat.totalEarnings), styles: { halign: 'right' as const } },
+      { content: formatIDR(cat.totalEarnings), styles: { halign: 'center' as const } },
     ];
 
     // Add deductions
     data.deductionKeys.forEach(key => {
-      row.push({ content: formatIDR(cat.deductions[key] || 0), styles: { halign: 'right' as const } });
+      row.push({ content: formatIDR(cat.deductions[key] || 0), styles: { halign: 'center' as const } });
     });
 
     // Add totalDeductions and netSalary
-    row.push({ content: formatIDR(cat.totalDeductions), styles: { halign: 'right' as const } });
-    row.push({ content: formatIDR(cat.netSalary), styles: { halign: 'right' as const } });
+    row.push({ content: formatIDR(cat.totalDeductions), styles: { halign: 'center' as const } });
+    row.push({ content: formatIDR(cat.netSalary), styles: { halign: 'center' as const } });
 
     body.push(row);
   });
@@ -102,29 +137,30 @@ export function generateRekapGajiPekaryaPdf(data: RekapGajiPekaryaData): void {
   const grandTotalRow: any[] = [
     { content: '', styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255] } },
     { content: 'JUMLAH', styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255] } },
-    { content: formatIDR(grandTotal.totalEarnings), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const } },
+    { content: formatIDR(grandTotal.totalEarnings), styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'center' as const } },
   ];
 
   data.deductionKeys.forEach(key => {
     grandTotalRow.push({
       content: formatIDR(grandTotal.deductions[key] || 0),
-      styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const },
+      styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'center' as const },
     });
   });
 
   grandTotalRow.push({
     content: formatIDR(grandTotal.totalDeductions),
-    styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const },
+    styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'center' as const },
   });
   grandTotalRow.push({
     content: formatIDR(grandTotal.netSalary),
-    styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'right' as const },
+    styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'center' as const },
   });
 
   body.push(grandTotalRow);
 
   autoTable(doc, {
     startY: y,
+    margin: { left: 5, right: 5 },
     head: head as any,
     body: body as any,
     theme: 'grid',

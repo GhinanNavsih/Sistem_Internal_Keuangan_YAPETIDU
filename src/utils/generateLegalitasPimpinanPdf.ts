@@ -20,15 +20,26 @@ export interface LegalitasPimpinanData {
   employees: LegalitasEmployeeData[];
 }
 
-export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void {
+/** Fetch a public-folder image and return a base64 data-URL. */
+async function loadImageAsDataUrl(publicPath: string): Promise<string> {
+  const res = await fetch(publicPath);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+export async function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): Promise<void> {
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
-    format: 'a4',
+    format: [216, 330], // Folio paper dimensions (216x330mm)
   });
 
   const pageWidth = doc.internal.pageSize.getWidth();
-  let y = 15;
 
   const formatIDR = (amount: number): string => {
     if (amount === 0) return '-';
@@ -38,10 +49,32 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
     }).format(amount);
   };
 
+  // Load logos
+  let logoYapetidu: string | null = null;
+  let logoUnipdu: string | null = null;
+  try {
+    [logoYapetidu, logoUnipdu] = await Promise.all([
+      loadImageAsDataUrl('/Logo YAPETIDU (Transparent bg).png'),
+      loadImageAsDataUrl('/Logo UNIPDU.png'),
+    ]);
+  } catch {
+    // Continue without logos
+  }
+
+  const hasLogos = !!(logoYapetidu && logoUnipdu);
+  const marginLeft = hasLogos ? 48 : 5;
+  let y = hasLogos ? 13 : 15;
+
+  if (logoYapetidu) {
+    doc.addImage(logoYapetidu, 'PNG', 5, 8, 18, 18);
+  }
+  if (logoUnipdu) {
+    doc.addImage(logoUnipdu, 'PNG', 25, 8, 18, 18);
+  }
+
   // Header
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  const marginLeft = 14;
   doc.text('UNIVERSITAS PESANTREN TINGGI DARUL ULUM', marginLeft, y);
   y += 5;
   doc.text(`VAKASI ${data.jobCategory.toUpperCase()}`, marginLeft, y);
@@ -71,7 +104,7 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
     row.push(emp.employeeNo.toString());
     row.push(emp.name);
     row.push(formatIDR(emp.gapok));
-    
+
     // Earnings
     earningLabels.forEach(label => {
       const field = emp.earnings.find(e => e.label === label);
@@ -92,6 +125,30 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
     return row;
   });
 
+  // Calculate totals for specific columns
+  const totalJumlah = data.employees.reduce((sum, emp) => sum + emp.totalEarnings, 0);
+  const totalPotongan = data.employees.reduce((sum, emp) => sum + emp.totalDeductions, 0);
+  const totalGajiBersih = data.employees.reduce((sum, emp) => sum + emp.netSalary, 0);
+
+  // Push total row
+  const totalRow: any[] = [];
+  totalRow.push(''); // NO
+  totalRow.push('TOTAL'); // NAMA
+  totalRow.push(''); // GAPOK
+
+  earningLabels.forEach(() => {
+    totalRow.push('');
+  });
+  totalRow.push(formatIDR(totalJumlah));
+
+  deductionLabels.forEach(() => {
+    totalRow.push('');
+  });
+  totalRow.push(formatIDR(totalPotongan));
+  totalRow.push(formatIDR(totalGajiBersih));
+
+  body.push(totalRow);
+
   const head = [
     [
       { content: 'NO', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
@@ -111,6 +168,7 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
 
   autoTable(doc, {
     startY: y,
+    margin: { left: 5, right: 5 },
     head: head as any,
     body: body as any,
     theme: 'grid',
@@ -120,7 +178,7 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
       lineWidth: 0.1,
       lineColor: [0, 0, 0],
       fontStyle: 'bold',
-      fontSize: 6,
+      fontSize: 7,
     },
     bodyStyles: {
       fillColor: [255, 255, 255],
@@ -129,35 +187,40 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
       lineColor: [0, 0, 0],
     },
     styles: {
-      fontSize: 6,
-      cellPadding: 1.5,
+      fontSize: 7,
+      cellPadding: 1.2,
       lineColor: [0, 0, 0],
       lineWidth: 0.1,
     },
     columnStyles: {
       0: { halign: 'center' }, // NO
       1: { halign: 'left' },   // NAMA
-      2: { halign: 'right' },  // GAPOK
+      2: { halign: 'center' }, // GAPOK
     },
     didParseCell: (data) => {
       // Body columns alignment
       if (data.section === 'body' && data.column.index > 1) {
-        data.cell.styles.halign = 'right';
+        data.cell.styles.halign = 'center';
       }
-      // Bold totals
+      // Bold styling
       if (data.section === 'body') {
-        const isJumlah = data.column.index === 3 + earningLabels.length;
-        const isJumlahPotongan = data.column.index === 3 + earningLabels.length + 1 + deductionLabels.length;
-        const isGajiBersih = data.column.index === 3 + earningLabels.length + 1 + deductionLabels.length + 1;
-        if (isJumlah || isJumlahPotongan || isGajiBersih) {
+        const isLastRow = data.row.index === body.length - 1;
+        if (isLastRow) {
           data.cell.styles.fontStyle = 'bold';
+        } else {
+          const isJumlah = data.column.index === 3 + earningLabels.length;
+          const isJumlahPotongan = data.column.index === 3 + earningLabels.length + 1 + deductionLabels.length;
+          const isGajiBersih = data.column.index === 3 + earningLabels.length + 1 + deductionLabels.length + 1;
+          if (isJumlah || isJumlahPotongan || isGajiBersih) {
+            data.cell.styles.fontStyle = 'bold';
+          }
         }
       }
     }
   });
 
   const filename = `Legalitas_Pimpinan_${data.jobCategory}_${data.period.replace(/\s+/g, '_')}.pdf`;
-  
+
   // ─── Signatures ──────────────────────────────────────────────
   const finalY = (doc as any).lastAutoTable.finalY + 15;
   const signatureY = finalY + 30;
@@ -177,9 +240,9 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
   doc.setFont('helvetica', 'normal');
 
   // Left: Rektor
-  doc.text('Rektor', 20, finalY);
+  doc.text('Rektor', 8, finalY);
   doc.setFont('helvetica', 'bold');
-  doc.text("Dr. dr. H.M. ZULFIKAR AS'AD, MMR.", 20, signatureY);
+  doc.text("Dr. dr. H.M. Zulfikar As'ad, MMR.", 8, signatureY);
 
   // Center: Wakil Rektor
   doc.setFont('helvetica', 'normal');
@@ -189,15 +252,15 @@ export function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData): void 
 
   // Right: Majlis Kamtib or Ketua Biro Administrasi Umum
   doc.setFont('helvetica', 'normal');
-  doc.text(dateStr, pageWidth - 20, finalY - 5, { align: 'right' });
-  
+  doc.text(dateStr, pageWidth - 8, finalY - 5, { align: 'right' });
+
   const isSatpam = data.jobCategory.toUpperCase() === 'SATPAM';
   const rightTitle = isSatpam ? 'Majlis Kamtib' : 'Ketua Biro Administrasi Umum';
   const rightName = isSatpam ? 'H. Rohmatul Akbar, ST' : 'H. Harun Ar Rasyid, S.Pd.I.';
 
-  doc.text(rightTitle, pageWidth - 20, finalY, { align: 'right' });
+  doc.text(rightTitle, pageWidth - 8, finalY, { align: 'right' });
   doc.setFont('helvetica', 'bold');
-  doc.text(rightName, pageWidth - 20, signatureY, { align: 'right' });
+  doc.text(rightName, pageWidth - 8, signatureY, { align: 'right' });
 
   doc.save(filename);
 }

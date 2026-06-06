@@ -158,11 +158,11 @@ export default function PayrollValidationDashboard() {
   const [emailTargetCount, setEmailTargetCount] = useState(0);
   const [currentBulkEmailName, setCurrentBulkEmailName] = useState('');
 
-  const handlePrintRekap = (format: 'pdf' | 'xlsx') => {
+  const handlePrintRekap = async (format: 'pdf' | 'xlsx') => {
     const sanitizeDeductionLabel = (label: string): string => {
       const clean = label.trim();
       const lower = clean.toLowerCase();
-      
+
       if (lower.includes('bpjs')) {
         return 'BPJS';
       }
@@ -178,7 +178,7 @@ export default function PayrollValidationDashboard() {
       if (lower.includes('tunai')) {
         return 'Tunai';
       }
-      
+
       // Title Case for any other custom label
       return clean
         .split(/\s+/)
@@ -196,7 +196,7 @@ export default function PayrollValidationDashboard() {
           amount: d.amount || 0,
         }));
       }
-      
+
       const deductions: { label: string; amount: number }[] = [];
       if (collar === 'loyalis') {
         deductions.push({ label: 'Koperasi Rochmad', amount: 0 });
@@ -212,7 +212,7 @@ export default function PayrollValidationDashboard() {
       } else {
         const bpjsAmount = emp.raw?.bpjs?.deductionAmount ? Math.round(emp.raw.bpjs.deductionAmount) : 0;
         const kopRochmadAmount = emp.raw?.deductions?.koperasiRochmad || 0;
-        
+
         deductions.push({ label: 'BPJS', amount: bpjsAmount });
         deductions.push({ label: 'Kop. Rochmad', amount: kopRochmadAmount });
         deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
@@ -229,7 +229,7 @@ export default function PayrollValidationDashboard() {
     activeEmployees.forEach(emp => {
       const slip = slipStates[emp.id];
       const deductionsList = getEmployeeDeductions(emp, slip, payrollCollar);
-      
+
       deductionsList.forEach(d => {
         const sanitized = sanitizeDeductionLabel(d.label);
         if (!standardKeys.includes(sanitized) && d.amount > 0) {
@@ -281,7 +281,7 @@ export default function PayrollValidationDashboard() {
           const sanitized = sanitizeDeductionLabel(d.label);
           const amount = d.amount || 0;
           totalDeductions += amount;
-          
+
           if (empDeductions[sanitized] !== undefined) {
             empDeductions[sanitized] += amount;
           } else {
@@ -290,7 +290,7 @@ export default function PayrollValidationDashboard() {
         });
       } else {
         earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0);
-        
+
         const defaultDeductions = getEmployeeDeductions(emp, undefined, payrollCollar);
         defaultDeductions.forEach(d => {
           const sanitized = sanitizeDeductionLabel(d.label);
@@ -310,7 +310,7 @@ export default function PayrollValidationDashboard() {
         categoriesMap[cat].totalEarnings += earnings;
         categoriesMap[cat].totalDeductions += totalDeductions;
         categoriesMap[cat].netSalary += netSalary;
-        
+
         allDeductionKeys.forEach(key => {
           categoriesMap[cat].deductions[key] += empDeductions[key] || 0;
         });
@@ -324,7 +324,7 @@ export default function PayrollValidationDashboard() {
     };
 
     if (format === 'pdf') {
-      generateRekapGajiPekaryaPdf(data);
+      await generateRekapGajiPekaryaPdf(data);
     } else {
       generateRekapGajiPekaryaXlsx(data);
     }
@@ -594,7 +594,7 @@ export default function PayrollValidationDashboard() {
     const fetchPeriodData = async () => {
       try {
         const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-        
+
         // 1. Fetch UraianGaji
         const snapshot = await getDocs(collection(db, 'UraianGaji'));
         const map: Record<string, UraianGajiDocument> = {};
@@ -638,7 +638,7 @@ export default function PayrollValidationDashboard() {
         const snapshot = await getDocs(collection(db, 'VakasiTambahan'));
         const sumMap: Record<string, number> = {};
         const listMap: Record<string, { eventName: string; payGiven: number }[]> = {};
-        
+
         snapshot.docs.forEach(d => {
           const data = d.data();
           if (data.period === periodToken) {
@@ -646,7 +646,7 @@ export default function PayrollValidationDashboard() {
             const workers = data.eventWorkers || {};
             Object.entries(workers).forEach(([empId, w]: [string, any]) => {
               sumMap[empId] = (sumMap[empId] || 0) + (w.payGiven || 0);
-              
+
               if (!listMap[empId]) {
                 listMap[empId] = [];
               }
@@ -713,7 +713,7 @@ export default function PayrollValidationDashboard() {
       try {
         // 1. Upload PDF and get download URL with a 5-second timeout race (false = don't trigger browser save)
         const uploadPromise = uploadPaySlipPdf(slipData);
-        
+
         // Attach a silent catch handler to prevent unhandled rejection overlays in Next.js development mode
         uploadPromise.catch((err) => {
           console.warn('Background Firebase upload failed/aborted after timeout:', err.message);
@@ -816,7 +816,7 @@ export default function PayrollValidationDashboard() {
       const totalEarnings = slip.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
       const totalDeductions = slip.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
       const netSalary = totalEarnings - totalDeductions;
-      
+
       const formatIDR = (amount: number): string => {
         return new Intl.NumberFormat('id-ID', {
           style: 'currency',
@@ -875,7 +875,7 @@ export default function PayrollValidationDashboard() {
 
   const handleBulkEmail = async () => {
     const isLoyalis = payrollCollar === 'loyalis';
-    
+
     // Get confirmed employees with valid emails in the active filter list
     const confirmedEmployees = displayEmployees.filter(emp => {
       const slip = slipStates[emp.id];
@@ -912,7 +912,7 @@ export default function PayrollValidationDashboard() {
     for (let i = 0; i < confirmedEmployees.length; i++) {
       const emp = confirmedEmployees[i];
       setCurrentBulkEmailName(emp.name);
-      
+
       const email = emp.email || emp.raw.personal_info?.email || emp.raw.email || '';
       const slip = slipStates[emp.id];
 
@@ -992,7 +992,7 @@ export default function PayrollValidationDashboard() {
 
   const handleBulkPdf = () => {
     const isLoyalis = payrollCollar === 'loyalis';
-    
+
     // We only compile slips for employees who have confirmed states
     const confirmedEmployees = displayEmployees.filter(emp => {
       const slip = slipStates[emp.id];
@@ -1040,7 +1040,7 @@ export default function PayrollValidationDashboard() {
       // Let's use the actual document ID
       const realDocId = `${period}_${employeeId}`;
       const slipRef = doc(db, 'PayrollSlipStates', realDocId);
-      
+
       await setDoc(slipRef, {
         employeeId,
         period,
@@ -1185,7 +1185,7 @@ export default function PayrollValidationDashboard() {
                         : 'text-slate-500 hover:text-slate-700'
                         }`}
                     >
-                      Pekarya (Blue Collar)
+                      Pekarya
                     </button>
                     <button
                       onClick={() => setPayrollCollar('loyalis')}
@@ -1194,7 +1194,7 @@ export default function PayrollValidationDashboard() {
                         : 'text-slate-500 hover:text-slate-700'
                         }`}
                     >
-                      Staf (White Collar)
+                      Loyalis
                     </button>
                   </div>
 
@@ -1778,11 +1778,10 @@ export default function PayrollValidationDashboard() {
 
       {/* ─── Snackbar Notification ─────────────────────────── */}
       {notification.show && (
-        <div className={`fixed top-5 right-5 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-lg transition-all duration-300 animate-in fade-in slide-in-from-top-4 ${
-          notification.type === 'success'
-            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-            : 'bg-rose-50 border-rose-200 text-rose-800'
-        }`}>
+        <div className={`fixed top-5 right-5 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-lg transition-all duration-300 animate-in fade-in slide-in-from-top-4 ${notification.type === 'success'
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+          : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}>
           {notification.type === 'success' ? (
             <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
           ) : (

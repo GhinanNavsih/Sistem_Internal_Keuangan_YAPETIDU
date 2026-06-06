@@ -167,7 +167,7 @@ export default function LegalitasPimpinanDialog({
     }
   }, [open, categories]);
 
-  const handlePrint = (format: 'pdf' | 'xlsx') => {
+  const handlePrint = async (format: 'pdf' | 'xlsx') => {
     if (!selectedCategory) return;
 
     const filteredEmployees = employees.filter(emp => emp.role === selectedCategory && emp.isActive);
@@ -232,7 +232,7 @@ export default function LegalitasPimpinanDialog({
     };
 
     if (format === 'pdf') {
-      generateLegalitasPimpinanPdf(data);
+      await generateLegalitasPimpinanPdf(data);
     } else {
       generateLegalitasPimpinanXlsx(data);
     }
