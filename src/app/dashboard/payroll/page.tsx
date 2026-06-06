@@ -103,7 +103,7 @@ interface EmployeeRow extends Employee {
 
 export default function PayrollValidationDashboard() {
   const { profile, logout } = useAuth();
-  const [targetDate] = useState(new Date('2026-05-01'));
+  const [targetDate, setTargetDate] = useState(new Date('2026-05-01'));
   const [activeTab, setActiveTab] = useState('Tagihan');
   const [notification, setNotification] = useState<{
     show: boolean;
@@ -1251,7 +1251,17 @@ export default function PayrollValidationDashboard() {
                 <div className="flex flex-wrap gap-6 text-sm">
                   <div>
                     <span className="text-slate-500 block mb-1">Periode Payroll</span>
-                    <span className="font-medium">{payrollPeriod}</span>
+                    <input
+                      type="month"
+                      value={`${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          const [y, m] = e.target.value.split('-');
+                          setTargetDate(new Date(Number(y), Number(m) - 1, 1));
+                        }
+                      }}
+                      className="bg-white border border-slate-200 text-slate-700 text-sm font-semibold rounded-xl px-3 py-1 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer mt-0.5"
+                    />
                   </div>
                   <div>
                     <span className="text-slate-500 block mb-1">Total Karyawan</span>
