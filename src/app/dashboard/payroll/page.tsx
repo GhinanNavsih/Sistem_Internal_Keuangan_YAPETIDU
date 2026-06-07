@@ -335,7 +335,7 @@ export default function PayrollValidationDashboard() {
 
     const roleOrder = payrollCollar === 'loyalis'
       ? ['REKTORAT', 'DOSEN', 'TENDIK', 'STAF']
-      : ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'PONTI'];
+      : ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI', 'PONTI'];
     const sortedEmployees = [...activeEmployees].sort((a, b) => {
       const roleA = roleOrder.indexOf(a.role) !== -1 ? roleOrder.indexOf(a.role) : 99;
       const roleB = roleOrder.indexOf(b.role) !== -1 ? roleOrder.indexOf(b.role) : 99;
@@ -371,6 +371,7 @@ export default function PayrollValidationDashboard() {
       let satker = cat;
       if (satker === 'KEBERSIHAN_IC') satker = 'KEBERSIHAN IC';
       if (satker === 'KEBERSIHAN_PT') satker = 'KEBERSIHAN PONDOK TINGGI';
+      if (satker === 'KEBERSIHAN_PONTI') satker = 'KEBERSIHAN PONTI';
 
       return {
         no: idx + 1,

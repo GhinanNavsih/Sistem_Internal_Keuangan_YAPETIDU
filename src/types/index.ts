@@ -9,7 +9,7 @@ export interface BlueCollarEmployee {
   collarType: 'blue_collar';
   employment: {
     status: 'active' | 'inactive';
-    jobCategory: 'SOPIR' | 'SATPAM' | 'TEKNISI' | 'KEBERSIHAN' | 'KEBERSIHAN_IC' | string;
+    jobCategory: 'SOPIR' | 'SATPAM' | 'TEKNISI' | 'KEBERSIHAN' | 'KEBERSIHAN_IC' | 'KEBERSIHAN_PONTI' | string;
     startDate: string | null; // ISO "YYYY-MM-DD"
     endDate: string | null;
   };

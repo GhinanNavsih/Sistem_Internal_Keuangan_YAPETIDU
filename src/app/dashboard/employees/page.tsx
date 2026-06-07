@@ -67,7 +67,7 @@ import {
 import { db } from '@/lib/firebase';
 import { BlueCollarEmployee } from '@/types';
 
-const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_IC'];
+const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI'];
 
 const JOB_ICONS: Record<string, React.ReactNode> = {
   SATPAM: <ShieldCheck className="w-3.5 h-3.5" />,
@@ -75,6 +75,7 @@ const JOB_ICONS: Record<string, React.ReactNode> = {
   TEKNISI: <Wrench className="w-3.5 h-3.5" />,
   KEBERSIHAN: <Wind className="w-3.5 h-3.5" />,
   KEBERSIHAN_IC: <Wind className="w-3.5 h-3.5" />,
+  KEBERSIHAN_PONTI: <Wind className="w-3.5 h-3.5" />,
 };
 
 const COLLAR_TABS = [
