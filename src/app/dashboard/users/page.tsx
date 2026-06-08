@@ -50,6 +50,8 @@ import {
   Layers,
   ChevronRight,
   RefreshCw,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
@@ -97,6 +99,7 @@ export default function UserManagementPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
   const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'employee_admin' | 'honorer'>('satker_head');
   const [newPermitted, setNewPermitted] = useState<string[]>([]);
@@ -476,16 +479,24 @@ export default function UserManagementPage() {
                       <div>
                         <Label htmlFor="pass" className="text-xs font-semibold text-slate-500">Kata Sandi (Min. 6 Karakter)</Label>
                         <div className="relative mt-1">
-                          <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                          <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400 pointer-events-none" />
                           <Input
                             id="pass"
-                            type="password"
+                            type={showNewPassword ? 'text' : 'password'}
                             required
                             placeholder="••••••••"
                             value={newPassword}
                             onChange={(e) => setNewPassword(e.target.value)}
-                            className="pl-9 rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
+                            className="pl-9 pr-10 rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
                           />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword(!showNewPassword)}
+                            className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 focus:outline-none focus:text-slate-600 cursor-pointer"
+                            aria-label={showNewPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                          >
+                            {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
                         </div>
                       </div>
                     </div>
