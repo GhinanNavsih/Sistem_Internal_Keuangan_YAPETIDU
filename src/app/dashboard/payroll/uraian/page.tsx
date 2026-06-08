@@ -74,7 +74,24 @@ export default function UraianPage() {
   }, [allowedCategories, category]);
 
   // ── Tab State ──
-  const [activeTab, setActiveTab] = useState<'presensi' | 'vakasi_loyalis'>('presensi');
+  const [activeTab, setActiveTab] = useState<'presensi' | 'vakasi_loyalis' | 'kegiatan_spj'>('presensi');
+
+  useEffect(() => {
+    if (profile && profile.role !== 'super_admin' && activeTab === 'vakasi_loyalis') {
+      setActiveTab('presensi');
+    }
+  }, [profile, activeTab]);
+
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (activeTab === 'kegiatan_spj') {
+        const fromTab = event.state?.from || 'presensi';
+        setActiveTab(fromTab);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activeTab]);
 
   // ── Vakasi Tambahan States ──
   const [loyalisEmployees, setLoyalisEmployees] = useState<any[]>([]);
@@ -93,6 +110,27 @@ export default function UraianPage() {
     showDropdown?: boolean;
     searchText?: string;
   }[]>([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+
+  // ── Kegiatan SPJ States ──
+  const [blueCollarEmployees, setBlueCollarEmployees] = useState<any[]>([]);
+  const [loadingBlueCollar, setLoadingBlueCollar] = useState(false);
+  const [spjEvents, setSpjEvents] = useState<any[]>([]);
+  const [loadingSpjEvents, setLoadingSpjEvents] = useState(false);
+  const [activeSpjSuggestionIndex, setActiveSpjSuggestionIndex] = useState<number>(0);
+
+  // SPJ Form States
+  const [selectedSpjEventId, setSelectedSpjEventId] = useState<string | null>(null);
+  const [spjEventName, setSpjEventName] = useState('');
+  const [spjEventFee, setSpjEventFee] = useState<number>(0);
+  const [spjWorkerRows, setSpjWorkerRows] = useState<{
+    employeeId: string;
+    employeeName: string;
+    payGiven: number;
+    showDropdown?: boolean;
+    searchText?: string;
+    isInvalid?: boolean;
+  }[]>([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+  const [mobileSpjView, setMobileSpjView] = useState<'list' | 'form'>('list');
 
   // ─── Custom Column Dialog States ──────────────────────────────────────────
   const [customColumns, setCustomColumns] = useState<RekapColumn[]>([]);
@@ -130,6 +168,34 @@ export default function UraianPage() {
     fetchLoyalis();
   }, []);
 
+  // ── Fetch Blue Collar Employees for SPJ ──
+  useEffect(() => {
+    const fetchBlueCollar = async () => {
+      setLoadingBlueCollar(true);
+      try {
+        const q = query(
+          collection(db, 'Employees_BlueCollar'),
+          where('employment.status', '==', 'active')
+        );
+        const snap = await getDocs(q);
+        const list = snap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            name: data.name || '',
+            category: data.employment?.jobCategory || '',
+          };
+        }).sort((a, b) => a.name.localeCompare(b.name));
+        setBlueCollarEmployees(list);
+      } catch (err) {
+        console.error('Error fetching Blue Collar employees for SPJ:', err);
+      } finally {
+        setLoadingBlueCollar(false);
+      }
+    };
+    fetchBlueCollar();
+  }, []);
+
   // ── Fetch Vakasi Tambahan Events ──
   const fetchEvents = useCallback(async () => {
     setLoadingEvents(true);
@@ -155,6 +221,43 @@ export default function UraianPage() {
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
+
+  // ── Fetch Kegiatan SPJ Events ──
+  const fetchSpjEvents = useCallback(async () => {
+    setLoadingSpjEvents(true);
+    try {
+      const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+      const q = query(
+        collection(db, 'KegiatanSpj'),
+        where('period', '==', periodToken)
+      );
+      const snap = await getDocs(q);
+      const list = snap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }));
+      setSpjEvents(list);
+    } catch (err) {
+      console.error('Error fetching SPJ events:', err);
+    } finally {
+      setLoadingSpjEvents(false);
+    }
+  }, [month, year]);
+
+  useEffect(() => {
+    fetchSpjEvents();
+  }, [fetchSpjEvents]);
+
+  // Helper: compute accumulated SPJ payout for an employee
+  const getComputedSpj = useCallback((empId: string) => {
+    return spjEvents.reduce((sum, evt) => {
+      const workerInfo = evt.eventWorkers?.[empId];
+      if (workerInfo) {
+        return sum + (workerInfo.payGiven || 0);
+      }
+      return sum;
+    }, 0);
+  }, [spjEvents]);
 
   // ID Sanitizer
   const sanitizeEventId = (name: string): string => {
@@ -183,7 +286,7 @@ export default function UraianPage() {
     try {
       const periodToken = `${year}-${String(month).padStart(2, '0')}`;
       const eventSeg = sanitizeEventId(eventName);
-      const documentId = selectedEventId || `${periodToken}_${eventSeg}`;
+      const documentId = selectedEventId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
 
       let totalPayout = 0;
       const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
@@ -260,7 +363,7 @@ export default function UraianPage() {
     try {
       const periodToken = `${year}-${String(month).padStart(2, '0')}`;
       const eventSeg = sanitizeEventId(currentEventName);
-      const documentId = activeId || `${periodToken}_${eventSeg}`;
+      const documentId = activeId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
 
       let totalPayout = 0;
       const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
@@ -291,6 +394,147 @@ export default function UraianPage() {
     }
   };
 
+  // ── Kegiatan SPJ Submit Handler ──
+  const handleSaveSpjEvent = async () => {
+    if (!spjEventName.trim()) {
+      setMessage({ type: 'error', text: 'Nama Kegiatan SPJ harus diisi.' });
+      return;
+    }
+    const hasInvalid = spjWorkerRows.some(w => w.isInvalid || (w.searchText && !w.employeeId));
+    if (hasInvalid) {
+      setMessage({ type: 'error', text: 'Terdapat nama pegawai yang tidak terdaftar di database.' });
+      return;
+    }
+    const activeWorkers = spjWorkerRows.filter(w => w.employeeId);
+    if (activeWorkers.length === 0) {
+      setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai.' });
+      return;
+    }
+    const ids = activeWorkers.map(w => w.employeeId);
+    if (new Set(ids).size !== ids.length) {
+      setMessage({ type: 'error', text: 'Ada duplikasi pegawai dalam kegiatan ini.' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+      const eventSeg = sanitizeEventId(spjEventName);
+      const documentId = selectedSpjEventId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
+
+      let totalPayout = 0;
+      const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
+
+      activeWorkers.forEach(w => {
+        workersMap[w.employeeId] = {
+          employeeName: w.employeeName,
+          payGiven: spjEventFee,
+        };
+        totalPayout += spjEventFee;
+      });
+
+      const payload = {
+        eventName: spjEventName,
+        period: periodToken,
+        totalPayout,
+        eventFee: spjEventFee,
+        eventWorkers: workersMap,
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, 'KegiatanSpj', documentId), payload);
+      setMessage({ type: 'success', text: `Kegiatan SPJ "${spjEventName}" berhasil disimpan.` });
+
+      setSelectedSpjEventId(null);
+      setSpjEventName('');
+      setSpjEventFee(0);
+      setSpjWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+      setMobileSpjView('list');
+      fetchSpjEvents();
+    } catch (err) {
+      console.error(`Error saving Kegiatan SPJ "${spjEventName}" with document ID "${selectedSpjEventId || 'new'}":`, err);
+      setMessage({ type: 'error', text: 'Gagal menyimpan Kegiatan SPJ.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Kegiatan SPJ Delete Handler ──
+  const handleDeleteSpjEvent = async (eventId: string) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus kegiatan SPJ ini?')) return;
+    setSaving(true);
+    try {
+      await deleteDoc(doc(db, 'KegiatanSpj', eventId));
+      setMessage({ type: 'success', text: 'Kegiatan SPJ berhasil dihapus.' });
+      setSelectedSpjEventId(null);
+      setSpjEventName('');
+      setSpjEventFee(0);
+      setSpjWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+      setMobileSpjView('list');
+      fetchSpjEvents();
+    } catch (err) {
+      console.error(`Error deleting Kegiatan SPJ with event ID "${eventId}":`, err);
+      setMessage({ type: 'error', text: 'Gagal menghapus kegiatan SPJ.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Kegiatan SPJ Add Row Handler ──
+  const handleSpjAddRow = () => {
+    setSpjWorkerRows(prev => [...prev, { employeeId: '', employeeName: '', payGiven: spjEventFee, searchText: '', showDropdown: false }]);
+    setTimeout(() => {
+      const nextIndex = spjWorkerRows.length;
+      const nextInput = document.getElementById(`spj-search-input-${nextIndex}`);
+      if (nextInput) {
+        nextInput.focus();
+      }
+    }, 50);
+  };
+
+  // ── Kegiatan SPJ Autosave Handler ──
+  const handleSpjAutosave = async (currentRows = spjWorkerRows, currentEventName = spjEventName, activeId = selectedSpjEventId, currentFee = spjEventFee) => {
+    if (!currentEventName.trim()) return;
+    if (currentRows.some(w => w.isInvalid || (w.searchText && !w.employeeId))) return;
+    const activeWorkers = currentRows.filter(w => w.employeeId);
+    const ids = activeWorkers.map(w => w.employeeId);
+    if (new Set(ids).size !== ids.length) return;
+
+    try {
+      const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+      const eventSeg = sanitizeEventId(currentEventName);
+      const documentId = activeId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
+
+      let totalPayout = 0;
+      const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
+
+      activeWorkers.forEach(w => {
+        workersMap[w.employeeId] = {
+          employeeName: w.employeeName,
+          payGiven: currentFee,
+        };
+        totalPayout += currentFee;
+      });
+
+      const payload = {
+        eventName: currentEventName,
+        period: periodToken,
+        totalPayout,
+        eventFee: currentFee,
+        eventWorkers: workersMap,
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, 'KegiatanSpj', documentId), payload);
+      if (!activeId) {
+        setSelectedSpjEventId(documentId);
+      }
+      fetchSpjEvents();
+    } catch (err) {
+      console.error('SPJ Autosave error:', err);
+    }
+  };
+
   const [imageStats, setImageStats] = useState<{ w: number, h: number, size: number, type: string } | null>(null);
   const [loadingEmps, setLoadingEmps] = useState(false);
   const [lastScanResult, setLastScanResult] = useState<any>(null);
@@ -310,6 +554,22 @@ export default function UraianPage() {
   const [saved, setSaved] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+
+  const spjDiscrepancies = useMemo(() => {
+    return employees.map(emp => {
+      const rawVal = tableData[emp.employeeId]?.spj;
+      const computedVal = getComputedSpj(emp.employeeId);
+      if (rawVal !== undefined && rawVal !== computedVal) {
+        return {
+          name: emp.name,
+          employeeId: emp.employeeId,
+          manual: rawVal,
+          computed: computedVal,
+        };
+      }
+      return null;
+    }).filter(Boolean) as { name: string; employeeId: string; manual: number; computed: number }[];
+  }, [employees, tableData, getComputedSpj]);
 
   // ── Columns logic ────────────────────────────────────────────────────────
   const columns = useMemo(() => {
@@ -597,6 +857,19 @@ export default function UraianPage() {
   };
 
   const updateCell = (employeeId: string, key: string, value: string) => {
+    if (key === 'spj' && value.trim() === '') {
+      setTableData(prev => {
+        const copy = { ...prev };
+        if (copy[employeeId]) {
+          const rowCopy = { ...copy[employeeId] };
+          delete rowCopy.spj;
+          copy[employeeId] = rowCopy;
+        }
+        return copy;
+      });
+      setSaved(false);
+      return;
+    }
     const num = parseInt(value, 10) || 0;
     setTableData(prev => ({ ...prev, [employeeId]: { ...prev[employeeId], [key]: num } }));
     setSaved(false);
@@ -608,7 +881,10 @@ export default function UraianPage() {
     const entries: Record<string, UraianEntry> = {};
     for (const emp of employees) {
       const rawValues = tableData[emp.employeeId] ?? {};
-      const storedValues = { ...rawValues };
+      const storedValues: Record<string, number> = { 
+        ...rawValues,
+        spj: rawValues.spj !== undefined ? rawValues.spj : getComputedSpj(emp.employeeId),
+      };
       const storedCounts: Record<string, number> = {};
       const empCols = [...(REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN), ...customColumns];
       empCols.forEach(col => {
@@ -669,7 +945,7 @@ export default function UraianPage() {
     }
     const cleanLabel = newColLabel.trim();
     const cleanSlipLabel = newColSlipLabel.trim() || cleanLabel;
-    
+
     // Generate a clean safe key
     const uniqueKey = `custom_${cleanLabel.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now().toString().slice(-4)}`;
 
@@ -682,14 +958,14 @@ export default function UraianPage() {
     };
 
     setCustomColumns(prev => [...prev, newCol]);
-    
+
     // Reset form states
     setNewColLabel('');
     setNewColSlipLabel('');
     setNewColType('currency');
     setNewColMultiplier('');
     setIsCustomColDialogOpen(false);
-    
+
     setMessage({ type: 'success', text: `Kolom kustom "${cleanLabel}" berhasil ditambahkan ke tabel.` });
     setTimeout(() => setMessage(null), 3000);
   };
@@ -722,7 +998,10 @@ export default function UraianPage() {
     return employees.map(emp => {
       const rawValues = tableData[emp.employeeId] ?? {};
       const fields = empCols.map(col => {
-        const rawVal = rawValues[col.key] ?? 0;
+        let rawVal = rawValues[col.key] ?? 0;
+        if (col.key === 'spj') {
+          rawVal = rawValues.spj !== undefined ? rawValues.spj : getComputedSpj(emp.employeeId);
+        }
         if (rawVal === 0) return { col, count: 0, value: 0, isDual: false };
         const isDual = (DUAL_MAP_KEYS as readonly string[]).includes(col.key) && !!col.multiplier;
         if (isDual && col.multiplier) {
@@ -744,7 +1023,10 @@ export default function UraianPage() {
 
     const empRows = employees.map((emp, idx) => {
       const rawValues = tableData[emp.employeeId] ?? {};
-      const computedValues = { ...rawValues };
+      const computedValues: Record<string, number> = { 
+        ...rawValues,
+        spj: rawValues.spj !== undefined ? rawValues.spj : getComputedSpj(emp.employeeId),
+      };
       const computedCounts: Record<string, number> = {};
       const baseCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
       const empCols = [...baseCols, ...customColumns];
@@ -808,8 +1090,18 @@ export default function UraianPage() {
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
-            {profile?.role === 'super_admin' ? (
-              <Button variant="ghost" onClick={() => router.back()} className="group -ml-2 mb-2 text-slate-500 hover:text-indigo-600">
+            {profile?.role === 'super_admin' || activeTab === 'kegiatan_spj' ? (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  if (activeTab === 'kegiatan_spj') {
+                    window.history.back();
+                  } else {
+                    router.back();
+                  }
+                }}
+                className="group -ml-2 mb-2 text-slate-500 hover:text-indigo-600"
+              >
                 <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
                 Kembali
               </Button>
@@ -817,12 +1109,18 @@ export default function UraianPage() {
               <div className="h-2" />
             )}
             <h1 className="text-3xl font-bold text-slate-900">
-              {activeTab === 'presensi' ? 'Rekap Presensi Pekarya' : 'Vakasi Tambahan (Loyalis)'}
+              {activeTab === 'presensi'
+                ? 'Rekap Presensi Pekarya'
+                : activeTab === 'vakasi_loyalis'
+                  ? 'Vakasi Tambahan (Loyalis)'
+                  : 'Kegiatan SPJ (Pekarya)'}
             </h1>
             <p className="text-slate-500 text-sm">
               {activeTab === 'presensi'
                 ? 'Upload rekap PDF/Gambar untuk auto-input'
-                : 'Kelola pembayaran kegiatan variabel loyalis bulanan'}
+                : activeTab === 'vakasi_loyalis'
+                  ? 'Kelola pembayaran kegiatan variabel loyalis bulanan'
+                  : 'Kelola pembayaran kegiatan variabel pekarya bulanan'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -852,66 +1150,18 @@ export default function UraianPage() {
               <SelectContent>{YEARS.map(y => (<SelectItem key={y} value={String(y)}>{y}</SelectItem>))}</SelectContent>
             </Select>
 
-            {activeTab === 'presensi' && (
-              <>
-                {category && allowedCategories.length > 0 && (
-                  <Select value={category} onValueChange={(v) => v && setCategory(v)}>
-                    <SelectTrigger className="w-48 bg-white shadow-sm border-slate-200"><SelectValue /></SelectTrigger>
-                    <SelectContent>{allowedCategories.map(c => (<SelectItem key={c} value={c}>{c}</SelectItem>))}</SelectContent>
-                  </Select>
-                )}
-                <div className="flex gap-2 ml-2">
-                  <Button
-                    variant={showScanPanel ? 'secondary' : 'outline'}
-                    onClick={() => setShowScanPanel(p => !p)}
-                    className={`rounded-xl flex items-center gap-2 font-semibold transition-all ${showScanPanel ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'border-slate-200 text-slate-600 hover:border-indigo-200 hover:text-indigo-600'}`}
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    Scan AI
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsCustomColDialogOpen(true)}
-                    disabled={!category || employees.length === 0}
-                    className="rounded-xl border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 flex items-center gap-2 font-semibold transition-all shadow-sm cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4 text-indigo-500" />
-                    Tambah Kolom
-                  </Button>
-                  <Button variant="outline" size="icon" onClick={() => setShowSavePreview(true)} disabled={!category || employees.length === 0} className="rounded-xl border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-200"><Database className="w-4 h-4" /></Button>
-                  <Button onClick={handleSave} disabled={saving || !category || employees.length === 0} className="rounded-xl px-6 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2">
-                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                    Simpan
-                  </Button>
-                  {/* ── Export PDF button — shown after a successful save ── */}
-                  {saved && (
-                    <Button
-                      onClick={handleExportPdf}
-                      variant="outline"
-                      className="rounded-xl border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 transition-all font-semibold flex items-center gap-2 shadow-sm"
-                    >
-                      <FileDown className="w-4 h-4" />
-                      Ekspor Laporan PDF
-                    </Button>
-                  )}
-                  {category && employees.length > 0 && (
-                    <Button
-                      onClick={handleExportEmptyPdf}
-                      variant="outline"
-                      className="rounded-xl border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-all font-semibold flex items-center gap-2 shadow-sm"
-                    >
-                      <FileText className="w-4 h-4" />
-                      Ekspor Templat Kosong (Darurat)
-                    </Button>
-                  )}
-                </div>
-              </>
+            {activeTab === 'presensi' && category && allowedCategories.length > 0 && (
+              <Select value={category} onValueChange={(v) => v && setCategory(v)}>
+                <SelectTrigger className="w-48 bg-white shadow-sm border-slate-200"><SelectValue /></SelectTrigger>
+                <SelectContent>{allowedCategories.map(c => (<SelectItem key={c} value={c}>{c}</SelectItem>))}</SelectContent>
+              </Select>
             )}
+
             {profile?.role === 'satker_head' && (
               <Button
                 variant="outline"
                 onClick={logout}
-                className="rounded-xl text-rose-600 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center gap-2"
+                className="rounded-xl text-rose-600 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center gap-2 shadow-sm"
               >
                 <LogOut className="w-4 h-4" />
                 Keluar
@@ -920,29 +1170,82 @@ export default function UraianPage() {
           </div>
         </div>
 
-        {/* Premium Tab Switcher */}
-        <div className="flex bg-slate-100 p-1 rounded-xl w-fit shadow-sm border border-slate-200">
-          <button
-            onClick={() => setActiveTab('presensi')}
-            className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'presensi'
-              ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
-              : 'text-slate-500 hover:text-slate-800'
-              }`}
-          >
-            <ScanLine className="w-4.5 h-4.5" />
-            Rekap Presensi (Pekarya)
-          </button>
-          <button
-            onClick={() => setActiveTab('vakasi_loyalis')}
-            className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'vakasi_loyalis'
-              ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
-              : 'text-slate-500 hover:text-slate-800'
-              }`}
-          >
-            <Banknote className="w-4.5 h-4.5" />
-            Vakasi Tambahan (Loyalis)
-          </button>
-        </div>
+        {/* Global Action Bar (only shown on Presensi tab) */}
+        {activeTab === 'presensi' && (
+          <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-[20px] border border-slate-200/60 shadow-sm">
+            <Button
+              onClick={() => {
+                setActiveTab('kegiatan_spj');
+                setMobileSpjView('list');
+                window.history.pushState({ tab: 'kegiatan_spj', from: activeTab }, '');
+              }}
+              variant="outline"
+              className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm"
+            >
+              <Calendar className="w-4 h-4" />
+              Kegiatan SPJ
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setIsCustomColDialogOpen(true)}
+              disabled={!category || employees.length === 0}
+              className="rounded-xl border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-200 flex items-center gap-2 font-semibold transition-all shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4 text-indigo-500" />
+              Tambah Kolom
+            </Button>
+            <Button onClick={handleSave} disabled={saving || !category || employees.length === 0} className="rounded-xl px-6 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+              Simpan
+            </Button>
+            {saved && (
+              <Button
+                onClick={handleExportPdf}
+                variant="outline"
+                className="rounded-xl border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 transition-all font-semibold flex items-center gap-2 shadow-sm"
+              >
+                <FileDown className="w-4 h-4" />
+                Ekspor Laporan PDF
+              </Button>
+            )}
+            {category && employees.length > 0 && (
+              <Button
+                onClick={handleExportEmptyPdf}
+                variant="outline"
+                className="rounded-xl border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-all font-semibold flex items-center gap-2 shadow-sm"
+              >
+                <FileText className="w-4 h-4" />
+                Ekspor Templat Kosong (Darurat)
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Premium Tab Switcher - Only shown for Super Admin */}
+        {profile?.role === 'super_admin' && (
+          <div className="flex bg-slate-100 p-1 rounded-xl w-fit shadow-sm border border-slate-200">
+            <button
+              onClick={() => setActiveTab('presensi')}
+              className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'presensi'
+                ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
+                : 'text-slate-500 hover:text-slate-800'
+                }`}
+            >
+              <ScanLine className="w-4.5 h-4.5" />
+              Rekap Presensi (Pekarya)
+            </button>
+            <button
+              onClick={() => setActiveTab('vakasi_loyalis')}
+              className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'vakasi_loyalis'
+                ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
+                : 'text-slate-500 hover:text-slate-800'
+                }`}
+            >
+              <Banknote className="w-4.5 h-4.5" />
+              Vakasi Tambahan (Loyalis)
+            </button>
+          </div>
+        )}
 
         {message && (
           <div className={`mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
@@ -1109,29 +1412,41 @@ export default function UraianPage() {
                               <div className="text-sm font-bold text-slate-800 leading-none">{emp.name}</div>
                               <div className="text-[10px] text-slate-400 font-mono mt-1.5 flex items-center gap-1"><Code2 className="w-2.5 h-2.5 opacity-50" /> {emp.employeeId}</div>
                             </td>
-                            {columns.map((col, colIdx) => (
-                              <td key={col.key} className={`px-3 py-5 ${hasScanData ? 'border-y-2 border-slate-400 bg-white shadow-sm ring-1 ring-black/15' : 'border-b border-slate-300'}`}>
-                                <Input
-                                  id={`cell-${empIdx}-${colIdx}`}
-                                  type="text"
-                                  value={tableData[emp.employeeId]?.[col.key] ?? ''}
-                                  onChange={(e) => updateCell(emp.employeeId, col.key, e.target.value)}
-                                  className={`h-10 text-center font-bold transition-all ${hasScanData ? 'rounded-xl border-slate-400 bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10' : 'bg-white border-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10'}`}
-                                  onKeyDown={(e) => {
-                                    let nextRow = empIdx, nextCol = colIdx, shouldMove = false;
-                                    if (e.key === 'Enter') { e.preventDefault(); shouldMove = true; if (e.shiftKey) { nextCol = colIdx + 1; if (nextCol >= columns.length) { nextCol = 0; nextRow = empIdx + 1; } } else nextRow = empIdx + 1; }
-                                    else if (e.key === 'ArrowDown') { e.preventDefault(); nextRow = empIdx + 1; shouldMove = true; }
-                                    else if (e.key === 'ArrowUp') { e.preventDefault(); nextRow = empIdx - 1; shouldMove = true; }
-                                    else if (e.key === 'ArrowRight') { const target = e.target as HTMLInputElement; if (target.selectionStart === target.value.length) { e.preventDefault(); nextCol = colIdx + 1; shouldMove = true; } }
-                                    else if (e.key === 'ArrowLeft') { const target = e.target as HTMLInputElement; if (target.selectionStart === 0) { e.preventDefault(); nextCol = colIdx - 1; shouldMove = true; } }
-                                    if (shouldMove) {
-                                      const nextId = `cell-${nextRow}-${nextCol}`, nextEl = document.getElementById(nextId);
-                                      if (nextEl) { nextEl.focus(); (nextEl as HTMLInputElement).select(); }
-                                    }
-                                  }}
-                                />
-                              </td>
-                            ))}
+                            {columns.map((col, colIdx) => {
+                              const isSpj = col.key === 'spj';
+                              const cellValue = (isSpj && tableData[emp.employeeId]?.[col.key] === undefined)
+                                ? (getComputedSpj(emp.employeeId) || 0) 
+                                : (tableData[emp.employeeId]?.[col.key] ?? '');
+                              return (
+                                <td key={col.key} className={`px-3 py-5 ${hasScanData ? 'border-y-2 border-slate-400 bg-white shadow-sm ring-1 ring-black/15' : 'border-b border-slate-300'}`}>
+                                  <Input
+                                    id={`cell-${empIdx}-${colIdx}`}
+                                    type="text"
+                                    value={cellValue}
+                                    onChange={(e) => updateCell(emp.employeeId, col.key, e.target.value)}
+                                    className={`h-10 text-center font-bold transition-all ${
+                                      isSpj
+                                        ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
+                                        : hasScanData
+                                          ? 'rounded-xl border-slate-400 bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
+                                          : 'bg-white border-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10'
+                                    }`}
+                                    onKeyDown={(e) => {
+                                      let nextRow = empIdx, nextCol = colIdx, shouldMove = false;
+                                      if (e.key === 'Enter') { e.preventDefault(); shouldMove = true; if (e.shiftKey) { nextCol = colIdx + 1; if (nextCol >= columns.length) { nextCol = 0; nextRow = empIdx + 1; } } else nextRow = empIdx + 1; }
+                                      else if (e.key === 'ArrowDown') { e.preventDefault(); nextRow = empIdx + 1; shouldMove = true; }
+                                      else if (e.key === 'ArrowUp') { e.preventDefault(); nextRow = empIdx - 1; shouldMove = true; }
+                                      else if (e.key === 'ArrowRight') { const target = e.target as HTMLInputElement; if (target.selectionStart === target.value.length) { e.preventDefault(); nextCol = colIdx + 1; shouldMove = true; } }
+                                      else if (e.key === 'ArrowLeft') { const target = e.target as HTMLInputElement; if (target.selectionStart === 0) { e.preventDefault(); nextCol = colIdx - 1; shouldMove = true; } }
+                                      if (shouldMove) {
+                                        const nextId = `cell-${nextRow}-${nextCol}`, nextEl = document.getElementById(nextId);
+                                        if (nextEl) { nextEl.focus(); (nextEl as HTMLInputElement).select(); }
+                                      }
+                                    }}
+                                  />
+                                </td>
+                              );
+                            })}
                             {hasScanData && <td className="p-0 border-r-2 border-y-2 border-slate-400 rounded-r-2xl bg-white shadow-sm ring-1 ring-black/15" />}
                           </tr>
                         </>
@@ -1143,7 +1458,7 @@ export default function UraianPage() {
               )}
             </Card>
           </div>
-        ) : (
+        ) : activeTab === 'vakasi_loyalis' ? (
           /* Tab 2: Vakasi Tambahan (Loyalis) UI */
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
             {/* Left side list of existing events */}
@@ -1416,7 +1731,7 @@ export default function UraianPage() {
                                           .filter(emp =>
                                             emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
                                           );
-                                        
+
                                         if (filtered.length === 0) {
                                           return <div className="p-4 text-center text-slate-400 text-xs font-semibold">Pegawai tidak ditemukan</div>;
                                         }
@@ -1427,11 +1742,10 @@ export default function UraianPage() {
                                             <div
                                               key={emp.id}
                                               onClick={() => selectEmployee(rowIdx, emp)}
-                                              className={`px-4 py-2.5 text-xs font-semibold cursor-pointer transition-colors text-left ${
-                                                isActive
-                                                  ? 'bg-indigo-50 text-indigo-600 font-bold'
-                                                  : 'hover:bg-indigo-50 hover:text-indigo-600 text-slate-700'
-                                              }`}
+                                              className={`px-4 py-2.5 text-xs font-semibold cursor-pointer transition-colors text-left ${isActive
+                                                ? 'bg-indigo-50 text-indigo-600 font-bold'
+                                                : 'hover:bg-indigo-50 hover:text-indigo-600 text-slate-700'
+                                                }`}
                                             >
                                               <p className={isActive ? 'text-indigo-700' : 'text-slate-800'}>{emp.name}</p>
                                               <p className={`text-[10px] font-mono mt-0.5 ${isActive ? 'text-indigo-400' : 'text-slate-400'}`}>{emp.role} · {emp.id}</p>
@@ -1549,6 +1863,448 @@ export default function UraianPage() {
               </div>
             </Card>
           </div>
+        ) : (
+          /* Tab 3: Kegiatan SPJ UI */
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+            {/* Left side list of existing events */}
+            <div className={`xl:col-span-4 space-y-6 ${mobileSpjView === 'list' ? 'block' : 'hidden xl:block'}`}>
+              <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-bold text-slate-800 text-sm">Daftar Kegiatan SPJ</h3>
+                  <Button
+                    onClick={() => {
+                      setSelectedSpjEventId(null);
+                      setSpjEventName('');
+                      setSpjWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+                      setMobileSpjView('form');
+                    }}
+                    size="sm"
+                    className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Baru
+                  </Button>
+                </div>
+
+                {loadingSpjEvents ? (
+                  <div className="py-12 flex justify-center text-slate-400">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                  </div>
+                ) : spjEvents.length === 0 && selectedSpjEventId !== null ? (
+                  <div className="py-12 text-center text-slate-400 text-xs font-semibold">
+                    <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    Belum ada kegiatan SPJ terdaftar di periode ini.
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                    {/* Empty / Draft Kegiatan Card */}
+                    {!selectedSpjEventId && (
+                      <div
+                        className="p-4 rounded-2xl border bg-indigo-50/30 border-indigo-200 shadow-sm border-dashed animate-in fade-in"
+                      >
+                        <p className="font-bold text-indigo-600 text-sm line-clamp-1 italic">
+                          {spjEventName.trim() !== '' ? spjEventName : 'Kegiatan Baru (Tanpa Nama)'}
+                        </p>
+                        <div className="flex items-center justify-between mt-3">
+                          <span className="text-[10px] text-indigo-400 font-bold bg-indigo-50/50 px-2 py-0.5 rounded border border-indigo-100">
+                            {spjWorkerRows.filter(r => r.employeeId).length} Orang
+                          </span>
+                          <span className="text-xs font-bold text-indigo-600">
+                            {fmtRp(spjWorkerRows.reduce((sum, r) => sum + (r.payGiven || 0), 0))}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {spjEvents.map(evt => {
+                      const isActive = selectedSpjEventId === evt.id;
+                      return (
+                        <div
+                          key={evt.id}
+                          onClick={() => {
+                            setSelectedSpjEventId(evt.id);
+                            setSpjEventName(evt.eventName);
+                            const fee = evt.eventFee || (Object.values(evt.eventWorkers || {})[0] as any)?.payGiven || 0;
+                            setSpjEventFee(fee);
+                            // Load workers
+                            const workers = evt.eventWorkers || {};
+                            const rows = Object.entries(workers).map(([id, w]: [string, any]) => ({
+                              employeeId: id,
+                              employeeName: w.employeeName,
+                              payGiven: w.payGiven || fee,
+                              searchText: w.employeeName,
+                              showDropdown: false,
+                            }));
+                            setSpjWorkerRows(rows);
+                            setMobileSpjView('form');
+                          }}
+                          className={`p-4 rounded-2xl border transition-all cursor-pointer ${isActive
+                            ? 'bg-indigo-50/50 border-indigo-200 shadow-sm animate-in fade-in'
+                            : 'bg-white border-slate-100 hover:border-indigo-100'
+                            }`}
+                        >
+                          <p className="font-bold text-slate-800 text-sm line-clamp-1">{evt.eventName}</p>
+                          <div className="flex items-center justify-between mt-3">
+                            <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                              {Object.keys(evt.eventWorkers || {}).length} Orang
+                            </span>
+                            <span className="text-xs font-bold text-indigo-600">
+                              {fmtRp(evt.totalPayout || 0)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            {/* Right side form */}
+            <Card className={`xl:col-span-8 bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-visible min-h-[500px] flex flex-col p-4 md:p-6 space-y-4 md:space-y-6 animate-in fade-in duration-500 ${mobileSpjView === 'form' ? 'block' : 'hidden xl:block'}`}>
+              <div className="flex justify-between items-center border-b border-slate-50 pb-4">
+                <div className="flex items-center">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setMobileSpjView('list')}
+                    className="xl:hidden -ml-2 rounded-xl text-slate-500 hover:text-indigo-600 mr-2"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </Button>
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-xs md:text-sm flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-indigo-500" />
+                      {selectedSpjEventId ? 'Ubah Kegiatan SPJ' : 'Buat Kegiatan SPJ Baru'}
+                    </h3>
+                    <p className="text-slate-400 text-[10px] md:text-xs mt-0.5">Input detail kegiatan dan daftarkan pegawai pekarya penerima payout.</p>
+                  </div>
+                </div>
+                {selectedSpjEventId && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => handleDeleteSpjEvent(selectedSpjEventId)}
+                    className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl text-xs"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Hapus
+                  </Button>
+                )}
+              </div>
+ 
+              {/* Event Details Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2 space-y-2">
+                  <label className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-wider block">Nama Kegiatan SPJ</label>
+                  <Input
+                    type="text"
+                    placeholder="Contoh: Piket Rektorat"
+                    value={spjEventName}
+                    onChange={(e) => setSpjEventName(e.target.value)}
+                    onBlur={() => {
+                      handleSpjAutosave(spjWorkerRows, spjEventName, selectedSpjEventId, spjEventFee);
+                    }}
+                    className="rounded-xl border-slate-200 font-bold text-slate-800 text-xs md:text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-9 md:h-11"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-wider block">Tarif per Orang (Rp)</label>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="Rp 0"
+                    value={spjEventFee > 0 ? fmtRp(spjEventFee) : ''}
+                    onChange={(e) => {
+                      const rawVal = e.target.value.replace(/\D/g, '');
+                      const val = parseInt(rawVal, 10) || 0;
+                      setSpjEventFee(val);
+                      setSpjWorkerRows(prev => prev.map(row => ({ ...row, payGiven: val })));
+                    }}
+                    onBlur={() => {
+                      handleSpjAutosave(spjWorkerRows.map(row => ({ ...row, payGiven: spjEventFee })), spjEventName, selectedSpjEventId, spjEventFee);
+                    }}
+                    className="rounded-xl border-slate-200 font-bold text-slate-800 text-xs md:text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-9 md:h-11"
+                  />
+                </div>
+              </div>
+ 
+              {/* Live Running Total */}
+              <div className="bg-blue-50/20 backdrop-blur-sm rounded-2xl p-4 md:p-6 text-blue-900 shadow-[0_4px_20px_rgba(59,130,246,0.05)] flex items-center justify-between border-2 border-blue-500 transition-all duration-300">
+                <div>
+                  <span className="text-[9px] md:text-[10px] text-blue-600 font-bold uppercase tracking-widest">Aggregate Validation</span>
+                  <h4 className="text-sm md:text-xl font-black mt-1 text-blue-900">JUMLAH</h4>
+                </div>
+                <div className="text-right">
+                  <span className="text-[9px] md:text-[10px] text-blue-600 font-bold uppercase tracking-widest">Total Payout</span>
+                  <p className="text-xl md:text-3xl font-black text-blue-800 mt-1 tracking-tight">
+                    {fmtRp(spjWorkerRows.reduce((sum, r) => sum + (r.payGiven || 0), 0))}
+                  </p>
+                </div>
+              </div>
+
+              {/* Iterative Workers grid */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-wider">Daftar Pegawai</span>
+                </div>
+
+                <div className="border border-slate-100 rounded-2xl shadow-sm overflow-visible bg-white">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">NO</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase">NAMA PEGAWAI</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-16 text-center">AKSI</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {spjWorkerRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="text-center py-12 text-slate-400 text-xs font-semibold">
+                            Belum ada pegawai ditambahkan. Klik tombol di bawah untuk menambahkan.
+                          </td>
+                        </tr>
+                      ) : (
+                        spjWorkerRows.map((row, rowIdx) => {
+                          const handleEmployeeSearch = (index: number, text: string) => {
+                            setSpjWorkerRows(prev => {
+                              const copy = [...prev];
+                              copy[index] = { ...copy[index], searchText: text, showDropdown: true };
+                              return copy;
+                            });
+                            setActiveSpjSuggestionIndex(0);
+                          };
+                          const selectEmployee = (index: number, emp: any) => {
+                            setSpjWorkerRows(prev => {
+                              const copy = [...prev];
+                              copy[index] = {
+                                ...copy[index],
+                                employeeId: emp.id,
+                                employeeName: emp.name,
+                                searchText: emp.name,
+                                showDropdown: false,
+                                payGiven: spjEventFee,
+                              };
+                              if (copy[index].employeeId && spjEventFee > 0) {
+                                handleSpjAutosave(copy, spjEventName, selectedSpjEventId, spjEventFee);
+                              }
+                              return copy;
+                            });
+                          };
+
+                          return (
+                            <tr key={rowIdx} className={`border-b border-slate-50 hover:bg-slate-50/30 transition-colors animate-in fade-in slide-in-from-top-1 ${row.showDropdown ? 'relative z-50' : 'relative z-0'}`}>
+                              <td className="px-4 py-4 text-xs font-bold text-slate-400 text-center">
+                                {rowIdx + 1}
+                              </td>
+                              <td className="px-4 py-4 relative">
+                                <div className="relative">
+                                  <Input
+                                    id={`spj-search-input-${rowIdx}`}
+                                    type="text"
+                                    placeholder="Cari nama pegawai..."
+                                    value={row.searchText || ''}
+                                    onChange={(e) => handleEmployeeSearch(rowIdx, e.target.value)}
+                                    onFocus={() => {
+                                      setSpjWorkerRows(prev => {
+                                        const copy = [...prev];
+                                        copy[rowIdx] = { ...copy[rowIdx], showDropdown: true };
+                                        return copy;
+                                      });
+                                      setActiveSpjSuggestionIndex(0);
+                                    }}
+                                    onBlur={() => {
+                                      setTimeout(() => {
+                                        setSpjWorkerRows(prev => {
+                                          const copy = [...prev];
+                                          if (copy[rowIdx]) {
+                                            const text = copy[rowIdx].searchText || '';
+                                            if (text.trim() === '') {
+                                              copy[rowIdx] = { ...copy[rowIdx], employeeId: '', employeeName: '', showDropdown: false, isInvalid: false };
+                                            } else {
+                                              const match = blueCollarEmployees
+                                                .filter(emp => {
+                                                  if (!profile) return false;
+                                                  if (profile.role === 'super_admin') return true;
+                                                  return profile.permittedCategories?.includes(emp.category);
+                                                })
+                                                .find(emp => emp.name.toLowerCase() === text.toLowerCase());
+                                              
+                                              if (match) {
+                                                copy[rowIdx] = {
+                                                  ...copy[rowIdx],
+                                                  employeeId: match.id,
+                                                  employeeName: match.name,
+                                                  searchText: match.name,
+                                                  showDropdown: false,
+                                                  isInvalid: false,
+                                                };
+                                                handleSpjAutosave(copy, spjEventName, selectedSpjEventId, spjEventFee);
+                                              } else {
+                                                copy[rowIdx] = {
+                                                  ...copy[rowIdx],
+                                                  employeeId: '',
+                                                  employeeName: '',
+                                                  showDropdown: false,
+                                                  isInvalid: true,
+                                                };
+                                              }
+                                            }
+                                          }
+                                          return copy;
+                                        });
+                                      }, 200);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      const otherSelectedIds = spjWorkerRows
+                                        .filter((_, i) => i !== rowIdx)
+                                        .map(w => w.employeeId)
+                                        .filter(Boolean);
+                                      const filtered = blueCollarEmployees
+                                        .filter(emp => !otherSelectedIds.includes(emp.id))
+                                        .filter(emp => {
+                                          if (!profile) return false;
+                                          if (profile.role === 'super_admin') return true;
+                                          return profile.permittedCategories?.includes(emp.category);
+                                        })
+                                        .filter(emp =>
+                                          emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
+                                        );
+                                      if (row.showDropdown && filtered.length > 0) {
+                                        if (e.key === 'ArrowDown') {
+                                          e.preventDefault();
+                                          setActiveSpjSuggestionIndex(prev => (prev + 1) % filtered.length);
+                                        } else if (e.key === 'ArrowUp') {
+                                          e.preventDefault();
+                                          setActiveSpjSuggestionIndex(prev => (prev - 1 + filtered.length) % filtered.length);
+                                        } else if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          const selectedEmp = filtered[activeSpjSuggestionIndex];
+                                          if (selectedEmp) {
+                                            selectEmployee(rowIdx, selectedEmp);
+                                          }
+                                        }
+                                      }
+                                    }}
+                                    className={`rounded-xl font-bold text-slate-700 text-xs h-10 w-full transition-all ${
+                                      row.isInvalid
+                                        ? 'border-red-500 focus:border-red-500 focus:ring-red-100 ring-2 ring-red-100'
+                                        : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100'
+                                    }`}
+                                  />
+                                  {row.showDropdown && (
+                                    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
+                                      {(() => {
+                                        const otherSelectedIds = spjWorkerRows
+                                          .filter((_, i) => i !== rowIdx)
+                                          .map(w => w.employeeId)
+                                          .filter(Boolean);
+                                        const filtered = blueCollarEmployees
+                                          .filter(emp => !otherSelectedIds.includes(emp.id))
+                                          .filter(emp => {
+                                            if (!profile) return false;
+                                            if (profile.role === 'super_admin') return true;
+                                            return profile.permittedCategories?.includes(emp.category);
+                                          })
+                                          .filter(emp =>
+                                            emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
+                                          );
+
+                                        if (filtered.length === 0) {
+                                          return <div className="p-4 text-center text-slate-400 text-xs font-semibold">Pegawai tidak ditemukan</div>;
+                                        }
+
+                                        return filtered.map((emp, empIdx) => {
+                                          const isActive = empIdx === activeSpjSuggestionIndex;
+                                          return (
+                                            <div
+                                              key={emp.id}
+                                              onClick={() => selectEmployee(rowIdx, emp)}
+                                              className={`px-4 py-2.5 text-xs font-semibold cursor-pointer transition-colors text-left ${isActive
+                                                ? 'bg-indigo-50 text-indigo-600 font-bold'
+                                                : 'hover:bg-indigo-50 hover:text-indigo-600 text-slate-700'
+                                                }`}
+                                            >
+                                              <p className={isActive ? 'text-indigo-700' : 'text-slate-800'}>{emp.name}</p>
+                                              <p className={`text-[10px] font-mono mt-0.5 ${isActive ? 'text-indigo-400' : 'text-slate-400'}`}>{emp.category} · {emp.id}</p>
+                                            </div>
+                                          );
+                                        });
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
+                                {row.isInvalid && (
+                                  <span className="text-[9px] font-bold text-red-500 mt-1 block">Nama tidak terdaftar di database</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-4 text-center">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => {
+                                    setSpjWorkerRows(prev => {
+                                      const copy = prev.filter((_, i) => i !== rowIdx);
+                                      handleSpjAutosave(copy, spjEventName, selectedSpjEventId, spjEventFee);
+                                      return copy;
+                                    });
+                                  }}
+                                  className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl h-8 w-8"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Add Employee button below the table */}
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={handleSpjAddRow}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold px-4 h-9.5 shadow-md flex items-center gap-1.5 transition-all active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Tambah Pegawai
+                  </Button>
+                </div>
+              </div>
+
+              {/* Form submit footer actions */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-50 shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setSelectedSpjEventId(null);
+                    setSpjEventName('');
+                    setSpjEventFee(0);
+                    setSpjWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+                    setMobileSpjView('list');
+                  }}
+                  className="rounded-xl border-slate-200 text-slate-600"
+                >
+                  Batal
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSaveSpjEvent}
+                  disabled={saving || !spjEventName.trim()}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 flex items-center gap-2"
+                >
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                  Simpan Kegiatan
+                </Button>
+              </div>
+            </Card>
+          </div>
         )}
       </div>
 
@@ -1609,6 +2365,25 @@ export default function UraianPage() {
               </span>
             </div>
 
+            {spjDiscrepancies.length > 0 && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex gap-3 text-amber-900 text-xs">
+                <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-amber-800 text-sm mb-1">Peringatan: Terdapat Perbedaan Nilai SPJ</p>
+                  <p className="leading-relaxed mb-2">
+                    Nilai SPJ yang dimasukkan secara manual berbeda dengan total kalkulasi Kegiatan SPJ untuk beberapa karyawan berikut:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 font-semibold text-amber-800">
+                    {spjDiscrepancies.map(d => (
+                      <li key={d.employeeId}>
+                        {d.name}: Manual {fmtRp(d.manual)} (Kalkulasi Kegiatan: {fmtRp(d.computed)})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
             {buildConfirmRows().length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-slate-400 space-y-2">
                 <AlertCircle className="w-10 h-10 opacity-40" />
@@ -1653,11 +2428,17 @@ export default function UraianPage() {
                           </div>
                         ) : (
                           /* Regular currency field */
-                          <div className="flex-1 flex items-center gap-2">
+                          <div className="flex-1 flex items-center justify-between gap-2">
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold">
                               <Banknote className="w-3 h-3" />
                               {fmtRp(value)}
                             </span>
+                            {col.key === 'spj' && tableData[emp.employeeId]?.spj !== undefined && tableData[emp.employeeId]?.spj !== getComputedSpj(emp.employeeId) && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-[10px] font-bold animate-pulse">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                Perbedaan: Seharusnya {fmtRp(getComputedSpj(emp.employeeId))}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>

@@ -47,36 +47,24 @@ service cloud.firestore {
 
     // 2. Employees (Blue Collar)
     match /Employees_BlueCollar/{employeeId} {
-      // Standard users can only view employees in their assigned job categories (SatKers)
-      allow read: if isSuperAdmin() || isEmployeeAdmin() || (
-        hasProfile() && 
-        resource.data.employment.jobCategory in getPermittedCategories()
-      );
+      // Standard users can view the employee directory to populate category lists and select dropdowns
+      allow read: if isSuperAdmin() || isEmployeeAdmin() || hasProfile();
       // Only Super Admins or Employee Admins can add or edit employee records
       allow write: if isSuperAdmin() || isEmployeeAdmin();
     }
 
     // 3. Employees (White Collar - Legacy)
     match /Employees_WhiteCollar/{employeeId} {
-      // Standard users can only view employees in their assigned job categories (SatKers)
-      allow read: if isSuperAdmin() || isEmployeeAdmin() || (
-        hasProfile() && 
-        resource.data.employment.jobCategory in getPermittedCategories()
-      );
+      // Standard users can view the employee directory
+      allow read: if isSuperAdmin() || isEmployeeAdmin() || hasProfile();
       // Only Super Admins or Employee Admins can add or edit employee records
       allow write: if isSuperAdmin() || isEmployeeAdmin();
     }
 
     // 3b. Employees (White Collar - Loyalis)
     match /Employees_Loyalis/{employeeId} {
-      // Standard users can only view employees in their assigned job roles (SatKers)
-      allow read: if isSuperAdmin() || isEmployeeAdmin() || (
-        hasProfile() && (
-          resource.data.employment_profile.job_role in getPermittedCategories() ||
-          resource.data.employment_profile.job_role.upper() in getPermittedCategories() ||
-          resource.data.employment.jobCategory in getPermittedCategories()
-        )
-      );
+      // Standard users can view the employee directory
+      allow read: if isSuperAdmin() || isEmployeeAdmin() || hasProfile();
       // Only Super Admins or Employee Admins can add or edit employee records
       allow write: if isSuperAdmin() || isEmployeeAdmin();
     }
@@ -116,7 +104,7 @@ service cloud.firestore {
       // Standard users can only read presensi rekap for their assigned SatKers
       allow read: if isSuperAdmin() || (
         hasProfile() && 
-        resource.data.jobCategory in getPermittedCategories()
+        (resource == null || resource.data.jobCategory in getPermittedCategories())
       );
       
       // Standard users can only write (create/update) data for their assigned SatKers
@@ -138,6 +126,12 @@ service cloud.firestore {
     // 5c. Payroll Slip States (Persisted verified states of employee payslips)
     match /PayrollSlipStates/{docId} {
       // Authenticated users with a registered profile can read and write payslip states
+      allow read, write: if isSuperAdmin() || hasProfile();
+    }
+
+    // 5d. Kegiatan SPJ (Variable Payout Event Entries for Blue Collar / Pekarya)
+    match /KegiatanSpj/{docId} {
+      // Authenticated users with a registered profile can read and write variable payouts
       allow read, write: if isSuperAdmin() || hasProfile();
     }
 

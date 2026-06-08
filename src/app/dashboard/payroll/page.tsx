@@ -631,40 +631,52 @@ export default function PayrollValidationDashboard() {
     fetchPeriodData();
   }, [targetDate]);
 
-  // ─── Fetch VakasiTambahan for current period ───────────────────
+  // ─── Fetch VakasiTambahan & KegiatanSpj for current period ───────────────────
   useEffect(() => {
-    const fetchVakasiTambahan = async () => {
+    const fetchVakasiAndSpj = async () => {
       try {
         const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-        const snapshot = await getDocs(collection(db, 'VakasiTambahan'));
+        
+        // Fetch both collections in parallel
+        const [snapshotLoyalis, snapshotSpj] = await Promise.all([
+          getDocs(collection(db, 'VakasiTambahan')),
+          getDocs(collection(db, 'KegiatanSpj'))
+        ]);
+
         const sumMap: Record<string, number> = {};
         const listMap: Record<string, { eventName: string; payGiven: number }[]> = {};
 
-        snapshot.docs.forEach(d => {
-          const data = d.data();
-          if (data.period === periodToken) {
-            const eventNameVal = data.eventName || '';
-            const workers = data.eventWorkers || {};
-            Object.entries(workers).forEach(([empId, w]: [string, any]) => {
-              sumMap[empId] = (sumMap[empId] || 0) + (w.payGiven || 0);
+        const processDocs = (docs: any[]) => {
+          docs.forEach(d => {
+            const data = d.data();
+            if (data.period === periodToken) {
+              const eventNameVal = data.eventName || '';
+              const workers = data.eventWorkers || {};
+              Object.entries(workers).forEach(([empId, w]: [string, any]) => {
+                sumMap[empId] = (sumMap[empId] || 0) + (w.payGiven || 0);
 
-              if (!listMap[empId]) {
-                listMap[empId] = [];
-              }
-              listMap[empId].push({
-                eventName: eventNameVal,
-                payGiven: w.payGiven || 0,
+                if (!listMap[empId]) {
+                  listMap[empId] = [];
+                }
+                listMap[empId].push({
+                  eventName: eventNameVal,
+                  payGiven: w.payGiven || 0,
+                });
               });
-            });
-          }
-        });
+            }
+          });
+        };
+
+        processDocs(snapshotLoyalis.docs);
+        processDocs(snapshotSpj.docs);
+
         setVakasiTambahanMap(sumMap);
         setVakasiTambahanListMap(listMap);
       } catch (err) {
-        console.error('Error fetching VakasiTambahan:', err);
+        console.error('Error fetching VakasiTambahan/KegiatanSpj:', err);
       }
     };
-    fetchVakasiTambahan();
+    fetchVakasiAndSpj();
   }, [targetDate]);
 
   // ─── Slip Handlers ─────────────────────────────────────────────

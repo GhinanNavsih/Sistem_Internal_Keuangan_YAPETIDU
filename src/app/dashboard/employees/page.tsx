@@ -52,6 +52,7 @@ import {
   FileClock,
   History,
   ClipboardCheck,
+  LogOut,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -192,7 +193,7 @@ function getLocalISOString(): string {
 
 export default function EmployeesPage() {
   const router = useRouter();
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading, logout } = useAuth();
 
   const [activeTab, setActiveTab] = useState('blue');
   const [employees, setEmployees] = useState<any[]>([]);
@@ -586,11 +587,13 @@ export default function EmployeesPage() {
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-4">
-            <Link href="/dashboard/payroll">
-              <Button variant="ghost" size="icon" className="rounded-full bg-white shadow-sm border border-slate-200 hover:bg-slate-50">
-                <ArrowLeft className="w-5 h-5 text-slate-600" />
-              </Button>
-            </Link>
+            {profile?.role === 'super_admin' && (
+              <Link href="/dashboard/payroll">
+                <Button variant="ghost" size="icon" className="rounded-full bg-white shadow-sm border border-slate-200 hover:bg-slate-50">
+                  <ArrowLeft className="w-5 h-5 text-slate-600" />
+                </Button>
+              </Link>
+            )}
             <div>
               <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
                 <Users className="w-6 h-6 text-indigo-500" />
@@ -623,6 +626,16 @@ export default function EmployeesPage() {
             <Button onClick={handleOpenAdd} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 px-6 cursor-pointer">
               <UserPlus className="w-4 h-4 mr-2" /> Tambah Pegawai
             </Button>
+            {profile?.role === 'employee_admin' && (
+              <Button
+                variant="outline"
+                onClick={logout}
+                className="rounded-xl text-rose-600 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                Keluar
+              </Button>
+            )}
           </div>
         </div>
 
