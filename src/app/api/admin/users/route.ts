@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import admin from '@/lib/firebase-admin';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 
 // Helper to verify that the requester is an authorized super_admin
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
     await verifySuperAdmin(req);
 
     const body = await req.json();
-    const { email, password, displayName, role, permittedCategories } = body;
+    const { email, password, displayName, role, permittedCategories, linkedEmployeeId } = body;
 
     if (!email || !password || !role || !permittedCategories) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -70,14 +71,18 @@ export async function POST(req: NextRequest) {
       displayName: displayName || undefined,
     });
 
-    // 2. Save profile document in Firestore
-    const profile = {
+    const profile: Record<string, any> = {
       email,
       displayName: displayName || '',
       role,
       permittedCategories,
       createdAt: new Date().toISOString(),
     };
+
+    // Attach linked employee ID for honorer accounts
+    if (role === 'honorer' && linkedEmployeeId) {
+      profile.linkedEmployeeId = linkedEmployeeId;
+    }
 
     await adminDb.collection('users').doc(userRecord.uid).set(profile);
 
@@ -110,7 +115,7 @@ export async function PUT(req: NextRequest) {
     await verifySuperAdmin(req);
 
     const body = await req.json();
-    const { uid, displayName, role, permittedCategories } = body;
+    const { uid, displayName, role, permittedCategories, linkedEmployeeId } = body;
 
     if (!uid || !role || !permittedCategories) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -126,12 +131,21 @@ export async function PUT(req: NextRequest) {
     }
 
     // 2. Update Firestore profile doc
-    await adminDb.collection('users').doc(uid).update({
+    const updatePayload: Record<string, any> = {
       displayName: displayName || '',
       role,
       permittedCategories,
       updatedAt: new Date().toISOString(),
-    });
+    };
+
+    // Attach or clear linked employee ID for honorer accounts
+    if (role === 'honorer' && linkedEmployeeId) {
+      updatePayload.linkedEmployeeId = linkedEmployeeId;
+    } else {
+      updatePayload.linkedEmployeeId = admin.firestore.FieldValue.delete();
+    }
+
+    await adminDb.collection('users').doc(uid).update(updatePayload);
 
     return NextResponse.json({
       message: 'User updated successfully',

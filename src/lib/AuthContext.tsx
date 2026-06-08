@@ -15,9 +15,10 @@ import { doc, getDoc } from 'firebase/firestore';
 export interface UserProfile {
   uid: string;
   email: string;
-  role: 'super_admin' | 'satker_head' | 'employee_admin';
+  role: 'super_admin' | 'satker_head' | 'employee_admin' | 'honorer';
   permittedCategories: string[];
   displayName?: string;
+  linkedEmployeeId?: string;
 }
 
 interface AuthContextType {

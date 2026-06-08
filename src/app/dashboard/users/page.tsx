@@ -59,9 +59,16 @@ interface ManagedUser {
   uid: string;
   email: string;
   displayName?: string;
-  role: 'super_admin' | 'satker_head' | 'employee_admin';
+  role: 'super_admin' | 'satker_head' | 'employee_admin' | 'honorer';
   permittedCategories: string[];
+  linkedEmployeeId?: string;
   createdAt?: string;
+}
+
+interface CleaningEmployee {
+  id: string;
+  name: string;
+  category: string;
 }
 
 export default function UserManagementPage() {
@@ -91,14 +98,19 @@ export default function UserManagementPage() {
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newDisplayName, setNewDisplayName] = useState('');
-  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'employee_admin'>('satker_head');
+  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'employee_admin' | 'honorer'>('satker_head');
   const [newPermitted, setNewPermitted] = useState<string[]>([]);
+  const [newLinkedEmployeeId, setNewLinkedEmployeeId] = useState('');
+
+  // Cleaning employees for honorer linking
+  const [cleaningEmployees, setCleaningEmployees] = useState<CleaningEmployee[]>([]);
 
   // Edit User modal state
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [editDisplayName, setEditDisplayName] = useState('');
-  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'employee_admin'>('satker_head');
+  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'employee_admin' | 'honorer'>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
+  const [editLinkedEmployeeId, setEditLinkedEmployeeId] = useState('');
 
   // Delete User modal state
   const [deletingUser, setDeletingUser] = useState<ManagedUser | null>(null);
@@ -117,6 +129,20 @@ export default function UserManagementPage() {
         if (cat) cats.add(cat);
       });
       setDynamicCategories(Array.from(cats).sort());
+
+      // Also build list of cleaning employees for honorer linking
+      const cleaningList: CleaningEmployee[] = empSnapshot.docs
+        .filter(docSnap => {
+          const cat = docSnap.data()?.employment?.jobCategory;
+          return cat === 'KEBERSIHAN' || cat === 'KEBERSIHAN_IC';
+        })
+        .map(docSnap => ({
+          id: docSnap.id,
+          name: docSnap.data()?.name || '',
+          category: docSnap.data()?.employment?.jobCategory || '',
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setCleaningEmployees(cleaningList);
 
       // 2. Fetch all user profiles from our API
       const idToken = await user.getIdToken();
@@ -214,7 +240,8 @@ export default function UserManagementPage() {
           password: newPassword,
           displayName: newDisplayName,
           role: newRole,
-          permittedCategories: newPermitted,
+          permittedCategories: newRole === 'honorer' ? (newLinkedEmployeeId ? [cleaningEmployees.find(e => e.id === newLinkedEmployeeId)?.category || ''] : []) : newPermitted,
+          linkedEmployeeId: newRole === 'honorer' ? newLinkedEmployeeId : undefined,
         }),
       });
 
@@ -230,6 +257,7 @@ export default function UserManagementPage() {
       setNewDisplayName('');
       setNewRole('satker_head');
       setNewPermitted([]);
+      setNewLinkedEmployeeId('');
       setShowAddForm(false);
 
       // Refresh list
@@ -247,6 +275,7 @@ export default function UserManagementPage() {
     setEditDisplayName(u.displayName || '');
     setEditRole(u.role);
     setEditPermitted(u.permittedCategories || []);
+    setEditLinkedEmployeeId(u.linkedEmployeeId || '');
   };
 
   // Submit Edit changes
@@ -267,7 +296,8 @@ export default function UserManagementPage() {
           uid: editingUser.uid,
           displayName: editDisplayName,
           role: editRole,
-          permittedCategories: editPermitted,
+          permittedCategories: editRole === 'honorer' ? (editLinkedEmployeeId ? [cleaningEmployees.find(e => e.id === editLinkedEmployeeId)?.category || ''] : []) : editPermitted,
+          linkedEmployeeId: editRole === 'honorer' ? editLinkedEmployeeId : undefined,
         }),
       });
 
@@ -513,6 +543,22 @@ export default function UserManagementPage() {
                             <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Akses penuh dan bebas ke semua fitur sistem payroll, Legalitas, dan manajemen user.</span>
                           </div>
                         </div>
+
+                        <div
+                          onClick={() => {
+                            setNewRole('honorer');
+                            setNewPermitted([]);
+                          }}
+                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${newRole === 'honorer' ? 'border-teal-500 bg-teal-50/20 ring-2 ring-teal-500/10' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
+                        >
+                          <div className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 ${newRole === 'honorer' ? 'border-teal-600' : 'border-slate-300'}`}>
+                            {newRole === 'honorer' && <div className="w-2.5 h-2.5 rounded-full bg-teal-600" />}
+                          </div>
+                          <div>
+                            <span className="text-sm font-bold text-slate-900 block">Karyawan Honorer (Lapor Kegiatan)</span>
+                            <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Akun untuk karyawan kebersihan yang hanya dapat mengakses halaman lapor kegiatan harian. Harus dihubungkan ke data pegawai.</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -529,6 +575,24 @@ export default function UserManagementPage() {
                       ) : newRole === 'employee_admin' ? (
                         <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 text-emerald-800 text-xs leading-relaxed font-medium">
                           Employee Administrator secara otomatis memiliki akses penuh ke <strong>seluruh</strong> data pegawai (Master Data Pegawai). Checkbox dinonaktifkan.
+                        </div>
+                      ) : newRole === 'honorer' ? (
+                        <div className="space-y-3">
+                          <div className="p-4 rounded-2xl bg-teal-50/50 border border-teal-100 text-teal-800 text-xs leading-relaxed font-medium">
+                            Pilih karyawan kebersihan yang akan dihubungkan ke akun ini. Akun honorer hanya bisa mengakses halaman lapor kegiatan.
+                          </div>
+                          <select
+                            value={newLinkedEmployeeId}
+                            onChange={(e) => setNewLinkedEmployeeId(e.target.value)}
+                            className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
+                          >
+                            <option value="">-- Pilih Karyawan --</option>
+                            {cleaningEmployees.map(emp => (
+                              <option key={emp.id} value={emp.id}>
+                                {emp.name} ({emp.category})
+                              </option>
+                            ))}
+                          </select>
                         </div>
                       ) : (
                         <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 max-h-[160px] overflow-y-auto space-y-2.5">
@@ -641,7 +705,7 @@ export default function UserManagementPage() {
                         <TableRow key={u.uid} className="border-slate-50 hover:bg-slate-50/40 transition-colors">
                           <TableCell className="font-bold pl-8 py-4.5">
                             <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${u.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : u.role === 'employee_admin' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${u.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : u.role === 'employee_admin' ? 'bg-emerald-100 text-emerald-700' : u.role === 'honorer' ? 'bg-teal-100 text-teal-700' : 'bg-indigo-100 text-indigo-700'}`}>
                                 {(u.displayName || u.email).substring(0, 2).toUpperCase()}
                               </div>
                               <div>
@@ -660,6 +724,10 @@ export default function UserManagementPage() {
                               <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Employee Admin
                               </Badge>
+                            ) : u.role === 'honorer' ? (
+                              <Badge variant="secondary" className="bg-teal-50 text-teal-700 hover:bg-teal-100 font-bold px-2.5 py-0.5 rounded-full border-none">
+                                Honorer
+                              </Badge>
                             ) : (
                               <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Kepala SatKer
@@ -671,6 +739,13 @@ export default function UserManagementPage() {
                               <span className="text-xs text-amber-600 font-bold italic">Semua Unit (Akses Penuh)</span>
                             ) : u.role === 'employee_admin' ? (
                               <span className="text-xs text-emerald-600 font-bold italic">Pegawai (Akses Penuh)</span>
+                            ) : u.role === 'honorer' ? (
+                              <span className="text-xs text-teal-600 font-bold">
+                                {u.linkedEmployeeId
+                                  ? cleaningEmployees.find(e => e.id === u.linkedEmployeeId)?.name || u.linkedEmployeeId
+                                  : <span className="text-rose-500 italic">Belum Terhubung</span>
+                                }
+                              </span>
                             ) : (
                               <div className="flex flex-wrap gap-1 max-w-[320px]">
                                 {u.permittedCategories && u.permittedCategories.length > 0 ? (
@@ -747,7 +822,7 @@ export default function UserManagementPage() {
               {/* Role */}
               <div>
                 <Label className="text-xs font-semibold text-slate-500">Tingkat Otoritas</Label>
-                <div className="grid grid-cols-3 gap-2 mt-1.5">
+                <div className="grid grid-cols-4 gap-2 mt-1.5">
                   <button
                     type="button"
                     onClick={() => setEditRole('satker_head')}
@@ -775,6 +850,16 @@ export default function UserManagementPage() {
                   >
                     Super Admin
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditRole('honorer');
+                      setEditPermitted([]);
+                    }}
+                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'honorer' ? 'border-teal-500 bg-teal-50/10 text-teal-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
+                  >
+                    Honorer
+                  </button>
                 </div>
               </div>
 
@@ -788,6 +873,24 @@ export default function UserManagementPage() {
                 ) : editRole === 'employee_admin' ? (
                   <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-800 text-[11px] font-medium leading-relaxed mt-1.5">
                     Employee Administrator memiliki hak akses penuh ke seluruh data pegawai. Pilihan dinonaktifkan.
+                  </div>
+                ) : editRole === 'honorer' ? (
+                  <div className="space-y-3 mt-1.5">
+                    <div className="p-3 rounded-xl bg-teal-50 border border-teal-100 text-teal-800 text-[11px] font-medium leading-relaxed">
+                      Pilih karyawan kebersihan yang dihubungkan ke akun ini.
+                    </div>
+                    <select
+                      value={editLinkedEmployeeId}
+                      onChange={(e) => setEditLinkedEmployeeId(e.target.value)}
+                      className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
+                    >
+                      <option value="">-- Pilih Karyawan --</option>
+                      {cleaningEmployees.map(emp => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.name} ({emp.category})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 ) : (
                   <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50 max-h-[140px] overflow-y-auto space-y-2 mt-1.5">

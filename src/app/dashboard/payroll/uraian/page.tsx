@@ -116,6 +116,7 @@ export default function UraianPage() {
   const [loadingBlueCollar, setLoadingBlueCollar] = useState(false);
   const [spjEvents, setSpjEvents] = useState<any[]>([]);
   const [loadingSpjEvents, setLoadingSpjEvents] = useState(false);
+  const [approvedActivityReports, setApprovedActivityReports] = useState<any[]>([]);
   const [activeSpjSuggestionIndex, setActiveSpjSuggestionIndex] = useState<number>(0);
 
   // SPJ Form States
@@ -237,6 +238,20 @@ export default function UraianPage() {
         ...d.data()
       }));
       setSpjEvents(list);
+
+      // Also fetch approved ActivityReports for the same period
+      try {
+        const arQ = query(
+          collection(db, 'ActivityReports'),
+          where('period', '==', periodToken),
+          where('status', '==', 'approved'),
+        );
+        const arSnap = await getDocs(arQ);
+        const arList = arSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setApprovedActivityReports(arList);
+      } catch (arErr) {
+        console.error('Error fetching ActivityReports:', arErr);
+      }
     } catch (err) {
       console.error('Error fetching SPJ events:', err);
     } finally {
@@ -249,15 +264,25 @@ export default function UraianPage() {
   }, [fetchSpjEvents]);
 
   // Helper: compute accumulated SPJ payout for an employee
+  // Combines KegiatanSpj events + approved ActivityReports
   const getComputedSpj = useCallback((empId: string) => {
-    return spjEvents.reduce((sum, evt) => {
+    const kegiatanTotal = spjEvents.reduce((sum, evt) => {
       const workerInfo = evt.eventWorkers?.[empId];
       if (workerInfo) {
         return sum + (workerInfo.payGiven || 0);
       }
       return sum;
     }, 0);
-  }, [spjEvents]);
+
+    const activityTotal = approvedActivityReports.reduce((sum, ar) => {
+      if (ar.employeeId === empId) {
+        return sum + (ar.fee || 0);
+      }
+      return sum;
+    }, 0);
+
+    return kegiatanTotal + activityTotal;
+  }, [spjEvents, approvedActivityReports]);
 
   // ID Sanitizer
   const sanitizeEventId = (name: string): string => {

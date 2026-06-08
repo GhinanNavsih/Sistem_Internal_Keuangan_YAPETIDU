@@ -59,7 +59,7 @@ function getAuthErrorMessage(code: string): string {
 }
 
 export default function LoginPage() {
-  const { user, loading, signInWithEmail, signInWithGoogle } = useAuth();
+  const { user, profile, loading, signInWithEmail, signInWithGoogle } = useAuth();
   const router = useRouter();
 
   const [email, setEmail] = useState('');
@@ -71,10 +71,14 @@ export default function LoginPage() {
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (!loading && user) {
-      router.replace('/dashboard/payroll');
+    if (!loading && user && profile) {
+      if (profile.role === 'honorer') {
+        router.replace('/employee/activities');
+      } else {
+        router.replace('/dashboard/payroll');
+      }
     }
-  }, [user, loading, router]);
+  }, [user, profile, loading, router]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,7 +87,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await signInWithEmail(email, password);
-      router.replace('/dashboard/payroll');
+      // Redirect is handled by the useEffect above once profile loads
     } catch (err: any) {
       setError(getAuthErrorMessage(err?.code ?? ''));
     } finally {
@@ -96,7 +100,7 @@ export default function LoginPage() {
     setGoogleLoading(true);
     try {
       await signInWithGoogle();
-      router.replace('/dashboard/payroll');
+      // Redirect is handled by the useEffect above once profile loads
     } catch (err: any) {
       setError(getAuthErrorMessage(err?.code ?? ''));
     } finally {

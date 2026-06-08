@@ -46,7 +46,7 @@ import {
   Search,
   Mail,
 } from 'lucide-react';
-import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
@@ -631,16 +631,21 @@ export default function PayrollValidationDashboard() {
     fetchPeriodData();
   }, [targetDate]);
 
-  // ─── Fetch VakasiTambahan & KegiatanSpj for current period ───────────────────
+  // ─── Fetch VakasiTambahan & KegiatanSpj & ActivityReports for current period ───
   useEffect(() => {
     const fetchVakasiAndSpj = async () => {
       try {
         const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
         
-        // Fetch both collections in parallel
-        const [snapshotLoyalis, snapshotSpj] = await Promise.all([
+        // Fetch all three collections in parallel
+        const [snapshotLoyalis, snapshotSpj, snapshotActivities] = await Promise.all([
           getDocs(collection(db, 'VakasiTambahan')),
-          getDocs(collection(db, 'KegiatanSpj'))
+          getDocs(collection(db, 'KegiatanSpj')),
+          getDocs(query(
+            collection(db, 'ActivityReports'),
+            where('period', '==', periodToken),
+            where('status', '==', 'approved'),
+          )),
         ]);
 
         const sumMap: Record<string, number> = {};
@@ -670,10 +675,26 @@ export default function PayrollValidationDashboard() {
         processDocs(snapshotLoyalis.docs);
         processDocs(snapshotSpj.docs);
 
+        // Add approved ActivityReports to the sums
+        snapshotActivities.docs.forEach(d => {
+          const data = d.data();
+          const empId = data.employeeId;
+          if (empId) {
+            sumMap[empId] = (sumMap[empId] || 0) + (data.fee || 0);
+            if (!listMap[empId]) {
+              listMap[empId] = [];
+            }
+            listMap[empId].push({
+              eventName: data.activityName || 'Kegiatan Harian',
+              payGiven: data.fee || 0,
+            });
+          }
+        });
+
         setVakasiTambahanMap(sumMap);
         setVakasiTambahanListMap(listMap);
       } catch (err) {
-        console.error('Error fetching VakasiTambahan/KegiatanSpj:', err);
+        console.error('Error fetching VakasiTambahan/KegiatanSpj/ActivityReports:', err);
       }
     };
     fetchVakasiAndSpj();

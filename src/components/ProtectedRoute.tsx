@@ -17,14 +17,20 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
       } else if (profile) {
         // Enforce role-based route access
         if (profile.role === 'satker_head') {
-          // SatKer Heads are ONLY allowed to access /dashboard/payroll/uraian
-          if (pathname !== '/dashboard/payroll/uraian') {
+          // SatKer Heads are allowed to access /dashboard/payroll/uraian and /dashboard/payroll/activity-review
+          const allowedPaths = ['/dashboard/payroll/uraian', '/dashboard/payroll/activity-review'];
+          if (!allowedPaths.includes(pathname)) {
             router.replace('/dashboard/payroll/uraian');
           }
         } else if (profile.role === 'employee_admin') {
           // Employee Admins are ONLY allowed to access /dashboard/employees
           if (pathname !== '/dashboard/employees') {
             router.replace('/dashboard/employees');
+          }
+        } else if (profile.role === 'honorer') {
+          // Honorer employees are ONLY allowed to access /employee/activities
+          if (!pathname.startsWith('/employee/')) {
+            router.replace('/employee/activities');
           }
         }
       }
@@ -47,10 +53,13 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   if (!user || !profile) return null;
 
   // Additional block in case they somehow render before the useEffect redirect completes
-  if (profile.role === 'satker_head' && pathname !== '/dashboard/payroll/uraian') {
+  if (profile.role === 'satker_head' && !['/dashboard/payroll/uraian', '/dashboard/payroll/activity-review'].includes(pathname)) {
     return null;
   }
   if (profile.role === 'employee_admin' && pathname !== '/dashboard/employees') {
+    return null;
+  }
+  if (profile.role === 'honorer' && !pathname.startsWith('/employee/')) {
     return null;
   }
 
