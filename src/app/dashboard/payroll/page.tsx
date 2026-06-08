@@ -488,6 +488,7 @@ export default function PayrollValidationDashboard() {
   const categories = Array.from(new Set(employees.map(emp => emp.role))).sort();
 
   useEffect(() => {
+    if (!profile || profile.role !== 'super_admin') return;
     const fetchData = async () => {
       try {
         setLoading(true);
@@ -588,10 +589,11 @@ export default function PayrollValidationDashboard() {
     };
 
     fetchData();
-  }, [payrollCollar]);
+  }, [payrollCollar, profile]);
 
   // ─── Fetch UraianGaji & persisted SlipStates for current period ──
   useEffect(() => {
+    if (!profile || profile.role !== 'super_admin') return;
     const fetchPeriodData = async () => {
       try {
         const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
@@ -629,10 +631,11 @@ export default function PayrollValidationDashboard() {
       }
     };
     fetchPeriodData();
-  }, [targetDate]);
+  }, [targetDate, profile]);
 
   // ─── Fetch VakasiTambahan & KegiatanSpj & ActivityReports for current period ───
   useEffect(() => {
+    if (!profile || profile.role !== 'super_admin') return;
     const fetchVakasiAndSpj = async () => {
       try {
         const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
@@ -698,7 +701,7 @@ export default function PayrollValidationDashboard() {
       }
     };
     fetchVakasiAndSpj();
-  }, [targetDate]);
+  }, [targetDate, profile]);
 
   // ─── Slip Handlers ─────────────────────────────────────────────
 

@@ -53,6 +53,13 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { MONTHS_ID } from '@/utils/rekapConfig';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -63,6 +70,7 @@ interface ActivityReport {
   jobCategory: string;
   period: string;
   activityName: string;
+  activityType?: 'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya';
   activityDate: string;
   timeStart: string;
   timeEnd: string;
@@ -136,7 +144,9 @@ export default function EmployeeActivitiesPage() {
   // ── Form state ──
   const [showForm, setShowForm] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ActivityReport | null>(null);
-  const [formName, setFormName] = useState('');
+  const [formActivityType, setFormActivityType] = useState<'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya'>('Piket');
+  const [formName, setFormName] = useState('Piket');
+  const [formCustomName, setFormCustomName] = useState('');
   const [formDate, setFormDate] = useState(getTodayISO());
   const [formTimeStart, setFormTimeStart] = useState('');
   const [formTimeEnd, setFormTimeEnd] = useState('');
@@ -213,7 +223,9 @@ export default function EmployeeActivitiesPage() {
 
   // ── Form Handlers ──
   const resetForm = () => {
-    setFormName('');
+    setFormActivityType('Piket');
+    setFormName('Piket');
+    setFormCustomName('');
     setFormDate(getTodayISO());
     setFormTimeStart('');
     setFormTimeEnd('');
@@ -223,7 +235,15 @@ export default function EmployeeActivitiesPage() {
 
   const openEditForm = (activity: ActivityReport) => {
     setEditingActivity(activity);
-    setFormName(activity.activityName);
+    const type = activity.activityType || (['Piket', 'Standby', 'Ro\'an'].includes(activity.activityName) ? activity.activityName : 'Lainnya');
+    setFormActivityType(type as any);
+    if (type === 'Lainnya') {
+      setFormCustomName(activity.activityName);
+      setFormName(activity.activityName);
+    } else {
+      setFormName(activity.activityName);
+      setFormCustomName('');
+    }
     setFormDate(activity.activityDate);
     setFormTimeStart(activity.timeStart);
     setFormTimeEnd(activity.timeEnd);
@@ -257,6 +277,7 @@ export default function EmployeeActivitiesPage() {
         // Re-submit / edit a declined activity → reset to pending
         await updateDoc(doc(db, 'ActivityReports', editingActivity.id), {
           activityName: formName.trim(),
+          activityType: formActivityType,
           activityDate: formDate,
           timeStart: formTimeStart,
           timeEnd: formTimeEnd,
@@ -276,6 +297,7 @@ export default function EmployeeActivitiesPage() {
           jobCategory: profile.permittedCategories?.[0] || '',
           period: activityPeriod,
           activityName: formName.trim(),
+          activityType: formActivityType,
           activityDate: formDate,
           timeStart: formTimeStart,
           timeEnd: formTimeEnd,
@@ -361,11 +383,10 @@ export default function EmployeeActivitiesPage() {
 
         {/* ── Notifications ────────────────────────────────────────────── */}
         {message && (
-          <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl text-sm font-semibold shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 ${
-            message.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border border-emerald-100'
-              : 'bg-rose-50 text-rose-800 border border-rose-100'
-          }`}>
+          <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl text-sm font-semibold shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 ${message.type === 'success'
+            ? 'bg-emerald-50 text-emerald-800 border border-emerald-100'
+            : 'bg-rose-50 text-rose-800 border border-rose-100'
+            }`}>
             {message.type === 'success'
               ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -380,24 +401,30 @@ export default function EmployeeActivitiesPage() {
             <div className="flex items-center gap-3">
               <CalendarDays className="w-4 h-4 text-teal-500 shrink-0" />
               <div className="flex items-center gap-2 flex-1">
-                <select
-                  value={month}
-                  onChange={(e) => setMonth(Number(e.target.value))}
-                  className="text-sm font-bold text-slate-700 bg-slate-50 rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-teal-400 flex-1"
-                >
-                  {MONTHS_ID.map((m, i) => (
-                    <option key={i} value={i + 1}>{m}</option>
-                  ))}
-                </select>
-                <select
-                  value={year}
-                  onChange={(e) => setYear(Number(e.target.value))}
-                  className="text-sm font-bold text-slate-700 bg-slate-50 rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-teal-400 w-24"
-                >
-                  {YEARS.map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
+                <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
+                  <SelectTrigger className="text-sm font-bold text-slate-700 bg-slate-50 rounded-xl border border-slate-200 h-10 px-3 flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                    {MONTHS_ID.map((m, i) => (
+                      <SelectItem key={i + 1} value={String(i + 1)}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
+                  <SelectTrigger className="text-sm font-bold text-slate-700 bg-slate-50 rounded-xl border border-slate-200 h-10 px-3 w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                    {YEARS.map(y => (
+                      <SelectItem key={y} value={String(y)}>
+                        {y}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </CardContent>
@@ -423,41 +450,37 @@ export default function EmployeeActivitiesPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setStatusFilter('all')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-              statusFilter === 'all'
-                ? 'bg-slate-800 text-white shadow-md'
-                : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
-            }`}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'all'
+              ? 'bg-slate-800 text-white shadow-md'
+              : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+              }`}
           >
             Semua ({activities.length})
           </button>
           <button
             onClick={() => setStatusFilter('pending')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-              statusFilter === 'pending'
-                ? 'bg-amber-500 text-white shadow-md'
-                : 'bg-white text-amber-600 border border-amber-200 hover:bg-amber-50'
-            }`}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'pending'
+              ? 'bg-amber-500 text-white shadow-md'
+              : 'bg-white text-amber-600 border border-amber-200 hover:bg-amber-50'
+              }`}
           >
             Menunggu ({stats.pending})
           </button>
           <button
             onClick={() => setStatusFilter('approved')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-              statusFilter === 'approved'
-                ? 'bg-emerald-500 text-white shadow-md'
-                : 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50'
-            }`}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'approved'
+              ? 'bg-emerald-500 text-white shadow-md'
+              : 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50'
+              }`}
           >
             Disetujui ({stats.approved})
           </button>
           <button
             onClick={() => setStatusFilter('declined')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-              statusFilter === 'declined'
-                ? 'bg-rose-500 text-white shadow-md'
-                : 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-50'
-            }`}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'declined'
+              ? 'bg-rose-500 text-white shadow-md'
+              : 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-50'
+              }`}
           >
             Ditolak ({stats.declined})
           </button>
@@ -495,9 +518,8 @@ export default function EmployeeActivitiesPage() {
               return (
                 <Card
                   key={activity.id}
-                  className={`bg-white rounded-2xl shadow-sm border-none overflow-hidden transition-all duration-200 ${
-                    isExpanded ? 'ring-2 ring-teal-200/60' : ''
-                  }`}
+                  className={`bg-white rounded-2xl shadow-sm border-none overflow-hidden transition-all duration-200 ${isExpanded ? 'ring-2 ring-teal-200/60' : ''
+                    }`}
                 >
                   <CardContent className="p-0">
                     {/* Main row — tap to expand */}
@@ -617,21 +639,56 @@ export default function EmployeeActivitiesPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="p-5 space-y-4">
-            {/* Activity Name */}
+            {/* Activity Type Selection */}
             <div className="space-y-1.5">
-              <Label htmlFor="activityName" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              <Label htmlFor="activityType" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                 Nama Kegiatan
               </Label>
-              <Input
-                id="activityName"
-                placeholder="Contoh: Bersih-bersih Gedung Rektorat"
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-sm"
-                required
-                autoFocus
-              />
+              <Select
+                value={formActivityType}
+                onValueChange={(val: any) => {
+                  setFormActivityType(val);
+                  if (val !== 'Lainnya') {
+                    setFormName(val);
+                  } else {
+                    setFormName(formCustomName || '');
+                  }
+                }}
+                modal={false}
+              >
+                <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                  <SelectItem value="Piket">Piket</SelectItem>
+                  <SelectItem value="Standby">Standby</SelectItem>
+                  <SelectItem value="Ro'an">Ro'an</SelectItem>
+                  <SelectItem value="Lainnya">Lainnya</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            {/* Custom Activity Name (shown only if 'Lainnya' is selected) */}
+            {formActivityType === 'Lainnya' && (
+              <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                <Label htmlFor="activityCustomName" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Nama Kegiatan Kustom
+                </Label>
+                <Input
+                  id="activityCustomName"
+                  placeholder="Contoh: Memindahkan Barang"
+                  value={formCustomName}
+                  onChange={(e) => {
+                    setFormCustomName(e.target.value);
+                    setFormName(e.target.value);
+                  }}
+                  className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-sm"
+                  required
+                  autoFocus
+                  autoComplete="off"
+                />
+              </div>
+            )}
 
             {/* Date */}
             <div className="space-y-1.5">

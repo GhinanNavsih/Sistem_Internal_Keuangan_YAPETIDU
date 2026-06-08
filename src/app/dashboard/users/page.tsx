@@ -479,7 +479,7 @@ export default function UserManagementPage() {
                       <div>
                         <Label htmlFor="pass" className="text-xs font-semibold text-slate-500">Kata Sandi (Min. 6 Karakter)</Label>
                         <div className="relative mt-1">
-                          <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400 pointer-events-none" />
+                          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                           <Input
                             id="pass"
                             type={showNewPassword ? 'text' : 'password'}
@@ -492,7 +492,7 @@ export default function UserManagementPage() {
                           <button
                             type="button"
                             onClick={() => setShowNewPassword(!showNewPassword)}
-                            className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 focus:outline-none focus:text-slate-600 cursor-pointer"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none focus:text-slate-600 cursor-pointer flex items-center justify-center"
                             aria-label={showNewPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
                           >
                             {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

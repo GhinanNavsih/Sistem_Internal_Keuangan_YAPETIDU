@@ -225,6 +225,7 @@ export default function UraianPage() {
 
   // ── Fetch Kegiatan SPJ Events ──
   const fetchSpjEvents = useCallback(async () => {
+    if (!category) return;
     setLoadingSpjEvents(true);
     try {
       const periodToken = `${year}-${String(month).padStart(2, '0')}`;
@@ -245,6 +246,7 @@ export default function UraianPage() {
           collection(db, 'ActivityReports'),
           where('period', '==', periodToken),
           where('status', '==', 'approved'),
+          where('jobCategory', '==', category),
         );
         const arSnap = await getDocs(arQ);
         const arList = arSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -257,7 +259,7 @@ export default function UraianPage() {
     } finally {
       setLoadingSpjEvents(false);
     }
-  }, [month, year]);
+  }, [month, year, category]);
 
   useEffect(() => {
     fetchSpjEvents();

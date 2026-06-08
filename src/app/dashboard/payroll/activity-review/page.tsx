@@ -80,6 +80,7 @@ interface ActivityReport {
   jobCategory: string;
   period: string;
   activityName: string;
+  activityType?: 'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya';
   activityDate: string;
   timeStart: string;
   timeEnd: string;
@@ -95,6 +96,50 @@ interface ActivityReport {
 
 function fmtRp(val: number): string {
   return 'Rp' + val.toLocaleString('id-ID');
+}
+
+function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: string, activityName?: string): number {
+  if (!timeStart || !timeEnd) return 0;
+  
+  // Parse HH:MM format
+  const [sh, sm] = timeStart.split(':').map(Number);
+  const [eh, em] = timeEnd.split(':').map(Number);
+  
+  if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return 0;
+  
+  const minutes = (eh * 60 + em) - (sh * 60 + sm);
+  if (minutes < 0) return 0;
+  
+  const halfHours = Math.round(minutes / 30);
+  
+  // Determine activity type
+  let type = activityType;
+  if (!type && activityName) {
+    const nameLower = activityName.toLowerCase();
+    if (nameLower === 'piket' || nameLower.startsWith('piket ')) {
+      type = 'Piket';
+    } else if (nameLower === 'standby' || nameLower.startsWith('standby ')) {
+      type = 'Standby';
+    } else if (nameLower === 'ro\'an' || nameLower === 'roan' || nameLower.startsWith('ro\'an ') || nameLower.startsWith('roan ')) {
+      type = 'Ro\'an';
+    } else {
+      type = 'Lainnya';
+    }
+  }
+  
+  if (!type) {
+    type = 'Lainnya';
+  }
+  
+  const isPiketOrStandby = type === 'Piket' || type === 'Standby';
+  const rate = isPiketOrStandby ? 2000 : 2500;
+  
+  let fee = halfHours * rate;
+  if (minutes >= 120) {
+    fee += 7500;
+  }
+  
+  return fee;
 }
 
 function getStatusConfig(status: string) {
@@ -117,10 +162,9 @@ export default function ActivityReviewPage() {
   const router = useRouter();
   const { profile, user } = useAuth();
 
-  // ── Period & Category ──
+  // ── Period ──
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
-  const [category, setCategory] = useState('KEBERSIHAN');
   const periodToken = useMemo(() => `${year}-${String(month).padStart(2, '0')}`, [year, month]);
 
   // ── Data ──
@@ -132,17 +176,12 @@ export default function ActivityReviewPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // ── Approve Modal ──
-  const [approveTarget, setApproveTarget] = useState<ActivityReport | null>(null);
-  const [approveFee, setApproveFee] = useState('');
+  // ── Row Fees (Inline input values) ──
+  const [rowFees, setRowFees] = useState<Record<string, string>>({});
 
   // ── Decline Modal ──
   const [declineTarget, setDeclineTarget] = useState<ActivityReport | null>(null);
   const [declineReason, setDeclineReason] = useState('');
-
-  // ── Bulk Approve Modal ──
-  const [showBulkApprove, setShowBulkApprove] = useState(false);
-  const [bulkFee, setBulkFee] = useState('');
 
   // ── Action Loading ──
   const [actionLoading, setActionLoading] = useState(false);
@@ -181,11 +220,7 @@ export default function ActivityReviewPage() {
     return CLEANING_CATEGORIES.filter(c => profile.permittedCategories?.includes(c));
   }, [profile]);
 
-  useEffect(() => {
-    if (allowedCategories.length > 0 && !allowedCategories.includes(category)) {
-      setCategory(allowedCategories[0]);
-    }
-  }, [allowedCategories, category]);
+
 
   // ── Fetch Activities ──
   const fetchActivities = useCallback(async () => {
@@ -193,11 +228,24 @@ export default function ActivityReviewPage() {
     setLoading(true);
     setSelectedIds(new Set());
     try {
-      const q = query(
-        collection(db, 'ActivityReports'),
-        where('period', '==', periodToken),
-        where('jobCategory', '==', category),
-      );
+      let q;
+      if (profile?.role === 'super_admin') {
+        q = query(
+          collection(db, 'ActivityReports'),
+          where('period', '==', periodToken),
+        );
+      } else {
+        if (allowedCategories.length === 0) {
+          setActivities([]);
+          setLoading(false);
+          return;
+        }
+        q = query(
+          collection(db, 'ActivityReports'),
+          where('period', '==', periodToken),
+          where('jobCategory', 'in', allowedCategories),
+        );
+      }
       const snap = await getDocs(q);
       const list: ActivityReport[] = snap.docs.map(d => ({
         id: d.id,
@@ -213,6 +261,16 @@ export default function ActivityReviewPage() {
         return a.timeStart.localeCompare(b.timeStart);
       });
 
+      // Prefill pending activities with default calculated fees
+      const initialFees: Record<string, string> = {};
+      list.forEach(a => {
+        if (a.status === 'pending') {
+          const defaultFee = calculateDefaultFee(a.timeStart, a.timeEnd, a.activityType, a.activityName);
+          initialFees[a.id] = String(defaultFee);
+        }
+      });
+      setRowFees(initialFees);
+
       setActivities(list);
     } catch (err) {
       console.error('Error fetching activity reports:', err);
@@ -220,7 +278,7 @@ export default function ActivityReviewPage() {
     } finally {
       setLoading(false);
     }
-  }, [hasAccess, periodToken, category]);
+  }, [hasAccess, periodToken, profile?.role, allowedCategories]);
 
   useEffect(() => {
     fetchActivities();
@@ -290,26 +348,32 @@ export default function ActivityReviewPage() {
     }
   };
 
-  // ── Approve Handler ──
-  const handleApprove = async () => {
-    if (!approveTarget || !user) return;
-    const feeVal = parseInt(approveFee.replace(/\D/g, ''), 10);
+  // ── Approve Row Handler (Inline Approval) ──
+  const handleApproveRow = async (activity: ActivityReport, feeStr: string) => {
+    if (!user) return;
+    const feeVal = parseInt(feeStr.replace(/\D/g, ''), 10);
     if (isNaN(feeVal) || feeVal <= 0) {
-      setErrorMsg('Fee harus berupa angka lebih dari 0.');
+      setErrorMsg('Masukkan nilai fee yang valid (lebih dari 0).');
       return;
     }
 
     setActionLoading(true);
     try {
-      await updateDoc(doc(db, 'ActivityReports', approveTarget.id), {
+      await updateDoc(doc(db, 'ActivityReports', activity.id), {
         status: 'approved',
         fee: feeVal,
         reviewedAt: serverTimestamp(),
         reviewedBy: user.uid,
       });
-      setSuccessMsg(`Kegiatan "${approveTarget.activityName}" oleh ${approveTarget.employeeName} berhasil disetujui.`);
-      setApproveTarget(null);
-      setApproveFee('');
+      setSuccessMsg(`Kegiatan "${activity.activityName}" oleh ${activity.employeeName} berhasil disetujui dengan fee ${fmtRp(feeVal)}.`);
+
+      // Clear local state for this row
+      setRowFees(prev => {
+        const next = { ...prev };
+        delete next[activity.id];
+        return next;
+      });
+
       fetchActivities();
     } catch (err) {
       console.error('Error approving activity:', err);
@@ -344,35 +408,59 @@ export default function ActivityReviewPage() {
     }
   };
 
-  // ── Bulk Approve Handler ──
-  const handleBulkApprove = async () => {
+  // ── Bulk Approve Individual Handler ──
+  const handleBulkApproveIndividual = async () => {
     if (!user || selectedIds.size === 0) return;
-    const feeVal = parseInt(bulkFee.replace(/\D/g, ''), 10);
-    if (isNaN(feeVal) || feeVal <= 0) {
-      setErrorMsg('Fee harus berupa angka lebih dari 0.');
+    if (!confirm(`Apakah Anda yakin ingin menyetujui ${selectedIds.size} kegiatan yang dipilih?`)) return;
+
+    // Validate that all selected activities have a valid fee input
+    const invalidList: { name: string; employee: string }[] = [];
+    const updates: { id: string; fee: number }[] = [];
+
+    selectedIds.forEach(id => {
+      const rawVal = rowFees[id] || '';
+      const feeVal = parseInt(rawVal.replace(/\D/g, ''), 10);
+      if (isNaN(feeVal) || feeVal <= 0) {
+        const act = activities.find(a => a.id === id);
+        if (act) {
+          invalidList.push({ name: act.activityName, employee: act.employeeName });
+        }
+      } else {
+        updates.push({ id, fee: feeVal });
+      }
+    });
+
+    if (invalidList.length > 0) {
+      const names = invalidList.map(item => `"${item.name}" oleh ${item.employee}`).join(', ');
+      setErrorMsg(`Fee tidak valid untuk kegiatan: ${names}. Pastikan semua fee diisi dengan angka lebih dari 0.`);
       return;
     }
 
     setActionLoading(true);
     try {
       const batch = writeBatch(db);
-      selectedIds.forEach(id => {
-        const ref = doc(db, 'ActivityReports', id);
+      updates.forEach(upd => {
+        const ref = doc(db, 'ActivityReports', upd.id);
         batch.update(ref, {
           status: 'approved',
-          fee: feeVal,
+          fee: upd.fee,
           reviewedAt: serverTimestamp(),
           reviewedBy: user.uid,
         });
       });
       await batch.commit();
-      setSuccessMsg(`${selectedIds.size} kegiatan berhasil disetujui dengan fee ${fmtRp(feeVal)}.`);
-      setShowBulkApprove(false);
-      setBulkFee('');
+      setSuccessMsg(`${updates.length} kegiatan berhasil disetujui.`);
+      
+      // Clear row fees for approved activities
+      setRowFees(prev => {
+        const next = { ...prev };
+        selectedIds.forEach(id => delete next[id]);
+        return next;
+      });
       setSelectedIds(new Set());
       fetchActivities();
     } catch (err) {
-      console.error('Error bulk approving:', err);
+      console.error('Error bulk approving activities:', err);
       setErrorMsg('Gagal menyetujui kegiatan secara massal.');
     } finally {
       setActionLoading(false);
@@ -472,43 +560,33 @@ export default function ActivityReviewPage() {
               {/* Period */}
               <div className="flex items-center gap-2">
                 <CalendarDays className="w-4 h-4 text-slate-400 shrink-0" />
-                <select
-                  value={month}
-                  onChange={(e) => setMonth(Number(e.target.value))}
-                  className="text-sm font-bold text-slate-700 bg-slate-50 rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-indigo-400"
-                >
-                  {MONTHS_ID.map((m, i) => (
-                    <option key={i} value={i + 1}>{m}</option>
-                  ))}
-                </select>
-                <select
-                  value={year}
-                  onChange={(e) => setYear(Number(e.target.value))}
-                  className="text-sm font-bold text-slate-700 bg-slate-50 rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-indigo-400 w-24"
-                >
-                  {YEARS.map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
+                <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
+                  <SelectTrigger className="w-36 bg-slate-50 border-slate-200 rounded-xl text-sm font-bold text-slate-700 h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                    {MONTHS_ID.map((m, i) => (
+                      <SelectItem key={i + 1} value={String(i + 1)}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
+                  <SelectTrigger className="w-24 bg-slate-50 border-slate-200 rounded-xl text-sm font-bold text-slate-700 h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                    {YEARS.map(y => (
+                      <SelectItem key={y} value={String(y)}>
+                        {y}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
-              {/* Category */}
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-slate-400 shrink-0" />
-                {allowedCategories.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => setCategory(cat)}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                      category === cat
-                        ? 'bg-teal-500 text-white shadow-md'
-                        : 'bg-white text-slate-600 border border-slate-200 hover:border-teal-300'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
+
 
               {/* Search */}
               <div className="relative flex-1 md:max-w-xs md:ml-auto">
@@ -591,8 +669,9 @@ export default function ActivityReviewPage() {
               </Badge>
               <div className="flex items-center gap-2 ml-auto">
                 <Button
-                  onClick={() => setShowBulkApprove(true)}
+                  onClick={handleBulkApproveIndividual}
                   size="sm"
+                  disabled={actionLoading}
                   className="rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 shadow-sm"
                 >
                   <ThumbsUp className="w-3.5 h-3.5 mr-1.5" />
@@ -646,7 +725,7 @@ export default function ActivityReviewPage() {
                       <TableHead className="font-bold text-slate-500">Tanggal</TableHead>
                       <TableHead className="font-bold text-slate-500">Waktu</TableHead>
                       <TableHead className="font-bold text-slate-500">Status</TableHead>
-                      <TableHead className="font-bold text-slate-500 text-right">Fee</TableHead>
+                      <TableHead className="font-bold text-slate-500">Fee</TableHead>
                       <TableHead className="font-bold text-slate-500 text-right pr-6">Aksi</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -691,10 +770,31 @@ export default function ActivityReviewPage() {
                               </p>
                             )}
                           </TableCell>
-                          <TableCell className="text-right text-sm font-bold text-slate-700 whitespace-nowrap">
+                          <TableCell className="text-sm font-bold text-slate-700 whitespace-nowrap">
                             {activity.status === 'approved' && activity.fee > 0
                               ? fmtRp(activity.fee)
-                              : <span className="text-slate-300">—</span>
+                              : activity.status === 'pending' ? (
+                                <div className="flex">
+                                  <Input
+                                    type="text"
+                                    placeholder="-"
+                                    value={rowFees[activity.id] || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value.replace(/\D/g, '');
+                                      setRowFees(prev => ({ ...prev, [activity.id]: val }));
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleApproveRow(activity, rowFees[activity.id] || '');
+                                      }
+                                    }}
+                                    className="w-36 h-8 text-center font-bold text-sm bg-slate-50 border-slate-200 focus:border-emerald-400 focus:ring-emerald-400/20 rounded-xl px-3"
+                                    disabled={actionLoading}
+                                  />
+                                </div>
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )
                             }
                           </TableCell>
                           <TableCell className="text-right pr-6">
@@ -702,8 +802,9 @@ export default function ActivityReviewPage() {
                               <div className="flex justify-end gap-1.5">
                                 <Button
                                   size="sm"
-                                  onClick={() => { setApproveTarget(activity); setApproveFee(''); }}
-                                  className="h-7 px-2.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[11px] border border-emerald-200"
+                                  disabled={actionLoading}
+                                  onClick={() => handleApproveRow(activity, rowFees[activity.id] || '')}
+                                  className="h-7 px-2.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[11px] border border-emerald-200 cursor-pointer"
                                 >
                                   <ThumbsUp className="w-3 h-3 mr-1" />
                                   Setujui
@@ -711,8 +812,9 @@ export default function ActivityReviewPage() {
                                 <Button
                                   size="sm"
                                   variant="ghost"
+                                  disabled={actionLoading}
                                   onClick={() => { setDeclineTarget(activity); setDeclineReason(''); }}
-                                  className="h-7 px-2.5 rounded-lg text-rose-500 hover:bg-rose-50 font-bold text-[11px]"
+                                  className="h-7 px-2.5 rounded-lg text-rose-500 hover:bg-rose-50 font-bold text-[11px] cursor-pointer"
                                 >
                                   <ThumbsDown className="w-3 h-3 mr-1" />
                                   Tolak
@@ -762,63 +864,6 @@ export default function ActivityReviewPage() {
         )}
       </div>
 
-      {/* ── Approve Modal ──────────────────────────────────────────────── */}
-      <Dialog open={approveTarget !== null} onOpenChange={(open) => { if (!open) setApproveTarget(null); }}>
-        <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl bg-white p-6">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
-              <ThumbsUp className="w-5 h-5 text-emerald-600" />
-              Setujui Kegiatan
-            </DialogTitle>
-            <DialogDescription className="text-slate-500">
-              Tentukan fee untuk kegiatan <strong>"{approveTarget?.activityName}"</strong> oleh <strong>{approveTarget?.employeeName}</strong>.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-400 font-semibold">Tanggal</span>
-                <span className="font-bold text-slate-700">{approveTarget?.activityDate}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400 font-semibold">Waktu</span>
-                <span className="font-bold text-slate-700">{approveTarget?.timeStart} – {approveTarget?.timeEnd}</span>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-500 uppercase">Fee Kegiatan (Rp)</Label>
-              <div className="relative">
-                <Banknote className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Contoh: 15000"
-                  value={approveFee}
-                  onChange={(e) => setApproveFee(e.target.value.replace(/\D/g, ''))}
-                  className="pl-9 rounded-xl border-slate-200 focus:border-emerald-400 focus:ring-emerald-400/20 text-sm font-bold"
-                  autoFocus
-                />
-              </div>
-              {approveFee && (
-                <p className="text-xs text-emerald-600 font-semibold">{fmtRp(parseInt(approveFee) || 0)}</p>
-              )}
-            </div>
-          </div>
-          <DialogFooter className="gap-3">
-            <Button variant="ghost" onClick={() => setApproveTarget(null)} className="rounded-xl font-bold text-slate-500">
-              Batal
-            </Button>
-            <Button
-              onClick={handleApprove}
-              disabled={actionLoading || !approveFee}
-              className="rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 shadow-md shadow-emerald-100"
-            >
-              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-              Konfirmasi Setujui
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* ── Decline Modal ──────────────────────────────────────────────── */}
       <Dialog open={declineTarget !== null} onOpenChange={(open) => { if (!open) setDeclineTarget(null); }}>
@@ -867,59 +912,6 @@ export default function ActivityReviewPage() {
             >
               {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <XCircle className="w-4 h-4 mr-2" />}
               Konfirmasi Tolak
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Bulk Approve Modal ──────────────────────────────────────────── */}
-      <Dialog open={showBulkApprove} onOpenChange={(open) => { if (!open) setShowBulkApprove(false); }}>
-        <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl bg-white p-6">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
-              <ThumbsUp className="w-5 h-5 text-emerald-600" />
-              Setujui {selectedIds.size} Kegiatan
-            </DialogTitle>
-            <DialogDescription className="text-slate-500">
-              Semua kegiatan yang dipilih akan disetujui dengan fee yang sama. Masukkan nominal fee per kegiatan.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-500 uppercase">Fee Per Kegiatan (Rp)</Label>
-              <div className="relative">
-                <Banknote className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Contoh: 15000"
-                  value={bulkFee}
-                  onChange={(e) => setBulkFee(e.target.value.replace(/\D/g, ''))}
-                  className="pl-9 rounded-xl border-slate-200 focus:border-emerald-400 focus:ring-emerald-400/20 text-sm font-bold"
-                  autoFocus
-                />
-              </div>
-              {bulkFee && (
-                <div className="text-xs space-y-0.5">
-                  <p className="text-emerald-600 font-semibold">Per kegiatan: {fmtRp(parseInt(bulkFee) || 0)}</p>
-                  <p className="text-slate-500 font-medium">
-                    Total: {fmtRp((parseInt(bulkFee) || 0) * selectedIds.size)} ({selectedIds.size} kegiatan)
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-          <DialogFooter className="gap-3">
-            <Button variant="ghost" onClick={() => setShowBulkApprove(false)} className="rounded-xl font-bold text-slate-500">
-              Batal
-            </Button>
-            <Button
-              onClick={handleBulkApprove}
-              disabled={actionLoading || !bulkFee}
-              className="rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 shadow-md shadow-emerald-100"
-            >
-              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-              Setujui {selectedIds.size} Kegiatan
             </Button>
           </DialogFooter>
         </DialogContent>
