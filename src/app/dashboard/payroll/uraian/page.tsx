@@ -1351,7 +1351,12 @@ export default function UraianPage() {
                   <table className={`w-full text-left ${hasScanData ? 'border-separate border-spacing-y-4' : 'border-collapse'}`}>
                     <thead className="sticky top-0 z-20 bg-[#F8FAFC]">
                       <tr>
-                        <th className={`px-6 py-4 text-[10px] font-bold uppercase text-slate-950 tracking-wider sticky top-0 z-20 bg-[#F8FAFC] ${!hasScanData ? 'border-b border-slate-300' : ''}`}>Nama</th>
+                        <th 
+                          className={`px-6 py-4 text-[10px] font-bold uppercase text-slate-950 tracking-wider sticky top-0 z-20 bg-[#F8FAFC] ${!hasScanData ? 'border-b border-slate-300' : ''}`}
+                          style={{ width: '220px', minWidth: '220px' }}
+                        >
+                          Nama
+                        </th>
                         {columns.map(col => {
                           const hasMultiplier = col.type === 'count' && col.multiplier;
                           const isCustom = col.key.startsWith('custom_');
@@ -1359,6 +1364,7 @@ export default function UraianPage() {
                             <th
                               key={col.key}
                               className={`px-4 py-4 text-[10px] font-bold uppercase text-center tracking-wider sticky top-0 z-20 bg-[#F8FAFC] ${!hasScanData ? 'border-b border-slate-300' : ''}`}
+                              style={{ width: '160px', minWidth: '160px' }}
                             >
                               <div className="flex flex-col items-center justify-center gap-0.5 relative group/header">
                                 <div className="flex items-center justify-center gap-1">
@@ -1408,7 +1414,10 @@ export default function UraianPage() {
                             </tr>
                           )}
                           <tr className={`${hasScanData ? 'group-hover/row:bg-indigo-50/30' : 'hover:bg-slate-50'} transition-all duration-200`}>
-                            <td className={`px-6 py-5 ${hasScanData ? `mx-2 border-l-2 border-y-2 border-slate-400 ${!bounds ? 'rounded-l-2xl' : ''} bg-white shadow-sm ring-1 ring-black/15` : 'border-b border-slate-300'}`}>
+                            <td 
+                              className={`px-6 py-5 ${hasScanData ? `mx-2 border-l-2 border-y-2 border-slate-400 ${!bounds ? 'rounded-l-2xl' : ''} bg-white shadow-sm ring-1 ring-black/15` : 'border-b border-slate-300'}`}
+                              style={{ width: '220px', minWidth: '220px' }}
+                            >
                               <div className="text-sm font-bold text-slate-800 leading-none">{emp.name}</div>
                               <div className="text-[10px] text-slate-400 font-mono mt-1.5 flex items-center gap-1"><Code2 className="w-2.5 h-2.5 opacity-50" /> {emp.employeeId}</div>
                             </td>
@@ -1418,7 +1427,11 @@ export default function UraianPage() {
                                 ? (getComputedSpj(emp.employeeId) || 0) 
                                 : (tableData[emp.employeeId]?.[col.key] ?? '');
                               return (
-                                <td key={col.key} className={`px-3 py-5 ${hasScanData ? 'border-y-2 border-slate-400 bg-white shadow-sm ring-1 ring-black/15' : 'border-b border-slate-300'}`}>
+                                <td 
+                                  key={col.key} 
+                                  className={`px-3 py-5 ${hasScanData ? 'border-y-2 border-slate-400 bg-white shadow-sm ring-1 ring-black/15' : 'border-b border-slate-300'}`}
+                                  style={{ width: '160px', minWidth: '160px' }}
+                                >
                                   <Input
                                     id={`cell-${empIdx}-${colIdx}`}
                                     type="text"
