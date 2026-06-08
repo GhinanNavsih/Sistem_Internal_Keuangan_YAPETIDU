@@ -26,7 +26,7 @@ import {
   ArrowLeft, Upload, ScanLine, Loader2, CheckCircle2,
   FileText, AlertCircle, ImageIcon, Trash2, Eye, RotateCw, Sparkles, X,
   Crop, Building2, Code2, Database, ShieldCheck, Hash, Banknote, LogOut,
-  FileDown, Plus, Calendar,
+  FileDown, Plus, Calendar, ClipboardCheck,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -1210,6 +1210,16 @@ export default function UraianPage() {
               <Calendar className="w-4 h-4" />
               Kegiatan SPJ
             </Button>
+            {['KEBERSIHAN', 'KEBERSIHAN_IC'].includes(category) && (
+              <Button
+                onClick={() => router.push('/dashboard/payroll/activity-review')}
+                variant="outline"
+                className="rounded-xl border-teal-200 text-teal-700 bg-teal-50 hover:bg-teal-100 hover:border-teal-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
+              >
+                <ClipboardCheck className="w-4 h-4 text-teal-600" />
+                Review Laporan Kegiatan
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => setIsCustomColDialogOpen(true)}
