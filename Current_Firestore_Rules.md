@@ -142,5 +142,58 @@ service cloud.firestore {
       // Super Admins or Employee Admins can write logs
       allow write: if isSuperAdmin() || isEmployeeAdmin();
     }
+
+    // 7. Activity Reports (Daily Activity submissions for Honorer)
+    match /ActivityReports/{reportId} {
+      // Super Admins can read all.
+      // SatKer Heads can read if the report is in their permitted job categories.
+      // Honorer employees can read their own reported activities.
+      allow read: if isSuperAdmin() || (
+        hasProfile() && (
+          (getUserData().role == 'satker_head' && resource.data.jobCategory in getPermittedCategories()) ||
+          (getUserData().role == 'honorer' && resource.data.employeeId == getUserData().linkedEmployeeId)
+        )
+      );
+
+      // Honorer employees can create a report for themselves.
+      // Must start with 'pending' status and 0 fee.
+      allow create: if isSuperAdmin() || (
+        hasProfile() && 
+        getUserData().role == 'honorer' && 
+        request.resource.data.employeeId == getUserData().linkedEmployeeId &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.fee == 0
+      );
+
+      // Super Admins can update all.
+      // SatKer Heads can approve (assign fee) or decline reports for their category.
+      // Honorer employees can edit/resubmit their own pending or declined reports.
+      allow update: if isSuperAdmin() || (
+        hasProfile() && (
+          (
+            getUserData().role == 'satker_head' &&
+            resource.data.jobCategory in getPermittedCategories() &&
+            request.resource.data.jobCategory == resource.data.jobCategory &&
+            request.resource.data.employeeId == resource.data.employeeId &&
+            request.resource.data.activityName == resource.data.activityName &&
+            request.resource.data.activityDate == resource.data.activityDate &&
+            request.resource.data.timeStart == resource.data.timeStart &&
+            request.resource.data.timeEnd == resource.data.timeEnd &&
+            (request.resource.data.status == 'approved' || request.resource.data.status == 'declined')
+          ) ||
+          (
+            getUserData().role == 'honorer' &&
+            resource.data.employeeId == getUserData().linkedEmployeeId &&
+            (resource.data.status == 'pending' || resource.data.status == 'declined') &&
+            request.resource.data.employeeId == getUserData().linkedEmployeeId &&
+            request.resource.data.status == 'pending' &&
+            request.resource.data.fee == 0
+          )
+        )
+      );
+
+      // Only Super Admins can delete reports.
+      allow delete: if isSuperAdmin();
+    }
   }
 }
