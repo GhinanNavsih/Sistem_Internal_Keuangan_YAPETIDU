@@ -68,6 +68,7 @@ import {
   where,
   serverTimestamp,
   writeBatch,
+  onSnapshot,
 } from 'firebase/firestore';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 
@@ -222,31 +223,39 @@ export default function ActivityReviewPage() {
 
 
 
-  // ── Fetch Activities ──
-  const fetchActivities = useCallback(async () => {
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // ── Fetch Activities (dummy/refresh trigger for backward compatibility) ──
+  const fetchActivities = useCallback(() => {
+    setRefreshTrigger(prev => prev + 1);
+  }, []);
+
+  // ── Real-time Listener for Activity Reports ──
+  useEffect(() => {
     if (!hasAccess) return;
     setLoading(true);
     setSelectedIds(new Set());
-    try {
-      let q;
-      if (profile?.role === 'super_admin') {
-        q = query(
-          collection(db, 'ActivityReports'),
-          where('period', '==', periodToken),
-        );
-      } else {
-        if (allowedCategories.length === 0) {
-          setActivities([]);
-          setLoading(false);
-          return;
-        }
-        q = query(
-          collection(db, 'ActivityReports'),
-          where('period', '==', periodToken),
-          where('jobCategory', 'in', allowedCategories),
-        );
+
+    let q;
+    if (profile?.role === 'super_admin') {
+      q = query(
+        collection(db, 'ActivityReports'),
+        where('period', '==', periodToken),
+      );
+    } else {
+      if (allowedCategories.length === 0) {
+        setActivities([]);
+        setLoading(false);
+        return;
       }
-      const snap = await getDocs(q);
+      q = query(
+        collection(db, 'ActivityReports'),
+        where('period', '==', periodToken),
+        where('jobCategory', 'in', allowedCategories),
+      );
+    }
+
+    const unsubscribe = onSnapshot(q, (snap) => {
       const list: ActivityReport[] = snap.docs.map(d => ({
         id: d.id,
         ...d.data(),
@@ -261,28 +270,32 @@ export default function ActivityReviewPage() {
         return a.timeStart.localeCompare(b.timeStart);
       });
 
-      // Prefill pending activities with default calculated fees
-      const initialFees: Record<string, string> = {};
-      list.forEach(a => {
-        if (a.status === 'pending') {
-          const defaultFee = calculateDefaultFee(a.timeStart, a.timeEnd, a.activityType, a.activityName);
-          initialFees[a.id] = String(defaultFee);
-        }
+      // Prefill pending activities with default calculated fees, merging with existing inputs
+      setRowFees(prev => {
+        const newFees = { ...prev };
+        list.forEach(a => {
+          if (a.status === 'pending') {
+            if (newFees[a.id] === undefined) {
+              const defaultFee = calculateDefaultFee(a.timeStart, a.timeEnd, a.activityType, a.activityName);
+              newFees[a.id] = String(defaultFee);
+            }
+          } else {
+            delete newFees[a.id];
+          }
+        });
+        return newFees;
       });
-      setRowFees(initialFees);
 
       setActivities(list);
-    } catch (err) {
-      console.error('Error fetching activity reports:', err);
-      setErrorMsg('Gagal memuat data laporan kegiatan.');
-    } finally {
       setLoading(false);
-    }
-  }, [hasAccess, periodToken, profile?.role, allowedCategories]);
+    }, (err) => {
+      console.error('Error listening to activity reports:', err);
+      setErrorMsg('Gagal memuat data laporan kegiatan.');
+      setLoading(false);
+    });
 
-  useEffect(() => {
-    fetchActivities();
-  }, [fetchActivities]);
+    return () => unsubscribe();
+  }, [hasAccess, periodToken, profile?.role, allowedCategories, refreshTrigger]);
 
   // ── Filtered activities ──
   const filteredActivities = useMemo(() => {

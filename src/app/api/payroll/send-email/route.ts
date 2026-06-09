@@ -6,6 +6,18 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { email, employeeName, period, pdfBase64, textBreakdown } = body;
 
+    // Try to extract net salary from textBreakdown and spell it out
+    let terbilangText = '';
+    if (textBreakdown) {
+      const match = textBreakdown.match(/GAJI BERSIH\s*\(Diterima\):\s*(?:Rp)?\s*([0-9.,]+)/i);
+      if (match) {
+        const cleanAmount = parseInt(match[1].replace(/\./g, '').replace(/,/g, ''), 10);
+        if (!isNaN(cleanAmount)) {
+          terbilangText = `Terbilang: "${terbilang(cleanAmount)} Rupiah"`;
+        }
+      }
+    }
+
     if (!email) {
       return NextResponse.json({ error: 'Email tujuan wajib diisi.' }, { status: 400 });
     }
@@ -15,9 +27,9 @@ export async function POST(request: Request) {
 
     if (!smtpUser || !smtpPass) {
       return NextResponse.json(
-        { 
-          error: 'Konfigurasi SMTP Google (SMTP_USER dan SMTP_PASS) belum disetting di file .env.local.' 
-        }, 
+        {
+          error: 'Konfigurasi SMTP Google (SMTP_USER dan SMTP_PASS) belum disetting di file .env.local.'
+        },
         { status: 500 }
       );
     }
@@ -124,15 +136,24 @@ export async function POST(request: Request) {
             <p>Yayasan Pendidikan Tinggi Darul 'Ulum (YAPETIDU)</p>
           </div>
           <div class="content">
-            <div class="greeting">Halo ${employeeName},</div>
-            <div class="message">
-              Bersama email ini, kami lampirkan dokumen resmi Slip Gaji Anda untuk periode <strong>${formattedPeriod}</strong>. 
-              Dokumen PDF resmi telah dilampirkan langsung pada email ini dan dapat Anda unduh/cetak sebagai bukti pembayaran yang sah.
+            <div class="greeting" style="font-size: 15px; color: #1e293b; line-height: 1.5;">
+              Kepada Yth.<br>
+              <strong>Bapak/Ibu ${employeeName}</strong>
+            </div>
+            <div class="message" style="margin-top: 15px; font-size: 14px; line-height: 1.6; color: #475569;">
+              Assalamualaikum wr. wb.<br><br>
+              Dengan hormat,<br>
+              Bersama dengan email ini, kami sampaikan dokumen resmi Slip Gaji Anda untuk periode <strong>${formattedPeriod}</strong>. Dokumen PDF resmi telah kami lampirkan langsung pada email ini dan dapat Anda unduh serta cetak sebagai bukti pembayaran yang sah.
             </div>
             
             ${textBreakdown ? `
               <div style="font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 10px;">Rincian Slip Gaji:</div>
               <div class="breakdown-box">${textBreakdown}</div>
+              ${terbilangText ? `
+                <div style="font-size: 13px; font-weight: bold; color: #4f46e5; margin-top: -20px; margin-bottom: 25px; font-style: italic;">
+                  ${terbilangText}
+                </div>
+              ` : ''}
             ` : ''}
             
             <div class="message" style="margin-top: 20px; font-size: 13px; font-style: italic;">
@@ -176,4 +197,37 @@ export async function POST(request: Request) {
     console.error('SMTP Mail error:', error);
     return NextResponse.json({ error: error?.message || 'Gagal mengirim email.' }, { status: 500 });
   }
+}
+
+function spell(n: number): string {
+  const angka = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
+  let hasil = "";
+
+  if (n < 12) {
+    hasil = angka[n];
+  } else if (n < 20) {
+    hasil = spell(n - 10) + " belas";
+  } else if (n < 100) {
+    hasil = spell(Math.floor(n / 10)) + " puluh " + spell(n % 10);
+  } else if (n < 200) {
+    hasil = "seratus " + spell(n - 100);
+  } else if (n < 1000) {
+    hasil = spell(Math.floor(n / 100)) + " ratus " + spell(n % 100);
+  } else if (n < 2000) {
+    hasil = "seribu " + spell(n - 1000);
+  } else if (n < 1000000) {
+    hasil = spell(Math.floor(n / 1000)) + " ribu " + spell(n % 1000);
+  } else if (n < 1000000000) {
+    hasil = spell(Math.floor(n / 1000000)) + " juta " + spell(n % 1000000);
+  } else if (n < 1000000000000) {
+    hasil = spell(Math.floor(n / 1000000000)) + " milyar " + spell(n % 1000000000);
+  }
+
+  return hasil.replace(/\s+/g, " ").trim();
+}
+
+function terbilang(n: number): string {
+  const cleaned = spell(n);
+  if (!cleaned) return "Nol";
+  return cleaned.split(" ").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 }
