@@ -51,6 +51,7 @@ import {
   orderBy,
   serverTimestamp,
   Timestamp,
+  onSnapshot,
 } from 'firebase/firestore';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import {
@@ -168,17 +169,25 @@ export default function EmployeeActivitiesPage() {
     }
   }, [message]);
 
-  // ── Fetch Activities ──
-  const fetchActivities = useCallback(async () => {
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // ── Fetch Activities (dummy/refresh trigger for backward compatibility) ──
+  const fetchActivities = useCallback(() => {
+    setRefreshTrigger(prev => prev + 1);
+  }, []);
+
+  // ── Real-time Listener for Employee Activities ──
+  useEffect(() => {
     if (!profile?.linkedEmployeeId) return;
     setLoading(true);
-    try {
-      const q = query(
-        collection(db, 'ActivityReports'),
-        where('employeeId', '==', profile.linkedEmployeeId),
-        where('period', '==', periodToken),
-      );
-      const snap = await getDocs(q);
+
+    const q = query(
+      collection(db, 'ActivityReports'),
+      where('employeeId', '==', profile.linkedEmployeeId),
+      where('period', '==', periodToken),
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
       const list: ActivityReport[] = snap.docs.map(d => ({
         id: d.id,
         ...d.data(),
@@ -194,17 +203,15 @@ export default function EmployeeActivitiesPage() {
       });
 
       setActivities(list);
-    } catch (err) {
-      console.error('Error fetching activities:', err);
-      setMessage({ type: 'error', text: 'Gagal memuat data kegiatan.' });
-    } finally {
       setLoading(false);
-    }
-  }, [profile?.linkedEmployeeId, periodToken]);
+    }, (err) => {
+      console.error('Error listening to employee activities:', err);
+      setMessage({ type: 'error', text: 'Gagal memuat data kegiatan.' });
+      setLoading(false);
+    });
 
-  useEffect(() => {
-    fetchActivities();
-  }, [fetchActivities]);
+    return () => unsubscribe();
+  }, [profile?.linkedEmployeeId, periodToken, refreshTrigger]);
 
   // ── Filtered activities ──
   const filteredActivities = useMemo(() => {
