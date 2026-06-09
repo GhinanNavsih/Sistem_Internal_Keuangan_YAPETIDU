@@ -44,6 +44,7 @@ import {
   collection,
   getDocs,
   addDoc,
+  setDoc,
   doc,
   updateDoc,
   query,
@@ -262,7 +263,7 @@ export default function EmployeeActivitiesPage() {
     if (!profile?.linkedEmployeeId) return;
 
     if (!formName.trim()) {
-      setMessage({ type: 'error', text: 'Nama kegiatan harus diisi.' });
+      setMessage({ type: 'error', text: 'Jenis kegiatan harus diisi.' });
       return;
     }
     if (!formDate) {
@@ -298,7 +299,16 @@ export default function EmployeeActivitiesPage() {
         // New submission
         // Determine the period from the activity date
         const activityPeriod = formDate.substring(0, 7); // "YYYY-MM"
-        await addDoc(collection(db, 'ActivityReports'), {
+
+        // Generate unique, identifiable document ID: ACT-[employeeId]-[date]-[4CharRandomSuffix]
+        const employeeIdSanitized = (profile.linkedEmployeeId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '');
+        const dateSanitized = formDate.replace(/-/g, '');
+        const randomSuffix = Array.from({ length: 4 }, () =>
+          'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.charAt(Math.floor(Math.random() * 36))
+        ).join('');
+        const customDocId = `ACT-${employeeIdSanitized}-${dateSanitized}-${randomSuffix}`;
+
+        await setDoc(doc(db, 'ActivityReports', customDocId), {
           employeeId: profile.linkedEmployeeId,
           employeeName: profile.displayName || '',
           jobCategory: profile.permittedCategories?.[0] || '',
@@ -649,7 +659,7 @@ export default function EmployeeActivitiesPage() {
             {/* Activity Type Selection */}
             <div className="space-y-1.5">
               <Label htmlFor="activityType" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Nama Kegiatan
+                Jenis Kegiatan
               </Label>
               <Select
                 value={formActivityType}
@@ -679,7 +689,7 @@ export default function EmployeeActivitiesPage() {
             {formActivityType === 'Lainnya' && (
               <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
                 <Label htmlFor="activityCustomName" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Nama Kegiatan Kustom
+                  Jenis Kegiatan Kustom
                 </Label>
                 <Input
                   id="activityCustomName"

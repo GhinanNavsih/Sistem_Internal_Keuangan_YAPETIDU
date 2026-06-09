@@ -136,7 +136,7 @@ function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: 
   const rate = isPiketOrStandby ? 2000 : 2500;
   
   let fee = halfHours * rate;
-  if (minutes >= 120) {
+  if (halfHours >= 4) {
     fee += 7500;
   }
   
