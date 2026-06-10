@@ -90,6 +90,50 @@ function fmtRp(val: number): string {
   return 'Rp' + val.toLocaleString('id-ID');
 }
 
+function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: string, activityName?: string): number {
+  if (!timeStart || !timeEnd) return 0;
+  
+  // Parse HH:MM format
+  const [sh, sm] = timeStart.split(':').map(Number);
+  const [eh, em] = timeEnd.split(':').map(Number);
+  
+  if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return 0;
+  
+  const minutes = (eh * 60 + em) - (sh * 60 + sm);
+  if (minutes < 0) return 0;
+  
+  const halfHours = Math.round(minutes / 30);
+  
+  // Determine activity type
+  let type = activityType;
+  if (!type && activityName) {
+    const nameLower = activityName.toLowerCase();
+    if (nameLower === 'piket' || nameLower.startsWith('piket ')) {
+      type = 'Piket';
+    } else if (nameLower === 'standby' || nameLower.startsWith('standby ')) {
+      type = 'Standby';
+    } else if (nameLower === 'ro\'an' || nameLower === 'roan' || nameLower.startsWith('ro\'an ') || nameLower.startsWith('roan ')) {
+      type = 'Ro\'an';
+    } else {
+      type = 'Lainnya';
+    }
+  }
+  
+  if (!type) {
+    type = 'Lainnya';
+  }
+  
+  const isPiketOrStandby = type === 'Piket' || type === 'Standby';
+  const rate = isPiketOrStandby ? 2000 : 2500;
+  
+  let fee = halfHours * rate;
+  if (halfHours >= 4) {
+    fee += 7500;
+  }
+  
+  return fee;
+}
+
 function getStatusConfig(status: string) {
   switch (status) {
     case 'approved':
@@ -589,6 +633,15 @@ export default function EmployeeActivitiesPage() {
                           <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
                             <Banknote className="w-4 h-4 text-emerald-600" />
                             <span className="text-sm font-bold text-emerald-700">{fmtRp(activity.fee)}</span>
+                          </div>
+                        )}
+
+                        {activity.status === 'pending' && (
+                          <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                            <Banknote className="w-4 h-4 text-amber-600" />
+                            <span className="text-sm font-bold text-amber-700">
+                              Estimasi Upah: {fmtRp(calculateDefaultFee(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName))}
+                            </span>
                           </div>
                         )}
 
