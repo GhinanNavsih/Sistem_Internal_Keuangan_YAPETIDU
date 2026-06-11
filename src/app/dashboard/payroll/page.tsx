@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { calculateYearsOfService, calculateGapok, matchFunctionalAllowance } from '@/utils/payrollLogic';
+import { calculateYearsOfService, calculateGapok, matchFunctionalAllowance, normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import {
   Table,
   TableBody,
@@ -47,7 +47,7 @@ import {
   Mail,
 } from 'lucide-react';
 import { collection, getDocs, doc, getDoc, setDoc, query, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, secondaryDb } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
 import PaySlipDialog, { SlipState } from '@/components/PaySlipDialog';
@@ -103,7 +103,10 @@ interface EmployeeRow extends Employee {
 
 export default function PayrollValidationDashboard() {
   const { profile, logout } = useAuth();
-  const [targetDate, setTargetDate] = useState(new Date('2026-05-01'));
+  const [targetDate, setTargetDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [activeTab, setActiveTab] = useState('Tagihan');
   const [notification, setNotification] = useState<{
     show: boolean;
@@ -139,6 +142,103 @@ export default function PayrollValidationDashboard() {
   const [vakasiTambahanMap, setVakasiTambahanMap] = useState<Record<string, number>>({});
   const [vakasiTambahanListMap, setVakasiTambahanListMap] = useState<Record<string, { eventName: string; payGiven: number }[]>>({});
   const [functionalAllowanceMap, setFunctionalAllowanceMap] = useState<Record<string, number>>({});
+  const [koperasiDeductions, setKoperasiDeductions] = useState<Record<string, number>>({});
+
+  // ─── Fetch Koperasi Loans & perform matching ───────────────────
+  useEffect(() => {
+    if (!profile || profile.role !== 'super_admin') return;
+
+    const fetchKoperasiDeductions = async () => {
+      try {
+        // 1. Fetch active loans from Koperasi Unipdu
+        const loanSnapshot = await getDocs(
+          query(
+            collection(secondaryDb, 'simpanPinjam'),
+            where('status', '==', 'Disetujui dan Aktif')
+          )
+        );
+        const activeLoans = loanSnapshot.docs
+          .map(docSnap => ({ id: docSnap.id, ...docSnap.data() as any }))
+          .filter(loan => (loan.sisaHutang || 0) > 0);
+
+        // 2. Fetch all internal employees to match against (both Loyalis and Blue Collar)
+        const [loyalisSnap, blueCollarSnap] = await Promise.all([
+          getDocs(collection(db, 'Employees_Loyalis')),
+          getDocs(collection(db, 'Employees_BlueCollar')),
+        ]);
+
+        const allEmployees: {
+          id: string;
+          originalName: string;
+          normalizedName: string;
+          koperasiAuthUid?: string | null;
+        }[] = [];
+
+        loyalisSnap.docs.forEach(docSnap => {
+          const data = docSnap.data();
+          const name = data.personal_info?.name || '';
+          if (name) {
+            allEmployees.push({
+              id: docSnap.id,
+              originalName: name,
+              normalizedName: normalizeName(name),
+              koperasiAuthUid: data.koperasiAuthUid || null,
+            });
+          }
+        });
+
+        blueCollarSnap.docs.forEach(docSnap => {
+          const data = docSnap.data();
+          const name = data.name || '';
+          if (name) {
+            allEmployees.push({
+              id: docSnap.id,
+              originalName: name,
+              normalizedName: normalizeName(name),
+              koperasiAuthUid: data.koperasiAuthUid || null,
+            });
+          }
+        });
+
+        // 3. Match names and build deduction map (employeeId -> cicilan)
+        const deductionMap: Record<string, number> = {};
+
+        activeLoans.forEach(loan => {
+          const spName = loan.userData?.namaLengkap || '';
+          const normalizedSP = normalizeName(spName);
+          const cicilan = Math.round(loan.jumlahPinjaman / loan.tenor);
+
+          // 1. Try match by koperasiAuthUid first!
+          let match = allEmployees.find(
+            emp => emp.koperasiAuthUid && emp.koperasiAuthUid === loan.userId
+          );
+
+          if (!match) {
+            // 2. Fallback to exact normalized name match
+            match = allEmployees.find(emp => emp.normalizedName === normalizedSP);
+          }
+
+          if (!match) {
+            // 3. Fallback to manual override
+            const overrideName = MANUAL_OVERRIDES[spName.trim()];
+            if (overrideName) {
+              match = allEmployees.find(emp => emp.originalName === overrideName);
+            }
+          }
+
+          if (match) {
+            deductionMap[match.id] = (deductionMap[match.id] || 0) + cicilan;
+          }
+        });
+
+        setKoperasiDeductions(deductionMap);
+      } catch (err) {
+        console.error('Error fetching/matching koperasi loans:', err);
+      }
+    };
+
+    fetchKoperasiDeductions();
+  }, [profile]);
 
   // ─── Dialog state ──────────────────────────────────────────────
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -198,6 +298,7 @@ export default function PayrollValidationDashboard() {
       }
 
       const deductions: { label: string; amount: number }[] = [];
+      const kopUnipduAmount = koperasiDeductions[emp.id] || 0;
       if (collar === 'loyalis') {
         deductions.push({ label: 'Koperasi Rochmad', amount: 0 });
         deductions.push({ label: 'BPJS', amount: 0 });
@@ -206,7 +307,7 @@ export default function PayrollValidationDashboard() {
         deductions.push({ label: 'ZIZ', amount: 0 });
         deductions.push({ label: 'Revisi Gaji', amount: 0 });
         deductions.push({ label: 'Pinlu/Tagihan', amount: 0 });
-        deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+        deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: kopUnipduAmount });
         deductions.push({ label: 'Potongan Presensi', amount: 0 });
         deductions.push({ label: 'Potongan Bonus Presensi', amount: 0 });
       } else {
@@ -215,7 +316,7 @@ export default function PayrollValidationDashboard() {
 
         deductions.push({ label: 'BPJS', amount: bpjsAmount });
         deductions.push({ label: 'Kop. Rochmad', amount: kopRochmadAmount });
-        deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+        deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: kopUnipduAmount });
       }
       return deductions;
     };
@@ -362,7 +463,7 @@ export default function PayrollValidationDashboard() {
         netSalary = earnings - totalDeductions;
       } else {
         earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0);
-        totalDeductions = calculateTotalDeductions(emp.raw);
+        totalDeductions = calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0);
         netSalary = calculateNetSalary(earnings, totalDeductions);
       }
 
@@ -453,22 +554,22 @@ export default function PayrollValidationDashboard() {
           break;
         }
         case 'deductions':
-          aValue = calculateTotalDeductions(a.raw);
-          bValue = calculateTotalDeductions(b.raw);
+          aValue = calculateTotalDeductions(a.raw, koperasiDeductions[a.id] || 0);
+          bValue = calculateTotalDeductions(b.raw, koperasiDeductions[b.id] || 0);
           break;
         case 'net': {
           const gapokA = calculateGapok(a, salaryMatrix, targetDate);
           const roleKeyA = payrollCollar === 'loyalis' ? a.role : a.raw.employment?.jobCategory;
           const uraianA = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyA}`]?.entries?.[a.id];
           const earningsA = calculateTotalEarnings(a.raw, gapokA, uraianA, vakasiTambahanMap[a.id] ?? 0, functionalAllowanceMap[a.id] ?? 0);
-          const deductionsA = calculateTotalDeductions(a.raw);
+          const deductionsA = calculateTotalDeductions(a.raw, koperasiDeductions[a.id] || 0);
           aValue = calculateNetSalary(earningsA, deductionsA);
 
           const gapokB = calculateGapok(b, salaryMatrix, targetDate);
           const roleKeyB = payrollCollar === 'loyalis' ? b.role : b.raw.employment?.jobCategory;
           const uraianB = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyB}`]?.entries?.[b.id];
           const earningsB = calculateTotalEarnings(b.raw, gapokB, uraianB, vakasiTambahanMap[b.id] ?? 0, functionalAllowanceMap[b.id] ?? 0);
-          const deductionsB = calculateTotalDeductions(b.raw);
+          const deductionsB = calculateTotalDeductions(b.raw, koperasiDeductions[b.id] || 0);
           bValue = calculateNetSalary(earningsB, deductionsB);
           break;
         }
@@ -640,10 +741,30 @@ export default function PayrollValidationDashboard() {
       try {
         const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
         
-        // Fetch all three collections in parallel
-        const [snapshotLoyalis, snapshotSpj, snapshotActivities] = await Promise.all([
+        const year = targetDate.getFullYear();
+        const month = targetDate.getMonth(); // 0-indexed
+        
+        // Pekarya period: 26th of previous month to 25th of current month
+        const prevMonthDate = new Date(year, month - 1, 26);
+        const currentMonthDate = new Date(year, month, 25);
+        
+        const formatDate = (d: Date) => {
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        };
+        
+        const startDateStr = formatDate(prevMonthDate);
+        const endDateStr = formatDate(currentMonthDate);
+        const prevMonthToken = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+
+        // Fetch collections/queries in parallel
+        const [snapshotLoyalis, snapshotSpj, snapshotAct1, snapshotAct2] = await Promise.all([
           getDocs(collection(db, 'VakasiTambahan')),
           getDocs(collection(db, 'KegiatanSpj')),
+          getDocs(query(
+            collection(db, 'ActivityReports'),
+            where('period', '==', prevMonthToken),
+            where('status', '==', 'approved'),
+          )),
           getDocs(query(
             collection(db, 'ActivityReports'),
             where('period', '==', periodToken),
@@ -678,9 +799,18 @@ export default function PayrollValidationDashboard() {
         processDocs(snapshotLoyalis.docs);
         processDocs(snapshotSpj.docs);
 
+        // Combine and filter ActivityReports by the 26th-to-25th date range
+        const allApprovedActivities = [
+          ...snapshotAct1.docs,
+          ...snapshotAct2.docs
+        ].map(d => ({ id: d.id, ...d.data() } as any));
+
+        const filteredActivities = allApprovedActivities.filter((act: any) => {
+          return act.activityDate >= startDateStr && act.activityDate <= endDateStr;
+        });
+
         // Add approved ActivityReports to the sums
-        snapshotActivities.docs.forEach(d => {
-          const data = d.data();
+        filteredActivities.forEach(data => {
           const empId = data.employeeId;
           if (empId) {
             sumMap[empId] = (sumMap[empId] || 0) + (data.fee || 0);
@@ -1158,13 +1288,6 @@ export default function PayrollValidationDashboard() {
             </Button>
           </div>
           <div className="flex gap-3">
-            <Button
-              onClick={() => setPrintSelectorOpen(true)}
-              variant="outline"
-              className="rounded-xl shadow-sm bg-white border-slate-200 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50/50 hover:border-indigo-200 transition-all font-semibold"
-            >
-              <Printer className="w-4 h-4 mr-2" /> Cetak Dokumen
-            </Button>
             {profile?.role === 'super_admin' && (
               <Link href="/dashboard/users">
                 <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50/50 hover:border-indigo-200 transition-all font-bold">
@@ -1177,14 +1300,14 @@ export default function PayrollValidationDashboard() {
                 <Users className="w-4 h-4 mr-2" /> Data Pegawai
               </Button>
             </Link>
-            <Link href="/dashboard/payroll/master">
-              <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">
-                <FileText className="w-4 h-4 mr-2" /> Master Gaji Pokok
-              </Button>
-            </Link>
             <Link href="/dashboard/payroll/uraian">
               <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">
                 <ScanLine className="w-4 h-4 mr-2" /> Rekap Presensi
+              </Button>
+            </Link>
+            <Link href="/dashboard/payroll/simpan-pinjam">
+              <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">
+                <Banknote className="w-4 h-4 mr-2" /> Simpan Pinjam
               </Button>
             </Link>
           </div>
@@ -1368,11 +1491,11 @@ export default function PayrollValidationDashboard() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleBulkPdf}
+                  onClick={() => setPrintSelectorOpen(true)}
                   className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm"
                 >
                   <Printer className="w-4 h-4 text-slate-500" />
-                  Cetak PDF Semua
+                  Cetak Dokumen
                 </button>
               </div>
             </div>
@@ -1466,7 +1589,7 @@ export default function PayrollValidationDashboard() {
                               const totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
                               return formatIDR(totalDeductions);
                             }
-                            return formatIDR(calculateTotalDeductions(emp.raw));
+                            return formatIDR(calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0));
                           })()}
                         </TableCell>
                         <TableCell className="py-4 font-bold text-indigo-700">
@@ -1481,7 +1604,7 @@ export default function PayrollValidationDashboard() {
                             const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
                             const gapokVal = calculateGapok(emp, salaryMatrix, targetDate);
                             const earnings = calculateTotalEarnings(emp.raw, gapokVal, uraian, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0);
-                            const deductions = calculateTotalDeductions(emp.raw);
+                            const deductions = calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0);
                             return formatIDR(calculateNetSalary(earnings, deductions));
                           })()}
                         </TableCell>
@@ -1574,6 +1697,7 @@ export default function PayrollValidationDashboard() {
           const uraianDoc = uraianMap[`${period}_${cat}`];
           return uraianDoc?.customColumns ?? undefined;
         })()}
+        koperasiDeduction={selectedEmployee ? koperasiDeductions[selectedEmployee.id] || 0 : 0}
       />
 
       <LegalitasPimpinanDialog
@@ -1588,6 +1712,7 @@ export default function PayrollValidationDashboard() {
         vakasiTambahanMap={vakasiTambahanMap}
         functionalAllowanceMap={functionalAllowanceMap}
         slipStates={slipStates}
+        koperasiDeductions={koperasiDeductions}
       />
 
       <CetakPayrollDialog
@@ -1697,6 +1822,30 @@ export default function PayrollValidationDashboard() {
               </div>
               <div className="flex-shrink-0 self-center pl-2">
                 <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-amber-500 group-hover:translate-x-1 transition-all duration-200" />
+              </div>
+            </button>
+
+            {/* Card 4: Cetak Semua Slip Gaji */}
+            <button
+              onClick={() => {
+                setPrintSelectorOpen(false);
+                handleBulkPdf();
+              }}
+              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-blue-50/30 hover:border-blue-100 transition-all duration-200 text-left outline-none cursor-pointer"
+            >
+              <div className="flex-shrink-0 p-3 rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-100/70 transition-colors">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-blue-900 transition-colors">
+                  Cetak Semua Slip Gaji
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  Gabungkan dan unduh seluruh slip gaji karyawan terkonfirmasi periode ini ke dalam satu file PDF.
+                </p>
+              </div>
+              <div className="flex-shrink-0 self-center pl-2">
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all duration-200" />
               </div>
             </button>
           </div>

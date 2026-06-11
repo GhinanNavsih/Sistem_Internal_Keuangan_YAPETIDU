@@ -242,15 +242,42 @@ export default function UraianPage() {
 
       // Also fetch approved ActivityReports for the same period
       try {
-        const arQ = query(
-          collection(db, 'ActivityReports'),
-          where('period', '==', periodToken),
-          where('status', '==', 'approved'),
-          where('jobCategory', '==', category),
-        );
-        const arSnap = await getDocs(arQ);
-        const arList = arSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setApprovedActivityReports(arList);
+        const prevMonthDate = new Date(year, month - 2, 26);
+        const currentMonthDate = new Date(year, month - 1, 25);
+        
+        const formatDate = (d: Date) => {
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        };
+        
+        const startDateStr = formatDate(prevMonthDate);
+        const endDateStr = formatDate(currentMonthDate);
+        const prevMonthToken = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+
+        const [arSnap1, arSnap2] = await Promise.all([
+          getDocs(query(
+            collection(db, 'ActivityReports'),
+            where('period', '==', prevMonthToken),
+            where('status', '==', 'approved'),
+            where('jobCategory', '==', category),
+          )),
+          getDocs(query(
+            collection(db, 'ActivityReports'),
+            where('period', '==', periodToken),
+            where('status', '==', 'approved'),
+            where('jobCategory', '==', category),
+          ))
+        ]);
+
+        const allAr = [
+          ...arSnap1.docs.map(d => ({ id: d.id, ...d.data() })),
+          ...arSnap2.docs.map(d => ({ id: d.id, ...d.data() }))
+        ];
+
+        const filteredAr = allAr.filter((ar: any) => {
+          return ar.activityDate >= startDateStr && ar.activityDate <= endDateStr;
+        });
+
+        setApprovedActivityReports(filteredAr);
       } catch (arErr) {
         console.error('Error fetching ActivityReports:', arErr);
       }
@@ -1154,18 +1181,27 @@ export default function UraianPage() {
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
               <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200">
                 <SelectValue>
-                  {MONTHS_ID[month - 1]} ({`26 ${MONTHS_ID[(month - 2 + 12) % 12].slice(0, 3)} – 25 ${MONTHS_ID[month - 1].slice(0, 3)}`})
+                  {activeTab === 'vakasi_loyalis' ? (
+                    `${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`
+                  ) : (
+                    `${MONTHS_ID[month - 1]} (26 ${MONTHS_ID[(month - 2 + 12) % 12].slice(0, 3)} – 25 ${MONTHS_ID[month - 1].slice(0, 3)})`
+                  )}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent className="w-72">
                 {MONTHS_ID.map((m, i) => {
                   const prevMonth = MONTHS_ID[(i - 1 + 12) % 12];
                   const nextMonth = MONTHS_ID[(i + 1) % 12];
+                  const lastDay = new Date(year, i + 1, 0).getDate();
                   return (
                     <SelectItem key={i + 1} value={String(i + 1)}>
                       <div className="flex flex-col py-0.5">
                         <span className="font-semibold">{m}</span>
-                        <span className="text-[11px] text-slate-400">26 {prevMonth.slice(0, 3)} – 25 {m.slice(0, 3)} · Bayar 5 {nextMonth.slice(0, 3)}</span>
+                        {activeTab === 'vakasi_loyalis' ? (
+                          <span className="text-[11px] text-slate-400">1 – {lastDay} {m}</span>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">26 {prevMonth.slice(0, 3)} – 25 {m.slice(0, 3)} · Bayar 5 {nextMonth.slice(0, 3)}</span>
+                        )}
                       </div>
                     </SelectItem>
                   );
@@ -1817,14 +1853,39 @@ export default function UraianPage() {
                                   inputMode="numeric"
                                   pattern="[0-9]*"
                                   placeholder="0"
-                                  value={row.payGiven || ''}
+                                  value={row.payGiven > 0 ? fmtRp(row.payGiven) : ''}
                                   onChange={(e) => {
-                                    const rawVal = e.target.value.replace(/\D/g, '');
+                                    const inputEl = e.target;
+                                    const rawVal = inputEl.value.replace(/\D/g, '');
                                     const val = parseInt(rawVal, 10) || 0;
+
+                                    const selectionStart = inputEl.selectionStart || 0;
+                                    const valueBefore = inputEl.value;
+                                    const digitsBeforeCursor = valueBefore.slice(0, selectionStart).replace(/\D/g, '').length;
+
                                     setWorkerRows(prev => {
                                       const copy = [...prev];
                                       copy[rowIdx] = { ...copy[rowIdx], payGiven: val };
                                       return copy;
+                                    });
+
+                                    requestAnimationFrame(() => {
+                                      if (!inputEl) return;
+                                      const newValue = inputEl.value;
+                                      let newSelectionStart = selectionStart;
+                                      if (digitsBeforeCursor > 0) {
+                                        let digitsFound = 0;
+                                        for (let i = 0; i < newValue.length; i++) {
+                                          if (/\d/.test(newValue[i])) {
+                                            digitsFound++;
+                                          }
+                                          if (digitsFound === digitsBeforeCursor) {
+                                            newSelectionStart = i + 1;
+                                            break;
+                                          }
+                                        }
+                                      }
+                                      inputEl.setSelectionRange(newSelectionStart, newSelectionStart);
                                     });
                                   }}
                                   onBlur={() => {
@@ -1843,11 +1904,6 @@ export default function UraianPage() {
                                   }}
                                   className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full text-right"
                                 />
-                                {row.payGiven > 0 && (
-                                  <span className="text-[9px] font-bold text-slate-400 mt-1 block text-right">
-                                    {fmtRp(row.payGiven)}
-                                  </span>
-                                )}
                               </td>
                               <td className="px-4 py-4 text-center">
                                 <Button

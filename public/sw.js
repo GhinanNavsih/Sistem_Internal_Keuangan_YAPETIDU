@@ -1,6 +1,5 @@
 const CACHE_NAME = 'bak-payroll-cache-v1';
 const ASSETS_TO_CACHE = [
-  '/',
   '/login',
   '/manifest.json',
   '/Logo YAPETIDU (Transparent bg).png',

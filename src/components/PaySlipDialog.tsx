@@ -61,6 +61,7 @@ interface PaySlipDialogProps {
   vakasiTambahanList?: { eventName: string; payGiven: number }[];
   tunjanganFungsional?: number;
   customColumns?: RekapColumn[];
+  koperasiDeduction?: number;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -200,7 +201,7 @@ function buildInitialEarnings(
 /**
  * Build initial deductions rows from whatever we know about the employee.
  */
-function buildInitialDeductions(emp: any, activeTab?: string): PaySlipField[] {
+function buildInitialDeductions(emp: any, activeTab?: string, koperasiDeduction = 0): PaySlipField[] {
   const deductions: PaySlipField[] = [];
 
   if (activeTab === 'loyalis') {
@@ -212,7 +213,7 @@ function buildInitialDeductions(emp: any, activeTab?: string): PaySlipField[] {
     deductions.push({ label: 'ZIZ', amount: 0 });
     deductions.push({ label: 'Revisi Gaji', amount: 0 });
     deductions.push({ label: 'Pinlu/Tagihan', amount: 0 });
-    deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+    deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
     deductions.push({ label: 'Potongan Presensi', amount: 0 });
     deductions.push({ label: 'Potongan Bonus Presensi', amount: 0 });
   } else {
@@ -226,8 +227,8 @@ function buildInitialDeductions(emp: any, activeTab?: string): PaySlipField[] {
       deductions.push({ label: 'Kop. Rochmad', amount: emp.deductions.koperasiRochmad });
     }
 
-    // Koperasi Unipdu from sample – we may not have data yet
-    deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+    // Koperasi Unipdu from sample
+    deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
   }
 
   return deductions;
@@ -252,6 +253,7 @@ export default function PaySlipDialog({
   vakasiTambahanList = [],
   tunjanganFungsional,
   customColumns,
+  koperasiDeduction = 0,
 }: PaySlipDialogProps) {
   const [earnings, setEarnings] = useState<PaySlipField[]>([]);
   const [deductions, setDeductions] = useState<PaySlipField[]>([]);
@@ -262,12 +264,12 @@ export default function PaySlipDialog({
 
     if (mode === 'create') {
       setEarnings(buildInitialEarnings(employee, gapok, activeTab, uraianEntry, vakasiTambahanSum, vakasiTambahanList, tunjanganFungsional, customColumns));
-      setDeductions(buildInitialDeductions(employee, activeTab));
+      setDeductions(buildInitialDeductions(employee, activeTab, koperasiDeduction));
     } else if (mode === 'review' && slipState) {
       setEarnings([...slipState.earnings]);
       setDeductions([...slipState.deductions]);
     }
-  }, [open, employee, mode, gapok, slipState, activeTab, vakasiTambahanSum, vakasiTambahanList, uraianEntry, tunjanganFungsional, customColumns]);
+  }, [open, employee, mode, gapok, slipState, activeTab, vakasiTambahanSum, vakasiTambahanList, uraianEntry, tunjanganFungsional, customColumns, koperasiDeduction]);
 
   // ─── Field Mutators ───────────────────────────────────────────
 

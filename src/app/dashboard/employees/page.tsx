@@ -53,12 +53,14 @@ import {
   History,
   ClipboardCheck,
   LogOut,
+  FileText,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
   collection,
   getDocs,
   doc,
+  getDoc,
   setDoc,
   deleteDoc,
   addDoc,
@@ -208,6 +210,7 @@ export default function EmployeesPage() {
   const [pendingEdits, setPendingEdits] = useState<PendingEdit[]>([]);
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [eduLevels, setEduLevels] = useState<string[]>([]);
 
   // Redirect if unauthorized
   useEffect(() => {
@@ -226,6 +229,26 @@ export default function EmployeesPage() {
         console.error('Failed to parse pending edits:', e);
       }
     }
+  }, []);
+
+  // Load unique education levels from functional salary matrix
+  useEffect(() => {
+    const fetchEduLevels = async () => {
+      try {
+        const funcConfigRef = doc(db, 'SalaryMatrix_Functional', '_config');
+        const funcConfigSnap = await getDoc(funcConfigRef);
+        let funcVersion = '2026_v1';
+        if (funcConfigSnap.exists() && funcConfigSnap.data().activeVersion) {
+          funcVersion = funcConfigSnap.data().activeVersion;
+        }
+        const funcRowsSnapshot = await getDocs(collection(db, 'SalaryMatrix_Functional', funcVersion, 'rows'));
+        const levels = funcRowsSnapshot.docs.map(docSnap => docSnap.data().education_level as string).filter(Boolean);
+        setEduLevels(Array.from(new Set(levels)).sort());
+      } catch (err) {
+        console.error('Error fetching education levels:', err);
+      }
+    };
+    fetchEduLevels();
   }, []);
 
   const currentTab = COLLAR_TABS.find(t => t.key === activeTab)!;
@@ -623,6 +646,11 @@ export default function EmployeesPage() {
             <Button onClick={handleExportExcel} variant="outline" className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
               <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" /> Export Excel
             </Button>
+            <Link href="/dashboard/payroll/master">
+              <Button variant="outline" className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
+                <FileText className="w-4 h-4 mr-2 text-indigo-600" /> Master Gaji Pokok
+              </Button>
+            </Link>
             <Button onClick={handleOpenAdd} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200 px-6 cursor-pointer">
               <UserPlus className="w-4 h-4 mr-2" /> Tambah Pegawai
             </Button>
@@ -788,10 +816,49 @@ export default function EmployeesPage() {
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Akademik &amp; Finansial</h3>
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-2"><Label>Pendidikan</Label><Input placeholder="S1, S2, D3" value={formData.academic_and_tier?.education_level || ''} onChange={e => updateNestedField('academic_and_tier', 'education_level', e.target.value)} /></div>
+                      <div className="col-span-2 space-y-2">
+                        <Label>Pendidikan</Label>
+                        <Select
+                          value={formData.academic_and_tier?.education_level || ''}
+                          onValueChange={(val) => updateNestedField('academic_and_tier', 'education_level', val)}
+                        >
+                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                            <SelectValue placeholder="Pilih Pendidikan" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                            {(() => {
+                              const currentVal = formData.academic_and_tier?.education_level;
+                              const options = currentVal && !eduLevels.includes(currentVal)
+                                ? [...eduLevels, currentVal]
+                                : eduLevels;
+                              return options.map(level => (
+                                <SelectItem key={level} value={level} className="text-xs">
+                                  {level}
+                                </SelectItem>
+                              ));
+                            })()}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div className="space-y-2"><Label>Golongan</Label><Input placeholder="Gol. G" value={formData.academic_and_tier?.level_code || ''} onChange={e => updateNestedField('academic_and_tier', 'level_code', e.target.value)} /></div>
-                      <div className="space-y-2"><Label>Kode Pend.</Label><Input type="number" value={formData.academic_and_tier?.education_code ?? ''} onChange={e => updateNestedField('academic_and_tier', 'education_code', e.target.value)} /></div>
-                      <div className="space-y-2"><Label>Tunj. Kofu</Label><Input type="number" value={formData.academic_and_tier?.functional_tier ?? ''} onChange={e => updateNestedField('academic_and_tier', 'functional_tier', e.target.value)} /></div>
+                      <div className="space-y-2">
+                        <Label>Beban Kerja</Label>
+                        <Select
+                          value={formData.academic_and_tier?.functional_tier !== undefined && formData.academic_and_tier?.functional_tier !== null && formData.academic_and_tier?.functional_tier !== '' ? String(formData.academic_and_tier.functional_tier) : ''}
+                          onValueChange={(val) => updateNestedField('academic_and_tier', 'functional_tier', val ? Number(val) : null)}
+                        >
+                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                            <SelectValue placeholder="Pilih Beban Kerja" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                            {Array.from({ length: 16 }, (_, idx) => String(idx + 1)).map((tierCode) => (
+                              <SelectItem key={tierCode} value={tierCode} className="text-xs">
+                                Beban {tierCode}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                     <div className="space-y-2"><Label>Nama Bank</Label><Input value={formData.banking_info?.bank_name || ''} onChange={e => updateNestedField('banking_info', 'bank_name', e.target.value)} /></div>
                     <div className="space-y-2"><Label>Nomor Rekening</Label><Input value={formData.banking_info?.account_number || ''} onChange={e => updateNestedField('banking_info', 'account_number', e.target.value)} /></div>

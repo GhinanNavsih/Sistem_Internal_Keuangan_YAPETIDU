@@ -42,6 +42,7 @@ interface LegalitasPimpinanDialogProps {
   vakasiTambahanMap?: Record<string, number>;
   functionalAllowanceMap?: Record<string, number>;
   slipStates?: Record<string, any>;
+  koperasiDeductions?: Record<string, number>;
 }
 
 function buildInitialEarnings(
@@ -121,14 +122,14 @@ function buildInitialEarnings(
   return earnings;
 }
 
-function buildInitialDeductions(emp: any): PaySlipField[] {
+function buildInitialDeductions(emp: any, koperasiDeduction = 0): PaySlipField[] {
   const deductions: PaySlipField[] = [];
 
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
     // White Collar / Loyalis deductions
     deductions.push({ label: 'BPJS', amount: 0 });
     deductions.push({ label: 'Kop. Rochmad', amount: 0 });
-    deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+    deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
     return deductions;
   }
 
@@ -140,7 +141,7 @@ function buildInitialDeductions(emp: any): PaySlipField[] {
     deductions.push({ label: 'Kop. Rochmad', amount: emp.deductions.koperasiRochmad });
   }
 
-  deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: 0 });
+  deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
 
   return deductions;
 }
@@ -157,6 +158,7 @@ export default function LegalitasPimpinanDialog({
   vakasiTambahanMap,
   functionalAllowanceMap,
   slipStates,
+  koperasiDeductions = {},
 }: LegalitasPimpinanDialogProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>(categories[0] || '');
 
@@ -204,8 +206,9 @@ export default function LegalitasPimpinanDialog({
           gapokVal = gapokField.amount;
         }
       } else {
+        const kopUnipdu = koperasiDeductions?.[emp.id] ?? 0;
         earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance);
-        deductions = buildInitialDeductions(emp.raw);
+        deductions = buildInitialDeductions(emp.raw, kopUnipdu);
         totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
         totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
         netSalary = totalEarnings - totalDeductions;

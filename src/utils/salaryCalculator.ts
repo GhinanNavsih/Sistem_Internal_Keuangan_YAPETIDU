@@ -90,10 +90,10 @@ export function calculateTotalEarnings(
  * Calculates the total deductions for a blue collar employee.
  * Includes BPJS deductions and Koperasi Rochmad.
  */
-export function calculateTotalDeductions(emp: any): number {
+export function calculateTotalDeductions(emp: any, koperasiDeduction = 0): number {
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
-    // White Collar / Loyalis deductions initially default to 0
-    return 0;
+    // White Collar / Loyalis deductions initially default to 0 + koperasi
+    return koperasiDeduction;
   }
 
   let total = 0;
@@ -106,7 +106,7 @@ export function calculateTotalDeductions(emp: any): number {
     total += emp.deductions.koperasiRochmad;
   }
 
-  // Note: Add other deductions here as they become available in the schema
+  total += koperasiDeduction;
   
   return total;
 }
