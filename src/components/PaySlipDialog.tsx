@@ -118,10 +118,10 @@ function buildInitialEarnings(
     earnings.push({ label: 'T. Hari Tua', amount: Math.round(gapok * 0.1) });
 
     // T. BPJS TK
-    earnings.push({ label: 'T. BPJS TK', amount: 0 });
+    earnings.push({ label: 'T. BPJS TK', amount: emp.bpjs?.t_bpjs_tk || 0 });
 
     // T. BPJS KES
-    earnings.push({ label: 'T. BPJS KES', amount: 0 });
+    earnings.push({ label: 'T. BPJS KES', amount: emp.bpjs?.t_bpjs_kes || 0 });
 
     // Beras
     const tunjBeras = emp.salaryProfile?.tunjanganBeras || 0;
@@ -207,7 +207,7 @@ function buildInitialDeductions(emp: any, activeTab?: string, koperasiDeduction 
   if (activeTab === 'loyalis') {
     // White Collar / Loyalis deductions
     deductions.push({ label: 'Koperasi Rochmad', amount: 0 });
-    deductions.push({ label: 'BPJS', amount: 0 });
+    deductions.push({ label: 'BPJS', amount: emp.bpjs?.deductionAmount || 0 });
     deductions.push({ label: 'THT', amount: 0 });
     deductions.push({ label: 'Tabungan', amount: 0 });
     deductions.push({ label: 'ZIZ', amount: 0 });

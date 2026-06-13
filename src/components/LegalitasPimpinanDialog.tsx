@@ -81,6 +81,11 @@ function buildInitialEarnings(
     // Vakasi Tambahan
     earnings.push({ label: 'Vakasi Tambahan', amount: vakasiTambahanSum ?? 0 });
 
+    // BPJS & Beras Allowances (Loyalis)
+    earnings.push({ label: 'T. BPJS TK', amount: emp.bpjs?.t_bpjs_tk || 0 });
+    earnings.push({ label: 'T. BPJS KES', amount: emp.bpjs?.t_bpjs_kes || 0 });
+    earnings.push({ label: 'Beras', amount: emp.salaryProfile?.tunjanganBeras || 0 });
+
     return earnings;
   }
 
@@ -127,7 +132,7 @@ function buildInitialDeductions(emp: any, koperasiDeduction = 0): PaySlipField[]
 
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
     // White Collar / Loyalis deductions
-    deductions.push({ label: 'BPJS', amount: 0 });
+    deductions.push({ label: 'BPJS', amount: emp.bpjs?.deductionAmount || 0 });
     deductions.push({ label: 'Kop. Rochmad', amount: 0 });
     deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
     return deductions;

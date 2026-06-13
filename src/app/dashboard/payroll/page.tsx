@@ -45,6 +45,7 @@ import {
   ChevronRight,
   Search,
   Mail,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { collection, getDocs, doc, getDoc, setDoc, query, where } from 'firebase/firestore';
 import { db, secondaryDb } from '@/lib/firebase';
@@ -301,7 +302,7 @@ export default function PayrollValidationDashboard() {
       const kopUnipduAmount = koperasiDeductions[emp.id] || 0;
       if (collar === 'loyalis') {
         deductions.push({ label: 'Koperasi Rochmad', amount: 0 });
-        deductions.push({ label: 'BPJS', amount: 0 });
+        deductions.push({ label: 'BPJS', amount: emp.raw?.bpjs?.deductionAmount || 0 });
         deductions.push({ label: 'THT', amount: 0 });
         deductions.push({ label: 'Tabungan', amount: 0 });
         deductions.push({ label: 'ZIZ', amount: 0 });
@@ -1308,6 +1309,11 @@ export default function PayrollValidationDashboard() {
             <Link href="/dashboard/payroll/simpan-pinjam">
               <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">
                 <Banknote className="w-4 h-4 mr-2" /> Simpan Pinjam
+              </Button>
+            </Link>
+            <Link href="/dashboard/payroll/constant-values">
+              <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">
+                <SlidersHorizontal className="w-4 h-4 mr-2" /> Detail Tunjangan & Potongan
               </Button>
             </Link>
           </div>

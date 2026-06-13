@@ -41,6 +41,17 @@ export function calculateTotalEarnings(
       total += vakasiTambahanSum;
     }
 
+    // BPJS & Beras Allowances (Loyalis)
+    if (emp.bpjs?.t_bpjs_tk) {
+      total += emp.bpjs.t_bpjs_tk;
+    }
+    if (emp.bpjs?.t_bpjs_kes) {
+      total += emp.bpjs.t_bpjs_kes;
+    }
+    if (emp.salaryProfile?.tunjanganBeras) {
+      total += emp.salaryProfile.tunjanganBeras;
+    }
+
     return total;
   }
 
@@ -92,8 +103,9 @@ export function calculateTotalEarnings(
  */
 export function calculateTotalDeductions(emp: any, koperasiDeduction = 0): number {
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
-    // White Collar / Loyalis deductions initially default to 0 + koperasi
-    return koperasiDeduction;
+    // White Collar / Loyalis deductions: include BPJS deduction
+    const bpjsDeduction = emp.bpjs?.deductionAmount || 0;
+    return koperasiDeduction + bpjsDeduction;
   }
 
   let total = 0;
