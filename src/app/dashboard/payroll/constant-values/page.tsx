@@ -35,6 +35,7 @@ import {
   Loader2,
   RefreshCw,
   Pencil,
+  Wallet,
 } from 'lucide-react';
 
 const formatCurrencyInput = (val: string | number) => {
@@ -59,6 +60,7 @@ interface EmployeeConstantRecord {
   tBpjsKes: number;
   tBeras: number;
   potBpjs: number;
+  potTabungan: number;
   tBpjsPekarya?: number;
 }
 
@@ -76,6 +78,7 @@ export default function ConstantValuesDebugPage() {
     tBpjsKes: 0,
     tBeras: 0,
     potBpjs: 0,
+    potTabungan: 0,
     tBpjsPekarya: 0,
   });
   const [saving, setSaving] = useState(false);
@@ -87,6 +90,7 @@ export default function ConstantValuesDebugPage() {
       tBpjsKes: emp.tBpjsKes,
       tBeras: emp.tBeras,
       potBpjs: emp.potBpjs,
+      potTabungan: emp.potTabungan || 0,
       tBpjsPekarya: emp.tBpjsPekarya || 0,
     });
   };
@@ -101,6 +105,7 @@ export default function ConstantValuesDebugPage() {
       const updateData: any = {
         'salaryProfile.tunjanganBeras': editForm.tBeras,
         'bpjs.deductionAmount': editForm.potBpjs,
+        'savings.deductionAmount': editForm.potTabungan,
         'updatedAt': new Date(),
         'audit.updatedAt': new Date(),
       };
@@ -121,6 +126,7 @@ export default function ConstantValuesDebugPage() {
           const tBpjsKes = type === 'loyalis' ? editForm.tBpjsKes : 0;
           const tBeras = editForm.tBeras;
           const potBpjs = editForm.potBpjs;
+          const potTabungan = editForm.potTabungan;
           const tBpjsPekarya = type === 'pekarya' ? editForm.tBpjsPekarya : 0;
 
           return {
@@ -129,6 +135,7 @@ export default function ConstantValuesDebugPage() {
             tBpjsKes,
             tBeras,
             potBpjs,
+            potTabungan,
             tBpjsPekarya,
           };
         }
@@ -159,7 +166,7 @@ export default function ConstantValuesDebugPage() {
         const data = docSnap.data();
         const name = data.personal_info?.name || '';
         const status = data.personal_info?.status || '';
-        const role = data.employment_profile?.job_role || data.employment_profile?.department_unit || '';
+        const role = data.employment_profile?.department_unit || 'Staf';
         const isActive = status === 'AKTIF';
 
         if (name && isActive) {
@@ -167,6 +174,7 @@ export default function ConstantValuesDebugPage() {
           const tBpjsKes = data.bpjs?.t_bpjs_kes || 0;
           const tBeras = data.salaryProfile?.tunjanganBeras || 0;
           const potBpjs = data.bpjs?.deductionAmount || 0;
+          const potTabungan = data.savings?.deductionAmount || 0;
 
           records.push({
             id: docSnap.id,
@@ -178,6 +186,7 @@ export default function ConstantValuesDebugPage() {
             tBpjsKes,
             tBeras,
             potBpjs,
+            potTabungan,
           });
         }
       });
@@ -193,6 +202,7 @@ export default function ConstantValuesDebugPage() {
           const tBpjsPekarya = data.bpjs?.allowanceAmount || 0;
           const tBeras = data.salaryProfile?.tunjanganBeras || 0;
           const potBpjs = data.bpjs?.deductionAmount || 0;
+          const potTabungan = 0;
 
           records.push({
             id: docSnap.id,
@@ -204,6 +214,7 @@ export default function ConstantValuesDebugPage() {
             tBpjsKes: 0,
             tBeras,
             potBpjs,
+            potTabungan,
             tBpjsPekarya,
           });
         }
@@ -239,21 +250,37 @@ export default function ConstantValuesDebugPage() {
 
   // General Metrics
   const metrics = useMemo(() => {
-    const total = employees.length;
-    const loyalisCount = employees.filter(e => e.type === 'loyalis').length;
-    const pekaryaCount = employees.filter(e => e.type === 'pekarya').length;
+    const totalAll = employees.length;
+    const loyalisCountAll = employees.filter(e => e.type === 'loyalis').length;
+    const pekaryaCountAll = employees.filter(e => e.type === 'pekarya').length;
     
-    const totalBpjsDeductions = employees.reduce((sum, e) => sum + e.potBpjs, 0);
-    const totalBerasAllowance = employees.reduce((sum, e) => sum + e.tBeras, 0);
+    // Filter employees based on activeTab for card calculation
+    const filteredForMetrics = employees.filter(e => {
+      if (activeTab === 'loyalis') return e.type === 'loyalis';
+      if (activeTab === 'pekarya') return e.type === 'pekarya';
+      return true;
+    });
+
+    const total = filteredForMetrics.length;
+    const loyalisCount = filteredForMetrics.filter(e => e.type === 'loyalis').length;
+    const pekaryaCount = filteredForMetrics.filter(e => e.type === 'pekarya').length;
+    
+    const totalBpjsDeductions = filteredForMetrics.reduce((sum, e) => sum + e.potBpjs, 0);
+    const totalBerasAllowance = filteredForMetrics.reduce((sum, e) => sum + e.tBeras, 0);
+    const totalTabunganDeductions = filteredForMetrics.reduce((sum, e) => sum + (e.potTabungan || 0), 0);
 
     return {
       total,
       loyalisCount,
       pekaryaCount,
+      totalAll,
+      loyalisCountAll,
+      pekaryaCountAll,
       totalBpjsDeductions,
       totalBerasAllowance,
+      totalTabunganDeductions,
     };
-  }, [employees]);
+  }, [employees, activeTab]);
 
   if (authLoading || loading) {
     return (
@@ -296,13 +323,19 @@ export default function ConstantValuesDebugPage() {
         </div>
 
         {/* Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card className="p-6 bg-white border-none shadow-[0_8px_30px_rgb(0,0,0,0.02)] rounded-2xl flex flex-row items-center justify-between hover:translate-y-[-2px] transition-transform duration-300">
             <div>
               <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Staf Aktif</p>
               <h3 className="text-2xl font-bold text-slate-800">{metrics.total}</h3>
               <p className="text-[11px] text-slate-400 mt-1">
-                {metrics.loyalisCount} Loyalis • {metrics.pekaryaCount} Pekarya
+                {activeTab === 'all' ? (
+                  `${metrics.loyalisCountAll} Loyalis • ${metrics.pekaryaCountAll} Pekarya`
+                ) : activeTab === 'loyalis' ? (
+                  `${metrics.loyalisCountAll} Loyalis`
+                ) : (
+                  `${metrics.pekaryaCountAll} Pekarya`
+                )}
               </p>
             </div>
             <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
@@ -316,10 +349,27 @@ export default function ConstantValuesDebugPage() {
               <h3 className="text-2xl font-bold text-slate-800">
                 Rp {metrics.totalBpjsDeductions.toLocaleString('id-ID')}
               </h3>
-              <p className="text-[11px] text-emerald-600 mt-1 font-medium">Beban total periode ini</p>
+              <p className="text-[11px] text-emerald-600 mt-1 font-medium">
+                {activeTab === 'all' ? 'Beban total periode ini' : activeTab === 'loyalis' ? 'Beban total Loyalis' : 'Beban total Pekarya'}
+              </p>
             </div>
             <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
               <Coins className="w-5 h-5" />
+            </div>
+          </Card>
+
+          <Card className="p-6 bg-white border-none shadow-[0_8px_30px_rgb(0,0,0,0.02)] rounded-2xl flex flex-row items-center justify-between hover:translate-y-[-2px] transition-transform duration-300">
+            <div>
+              <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Total Potongan Tabungan</p>
+              <h3 className="text-2xl font-bold text-slate-800">
+                Rp {metrics.totalTabunganDeductions.toLocaleString('id-ID')}
+              </h3>
+              <p className="text-[11px] text-rose-600 mt-1 font-medium">
+                {activeTab === 'all' ? 'Potongan total periode ini' : activeTab === 'loyalis' ? 'Potongan total Loyalis' : 'Potongan total Pekarya'}
+              </p>
+            </div>
+            <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
+              <Wallet className="w-5 h-5" />
             </div>
           </Card>
 
@@ -329,7 +379,9 @@ export default function ConstantValuesDebugPage() {
               <h3 className="text-2xl font-bold text-slate-800">
                 Rp {metrics.totalBerasAllowance.toLocaleString('id-ID')}
               </h3>
-              <p className="text-[11px] text-slate-400 mt-1">Seluruh kategori pegawai</p>
+              <p className="text-[11px] text-slate-400 mt-1">
+                {activeTab === 'all' ? 'Seluruh kategori pegawai' : activeTab === 'loyalis' ? 'Kategori Loyalis' : 'Kategori Pekarya'}
+              </p>
             </div>
             <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
               <Wheat className="w-5 h-5" />
@@ -349,19 +401,19 @@ export default function ConstantValuesDebugPage() {
                 onClick={() => setActiveTab('all')}
                 className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${activeTab === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
               >
-                Semua ({metrics.total})
+                Semua ({metrics.totalAll})
               </button>
               <button
                 onClick={() => setActiveTab('loyalis')}
                 className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${activeTab === 'loyalis' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
               >
-                Loyalis ({metrics.loyalisCount})
+                Loyalis ({metrics.loyalisCountAll})
               </button>
               <button
                 onClick={() => setActiveTab('pekarya')}
                 className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${activeTab === 'pekarya' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
               >
-                Pekarya ({metrics.pekaryaCount})
+                Pekarya ({metrics.pekaryaCountAll})
               </button>
             </div>
 
@@ -391,13 +443,14 @@ export default function ConstantValuesDebugPage() {
                   <TableHead className="py-4 font-semibold text-emerald-800 bg-emerald-50/40 text-xs uppercase tracking-wider text-right">BPJS Pekarya</TableHead>
                   <TableHead className="py-4 font-semibold text-emerald-800 bg-emerald-50/40 text-xs uppercase tracking-wider text-right">T. Beras</TableHead>
                   <TableHead className="py-4 font-semibold text-rose-800 bg-rose-50/40 text-xs uppercase tracking-wider text-right">Potongan BPJS</TableHead>
+                  <TableHead className="py-4 font-semibold text-rose-800 bg-rose-50/40 text-xs uppercase tracking-wider text-right">Pot. Tabungan</TableHead>
                   <TableHead className="py-4 pr-8 font-semibold text-slate-700 text-xs uppercase tracking-wider text-center">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredEmployees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-12 text-center text-slate-400">
+                    <TableCell colSpan={9} className="py-12 text-center text-slate-400">
                       <div className="flex flex-col items-center justify-center gap-3">
                         <AlertCircle className="w-8 h-8 text-slate-300" />
                         <p className="text-sm">Tidak ditemukan data pegawai yang sesuai filter.</p>
@@ -469,6 +522,16 @@ export default function ConstantValuesDebugPage() {
                         </span>
                       </TableCell>
 
+                      <TableCell className="py-4 text-right font-medium text-slate-700 text-sm bg-rose-50/10">
+                        {emp.type === 'loyalis' ? (
+                          <span>
+                            Rp {emp.potTabungan.toLocaleString('id-ID')}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300 text-xs font-normal">N/A</span>
+                        )}
+                      </TableCell>
+
                       <TableCell className="py-4 pr-8 text-center">
                         <Button 
                           variant="outline" 
@@ -497,6 +560,7 @@ export default function ConstantValuesDebugPage() {
               <span>T. BPJS KES = Rp 166.038</span>
               <span>Beras = Rp 100.000</span>
               <span>Pot. BPJS = Dinamis (Sesuai Excel)</span>
+              <span>Pot. Tabungan = Dinamis (Sesuai Excel)</span>
             </div>
           </div>
 
@@ -544,6 +608,19 @@ export default function ConstantValuesDebugPage() {
                         type="text"
                         value={formatCurrencyInput(editForm.tBpjsKes)}
                         onChange={(e) => setEditForm(prev => ({ ...prev, tBpjsKes: parseCurrencyInput(e.target.value) }))}
+                        className="pl-9 rounded-xl border-slate-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-sm h-10 shadow-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-600">Potongan Tabungan</label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-medium select-none">Rp</span>
+                      <Input
+                        type="text"
+                        value={formatCurrencyInput(editForm.potTabungan)}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, potTabungan: parseCurrencyInput(e.target.value) }))}
                         className="pl-9 rounded-xl border-slate-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-sm h-10 shadow-sm"
                       />
                     </div>

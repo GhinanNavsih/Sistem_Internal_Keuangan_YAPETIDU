@@ -104,6 +104,35 @@ interface EmployeeRow extends Employee {
 
 export default function PayrollValidationDashboard() {
   const { profile, logout } = useAuth();
+
+  const getLoyalisPresenceBonus = (empId: string): number => {
+    if (!loyalisPresenceData?.entries?.[empId]) return 0;
+    if (loyalisPresenceData.entries[empId].isNotFoundInExcel) return 0;
+    return 250000;
+  };
+
+  const getLoyalisPresenceDeduction = (empId: string): number => {
+    if (!loyalisPresenceData?.entries?.[empId]) return 0;
+    if (loyalisPresenceData.entries[empId].isNotFoundInExcel) return 0;
+    return loyalisPresenceData.entries[empId].deduction || 0;
+  };
+
+  const getLoyalisPresensiEarning = (empId: string): number => {
+    if (!loyalisPresenceData?.entries?.[empId]) return 0;
+    if (loyalisPresenceData.entries[empId].isNotFoundInExcel) return 0;
+    const workingDays = loyalisPresenceData.workingDays || 25;
+    const expectedHours = loyalisPresenceData.expectedHours || 6.5;
+    return Math.round(workingDays * expectedHours * 1650);
+  };
+
+  const getLoyalisPresensiDeduction = (empId: string): number => {
+    if (!loyalisPresenceData?.entries?.[empId]) return 0;
+    if (loyalisPresenceData.entries[empId].isNotFoundInExcel) return 0;
+    const entry = loyalisPresenceData.entries[empId];
+    const absenceMinutes = entry.absenceMinutes || 0;
+    return Math.round((absenceMinutes / 60) * 1650);
+  };
+
   const [targetDate, setTargetDate] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -144,6 +173,8 @@ export default function PayrollValidationDashboard() {
   const [vakasiTambahanListMap, setVakasiTambahanListMap] = useState<Record<string, { eventName: string; payGiven: number }[]>>({});
   const [functionalAllowanceMap, setFunctionalAllowanceMap] = useState<Record<string, number>>({});
   const [koperasiDeductions, setKoperasiDeductions] = useState<Record<string, number>>({});
+  const [koperasiSavings, setKoperasiSavings] = useState<Record<string, number>>({});
+  const [loyalisPresenceData, setLoyalisPresenceData] = useState<any | null>(null);
 
   // ─── Fetch Koperasi Loans & perform matching ───────────────────
   useEffect(() => {
@@ -151,28 +182,29 @@ export default function PayrollValidationDashboard() {
 
     const fetchKoperasiDeductions = async () => {
       try {
-        // 1. Fetch active loans from Koperasi Unipdu
-        const loanSnapshot = await getDocs(
-          query(
-            collection(secondaryDb, 'simpanPinjam'),
-            where('status', '==', 'Disetujui dan Aktif')
-          )
-        );
-        const activeLoans = loanSnapshot.docs
-          .map(docSnap => ({ id: docSnap.id, ...docSnap.data() as any }))
-          .filter(loan => (loan.sisaHutang || 0) > 0);
-
-        // 2. Fetch all internal employees to match against (both Loyalis and Blue Collar)
-        const [loyalisSnap, blueCollarSnap] = await Promise.all([
+        // 1. Fetch active loans and users from Koperasi Unipdu
+        const [loanSnapshot, userSnapshot, loyalisSnap, blueCollarSnap] = await Promise.all([
+          getDocs(
+            query(
+              collection(secondaryDb, 'simpanPinjam'),
+              where('status', '==', 'Disetujui dan Aktif')
+            )
+          ),
+          getDocs(collection(secondaryDb, 'users')),
           getDocs(collection(db, 'Employees_Loyalis')),
           getDocs(collection(db, 'Employees_BlueCollar')),
         ]);
+
+        const activeLoans = loanSnapshot.docs
+          .map(docSnap => ({ id: docSnap.id, ...docSnap.data() as any }))
+          .filter(loan => (loan.sisaHutang || 0) > 0);
 
         const allEmployees: {
           id: string;
           originalName: string;
           normalizedName: string;
           koperasiAuthUid?: string | null;
+          koperasiUserId?: string | null;
         }[] = [];
 
         loyalisSnap.docs.forEach(docSnap => {
@@ -184,6 +216,7 @@ export default function PayrollValidationDashboard() {
               originalName: name,
               normalizedName: normalizeName(name),
               koperasiAuthUid: data.koperasiAuthUid || null,
+              koperasiUserId: data.koperasiUserId || null,
             });
           }
         });
@@ -197,6 +230,7 @@ export default function PayrollValidationDashboard() {
               originalName: name,
               normalizedName: normalizeName(name),
               koperasiAuthUid: data.koperasiAuthUid || null,
+              koperasiUserId: data.koperasiUserId || null,
             });
           }
         });
@@ -232,9 +266,41 @@ export default function PayrollValidationDashboard() {
           }
         });
 
+        // 4. Match names for Koperasi membership and build savings map
+        const savingMap: Record<string, number> = {};
+        userSnapshot.docs.forEach(userDoc => {
+          const uData = userDoc.data();
+          const uName = uData.nama || '';
+          if (!uName) return;
+          const normalizedU = normalizeName(uName);
+          const uUid = uData.uid || userDoc.id;
+
+          let match = allEmployees.find(
+            emp => 
+              (emp.koperasiUserId && emp.koperasiUserId === userDoc.id) ||
+              (emp.koperasiAuthUid && emp.koperasiAuthUid === uUid)
+          );
+
+          if (!match) {
+            match = allEmployees.find(emp => emp.normalizedName === normalizedU);
+          }
+
+          if (!match) {
+            const overrideName = MANUAL_OVERRIDES[uName.trim()];
+            if (overrideName) {
+              match = allEmployees.find(emp => emp.originalName === overrideName);
+            }
+          }
+
+          if (match) {
+            savingMap[match.id] = 25000;
+          }
+        });
+
         setKoperasiDeductions(deductionMap);
+        setKoperasiSavings(savingMap);
       } catch (err) {
-        console.error('Error fetching/matching koperasi loans:', err);
+        console.error('Error fetching/matching koperasi data:', err);
       }
     };
 
@@ -304,13 +370,13 @@ export default function PayrollValidationDashboard() {
         deductions.push({ label: 'Koperasi Rochmad', amount: 0 });
         deductions.push({ label: 'BPJS', amount: emp.raw?.bpjs?.deductionAmount || 0 });
         deductions.push({ label: 'THT', amount: 0 });
-        deductions.push({ label: 'Tabungan', amount: 0 });
+        deductions.push({ label: 'Tabungan', amount: emp.raw?.savings?.deductionAmount || 0 });
         deductions.push({ label: 'ZIZ', amount: 0 });
         deductions.push({ label: 'Revisi Gaji', amount: 0 });
         deductions.push({ label: 'Pinlu/Tagihan', amount: 0 });
         deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: kopUnipduAmount });
-        deductions.push({ label: 'Potongan Presensi', amount: 0 });
-        deductions.push({ label: 'Potongan Bonus Presensi', amount: 0 });
+        deductions.push({ label: 'Potongan Presensi', amount: getLoyalisPresensiDeduction(emp.id) });
+        deductions.push({ label: 'Potongan Bonus Presensi', amount: getLoyalisPresenceDeduction(emp.id) });
       } else {
         const bpjsAmount = emp.raw?.bpjs?.deductionAmount ? Math.round(emp.raw.bpjs.deductionAmount) : 0;
         const kopRochmadAmount = emp.raw?.deductions?.koperasiRochmad || 0;
@@ -391,7 +457,7 @@ export default function PayrollValidationDashboard() {
           }
         });
       } else {
-        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0);
+        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id));
 
         const defaultDeductions = getEmployeeDeductions(emp, undefined, payrollCollar);
         defaultDeductions.forEach(d => {
@@ -436,7 +502,15 @@ export default function PayrollValidationDashboard() {
     const activeEmployees = employees.filter(e => e.isActive);
 
     const roleOrder = payrollCollar === 'loyalis'
-      ? ['REKTORAT', 'DOSEN', 'TENDIK', 'STAF']
+      ? [
+          'REKTORAT',
+          'FAK. AGAMA ISLAM',
+          'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
+          'FAK. ILMU KESEHATAN',
+          'FAK. SAINS DAN TEKNOLOGI',
+          'PASCASARJANA',
+          'UPT & LEMBAGA'
+        ]
       : ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI', 'PONTI'];
     const sortedEmployees = [...activeEmployees].sort((a, b) => {
       const roleA = roleOrder.indexOf(a.role) !== -1 ? roleOrder.indexOf(a.role) : 99;
@@ -463,8 +537,8 @@ export default function PayrollValidationDashboard() {
         totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
         netSalary = earnings - totalDeductions;
       } else {
-        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0);
-        totalDeductions = calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0);
+        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id));
+        totalDeductions = calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0, getLoyalisPresenceDeduction(emp.id), getLoyalisPresensiDeduction(emp.id), koperasiSavings[emp.id] || 0);
         netSalary = calculateNetSalary(earnings, totalDeductions);
       }
 
@@ -546,31 +620,31 @@ export default function PayrollValidationDashboard() {
           const gapokA = calculateGapok(a, salaryMatrix, targetDate);
           const roleKeyA = payrollCollar === 'loyalis' ? a.role : a.raw.employment?.jobCategory;
           const uraianA = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyA}`]?.entries?.[a.id];
-          aValue = calculateTotalEarnings(a.raw, gapokA, uraianA, vakasiTambahanMap[a.id] ?? 0, functionalAllowanceMap[a.id] ?? 0);
+          aValue = calculateTotalEarnings(a.raw, gapokA, uraianA, vakasiTambahanMap[a.id] ?? 0, functionalAllowanceMap[a.id] ?? 0, getLoyalisPresenceBonus(a.id), getLoyalisPresensiEarning(a.id));
 
           const gapokB = calculateGapok(b, salaryMatrix, targetDate);
           const roleKeyB = payrollCollar === 'loyalis' ? b.role : b.raw.employment?.jobCategory;
           const uraianB = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyB}`]?.entries?.[b.id];
-          bValue = calculateTotalEarnings(b.raw, gapokB, uraianB, vakasiTambahanMap[b.id] ?? 0, functionalAllowanceMap[b.id] ?? 0);
+          bValue = calculateTotalEarnings(b.raw, gapokB, uraianB, vakasiTambahanMap[b.id] ?? 0, functionalAllowanceMap[b.id] ?? 0, getLoyalisPresenceBonus(b.id), getLoyalisPresensiEarning(b.id));
           break;
         }
         case 'deductions':
-          aValue = calculateTotalDeductions(a.raw, koperasiDeductions[a.id] || 0);
-          bValue = calculateTotalDeductions(b.raw, koperasiDeductions[b.id] || 0);
+          aValue = calculateTotalDeductions(a.raw, koperasiDeductions[a.id] || 0, getLoyalisPresenceDeduction(a.id), getLoyalisPresensiDeduction(a.id), koperasiSavings[a.id] || 0);
+          bValue = calculateTotalDeductions(b.raw, koperasiDeductions[b.id] || 0, getLoyalisPresenceDeduction(b.id), getLoyalisPresensiDeduction(b.id), koperasiSavings[b.id] || 0);
           break;
         case 'net': {
           const gapokA = calculateGapok(a, salaryMatrix, targetDate);
           const roleKeyA = payrollCollar === 'loyalis' ? a.role : a.raw.employment?.jobCategory;
           const uraianA = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyA}`]?.entries?.[a.id];
-          const earningsA = calculateTotalEarnings(a.raw, gapokA, uraianA, vakasiTambahanMap[a.id] ?? 0, functionalAllowanceMap[a.id] ?? 0);
-          const deductionsA = calculateTotalDeductions(a.raw, koperasiDeductions[a.id] || 0);
+          const earningsA = calculateTotalEarnings(a.raw, gapokA, uraianA, vakasiTambahanMap[a.id] ?? 0, functionalAllowanceMap[a.id] ?? 0, getLoyalisPresenceBonus(a.id), getLoyalisPresensiEarning(a.id));
+          const deductionsA = calculateTotalDeductions(a.raw, koperasiDeductions[a.id] || 0, getLoyalisPresenceDeduction(a.id), getLoyalisPresensiDeduction(a.id), koperasiSavings[a.id] || 0);
           aValue = calculateNetSalary(earningsA, deductionsA);
 
           const gapokB = calculateGapok(b, salaryMatrix, targetDate);
           const roleKeyB = payrollCollar === 'loyalis' ? b.role : b.raw.employment?.jobCategory;
           const uraianB = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyB}`]?.entries?.[b.id];
-          const earningsB = calculateTotalEarnings(b.raw, gapokB, uraianB, vakasiTambahanMap[b.id] ?? 0, functionalAllowanceMap[b.id] ?? 0);
-          const deductionsB = calculateTotalDeductions(b.raw, koperasiDeductions[b.id] || 0);
+          const earningsB = calculateTotalEarnings(b.raw, gapokB, uraianB, vakasiTambahanMap[b.id] ?? 0, functionalAllowanceMap[b.id] ?? 0, getLoyalisPresenceBonus(b.id), getLoyalisPresensiEarning(b.id));
+          const deductionsB = calculateTotalDeductions(b.raw, koperasiDeductions[b.id] || 0, getLoyalisPresenceDeduction(b.id), getLoyalisPresensiDeduction(b.id), koperasiSavings[b.id] || 0);
           bValue = calculateNetSalary(earningsB, deductionsB);
           break;
         }
@@ -587,7 +661,25 @@ export default function PayrollValidationDashboard() {
   const displayEmployees = getFilteredAndSortedEmployees();
 
   // Get all unique categories for filter
-  const categories = Array.from(new Set(employees.map(emp => emp.role))).sort();
+  const categories = Array.from(new Set(employees.map(emp => emp.role))).sort((a, b) => {
+    const roleOrder = payrollCollar === 'loyalis'
+      ? [
+          'REKTORAT',
+          'FAK. AGAMA ISLAM',
+          'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
+          'FAK. ILMU KESEHATAN',
+          'FAK. SAINS DAN TEKNOLOGI',
+          'PASCASARJANA',
+          'UPT & LEMBAGA'
+        ]
+      : ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI', 'PONTI'];
+    const idxA = roleOrder.indexOf(a);
+    const idxB = roleOrder.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.localeCompare(b);
+  });
 
   useEffect(() => {
     if (!profile || profile.role !== 'super_admin') return;
@@ -613,7 +705,7 @@ export default function PayrollValidationDashboard() {
             const row: EmployeeRow = {
               id: docSnap.id,
               name: isLoyalis ? (data.personal_info?.name || '') : (data.name || ''),
-              role: isLoyalis ? (data.employment_profile?.job_role || '') : (data.employment?.jobCategory || ''),
+              role: isLoyalis ? (data.employment_profile?.department_unit || 'Staf') : (data.employment?.jobCategory || ''),
               gradeLevel: isLoyalis ? (data.academic_and_tier?.level_code || '') : (data.salaryProfile?.salaryGradeCode || ''),
               joinDate: joinDateVal,
               isActive: isLoyalis ? (data.personal_info?.status === 'AKTIF') : (data.flags?.isActive ?? true),
@@ -728,6 +820,15 @@ export default function PayrollValidationDashboard() {
           }
         });
         setSlipStates(persistedStates);
+
+        // 3. Fetch LoyalisPresence document
+        const presenceDocRef = doc(db, 'LoyalisPresence', period);
+        const presenceSnap = await getDoc(presenceDocRef);
+        if (presenceSnap.exists()) {
+          setLoyalisPresenceData(presenceSnap.data());
+        } else {
+          setLoyalisPresenceData(null);
+        }
       } catch (err) {
         console.error('Error fetching period data:', err);
       }
@@ -867,7 +968,7 @@ export default function PayrollValidationDashboard() {
         employeeNo: emp.rowIndex,
         period: payrollPeriod.toUpperCase(),
         jobCategory: isLoyalis
-          ? `STAF ${emp.raw.employment_profile?.job_role || ''}`
+          ? `STAF ${emp.raw.employment_profile?.department_unit || 'STAF'}`
           : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
         earnings: slip.earnings,
         deductions: slip.deductions,
@@ -966,7 +1067,7 @@ export default function PayrollValidationDashboard() {
         employeeNo: emp.rowIndex,
         period: payrollPeriod.toUpperCase(),
         jobCategory: isLoyalis
-          ? `STAF ${emp.raw.employment_profile?.job_role || ''}`
+          ? `STAF ${emp.raw.employment_profile?.department_unit || 'STAF'}`
           : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
         earnings: slip.earnings,
         deductions: slip.deductions,
@@ -1090,7 +1191,7 @@ export default function PayrollValidationDashboard() {
           employeeNo: emp.rowIndex,
           period: payrollPeriod.toUpperCase(),
           jobCategory: isLoyalis
-            ? `STAF ${emp.raw.employment_profile?.job_role || ''}`
+            ? `STAF ${emp.raw.employment_profile?.department_unit || 'STAF'}`
             : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
           earnings: slip.earnings,
           deductions: slip.deductions,
@@ -1179,7 +1280,7 @@ export default function PayrollValidationDashboard() {
         employeeNo: emp.rowIndex,
         period: payrollPeriod.toUpperCase(),
         jobCategory: isLoyalis
-          ? `STAF ${emp.raw.employment_profile?.job_role || ''}`
+          ? `STAF ${emp.raw.employment_profile?.department_unit || 'STAF'}`
           : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
         earnings: slip.earnings,
         deductions: slip.deductions,
@@ -1301,9 +1402,9 @@ export default function PayrollValidationDashboard() {
                 <Users className="w-4 h-4 mr-2" /> Data Pegawai
               </Button>
             </Link>
-            <Link href="/dashboard/payroll/uraian">
+            <Link href={`/dashboard/payroll/uraian?month=${targetDate.getMonth() + 1}&year=${targetDate.getFullYear()}`}>
               <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">
-                <ScanLine className="w-4 h-4 mr-2" /> Rekap Presensi
+                <FileSpreadsheet className="w-4 h-4 mr-2" /> Rekap & Vakasi Tambahan
               </Button>
             </Link>
             <Link href="/dashboard/payroll/simpan-pinjam">
@@ -1586,7 +1687,7 @@ export default function PayrollValidationDashboard() {
                             const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
                             const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
                             const gapokVal = calculateGapok(emp, salaryMatrix, targetDate);
-                            return formatIDR(calculateTotalEarnings(emp.raw, gapokVal, uraian, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0));
+                            return formatIDR(calculateTotalEarnings(emp.raw, gapokVal, uraian, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id)));
                           })()}
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
@@ -1595,7 +1696,7 @@ export default function PayrollValidationDashboard() {
                               const totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
                               return formatIDR(totalDeductions);
                             }
-                            return formatIDR(calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0));
+                            return formatIDR(calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0, getLoyalisPresenceDeduction(emp.id), getLoyalisPresensiDeduction(emp.id), koperasiSavings[emp.id] || 0));
                           })()}
                         </TableCell>
                         <TableCell className="py-4 font-bold text-indigo-700">
@@ -1609,8 +1710,8 @@ export default function PayrollValidationDashboard() {
                             const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
                             const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
                             const gapokVal = calculateGapok(emp, salaryMatrix, targetDate);
-                            const earnings = calculateTotalEarnings(emp.raw, gapokVal, uraian, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0);
-                            const deductions = calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0);
+                            const earnings = calculateTotalEarnings(emp.raw, gapokVal, uraian, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id));
+                            const deductions = calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0, getLoyalisPresenceDeduction(emp.id), getLoyalisPresensiDeduction(emp.id), koperasiSavings[emp.id] || 0);
                             return formatIDR(calculateNetSalary(earnings, deductions));
                           })()}
                         </TableCell>
@@ -1704,6 +1805,11 @@ export default function PayrollValidationDashboard() {
           return uraianDoc?.customColumns ?? undefined;
         })()}
         koperasiDeduction={selectedEmployee ? koperasiDeductions[selectedEmployee.id] || 0 : 0}
+        koperasiSaving={selectedEmployee ? koperasiSavings[selectedEmployee.id] || 0 : 0}
+        presenceBonus={selectedEmployee ? getLoyalisPresenceBonus(selectedEmployee.id) : 0}
+        presenceDeduction={selectedEmployee ? getLoyalisPresenceDeduction(selectedEmployee.id) : 0}
+        presensiEarning={selectedEmployee ? getLoyalisPresensiEarning(selectedEmployee.id) : 0}
+        presensiDeduction={selectedEmployee ? getLoyalisPresensiDeduction(selectedEmployee.id) : 0}
       />
 
       <LegalitasPimpinanDialog
@@ -1719,6 +1825,11 @@ export default function PayrollValidationDashboard() {
         functionalAllowanceMap={functionalAllowanceMap}
         slipStates={slipStates}
         koperasiDeductions={koperasiDeductions}
+        koperasiSavings={koperasiSavings}
+        getLoyalisPresenceBonus={getLoyalisPresenceBonus}
+        getLoyalisPresenceDeduction={getLoyalisPresenceDeduction}
+        getLoyalisPresensiEarning={getLoyalisPresensiEarning}
+        getLoyalisPresensiDeduction={getLoyalisPresensiDeduction}
       />
 
       <CetakPayrollDialog
@@ -1733,6 +1844,12 @@ export default function PayrollValidationDashboard() {
         vakasiTambahanMap={vakasiTambahanMap}
         functionalAllowanceMap={functionalAllowanceMap}
         slipStates={slipStates}
+        koperasiDeductions={koperasiDeductions}
+        koperasiSavings={koperasiSavings}
+        getLoyalisPresenceBonus={getLoyalisPresenceBonus}
+        getLoyalisPresenceDeduction={getLoyalisPresenceDeduction}
+        getLoyalisPresensiEarning={getLoyalisPresensiEarning}
+        getLoyalisPresensiDeduction={getLoyalisPresensiDeduction}
       />
 
       <CetakRekapDialog
@@ -1948,7 +2065,7 @@ export default function PayrollValidationDashboard() {
                   employeeNo: selectedEmployee.rowIndex,
                   period: payrollPeriod.toUpperCase(),
                   jobCategory: isLoyalis
-                    ? `STAF ${selectedEmployee.raw.employment_profile?.job_role || ''}`
+                    ? `STAF ${selectedEmployee.raw.employment_profile?.department_unit || 'STAF'}`
                     : `VAKASI ${selectedEmployee.raw.employment?.jobCategory || ''}`,
                   earnings: slip.earnings,
                   deductions: slip.deductions,

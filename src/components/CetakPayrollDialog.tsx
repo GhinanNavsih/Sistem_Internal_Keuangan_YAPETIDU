@@ -37,6 +37,12 @@ interface CetakPayrollDialogProps {
   vakasiTambahanMap?: Record<string, number>;
   functionalAllowanceMap?: Record<string, number>;
   slipStates?: Record<string, any>;
+  koperasiDeductions?: Record<string, number>;
+  koperasiSavings?: Record<string, number>;
+  getLoyalisPresenceBonus?: (empId: string) => number;
+  getLoyalisPresenceDeduction?: (empId: string) => number;
+  getLoyalisPresensiEarning?: (empId: string) => number;
+  getLoyalisPresensiDeduction?: (empId: string) => number;
 }
 
 export default function CetakPayrollDialog({
@@ -51,12 +57,33 @@ export default function CetakPayrollDialog({
   vakasiTambahanMap,
   functionalAllowanceMap,
   slipStates,
+  koperasiDeductions,
+  koperasiSavings,
+  getLoyalisPresenceBonus,
+  getLoyalisPresenceDeduction,
+  getLoyalisPresensiEarning,
+  getLoyalisPresensiDeduction,
 }: CetakPayrollDialogProps) {
 
   const handleExportXlsx = () => {
     const activeEmployees = employees.filter(e => e.isActive);
     
-    const roleOrder = ['REKTORAT', 'DOSEN', 'TENDIK', 'STAF', 'SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI', 'PONTI'];
+    const roleOrder = [
+      'REKTORAT',
+      'FAK. AGAMA ISLAM',
+      'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
+      'FAK. ILMU KESEHATAN',
+      'FAK. SAINS DAN TEKNOLOGI',
+      'PASCASARJANA',
+      'UPT & LEMBAGA',
+      'SATPAM',
+      'SOPIR',
+      'PEKARYA',
+      'TEKNISI',
+      'KEBERSIHAN_IC',
+      'KEBERSIHAN_PONTI',
+      'PONTI'
+    ];
     const sortedEmployees = [...activeEmployees].sort((a, b) => {
       const roleA = roleOrder.indexOf(a.role) !== -1 ? roleOrder.indexOf(a.role) : 99;
       const roleB = roleOrder.indexOf(b.role) !== -1 ? roleOrder.indexOf(b.role) : 99;
@@ -83,8 +110,14 @@ export default function CetakPayrollDialog({
         totalDeductions = slip.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
         netSalary = earnings - totalDeductions;
       } else {
-        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance);
-        totalDeductions = calculateTotalDeductions(emp.raw);
+        const kopDeduction = koperasiDeductions?.[emp.id] || 0;
+        const kopSaving = koperasiSavings?.[emp.id] || 0;
+        const pBonus = getLoyalisPresenceBonus ? getLoyalisPresenceBonus(emp.id) : 0;
+        const pDeduction = getLoyalisPresenceDeduction ? getLoyalisPresenceDeduction(emp.id) : 0;
+        const presEarning = getLoyalisPresensiEarning ? getLoyalisPresensiEarning(emp.id) : 0;
+        const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
+        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning);
+        totalDeductions = calculateTotalDeductions(emp.raw, kopDeduction, pDeduction, presDeduction, kopSaving);
         netSalary = calculateNetSalary(earnings, totalDeductions);
       }
 

@@ -434,10 +434,14 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     const bonusPresPot = data.deductions.find(d => d.label.toUpperCase() === 'POTONGAN BONUS PRESENSI');
     rightRows.push({ type: 'item', label: '9   POTONGAN BONUS PRESENSI', amount: bonusPresPot ? bonusPresPot.amount : 0 });
 
+    // Simpanan Wajib Koperasi
+    const simpananWajibPot = data.deductions.find(d => d.label.toUpperCase() === 'SIMPANAN WAJIB KOPERASI');
+    rightRows.push({ type: 'item', label: '10  SIMPANAN WAJIB KOPERASI', amount: simpananWajibPot ? simpananWajibPot.amount : 0 });
+
     // Koperasi Rochmad (if actual Rochmad amount is set)
     const rochmadDeduction = data.deductions.find(d => d.label.toUpperCase() === 'KOP. ROCHMAD' || d.label.toUpperCase() === 'KOPERASI ROCHMAD');
     if (rochmadDeduction && rochmadDeduction.amount > 0) {
-      rightRows.push({ type: 'item', label: '10  KOPERASI ROCHMAD', amount: rochmadDeduction.amount });
+      rightRows.push({ type: 'item', label: '11  KOPERASI ROCHMAD', amount: rochmadDeduction.amount });
     }
 
     // ─── Drawing Rows ──────────────────────────────────────────────

@@ -135,6 +135,12 @@ service cloud.firestore {
       allow read, write: if isSuperAdmin() || hasProfile();
     }
 
+    // 5e. Loyalis Presence (Calculated stratum presence inputs for Loyalis)
+    match /LoyalisPresence/{docId} {
+      // Authenticated users with a registered profile can read and write presence calculations
+      allow read, write: if isSuperAdmin() || hasProfile();
+    }
+
     // 6. EmpEditLog (Employee Edit / Change Audit Logs)
     match /EmpEditLog/{docId} {
       // Only Super Admins can view change logs
@@ -194,6 +200,14 @@ service cloud.firestore {
 
       // Only Super Admins can delete reports.
       allow delete: if isSuperAdmin();
+    }
+
+    // 8. Predefined Structural Positions configuration
+    match /JabatanStruktural/{docId} {
+      // Any authenticated user with a profile can read the structural positions list
+      allow read: if isSuperAdmin() || isEmployeeAdmin() || hasProfile();
+      // Only Super Admins can edit or manage the structural positions master data
+      allow write: if isSuperAdmin();
     }
   }
 }

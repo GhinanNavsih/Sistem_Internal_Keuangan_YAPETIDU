@@ -525,7 +525,7 @@ export default function ActivityReviewPage() {
         {/* ── Header ─────────────────────────────────────────────────── */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1.5">
-            <Link href="/dashboard/payroll/uraian">
+            <Link href={`/dashboard/payroll/uraian?month=${month}&year=${year}`}>
               <Button variant="ghost" className="group -ml-2 mb-2 text-slate-500 hover:text-indigo-600 transition-colors">
                 <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
                 Kembali ke Uraian

@@ -1,0 +1,81 @@
+Created At: 2026-06-15T03:33:26Z
+Completed At: 2026-06-15T03:33:27Z
+The following changes were made by the multi_replace_file_content tool to: /Users/ghinannavsih/Documents/Internal-BAK/src/app/dashboard/employees/page.tsx. If relevant, proactively run terminal commands to execute this code for the USER. Don't ask for permission.
+[diff_block_start]
+@@ -54,6 +54,8 @@
+   ClipboardCheck,
+   LogOut,
+   FileText,
++  Building2,
++  Plus,
+ } from 'lucide-react';
+ import * as XLSX from 'xlsx';
+ import {
+@@ -211,6 +211,11 @@
+   const [confirming, setConfirming] = useState(false);
+   const [eduLevels, setEduLevels] = useState<string[]>([]);
+ 
++  // Loyalis Structural Position form states
++  const [newPosName, setNewPosName] = useState('');
++  const [newPosAllowance, setNewPosAllowance] = useState<number | ''>('');
++  const [newPosSatker, setNewPosSatker] = useState('');
++
+   // Redirect if unauthorized
+   useEffect(() => {
+     if (!authLoading && (!user || (profile?.role !== 'super_admin' && profile?.role !== 'employee_admin'))) {
+@@ -256,7 +256,7 @@
+       return {
+         personal_info: { name: '', employee_id_niy: '', tax_id_npwp: '', status: 'AKTIF', phone: '', email: '' },
+         banking_info: { bank_name: 'BSI', account_number: '' },
+-        employment_profile: { job_role: '', department_unit: '', date_of_hire: '', date_recognized: '', date_exit: '' },
++        employment_profile: { job_role: '', department_unit: '', date_of_hire: '', date_recognized: '', date_exit: '', structural_positions: [] },
+         academic_and_tier: { education_level: '', education_code: '', functional_tier: '', level_code: '', base_salary_tier: '' },
+         family_allowance_metrics: { spouse_count: 0, children_sd: 0, children_sltp: 0, children_slta: 0, children_pt: 0 },
+       };
+@@ -328,6 +328,7 @@
+       setFormData({
+         ...emp,
+         employment_profile: {
++          structural_positions: [],
+           ...emp.employment_profile,
+           date_of_hire: formatTimestampForInput(emp.employment_profile?.date_of_hire),
+       
+<truncated 4308 bytes>
+old text-slate-500 uppercase tracking-wider">Tunjangan (Rp)</Label>
++                        <Input
++                          type="number"
++                          placeholder="0"
++                          value={newPosAllowance}
++                          onChange={(e) => setNewPosAllowance(e.target.value !== '' ? Number(e.target.value) : '')}
++                          className="rounded-xl border-slate-200 text-xs h-9 bg-white text-right font-mono"
++                        />
++                      </div>
++                      <Button
++                        type="button"
++                        onClick={() => {
++                          if (!newPosName.trim()) return;
++                          const current = formData.employment_profile?.structural_positions || [];
++                          updateNestedField('employment_profile', 'structural_positions', [
++                            ...current,
++                            {
++                              name: newPosName.trim(),
++                              allowance: Number(newPosAllowance) || 0,
++                              satker: newPosSatker.trim()
++                            }
++                          ]);
++                          setNewPosName('');
++                          setNewPosAllowance('');
++                          setNewPosSatker('');
++                        }}
++                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold h-9 px-4 cursor-pointer shrink-0"
++                      >
++                        <Plus className="w-4 h-4 mr-1.5" /> Tambah
++                      </Button>
++                    </div>
++                  </div>
+                 </div>
+               ) : (
+                 <div className="grid grid-cols-3 gap-6">
+[diff_block_end]
+
+Please note that the above snippet only shows the MODIFIED lines from the last change. It shows up to 3 lines of unchanged lines before and after the modified lines. The actual file contents may have many more lines not shown.

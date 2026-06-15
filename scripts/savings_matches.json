@@ -1,0 +1,579 @@
+{
+  "generatedAt": "2026-06-13T04:09:54.594Z",
+  "summary": {
+    "totalExcelRows": 71,
+    "matched": 71,
+    "unmatched": 0
+  },
+  "matched": [
+    {
+      "excelName": "Abid Datul Mukhoyaroh, S.Sos., M.A.B.",
+      "dbName": "Abid Datul Mukhoyaroh, S.Sos., M.A.B.",
+      "employeeId": "Loyalis_171",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Achmat Rosid",
+      "dbName": "Achmat Rosid",
+      "employeeId": "Loyalis_201",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Afsah Novitasari, S.Si, M.Pd,",
+      "dbName": "Afsah Novitasari, S.Si, M.Pd,",
+      "employeeId": "Loyalis_112",
+      "status": "AKTIF",
+      "amount": 450000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Ana Farida Ulfa, S. Kep., Ners.M.Kep.",
+      "dbName": "Ana Farida Ulfa, S. Kep., Ners.M.Kep.",
+      "employeeId": "Loyalis_052",
+      "status": "AKTIF",
+      "amount": 500000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Ana Rahmawati, M.Pd",
+      "dbName": "Ana Rahmawati, M.Pd",
+      "employeeId": "Loyalis_151",
+      "status": "AKTIF",
+      "amount": 250000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Anisatul Barita,S.Sos",
+      "dbName": "Anisatul Barita,S.Sos",
+      "employeeId": "Loyalis_091",
+      "status": "AKTIF",
+      "amount": 125000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Arifin, S.Ag.M.Pdi",
+      "dbName": "Arifin, S.Ag.M.Pdi",
+      "employeeId": "Loyalis_029",
+      "status": "AKTIF",
+      "amount": 150000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Asna Malini, S. Kom.",
+      "dbName": "Asna Malini, S. Kom.",
+      "employeeId": "Loyalis_023",
+      "status": "AKTIF",
+      "amount": 250000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Binti Qoni'ah, SS, M. Hum",
+      "dbName": "Binti Qoni'ah, SS, M. Hum",
+      "employeeId": "Loyalis_089",
+      "status": "AKTIF",
+      "amount": 250000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Devin Prihar Ninuk, S.Kep Nes",
+      "dbName": "Devin Prihar Ninuk, S.Kep Nes",
+      "employeeId": "Loyalis_167",
+      "status": "AKTIF",
+      "amount": 250000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Dewi Triloka Wulandari, S.ST,M,Tr.Keb",
+      "dbName": "Dewi Triloka Wulandari, S.ST,M,Tr.Keb",
+      "employeeId": "Loyalis_134",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Dhikrul Hakim,M.PdI",
+      "dbName": "Dhikrul Hakim,M.PdI",
+      "employeeId": "Loyalis_104",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Diah Ayu Fatmawati, S.Kep, Ners",
+      "dbName": "Diah Ayu Fatmawati, S.Kep, Ners",
+      "employeeId": "Loyalis_100",
+      "status": "AKTIF",
+      "amount": 250000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Dian Puspitayani, SST.M.Kes.",
+      "dbName": "Dian Puspitayani, SST.M.Kes.",
+      "employeeId": "Loyalis_059",
+      "status": "AKTIF",
+      "amount": 400000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Dr. Hj. Herin Mawarti, S. Kep. Ners, M.Biomed",
+      "dbName": "Dr. Hj. Herin Mawarti, S. Kep. Ners, M.Biomed",
+      "employeeId": "Loyalis_077",
+      "status": "AKTIF",
+      "amount": 1000000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Dr. Hj. Masruroh Hasyim, S.Kep.Ns. M.Kes",
+      "dbName": "Dr. Hj. Masruroh Hasyim, S.Kep.Ns. M.Kes",
+      "employeeId": "Loyalis_053",
+      "status": "AKTIF",
+      "amount": 500000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Dr. Nuning Yudhi Prastyani, SS. M. Hum.",
+      "dbName": "Dr. Nuning Yudhi Prastyani, SS. M. Hum.",
+      "employeeId": "Loyalis_032",
+      "status": "AKTIF",
+      "amount": 600000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Dr. Nur Ulwiyah, M.PdI",
+      "dbName": "Dr. Nur Ulwiyah, M.PdI",
+      "employeeId": "Loyalis_118",
+      "status": "AKTIF",
+      "amount": 500000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "DR. Wiwik Maryati, S.Sos.M.SM",
+      "dbName": "DR. Wiwik Maryati, S.Sos.M.SM",
+      "employeeId": "Loyalis_039",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "DR.dr.H.M. Zulfikar As'ad, MMR",
+      "dbName": "DR.dr.H.M. Zulfikar As'ad, MMR",
+      "employeeId": "Loyalis_003",
+      "status": "AKTIF",
+      "amount": 1000000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Dwi Nur Cahyani, SS",
+      "dbName": "Dwi Nur Cahyani, SS",
+      "employeeId": "Loyalis_036",
+      "status": "AKTIF",
+      "amount": 400000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Eka Nurjanah, M.Pd.",
+      "dbName": "Eka Nurjanah, M.Pd.",
+      "employeeId": "Loyalis_192",
+      "status": "AKTIF",
+      "amount": 450000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Endang Suciati,SS,M.A",
+      "dbName": "Endang Suciati,SS,M.A",
+      "employeeId": "Loyalis_034",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Fenny Vitiasaridessy, S.ST",
+      "dbName": "Fenny Vitiasaridessy, S.ST",
+      "employeeId": "Loyalis_156",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Galuh Tisna Widiana,M. Pd.",
+      "dbName": "Galuh Tisna Widiana,M. Pd.",
+      "employeeId": "Loyalis_189",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "H. Achmad Fanani, SS, M.Pd",
+      "dbName": "H. Achmad Fanani, SS, M.Pd",
+      "employeeId": "Loyalis_035",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Herjanti Nursuksmaningtyas Santoso, S.S, M.Si.",
+      "dbName": "Herjanti Nursuksmaningtyas Santoso, S.S, M.Si.",
+      "employeeId": "Loyalis_239",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Hj. Anggrea Maduratih, S.AB",
+      "dbName": "Anggrea Maduratih, S.AB",
+      "employeeId": "Loyalis_068",
+      "status": "AKTIF",
+      "amount": 400000,
+      "matchType": "normalized"
+    },
+    {
+      "excelName": "Hj. Anna Qomariana, SE, M.Pdi",
+      "dbName": "Hj. Anna Qomariana, SE, M.Pdi",
+      "employeeId": "Loyalis_013",
+      "status": "AKTIF",
+      "amount": 600000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Hj. Kurniawati, S. Kep., Ners.,M.Kep.",
+      "dbName": "Hj. Kurniawati, S. Kep., Ners.,M.Kep.",
+      "employeeId": "Loyalis_051",
+      "status": "AKTIF",
+      "amount": 500000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Hj. Masadah Endang Susilowati, S.AB",
+      "dbName": "Hj. Masadah Endang Susilowati, S.AB",
+      "employeeId": "Loyalis_072",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Hj. Masrikah, S.AB",
+      "dbName": "Hj. Masrikah, S.AB",
+      "employeeId": "Loyalis_067",
+      "status": "AKTIF",
+      "amount": 700000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Hj. Zuliani,S. Kep. Ns. M. Kep.",
+      "dbName": "Zuliani,S. Kep. Ns. M. Kep.",
+      "employeeId": "Loyalis_143",
+      "status": "AKTIF",
+      "amount": 500000,
+      "matchType": "normalized"
+    },
+    {
+      "excelName": "Hosnatul Hasanah, S.Kom",
+      "dbName": "Hosnatul Hasanah, S.Kom",
+      "employeeId": "Loyalis_163",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Hudzaifah, SS",
+      "dbName": "Hudzaifah, SS",
+      "employeeId": "Loyalis_065",
+      "status": "AKTIF",
+      "amount": 400000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Ihwanus Sholihin, M.Pd",
+      "dbName": "Ihwanus Sholihin, M.Pd",
+      "employeeId": "Loyalis_245",
+      "status": "AKTIF",
+      "amount": 100000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Ika Vita Sari, SS",
+      "dbName": "Ika Vita Sari, SS",
+      "employeeId": "Loyalis_139",
+      "status": "AKTIF",
+      "amount": 250000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Indah Mukarromah, S.Kep.Ns.",
+      "dbName": "Indah Mukarromah, S.Kep.Ns.",
+      "employeeId": "Loyalis_064",
+      "status": "AKTIF",
+      "amount": 350000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Indah Sumiyarsih, SE.",
+      "dbName": "Indah Sumiyarsih, SE.",
+      "employeeId": "Loyalis_014",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Ir. Syarif Hidayatulloh",
+      "dbName": "Ir. Syarif Hidayatulloh",
+      "employeeId": "Loyalis_082",
+      "status": "AKTIF",
+      "amount": 100000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Irta Fitriana, SS, M.Hum",
+      "dbName": "Irta Fitriana, SS, M.Hum",
+      "employeeId": "Loyalis_102",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Irva Arina Alawiyah, SE",
+      "dbName": "Irva Arina Alawiyah, SE",
+      "employeeId": "Loyalis_040",
+      "status": "AKTIF",
+      "amount": 400000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Ita Fitria, S. Kom.",
+      "dbName": "Ita Fitria, S. Kom.",
+      "employeeId": "Loyalis_066",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Khamim Mansyur,S.AB",
+      "dbName": "Khamim Mansyur,S.AB",
+      "employeeId": "Loyalis_070",
+      "status": "AKTIF",
+      "amount": 250000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Khoiro Ummah,S.AB",
+      "dbName": "Khoiro Ummah,S.AB",
+      "employeeId": "Loyalis_079",
+      "status": "AKTIF",
+      "amount": 500000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Lilik Maftukhatin, S.Pdi.M.Pdi",
+      "dbName": "Lilik Maftukhatin, S.Pdi.M.Pdi",
+      "employeeId": "Loyalis_026",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Lilik Nur Azizah, SE.",
+      "dbName": "Lilik Nur Azizah, SE.",
+      "employeeId": "Loyalis_015",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Luluk Mahfiyah, SP",
+      "dbName": "Luluk Mahfiyah, SP",
+      "employeeId": "Loyalis_007",
+      "status": "AKTIF",
+      "amount": 150000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Lulus Oktavia Kartika sari, S.Pd",
+      "dbName": "Lulus Oktavia Kartika sari, S.Pd",
+      "employeeId": "Loyalis_030",
+      "status": "AKTIF",
+      "amount": 350000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "M. Qomaruzzaman, S. Sos",
+      "dbName": "M. Qomaruzzaman, S. Sos",
+      "employeeId": "Loyalis_016",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Maisaroh, M.Si",
+      "dbName": "Maisaroh, M.Si",
+      "employeeId": "Loyalis_149",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Muzayyaroh, M.Keb.",
+      "dbName": "Muzayyaroh, M.Keb.",
+      "employeeId": "Loyalis_058",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Nailul Fauziyah, S.Hum.M.Pd",
+      "dbName": "Nailul Fauziyah, S.Hum.M.Pd",
+      "employeeId": "Loyalis_147",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Ninik Azizah, SST.",
+      "dbName": "Ninik Azizah, SST.",
+      "employeeId": "Loyalis_056",
+      "status": "AKTIF",
+      "amount": 500000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Nur Elizah, S.Pd. I",
+      "dbName": "Nur Elizah, S.Pd. I",
+      "employeeId": "Loyalis_087",
+      "status": "AKTIF",
+      "amount": 250000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Nur Mulyawati. S.Sos",
+      "dbName": "Nur Mulyawati. S.Sos",
+      "employeeId": "Loyalis_008",
+      "status": "AKTIF",
+      "amount": 250000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Nurul Lailiyah",
+      "dbName": "Nurul Lailiyah",
+      "employeeId": "Loyalis_178",
+      "status": "AKTIF",
+      "amount": 250000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Purwanti, S.Pd. I",
+      "dbName": "Purwanti, S.Pd. I",
+      "employeeId": "Loyalis_090",
+      "status": "AKTIF",
+      "amount": 350000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Puspa Mia Widiyaningsih, M.Pd.",
+      "dbName": "Puspa Mia Widiyaningsih, M.Pd.",
+      "employeeId": "Loyalis_236",
+      "status": "AKTIF",
+      "amount": 150000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Roikhatur Roisah",
+      "dbName": "Roikhatur Roisah",
+      "employeeId": "Loyalis_152",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Siti Nafiatul Azizah S.S",
+      "dbName": "Siti Nafiatul Azizah S.S",
+      "employeeId": "Loyalis_231",
+      "status": "AKTIF",
+      "amount": 150000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Siti Rofi'ah, A. Md.",
+      "dbName": "Siti Rofi'ah, A. Md.",
+      "employeeId": "Loyalis_080",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Sri Banun Titi Istiqomah, S.S.T",
+      "dbName": "Sri Banun Titi Istiqomah, S.S.T",
+      "employeeId": "Loyalis_148",
+      "status": "AKTIF",
+      "amount": 1000000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Suyati, SST. M. Kes",
+      "dbName": "Suyati, SST. M. Kes",
+      "employeeId": "Loyalis_057",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Tafsillatul Mufida Asriningsih, M. Pd.",
+      "dbName": "Tafsillatul Mufida Asriningsih, M. Pd.",
+      "employeeId": "Loyalis_177",
+      "status": "AKTIF",
+      "amount": 250000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Trikaloka Handayani Putri, SS.M.Pd",
+      "dbName": "Trikaloka Handayani Putri, SS.M.Pd",
+      "employeeId": "Loyalis_033",
+      "status": "AKTIF",
+      "amount": 500000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Vivin Eka Rahmawati, A. Md. Keb.",
+      "dbName": "Vivin Eka Rahmawati, A. Md. Keb.",
+      "employeeId": "Loyalis_127",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Wahyuning Ucik, S.Sos",
+      "dbName": "Wahyuning Ucik, S.Sos",
+      "employeeId": "Loyalis_037",
+      "status": "AKTIF",
+      "amount": 400000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Wiwiek Widiatie, S. Kep. Ners.M.Kes",
+      "dbName": "Wiwiek Widiatie, S. Kep. Ners.M.Kes",
+      "employeeId": "Loyalis_078",
+      "status": "AKTIF",
+      "amount": 200000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Yulia Arofatus Sobah, S.Kom",
+      "dbName": "Yulia Arofatus Sobah, S.Kom",
+      "employeeId": "Loyalis_130",
+      "status": "AKTIF",
+      "amount": 300000,
+      "matchType": "exact"
+    },
+    {
+      "excelName": "Zulfa Khusniyah, S.Kep.Ners.M.Pdi",
+      "dbName": "Zulfa Khusniyah, S.Kep.Ners.M.Pdi",
+      "employeeId": "Loyalis_062",
+      "status": "AKTIF",
+      "amount": 400000,
+      "matchType": "exact"
+    }
+  ],
+  "unmatched": []
+}

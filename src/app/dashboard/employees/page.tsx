@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
@@ -54,6 +54,8 @@ import {
   ClipboardCheck,
   LogOut,
   FileText,
+  Building2,
+  Plus,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -82,8 +84,8 @@ const JOB_ICONS: Record<string, React.ReactNode> = {
 };
 
 const COLLAR_TABS = [
-  { key: 'blue', label: 'Blue Collar', collection: 'Employees_BlueCollar', prefix: 'BC' },
-  { key: 'loyalis', label: 'White Collar (Loyalis)', collection: 'Employees_Loyalis', prefix: 'Loyalis' },
+  { key: 'blue', label: 'Pekarya', collection: 'Employees_BlueCollar', prefix: 'BC' },
+  { key: 'loyalis', label: 'Loyalis', collection: 'Employees_Loyalis', prefix: 'Loyalis' },
 ];
 
 type FormData = any;
@@ -212,6 +214,14 @@ export default function EmployeesPage() {
   const [confirming, setConfirming] = useState(false);
   const [eduLevels, setEduLevels] = useState<string[]>([]);
 
+  // Loyalis Structural Position form states
+  const [newPosName, setNewPosName] = useState('');
+  const [newPosAllowance, setNewPosAllowance] = useState<number | ''>('');
+  const [newPosSatker, setNewPosSatker] = useState('');
+  const [dbPositions, setDbPositions] = useState<{ id: string; name: string; satker: string; allowance: number }[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionRef = useRef<HTMLDivElement>(null);
+
   // Redirect if unauthorized
   useEffect(() => {
     if (!authLoading && (!user || (profile?.role !== 'super_admin' && profile?.role !== 'employee_admin'))) {
@@ -231,7 +241,7 @@ export default function EmployeesPage() {
     }
   }, []);
 
-  // Load unique education levels from functional salary matrix
+  // Load unique education levels from functional salary matrix and fetch JabatanStruktural positions
   useEffect(() => {
     const fetchEduLevels = async () => {
       try {
@@ -248,7 +258,38 @@ export default function EmployeesPage() {
         console.error('Error fetching education levels:', err);
       }
     };
+
+    const fetchDbPositions = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'JabatanStruktural'));
+        const list = snap.docs.map(docSnap => ({
+          id: docSnap.id,
+          name: docSnap.data().name as string,
+          satker: docSnap.data().satker as string,
+          allowance: Number(docSnap.data().allowance) || 0
+        }));
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        setDbPositions(list);
+      } catch (err) {
+        console.error('Error fetching JabatanStruktural:', err);
+      }
+    };
+
     fetchEduLevels();
+    fetchDbPositions();
+  }, []);
+
+  // Handle click outside of structural position suggestions
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (suggestionRef.current && !suggestionRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   const currentTab = COLLAR_TABS.find(t => t.key === activeTab)!;
@@ -258,7 +299,7 @@ export default function EmployeesPage() {
       return {
         personal_info: { name: '', employee_id_niy: '', tax_id_npwp: '', status: 'AKTIF', phone: '', email: '' },
         banking_info: { bank_name: 'BSI', account_number: '' },
-        employment_profile: { job_role: '', department_unit: '', date_of_hire: '', date_recognized: '', date_exit: '' },
+        employment_profile: { job_role: '', department_unit: '', date_of_hire: '', date_recognized: '', date_exit: '', structural_positions: [] },
         academic_and_tier: { education_level: '', education_code: '', functional_tier: '', level_code: '', base_salary_tier: '' },
         family_allowance_metrics: { spouse_count: 0, children_sd: 0, children_sltp: 0, children_slta: 0, children_pt: 0 },
       };
@@ -331,6 +372,7 @@ export default function EmployeesPage() {
       setFormData({
         ...emp,
         employment_profile: {
+          structural_positions: [],
           ...emp.employment_profile,
           date_of_hire: formatTimestampForInput(emp.employment_profile?.date_of_hire),
           date_recognized: formatTimestampForInput(emp.employment_profile?.date_recognized),
@@ -384,6 +426,7 @@ export default function EmployeesPage() {
             date_of_hire: toTimestamp(formData.employment_profile?.date_of_hire || ''),
             date_recognized: toTimestamp(formData.employment_profile?.date_recognized || ''),
             date_exit: toTimestamp(formData.employment_profile?.date_exit || ''),
+            structural_positions: formData.employment_profile?.structural_positions || [],
           },
           academic_and_tier: {
             education_level: formData.academic_and_tier?.education_level || null,
@@ -579,7 +622,7 @@ export default function EmployeesPage() {
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
-    const sheetName = activeTab === 'loyalis' ? 'White Collar Loyalis' : 'Blue Collar';
+    const sheetName = activeTab === 'loyalis' ? 'Loyalis' : 'Pekarya';
     XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
     
     // Auto-fit column widths for premium, beautiful spreadsheet presentation!
@@ -634,15 +677,6 @@ export default function EmployeesPage() {
                 {message.text}
               </div>
             )}
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <Input
-                placeholder="Cari nama, NIK..."
-                className="pl-10 w-64 bg-white border-slate-200 rounded-xl shadow-sm"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-              />
-            </div>
             <Button onClick={handleExportExcel} variant="outline" className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
               <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" /> Export Excel
             </Button>
@@ -667,20 +701,32 @@ export default function EmployeesPage() {
           </div>
         </div>
 
-        {/* Collar type tabs */}
-        <div className="flex gap-2 mb-6">
-          {COLLAR_TABS.map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeTab === tab.key
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100'
-                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        {/* Collar type tabs and Search Box */}
+        <div className="flex items-center gap-4 mb-6">
+          <div className="flex gap-2 shrink-0">
+            {COLLAR_TABS.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeTab === tab.key
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Cari nama, NIK..."
+              className="pl-10 w-full bg-white border-slate-200 rounded-xl shadow-sm"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
         </div>
 
         {/* Stats */}
@@ -789,8 +835,8 @@ export default function EmployeesPage() {
               <DialogTitle className="text-xl font-bold flex items-center gap-2">
                 {editingEmployee ? <Pencil className="w-5 h-5 text-indigo-500" /> : <UserPlus className="w-5 h-5 text-indigo-500" />}
                 {editingEmployee
-                  ? `Edit Data Karyawan (${activeTab === 'loyalis' ? 'White Collar' : 'Blue Collar'})`
-                  : `Tambah Karyawan ${activeTab === 'loyalis' ? 'White Collar (Loyalis)' : 'Blue Collar'}`
+                  ? `Edit Data Karyawan (${activeTab === 'loyalis' ? 'Loyalis' : 'Pekarya'})`
+                  : `Tambah Karyawan ${activeTab === 'loyalis' ? 'Loyalis' : 'Pekarya'}`
                 }
               </DialogTitle>
             </DialogHeader>
@@ -879,6 +925,148 @@ export default function EmployeesPage() {
                       <Badge onClick={() => updateNestedField('personal_info', 'status', formData.personal_info?.status === 'AKTIF' ? 'KELUAR' : 'AKTIF')} className={`cursor-pointer px-4 py-1.5 rounded-xl border-none transition-all ${formData.personal_info?.status === 'AKTIF' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-200 text-slate-600'}`}>
                         {formData.personal_info?.status === 'AKTIF' ? 'Aktif' : 'Non-Aktif / Keluar'}
                       </Badge>
+                    </div>
+                  </div>
+
+                  <div className="col-span-3 pt-4 border-t border-slate-100 space-y-4">
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-indigo-500" />
+                      Tunjangan Jabatan Struktural Tambahan
+                    </h3>
+                    
+                    {/* Existing positions list */}
+                    <div className="space-y-2">
+                      {(() => {
+                        const positions = formData.employment_profile?.structural_positions || [];
+                        const positionsWithIndex = positions.map((pos: any, idx: number) => ({ ...pos, originalIndex: idx }));
+                        const sorted = [...positionsWithIndex].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
+                        return sorted.map((pos: any, posIdx: number) => {
+                          const originalAllowance = Number(pos.allowance) || 0;
+                          const halvedAllowance = posIdx === 0 ? originalAllowance : Math.round(originalAllowance / 2);
+                          
+                          return (
+                            <div key={pos.originalIndex} className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                              <div className="flex-1 font-semibold text-slate-800 text-xs">
+                                {pos.name}
+                              </div>
+                              <div className="w-36 text-xs text-slate-600">{pos.satker}</div>
+                              <div className="w-64 text-right font-bold text-indigo-600 text-xs">
+                                {posIdx === 0 ? (
+                                  <span>Rp {originalAllowance.toLocaleString('id-ID')}</span>
+                                ) : (
+                                  <span className="flex flex-col items-end">
+                                    <span className="text-[10px] text-slate-400 font-normal line-through">Rp {originalAllowance.toLocaleString('id-ID')}</span>
+                                    <span className="flex items-center gap-1.5 mt-0.5">
+                                      <span className="text-[10px] text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-100">Dipotong 50%</span>
+                                      <span>Rp {halvedAllowance.toLocaleString('id-ID')}</span>
+                                    </span>
+                                  </span>
+                                )}
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  updateNestedField('employment_profile', 'structural_positions', positions.filter((_: any, idx: number) => idx !== pos.originalIndex));
+                                }}
+                                className="h-8 w-8 text-slate-400 hover:text-red-500 rounded-lg shrink-0"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          );
+                        });
+                      })()}
+                      {(formData.employment_profile?.structural_positions || []).length === 0 && (
+                        <p className="text-xs text-slate-400 italic">Belum ada tunjangan jabatan struktural tambahan.</p>
+                      )}
+                    </div>
+
+                    {/* Form to add a new position */}
+                    <div className="flex flex-wrap md:flex-nowrap gap-3 items-end bg-slate-50/50 p-4 rounded-[20px] border border-slate-100">
+                      <div className="flex-1 space-y-1.5 min-w-[200px] relative" ref={suggestionRef}>
+                        <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nama Jabatan</Label>
+                        <Input
+                          placeholder="Contoh: Kaprodi Bahasa Inggris"
+                          value={newPosName}
+                          onChange={(e) => {
+                            setNewPosName(e.target.value);
+                            setShowSuggestions(true);
+                          }}
+                          onFocus={() => setShowSuggestions(true)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              setShowSuggestions(false);
+                            }
+                          }}
+                          className="rounded-xl border-slate-200 text-xs h-9 bg-white"
+                        />
+                        {showSuggestions && dbPositions.filter(pos => pos.name.toLowerCase().includes(newPosName.toLowerCase())).length > 0 && (
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto z-[9999]">
+                            {dbPositions
+                              .filter(pos => pos.name.toLowerCase().includes(newPosName.toLowerCase()))
+                              .map((pos) => (
+                                <button
+                                  key={pos.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setNewPosName(pos.name);
+                                    setNewPosSatker(pos.satker);
+                                    setNewPosAllowance(pos.allowance);
+                                    setShowSuggestions(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2.5 text-xs hover:bg-indigo-50/50 hover:text-indigo-600 border-b border-slate-50 last:border-0 flex justify-between items-center transition-colors"
+                                >
+                                  <span className="font-semibold text-slate-700">{pos.name}</span>
+                                  <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 ml-2 shrink-0">
+                                    {pos.satker}
+                                  </span>
+                                </button>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="w-44 space-y-1.5">
+                        <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Satuan Kerja (Satker)</Label>
+                        <Input
+                          placeholder="Contoh: FAK. BISNIS"
+                          value={newPosSatker}
+                          onChange={(e) => setNewPosSatker(e.target.value)}
+                          className="rounded-xl border-slate-200 text-xs h-9 bg-white"
+                        />
+                      </div>
+                      <div className="w-36 space-y-1.5">
+                        <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tunjangan (Rp)</Label>
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          value={newPosAllowance}
+                          onChange={(e) => setNewPosAllowance(e.target.value !== '' ? Number(e.target.value) : '')}
+                          className="rounded-xl border-slate-200 text-xs h-9 bg-white text-right font-mono"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          if (!newPosName.trim()) return;
+                          const current = formData.employment_profile?.structural_positions || [];
+                          updateNestedField('employment_profile', 'structural_positions', [
+                            ...current,
+                            {
+                              name: newPosName.trim(),
+                              allowance: Number(newPosAllowance) || 0,
+                              satker: newPosSatker.trim()
+                            }
+                          ]);
+                          setNewPosName('');
+                          setNewPosAllowance('');
+                          setNewPosSatker('');
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold h-9 px-4 cursor-pointer shrink-0"
+                      >
+                        <Plus className="w-4 h-4 mr-1.5" /> Tambah
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -987,7 +1175,7 @@ export default function EmployeesPage() {
                     <span className="font-bold text-slate-900 text-sm">{edit.name}</span>
                   </div>
                   <Badge variant="outline" className="text-[10px] font-bold uppercase bg-white px-2 py-0.5 border-slate-200">
-                    {edit.tab === 'loyalis' ? 'White Collar' : 'Blue Collar'}
+                    {edit.tab === 'loyalis' ? 'Loyalis' : 'Pekarya'}
                   </Badge>
                 </div>
                 

@@ -2,6 +2,24 @@ import { BlueCollarEmployee, UraianEntry } from '@/types';
 import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
 
 /**
+ * Calculates the total structural allowance based on the descending-halving rules.
+ */
+export function calculateStructuralAllowance(positions: any[]): number {
+  if (!positions || positions.length === 0) return 0;
+  const sorted = [...positions].sort((a, b) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
+  let total = 0;
+  sorted.forEach((pos, idx) => {
+    const amt = Number(pos.allowance) || 0;
+    if (idx === 0) {
+      total += amt;
+    } else {
+      total += Math.round(amt / 2);
+    }
+  });
+  return total;
+}
+
+/**
  * Calculates the total earnings for a blue collar employee.
  * Includes Gapok, Uraian components, BPJS allowance, and Tunjangan Beras.
  */
@@ -10,7 +28,9 @@ export function calculateTotalEarnings(
   gapok: number,
   uraian?: UraianEntry,
   vakasiTambahanSum?: number,
-  tunjanganFungsional?: number
+  tunjanganFungsional?: number,
+  presenceBonus = 0,
+  presensiEarning = 0
 ): number {
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
     // White Collar / Loyalis calculations
@@ -30,15 +50,32 @@ export function calculateTotalEarnings(
     const tunjKeluarga = Math.round(gapok * familyPct);
     total += tunjKeluarga;
 
+    // T. Hari Tua (10% of Gaji Pokok)
+    total += Math.round(gapok * 0.1);
+
     // Tunjangan Jabatan (Kofu) - use passed tunjanganFungsional or fallback
     const fAllowance = tunjanganFungsional !== undefined 
       ? tunjanganFungsional 
       : (Number(emp.academic_and_tier?.functional_tier) || 0);
     total += fAllowance;
 
+    // Tunjangan Struktural
+    const structuralAllowance = calculateStructuralAllowance(emp.employment_profile?.structural_positions || []);
+    total += structuralAllowance;
+
     // Vakasi Tambahan (Loyalis)
     if (vakasiTambahanSum) {
       total += vakasiTambahanSum;
+    }
+
+    // Dynamic presence bonus
+    if (presenceBonus) {
+      total += presenceBonus;
+    }
+
+    // Dynamic presensi earning
+    if (presensiEarning) {
+      total += presensiEarning;
     }
 
     // BPJS & Beras Allowances (Loyalis)
@@ -101,11 +138,18 @@ export function calculateTotalEarnings(
  * Calculates the total deductions for a blue collar employee.
  * Includes BPJS deductions and Koperasi Rochmad.
  */
-export function calculateTotalDeductions(emp: any, koperasiDeduction = 0): number {
+export function calculateTotalDeductions(
+  emp: any,
+  koperasiDeduction = 0,
+  presenceDeduction = 0,
+  presensiDeduction = 0,
+  koperasiSaving = 0
+): number {
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
-    // White Collar / Loyalis deductions: include BPJS deduction
+    // White Collar / Loyalis deductions: include BPJS deduction, Savings deduction, presence deduction, presensi deduction, and koperasi saving
     const bpjsDeduction = emp.bpjs?.deductionAmount || 0;
-    return koperasiDeduction + bpjsDeduction;
+    const savingsDeduction = emp.savings?.deductionAmount || 0;
+    return koperasiDeduction + bpjsDeduction + savingsDeduction + presenceDeduction + presensiDeduction + koperasiSaving;
   }
 
   let total = 0;
@@ -119,6 +163,7 @@ export function calculateTotalDeductions(emp: any, koperasiDeduction = 0): numbe
   }
 
   total += koperasiDeduction;
+  total += koperasiSaving;
   
   return total;
 }
@@ -129,4 +174,3 @@ export function calculateTotalDeductions(emp: any, koperasiDeduction = 0): numbe
 export function calculateNetSalary(earnings: number, deductions: number): number {
   return earnings - deductions;
 }
-

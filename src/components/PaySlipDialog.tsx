@@ -62,6 +62,11 @@ interface PaySlipDialogProps {
   tunjanganFungsional?: number;
   customColumns?: RekapColumn[];
   koperasiDeduction?: number;
+  presenceBonus?: number;
+  presenceDeduction?: number;
+  presensiEarning?: number;
+  presensiDeduction?: number;
+  koperasiSaving?: number;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -75,6 +80,16 @@ const formatIDR = (amount: number) => {
   }).format(amount);
 };
 
+const formatNumberWithDots = (num: number): string => {
+  if (num === 0) return '';
+  return new Intl.NumberFormat('id-ID').format(num);
+};
+
+const parseDotsToNumber = (val: string): number => {
+  const clean = val.replace(/\./g, '').replace(/[^0-9]/g, '');
+  return Number(clean) || 0;
+};
+
 /**
  * Build initial earnings rows from whatever we know about the employee.
  */
@@ -86,7 +101,9 @@ function buildInitialEarnings(
   vakasiTambahanSum?: number,
   vakasiTambahanList?: { eventName: string; payGiven: number }[],
   tunjanganFungsional?: number,
-  customColumns?: RekapColumn[]
+  customColumns?: RekapColumn[],
+  presenceBonus = 0,
+  presensiEarning = 0
 ): PaySlipField[] {
   const earnings: PaySlipField[] = [];
 
@@ -128,10 +145,10 @@ function buildInitialEarnings(
     earnings.push({ label: 'Beras', amount: tunjBeras });
 
     // Presensi
-    earnings.push({ label: 'Presensi', amount: 0 });
+    earnings.push({ label: 'Presensi', amount: presensiEarning });
 
     // Bonus Presensi
-    earnings.push({ label: 'Bonus Presensi', amount: 0 });
+    earnings.push({ label: 'Bonus Presensi', amount: presenceBonus });
 
     // Piket
     earnings.push({ label: 'Piket', amount: 0 });
@@ -140,8 +157,25 @@ function buildInitialEarnings(
     earnings.push({ label: 'Lembur', amount: 0 });
 
     // Struktural
-    const structuralRole = emp.employment_profile?.department_unit || emp.employment_profile?.job_role || 'Struktural';
-    earnings.push({ label: `Struktural: ${structuralRole}`, amount: 0 });
+    const positions = emp.employment_profile?.structural_positions || [];
+    if (positions.length > 0) {
+      const sorted = [...positions].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
+      sorted.forEach((pos, idx) => {
+        const amt = Number(pos.allowance) || 0;
+        if (idx === 0) {
+          earnings.push({ label: `Struktural: ${pos.name}`, amount: amt });
+        } else {
+          const adjustedAmt = Math.round(amt / 2);
+          earnings.push({
+            label: `Struktural: ${pos.name} (50% dari Rp ${amt.toLocaleString('id-ID')})`,
+            amount: adjustedAmt,
+          });
+        }
+      });
+    } else {
+      const structuralRole = emp.employment_profile?.department_unit || emp.employment_profile?.job_role || 'Struktural';
+      earnings.push({ label: `Struktural: ${structuralRole}`, amount: 0 });
+    }
 
     // Vakasi Tambahan - show each event worked
     if (vakasiTambahanList && vakasiTambahanList.length > 0) {
@@ -201,7 +235,14 @@ function buildInitialEarnings(
 /**
  * Build initial deductions rows from whatever we know about the employee.
  */
-function buildInitialDeductions(emp: any, activeTab?: string, koperasiDeduction = 0): PaySlipField[] {
+function buildInitialDeductions(
+  emp: any,
+  activeTab?: string,
+  koperasiDeduction = 0,
+  presenceDeduction = 0,
+  presensiDeduction = 0,
+  koperasiSaving = 0
+): PaySlipField[] {
   const deductions: PaySlipField[] = [];
 
   if (activeTab === 'loyalis') {
@@ -214,8 +255,9 @@ function buildInitialDeductions(emp: any, activeTab?: string, koperasiDeduction 
     deductions.push({ label: 'Revisi Gaji', amount: 0 });
     deductions.push({ label: 'Pinlu/Tagihan', amount: 0 });
     deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
-    deductions.push({ label: 'Potongan Presensi', amount: 0 });
-    deductions.push({ label: 'Potongan Bonus Presensi', amount: 0 });
+    deductions.push({ label: 'Potongan Presensi', amount: presensiDeduction });
+    deductions.push({ label: 'Potongan Bonus Presensi', amount: presenceDeduction });
+    deductions.push({ label: 'Simpanan Wajib Koperasi', amount: koperasiSaving });
   } else {
     // BPJS deduction
     if (emp.bpjs?.deductionAmount) {
@@ -229,6 +271,9 @@ function buildInitialDeductions(emp: any, activeTab?: string, koperasiDeduction 
 
     // Koperasi Unipdu from sample
     deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
+
+    // Simpanan Wajib Koperasi
+    deductions.push({ label: 'Simpanan Wajib Koperasi', amount: koperasiSaving });
   }
 
   return deductions;
@@ -254,6 +299,11 @@ export default function PaySlipDialog({
   tunjanganFungsional,
   customColumns,
   koperasiDeduction = 0,
+  presenceBonus = 0,
+  presenceDeduction = 0,
+  presensiEarning = 0,
+  presensiDeduction = 0,
+  koperasiSaving = 0,
 }: PaySlipDialogProps) {
   const [earnings, setEarnings] = useState<PaySlipField[]>([]);
   const [deductions, setDeductions] = useState<PaySlipField[]>([]);
@@ -263,13 +313,49 @@ export default function PaySlipDialog({
     if (!open || !employee) return;
 
     if (mode === 'create') {
-      setEarnings(buildInitialEarnings(employee, gapok, activeTab, uraianEntry, vakasiTambahanSum, vakasiTambahanList, tunjanganFungsional, customColumns));
-      setDeductions(buildInitialDeductions(employee, activeTab, koperasiDeduction));
+      setEarnings(buildInitialEarnings(
+        employee,
+        gapok,
+        activeTab,
+        uraianEntry,
+        vakasiTambahanSum,
+        vakasiTambahanList,
+        tunjanganFungsional,
+        customColumns,
+        presenceBonus,
+        presensiEarning
+      ));
+      setDeductions(buildInitialDeductions(
+        employee,
+        activeTab,
+        koperasiDeduction,
+        presenceDeduction,
+        presensiDeduction,
+        koperasiSaving
+      ));
     } else if (mode === 'review' && slipState) {
       setEarnings([...slipState.earnings]);
       setDeductions([...slipState.deductions]);
     }
-  }, [open, employee, mode, gapok, slipState, activeTab, vakasiTambahanSum, vakasiTambahanList, uraianEntry, tunjanganFungsional, customColumns, koperasiDeduction]);
+  }, [
+    open,
+    employee,
+    mode,
+    gapok,
+    slipState,
+    activeTab,
+    vakasiTambahanSum,
+    vakasiTambahanList,
+    uraianEntry,
+    tunjanganFungsional,
+    customColumns,
+    koperasiDeduction,
+    presenceBonus,
+    presensiEarning,
+    presenceDeduction,
+    presensiDeduction,
+    koperasiSaving
+  ]);
 
   // ─── Field Mutators ───────────────────────────────────────────
 
@@ -403,13 +489,16 @@ export default function PaySlipDialog({
                       placeholder="Nama"
                       className="flex-1 text-sm h-8 rounded-lg bg-slate-50 border-slate-200 focus-visible:border-emerald-400 focus-visible:ring-emerald-200"
                     />
-                    <Input
-                      type="number"
-                      value={item.amount || ''}
-                      onChange={(e) => updateField('earnings', idx, 'amount', (e.target as HTMLInputElement).value)}
-                      placeholder="0"
-                      className="w-28 text-sm h-8 rounded-lg bg-slate-50 border-slate-200 text-right tabular-nums focus-visible:border-emerald-400 focus-visible:ring-emerald-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
+                    <div className="flex items-center w-32 h-8 rounded-lg bg-slate-50 border border-slate-200 px-2 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all shrink-0">
+                      <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                      <input
+                        type="text"
+                        value={item.amount ? formatNumberWithDots(item.amount) : ''}
+                        onChange={(e) => updateField('earnings', idx, 'amount', String(parseDotsToNumber(e.target.value)))}
+                        placeholder="0"
+                        className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums"
+                      />
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"
@@ -457,13 +546,16 @@ export default function PaySlipDialog({
                       placeholder="Nama"
                       className="flex-1 text-sm h-8 rounded-lg bg-slate-50 border-slate-200 focus-visible:border-red-400 focus-visible:ring-red-200"
                     />
-                    <Input
-                      type="number"
-                      value={item.amount || ''}
-                      onChange={(e) => updateField('deductions', idx, 'amount', (e.target as HTMLInputElement).value)}
-                      placeholder="0"
-                      className="w-28 text-sm h-8 rounded-lg bg-slate-50 border-slate-200 text-right tabular-nums focus-visible:border-red-400 focus-visible:ring-red-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
+                    <div className="flex items-center w-32 h-8 rounded-lg bg-slate-50 border border-slate-200 px-2 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all shrink-0">
+                      <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                      <input
+                        type="text"
+                        value={item.amount ? formatNumberWithDots(item.amount) : ''}
+                        onChange={(e) => updateField('deductions', idx, 'amount', String(parseDotsToNumber(e.target.value)))}
+                        placeholder="0"
+                        className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums"
+                      />
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"

@@ -26,13 +26,15 @@ import {
   ArrowLeft, Upload, ScanLine, Loader2, CheckCircle2,
   FileText, AlertCircle, ImageIcon, Trash2, Eye, RotateCw, Sparkles, X,
   Crop, Building2, Code2, Database, ShieldCheck, Hash, Banknote, LogOut,
-  FileDown, Plus, Calendar, ClipboardCheck,
+  FileDown, Plus, Calendar, ClipboardCheck, FileSpreadsheet,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
   collection, getDocs, doc, setDoc, getDoc, serverTimestamp, query, where, deleteDoc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import * as XLSX from 'xlsx';
+import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import {
   REKAP_COLUMNS, SUPPORTED_CATEGORIES, MONTHS_ID,
 } from '@/utils/rekapConfig';
@@ -56,6 +58,26 @@ export default function UraianPage() {
   // ── Filters & UI State ────────────────────────────────────────────────────
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const queryMonth = params.get('month');
+      const queryYear = params.get('year');
+      if (queryMonth) {
+        const parsedM = parseInt(queryMonth, 10);
+        if (!isNaN(parsedM) && parsedM >= 1 && parsedM <= 12) {
+          setMonth(parsedM);
+        }
+      }
+      if (queryYear) {
+        const parsedY = parseInt(queryYear, 10);
+        if (!isNaN(parsedY) && parsedY >= 2000 && parsedY <= 2100) {
+          setYear(parsedY);
+        }
+      }
+    }
+  }, []);
   const [category, setCategory] = useState<string>("");
   const [dynamicCategories, setDynamicCategories] = useState<string[]>(SUPPORTED_CATEGORIES);
 
@@ -99,6 +121,15 @@ export default function UraianPage() {
   const [existingEvents, setExistingEvents] = useState<any[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number>(0);
+
+  // ── Loyalis Presence Calculator States ──
+  const [uploadedData, setUploadedData] = useState<any[] | null>(null);
+  const [calcMode, setCalcMode] = useState<'worked' | 'absent'>('worked');
+  const [workingDays, setWorkingDays] = useState<number>(25);
+  const [expectedHours, setExpectedHours] = useState<number>(6.5);
+  const [savingPresence, setSavingPresence] = useState(false);
+  const [existingPresence, setExistingPresence] = useState<any>(null);
+  const [loadingPresence, setLoadingPresence] = useState(false);
 
   // Form States
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -222,6 +253,33 @@ export default function UraianPage() {
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
+
+  // ── Fetch Existing Loyalis Presence Data ──
+  const fetchExistingPresence = useCallback(async () => {
+    setLoadingPresence(true);
+    try {
+      const periodToken = `${year}_${String(month).padStart(2, '0')}`;
+      const docRef = doc(db, 'LoyalisPresence', periodToken);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setExistingPresence(data);
+        if (data.mode) setCalcMode(data.mode);
+        if (data.workingDays) setWorkingDays(data.workingDays);
+        if (data.expectedHours) setExpectedHours(data.expectedHours);
+      } else {
+        setExistingPresence(null);
+      }
+    } catch (err) {
+      console.error('Error fetching existing presence:', err);
+    } finally {
+      setLoadingPresence(false);
+    }
+  }, [month, year]);
+
+  useEffect(() => {
+    fetchExistingPresence();
+  }, [fetchExistingPresence]);
 
   // ── Fetch Kegiatan SPJ Events ──
   const fetchSpjEvents = useCallback(async () => {
@@ -586,6 +644,301 @@ export default function UraianPage() {
       fetchSpjEvents();
     } catch (err) {
       console.error('SPJ Autosave error:', err);
+    }
+  };
+
+  // ── Presence Calculator Helper functions ──
+  
+  const matchExcelName = useCallback((excelName: string, employees: any[]) => {
+    if (!excelName) return null;
+    const cleanExcel = normalizeName(excelName);
+    
+    // 1. Direct match on normalized name
+    let found = employees.find(emp => normalizeName(emp.name) === cleanExcel);
+    if (found) return found;
+    
+    // 2. Manual overrides check
+    const overridden = MANUAL_OVERRIDES[excelName.trim()];
+    if (overridden) {
+      const cleanOverridden = normalizeName(overridden);
+      found = employees.find(emp => normalizeName(emp.name) === cleanOverridden);
+      if (found) return found;
+    }
+    
+    // 3. Containment match (fallback)
+    found = employees.find(emp => {
+      const dbNorm = normalizeName(emp.name);
+      return dbNorm.includes(cleanExcel) || cleanExcel.includes(dbNorm);
+    });
+    
+    return found || null;
+  }, []);
+
+  const calculatePresenceStratum = useCallback((
+    minutes: number,
+    mode: 'worked' | 'absent',
+    days: number,
+    hours: number
+  ) => {
+    const expectedTotal = days * hours * 60;
+    let x = 0;
+    if (mode === 'worked') {
+      x = expectedTotal - minutes;
+      if (x < 0) x = 0;
+    } else {
+      x = minutes;
+    }
+
+    let stratum = 5;
+    let deduction = 250000;
+    let netBonus = 0;
+
+    if (x === 0) {
+      stratum = 1;
+      deduction = 0;
+      netBonus = 250000;
+    } else if (x <= days * 30) {
+      stratum = 2;
+      deduction = 100000;
+      netBonus = 150000;
+    } else if (x <= days * 35) {
+      stratum = 3;
+      deduction = 150000;
+      netBonus = 100000;
+    } else if (x <= days * 40) {
+      stratum = 4;
+      deduction = 200000;
+      netBonus = 50000;
+    } else {
+      stratum = 5;
+      deduction = 250000;
+      netBonus = 0;
+    }
+
+    return {
+      absenceMinutes: x,
+      stratum,
+      deduction,
+      netBonus,
+    };
+  }, []);
+
+  const displayRows = useMemo(() => {
+    if (uploadedData) {
+      const matchedIds = new Set(uploadedData.map(r => r.employeeId).filter(Boolean));
+      const uploadedRows = uploadedData.map((row, idx) => {
+        const calc = calculatePresenceStratum(row.minutes, calcMode, workingDays, expectedHours);
+        return {
+          idx,
+          excelName: row.excelName,
+          employeeId: row.employeeId,
+          employeeName: row.employeeName,
+          minutes: row.minutes,
+          absenceMinutes: calc.absenceMinutes,
+          stratum: calc.stratum,
+          deduction: calc.deduction,
+          netBonus: calc.netBonus,
+          isMatched: !!row.employeeId,
+          isNotFoundInExcel: false,
+        };
+      });
+
+      const unmatchedEmployees = loyalisEmployees.filter(emp => !matchedIds.has(emp.id));
+      const unmatchedRows = unmatchedEmployees.map((emp, uidx) => {
+        return {
+          idx: uploadedRows.length + uidx,
+          excelName: '-',
+          employeeId: emp.id,
+          employeeName: emp.name,
+          minutes: 0,
+          absenceMinutes: 0,
+          stratum: 5,
+          deduction: 0,
+          netBonus: 0,
+          isMatched: true,
+          isNotFoundInExcel: true,
+        };
+      });
+
+      return [...uploadedRows, ...unmatchedRows];
+    }
+    if (existingPresence && existingPresence.entries) {
+      return Object.values(existingPresence.entries).map((entry: any, idx) => {
+        return {
+          idx,
+          excelName: entry.excelName,
+          employeeId: entry.employeeId,
+          employeeName: entry.employeeName,
+          minutes: entry.minutes,
+          absenceMinutes: entry.absenceMinutes,
+          stratum: entry.stratum,
+          deduction: entry.deduction,
+          netBonus: entry.netBonus,
+          isMatched: true,
+          isNotFoundInExcel: !!entry.isNotFoundInExcel,
+        };
+      }).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+    }
+    return null;
+  }, [uploadedData, loyalisEmployees, existingPresence, calcMode, workingDays, expectedHours, calculatePresenceStratum]);
+
+  const handleExcelUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = evt.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+        if (rows.length === 0) {
+          setMessage({ type: 'error', text: 'File Excel kosong.' });
+          return;
+        }
+
+        // Auto-detect Name and Minutes columns
+        let nameColIndex = 0;
+        let minColIndex = 1;
+
+        for (let r = 0; r < Math.min(rows.length, 10); r++) {
+          const row = rows[r];
+          if (!row) continue;
+          const nameIdx = row.findIndex(cell => typeof cell === 'string' && cell.trim().length > 2 && isNaN(Number(cell)));
+          const valIdx = row.findIndex(cell => typeof cell === 'number' || (typeof cell === 'string' && !isNaN(Number(cell.trim())) && cell.trim() !== ''));
+          if (nameIdx !== -1 && valIdx !== -1 && nameIdx !== valIdx) {
+            nameColIndex = nameIdx;
+            minColIndex = valIdx;
+            break;
+          }
+        }
+
+        const parsedData: any[] = [];
+        rows.forEach((row) => {
+          if (!row) return;
+          const nameVal = row[nameColIndex];
+          const minVal = row[minColIndex];
+
+          if (!nameVal) return;
+          const nameStr = String(nameVal).trim();
+
+          // Skip header row if it is a known header title (matches from the start)
+          const lowerName = nameStr.toLowerCase();
+          if (
+            /^(nama|staff|employee|total|rekap)/i.test(lowerName) ||
+            lowerName === 'nama/nik' ||
+            lowerName === 'nama / nik'
+          ) {
+            return;
+          }
+
+          const minutes = Number(minVal) || 0;
+          const match = matchExcelName(nameStr, loyalisEmployees);
+
+          parsedData.push({
+            excelName: nameStr,
+            employeeId: match?.id || null,
+            employeeName: match?.name || null,
+            minutes,
+          });
+        });
+
+        if (parsedData.length === 0) {
+          setMessage({ type: 'error', text: 'Tidak ada data pegawai yang dapat diproses di Excel ini.' });
+          return;
+        }
+
+        setUploadedData(parsedData);
+        setMessage({ type: 'success', text: `Berhasil mengunggah ${parsedData.length} baris data.` });
+      } catch (err) {
+        console.error(err);
+        setMessage({ type: 'error', text: 'Gagal membaca file Excel. Pastikan format benar.' });
+      }
+    };
+    reader.readAsBinaryString(file);
+  }, [loyalisEmployees, matchExcelName]);
+
+  const handleSavePresence = async () => {
+    if (!uploadedData || uploadedData.length === 0) return;
+
+    setSavingPresence(true);
+    try {
+      const periodToken = `${year}_${String(month).padStart(2, '0')}`;
+      const entriesMap: Record<string, any> = {};
+
+      // 1. Process matched employees from Excel
+      uploadedData.forEach(row => {
+        if (!row.employeeId) return;
+        
+        const calc = calculatePresenceStratum(row.minutes, calcMode, workingDays, expectedHours);
+        entriesMap[row.employeeId] = {
+          employeeId: row.employeeId,
+          employeeName: row.employeeName,
+          excelName: row.excelName,
+          minutes: row.minutes,
+          absenceMinutes: calc.absenceMinutes,
+          stratum: calc.stratum,
+          deduction: calc.deduction,
+          netBonus: calc.netBonus,
+          isNotFoundInExcel: false,
+        };
+      });
+
+      // 2. Process unmatched active Loyalis employees
+      const matchedIds = new Set(uploadedData.map(r => r.employeeId).filter(Boolean));
+      loyalisEmployees.forEach(emp => {
+        if (!matchedIds.has(emp.id)) {
+          entriesMap[emp.id] = {
+            employeeId: emp.id,
+            employeeName: emp.name,
+            excelName: '-',
+            minutes: 0,
+            absenceMinutes: 0,
+            stratum: 5,
+            deduction: 0,
+            netBonus: 0,
+            isNotFoundInExcel: true,
+          };
+        }
+      });
+
+      const payload = {
+        period: periodToken,
+        workingDays,
+        expectedHours,
+        mode: calcMode,
+        entries: entriesMap,
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, 'LoyalisPresence', periodToken), payload);
+      setMessage({ type: 'success', text: 'Data bonus presensi berhasil disimpan.' });
+      setUploadedData(null);
+      fetchExistingPresence();
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: 'Gagal menyimpan data presensi.' });
+    } finally {
+      setSavingPresence(false);
+    }
+  };
+
+  const handleDeletePresence = async () => {
+    if (!confirm('Apakah Anda yakin ingin menghapus data presensi periode ini?')) return;
+    setSavingPresence(true);
+    try {
+      const periodToken = `${year}_${String(month).padStart(2, '0')}`;
+      await deleteDoc(doc(db, 'LoyalisPresence', periodToken));
+      setMessage({ type: 'success', text: 'Data presensi berhasil dihapus.' });
+      setExistingPresence(null);
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: 'Gagal menghapus data presensi.' });
+    } finally {
+      setSavingPresence(false);
     }
   };
 
@@ -1546,7 +1899,8 @@ export default function UraianPage() {
           </div>
         ) : activeTab === 'vakasi_loyalis' ? (
           /* Tab 2: Vakasi Tambahan (Loyalis) UI */
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+          <div className="space-y-8 animate-in fade-in duration-500">
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
             {/* Left side list of existing events */}
             <div className="xl:col-span-4 space-y-6">
               <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
@@ -1969,7 +2323,201 @@ export default function UraianPage() {
               </div>
             </Card>
           </div>
-        ) : (
+
+          {/* Loyalis Presence Calculator Section */}
+          <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
+            <div className="flex justify-between items-center border-b border-slate-50 pb-4">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+                  Kalkulator Bonus Presensi Loyalis via Excel
+                </h3>
+                <p className="text-slate-400 text-xs mt-0.5">Unggah data rekap kehadiran bulanan untuk menghitung strata dan bonus presensi.</p>
+              </div>
+              {existingPresence && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDeletePresence}
+                  disabled={savingPresence}
+                  className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Hapus Data
+                </Button>
+              )}
+            </div>
+
+            {/* Status Indicator */}
+            {existingPresence && !uploadedData && (
+              <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-emerald-800 text-xs font-bold">Data Presensi Telah Disimpan</h4>
+                  <p className="text-emerald-600/90 text-[11px] mt-0.5 leading-relaxed">
+                    Periode ini ({MONTHS_ID[month - 1]} {year}) sudah memiliki data presensi dengan {Object.keys(existingPresence.entries || {}).length} pegawai terdaftar. 
+                    Jika ingin memperbarui data, silakan hapus data saat ini terlebih dahulu.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-4 text-[10px] text-emerald-700 font-bold bg-white/50 px-3 py-1.5 rounded-xl border border-emerald-100/50 w-fit">
+                    <span>Hari Kerja: {existingPresence.workingDays || 25} hari</span>
+                    <span>Target: 390 menit/hari</span>
+                    <span>Mode Input: {existingPresence.mode === 'worked' ? 'Menit Kerja' : 'Menit Absen'}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Settings and File Upload Input */}
+            {!existingPresence && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+                {/* 1. Working Days */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jumlah Hari Kerja (n)</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={workingDays}
+                    onChange={(e) => setWorkingDays(Math.max(1, parseInt(e.target.value) || 0))}
+                    className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
+                  />
+                </div>
+
+                {/* 2. File Upload */}
+                <div className="relative">
+                  <Input
+                    type="file"
+                    accept=".xlsx, .xls"
+                    id="presence-excel-file"
+                    onChange={handleExcelUpload}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => document.getElementById('presence-excel-file')?.click()}
+                    className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold h-10 flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Upload className="w-4 h-4 text-slate-400" />
+                    Pilih File Excel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Review Table */}
+            {displayRows && (
+              <div className="space-y-4 pt-4 border-t border-slate-100 animate-in fade-in">
+                <div className="flex flex-wrap justify-between items-center gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      {uploadedData ? 'Preview Hasil Perhitungan Strata' : 'Data Perhitungan Strata Tersimpan'}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <span className="text-[10px] bg-slate-50 text-slate-600 border border-slate-200/60 px-2 py-0.5 rounded-full font-semibold">
+                        Total Menit Kerja Kehadiran Penuh: {(workingDays * expectedHours * 60).toLocaleString('id-ID')} menit
+                      </span>
+                      <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-full font-semibold">
+                        Gaji Standar Presensi: {fmtRp(workingDays * expectedHours * 1650)}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-semibold">
+                    Total Data: {displayRows.length} baris ({displayRows.filter(r => r.employeeId).length} Terhubung)
+                  </span>
+                </div>
+
+                <div className="border border-slate-100 rounded-2xl overflow-auto shadow-sm max-h-[800px] bg-white">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="sticky top-0 bg-slate-50 z-10 shadow-[0_1px_0_0_rgba(241,245,249,1)]">
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">NO</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase">NAMA EXCEL</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase">PEGAWAI TERHUBUNG</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-center">MENIT KERJA EXCEL</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-center">ABSEN (MENIT)</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-24 text-center">STRATA</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-right">POT. BONUS</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-right">NET BONUS</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-36 text-right">POT. PRESENSI</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayRows.map((row, idx) => {
+                        return (
+                          <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                            <td className="px-4 py-3 text-xs text-slate-400 text-center font-mono">{idx + 1}</td>
+                            <td className="px-4 py-3 text-xs font-bold text-slate-700">{row.excelName}</td>
+                            <td className="px-4 py-3 text-xs">
+                              {row.isMatched ? (
+                                <div>
+                                  <p className="font-bold text-indigo-600">{row.employeeName}</p>
+                                  <p className="text-[10px] text-slate-400 font-mono">ID: {row.employeeId}</p>
+                                </div>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-rose-500 bg-rose-50 border border-rose-100 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                  <AlertCircle className="w-3 h-3" />
+                                  Tidak cocok
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-xs font-bold text-slate-600 text-center font-mono">{row.minutes}</td>
+                            <td className="px-4 py-3 text-xs text-slate-600 text-center font-mono">{row.isMatched && !row.isNotFoundInExcel ? row.absenceMinutes : 0}</td>
+                            <td className="px-4 py-3 text-center">
+                              {row.isMatched && !row.isNotFoundInExcel ? (
+                                <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  row.stratum === 1 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                  row.stratum === 2 ? 'bg-blue-50 text-blue-600 border border-blue-100' :
+                                  row.stratum === 3 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                                  row.stratum === 4 ? 'bg-orange-50 text-orange-600 border border-orange-100' :
+                                  'bg-rose-50 text-rose-600 border border-rose-100'
+                                }`}>
+                                  Strata {row.stratum}
+                                </span>
+                              ) : '-'}
+                            </td>
+                            <td className="px-4 py-3 text-xs font-bold text-slate-600 text-right font-mono">
+                              {row.isMatched && !row.isNotFoundInExcel ? fmtRp(row.deduction) : fmtRp(0)}
+                            </td>
+                            <td className="px-4 py-3 text-xs font-black text-indigo-600 text-right font-mono">
+                              {row.isMatched && !row.isNotFoundInExcel ? fmtRp(row.netBonus) : fmtRp(0)}
+                            </td>
+                            <td className="px-4 py-3 text-xs font-bold text-red-500 text-right font-mono">
+                              {row.isMatched && !row.isNotFoundInExcel ? fmtRp((row.absenceMinutes / 60) * 1650) : fmtRp(0)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Actions Footer */}
+                {uploadedData && (
+                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-50">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setUploadedData(null)}
+                      className="rounded-xl border-slate-200 text-slate-600 text-xs font-bold"
+                    >
+                      Batal
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleSavePresence}
+                      disabled={savingPresence || uploadedData.filter(r => r.employeeId).length === 0}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all"
+                    >
+                      {savingPresence ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                      Simpan Data Presensi
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+        </div>
+      ) : (
           /* Tab 3: Kegiatan SPJ UI */
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
             {/* Left side list of existing events */}

@@ -43,6 +43,11 @@ interface LegalitasPimpinanDialogProps {
   functionalAllowanceMap?: Record<string, number>;
   slipStates?: Record<string, any>;
   koperasiDeductions?: Record<string, number>;
+  koperasiSavings?: Record<string, number>;
+  getLoyalisPresenceBonus?: (empId: string) => number;
+  getLoyalisPresenceDeduction?: (empId: string) => number;
+  getLoyalisPresensiEarning?: (empId: string) => number;
+  getLoyalisPresensiDeduction?: (empId: string) => number;
 }
 
 function buildInitialEarnings(
@@ -50,7 +55,9 @@ function buildInitialEarnings(
   gapok: number,
   uraian?: any,
   vakasiTambahanSum?: number,
-  tunjanganFungsional?: number
+  tunjanganFungsional?: number,
+  presenceBonus = 0,
+  presensiEarning = 0
 ): PaySlipField[] {
   const earnings: PaySlipField[] = [];
 
@@ -80,6 +87,12 @@ function buildInitialEarnings(
 
     // Vakasi Tambahan
     earnings.push({ label: 'Vakasi Tambahan', amount: vakasiTambahanSum ?? 0 });
+
+    // Presensi
+    earnings.push({ label: 'Presensi', amount: presensiEarning });
+
+    // Bonus Presensi
+    earnings.push({ label: 'Bonus Presensi', amount: presenceBonus });
 
     // BPJS & Beras Allowances (Loyalis)
     earnings.push({ label: 'T. BPJS TK', amount: emp.bpjs?.t_bpjs_tk || 0 });
@@ -127,7 +140,13 @@ function buildInitialEarnings(
   return earnings;
 }
 
-function buildInitialDeductions(emp: any, koperasiDeduction = 0): PaySlipField[] {
+function buildInitialDeductions(
+  emp: any,
+  koperasiDeduction = 0,
+  presenceDeduction = 0,
+  presensiDeduction = 0,
+  koperasiSaving = 0
+): PaySlipField[] {
   const deductions: PaySlipField[] = [];
 
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
@@ -135,6 +154,9 @@ function buildInitialDeductions(emp: any, koperasiDeduction = 0): PaySlipField[]
     deductions.push({ label: 'BPJS', amount: emp.bpjs?.deductionAmount || 0 });
     deductions.push({ label: 'Kop. Rochmad', amount: 0 });
     deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
+    deductions.push({ label: 'Potongan Presensi', amount: presensiDeduction });
+    deductions.push({ label: 'Potongan Bonus Presensi', amount: presenceDeduction });
+    deductions.push({ label: 'Simpanan Wajib Koperasi', amount: koperasiSaving });
     return deductions;
   }
 
@@ -147,6 +169,7 @@ function buildInitialDeductions(emp: any, koperasiDeduction = 0): PaySlipField[]
   }
 
   deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
+  deductions.push({ label: 'Simpanan Wajib Koperasi', amount: koperasiSaving });
 
   return deductions;
 }
@@ -164,6 +187,11 @@ export default function LegalitasPimpinanDialog({
   functionalAllowanceMap,
   slipStates,
   koperasiDeductions = {},
+  koperasiSavings = {},
+  getLoyalisPresenceBonus,
+  getLoyalisPresenceDeduction,
+  getLoyalisPresensiEarning,
+  getLoyalisPresensiDeduction,
 }: LegalitasPimpinanDialogProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>(categories[0] || '');
 
@@ -212,10 +240,15 @@ export default function LegalitasPimpinanDialog({
         }
       } else {
         const kopUnipdu = koperasiDeductions?.[emp.id] ?? 0;
-        earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance);
-        deductions = buildInitialDeductions(emp.raw, kopUnipdu);
+        const kopSaving = koperasiSavings?.[emp.id] ?? 0;
+        const pBonus = getLoyalisPresenceBonus ? getLoyalisPresenceBonus(emp.id) : 0;
+        const pDeduction = getLoyalisPresenceDeduction ? getLoyalisPresenceDeduction(emp.id) : 0;
+        const presEarning = getLoyalisPresensiEarning ? getLoyalisPresensiEarning(emp.id) : 0;
+        const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
+        earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning);
+        deductions = buildInitialDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
+        totalDeductions = calculateTotalDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
         totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
-        totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
         netSalary = totalEarnings - totalDeductions;
         gapokVal = gapok;
       }
