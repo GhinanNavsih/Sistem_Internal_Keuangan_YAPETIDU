@@ -209,5 +209,20 @@ service cloud.firestore {
       // Only Super Admins can edit or manage the structural positions master data
       allow write: if isSuperAdmin();
     }
+
+    // 9. Settings and configurations (e.g. department lists)
+    match /Settings/{docId} {
+      // Any authenticated user with a profile can read the settings documents
+      allow read: if hasProfile();
+      // Only Super Admins or Employee Admins can create or update settings
+      allow create, update: if (isSuperAdmin() || isEmployeeAdmin()) &&
+                            (docId != 'departments' || (
+                              request.resource.data.keys().hasOnly(['list']) &&
+                              request.resource.data.list is list &&
+                              request.resource.data.list.size() <= 100
+                            ));
+      // Only Super Admins can delete settings documents
+      allow delete: if isSuperAdmin();
+    }
   }
 }

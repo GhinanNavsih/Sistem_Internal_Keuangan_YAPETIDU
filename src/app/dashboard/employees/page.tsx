@@ -74,6 +74,8 @@ import { BlueCollarEmployee } from '@/types';
 
 const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI'];
 
+
+
 const JOB_ICONS: Record<string, React.ReactNode> = {
   SATPAM: <ShieldCheck className="w-3.5 h-3.5" />,
   SOPIR: <Truck className="w-3.5 h-3.5" />,
@@ -221,6 +223,9 @@ export default function EmployeesPage() {
   const [dbPositions, setDbPositions] = useState<{ id: string; name: string; satker: string; allowance: number }[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
+  const [departments, setDepartments] = useState<string[]>([]);
+  const [isCustomDept, setIsCustomDept] = useState(false);
+  const [customDeptValue, setCustomDeptValue] = useState('');
 
   // Redirect if unauthorized
   useEffect(() => {
@@ -275,8 +280,36 @@ export default function EmployeesPage() {
       }
     };
 
+    const fetchDepartments = async () => {
+      try {
+        const deptDoc = await getDoc(doc(db, 'Settings', 'departments'));
+        if (deptDoc.exists() && deptDoc.data().list) {
+          setDepartments(deptDoc.data().list);
+        } else {
+          const defaultList = [
+            'FAK. AGAMA ISLAM',
+            'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
+            'FAK. ILMU KESEHATAN',
+            'FAK. SAINS DAN TEKNOLOGI',
+            'PASCASARJANA',
+            'REKTORAT',
+            'UPT & LEMBAGA'
+          ];
+          setDepartments(defaultList);
+          try {
+            await setDoc(doc(db, 'Settings', 'departments'), { list: defaultList });
+          } catch (e) {
+            console.error('Failed to initialize departments in Firestore:', e);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching departments:', err);
+      }
+    };
+
     fetchEduLevels();
     fetchDbPositions();
+    fetchDepartments();
   }, []);
 
   // Handle click outside of structural position suggestions
@@ -302,6 +335,10 @@ export default function EmployeesPage() {
         employment_profile: { job_role: '', department_unit: '', date_of_hire: '', date_recognized: '', date_exit: '', structural_positions: [] },
         academic_and_tier: { education_level: '', education_code: '', functional_tier: '', level_code: '', base_salary_tier: '' },
         family_allowance_metrics: { spouse_count: 0, children_sd: 0, children_sltp: 0, children_slta: 0, children_pt: 0 },
+        ziz: { deductionAmount: 0 },
+        savings: { deductionAmount: 0 },
+        pinlu: { deductionAmount: 0 },
+        tht: { deductionAmount: 0 },
       };
     }
     return {
@@ -354,6 +391,8 @@ export default function EmployeesPage() {
   const handleOpenAdd = () => {
     setEditingEmployee(null);
     setFormData(resetForm(activeTab));
+    setIsCustomDept(false);
+    setCustomDeptValue('');
     setIsDialogOpen(true);
   };
 
@@ -368,6 +407,10 @@ export default function EmployeesPage() {
 
   const handleOpenEdit = (emp: any) => {
     setEditingEmployee(emp);
+    setIsCustomDept(false);
+    setCustomDeptValue('');
+    
+    // For Loyalis, make sure structural_positions is initialized as array
     if (activeTab === 'loyalis') {
       setFormData({
         ...emp,
@@ -422,7 +465,7 @@ export default function EmployeesPage() {
           },
           employment_profile: {
             job_role: formData.employment_profile?.job_role || null,
-            department_unit: formData.employment_profile?.department_unit || null,
+            department_unit: isCustomDept ? customDeptValue.trim().toUpperCase() : (formData.employment_profile?.department_unit || null),
             date_of_hire: toTimestamp(formData.employment_profile?.date_of_hire || ''),
             date_recognized: toTimestamp(formData.employment_profile?.date_recognized || ''),
             date_exit: toTimestamp(formData.employment_profile?.date_exit || ''),
@@ -441,6 +484,18 @@ export default function EmployeesPage() {
             children_sltp: Number(formData.family_allowance_metrics?.children_sltp) || 0,
             children_slta: Number(formData.family_allowance_metrics?.children_slta) || 0,
             children_pt: Number(formData.family_allowance_metrics?.children_pt) || 0,
+          },
+          ziz: {
+            deductionAmount: Number(formData.ziz?.deductionAmount) || 0,
+          },
+          savings: {
+            deductionAmount: Number(formData.savings?.deductionAmount) || 0,
+          },
+          pinlu: {
+            deductionAmount: Number(formData.pinlu?.deductionAmount) || 0,
+          },
+          tht: {
+            deductionAmount: Number(formData.tht?.deductionAmount) || 0,
           },
           audit: {
             updatedAt: serverTimestamp(),
@@ -486,6 +541,19 @@ export default function EmployeesPage() {
       }
 
       await setDoc(doc(db, currentTab.collection, employeeId), final, { merge: true });
+
+      if (activeTab === 'loyalis' && isCustomDept && customDeptValue.trim()) {
+        const newDept = customDeptValue.trim().toUpperCase();
+        if (!departments.includes(newDept)) {
+          const updatedList = [...departments, newDept].sort();
+          setDepartments(updatedList);
+          try {
+            await setDoc(doc(db, 'Settings', 'departments'), { list: updatedList });
+          } catch (e) {
+            console.error('Failed to update Settings/departments:', e);
+          }
+        }
+      }
 
       setMessage({ type: 'success', text: `Karyawan ${editingEmployee ? 'diperbarui' : 'ditambahkan'}!` });
       setIsDialogOpen(false);
@@ -855,7 +923,78 @@ export default function EmployeesPage() {
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Pekerjaan</h3>
                     <div className="space-y-2"><Label>Jabatan</Label><Input placeholder="DOSEN, TENDIK, dll." value={formData.employment_profile?.job_role || ''} onChange={e => updateNestedField('employment_profile', 'job_role', e.target.value)} /></div>
-                    <div className="space-y-2"><Label>Departemen / Unit</Label><Input value={formData.employment_profile?.department_unit || ''} onChange={e => updateNestedField('employment_profile', 'department_unit', e.target.value)} /></div>
+                    <div className="space-y-2">
+                      <Label>Departemen / Unit</Label>
+                      {!isCustomDept ? (
+                        <Select
+                          value={formData.employment_profile?.department_unit || ''}
+                          onValueChange={(val) => {
+                            if (val === '__ADD_NEW__') {
+                              setIsCustomDept(true);
+                              updateNestedField('employment_profile', 'department_unit', '');
+                            } else {
+                              updateNestedField('employment_profile', 'department_unit', val);
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                            <SelectValue placeholder="Pilih Departemen / Unit" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                            {(() => {
+                              const listToUse = departments.length > 0 ? departments : [
+                                'FAK. AGAMA ISLAM',
+                                'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
+                                'FAK. ILMU KESEHATAN',
+                                'FAK. SAINS DAN TEKNOLOGI',
+                                'PASCASARJANA',
+                                'REKTORAT',
+                                'UPT & LEMBAGA'
+                              ];
+                              const currentVal = formData.employment_profile?.department_unit;
+                              const options = currentVal && !listToUse.includes(currentVal)
+                                ? [...listToUse, currentVal]
+                                : listToUse;
+                              return (
+                                <>
+                                  {options.map(dept => (
+                                    <SelectItem key={dept} value={dept} className="text-xs">
+                                      {dept}
+                                    </SelectItem>
+                                  ))}
+                                  <SelectItem value="__ADD_NEW__" className="text-xs font-semibold text-indigo-600 focus:text-indigo-700">
+                                    + Tambah Departemen Baru
+                                  </SelectItem>
+                                </>
+                              );
+                            })()}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Ketik Departemen Baru (misal: REKTORAT)"
+                              value={customDeptValue}
+                              onChange={(e) => setCustomDeptValue(e.target.value)}
+                              className="rounded-xl border-slate-200 text-xs h-10 flex-1 bg-white"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setIsCustomDept(false);
+                                setCustomDeptValue('');
+                                updateNestedField('employment_profile', 'department_unit', '');
+                              }}
+                              className="rounded-xl border-slate-200 text-xs h-10 px-3 hover:bg-slate-50"
+                            >
+                              Batal
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     <div className="space-y-2"><Label>Tanggal Mulai Kerja</Label><Input type="date" value={formData.employment_profile?.date_of_hire || ''} onChange={e => updateNestedField('employment_profile', 'date_of_hire', e.target.value)} /></div>
                     <div className="space-y-2"><Label>TMT Golongan (SK)</Label><Input type="date" value={formData.employment_profile?.date_recognized || ''} onChange={e => updateNestedField('employment_profile', 'date_recognized', e.target.value)} /></div>
                   </div>
@@ -908,6 +1047,44 @@ export default function EmployeesPage() {
                     </div>
                     <div className="space-y-2"><Label>Nama Bank</Label><Input value={formData.banking_info?.bank_name || ''} onChange={e => updateNestedField('banking_info', 'bank_name', e.target.value)} /></div>
                     <div className="space-y-2"><Label>Nomor Rekening</Label><Input value={formData.banking_info?.account_number || ''} onChange={e => updateNestedField('banking_info', 'account_number', e.target.value)} /></div>
+                    <div className="grid grid-cols-4 gap-3">
+                      <div className="space-y-2">
+                        <Label>Potongan Zakat Infaq Sodaqoh (Rp)</Label>
+                        <Input 
+                          type="number" 
+                          value={formData.ziz?.deductionAmount ?? 0} 
+                          onChange={e => updateNestedField('ziz', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                          className="rounded-xl border-slate-200"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Potongan Tabungan (Rp)</Label>
+                        <Input 
+                          type="number" 
+                          value={formData.savings?.deductionAmount ?? 0} 
+                          onChange={e => updateNestedField('savings', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                          className="rounded-xl border-slate-200"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Potongan Pinlu/Tagihan (Rp)</Label>
+                        <Input 
+                          type="number" 
+                          value={formData.pinlu?.deductionAmount ?? 0} 
+                          onChange={e => updateNestedField('pinlu', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                          className="rounded-xl border-slate-200"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Potongan BNI Simponi / THT (Rp)</Label>
+                        <Input 
+                          type="number" 
+                          value={formData.tht?.deductionAmount ?? 0} 
+                          onChange={e => updateNestedField('tht', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                          className="rounded-xl border-slate-200"
+                        />
+                      </div>
+                    </div>
                   </div>
                   <div className="col-span-3 pt-2 border-t border-slate-100 space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Tanggungan Keluarga (Untuk Tunjangan)</h3>

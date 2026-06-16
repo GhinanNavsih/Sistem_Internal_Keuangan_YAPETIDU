@@ -129,7 +129,8 @@ function buildInitialEarnings(
     earnings.push({ label: 'T. Fungsional', amount: tunjanganFungsional ?? 0 });
 
     // Kepangkatan
-    earnings.push({ label: 'Kepangkatan', amount: 0 });
+    const tKepangkatan = emp.kepangkatan?.t_kepangkatan || 0;
+    earnings.push({ label: 'Kepangkatan', amount: tKepangkatan });
 
     // T. Hari Tua (10% of Gaji Pokok)
     earnings.push({ label: 'T. Hari Tua', amount: Math.round(gapok * 0.1) });
@@ -249,15 +250,15 @@ function buildInitialDeductions(
     // White Collar / Loyalis deductions
     deductions.push({ label: 'Koperasi Rochmad', amount: 0 });
     deductions.push({ label: 'BPJS', amount: emp.bpjs?.deductionAmount || 0 });
-    deductions.push({ label: 'THT', amount: 0 });
-    deductions.push({ label: 'Tabungan', amount: 0 });
-    deductions.push({ label: 'ZIZ', amount: 0 });
+    deductions.push({ label: 'Tabungan Hari Tua BNI Simponi', amount: emp.tht?.deductionAmount || 0 });
+    deductions.push({ label: 'Tabungan', amount: emp.savings?.deductionAmount || 0 });
+    deductions.push({ label: 'Zakat Infaq Sodaqoh', amount: emp.ziz?.deductionAmount || 0 });
     deductions.push({ label: 'Revisi Gaji', amount: 0 });
-    deductions.push({ label: 'Pinlu/Tagihan', amount: 0 });
-    deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
+    deductions.push({ label: 'Pinlu/Tagihan', amount: emp.pinlu?.deductionAmount || 0 });
+    deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: koperasiDeduction });
     deductions.push({ label: 'Potongan Presensi', amount: presensiDeduction });
     deductions.push({ label: 'Potongan Bonus Presensi', amount: presenceDeduction });
-    deductions.push({ label: 'Simpanan Wajib Koperasi', amount: koperasiSaving });
+    deductions.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving });
   } else {
     // BPJS deduction
     if (emp.bpjs?.deductionAmount) {
@@ -270,10 +271,10 @@ function buildInitialDeductions(
     }
 
     // Koperasi Unipdu from sample
-    deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
+    deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: koperasiDeduction });
 
     // Simpanan Wajib Koperasi
-    deductions.push({ label: 'Simpanan Wajib Koperasi', amount: koperasiSaving });
+    deductions.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving });
   }
 
   return deductions;
@@ -422,6 +423,25 @@ export default function PaySlipDialog({
     onOpenChange(false);
   };
 
+  const handleRevertToDraft = () => {
+    if (!employee || !slipState) return;
+
+    const confirmRevert = window.confirm(
+      "Apakah Anda yakin ingin membatalkan konfirmasi slip gaji ini dan mengembalikannya ke status 'Periksa'?"
+    );
+    if (!confirmRevert) return;
+
+    const newState: SlipState = {
+      ...slipState,
+      status: 'draft',
+      earnings: [...earnings],
+      deductions: [...deductions],
+    };
+
+    onSlipGenerated(employee.employeeId || employee.id, newState);
+    onOpenChange(false);
+  };
+
   if (!employee) return null;
 
   return (
@@ -448,11 +468,8 @@ export default function PaySlipDialog({
             <Badge variant="secondary" className="bg-white/80 text-slate-600 rounded-full border border-slate-200 font-normal shadow-none">
               {activeTab === 'loyalis' ? (employee.employment_profile?.job_role || 'Staf') : employee.employment?.jobCategory}
             </Badge>
-            <Badge variant="secondary" className="bg-white/80 text-slate-600 rounded-full border border-slate-200 font-normal shadow-none">
-              Gol. {activeTab === 'loyalis' ? (employee.academic_and_tier?.level_code || '-') : (employee.salaryProfile?.salaryGradeCode || '-')}
-            </Badge>
-            <Badge variant="secondary" className="bg-white/80 text-slate-600 rounded-full border border-slate-200 font-normal shadow-none">
-              No. {employeeNo}
+            <Badge variant="secondary" className="bg-white/80 text-indigo-600 rounded-full border border-indigo-150 font-semibold shadow-none flex items-center gap-1">
+              No. Antrean {employeeNo}
             </Badge>
           </div>
         </DialogHeader>
@@ -609,35 +626,50 @@ export default function PaySlipDialog({
         </div>
 
         {/* ─── Footer ───────────────────────────────────────────── */}
-        <DialogFooter className="p-6 pt-4 bg-slate-50/50 border-t border-slate-100">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => onOpenChange(false)}
-            className="rounded-xl text-slate-500"
-          >
-            Batal
-          </Button>
+        <DialogFooter className="p-6 pt-4 bg-slate-50/50 border-t border-slate-100 flex flex-row justify-between items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+              className="rounded-xl text-slate-500"
+            >
+              Batal
+            </Button>
+            
+            {mode === 'review' && slipState && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleRevertToDraft}
+                className="rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 transition-all cursor-pointer"
+              >
+                Kembalikan ke Periksa
+              </Button>
+            )}
+          </div>
 
-          {mode === 'create' ? (
-            <Button
-              type="button"
-              onClick={handleConfirmChecked}
-              className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 shadow-md shadow-indigo-200 px-6 cursor-pointer"
-            >
-              <CheckCircle2 className="w-4 h-4 mr-2" />
-              Konfirmasi Data Benar
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={handleSaveReview}
-              className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 shadow-md shadow-indigo-200 px-6 cursor-pointer"
-            >
-              <CheckCircle2 className="w-4 h-4 mr-2" />
-              Simpan Perubahan
-            </Button>
-          )}
+          <div>
+            {mode === 'create' ? (
+              <Button
+                type="button"
+                onClick={handleConfirmChecked}
+                className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 shadow-md shadow-indigo-200 px-6 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+                Konfirmasi Data Benar
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={handleSaveReview}
+                className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 shadow-md shadow-indigo-200 px-6 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+                Simpan Perubahan
+              </Button>
+            )}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

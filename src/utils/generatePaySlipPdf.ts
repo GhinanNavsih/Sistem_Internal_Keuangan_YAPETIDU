@@ -402,17 +402,17 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     const bpjsDeduction = data.deductions.find(d => d.label.toUpperCase() === 'BPJS');
     rightRows.push({ type: 'item', label: '1   BPJS', amount: bpjsDeduction ? bpjsDeduction.amount : 0 });
 
-    // THT
-    const thtDeduction = data.deductions.find(d => d.label.toUpperCase() === 'THT');
-    rightRows.push({ type: 'item', label: '2   THT', amount: thtDeduction ? thtDeduction.amount : 0 });
+    // Tabungan Hari Tua BNI Simponi
+    const thtDeduction = data.deductions.find(d => d.label.toUpperCase() === 'TABUNGAN HARI TUA BNI SIMPONI' || d.label.toUpperCase() === 'THT');
+    rightRows.push({ type: 'item', label: '2   TABUNGAN HARI TUA BNI SIMPONI', amount: thtDeduction ? thtDeduction.amount : 0 });
 
     // Tabungan
     const tabDeduction = data.deductions.find(d => d.label.toUpperCase() === 'TABUNGAN');
     rightRows.push({ type: 'item', label: '3   TABUNGAN', amount: tabDeduction ? tabDeduction.amount : 0 });
 
-    // ZIZ
-    const zizDeduction = data.deductions.find(d => d.label.toUpperCase() === 'ZIZ');
-    rightRows.push({ type: 'item', label: '4   ZIZ', amount: zizDeduction ? zizDeduction.amount : 0 });
+    // Zakat Infaq Sodaqoh
+    const zizDeduction = data.deductions.find(d => d.label.toUpperCase() === 'ZAKAT INFAQ SODAQOH' || d.label.toUpperCase() === 'ZIZ');
+    rightRows.push({ type: 'item', label: '4   ZAKAT INFAQ SODAQOH', amount: zizDeduction ? zizDeduction.amount : 0 });
 
     // Revisi Gaji
     const revDeduction = data.deductions.find(d => d.label.toUpperCase() === 'REVISI GAJI');
@@ -423,8 +423,8 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     rightRows.push({ type: 'item', label: '6   PINLU/TAGIHAN', amount: pinluDeduction ? pinluDeduction.amount : 0 });
 
     // Kop Unipdu
-    const unipduDeduction = data.deductions.find(d => d.label.toUpperCase() === 'KOP. UNIPDU REJOSO GEMILANG' || d.label.toUpperCase() === 'KOPERASI UNIPDU REJOSO GEMILANG');
-    rightRows.push({ type: 'item', label: '7   KOPERASI UNIPDU REJOSO GEMILANG', amount: unipduDeduction ? unipduDeduction.amount : 0 });
+    const unipduDeduction = data.deductions.find(d => d.label.toUpperCase() === 'PINJAMAN KOP. UNIPDU' || d.label.toUpperCase() === 'KOP. UNIPDU REJOSO GEMILANG' || d.label.toUpperCase() === 'KOPERASI UNIPDU REJOSO GEMILANG');
+    rightRows.push({ type: 'item', label: '7   PINJAMAN KOP. UNIPDU', amount: unipduDeduction ? unipduDeduction.amount : 0 });
 
     // Potongan Presensi
     const presPot = data.deductions.find(d => d.label.toUpperCase() === 'POTONGAN PRESENSI');
@@ -434,9 +434,9 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     const bonusPresPot = data.deductions.find(d => d.label.toUpperCase() === 'POTONGAN BONUS PRESENSI');
     rightRows.push({ type: 'item', label: '9   POTONGAN BONUS PRESENSI', amount: bonusPresPot ? bonusPresPot.amount : 0 });
 
-    // Simpanan Wajib Koperasi
-    const simpananWajibPot = data.deductions.find(d => d.label.toUpperCase() === 'SIMPANAN WAJIB KOPERASI');
-    rightRows.push({ type: 'item', label: '10  SIMPANAN WAJIB KOPERASI', amount: simpananWajibPot ? simpananWajibPot.amount : 0 });
+    // Iuran Wajib Kop. UNIPDU
+    const simpananWajibPot = data.deductions.find(d => d.label.toUpperCase() === 'IURAN WAJIB KOP. UNIPDU' || d.label.toUpperCase() === 'IURAN WAJIB KOP. REJOSO GEMILANG' || d.label.toUpperCase() === 'SIMPANAN WAJIB KOPERASI');
+    rightRows.push({ type: 'item', label: '10  IURAN WAJIB KOP. UNIPDU', amount: simpananWajibPot ? simpananWajibPot.amount : 0 });
 
     // Koperasi Rochmad (if actual Rochmad amount is set)
     const rochmadDeduction = data.deductions.find(d => d.label.toUpperCase() === 'KOP. ROCHMAD' || d.label.toUpperCase() === 'KOPERASI ROCHMAD');

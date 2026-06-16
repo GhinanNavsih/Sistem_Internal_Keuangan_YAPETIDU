@@ -63,6 +63,10 @@ export function calculateTotalEarnings(
     const structuralAllowance = calculateStructuralAllowance(emp.employment_profile?.structural_positions || []);
     total += structuralAllowance;
 
+    // Kepangkatan
+    const tKepangkatan = emp.kepangkatan?.t_kepangkatan || 0;
+    total += tKepangkatan;
+
     // Vakasi Tambahan (Loyalis)
     if (vakasiTambahanSum) {
       total += vakasiTambahanSum;
@@ -146,10 +150,13 @@ export function calculateTotalDeductions(
   koperasiSaving = 0
 ): number {
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
-    // White Collar / Loyalis deductions: include BPJS deduction, Savings deduction, presence deduction, presensi deduction, and koperasi saving
+    // White Collar / Loyalis deductions: include BPJS deduction, Savings deduction, ZIZ deduction, Pinlu/Tagihan deduction, presence deduction, presensi deduction, tht deduction, and koperasi saving
     const bpjsDeduction = emp.bpjs?.deductionAmount || 0;
     const savingsDeduction = emp.savings?.deductionAmount || 0;
-    return koperasiDeduction + bpjsDeduction + savingsDeduction + presenceDeduction + presensiDeduction + koperasiSaving;
+    const zizDeduction = emp.ziz?.deductionAmount || 0;
+    const pinluDeduction = emp.pinlu?.deductionAmount || 0;
+    const thtDeduction = emp.tht?.deductionAmount || 0;
+    return koperasiDeduction + bpjsDeduction + savingsDeduction + zizDeduction + pinluDeduction + thtDeduction + presenceDeduction + presensiDeduction + koperasiSaving;
   }
 
   let total = 0;

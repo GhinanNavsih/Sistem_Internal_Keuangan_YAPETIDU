@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { calculateYearsOfService, calculateGapok, matchFunctionalAllowance, normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import {
@@ -54,6 +54,8 @@ import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianE
 import PaySlipDialog, { SlipState } from '@/components/PaySlipDialog';
 import LegalitasPimpinanDialog from '@/components/LegalitasPimpinanDialog';
 import CetakPayrollDialog from '@/components/CetakPayrollDialog';
+import CetakTunjanganJabatanDialog from '@/components/CetakTunjanganJabatanDialog';
+import CetakVakasiPimpinanStafDialog from '@/components/CetakVakasiPimpinanStafDialog';
 import { generateWhatsAppPaySlipUrl, uploadPaySlipPdf } from '@/utils/whatsappHelper';
 import { generatePaySlipPdf, generateMultiPaySlipPdf, PaySlipData } from '@/utils/generatePaySlipPdf';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -276,7 +278,7 @@ export default function PayrollValidationDashboard() {
           const uUid = uData.uid || userDoc.id;
 
           let match = allEmployees.find(
-            emp => 
+            emp =>
               (emp.koperasiUserId && emp.koperasiUserId === userDoc.id) ||
               (emp.koperasiAuthUid && emp.koperasiAuthUid === uUid)
           );
@@ -315,6 +317,8 @@ export default function PayrollValidationDashboard() {
   const [legalitasDialogOpen, setLegalitasDialogOpen] = useState(false);
   const [cetakPayrollDialogOpen, setCetakPayrollDialogOpen] = useState(false);
   const [cetakRekapDialogOpen, setCetakRekapDialogOpen] = useState(false);
+  const [tunjanganJabatanDialogOpen, setTunjanganJabatanDialogOpen] = useState(false);
+  const [vakasiPimpinanStafDialogOpen, setVakasiPimpinanStafDialogOpen] = useState(false);
   const [printSelectorOpen, setPrintSelectorOpen] = useState(false);
 
   // New States for Email & Cetak/Kirim Fallbacks
@@ -339,8 +343,14 @@ export default function PayrollValidationDashboard() {
       if (lower.includes('unipdu') || lower.includes('rejoso') || lower.includes('gemilang')) {
         return 'Kop. Rejoso Gemilang';
       }
-      if (lower.includes('sosial') || lower.includes('ziz')) {
+      if (lower.includes('sosial') || lower.includes('ziz') || lower.includes('zakat') || lower.includes('infaq') || lower.includes('sodaqoh')) {
         return 'Dana Sosial';
+      }
+      if (lower.includes('pinlu') || lower.includes('tagihan')) {
+        return 'Pinlu/Tagihan';
+      }
+      if (lower.includes('tht') || lower.includes('simponi') || lower.includes('hari tua')) {
+        return 'Tabungan Hari Tua BNI Simponi';
       }
       if (lower.includes('tunai')) {
         return 'Tunai';
@@ -369,12 +379,12 @@ export default function PayrollValidationDashboard() {
       if (collar === 'loyalis') {
         deductions.push({ label: 'Koperasi Rochmad', amount: 0 });
         deductions.push({ label: 'BPJS', amount: emp.raw?.bpjs?.deductionAmount || 0 });
-        deductions.push({ label: 'THT', amount: 0 });
+        deductions.push({ label: 'Tabungan Hari Tua BNI Simponi', amount: emp.raw?.tht?.deductionAmount || 0 });
         deductions.push({ label: 'Tabungan', amount: emp.raw?.savings?.deductionAmount || 0 });
-        deductions.push({ label: 'ZIZ', amount: 0 });
+        deductions.push({ label: 'Zakat Infaq Sodaqoh', amount: emp.raw?.ziz?.deductionAmount || 0 });
         deductions.push({ label: 'Revisi Gaji', amount: 0 });
-        deductions.push({ label: 'Pinlu/Tagihan', amount: 0 });
-        deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: kopUnipduAmount });
+        deductions.push({ label: 'Pinlu/Tagihan', amount: emp.raw?.pinlu?.deductionAmount || 0 });
+        deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: kopUnipduAmount });
         deductions.push({ label: 'Potongan Presensi', amount: getLoyalisPresensiDeduction(emp.id) });
         deductions.push({ label: 'Potongan Bonus Presensi', amount: getLoyalisPresenceDeduction(emp.id) });
       } else {
@@ -383,7 +393,7 @@ export default function PayrollValidationDashboard() {
 
         deductions.push({ label: 'BPJS', amount: bpjsAmount });
         deductions.push({ label: 'Kop. Rochmad', amount: kopRochmadAmount });
-        deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: kopUnipduAmount });
+        deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: kopUnipduAmount });
       }
       return deductions;
     };
@@ -503,14 +513,14 @@ export default function PayrollValidationDashboard() {
 
     const roleOrder = payrollCollar === 'loyalis'
       ? [
-          'REKTORAT',
-          'FAK. AGAMA ISLAM',
-          'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
-          'FAK. ILMU KESEHATAN',
-          'FAK. SAINS DAN TEKNOLOGI',
-          'PASCASARJANA',
-          'UPT & LEMBAGA'
-        ]
+        'REKTORAT',
+        'FAK. AGAMA ISLAM',
+        'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
+        'FAK. ILMU KESEHATAN',
+        'FAK. SAINS DAN TEKNOLOGI',
+        'PASCASARJANA',
+        'UPT & LEMBAGA'
+      ]
       : ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI', 'PONTI'];
     const sortedEmployees = [...activeEmployees].sort((a, b) => {
       const roleA = roleOrder.indexOf(a.role) !== -1 ? roleOrder.indexOf(a.role) : 99;
@@ -660,18 +670,77 @@ export default function PayrollValidationDashboard() {
 
   const displayEmployees = getFilteredAndSortedEmployees();
 
+  const payrollTotals = useMemo(() => {
+    let totalGross = 0;
+    let totalDeductions = 0;
+    let totalNet = 0;
+
+    displayEmployees.forEach((emp) => {
+      const slip = slipStates[emp.id];
+      let earnings = 0;
+      let deductions = 0;
+
+      if (slip && slip.earnings && slip.deductions) {
+        earnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
+        deductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
+      } else {
+        const gapok = calculateGapok(emp, salaryMatrix, targetDate);
+        const cat = emp.raw.employment?.jobCategory;
+        const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+        const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
+        earnings = calculateTotalEarnings(
+          emp.raw,
+          gapok,
+          uraian,
+          vakasiTambahanMap[emp.id] ?? 0,
+          functionalAllowanceMap[emp.id] ?? 0,
+          getLoyalisPresenceBonus(emp.id),
+          getLoyalisPresensiEarning(emp.id)
+        );
+        deductions = calculateTotalDeductions(
+          emp.raw,
+          koperasiDeductions[emp.id] || 0,
+          getLoyalisPresenceDeduction(emp.id),
+          getLoyalisPresensiDeduction(emp.id),
+          koperasiSavings[emp.id] || 0
+        );
+      }
+
+      totalGross += earnings;
+      totalDeductions += deductions;
+      totalNet += (earnings - deductions);
+    });
+
+    return {
+      totalGross,
+      totalDeductions,
+      totalNet
+    };
+  }, [
+    displayEmployees,
+    slipStates,
+    salaryMatrix,
+    targetDate,
+    uraianMap,
+    vakasiTambahanMap,
+    functionalAllowanceMap,
+    koperasiDeductions,
+    koperasiSavings,
+    loyalisPresenceData
+  ]);
+
   // Get all unique categories for filter
   const categories = Array.from(new Set(employees.map(emp => emp.role))).sort((a, b) => {
     const roleOrder = payrollCollar === 'loyalis'
       ? [
-          'REKTORAT',
-          'FAK. AGAMA ISLAM',
-          'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
-          'FAK. ILMU KESEHATAN',
-          'FAK. SAINS DAN TEKNOLOGI',
-          'PASCASARJANA',
-          'UPT & LEMBAGA'
-        ]
+        'REKTORAT',
+        'FAK. AGAMA ISLAM',
+        'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
+        'FAK. ILMU KESEHATAN',
+        'FAK. SAINS DAN TEKNOLOGI',
+        'PASCASARJANA',
+        'UPT & LEMBAGA'
+      ]
       : ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI', 'PONTI'];
     const idxA = roleOrder.indexOf(a);
     const idxB = roleOrder.indexOf(b);
@@ -842,18 +911,18 @@ export default function PayrollValidationDashboard() {
     const fetchVakasiAndSpj = async () => {
       try {
         const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-        
+
         const year = targetDate.getFullYear();
         const month = targetDate.getMonth(); // 0-indexed
-        
+
         // Pekarya period: 26th of previous month to 25th of current month
         const prevMonthDate = new Date(year, month - 1, 26);
         const currentMonthDate = new Date(year, month, 25);
-        
+
         const formatDate = (d: Date) => {
           return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         };
-        
+
         const startDateStr = formatDate(prevMonthDate);
         const endDateStr = formatDate(currentMonthDate);
         const prevMonthToken = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1359,9 +1428,9 @@ export default function PayrollValidationDashboard() {
 
   // ─── Stats ─────────────────────────────────────────────────────
 
-  const totalSlips = Object.keys(slipStates).length;
-  const confirmedSlips = Object.values(slipStates).filter(s => s.status === 'confirmed').length;
-  const printedSlips = Object.values(slipStates).filter(s => s.status === 'printed').length;
+  const totalSlips = displayEmployees.filter(emp => slipStates[emp.id]).length;
+  const confirmedSlips = displayEmployees.filter(emp => slipStates[emp.id]?.status === 'confirmed').length;
+  const printedSlips = displayEmployees.filter(emp => slipStates[emp.id]?.status === 'printed').length;
 
   const tabs = [
     { name: 'Tagihan', icon: <FileText className="w-4 h-4 mr-2" /> },
@@ -1543,11 +1612,22 @@ export default function PayrollValidationDashboard() {
                     <span className="font-medium text-emerald-600">{confirmedSlips} / {displayEmployees.length}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block mb-1">Label</span>
-                    <div className="flex gap-2">
-                      <Badge variant="secondary" className="bg-pink-50 text-pink-700 hover:bg-pink-100 rounded-full font-normal border-none shadow-none"><div className="w-1.5 h-1.5 rounded-full bg-pink-500 mr-1.5"></div> Validasi</Badge>
-                      <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-full font-normal border-none shadow-none"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></div> Bulanan</Badge>
-                    </div>
+                    <span className="text-slate-500 block mb-1">Total Pendapatan</span>
+                    <span className="font-medium text-emerald-600">
+                      {loading ? '...' : formatIDR(payrollTotals.totalGross)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block mb-1">Total Potongan</span>
+                    <span className="font-medium text-rose-600">
+                      {loading ? '...' : formatIDR(payrollTotals.totalDeductions)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block mb-1">Total Gaji Bersih</span>
+                    <span className="font-bold text-indigo-600">
+                      {loading ? '...' : formatIDR(payrollTotals.totalNet)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1860,22 +1940,51 @@ export default function PayrollValidationDashboard() {
         onExportXlsx={() => handlePrintRekap('xlsx')}
       />
 
+      <CetakTunjanganJabatanDialog
+        open={tunjanganJabatanDialogOpen}
+        onOpenChange={setTunjanganJabatanDialogOpen}
+        employees={employees}
+        categories={categories}
+        periodName={payrollPeriod}
+      />
+
+      <CetakVakasiPimpinanStafDialog
+        open={vakasiPimpinanStafDialogOpen}
+        onOpenChange={setVakasiPimpinanStafDialogOpen}
+        employees={employees}
+        categories={categories}
+        periodName={payrollPeriod}
+        salaryMatrix={salaryMatrix}
+        targetDate={targetDate}
+        functionalAllowanceMap={functionalAllowanceMap}
+        getLoyalisPresenceBonus={getLoyalisPresenceBonus}
+        getLoyalisPresenceDeduction={getLoyalisPresenceDeduction}
+        getLoyalisPresensiEarning={getLoyalisPresensiEarning}
+        getLoyalisPresensiDeduction={getLoyalisPresensiDeduction}
+        loyalisPresenceData={loyalisPresenceData}
+      />
+
       {/* ─── Print Selection Dialog ─────────────────────────────────── */}
       <Dialog open={printSelectorOpen} onOpenChange={setPrintSelectorOpen}>
-        <DialogContent className="sm:max-w-[460px] p-6 rounded-2xl bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
+        <DialogContent className="sm:max-w-[760px] p-6 rounded-2xl bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
-                <Printer className="w-5 h-5" />
+            <DialogTitle className="text-xl font-bold tracking-tight text-slate-900 flex items-center justify-between gap-2.5 w-full">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
+                  <Printer className="w-5 h-5" />
+                </div>
+                Cetak Dokumen Payroll
               </div>
-              Cetak Dokumen Payroll
+              <Badge className={payrollCollar === 'loyalis' ? "bg-indigo-600 hover:bg-indigo-600 text-white rounded-lg px-2.5 py-0.5" : "bg-amber-500 hover:bg-amber-500 text-white rounded-lg px-2.5 py-0.5"}>
+                {payrollCollar === 'loyalis' ? 'Loyalis' : 'Pekarya'}
+              </Badge>
             </DialogTitle>
             <DialogDescription className="text-slate-500 mt-2 text-sm">
-              Pilih format dokumen payroll yang ingin Anda cetak atau unduh untuk periode <span className="font-semibold text-slate-700">{payrollPeriod}</span>.
+              Pilih format dokumen payroll yang ingin Anda cetak atau unduh untuk kelompok <span className="font-bold text-slate-700">{payrollCollar === 'loyalis' ? 'Loyalis' : 'Pekarya'}</span> periode <span className="font-semibold text-slate-700">{payrollPeriod}</span>.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-3.5 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mt-4">
             {/* Card 1: Cetak Legalitas Pimpinan */}
             <button
               onClick={() => {
@@ -1892,7 +2001,7 @@ export default function PayrollValidationDashboard() {
                   Legalitas Pimpinan
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  Cetak slip validasi pimpinan untuk keperluan pengesahan resmi.
+                  Cetak slip validasi pimpinan untuk pengesahan resmi.
                 </p>
               </div>
               <div className="flex-shrink-0 self-center pl-2">
@@ -1916,7 +2025,7 @@ export default function PayrollValidationDashboard() {
                   Rekapitulasi Gaji
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  Unduh laporan rekap vakasi total berdasarkan masing-masing divisi.
+                  Unduh laporan rekap total berdasarkan masing-masing divisi.
                 </p>
               </div>
               <div className="flex-shrink-0 self-center pl-2">
@@ -1940,7 +2049,7 @@ export default function PayrollValidationDashboard() {
                   Payroll Statement
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  Cetak rincian rekening bank dan surat pengantar transfer bank.
+                  Cetak rincian rekening bank dan surat pengantar transfer.
                 </p>
               </div>
               <div className="flex-shrink-0 self-center pl-2">
@@ -1964,13 +2073,65 @@ export default function PayrollValidationDashboard() {
                   Cetak Semua Slip Gaji
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  Gabungkan dan unduh seluruh slip gaji karyawan terkonfirmasi periode ini ke dalam satu file PDF.
+                  Unduh seluruh slip gaji terkonfirmasi ke dalam satu file PDF.
                 </p>
               </div>
               <div className="flex-shrink-0 self-center pl-2">
                 <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all duration-200" />
               </div>
             </button>
+
+            {/* Card 5: Laporan Tunjangan Jabatan (Loyalis Only) */}
+            {payrollCollar === 'loyalis' && (
+              <button
+                onClick={() => {
+                  setPrintSelectorOpen(false);
+                  setTunjanganJabatanDialogOpen(true);
+                }}
+                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-purple-50/30 hover:border-purple-100 transition-all duration-200 text-left outline-none cursor-pointer"
+              >
+                <div className="flex-shrink-0 p-3 rounded-xl bg-purple-50 text-purple-600 group-hover:bg-purple-100/70 transition-colors">
+                  <Briefcase className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-purple-900 transition-colors">
+                    Tunjangan Jabatan
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    Cetak rincian tunjangan jabatan struktural dosen dan tendik unit.
+                  </p>
+                </div>
+                <div className="flex-shrink-0 self-center pl-2">
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-purple-500 group-hover:translate-x-1 transition-all duration-200" />
+                </div>
+              </button>
+            )}
+
+            {/* Card 6: Laporan Vakasi Pimpinan & Staf (Loyalis Only) */}
+            {payrollCollar === 'loyalis' && (
+              <button
+                onClick={() => {
+                  setPrintSelectorOpen(false);
+                  setVakasiPimpinanStafDialogOpen(true);
+                }}
+                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
+              >
+                <div className="flex-shrink-0 p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-indigo-900 transition-colors">
+                    Vakasi Pimpinan & Staf
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    Cetak rincian vakasi pimpinan dan staf lengkap dengan kehadiran.
+                  </p>
+                </div>
+                <div className="flex-shrink-0 self-center pl-2">
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all duration-200" />
+                </div>
+              </button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

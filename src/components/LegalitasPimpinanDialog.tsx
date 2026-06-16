@@ -153,10 +153,10 @@ function buildInitialDeductions(
     // White Collar / Loyalis deductions
     deductions.push({ label: 'BPJS', amount: emp.bpjs?.deductionAmount || 0 });
     deductions.push({ label: 'Kop. Rochmad', amount: 0 });
-    deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
+    deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: koperasiDeduction });
     deductions.push({ label: 'Potongan Presensi', amount: presensiDeduction });
     deductions.push({ label: 'Potongan Bonus Presensi', amount: presenceDeduction });
-    deductions.push({ label: 'Simpanan Wajib Koperasi', amount: koperasiSaving });
+    deductions.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving });
     return deductions;
   }
 
@@ -168,8 +168,8 @@ function buildInitialDeductions(
     deductions.push({ label: 'Kop. Rochmad', amount: emp.deductions.koperasiRochmad });
   }
 
-  deductions.push({ label: 'Kop. Unipdu Rejoso Gemilang', amount: koperasiDeduction });
-  deductions.push({ label: 'Simpanan Wajib Koperasi', amount: koperasiSaving });
+  deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: koperasiDeduction });
+  deductions.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving });
 
   return deductions;
 }
