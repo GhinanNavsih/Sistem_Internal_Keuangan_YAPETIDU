@@ -132,7 +132,7 @@ export default function CetakVakasiPimpinanStafDialog({
         const expectedMinutes = workingDays * expectedHours * 60;
         const absenceMinutes = presenceEntry.absenceMinutes || 0;
         workedMinutes = Math.max(0, expectedMinutes - absenceMinutes);
-        presensiAmount = Math.round(workedMinutes * 27.5);
+        presensiAmount = getLoyalisPresensiEarning(emp.id);
         presensiHours = Math.round(expectedMinutes / 60);
       }
 
