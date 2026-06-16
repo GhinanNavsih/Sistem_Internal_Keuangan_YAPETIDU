@@ -124,6 +124,7 @@ export default function CetakVakasiPimpinanStafDialog({
       const presenceEntry = loyalisPresenceData?.entries?.[emp.id];
       let workedMinutes = 0;
       let presensiAmount = 0;
+      let presensiHours = 0;
 
       if (presenceEntry && !presenceEntry.isNotFoundInExcel) {
         const workingDays = loyalisPresenceData?.workingDays || 25;
@@ -132,9 +133,8 @@ export default function CetakVakasiPimpinanStafDialog({
         const absenceMinutes = presenceEntry.absenceMinutes || 0;
         workedMinutes = Math.max(0, expectedMinutes - absenceMinutes);
         presensiAmount = Math.round(workedMinutes * 27.5);
+        presensiHours = Math.round(expectedMinutes / 60);
       }
-
-      const presensiHours = Math.round(workedMinutes / 60);
 
       // Bonus Presensi
       const presenceBonus = getLoyalisPresenceBonus(emp.id);
