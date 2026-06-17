@@ -93,7 +93,7 @@ const parseDotsToNumber = (val: string): number => {
 /**
  * Build initial earnings rows from whatever we know about the employee.
  */
-function buildInitialEarnings(
+export function buildInitialEarnings(
   emp: any,
   gapok: number,
   activeTab?: string,
@@ -240,7 +240,7 @@ function buildInitialEarnings(
 /**
  * Build initial deductions rows from whatever we know about the employee.
  */
-function buildInitialDeductions(
+export function buildInitialDeductions(
   emp: any,
   activeTab?: string,
   koperasiDeduction = 0,

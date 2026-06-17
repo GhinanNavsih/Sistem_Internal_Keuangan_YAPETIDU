@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
@@ -96,6 +96,7 @@ export default function ConstantValuesDebugPage() {
     tInstruksional: 0,
   });
   const [saving, setSaving] = useState(false);
+  const isSavingRef = useRef(false);
 
   const handleStartEdit = (emp: EmployeeConstantRecord) => {
     setEditingEmployee(emp);
@@ -116,8 +117,9 @@ export default function ConstantValuesDebugPage() {
   };
 
   const handleSaveEdit = async () => {
-    if (!editingEmployee) return;
+    if (!editingEmployee || isSavingRef.current) return;
     try {
+      isSavingRef.current = true;
       setSaving(true);
       const collectionName = editingEmployee.type === 'loyalis' ? 'Employees_Loyalis' : 'Employees_BlueCollar';
       const docRef = doc(db, collectionName, editingEmployee.id);
@@ -185,6 +187,7 @@ export default function ConstantValuesDebugPage() {
       console.error('Error saving edits:', error);
       alert('Gagal menyimpan perubahan.');
     } finally {
+      isSavingRef.current = false;
       setSaving(false);
     }
   };

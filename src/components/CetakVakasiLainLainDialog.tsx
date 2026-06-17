@@ -31,7 +31,7 @@ interface CetakVakasiLainLainDialogProps {
   employees: EmployeeRow[];
   categories: string[]; // Unique department units for Loyalis
   periodName: string; // e.g. "Mei 2026"
-  vakasiTambahanMap: Record<string, number>;
+  vakasiTambahanListMap: Record<string, { eventName: string; payGiven: number; isEndOfMonth?: boolean }[]>;
 }
 
 export default function CetakVakasiLainLainDialog({
@@ -40,7 +40,7 @@ export default function CetakVakasiLainLainDialog({
   employees,
   categories,
   periodName,
-  vakasiTambahanMap,
+  vakasiTambahanListMap,
 }: CetakVakasiLainLainDialogProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
 
@@ -65,37 +65,66 @@ export default function CetakVakasiLainLainDialog({
       return;
     }
 
-    // 2. Sort by original database rowIndex to guarantee a deterministic sequence
+    // 2. Gather all unique end-of-month event names from activeLoyalis employees
+    const uniqueEndOfMonthEventsSet = new Set<string>();
+    activeLoyalis.forEach(emp => {
+      const events = vakasiTambahanListMap[emp.id] || [];
+      events.forEach(evt => {
+        if (evt.isEndOfMonth) {
+          uniqueEndOfMonthEventsSet.add(evt.eventName);
+        }
+      });
+    });
+    const uniqueEndOfMonthEvents = Array.from(uniqueEndOfMonthEventsSet).sort();
+
+    // 3. Sort by original database rowIndex to guarantee a deterministic sequence
     const sortedEmployees = [...activeLoyalis].sort((a, b) => a.rowIndex - b.rowIndex);
 
-    // 3. Map to row data objects
+    // 4. Map to row data objects
     const rows: VakasiLainLainRow[] = sortedEmployees.map((emp, idx) => {
       const raw = emp.raw;
       
       // Tunjangan Struktural
       const tStruktural = calculateStructuralAllowance(raw.employment_profile?.structural_positions || []);
 
-      // Vakasi Tambahan
-      const vakasiTambahan = vakasiTambahanMap[emp.id] || 0;
+      // Tunjangan Instruksional
+      const tInstruksional = raw.t_instruksional || 0;
+
+      // Get employee's events
+      const employeeEvents = vakasiTambahanListMap[emp.id] || [];
+
+      // Vakasi Tambahan is the sum of payments for events where isEndOfMonth !== true
+      const vakasiTambahan = employeeEvents
+        .filter(evt => !evt.isEndOfMonth)
+        .reduce((sum, evt) => sum + evt.payGiven, 0);
+
+      // Pays for each event in the order of uniqueEndOfMonthEvents
+      const endOfMonthPays = uniqueEndOfMonthEvents.map(evtName => {
+        const match = employeeEvents.find(evt => evt.isEndOfMonth && evt.eventName === evtName);
+        return match ? match.payGiven : 0;
+      });
 
       // Net/Jumlah of this section
-      const jumlah = tStruktural + vakasiTambahan;
+      const jumlah = tStruktural + tInstruksional + vakasiTambahan + endOfMonthPays.reduce((sum, val) => sum + val, 0);
 
       return {
         noUrut: idx + 1,
         name: emp.name,
         position: raw.employment_profile?.structural_positions?.[0]?.name || raw.employment_profile?.job_role || 'Staf',
         tStruktural,
+        tInstruksional,
         vakasiTambahan,
+        endOfMonthPays,
         jumlah
       };
     });
 
-    // 4. Generate the PDF
+    // 5. Generate the PDF
     generateVakasiLainLainPdf({
       department: selectedCategory,
       period: periodName,
       rows,
+      endOfMonthEvents: uniqueEndOfMonthEvents,
     });
 
     onOpenChange(false);

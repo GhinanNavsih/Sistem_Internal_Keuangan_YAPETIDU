@@ -16,6 +16,13 @@ export interface TunjanganJabatanData {
 }
 
 export function generateTunjanganJabatanPdf(data: TunjanganJabatanData, saveToFile = true): jsPDF {
+  // Filter out rows with 0 amount and reassign NO. sequentially starting at 1
+  const activeRows = data.rows.filter(row => row.amount > 0);
+  const sequentialRows = activeRows.map((row, idx) => ({
+    ...row,
+    noUrut: idx + 1
+  }));
+
   // Folio paper dimensions (216x330mm)
   const doc = new jsPDF({
     orientation: 'landscape',
@@ -45,19 +52,40 @@ export function generateTunjanganJabatanPdf(data: TunjanganJabatanData, saveToFi
   doc.text('TUNJANGAN JABATAN', 58, 19);
   doc.text(`BULAN  ${data.period.toUpperCase()}`, 58, 25);
 
+  // Measure text width of the longest name in sequentialRows to size NAMA column dynamically
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5); // body text font size
+  let maxNameWidth = 0;
+  sequentialRows.forEach(row => {
+    const w = doc.getTextWidth(row.name);
+    if (w > maxNameWidth) {
+      maxNameWidth = w;
+    }
+  });
+
+  // Calculate NAMA column width (longest name + 5mm padding, bounded between 35mm and 95mm)
+  const nameWidth = Math.max(35, Math.min(95, maxNameWidth + 5));
+
+  // Determine width distribution
+  const totalTableWidth = 300; // Landscape Folio table width
+  const marginSide = Math.max(15, (pageWidth - totalTableWidth) / 2);
+
+  // Remaining space divided equally among JABATAN and JUMLAH columns
+  const equalColWidth = (totalTableWidth - 10 - nameWidth) / 2;
+
   // Table setup
   autoTable(doc, {
     startY: 35,
-    margin: { left: 15, right: 15 },
+    margin: { left: marginSide, right: marginSide },
     head: [
       [
-        { content: 'NO.\nURUT', styles: { halign: 'center' as const, valign: 'middle' as const } },
+        { content: 'NO.', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'NAMA', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'JABATAN', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'JUMLAH', styles: { halign: 'center' as const, valign: 'middle' as const } }
       ]
     ],
-    body: data.rows.map(row => [
+    body: sequentialRows.map(row => [
       row.noUrut.toString(),
       row.name,
       row.positionName,
@@ -85,11 +113,12 @@ export function generateTunjanganJabatanPdf(data: TunjanganJabatanData, saveToFi
       lineColor: [0, 0, 0],
       lineWidth: 0.15,
     },
+    tableWidth: totalTableWidth,
     columnStyles: {
-      0: { cellWidth: 20, halign: 'center' as const, fontSize: 11 }, // NO. URUT
-      1: { cellWidth: 100, halign: 'left' as const, fontSize: 11 },   // NAMA
-      2: { cellWidth: 120, halign: 'left' as const, fontSize: 11 },   // JABATAN
-      3: { cellWidth: 60, halign: 'right' as const, fontSize: 11 },   // JUMLAH
+      0: { cellWidth: 10, halign: 'center' as const, fontSize: 11 },
+      1: { cellWidth: nameWidth, halign: 'left' as const, fontSize: 11 },
+      2: { cellWidth: equalColWidth, halign: 'left' as const, fontSize: 11 },
+      3: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 11 },
     }
   });
 

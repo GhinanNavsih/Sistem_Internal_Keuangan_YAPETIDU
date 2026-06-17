@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
@@ -94,6 +94,7 @@ export default function UserManagementPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const isActionLoadingRef = useRef(false);
 
   // New User form state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -220,12 +221,13 @@ export default function UserManagementPage() {
   // Add User submit handler
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || isActionLoadingRef.current) return;
     if (!newEmail || !newPassword) {
       setErrorMsg('Email dan Password wajib diisi.');
       return;
     }
 
+    isActionLoadingRef.current = true;
     setActionLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -268,6 +270,7 @@ export default function UserManagementPage() {
     } catch (err: any) {
       setErrorMsg(err.message || 'Terjadi kesalahan saat memproses data.');
     } finally {
+      isActionLoadingRef.current = false;
       setActionLoading(false);
     }
   };
@@ -283,7 +286,8 @@ export default function UserManagementPage() {
 
   // Submit Edit changes
   const handleUpdateUser = async () => {
-    if (!user || !editingUser) return;
+    if (!user || !editingUser || isActionLoadingRef.current) return;
+    isActionLoadingRef.current = true;
     setActionLoading(true);
     setErrorMsg(null);
 
@@ -315,6 +319,7 @@ export default function UserManagementPage() {
     } catch (err: any) {
       setErrorMsg(err.message || 'Terjadi kesalahan saat menyimpan perubahan.');
     } finally {
+      isActionLoadingRef.current = false;
       setActionLoading(false);
     }
   };
@@ -326,7 +331,8 @@ export default function UserManagementPage() {
 
   // Execute Delete
   const handleDeleteUser = async () => {
-    if (!user || !deletingUser) return;
+    if (!user || !deletingUser || isActionLoadingRef.current) return;
+    isActionLoadingRef.current = true;
     setActionLoading(true);
     setErrorMsg(null);
 
@@ -350,6 +356,7 @@ export default function UserManagementPage() {
     } catch (err: any) {
       setErrorMsg(err.message || 'Terjadi kesalahan saat menghapus pengguna.');
     } finally {
+      isActionLoadingRef.current = false;
       setActionLoading(false);
     }
   };

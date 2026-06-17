@@ -197,6 +197,7 @@ export default function EmployeeActivitiesPage() {
   const [formTimeStart, setFormTimeStart] = useState('');
   const [formTimeEnd, setFormTimeEnd] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const isSubmittingRef = React.useRef(false);
 
   // ── Notifications ──
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -304,7 +305,7 @@ export default function EmployeeActivitiesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile?.linkedEmployeeId) return;
+    if (!profile?.linkedEmployeeId || isSubmittingRef.current) return;
 
     if (!formName.trim()) {
       setMessage({ type: 'error', text: 'Jenis kegiatan harus diisi.' });
@@ -323,6 +324,7 @@ export default function EmployeeActivitiesPage() {
       return;
     }
 
+    isSubmittingRef.current = true;
     setSubmitting(true);
     try {
       if (editingActivity) {
@@ -375,6 +377,7 @@ export default function EmployeeActivitiesPage() {
       console.error('Error submitting activity:', err);
       setMessage({ type: 'error', text: 'Gagal menyimpan kegiatan. Silakan coba lagi.' });
     } finally {
+      isSubmittingRef.current = false;
       setSubmitting(false);
     }
   };

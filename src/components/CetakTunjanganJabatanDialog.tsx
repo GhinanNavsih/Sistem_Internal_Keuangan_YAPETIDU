@@ -98,8 +98,8 @@ export default function CetakTunjanganJabatanDialog({
       });
     });
 
-    // 3. Filter by the selected department unit
-    const filteredRows = globalPositions.filter(p => p.departmentUnit === selectedCategory);
+    // 3. Filter by the selected department unit and non-zero amount
+    const filteredRows = globalPositions.filter(p => p.departmentUnit === selectedCategory && p.amount > 0);
 
     if (filteredRows.length === 0) {
       alert(`Tidak ada karyawan dengan tunjangan jabatan di unit "${selectedCategory}"`);

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { calculateYearsOfService, calculateGapok, matchFunctionalAllowance, normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import {
@@ -51,12 +51,15 @@ import { collection, getDocs, doc, getDoc, setDoc, query, where } from 'firebase
 import { db, secondaryDb } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
-import PaySlipDialog, { SlipState } from '@/components/PaySlipDialog';
+import PaySlipDialog, { SlipState, buildInitialEarnings, buildInitialDeductions } from '@/components/PaySlipDialog';
+import * as XLSX from 'xlsx';
 import LegalitasPimpinanDialog from '@/components/LegalitasPimpinanDialog';
 import CetakPayrollDialog from '@/components/CetakPayrollDialog';
 import CetakTunjanganJabatanDialog from '@/components/CetakTunjanganJabatanDialog';
 import CetakVakasiPimpinanStafDialog from '@/components/CetakVakasiPimpinanStafDialog';
 import CetakVakasiLainLainDialog from '@/components/CetakVakasiLainLainDialog';
+import CetakPotonganGajiDialog from '@/components/CetakPotonganGajiDialog';
+import CetakGabunganDialog from '@/components/CetakGabunganDialog';
 import { generateWhatsAppPaySlipUrl, uploadPaySlipPdf } from '@/utils/whatsappHelper';
 import { generatePaySlipPdf, generateMultiPaySlipPdf, PaySlipData } from '@/utils/generatePaySlipPdf';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -147,6 +150,7 @@ export default function PayrollValidationDashboard() {
     message: string;
   }>({ show: false, type: 'success', message: '' });
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
+  const isSavingRef = useRef(false);
   const [uploadingWa, setUploadingWa] = useState<Record<string, boolean>>({});
   const [salaryMatrix, setSalaryMatrix] = useState<SalaryMatrix>({});
   const [loading, setLoading] = useState(true);
@@ -172,7 +176,7 @@ export default function PayrollValidationDashboard() {
 
   // ─── VakasiTambahan state (keyed by employeeId) ─────────────────
   const [vakasiTambahanMap, setVakasiTambahanMap] = useState<Record<string, number>>({});
-  const [vakasiTambahanListMap, setVakasiTambahanListMap] = useState<Record<string, { eventName: string; payGiven: number }[]>>({});
+  const [vakasiTambahanListMap, setVakasiTambahanListMap] = useState<Record<string, { eventName: string; payGiven: number; isEndOfMonth?: boolean }[]>>({});
   const [functionalAllowanceMap, setFunctionalAllowanceMap] = useState<Record<string, number>>({});
   const [koperasiDeductions, setKoperasiDeductions] = useState<Record<string, number>>({});
   const [koperasiSavings, setKoperasiSavings] = useState<Record<string, number>>({});
@@ -320,6 +324,8 @@ export default function PayrollValidationDashboard() {
   const [tunjanganJabatanDialogOpen, setTunjanganJabatanDialogOpen] = useState(false);
   const [vakasiPimpinanStafDialogOpen, setVakasiPimpinanStafDialogOpen] = useState(false);
   const [vakasiLainLainDialogOpen, setVakasiLainLainDialogOpen] = useState(false);
+  const [potonganGajiDialogOpen, setPotonganGajiDialogOpen] = useState(false);
+  const [gabunganDialogOpen, setGabunganDialogOpen] = useState(false);
   const [printSelectorOpen, setPrintSelectorOpen] = useState(false);
 
   // New States for Email & Cetak/Kirim Fallbacks
@@ -329,6 +335,190 @@ export default function PayrollValidationDashboard() {
   const [bulkEmailProgress, setBulkEmailProgress] = useState(0);
   const [emailTargetCount, setEmailTargetCount] = useState(0);
   const [currentBulkEmailName, setCurrentBulkEmailName] = useState('');
+
+  const handleExportExcel = () => {
+    const filteredEmployees = getFilteredAndSortedEmployees();
+
+    if (filteredEmployees.length === 0) {
+      alert("Tidak ada data untuk diekspor.");
+      return;
+    }
+
+    const allEarningLabelsSet = new Set<string>();
+    const allDeductionLabelsSet = new Set<string>();
+
+    const rowsData = filteredEmployees.map((emp, idx) => {
+      const years = calculateYearsOfService(emp.joinDate, targetDate);
+      const gapok = calculateGapok(emp, salaryMatrix, targetDate);
+      const slip = slipStates[emp.id];
+
+      let earningsList: { label: string; amount: number }[] = [];
+      let deductionsList: { label: string; amount: number }[] = [];
+
+      if (slip && slip.earnings && slip.deductions) {
+        earningsList = slip.earnings.map(e => ({ label: e.label, amount: e.amount }));
+        deductionsList = slip.deductions.map(d => ({ label: d.label, amount: d.amount }));
+      } else {
+        const roleKey = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
+        const periodKey = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+        const uraianDoc = uraianMap[`${periodKey}_${roleKey}`];
+        const uraianEntry = uraianDoc?.entries?.[emp.id];
+
+        earningsList = buildInitialEarnings(
+          emp.raw,
+          gapok,
+          payrollCollar,
+          uraianEntry,
+          vakasiTambahanMap[emp.id] ?? 0,
+          vakasiTambahanListMap[emp.id] ?? [],
+          functionalAllowanceMap[emp.id] ?? 0,
+          [],
+          getLoyalisPresenceBonus(emp.id),
+          getLoyalisPresensiEarning(emp.id)
+        );
+
+        deductionsList = buildInitialDeductions(
+          emp.raw,
+          payrollCollar,
+          koperasiDeductions[emp.id] || 0,
+          getLoyalisPresenceDeduction(emp.id),
+          getLoyalisPresensiDeduction(emp.id),
+          koperasiSavings[emp.id] || 0
+        );
+      }
+
+      earningsList.forEach(e => allEarningLabelsSet.add(e.label));
+      deductionsList.forEach(d => allDeductionLabelsSet.add(d.label));
+
+      const totalEarnings = earningsList.reduce((sum, e) => sum + e.amount, 0);
+      const totalDeductions = deductionsList.reduce((sum, d) => sum + d.amount, 0);
+      const netSalary = totalEarnings - totalDeductions;
+
+      return {
+        no: idx + 1,
+        id: emp.id,
+        nik_niy: payrollCollar === 'loyalis' ? (emp.raw.personal_info?.employee_id_niy || '') : (emp.raw.nik || ''),
+        name: emp.name,
+        role: emp.role,
+        gradeLevel: emp.gradeLevel,
+        joinDate: emp.joinDate ? new Date(emp.joinDate).toLocaleDateString('id-ID') : '',
+        status: emp.isActive ? 'AKTIF' : 'KELUAR',
+        earningsMap: earningsList.reduce((acc, curr) => ({ ...acc, [curr.label]: curr.amount }), {} as Record<string, number>),
+        deductionsMap: deductionsList.reduce((acc, curr) => ({ ...acc, [curr.label]: curr.amount }), {} as Record<string, number>),
+        totalEarnings,
+        totalDeductions,
+        netSalary
+      };
+    });
+
+    const earningLabels = Array.from(allEarningLabelsSet);
+    const deductionLabels = Array.from(allDeductionLabelsSet);
+
+    const headers = [
+      'NO',
+      payrollCollar === 'loyalis' ? 'NIY' : 'NIK',
+      'NAMA',
+      payrollCollar === 'loyalis' ? 'DEPARTEMEN / UNIT' : 'JABATAN',
+      'GOLONGAN',
+      'TANGGAL MASUK',
+      'STATUS',
+      ...earningLabels,
+      'TOTAL PENDAPATAN',
+      ...deductionLabels,
+      'TOTAL POTONGAN',
+      'GAJI BERSIH'
+    ];
+
+    const dataRows: any[][] = [];
+
+    rowsData.forEach(row => {
+      const dataRow: any[] = [
+        row.no,
+        row.nik_niy,
+        row.name,
+        row.role,
+        row.gradeLevel,
+        row.joinDate,
+        row.status
+      ];
+
+      earningLabels.forEach(label => {
+        dataRow.push(row.earningsMap[label] || 0);
+      });
+
+      dataRow.push(row.totalEarnings);
+
+      deductionLabels.forEach(label => {
+        dataRow.push(row.deductionsMap[label] || 0);
+      });
+
+      dataRow.push(row.totalDeductions);
+      dataRow.push(row.netSalary);
+
+      dataRows.push(dataRow);
+    });
+
+    const totalRow: any[] = [
+      '',
+      '',
+      'JUMLAH',
+      '',
+      '',
+      '',
+      ''
+    ];
+
+    earningLabels.forEach(label => {
+      const sum = rowsData.reduce((acc, curr) => acc + (curr.earningsMap[label] || 0), 0);
+      totalRow.push(sum);
+    });
+
+    totalRow.push(rowsData.reduce((acc, curr) => acc + curr.totalEarnings, 0));
+
+    deductionLabels.forEach(label => {
+      const sum = rowsData.reduce((acc, curr) => acc + (curr.deductionsMap[label] || 0), 0);
+      totalRow.push(sum);
+    });
+
+    totalRow.push(rowsData.reduce((acc, curr) => acc + curr.totalDeductions, 0));
+    totalRow.push(rowsData.reduce((acc, curr) => acc + curr.netSalary, 0));
+
+    const periodString = getPayrollPeriod(targetDate);
+    const title = payrollCollar === 'loyalis' ? 'LAPORAN PAYROLL STAF LOYALIS' : 'LAPORAN PAYROLL PEKARYA';
+    
+    const worksheetData = [
+      [title],
+      [`PERIODE: ${periodString.toUpperCase()}`],
+      [],
+      headers,
+      ...dataRows,
+      [],
+      totalRow
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+
+    const colWidths = headers.map((header, colIndex) => {
+      let maxLen = header.length;
+      worksheetData.forEach(r => {
+        if (r[colIndex] !== undefined && r[colIndex] !== null) {
+          const valStr = String(r[colIndex]);
+          if (valStr.length > maxLen) {
+            maxLen = valStr.length;
+          }
+        }
+      });
+      return { wch: maxLen + 3 };
+    });
+    worksheet['!cols'] = colWidths;
+
+    const workbook = XLSX.utils.book_new();
+    const sheetName = payrollCollar === 'loyalis' ? 'Payroll Loyalis' : 'Payroll Pekarya';
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+    const filename = `Payroll_${sheetName.replace(/\s+/g, '_')}_${periodString.replace(/\s+/g, '_')}.xlsx`;
+    XLSX.writeFile(workbook, filename);
+  };
 
   const handlePrintRekap = async (format: 'pdf' | 'xlsx') => {
     const sanitizeDeductionLabel = (label: string): string => {
@@ -904,46 +1094,18 @@ export default function PayrollValidationDashboard() {
     fetchPeriodData();
   }, [targetDate, profile]);
 
-  // ─── Fetch VakasiTambahan & KegiatanSpj & ActivityReports for current period ───
+  // ─── Fetch VakasiTambahan for current period (Loyalis Only) ───
   useEffect(() => {
     if (!profile || profile.role !== 'super_admin') return;
     const fetchVakasiAndSpj = async () => {
       try {
         const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
 
-        const year = targetDate.getFullYear();
-        const month = targetDate.getMonth(); // 0-indexed
-
-        // Pekarya period: 26th of previous month to 25th of current month
-        const prevMonthDate = new Date(year, month - 1, 26);
-        const currentMonthDate = new Date(year, month, 25);
-
-        const formatDate = (d: Date) => {
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        };
-
-        const startDateStr = formatDate(prevMonthDate);
-        const endDateStr = formatDate(currentMonthDate);
-        const prevMonthToken = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
-
-        // Fetch collections/queries in parallel
-        const [snapshotLoyalis, snapshotSpj, snapshotAct1, snapshotAct2] = await Promise.all([
-          getDocs(collection(db, 'VakasiTambahan')),
-          getDocs(collection(db, 'KegiatanSpj')),
-          getDocs(query(
-            collection(db, 'ActivityReports'),
-            where('period', '==', prevMonthToken),
-            where('status', '==', 'approved'),
-          )),
-          getDocs(query(
-            collection(db, 'ActivityReports'),
-            where('period', '==', periodToken),
-            where('status', '==', 'approved'),
-          )),
-        ]);
+        // Fetch Loyalis VakasiTambahan collection
+        const snapshotLoyalis = await getDocs(collection(db, 'VakasiTambahan'));
 
         const sumMap: Record<string, number> = {};
-        const listMap: Record<string, { eventName: string; payGiven: number }[]> = {};
+        const listMap: Record<string, { eventName: string; payGiven: number; isEndOfMonth?: boolean }[]> = {};
 
         const processDocs = (docs: any[]) => {
           docs.forEach(d => {
@@ -960,6 +1122,7 @@ export default function PayrollValidationDashboard() {
                 listMap[empId].push({
                   eventName: eventNameVal,
                   payGiven: w.payGiven || 0,
+                  isEndOfMonth: !!data.isEndOfMonth,
                 });
               });
             }
@@ -967,37 +1130,11 @@ export default function PayrollValidationDashboard() {
         };
 
         processDocs(snapshotLoyalis.docs);
-        processDocs(snapshotSpj.docs);
-
-        // Combine and filter ActivityReports by the 26th-to-25th date range
-        const allApprovedActivities = [
-          ...snapshotAct1.docs,
-          ...snapshotAct2.docs
-        ].map(d => ({ id: d.id, ...d.data() } as any));
-
-        const filteredActivities = allApprovedActivities.filter((act: any) => {
-          return act.activityDate >= startDateStr && act.activityDate <= endDateStr;
-        });
-
-        // Add approved ActivityReports to the sums
-        filteredActivities.forEach(data => {
-          const empId = data.employeeId;
-          if (empId) {
-            sumMap[empId] = (sumMap[empId] || 0) + (data.fee || 0);
-            if (!listMap[empId]) {
-              listMap[empId] = [];
-            }
-            listMap[empId].push({
-              eventName: data.activityName || 'Kegiatan Harian',
-              payGiven: data.fee || 0,
-            });
-          }
-        });
 
         setVakasiTambahanMap(sumMap);
         setVakasiTambahanListMap(listMap);
       } catch (err) {
-        console.error('Error fetching VakasiTambahan/KegiatanSpj/ActivityReports:', err);
+        console.error('Error fetching VakasiTambahan:', err);
       }
     };
     fetchVakasiAndSpj();
@@ -1367,6 +1504,8 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleSlipGenerated = async (employeeId: string, state: SlipState) => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     // 1. Update React state immediately for snappy UI feel
     setSlipStates(prev => ({ ...prev, [employeeId]: state }));
 
@@ -1411,6 +1550,8 @@ export default function PayrollValidationDashboard() {
       setTimeout(() => {
         setNotification(prev => ({ ...prev, show: false }));
       }, 5000);
+    } finally {
+      isSavingRef.current = false;
     }
   };
 
@@ -1662,6 +1803,14 @@ export default function PayrollValidationDashboard() {
                 >
                   <Printer className="w-4 h-4 text-slate-500" />
                   Cetak Dokumen
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+                  Ekspor Excel
                 </button>
               </div>
             </div>
@@ -1949,7 +2098,40 @@ export default function PayrollValidationDashboard() {
         employees={employees}
         categories={categories}
         periodName={payrollPeriod}
-        vakasiTambahanMap={vakasiTambahanMap}
+        vakasiTambahanListMap={vakasiTambahanListMap}
+      />
+
+      <CetakPotonganGajiDialog
+        open={potonganGajiDialogOpen}
+        onOpenChange={setPotonganGajiDialogOpen}
+        employees={employees}
+        categories={categories}
+        periodName={payrollPeriod}
+        slipStates={slipStates}
+        koperasiDeductions={koperasiDeductions}
+        koperasiSavings={koperasiSavings}
+        getLoyalisPresenceDeduction={getLoyalisPresenceDeduction}
+        getLoyalisPresensiDeduction={getLoyalisPresensiDeduction}
+      />
+
+      <CetakGabunganDialog
+        open={gabunganDialogOpen}
+        onOpenChange={setGabunganDialogOpen}
+        employees={employees}
+        categories={categories}
+        periodName={payrollPeriod}
+        salaryMatrix={salaryMatrix}
+        targetDate={targetDate}
+        functionalAllowanceMap={functionalAllowanceMap}
+        getLoyalisPresenceBonus={getLoyalisPresenceBonus}
+        getLoyalisPresenceDeduction={getLoyalisPresenceDeduction}
+        getLoyalisPresensiEarning={getLoyalisPresensiEarning}
+        getLoyalisPresensiDeduction={getLoyalisPresensiDeduction}
+        loyalisPresenceData={loyalisPresenceData}
+        vakasiTambahanListMap={vakasiTambahanListMap}
+        slipStates={slipStates}
+        koperasiDeductions={koperasiDeductions}
+        koperasiSavings={koperasiSavings}
       />
 
       {/* ─── Print Selection Dialog ─────────────────────────────────── */}
@@ -2143,6 +2325,58 @@ export default function PayrollValidationDashboard() {
                 </div>
                 <div className="flex-shrink-0 self-center pl-2">
                   <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-rose-500 group-hover:translate-x-1 transition-all duration-200" />
+                </div>
+              </button>
+            )}
+
+            {/* Card 8: Laporan Potongan Gaji (Loyalis Only) */}
+            {payrollCollar === 'loyalis' && (
+              <button
+                onClick={() => {
+                  setPrintSelectorOpen(false);
+                  setPotonganGajiDialogOpen(true);
+                }}
+                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
+              >
+                <div className="flex-shrink-0 p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-indigo-900 transition-colors">
+                    Potongan Gaji
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    Cetak rincian seluruh potongan gaji karyawan unit.
+                  </p>
+                </div>
+                <div className="flex-shrink-0 self-center pl-2">
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all duration-200" />
+                </div>
+              </button>
+            )}
+
+            {/* Card 9: Laporan Gabungan (Loyalis Only) */}
+            {payrollCollar === 'loyalis' && (
+              <button
+                onClick={() => {
+                  setPrintSelectorOpen(false);
+                  setGabunganDialogOpen(true);
+                }}
+                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
+              >
+                <div className="flex-shrink-0 p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-indigo-900 transition-colors">
+                    Laporan Gabungan
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    Cetak rekap gabungan tunjangan jabatan, vakasi, dan potongan gaji.
+                  </p>
+                </div>
+                <div className="flex-shrink-0 self-center pl-2">
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all duration-200" />
                 </div>
               </button>
             )}

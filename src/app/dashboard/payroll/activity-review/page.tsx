@@ -186,6 +186,7 @@ export default function ActivityReviewPage() {
 
   // ── Action Loading ──
   const [actionLoading, setActionLoading] = useState(false);
+  const isActionLoadingRef = React.useRef(false);
 
   // ── Notifications ──
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -363,13 +364,14 @@ export default function ActivityReviewPage() {
 
   // ── Approve Row Handler (Inline Approval) ──
   const handleApproveRow = async (activity: ActivityReport, feeStr: string) => {
-    if (!user) return;
+    if (isActionLoadingRef.current || !user) return;
     const feeVal = parseInt(feeStr.replace(/\D/g, ''), 10);
     if (isNaN(feeVal) || feeVal <= 0) {
       setErrorMsg('Masukkan nilai fee yang valid (lebih dari 0).');
       return;
     }
 
+    isActionLoadingRef.current = true;
     setActionLoading(true);
     try {
       await updateDoc(doc(db, 'ActivityReports', activity.id), {
@@ -392,14 +394,16 @@ export default function ActivityReviewPage() {
       console.error('Error approving activity:', err);
       setErrorMsg('Gagal menyetujui kegiatan.');
     } finally {
+      isActionLoadingRef.current = false;
       setActionLoading(false);
     }
   };
 
   // ── Decline Handler ──
   const handleDecline = async () => {
-    if (!declineTarget || !user) return;
+    if (isActionLoadingRef.current || !declineTarget || !user) return;
 
+    isActionLoadingRef.current = true;
     setActionLoading(true);
     try {
       await updateDoc(doc(db, 'ActivityReports', declineTarget.id), {
@@ -417,13 +421,14 @@ export default function ActivityReviewPage() {
       console.error('Error declining activity:', err);
       setErrorMsg('Gagal menolak kegiatan.');
     } finally {
+      isActionLoadingRef.current = false;
       setActionLoading(false);
     }
   };
 
   // ── Bulk Approve Individual Handler ──
   const handleBulkApproveIndividual = async () => {
-    if (!user || selectedIds.size === 0) return;
+    if (isActionLoadingRef.current || !user || selectedIds.size === 0) return;
     if (!confirm(`Apakah Anda yakin ingin menyetujui ${selectedIds.size} kegiatan yang dipilih?`)) return;
 
     // Validate that all selected activities have a valid fee input
@@ -449,6 +454,7 @@ export default function ActivityReviewPage() {
       return;
     }
 
+    isActionLoadingRef.current = true;
     setActionLoading(true);
     try {
       const batch = writeBatch(db);
@@ -476,15 +482,17 @@ export default function ActivityReviewPage() {
       console.error('Error bulk approving activities:', err);
       setErrorMsg('Gagal menyetujui kegiatan secara massal.');
     } finally {
+      isActionLoadingRef.current = false;
       setActionLoading(false);
     }
   };
 
   // ── Bulk Decline Handler ──
   const handleBulkDecline = async () => {
-    if (!user || selectedIds.size === 0) return;
+    if (isActionLoadingRef.current || !user || selectedIds.size === 0) return;
     if (!confirm(`Apakah Anda yakin ingin menolak ${selectedIds.size} kegiatan yang dipilih?`)) return;
 
+    isActionLoadingRef.current = true;
     setActionLoading(true);
     try {
       const batch = writeBatch(db);
@@ -506,6 +514,7 @@ export default function ActivityReviewPage() {
       console.error('Error bulk declining:', err);
       setErrorMsg('Gagal menolak kegiatan secara massal.');
     } finally {
+      isActionLoadingRef.current = false;
       setActionLoading(false);
     }
   };

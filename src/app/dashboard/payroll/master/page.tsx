@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   Table,
@@ -46,6 +46,7 @@ export default function SalaryMasterPage() {
   const [activeVersion, setActiveVersion] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const isSavingRef = useRef(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   
   const [selectedTab, setSelectedTab] = useState<'blue_collar' | 'white_collar' | 'functional'>('blue_collar');
@@ -183,7 +184,9 @@ export default function SalaryMasterPage() {
   };
 
   const saveChanges = async () => {
+    if (isSavingRef.current) return;
     try {
+      isSavingRef.current = true;
       setSaving(true);
       setMessage(null);
       const batch = writeBatch(db);
@@ -239,6 +242,7 @@ export default function SalaryMasterPage() {
       console.error("Error saving changes:", error);
       setMessage({ type: 'error', text: 'Gagal menyimpan perubahan. Silakan coba lagi.' });
     } finally {
+      isSavingRef.current = false;
       setSaving(false);
     }
   };

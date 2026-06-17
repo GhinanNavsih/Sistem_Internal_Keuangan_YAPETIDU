@@ -208,7 +208,7 @@ export function generatePayrollStatementPdf(data: PayrollStatementData): void {
 
   const head = [
     [
-      { content: 'NO.\nURUT', styles: { halign: 'center', valign: 'middle', fillColor: [220, 220, 220] } },
+      { content: 'NO.', styles: { halign: 'center', valign: 'middle', fillColor: [220, 220, 220] } },
       { content: 'NAMA', styles: { halign: 'center', valign: 'middle', fillColor: [220, 220, 220] } },
       { content: 'NO. REK', styles: { halign: 'center', valign: 'middle', fillColor: [220, 220, 220] } },
       { content: 'JUMLAH GAJI\nBERSIH', styles: { halign: 'center', valign: 'middle', fillColor: [220, 220, 220] } },

@@ -7,7 +7,9 @@ export interface VakasiLainLainRow {
   name: string;
   position: string;
   tStruktural: number;
+  tInstruksional: number;
   vakasiTambahan: number;
+  endOfMonthPays: number[]; // Array of pays for each event in the order of endOfMonthEvents prop
   jumlah: number;
 }
 
@@ -15,6 +17,7 @@ export interface VakasiLainLainData {
   department: string;
   period: string; // e.g. "MEI 2026"
   rows: VakasiLainLainRow[];
+  endOfMonthEvents: string[]; // List of dynamic column names
 }
 
 export function generateVakasiLainLainPdf(data: VakasiLainLainData, saveToFile = true): jsPDF {
@@ -42,13 +45,19 @@ export function generateVakasiLainLainPdf(data: VakasiLainLainData, saveToFile =
 
   // Sum totals
   let totalTStruktural = 0;
+  let totalTInstruksional = 0;
   let totalVakasiTambahan = 0;
   let totalJumlah = 0;
+  const totalEndOfMonthPays = Array(data.endOfMonthEvents.length).fill(0);
 
   data.rows.forEach(row => {
     totalTStruktural += row.tStruktural;
+    totalTInstruksional += row.tInstruksional;
     totalVakasiTambahan += row.vakasiTambahan;
     totalJumlah += row.jumlah;
+    row.endOfMonthPays.forEach((pay, idx) => {
+      totalEndOfMonthPays[idx] += pay;
+    });
   });
 
   // Add logos at top left
@@ -63,33 +72,79 @@ export function generateVakasiLainLainPdf(data: VakasiLainLainData, saveToFile =
   doc.text(data.department.toUpperCase(), 53, 23);
   doc.text(`BULAN  ${data.period.toUpperCase()}`, 53, 29);
 
+  // Header row setup
+  const headerRow = [
+    { content: 'NO.', styles: { halign: 'center' as const, valign: 'middle' as const } },
+    { content: 'NAMA', styles: { halign: 'center' as const, valign: 'middle' as const } },
+    { content: 'TUNJANGAN\nSTRUKTURAL', styles: { halign: 'center' as const, valign: 'middle' as const } },
+    { content: 'TUNJANGAN\nINSTRUKSIONAL', styles: { halign: 'center' as const, valign: 'middle' as const } },
+    { content: 'VAKASI\nTAMBAHAN', styles: { halign: 'center' as const, valign: 'middle' as const } },
+    // Dynamic end-of-month headers
+    ...data.endOfMonthEvents.map(evtName => ({
+      content: evtName.substring(0, 15).toUpperCase(),
+      styles: { halign: 'center' as const, valign: 'middle' as const }
+    })),
+    { content: 'JUMLAH', styles: { halign: 'center' as const, valign: 'middle' as const } }
+  ];
+
+  // Measure text width of the longest name in data.rows to size NAMA column dynamically
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5); // body text font size
+  let maxNameWidth = 0;
+  data.rows.forEach(row => {
+    const w = doc.getTextWidth(row.name);
+    if (w > maxNameWidth) {
+      maxNameWidth = w;
+    }
+  });
+
+  // Calculate NAMA column width (longest name + 5mm padding, bounded between 35mm and 95mm)
+  const nameWidth = Math.max(35, Math.min(95, maxNameWidth + 5));
+
+  // Determine width distribution
+  const totalTableWidth = 300; // Landscape Folio table width
+  const marginSide = Math.max(10, (pageWidth - totalTableWidth) / 2);
+
+  // Remaining space divided equally among all remaining columns (T. Struktural, T. Instruksional, Vakasi Tambahan, dynamic event columns, and JUMLAH)
+  const numEvents = data.endOfMonthEvents.length;
+  const equalColWidth = (totalTableWidth - 10 - nameWidth) / (4 + numEvents);
+
+  const columnStyles: { [key: number]: any } = {
+    0: { cellWidth: 10, halign: 'center' as const, fontSize: 8 },
+    1: { cellWidth: nameWidth, halign: 'left' as const }
+  };
+
+  columnStyles[2] = { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 };
+  columnStyles[3] = { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 };
+  columnStyles[4] = { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 };
+
+  for (let i = 0; i < numEvents; i++) {
+    columnStyles[5 + i] = { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 };
+  }
+
+  columnStyles[5 + numEvents] = { cellWidth: equalColWidth, halign: 'right' as const, fontStyle: 'bold', fontSize: 8 };
+
   // Table setup
   autoTable(doc, {
     startY: 37,
-    margin: { left: 10, right: 10 },
-    head: [
-      [
-        { content: 'NO.\nURUT', styles: { halign: 'center' as const, valign: 'middle' as const } },
-        { content: 'NAMA', styles: { halign: 'center' as const, valign: 'middle' as const } },
-        { content: 'JABATAN', styles: { halign: 'center' as const, valign: 'middle' as const } },
-        { content: 'TUNJANGAN\nSTRUKTURAL', styles: { halign: 'center' as const, valign: 'middle' as const } },
-        { content: 'VAKASI\nTAMBAHAN', styles: { halign: 'center' as const, valign: 'middle' as const } },
-        { content: 'JUMLAH', styles: { halign: 'center' as const, valign: 'middle' as const } }
-      ]
-    ],
+    margin: { left: marginSide, right: marginSide },
+    head: [headerRow],
     body: [
       ...data.rows.map(row => [
         row.noUrut.toString(),
         row.name,
-        row.position,
         formatValue(row.tStruktural),
+        formatValue(row.tInstruksional),
         formatValue(row.vakasiTambahan),
+        ...row.endOfMonthPays.map(amt => formatValue(amt)),
         formatIDR(row.jumlah)
       ]),
       [
-        { content: 'JUMLAH', colSpan: 3, styles: { halign: 'center' as const, fontStyle: 'bold' as const } },
+        { content: 'JUMLAH', colSpan: 2, styles: { halign: 'center' as const, fontStyle: 'bold' as const } },
         { content: totalTStruktural > 0 ? formatIDR(totalTStruktural) : '', styles: { fontStyle: 'bold' as const } },
+        { content: totalTInstruksional > 0 ? formatIDR(totalTInstruksional) : '', styles: { fontStyle: 'bold' as const } },
         { content: totalVakasiTambahan > 0 ? formatIDR(totalVakasiTambahan) : '', styles: { fontStyle: 'bold' as const } },
+        ...totalEndOfMonthPays.map(amt => amt > 0 ? formatIDR(amt) : ''),
         { content: formatIDR(totalJumlah), styles: { fontStyle: 'bold' as const } }
       ]
     ],
@@ -115,50 +170,11 @@ export function generateVakasiLainLainPdf(data: VakasiLainLainData, saveToFile =
       lineColor: [0, 0, 0],
       lineWidth: 0.1,
     },
-    columnStyles: {
-      0: { cellWidth: 15, halign: 'center' as const, fontSize: 8 },  // NO. URUT
-      1: { cellWidth: 80, halign: 'left' as const },                 // NAMA
-      2: { cellWidth: 80, halign: 'left' as const },                 // JABATAN
-      3: { cellWidth: 45, halign: 'right' as const, fontSize: 8 },   // T. STRUKTURAL
-      4: { cellWidth: 45, halign: 'right' as const, fontSize: 8 },   // VAKASI TAMBAHAN
-      5: { cellWidth: 45, halign: 'right' as const, fontStyle: 'bold', fontSize: 8 }, // JUMLAH
-    }
+    tableWidth: totalTableWidth,
+    columnStyles
   });
 
-  // Signatures block
-  const finalY = (doc as any).lastAutoTable.finalY;
-  const signatureSpaceNeeded = 45;
-  let signatureY = finalY + 15;
-
-  if (signatureY + signatureSpaceNeeded > pageHeight - 15) {
-    doc.addPage();
-    signatureY = 25;
-  }
-
-  doc.setFontSize(9.5);
-  doc.setFont('helvetica', 'normal');
-
-  // Left signature: Rektor
-  doc.text('Rektor', 10, signatureY);
-  doc.setFont('helvetica', 'bold');
-  doc.text("Dr. dr. H. M. ZULFIKAR AS'AD, MMR", 10, signatureY + 30);
-
-  // Right signature: Wakil Rektor with Date
-  const today = new Date();
-  const day = String(today.getDate()).padStart(2, '0');
-  const monthNames = [
-    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-  ];
-  const month = monthNames[today.getMonth()];
-  const year = today.getFullYear();
-  const dateStr = `Jombang, ${day} ${month} ${year}`;
-
-  doc.setFont('helvetica', 'normal');
-  doc.text(dateStr, pageWidth - 10, signatureY - 5, { align: 'right' });
-  doc.text('Wakil Rektor Bidang SDM, Keuangan dan Umum', pageWidth - 10, signatureY, { align: 'right' });
-  doc.setFont('helvetica', 'bold');
-  doc.text('Dr. Hj. Uswatun Qoyyimah, SS., M. Ed., Ph.D', pageWidth - 10, signatureY + 30, { align: 'right' });
+  // Signatures block removed
 
   // Add Page Numbers
   const pageCount = doc.getNumberOfPages();

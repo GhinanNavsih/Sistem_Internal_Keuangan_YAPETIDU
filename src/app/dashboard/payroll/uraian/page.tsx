@@ -48,6 +48,7 @@ import {
   generateRekapPresensiKebersihanyPdf,
   type KebersihanyEmployee,
 } from '@/utils/generateRekapPresensiKebersihan';
+import CetakKegiatanLoyalisDialog from '@/components/CetakKegiatanLoyalisDialog';
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 
@@ -96,7 +97,7 @@ export default function UraianPage() {
   }, [allowedCategories, category]);
 
   // ── Tab State ──
-  const [activeTab, setActiveTab] = useState<'presensi' | 'vakasi_loyalis' | 'kegiatan_spj'>('presensi');
+  const [activeTab, setActiveTab] = useState<'presensi' | 'vakasi_loyalis' | 'kegiatan_spj'>('vakasi_loyalis');
 
   useEffect(() => {
     if (profile && profile.role !== 'super_admin' && activeTab === 'vakasi_loyalis') {
@@ -128,12 +129,16 @@ export default function UraianPage() {
   const [workingDays, setWorkingDays] = useState<number>(25);
   const [expectedHours, setExpectedHours] = useState<number>(6.5);
   const [savingPresence, setSavingPresence] = useState(false);
+  const isSavingPresenceRef = useRef(false);
   const [existingPresence, setExistingPresence] = useState<any>(null);
   const [loadingPresence, setLoadingPresence] = useState(false);
 
   // Form States
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [eventName, setEventName] = useState('');
+  const [isEndOfMonth, setIsEndOfMonth] = useState(false);
+  const [selectedDept, setSelectedDept] = useState<string>('');
+  const [departments, setDepartments] = useState<string[]>([]);
   const [workerRows, setWorkerRows] = useState<{
     employeeId: string;
     employeeName: string;
@@ -167,6 +172,7 @@ export default function UraianPage() {
   // ─── Custom Column Dialog States ──────────────────────────────────────────
   const [customColumns, setCustomColumns] = useState<RekapColumn[]>([]);
   const [isCustomColDialogOpen, setIsCustomColDialogOpen] = useState(false);
+  const [cetakKegiatanDialogOpen, setCetakKegiatanDialogOpen] = useState(false);
   const [newColLabel, setNewColLabel] = useState('');
   const [newColSlipLabel, setNewColSlipLabel] = useState('');
   const [newColType, setNewColType] = useState<'count' | 'currency'>('currency');
@@ -188,6 +194,7 @@ export default function UraianPage() {
             id: d.id,
             name: data.personal_info?.name || '',
             role: data.employment_profile?.job_role || '',
+            department: data.employment_profile?.department_unit || '',
           };
         }).sort((a, b) => a.name.localeCompare(b.name));
         setLoyalisEmployees(list);
@@ -198,6 +205,26 @@ export default function UraianPage() {
       }
     };
     fetchLoyalis();
+  }, []);
+
+  // ── Fetch Departments ──
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        const deptDoc = await getDoc(doc(db, 'Settings', 'departments'));
+        if (deptDoc.exists() && deptDoc.data().list) {
+          setDepartments(deptDoc.data().list);
+        } else {
+          const defaultList = [
+            'BAK', 'FEB', 'FBS', 'FIK', 'FIP', 'FKI', 'FSP', 'FT', 'Rektorat', 'Satpam', 'Yayasan'
+          ].sort();
+          setDepartments(defaultList);
+        }
+      } catch (err) {
+        console.error('Error fetching departments:', err);
+      }
+    };
+    fetchDepartments();
   }, []);
 
   // ── Fetch Blue Collar Employees for SPJ ──
@@ -379,6 +406,7 @@ export default function UraianPage() {
 
   // Submit Handler
   const handleSaveEvent = async () => {
+    if (isSavingRef.current) return;
     if (!eventName.trim()) {
       setMessage({ type: 'error', text: 'Nama Kegiatan harus diisi.' });
       return;
@@ -394,6 +422,7 @@ export default function UraianPage() {
       return;
     }
 
+    isSavingRef.current = true;
     setSaving(true);
     try {
       const periodToken = `${year}-${String(month).padStart(2, '0')}`;
@@ -415,6 +444,8 @@ export default function UraianPage() {
         eventName,
         period: periodToken,
         totalPayout,
+        isEndOfMonth,
+        departmentUnit: !isEndOfMonth ? selectedDept : null,
         eventWorkers: workersMap,
         updatedAt: serverTimestamp(),
       };
@@ -424,31 +455,39 @@ export default function UraianPage() {
 
       setSelectedEventId(null);
       setEventName('');
+      setIsEndOfMonth(false);
+      setSelectedDept('');
       setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
       fetchEvents();
     } catch (err) {
       console.error(err);
       setMessage({ type: 'error', text: 'Gagal menyimpan Event Vakasi Tambahan.' });
     } finally {
+      isSavingRef.current = false;
       setSaving(false);
     }
   };
 
   // Delete Handler
   const handleDeleteEvent = async (eventId: string) => {
+    if (isSavingRef.current) return;
     if (!confirm('Apakah Anda yakin ingin menghapus event ini?')) return;
-    setSaving(true);
     try {
+      isSavingRef.current = true;
+      setSaving(true);
       await deleteDoc(doc(db, 'VakasiTambahan', eventId));
       setMessage({ type: 'success', text: 'Event Vakasi Tambahan berhasil dihapus.' });
       setSelectedEventId(null);
       setEventName('');
+      setIsEndOfMonth(false);
+      setSelectedDept('');
       setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
       fetchEvents();
     } catch (err) {
       console.error(err);
       setMessage({ type: 'error', text: 'Gagal menghapus event.' });
     } finally {
+      isSavingRef.current = false;
       setSaving(false);
     }
   };
@@ -466,7 +505,13 @@ export default function UraianPage() {
   };
 
   // Autosave Handler
-  const handleAutosave = async (currentRows = workerRows, currentEventName = eventName, activeId = selectedEventId) => {
+  const handleAutosave = async (
+    currentRows = workerRows,
+    currentEventName = eventName,
+    activeId = selectedEventId,
+    currentIsEndOfMonth = isEndOfMonth,
+    currentDept = selectedDept
+  ) => {
     if (!currentEventName.trim()) return;
     const activeWorkers = currentRows.filter(w => w.employeeId);
     const ids = activeWorkers.map(w => w.employeeId);
@@ -492,6 +537,8 @@ export default function UraianPage() {
         eventName: currentEventName,
         period: periodToken,
         totalPayout,
+        isEndOfMonth: currentIsEndOfMonth,
+        departmentUnit: !currentIsEndOfMonth ? currentDept : null,
         eventWorkers: workersMap,
         updatedAt: serverTimestamp(),
       };
@@ -508,6 +555,7 @@ export default function UraianPage() {
 
   // ── Kegiatan SPJ Submit Handler ──
   const handleSaveSpjEvent = async () => {
+    if (isSavingRef.current) return;
     if (!spjEventName.trim()) {
       setMessage({ type: 'error', text: 'Nama Kegiatan SPJ harus diisi.' });
       return;
@@ -528,6 +576,7 @@ export default function UraianPage() {
       return;
     }
 
+    isSavingRef.current = true;
     setSaving(true);
     try {
       const periodToken = `${year}-${String(month).padStart(2, '0')}`;
@@ -567,15 +616,18 @@ export default function UraianPage() {
       console.error(`Error saving Kegiatan SPJ "${spjEventName}" with document ID "${selectedSpjEventId || 'new'}":`, err);
       setMessage({ type: 'error', text: 'Gagal menyimpan Kegiatan SPJ.' });
     } finally {
+      isSavingRef.current = false;
       setSaving(false);
     }
   };
 
   // ── Kegiatan SPJ Delete Handler ──
   const handleDeleteSpjEvent = async (eventId: string) => {
+    if (isSavingRef.current) return;
     if (!confirm('Apakah Anda yakin ingin menghapus kegiatan SPJ ini?')) return;
-    setSaving(true);
     try {
+      isSavingRef.current = true;
+      setSaving(true);
       await deleteDoc(doc(db, 'KegiatanSpj', eventId));
       setMessage({ type: 'success', text: 'Kegiatan SPJ berhasil dihapus.' });
       setSelectedSpjEventId(null);
@@ -588,6 +640,7 @@ export default function UraianPage() {
       console.error(`Error deleting Kegiatan SPJ with event ID "${eventId}":`, err);
       setMessage({ type: 'error', text: 'Gagal menghapus kegiatan SPJ.' });
     } finally {
+      isSavingRef.current = false;
       setSaving(false);
     }
   };
@@ -862,8 +915,9 @@ export default function UraianPage() {
   }, [loyalisEmployees, matchExcelName]);
 
   const handleSavePresence = async () => {
-    if (!uploadedData || uploadedData.length === 0) return;
+    if (isSavingPresenceRef.current || !uploadedData || uploadedData.length === 0) return;
 
+    isSavingPresenceRef.current = true;
     setSavingPresence(true);
     try {
       const periodToken = `${year}_${String(month).padStart(2, '0')}`;
@@ -922,14 +976,17 @@ export default function UraianPage() {
       console.error(err);
       setMessage({ type: 'error', text: 'Gagal menyimpan data presensi.' });
     } finally {
+      isSavingPresenceRef.current = false;
       setSavingPresence(false);
     }
   };
 
   const handleDeletePresence = async () => {
+    if (isSavingPresenceRef.current) return;
     if (!confirm('Apakah Anda yakin ingin menghapus data presensi periode ini?')) return;
-    setSavingPresence(true);
     try {
+      isSavingPresenceRef.current = true;
+      setSavingPresence(true);
       const periodToken = `${year}_${String(month).padStart(2, '0')}`;
       await deleteDoc(doc(db, 'LoyalisPresence', periodToken));
       setMessage({ type: 'success', text: 'Data presensi berhasil dihapus.' });
@@ -938,6 +995,7 @@ export default function UraianPage() {
       console.error(err);
       setMessage({ type: 'error', text: 'Gagal menghapus data presensi.' });
     } finally {
+      isSavingPresenceRef.current = false;
       setSavingPresence(false);
     }
   };
@@ -958,6 +1016,7 @@ export default function UraianPage() {
   const [scanProgress, setScanProgress] = useState(0);
   const [showScanPanel, setShowScanPanel] = useState(false);
   const [saving, setSaving] = useState(false);
+  const isSavingRef = useRef(false);
   const [saved, setSaved] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -1327,7 +1386,9 @@ export default function UraianPage() {
 
   // Called only when user clicks "Konfirmasi & Simpan" inside the modal
   const handleConfirmSave = async () => {
+    if (isSavingRef.current) return;
     setShowSaveConfirm(false);
+    isSavingRef.current = true;
     setSaving(true);
     try {
       const payload = generateSavePayload();
@@ -1338,7 +1399,10 @@ export default function UraianPage() {
     } catch (err) {
       setMessage({ type: 'error', text: 'Gagal menyimpan.' });
     }
-    finally { setSaving(false); }
+    finally {
+      isSavingRef.current = false;
+      setSaving(false);
+    }
   };
 
   // Helper: format to IDR string (e.g. 250000 -> "Rp 250.000")
@@ -1649,27 +1713,38 @@ export default function UraianPage() {
 
         {/* Premium Tab Switcher - Only shown for Super Admin */}
         {profile?.role === 'super_admin' && (
-          <div className="flex bg-slate-100 p-1 rounded-xl w-fit shadow-sm border border-slate-200">
-            <button
-              onClick={() => setActiveTab('presensi')}
-              className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'presensi'
-                ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
-                : 'text-slate-500 hover:text-slate-800'
-                }`}
+          <div className="flex flex-wrap items-center justify-between gap-4 w-full">
+            <div className="flex bg-slate-100 p-1 rounded-xl w-fit shadow-sm border border-slate-200">
+              <button
+                onClick={() => setActiveTab('presensi')}
+                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'presensi'
+                  ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
+                  : 'text-slate-500 hover:text-slate-800'
+                  }`}
+              >
+                <ScanLine className="w-4.5 h-4.5" />
+                Rekap Presensi (Pekarya)
+              </button>
+              <button
+                onClick={() => setActiveTab('vakasi_loyalis')}
+                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'vakasi_loyalis'
+                  ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
+                  : 'text-slate-500 hover:text-slate-800'
+                  }`}
+              >
+                <Banknote className="w-4.5 h-4.5" />
+                Vakasi Tambahan (Loyalis)
+              </button>
+            </div>
+
+            <Button
+              onClick={() => setCetakKegiatanDialogOpen(true)}
+              variant="outline"
+              className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
             >
-              <ScanLine className="w-4.5 h-4.5" />
-              Rekap Presensi (Pekarya)
-            </button>
-            <button
-              onClick={() => setActiveTab('vakasi_loyalis')}
-              className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'vakasi_loyalis'
-                ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
-                : 'text-slate-500 hover:text-slate-800'
-                }`}
-            >
-              <Banknote className="w-4.5 h-4.5" />
-              Vakasi Tambahan (Loyalis)
-            </button>
+              <FileText className="w-4 h-4 text-indigo-600" />
+              Laporan Kegiatan Loyalis
+            </Button>
           </div>
         )}
 
@@ -1910,6 +1985,8 @@ export default function UraianPage() {
                     onClick={() => {
                       setSelectedEventId(null);
                       setEventName('');
+                      setIsEndOfMonth(false);
+                      setSelectedDept('');
                       setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
                     }}
                     size="sm"
@@ -1940,13 +2017,30 @@ export default function UraianPage() {
                           {eventName.trim() !== '' ? eventName : 'Kegiatan Baru (Tanpa Nama)'}
                         </p>
                         <div className="flex items-center justify-between mt-3">
-                          <span className="text-[10px] text-indigo-400 font-bold bg-indigo-50/50 px-2 py-0.5 rounded border border-indigo-100">
-                            {workerRows.filter(r => r.employeeId).length} Orang
-                          </span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] text-indigo-400 font-bold bg-indigo-50/50 px-2 py-0.5 rounded border border-indigo-100">
+                              {workerRows.filter(r => r.employeeId).length} Orang
+                            </span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                              isEndOfMonth 
+                                ? 'bg-amber-50 text-amber-700 border-amber-100' 
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                            }`}>
+                              {isEndOfMonth ? 'Akhir Bulan' : 'Tengah Bulan'}
+                            </span>
+                          </div>
                           <span className="text-xs font-bold text-indigo-600">
                             {fmtRp(workerRows.reduce((sum, r) => sum + (r.payGiven || 0), 0))}
                           </span>
                         </div>
+                        {!isEndOfMonth && selectedDept && (
+                          <div className="mt-2 flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                              <Building2 className="w-2.5 h-2.5" />
+                              {selectedDept}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1958,6 +2052,8 @@ export default function UraianPage() {
                           onClick={() => {
                             setSelectedEventId(evt.id);
                             setEventName(evt.eventName);
+                            setIsEndOfMonth(!!evt.isEndOfMonth);
+                            setSelectedDept(evt.departmentUnit || '');
                             // Load workers
                             const workers = evt.eventWorkers || {};
                             const rows = Object.entries(workers).map(([id, w]: [string, any]) => ({
@@ -1976,13 +2072,30 @@ export default function UraianPage() {
                         >
                           <p className="font-bold text-slate-800 text-sm line-clamp-1">{evt.eventName}</p>
                           <div className="flex items-center justify-between mt-3">
-                            <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
-                              {Object.keys(evt.eventWorkers || {}).length} Orang
-                            </span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                                {Object.keys(evt.eventWorkers || {}).length} Orang
+                              </span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                evt.isEndOfMonth 
+                                  ? 'bg-amber-50 text-amber-700 border-amber-100' 
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                              }`}>
+                                {evt.isEndOfMonth ? 'Akhir Bulan' : 'Tengah Bulan'}
+                              </span>
+                            </div>
                             <span className="text-xs font-bold text-indigo-600">
                               {fmtRp(evt.totalPayout || 0)}
                             </span>
                           </div>
+                          {!evt.isEndOfMonth && evt.departmentUnit && (
+                            <div className="mt-2 flex items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                                <Building2 className="w-2.5 h-2.5" />
+                                {evt.departmentUnit}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -2027,6 +2140,100 @@ export default function UraianPage() {
                   className="rounded-xl border-slate-200 font-bold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-11"
                 />
               </div>
+
+              {/* Event Period Type Segmented Toggle */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Tipe Kegiatan</label>
+                <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100/80">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEndOfMonth(false);
+                      handleAutosave(workerRows, eventName, selectedEventId, false);
+                    }}
+                    className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-200 ${
+                      !isEndOfMonth
+                        ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Tengah Bulan (Vakasi Tambahan)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEndOfMonth(true);
+                      handleAutosave(workerRows, eventName, selectedEventId, true);
+                    }}
+                    className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-200 ${
+                      isEndOfMonth
+                        ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Akhir Bulan (Kolom Tersendiri)
+                  </button>
+                </div>
+              </div>
+
+              {/* Department Selector (only visible when Tengah Bulan is active) */}
+              {!isEndOfMonth && (
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-indigo-400" />
+                    Unit Kerja (Department)
+                  </label>
+                  <Select
+                    value={selectedDept}
+                    onValueChange={(val) => {
+                      setSelectedDept(val || '');
+                      handleAutosave(workerRows, eventName, selectedEventId, false, val || undefined);
+                    }}
+                  >
+                    <SelectTrigger className={`rounded-xl text-sm font-bold h-11 transition-all duration-200 border focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 ${
+                      selectedDept
+                        ? 'bg-indigo-50/60 border-indigo-200 text-indigo-700'
+                        : 'bg-white border-slate-200 text-slate-400'
+                    }`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Building2 className={`w-4 h-4 shrink-0 ${selectedDept ? 'text-indigo-500' : 'text-slate-300'}`} />
+                        <SelectValue placeholder="Pilih Unit Kerja..." />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false} sideOffset={4} className="rounded-2xl border border-slate-100 shadow-2xl bg-white p-1.5 max-h-64 overflow-y-auto w-max min-w-[var(--radix-select-trigger-width)]">
+                      {/* Clear / All option */}
+                      <SelectItem
+                        value=""
+                        className="rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 focus:bg-slate-50 focus:text-slate-700 flex items-center gap-2 mb-1 border border-dashed border-slate-200 data-[highlighted]:bg-slate-50 data-[highlighted]:text-slate-700"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 text-[9px] font-black">✕</span>
+                          Semua Unit Kerja
+                        </span>
+                      </SelectItem>
+                      <div className="h-px bg-slate-100 my-1" />
+                      {departments.map(dept => (
+                        <SelectItem
+                          key={dept}
+                          value={dept}
+                          className="rounded-xl text-xs font-bold uppercase text-slate-700 data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700 data-[state=checked]:bg-indigo-50 data-[state=checked]:text-indigo-700 focus:bg-indigo-50 focus:text-indigo-700 cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-300 shrink-0" />
+                            {dept}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedDept && (
+                    <p className="text-[10px] text-indigo-500 font-bold flex items-center gap-1 animate-in fade-in duration-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 inline-block" />
+                      Filter aktif: hanya menampilkan pegawai dari unit <span className="underline underline-offset-2">{selectedDept}</span>
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Live Running Total header mockup in Excel screenshot */}
               <div className="bg-blue-50/20 backdrop-blur-sm rounded-2xl p-6 text-blue-900 shadow-[0_4px_20px_rgba(59,130,246,0.05)] flex items-center justify-between border-2 border-blue-500 transition-all duration-300">
@@ -2138,6 +2345,12 @@ export default function UraianPage() {
                                         .filter(Boolean);
                                       const filtered = loyalisEmployees
                                         .filter(emp => !otherSelectedIds.includes(emp.id))
+                                        .filter(emp => {
+                                          if (!isEndOfMonth && selectedDept) {
+                                            return emp.department === selectedDept;
+                                          }
+                                          return true;
+                                        })
                                         .filter(emp =>
                                           emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
                                         );
@@ -2168,6 +2381,12 @@ export default function UraianPage() {
                                           .filter(Boolean);
                                         const filtered = loyalisEmployees
                                           .filter(emp => !otherSelectedIds.includes(emp.id))
+                                          .filter(emp => {
+                                            if (!isEndOfMonth && selectedDept) {
+                                              return emp.department === selectedDept;
+                                            }
+                                            return true;
+                                          })
                                           .filter(emp =>
                                             emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
                                           );
@@ -2305,6 +2524,8 @@ export default function UraianPage() {
                   onClick={() => {
                     setSelectedEventId(null);
                     setEventName('');
+                    setIsEndOfMonth(false);
+                    setSelectedDept('');
                     setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
                   }}
                   className="rounded-xl border-slate-200 text-slate-600"
@@ -3128,6 +3349,16 @@ export default function UraianPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Cetak Rincian Kegiatan Dialog ───────────────────────────────────── */}
+      <CetakKegiatanLoyalisDialog
+        open={cetakKegiatanDialogOpen}
+        onOpenChange={setCetakKegiatanDialogOpen}
+        periodName={MONTHS_ID[month - 1] + ' ' + year}
+        existingEvents={existingEvents}
+        departments={departments}
+        loyalisEmployees={loyalisEmployees}
+      />
 
       {/* ── Add Custom Column Dialog ────────────────────────────────────────── */}
       <Dialog open={isCustomColDialogOpen} onOpenChange={setIsCustomColDialogOpen}>

@@ -56,6 +56,7 @@ import {
   FileText,
   Building2,
   Plus,
+  LayoutGrid,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -113,6 +114,68 @@ const getEmpStartDate = (emp: any) => {
     return d;
   }
   return emp.employment?.startDate || '';
+};
+
+const calculateStructuralAllowance = (positions: any[]): number => {
+  if (!positions || positions.length === 0) return 0;
+  const sorted = [...positions].sort((a, b) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
+  let total = 0;
+  sorted.forEach((pos, idx) => {
+    const amt = Number(pos.allowance) || 0;
+    if (idx === 0) {
+      total += amt;
+    } else {
+      total += Math.round(amt / 2);
+    }
+  });
+  return total;
+};
+
+const getDebugRows = (employeesList: any[], activeTab: string) => {
+  const rows: any[] = [];
+  employeesList.forEach(emp => {
+    if (activeTab === 'loyalis') {
+      const positions = emp.employment_profile?.structural_positions || [];
+      if (positions.length > 0) {
+        const sortedPositions = [...positions].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
+        sortedPositions.forEach((pos: any, idx: number) => {
+          const originalAllowance = Number(pos.allowance) || 0;
+          const adjustedAllowance = idx === 0 ? originalAllowance : Math.round(originalAllowance / 2);
+          rows.push({
+            ...emp,
+            rowKey: `${getEmpId(emp)}_pos_${idx}`,
+            debugJabatan: pos.name,
+            debugSatker: pos.satker || emp.employment_profile?.department_unit || '-',
+            debugTunjangan: adjustedAllowance,
+            debugTunjanganLabel: idx === 0 ? formatIDR(originalAllowance) : `${formatIDR(adjustedAllowance)} (50% dari ${formatIDR(originalAllowance)})`
+          });
+        });
+      } else {
+        rows.push({
+          ...emp,
+          rowKey: `${getEmpId(emp)}_default`,
+          debugJabatan: emp.employment_profile?.job_role || '-',
+          debugSatker: emp.employment_profile?.department_unit || '-',
+          debugTunjangan: 0,
+          debugTunjanganLabel: 'Rp 0'
+        });
+      }
+    } else {
+      rows.push({
+        ...emp,
+        rowKey: `${getEmpId(emp)}_default`,
+        debugJabatan: emp.employment?.jobCategory || '-',
+        debugSatker: emp.employment?.jobCategory || '-',
+        debugTunjangan: 0,
+        debugTunjanganLabel: 'Rp 0'
+      });
+    }
+  });
+  return rows;
+};
+
+const formatIDR = (val: number) => {
+  return `Rp ${val.toLocaleString('id-ID')}`;
 };
 
 interface FieldChange {
@@ -202,12 +265,14 @@ export default function EmployeesPage() {
   const { user, profile, loading: authLoading, logout } = useAuth();
 
   const [activeTab, setActiveTab] = useState('blue');
+  const [tableViewMode, setTableViewMode] = useState<'default' | 'debug'>('default');
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
+  const isSavingRef = useRef(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Edit Log States
@@ -348,7 +413,7 @@ export default function EmployeesPage() {
       email: '',
       collarType: 'blue_collar',
       employment: { status: 'active', jobCategory: 'OTHER', startDate: '', endDate: null },
-      salaryProfile: { salaryGradeCode: '', baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' },
+      salaryProfile: { salaryGradeCode: '', baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1', tunjanganBeras: 0 },
       bankAccount: { bankName: 'BSI', accountNumber: '', accountHolderName: '' },
       bpjs: { allowanceAmount: 0, deductionAmount: 0 },
       deductions: { koperasiRochmad: 0 },
@@ -430,7 +495,9 @@ export default function EmployeesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingRef.current) return;
     try {
+      isSavingRef.current = true;
       setSaving(true);
       setMessage(null);
 
@@ -563,13 +630,16 @@ export default function EmployeesPage() {
       console.error('Error saving employee:', err);
       setMessage({ type: 'error', text: 'Gagal menyimpan data.' });
     } finally {
+      isSavingRef.current = false;
       setSaving(false);
     }
   };
 
   const handleDelete = async (employeeId: string) => {
+    if (isSavingRef.current) return;
     if (!confirm('Hapus data karyawan ini?')) return;
     try {
+      isSavingRef.current = true;
       setLoading(true);
       await deleteDoc(doc(db, currentTab.collection, employeeId));
       fetchEmployees();
@@ -579,13 +649,15 @@ export default function EmployeesPage() {
       console.error('Error deleting employee:', err);
       setMessage({ type: 'error', text: 'Gagal menghapus data.' });
     } finally {
+      isSavingRef.current = false;
       setLoading(false);
     }
   };
 
   const handleConfirmChanges = async () => {
-    if (pendingEdits.length === 0) return;
+    if (pendingEdits.length === 0 || isSavingRef.current) return;
     try {
+      isSavingRef.current = true;
       setConfirming(true);
       const logPayload = {
         operatorEmail: user?.email || 'Unknown Operator',
@@ -608,6 +680,7 @@ export default function EmployeesPage() {
       setMessage({ type: 'error', text: 'Gagal menulis log ke EmpEditLog.' });
       setTimeout(() => setMessage(null), 3000);
     } finally {
+      isSavingRef.current = false;
       setConfirming(false);
     }
   };
@@ -812,25 +885,67 @@ export default function EmployeesPage() {
           ))}
         </div>
 
+        {/* Table View Mode Toggle */}
+        <div className="flex items-center justify-between mb-4 bg-slate-50/50 p-2 rounded-2xl border border-slate-100">
+          <div className="flex items-center gap-2 pl-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Mode Tampilan Tabel</span>
+          </div>
+          <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-100 gap-1">
+            <button
+              onClick={() => setTableViewMode('default')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                tableViewMode === 'default'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Tampilan Default
+            </button>
+            <button
+              onClick={() => setTableViewMode('debug')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                tableViewMode === 'debug'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              Debug Jabatan
+            </button>
+          </div>
+        </div>
+
         {/* Table */}
         <Card className="bg-white rounded-[24px] shadow-[0_8px_40px_-12px_rgba(0,0,0,0.06)] border-none overflow-hidden">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader className="bg-slate-50/50">
-                <TableRow className="border-slate-100">
-                  <TableHead className="w-24 font-semibold text-slate-900 pl-8">ID</TableHead>
-                  <TableHead className="font-semibold text-slate-900 w-[320px]">Nama Lengkap</TableHead>
-                  <TableHead className="font-semibold text-slate-900 w-[320px]">Kategori</TableHead>
-                  <TableHead className="font-semibold text-slate-900">Gol.</TableHead>
-                  <TableHead className="font-semibold text-slate-900 text-center">Status</TableHead>
-                  <TableHead className="font-semibold text-slate-900">Mulai Kerja</TableHead>
-                  <TableHead className="font-semibold text-slate-900 text-right pr-8">Aksi</TableHead>
-                </TableRow>
+                {tableViewMode === 'default' ? (
+                  <TableRow className="border-slate-100">
+                    <TableHead className="w-24 font-semibold text-slate-900 pl-8">ID</TableHead>
+                    <TableHead className="font-semibold text-slate-900 w-[320px]">Nama Lengkap</TableHead>
+                    <TableHead className="font-semibold text-slate-900 w-[320px]">Kategori</TableHead>
+                    <TableHead className="font-semibold text-slate-900">Gol.</TableHead>
+                    <TableHead className="font-semibold text-slate-900 text-center">Status</TableHead>
+                    <TableHead className="font-semibold text-slate-900">Mulai Kerja</TableHead>
+                    <TableHead className="font-semibold text-slate-900 text-right pr-8">Aksi</TableHead>
+                  </TableRow>
+                ) : (
+                  <TableRow className="border-slate-100">
+                    <TableHead className="w-24 font-semibold text-slate-900 pl-8">ID</TableHead>
+                    <TableHead className="font-semibold text-slate-900 w-[300px]">Nama Lengkap</TableHead>
+                    <TableHead className="font-semibold text-slate-900 w-[300px]">Nama Jabatan</TableHead>
+                    <TableHead className="font-semibold text-slate-900">SatKer (department_unit)</TableHead>
+                    <TableHead className="font-semibold text-slate-900 text-right">Tunjangan Jabatan</TableHead>
+                    <TableHead className="font-semibold text-slate-900 text-right pr-8">Aksi</TableHead>
+                  </TableRow>
+                )}
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? 7 : 6} className="h-64 text-center">
                       <div className="flex flex-col items-center gap-3 text-slate-400">
                         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                         <p>Memuat data pegawai...</p>
@@ -839,56 +954,93 @@ export default function EmployeesPage() {
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? 7 : 6} className="h-64 text-center">
                       <p className="text-slate-400">Tidak ada pegawai yang ditemukan.</p>
                     </TableCell>
                   </TableRow>
-                ) : filtered.map(emp => (
-                  <TableRow key={getEmpId(emp)} className="hover:bg-slate-50/30 transition-colors border-slate-50">
-                    <TableCell className="font-bold text-slate-400 pl-8 font-mono text-xs">{getEmpId(emp)}</TableCell>
-                    <TableCell className="w-[320px] max-w-[320px]">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-slate-900 block truncate" title={getEmpName(emp)}>{getEmpName(emp)}</span>
-                        <span className="text-xs text-slate-400 font-mono">
-                          {activeTab === 'loyalis' ? 'NIY' : 'NIK'}: {getEmpNikOrNiy(emp) || '-'}
+                ) : tableViewMode === 'default' ? (
+                  filtered.map(emp => (
+                    <TableRow key={getEmpId(emp)} className="hover:bg-slate-50/30 transition-colors border-slate-50">
+                      <TableCell className="font-bold text-slate-400 pl-8 font-mono text-xs">{getEmpId(emp)}</TableCell>
+                      <TableCell className="w-[320px] max-w-[320px]">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-900 block truncate" title={getEmpName(emp)}>{getEmpName(emp)}</span>
+                          <span className="text-xs text-slate-400 font-mono">
+                            {activeTab === 'loyalis' ? 'NIY' : 'NIK'}: {getEmpNikOrNiy(emp) || '-'}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="w-[320px] max-w-[320px]">
+                        <div className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                          <span className="shrink-0">{JOB_ICONS[getEmpCategory(emp)] || null}</span>
+                          <span className="truncate" title={getEmpCategory(emp)}>{getEmpCategory(emp)}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {getEmpGrade(emp)
+                          ? <span className="font-bold text-indigo-600">{getEmpGrade(emp)}</span>
+                          : <span className="text-slate-300">-</span>
+                        }
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge className={`rounded-full px-3 font-normal border-none ${getEmpIsActive(emp) ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+                          }`}>
+                          {getEmpIsActive(emp) ? 'Aktif' : 'Non-Aktif'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-slate-500 text-sm">
+                        {getEmpStartDate(emp)
+                          ? new Date(getEmpStartDate(emp)).toLocaleDateString('id-ID', { year: 'numeric', month: 'short' })
+                          : '-'}
+                      </TableCell>
+                      <TableCell className="text-right pr-8">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(emp)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-lg">
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(emp))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-lg">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  getDebugRows(filtered, activeTab).map(empRow => (
+                    <TableRow key={empRow.rowKey} className="hover:bg-slate-50/30 transition-colors border-slate-50">
+                      <TableCell className="font-bold text-slate-400 pl-8 font-mono text-xs">{getEmpId(empRow)}</TableCell>
+                      <TableCell className="w-[320px] max-w-[320px]">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-900 block truncate" title={getEmpName(empRow)}>{getEmpName(empRow)}</span>
+                          <span className="text-xs text-slate-400 font-mono">
+                            {activeTab === 'loyalis' ? 'NIY' : 'NIK'}: {getEmpNikOrNiy(empRow) || '-'}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="w-[300px] max-w-[300px]">
+                        <span className="font-medium text-slate-700 block truncate" title={empRow.debugJabatan}>
+                          {empRow.debugJabatan}
                         </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="w-[320px] max-w-[320px]">
-                      <div className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                        <span className="shrink-0">{JOB_ICONS[getEmpCategory(emp)] || null}</span>
-                        <span className="truncate" title={getEmpCategory(emp)}>{getEmpCategory(emp)}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {getEmpGrade(emp)
-                        ? <span className="font-bold text-indigo-600">{getEmpGrade(emp)}</span>
-                        : <span className="text-slate-300">-</span>
-                      }
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge className={`rounded-full px-3 font-normal border-none ${getEmpIsActive(emp) ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
-                        }`}>
-                        {getEmpIsActive(emp) ? 'Aktif' : 'Non-Aktif'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-slate-500 text-sm">
-                      {getEmpStartDate(emp)
-                        ? new Date(getEmpStartDate(emp)).toLocaleDateString('id-ID', { year: 'numeric', month: 'short' })
-                        : '-'}
-                    </TableCell>
-                    <TableCell className="text-right pr-8">
-                      <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(emp)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-lg">
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(emp))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-lg">
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell className="text-slate-500 text-sm">
+                        {empRow.debugSatker}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-slate-700 text-sm whitespace-nowrap">
+                        {empRow.debugTunjanganLabel}
+                      </TableCell>
+                      <TableCell className="text-right pr-8">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(empRow)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-lg">
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(empRow))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-lg">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
@@ -1292,6 +1444,9 @@ export default function EmployeesPage() {
                     <div className="space-y-2"><Label>Nama Bank</Label><Input value={formData.bankAccount?.bankName || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, bankName: e.target.value } })} className="rounded-xl border-slate-200" /></div>
                     <div className="space-y-2"><Label>Nomor Rekening</Label><Input value={formData.bankAccount?.accountNumber || ''} onChange={e => setFormData({ ...formData, bankAccount: { ...formData.bankAccount!, accountNumber: e.target.value } })} className="rounded-xl border-slate-200" /></div>
                     <div className="space-y-2"><Label>Kode Koperasi Rochmad</Label><Input type="number" value={formData.deductions?.koperasiRochmad ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, deductions: { ...(prev.deductions || {}), koperasiRochmad: Number(e.target.value) } as any }))} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label>BPJS Pekarya (Rp)</Label><Input type="number" value={formData.bpjs?.allowanceAmount ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, bpjs: { ...(prev.bpjs || {}), allowanceAmount: e.target.value !== '' ? Number(e.target.value) : 0 } }))} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label>T. Beras (Rp)</Label><Input type="number" value={formData.salaryProfile?.tunjanganBeras ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, salaryProfile: { ...(prev.salaryProfile || {}), tunjanganBeras: e.target.value !== '' ? Number(e.target.value) : 0 } }))} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label>Potongan BPJS (Rp)</Label><Input type="number" value={formData.bpjs?.deductionAmount ?? 0} onChange={e => setFormData((prev: any) => ({ ...prev, bpjs: { ...(prev.bpjs || {}), deductionAmount: e.target.value !== '' ? Number(e.target.value) : 0 } }))} className="rounded-xl border-slate-200" /></div>
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Status</h3>

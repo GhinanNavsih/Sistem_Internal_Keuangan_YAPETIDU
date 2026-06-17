@@ -10,7 +10,6 @@ export interface VakasiPimpinanStafRow {
   tunjKeluarga: number;
   tunjFungsional: number;
   kepangkatan?: number;
-  tInstruksional?: number;
   tHariTua?: number;
   tBpjsTk?: number;
   tBpjsKes?: number;
@@ -71,7 +70,6 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
   let totalTunjKeluarga = 0;
   let totalTunjFungsional = 0;
   let totalKepangkatan = 0;
-  let totalTInstruksional = 0;
   let totalHariTua = 0;
   let totalBpjsTk = 0;
   let totalBpjsKes = 0;
@@ -85,7 +83,6 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
     totalTunjKeluarga += row.tunjKeluarga || 0;
     totalTunjFungsional += row.tunjFungsional || 0;
     totalKepangkatan += row.kepangkatan || 0;
-    totalTInstruksional += row.tInstruksional || 0;
     totalHariTua += row.tHariTua || 0;
     totalBpjsTk += row.tBpjsTk || 0;
     totalBpjsKes += row.tBpjsKes || 0;
@@ -94,6 +91,27 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
     totalPresenceBonus += row.presenceBonus || 0;
     totalJumlah += row.jumlah || 0;
   });
+
+  // Measure text width of the longest name in data.rows to size NAMA column dynamically
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5); // body text font size
+  let maxNameWidth = 0;
+  data.rows.forEach(row => {
+    const w = doc.getTextWidth(row.name);
+    if (w > maxNameWidth) {
+      maxNameWidth = w;
+    }
+  });
+
+  // Calculate NAMA column width (longest name + 5mm padding, bounded between 35mm and 95mm)
+  const nameWidth = Math.max(35, Math.min(95, maxNameWidth + 5));
+
+  // Determine width distribution
+  const totalTableWidth = 310; // Landscape Folio table width
+  const marginSide = Math.max(10, (pageWidth - totalTableWidth) / 2);
+
+  // Remaining space divided equally among remaining 11 columns (excluding NO (10), NAMA (nameWidth), PRESENSI (38))
+  const equalColWidth = (totalTableWidth - 10 - nameWidth - 38) / 11;
 
   // Add logos at top left
   doc.addImage(LOGO_YAPETIDU_BASE64, 'PNG', 10, 8, 18, 18);
@@ -110,17 +128,16 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
   // Table setup
   autoTable(doc, {
     startY: 37,
-    margin: { left: 10, right: 10 },
+    margin: { left: marginSide, right: marginSide },
     head: [
       [
-        { content: 'NO.\nURU\nT', styles: { halign: 'center' as const, valign: 'middle' as const } },
+        { content: 'NO.', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'NAMA', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'JABATAN', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'GAJI\nPOKOK', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'T.\nKELUARGA', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'T.\nFUNGSIONA\nL', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'KEPANGK\nATAN', styles: { halign: 'center' as const, valign: 'middle' as const } },
-        { content: 'T. INSTRU\nKSIONAL', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'T. HARI\nTUA', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'T. BPJS TK', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'T. BPJS\nKES', styles: { halign: 'center' as const, valign: 'middle' as const } },
@@ -139,7 +156,6 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
         formatIDR(row.tunjKeluarga),
         formatIDR(row.tunjFungsional),
         formatKepangkatan(row.kepangkatan),
-        formatBpjsOrBonus(row.tInstruksional),
         formatHariTua(row.tHariTua),
         formatBpjsOrBonus(row.tBpjsTk),
         formatBpjsOrBonus(row.tBpjsKes),
@@ -154,7 +170,6 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
         { content: totalTunjKeluarga > 0 ? formatIDR(totalTunjKeluarga) : '0', styles: { fontStyle: 'bold' as const } },
         { content: totalTunjFungsional > 0 ? formatIDR(totalTunjFungsional) : '0', styles: { fontStyle: 'bold' as const } },
         { content: totalKepangkatan > 0 ? formatIDR(totalKepangkatan) : '', styles: { fontStyle: 'bold' as const } },
-        { content: totalTInstruksional > 0 ? formatIDR(totalTInstruksional) : '', styles: { fontStyle: 'bold' as const } },
         { content: totalHariTua > 0 ? formatIDR(totalHariTua) : '-', styles: { fontStyle: 'bold' as const } },
         { content: totalBpjsTk > 0 ? formatIDR(totalBpjsTk) : '', styles: { fontStyle: 'bold' as const } },
         { content: totalBpjsKes > 0 ? formatIDR(totalBpjsKes) : '', styles: { fontStyle: 'bold' as const } },
@@ -186,21 +201,22 @@ export function generateVakasiPimpinanStafPdf(data: VakasiPimpinanStafData, save
       lineColor: [0, 0, 0],
       lineWidth: 0.1,
     },
+    tableWidth: totalTableWidth,
     columnStyles: {
-      0: { cellWidth: 12, halign: 'center' as const, fontSize: 8 },  // NO. URUT
-      1: { cellWidth: 40, halign: 'left' as const },                 // NAMA
-      2: { cellWidth: 35, halign: 'left' as const },                 // JABATAN
-      3: { cellWidth: 18, halign: 'right' as const, fontSize: 7.5 },  // GAJI POKOK
-      4: { cellWidth: 18, halign: 'right' as const, fontSize: 7.5 },  // T. KELUARGA
-      5: { cellWidth: 20, halign: 'right' as const, fontSize: 7.5 },  // T. FUNGSIONAL
-      6: { cellWidth: 18, halign: 'right' as const, fontSize: 7.5 },  // KEPANGKATAN
-      7: { cellWidth: 18, halign: 'right' as const, fontSize: 7.5 },  // T. HARI TUA
-      8: { cellWidth: 18, halign: 'right' as const, fontSize: 7.5 },  // T. BPJS TK
-      9: { cellWidth: 18, halign: 'right' as const, fontSize: 7.5 },  // T. BPJS KES
-      10: { cellWidth: 15, halign: 'right' as const, fontSize: 7.5 }, // BERAS
-      11: { cellWidth: 42, halign: 'center' as const },               // PRESENSI (Contains spacing)
-      12: { cellWidth: 18, halign: 'right' as const, fontSize: 7.5 }, // BONUS PRESENSI
-      13: { cellWidth: 20, halign: 'right' as const, fontStyle: 'bold', fontSize: 8 }, // JUMLAH
+      0: { cellWidth: 10, halign: 'center' as const, fontSize: 8 },
+      1: { cellWidth: nameWidth, halign: 'left' as const },
+      2: { cellWidth: equalColWidth, halign: 'left' as const },
+      3: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
+      4: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
+      5: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
+      6: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
+      7: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
+      8: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
+      9: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
+      10: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
+      11: { cellWidth: 38, halign: 'center' as const },
+      12: { cellWidth: equalColWidth, halign: 'right' as const, fontSize: 7.5 },
+      13: { cellWidth: equalColWidth, halign: 'right' as const, fontStyle: 'bold', fontSize: 8 },
     }
   });
 
