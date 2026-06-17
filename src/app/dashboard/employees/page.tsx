@@ -1206,12 +1206,32 @@ export default function EmployeesPage() {
                       </div>
                       <div className="w-44 space-y-1.5">
                         <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Satuan Kerja (Satker)</Label>
-                        <Input
-                          placeholder="Contoh: FAK. BISNIS"
+                        <Select
                           value={newPosSatker}
-                          onChange={(e) => setNewPosSatker(e.target.value)}
-                          className="rounded-xl border-slate-200 text-xs h-9 bg-white"
-                        />
+                          onValueChange={(val) => setNewPosSatker(val || '')}
+                        >
+                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-9 w-full">
+                            <SelectValue placeholder="Pilih Satker" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                            {(() => {
+                              const listToUse = departments.length > 0 ? departments : [
+                                'FAK. AGAMA ISLAM',
+                                'FAK. BISNIS, BAHASA DAN PENDIDIKAN',
+                                'FAK. ILMU KESEHATAN',
+                                'FAK. SAINS DAN TEKNOLOGI',
+                                'PASCASARJANA',
+                                'REKTORAT',
+                                'UPT & LEMBAGA'
+                              ];
+                              return listToUse.map(dept => (
+                                <SelectItem key={dept} value={dept} className="text-xs">
+                                  {dept}
+                                </SelectItem>
+                              ));
+                            })()}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="w-36 space-y-1.5">
                         <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tunjangan (Rp)</Label>

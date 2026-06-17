@@ -132,6 +132,10 @@ function buildInitialEarnings(
     const tKepangkatan = emp.kepangkatan?.t_kepangkatan || 0;
     earnings.push({ label: 'Kepangkatan', amount: tKepangkatan });
 
+    // Instruksional
+    const tInstruksional = emp.t_instruksional || 0;
+    earnings.push({ label: 'Instruksional', amount: tInstruksional });
+
     // T. Hari Tua (10% of Gaji Pokok)
     earnings.push({ label: 'T. Hari Tua', amount: Math.round(gapok * 0.1) });
 

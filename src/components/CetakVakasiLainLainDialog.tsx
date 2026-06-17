@@ -11,8 +11,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { FileText, Printer } from 'lucide-react';
-import { generateVakasiPimpinanStafPdf, VakasiPimpinanStafRow } from '@/utils/generateVakasiPimpinanStafPdf';
-import { calculateGapok } from '@/utils/payrollLogic';
+import { generateVakasiLainLainPdf, VakasiLainLainRow } from '@/utils/generateVakasiLainLainPdf';
+import { calculateStructuralAllowance } from '@/utils/salaryCalculator';
 
 interface EmployeeRow {
   id: string;
@@ -25,37 +25,23 @@ interface EmployeeRow {
   rowIndex: number;
 }
 
-interface CetakVakasiPimpinanStafDialogProps {
+interface CetakVakasiLainLainDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   employees: EmployeeRow[];
   categories: string[]; // Unique department units for Loyalis
   periodName: string; // e.g. "Mei 2026"
-  salaryMatrix: any;
-  targetDate: Date;
-  functionalAllowanceMap: Record<string, number>;
-  getLoyalisPresenceBonus: (empId: string) => number;
-  getLoyalisPresenceDeduction: (empId: string) => number;
-  getLoyalisPresensiEarning: (empId: string) => number;
-  getLoyalisPresensiDeduction: (empId: string) => number;
-  loyalisPresenceData: any;
+  vakasiTambahanMap: Record<string, number>;
 }
 
-export default function CetakVakasiPimpinanStafDialog({
+export default function CetakVakasiLainLainDialog({
   open,
   onOpenChange,
   employees,
   categories,
   periodName,
-  salaryMatrix,
-  targetDate,
-  functionalAllowanceMap,
-  getLoyalisPresenceBonus,
-  getLoyalisPresenceDeduction,
-  getLoyalisPresensiEarning,
-  getLoyalisPresensiDeduction,
-  loyalisPresenceData,
-}: CetakVakasiPimpinanStafDialogProps) {
+  vakasiTambahanMap,
+}: CetakVakasiLainLainDialogProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
 
   React.useEffect(() => {
@@ -83,107 +69,30 @@ export default function CetakVakasiPimpinanStafDialog({
     const sortedEmployees = [...activeLoyalis].sort((a, b) => a.rowIndex - b.rowIndex);
 
     // 3. Map to row data objects
-    const rows: VakasiPimpinanStafRow[] = sortedEmployees.map((emp, idx) => {
+    const rows: VakasiLainLainRow[] = sortedEmployees.map((emp, idx) => {
       const raw = emp.raw;
       
-      // Gaji Pokok
-      const hasGapok = emp.gradeLevel && emp.gradeLevel.trim() !== '';
-      const gapok = hasGapok ? calculateGapok(emp, salaryMatrix, targetDate) : undefined;
+      // Tunjangan Struktural
+      const tStruktural = calculateStructuralAllowance(raw.employment_profile?.structural_positions || []);
 
-      // T. Keluarga
-      let spouseCount = 0, sd = 0, sltp = 0, slta = 0, pt = 0;
-      const metrics = raw.family_allowance_metrics;
-      if (metrics) {
-        spouseCount = Number(metrics.spouse_count) || 0;
-        sd = Number(metrics.children_sd) || 0;
-        sltp = Number(metrics.children_sltp) || 0;
-        slta = Number(metrics.children_slta) || 0;
-        pt = Number(metrics.children_pt) || 0;
-      }
-      const familyPct = (spouseCount * 0.05) + (sd * 0.05) + (sltp * 0.075) + (slta * 0.1) + (pt * 0.125);
-      const tunjKeluarga = gapok ? Math.round(gapok * familyPct) : 0;
+      // Vakasi Tambahan
+      const vakasiTambahan = vakasiTambahanMap[emp.id] || 0;
 
-      // T. Fungsional
-      const tunjFungsional = functionalAllowanceMap[emp.id] || 0;
-
-      // Kepangkatan
-      const hasKepangkatan = raw.kepangkatan?.t_kepangkatan !== undefined;
-      const kepangkatan = hasKepangkatan ? (raw.kepangkatan?.t_kepangkatan || 0) : undefined;
-
-      // Instruksional
-      const tInstruksional = raw.t_instruksional || 0;
-
-      // T. Hari Tua
-      const tHariTua = gapok ? Math.round(gapok * 0.1) : undefined;
-
-      // BPJS TK & KES
-      const tBpjsTk = raw.bpjs?.t_bpjs_tk || 0;
-      const tBpjsKes = raw.bpjs?.t_bpjs_kes || 0;
-
-      // Beras
-      const beras = raw.salaryProfile?.tunjanganBeras || 0;
-
-      // Presensi (Working hours and amount)
-      const presenceEntry = loyalisPresenceData?.entries?.[emp.id];
-      let workedMinutes = 0;
-      let presensiAmount = 0;
-      let presensiHours = 0;
-
-      if (presenceEntry && !presenceEntry.isNotFoundInExcel) {
-        const workingDays = loyalisPresenceData?.workingDays || 25;
-        const expectedHours = loyalisPresenceData?.expectedHours || 6.5;
-        const expectedMinutes = workingDays * expectedHours * 60;
-        const absenceMinutes = presenceEntry.absenceMinutes || 0;
-        workedMinutes = Math.max(0, expectedMinutes - absenceMinutes);
-        presensiAmount = getLoyalisPresensiEarning(emp.id);
-        presensiHours = Math.round(expectedMinutes / 60);
-      }
-
-      // Bonus Presensi
-      const presenceBonus = getLoyalisPresenceBonus(emp.id);
-
-      // Jabatan
-      const structPositions = raw.employment_profile?.structural_positions || [];
-      const position = structPositions.length > 0
-        ? structPositions.map((p: any) => p.name).join(', ')
-        : (raw.employment_profile?.job_role || 'Staf');
-
-      // Total Jumlah
-      const jumlah = 
-        (gapok || 0) +
-        tunjKeluarga +
-        tunjFungsional +
-        (kepangkatan || 0) +
-        tInstruksional +
-        (tHariTua || 0) +
-        tBpjsTk +
-        tBpjsKes +
-        beras +
-        presensiAmount +
-        presenceBonus;
+      // Net/Jumlah of this section
+      const jumlah = tStruktural + vakasiTambahan;
 
       return {
         noUrut: idx + 1,
         name: emp.name,
-        position,
-        gapok,
-        tunjKeluarga,
-        tunjFungsional,
-        kepangkatan,
-        tInstruksional,
-        tHariTua,
-        tBpjsTk,
-        tBpjsKes,
-        beras,
-        presensiHours,
-        presensiAmount,
-        presenceBonus,
+        position: raw.employment_profile?.structural_positions?.[0]?.name || raw.employment_profile?.job_role || 'Staf',
+        tStruktural,
+        vakasiTambahan,
         jumlah
       };
     });
 
     // 4. Generate the PDF
-    generateVakasiPimpinanStafPdf({
+    generateVakasiLainLainPdf({
       department: selectedCategory,
       period: periodName,
       rows,
@@ -202,10 +111,10 @@ export default function CetakVakasiPimpinanStafDialog({
             </div>
             <div>
               <DialogTitle className="text-xl font-bold tracking-tight text-slate-800">
-                Laporan Vakasi Pimpinan & Staf
+                Laporan Vakasi Lain-Lain
               </DialogTitle>
               <DialogDescription className="text-sm text-slate-500 mt-0.5">
-                Pilih unit departemen untuk mencetak rekapitulasi vakasi
+                Pilih unit departemen untuk mencetak rincian vakasi struktural & tambahan
               </DialogDescription>
             </div>
           </div>
@@ -228,7 +137,7 @@ export default function CetakVakasiPimpinanStafDialog({
               </select>
             </div>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Laporan ini merangkum seluruh rincian slip gaji bulanan, BPJS, beras, presensi jam kerja, dan bonus presensi untuk pimpinan dan staf di unit departemen terpilih.
+              Laporan ini merangkum seluruh tunjangan struktural dan vakasi tambahan untuk pimpinan dan staf di unit departemen terpilih.
             </p>
           </div>
         </div>

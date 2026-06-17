@@ -68,6 +68,7 @@ interface EmployeeConstantRecord {
   tJabatan?: number;
   tKepangkatan?: number;
   cummulativeCredit?: number;
+  tInstruksional?: number;
 }
 
 export default function ConstantValuesDebugPage() {
@@ -92,6 +93,7 @@ export default function ConstantValuesDebugPage() {
     potTht: 0,
     tKepangkatan: 0,
     cummulativeCredit: 0,
+    tInstruksional: 0,
   });
   const [saving, setSaving] = useState(false);
 
@@ -109,6 +111,7 @@ export default function ConstantValuesDebugPage() {
       potTht: emp.potTht || 0,
       tKepangkatan: emp.tKepangkatan || 0,
       cummulativeCredit: emp.cummulativeCredit || 0,
+      tInstruksional: emp.tInstruksional || 0,
     });
   };
 
@@ -135,6 +138,7 @@ export default function ConstantValuesDebugPage() {
         updateData['bpjs.t_bpjs_kes'] = editForm.tBpjsKes;
         updateData['kepangkatan.t_kepangkatan'] = editForm.tKepangkatan;
         updateData['kepangkatan.cummulativeCredit'] = editForm.cummulativeCredit;
+        updateData['t_instruksional'] = editForm.tInstruksional;
       } else {
         updateData['bpjs.allowanceAmount'] = editForm.tBpjsPekarya;
       }
@@ -148,6 +152,7 @@ export default function ConstantValuesDebugPage() {
           const tBpjsKes = type === 'loyalis' ? editForm.tBpjsKes : 0;
           const tKepangkatan = type === 'loyalis' ? editForm.tKepangkatan : 0;
           const cummulativeCredit = type === 'loyalis' ? editForm.cummulativeCredit : 0;
+          const tInstruksional = type === 'loyalis' ? editForm.tInstruksional : 0;
           const tBeras = editForm.tBeras;
           const potBpjs = editForm.potBpjs;
           const potTabungan = editForm.potTabungan;
@@ -169,6 +174,7 @@ export default function ConstantValuesDebugPage() {
             tBpjsPekarya,
             tKepangkatan,
             cummulativeCredit,
+            tInstruksional,
           };
         }
         return emp;
@@ -213,6 +219,7 @@ export default function ConstantValuesDebugPage() {
           const tJabatan = (data.employment_profile?.structural_positions || []).reduce((sum: number, pos: any) => sum + (Number(pos.allowance) || 0), 0);
           const tKepangkatan = data.kepangkatan?.t_kepangkatan || 0;
           const cummulativeCredit = data.kepangkatan?.cummulativeCredit || 0;
+          const tInstruksional = data.t_instruksional || 0;
 
           records.push({
             id: docSnap.id,
@@ -231,6 +238,7 @@ export default function ConstantValuesDebugPage() {
             tJabatan,
             tKepangkatan,
             cummulativeCredit,
+            tInstruksional,
           });
         }
       });
@@ -330,6 +338,7 @@ export default function ConstantValuesDebugPage() {
   const showBeras = valueFilter === 'all' || valueFilter === 'pay';
   const showTJabatan = activeTab !== 'pekarya' && (valueFilter === 'all' || valueFilter === 'pay');
   const showTKepangkatan = activeTab !== 'pekarya' && (valueFilter === 'all' || valueFilter === 'pay');
+  const showTInstruksional = activeTab !== 'pekarya' && (valueFilter === 'all' || valueFilter === 'pay');
   const showPotBpjs = valueFilter === 'all' || valueFilter === 'deduction';
   const showPotTabungan = activeTab !== 'pekarya' && (valueFilter === 'all' || valueFilter === 'deduction');
   const showZiz = activeTab !== 'pekarya' && (valueFilter === 'all' || valueFilter === 'deduction');
@@ -344,6 +353,7 @@ export default function ConstantValuesDebugPage() {
     (showBeras ? 1 : 0) +
     (showTJabatan ? 1 : 0) +
     (showTKepangkatan ? 1 : 0) +
+    (showTInstruksional ? 1 : 0) +
     (showPotBpjs ? 1 : 0) +
     (showPotTabungan ? 1 : 0) +
     (showZiz ? 1 : 0) +
@@ -525,6 +535,7 @@ export default function ConstantValuesDebugPage() {
                   {showBeras && <TableHead className="py-4 font-semibold text-emerald-800 bg-emerald-50/40 text-xs uppercase tracking-wider text-right">T. Beras</TableHead>}
                   {showTJabatan && <TableHead className="py-4 font-semibold text-emerald-800 bg-emerald-50/40 text-xs uppercase tracking-wider text-right">T. Jabatan</TableHead>}
                   {showTKepangkatan && <TableHead className="py-4 font-semibold text-emerald-800 bg-emerald-50/40 text-xs uppercase tracking-wider text-right">T. Kepangkatan</TableHead>}
+                  {showTInstruksional && <TableHead className="py-4 font-semibold text-emerald-800 bg-emerald-50/40 text-xs uppercase tracking-wider text-right">T. Instruksional</TableHead>}
                   
                   {showPotBpjs && <TableHead className="py-4 font-semibold text-rose-800 bg-rose-50/40 text-xs uppercase tracking-wider text-right">Potongan BPJS</TableHead>}
                   {showPotTabungan && <TableHead className="py-4 font-semibold text-rose-800 bg-rose-50/40 text-xs uppercase tracking-wider text-right">Pot. Tabungan</TableHead>}
@@ -629,6 +640,18 @@ export default function ConstantValuesDebugPage() {
                           {emp.type === 'loyalis' ? (
                             <span>
                               Rp {(emp.tKepangkatan || 0).toLocaleString('id-ID')}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 text-xs font-normal">N/A</span>
+                          )}
+                        </TableCell>
+                      )}
+
+                      {showTInstruksional && (
+                        <TableCell className="py-4 text-right font-medium text-slate-700 text-sm bg-emerald-50/10">
+                          {emp.type === 'loyalis' ? (
+                            <span>
+                              Rp {(emp.tInstruksional || 0).toLocaleString('id-ID')}
                             </span>
                           ) : (
                             <span className="text-slate-300 text-xs font-normal">N/A</span>
@@ -833,6 +856,19 @@ export default function ConstantValuesDebugPage() {
                         type="text"
                         value={formatCurrencyInput(editForm.tKepangkatan)}
                         onChange={(e) => setEditForm(prev => ({ ...prev, tKepangkatan: parseCurrencyInput(e.target.value) }))}
+                        className="pl-9 rounded-xl border-slate-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-sm h-10 shadow-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-600">Tunjangan Instruksional</label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-medium select-none">Rp</span>
+                      <Input
+                        type="text"
+                        value={formatCurrencyInput(editForm.tInstruksional)}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, tInstruksional: parseCurrencyInput(e.target.value) }))}
                         className="pl-9 rounded-xl border-slate-200 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-sm h-10 shadow-sm"
                       />
                     </div>

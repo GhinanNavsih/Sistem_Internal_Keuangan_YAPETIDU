@@ -67,6 +67,10 @@ export function calculateTotalEarnings(
     const tKepangkatan = emp.kepangkatan?.t_kepangkatan || 0;
     total += tKepangkatan;
 
+    // Instruksional
+    const tInstruksional = emp.t_instruksional || 0;
+    total += tInstruksional;
+
     // Vakasi Tambahan (Loyalis)
     if (vakasiTambahanSum) {
       total += vakasiTambahanSum;

@@ -56,6 +56,7 @@ import LegalitasPimpinanDialog from '@/components/LegalitasPimpinanDialog';
 import CetakPayrollDialog from '@/components/CetakPayrollDialog';
 import CetakTunjanganJabatanDialog from '@/components/CetakTunjanganJabatanDialog';
 import CetakVakasiPimpinanStafDialog from '@/components/CetakVakasiPimpinanStafDialog';
+import CetakVakasiLainLainDialog from '@/components/CetakVakasiLainLainDialog';
 import { generateWhatsAppPaySlipUrl, uploadPaySlipPdf } from '@/utils/whatsappHelper';
 import { generatePaySlipPdf, generateMultiPaySlipPdf, PaySlipData } from '@/utils/generatePaySlipPdf';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -152,10 +153,9 @@ export default function PayrollValidationDashboard() {
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' | null }>({ key: '', direction: null });
 
   // Collar type state (Lapangan / Blue Collar vs Kantor / White Collar Loyalis)
-  const [payrollCollar, setPayrollCollar] = useState<'blue' | 'loyalis'>('blue');
+  const [payrollCollar, setPayrollCollar] = useState<'blue' | 'loyalis'>('loyalis');
 
   // ─── Filters ───────────────────────────────────────────────────
-  const [activityFilter, setActivityFilter] = useState<'active' | 'all'>('active');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -319,6 +319,7 @@ export default function PayrollValidationDashboard() {
   const [cetakRekapDialogOpen, setCetakRekapDialogOpen] = useState(false);
   const [tunjanganJabatanDialogOpen, setTunjanganJabatanDialogOpen] = useState(false);
   const [vakasiPimpinanStafDialogOpen, setVakasiPimpinanStafDialogOpen] = useState(false);
+  const [vakasiLainLainDialogOpen, setVakasiLainLainDialogOpen] = useState(false);
   const [printSelectorOpen, setPrintSelectorOpen] = useState(false);
 
   // New States for Email & Cetak/Kirim Fallbacks
@@ -591,10 +592,8 @@ export default function PayrollValidationDashboard() {
   const getFilteredAndSortedEmployees = () => {
     let filtered = [...employees];
 
-    // Activity Filter
-    if (activityFilter === 'active') {
-      filtered = filtered.filter(emp => emp.isActive);
-    }
+    // Only show active employees
+    filtered = filtered.filter(emp => emp.isActive);
 
     // Category Filter
     if (categoryFilter !== 'all') {
@@ -1537,26 +1536,6 @@ export default function PayrollValidationDashboard() {
                     </button>
                   </div>
 
-                  <div className="flex bg-slate-100 p-1 rounded-xl">
-                    <button
-                      onClick={() => setActivityFilter('active')}
-                      className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${activityFilter === 'active'
-                        ? 'bg-white text-indigo-600 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                    >
-                      Aktif
-                    </button>
-                    <button
-                      onClick={() => setActivityFilter('all')}
-                      className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${activityFilter === 'all'
-                        ? 'bg-white text-indigo-600 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                    >
-                      Semua
-                    </button>
-                  </div>
 
                   <select
                     value={categoryFilter}
@@ -1964,6 +1943,15 @@ export default function PayrollValidationDashboard() {
         loyalisPresenceData={loyalisPresenceData}
       />
 
+      <CetakVakasiLainLainDialog
+        open={vakasiLainLainDialogOpen}
+        onOpenChange={setVakasiLainLainDialogOpen}
+        employees={employees}
+        categories={categories}
+        periodName={payrollPeriod}
+        vakasiTambahanMap={vakasiTambahanMap}
+      />
+
       {/* ─── Print Selection Dialog ─────────────────────────────────── */}
       <Dialog open={printSelectorOpen} onOpenChange={setPrintSelectorOpen}>
         <DialogContent className="sm:max-w-[760px] p-6 rounded-2xl bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
@@ -2129,6 +2117,32 @@ export default function PayrollValidationDashboard() {
                 </div>
                 <div className="flex-shrink-0 self-center pl-2">
                   <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all duration-200" />
+                </div>
+              </button>
+            )}
+
+            {/* Card 7: Laporan Vakasi Lain-Lain (Loyalis Only) */}
+            {payrollCollar === 'loyalis' && (
+              <button
+                onClick={() => {
+                  setPrintSelectorOpen(false);
+                  setVakasiLainLainDialogOpen(true);
+                }}
+                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-rose-50/30 hover:border-rose-100 transition-all duration-200 text-left outline-none cursor-pointer"
+              >
+                <div className="flex-shrink-0 p-3 rounded-xl bg-rose-50 text-rose-600 group-hover:bg-rose-100/70 transition-colors">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-rose-900 transition-colors">
+                    Vakasi Lain-Lain
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    Cetak rincian tunjangan struktural, vakasi tambahan, dan potongan.
+                  </p>
+                </div>
+                <div className="flex-shrink-0 self-center pl-2">
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-rose-500 group-hover:translate-x-1 transition-all duration-200" />
                 </div>
               </button>
             )}

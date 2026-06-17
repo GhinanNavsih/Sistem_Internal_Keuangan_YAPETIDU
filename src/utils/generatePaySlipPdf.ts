@@ -266,6 +266,10 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     const rankItem = data.earnings.find(e => e.label.toUpperCase() === 'KEPANGKATAN');
     leftRows.push({ type: 'item', label: 'KEPANGKATAN', amount: rankItem ? rankItem.amount : 0 });
 
+    // T. Instruksional
+    const instItem = data.earnings.find(e => e.label.toUpperCase() === 'INSTRUKSIONAL' || e.label.toUpperCase() === 'T. INSTRUKSIONAL');
+    leftRows.push({ type: 'item', label: 'T. INSTRUKSIONAL', amount: instItem ? instItem.amount : 0 });
+
     // T. Hari Tua (10% of gapok)
     const htItem = data.earnings.find(e => e.label.toUpperCase() === 'T. HARI TUA');
     const htAmt = htItem ? htItem.amount : Math.round(gapokVal * 0.1);
@@ -376,7 +380,7 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
 
     const specialLabels = [
       'GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN JABATAN',
-      'KEPANGKATAN', 'T. HARI TUA', 'T. BPJS TK', 'T. BPJS KES', 'BERAS', 'TUNJANGAN BERAS',
+      'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'T. BPJS TK', 'T. BPJS KES', 'BERAS', 'TUNJANGAN BERAS',
       'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'
     ];
     const eventItems = data.earnings.filter(e => {
