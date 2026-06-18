@@ -299,7 +299,8 @@ export default function PayrollValidationDashboard() {
           }
 
           if (match) {
-            savingMap[match.id] = 25000;
+            const isYayasanSubsidy = uData.paymentStatus === 'Yayasan Subsidy';
+            savingMap[match.id] = isYayasanSubsidy ? 0 : 25000;
           }
         });
 
@@ -1619,11 +1620,6 @@ export default function PayrollValidationDashboard() {
             <Link href="/dashboard/payroll/simpan-pinjam">
               <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">
                 <Banknote className="w-4 h-4 mr-2" /> Simpan Pinjam
-              </Button>
-            </Link>
-            <Link href="/dashboard/payroll/constant-values">
-              <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">
-                <SlidersHorizontal className="w-4 h-4 mr-2" /> Detail Tunjangan & Potongan
               </Button>
             </Link>
           </div>

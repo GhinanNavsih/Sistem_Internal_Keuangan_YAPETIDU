@@ -57,6 +57,8 @@ import {
   Building2,
   Plus,
   LayoutGrid,
+  SlidersHorizontal,
+  Coins,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -264,8 +266,8 @@ export default function EmployeesPage() {
   const router = useRouter();
   const { user, profile, loading: authLoading, logout } = useAuth();
 
-  const [activeTab, setActiveTab] = useState('blue');
-  const [tableViewMode, setTableViewMode] = useState<'default' | 'debug'>('default');
+  const [activeTab, setActiveTab] = useState('loyalis');
+  const [tableViewMode, setTableViewMode] = useState<'default' | 'debug' | 'constant'>('default');
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -404,6 +406,10 @@ export default function EmployeesPage() {
         savings: { deductionAmount: 0 },
         pinlu: { deductionAmount: 0 },
         tht: { deductionAmount: 0 },
+        bpjs: { t_bpjs_tk: 0, t_bpjs_kes: 0, deductionAmount: 0 },
+        salaryProfile: { tunjanganBeras: 0 },
+        kepangkatan: { t_kepangkatan: 0, cummulativeCredit: 0 },
+        t_instruksional: 0,
       };
     }
     return {
@@ -421,7 +427,7 @@ export default function EmployeesPage() {
     };
   };
 
-  const [formData, setFormData] = useState<FormData>(resetForm('blue'));
+  const [formData, setFormData] = useState<FormData>(resetForm('loyalis'));
 
   const updateNestedField = (section: string, field: string, value: any) => {
     setFormData((prev: any) => ({
@@ -485,7 +491,23 @@ export default function EmployeesPage() {
           date_of_hire: formatTimestampForInput(emp.employment_profile?.date_of_hire),
           date_recognized: formatTimestampForInput(emp.employment_profile?.date_recognized),
           date_exit: formatTimestampForInput(emp.employment_profile?.date_exit),
-        }
+        },
+        bpjs: {
+          t_bpjs_tk: 0,
+          t_bpjs_kes: 0,
+          deductionAmount: 0,
+          ...emp.bpjs
+        },
+        salaryProfile: {
+          tunjanganBeras: 0,
+          ...emp.salaryProfile
+        },
+        kepangkatan: {
+          t_kepangkatan: 0,
+          cummulativeCredit: 0,
+          ...emp.kepangkatan
+        },
+        t_instruksional: emp.t_instruksional || 0,
       });
     } else {
       setFormData({ ...emp });
@@ -564,6 +586,19 @@ export default function EmployeesPage() {
           tht: {
             deductionAmount: Number(formData.tht?.deductionAmount) || 0,
           },
+          bpjs: {
+            t_bpjs_tk: Number(formData.bpjs?.t_bpjs_tk) || 0,
+            t_bpjs_kes: Number(formData.bpjs?.t_bpjs_kes) || 0,
+            deductionAmount: Number(formData.bpjs?.deductionAmount) || 0,
+          },
+          salaryProfile: {
+            tunjanganBeras: Number(formData.salaryProfile?.tunjanganBeras) || 0,
+          },
+          kepangkatan: {
+            t_kepangkatan: Number(formData.kepangkatan?.t_kepangkatan) || 0,
+            cummulativeCredit: Number(formData.kepangkatan?.cummulativeCredit) || 0,
+          },
+          t_instruksional: Number(formData.t_instruksional) || 0,
           audit: {
             updatedAt: serverTimestamp(),
             ...(editingEmployee ? {} : { createdAt: serverTimestamp(), sourceFile: 'Web Dashboard' }),
@@ -913,6 +948,17 @@ export default function EmployeesPage() {
               <Building2 className="w-3.5 h-3.5" />
               Debug Jabatan
             </button>
+            <button
+              onClick={() => setTableViewMode('constant')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                tableViewMode === 'constant'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              Nilai Konstanta
+            </button>
           </div>
         </div>
 
@@ -921,7 +967,7 @@ export default function EmployeesPage() {
           <div className="overflow-x-auto">
             <Table>
               <TableHeader className="bg-slate-50/50">
-                {tableViewMode === 'default' ? (
+                {tableViewMode === 'default' && (
                   <TableRow className="border-slate-100">
                     <TableHead className="w-24 font-semibold text-slate-900 pl-8">ID</TableHead>
                     <TableHead className="font-semibold text-slate-900 w-[320px]">Nama Lengkap</TableHead>
@@ -931,7 +977,8 @@ export default function EmployeesPage() {
                     <TableHead className="font-semibold text-slate-900">Mulai Kerja</TableHead>
                     <TableHead className="font-semibold text-slate-900 text-right pr-8">Aksi</TableHead>
                   </TableRow>
-                ) : (
+                )}
+                {tableViewMode === 'debug' && (
                   <TableRow className="border-slate-100">
                     <TableHead className="w-24 font-semibold text-slate-900 pl-8">ID</TableHead>
                     <TableHead className="font-semibold text-slate-900 w-[300px]">Nama Lengkap</TableHead>
@@ -941,11 +988,40 @@ export default function EmployeesPage() {
                     <TableHead className="font-semibold text-slate-900 text-right pr-8">Aksi</TableHead>
                   </TableRow>
                 )}
+                {tableViewMode === 'constant' && (
+                  activeTab === 'loyalis' ? (
+                    <TableRow className="border-slate-100">
+                      <TableHead className="w-24 font-semibold text-slate-900 pl-8">ID</TableHead>
+                      <TableHead className="font-semibold text-slate-900 w-[200px]">Nama Lengkap</TableHead>
+                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. BPJS TK</TableHead>
+                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. BPJS KES</TableHead>
+                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. Beras</TableHead>
+                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. Jabatan</TableHead>
+                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. Kepangkatan</TableHead>
+                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. Instruksional</TableHead>
+                      <TableHead className="font-semibold text-rose-800 bg-rose-50/40 text-right">Pot. BPJS</TableHead>
+                      <TableHead className="font-semibold text-rose-800 bg-rose-50/40 text-right">Pot. Tabungan</TableHead>
+                      <TableHead className="font-semibold text-rose-800 bg-rose-50/40 text-right">ZIS</TableHead>
+                      <TableHead className="font-semibold text-rose-800 bg-rose-50/40 text-right">Pot. BNI Simponi</TableHead>
+                      <TableHead className="font-semibold text-rose-800 bg-rose-50/40 text-right">Pot. Pinlu/Tagihan</TableHead>
+                      <TableHead className="font-semibold text-slate-900 text-right pr-8">Aksi</TableHead>
+                    </TableRow>
+                  ) : (
+                    <TableRow className="border-slate-100">
+                      <TableHead className="w-24 font-semibold text-slate-900 pl-8">ID</TableHead>
+                      <TableHead className="font-semibold text-slate-900 w-[250px]">Nama Lengkap</TableHead>
+                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">BPJS Pekarya</TableHead>
+                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. Beras</TableHead>
+                      <TableHead className="font-semibold text-rose-800 bg-rose-50/40 text-right">Pot. BPJS</TableHead>
+                      <TableHead className="font-semibold text-slate-900 text-right pr-8">Aksi</TableHead>
+                    </TableRow>
+                  )
+                )}
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? 7 : 6} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? 7 : (tableViewMode === 'debug' ? 6 : (activeTab === 'loyalis' ? 14 : 6))} className="h-64 text-center">
                       <div className="flex flex-col items-center gap-3 text-slate-400">
                         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                         <p>Memuat data pegawai...</p>
@@ -954,7 +1030,7 @@ export default function EmployeesPage() {
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? 7 : 6} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? 7 : (tableViewMode === 'debug' ? 6 : (activeTab === 'loyalis' ? 14 : 6))} className="h-64 text-center">
                       <p className="text-slate-400">Tidak ada pegawai yang ditemukan.</p>
                     </TableCell>
                   </TableRow>
@@ -1005,7 +1081,7 @@ export default function EmployeesPage() {
                       </TableCell>
                     </TableRow>
                   ))
-                ) : (
+                ) : tableViewMode === 'debug' ? (
                   getDebugRows(filtered, activeTab).map(empRow => (
                     <TableRow key={empRow.rowKey} className="hover:bg-slate-50/30 transition-colors border-slate-50">
                       <TableCell className="font-bold text-slate-400 pl-8 font-mono text-xs">{getEmpId(empRow)}</TableCell>
@@ -1034,6 +1110,53 @@ export default function EmployeesPage() {
                             <Pencil className="w-4 h-4" />
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(empRow))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-lg">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  filtered.map(emp => (
+                    <TableRow key={getEmpId(emp)} className="hover:bg-slate-50/30 transition-colors border-slate-50">
+                      <TableCell className="font-bold text-slate-400 pl-8 font-mono text-xs">{getEmpId(emp)}</TableCell>
+                      <TableCell className="w-[180px] max-w-[180px]">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-900 block truncate" title={getEmpName(emp)}>{getEmpName(emp)}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {activeTab === 'loyalis' ? 'NIY' : 'NIK'}: {getEmpNikOrNiy(emp) || '-'}
+                          </span>
+                        </div>
+                      </TableCell>
+                      {activeTab === 'loyalis' ? (
+                        <>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(emp.bpjs?.t_bpjs_tk || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(emp.bpjs?.t_bpjs_kes || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(emp.salaryProfile?.tunjanganBeras || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">
+                            {formatIDR((emp.employment_profile?.structural_positions || []).reduce((sum: number, pos: any) => sum + (Number(pos.allowance) || 0), 0))}
+                          </TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(emp.kepangkatan?.t_kepangkatan || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(emp.t_instruksional || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-rose-50/10">{formatIDR(emp.bpjs?.deductionAmount || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-rose-50/10">{formatIDR(emp.savings?.deductionAmount || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-rose-50/10">{formatIDR(emp.ziz?.deductionAmount || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-rose-50/10">{formatIDR(emp.tht?.deductionAmount || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-rose-50/10">{formatIDR(emp.pinlu?.deductionAmount || 0)}</TableCell>
+                        </>
+                      ) : (
+                        <>
+                          <TableCell className="text-right font-medium text-slate-700 text-sm bg-emerald-50/10">{formatIDR(emp.bpjs?.allowanceAmount || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-sm bg-emerald-50/10">{formatIDR(emp.salaryProfile?.tunjanganBeras || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-sm bg-rose-50/10">{formatIDR(emp.bpjs?.deductionAmount || 0)}</TableCell>
+                        </>
+                      )}
+                      <TableCell className="text-right pr-8">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(emp)} className="h-8 w-8 text-slate-400 hover:text-indigo-600 rounded-lg">
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(getEmpId(emp))} className="h-8 w-8 text-slate-400 hover:text-red-600 rounded-lg">
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
@@ -1197,46 +1320,45 @@ export default function EmployeesPage() {
                         </Select>
                       </div>
                     </div>
+                    <div className="space-y-2">
+                      <Label>Kredit Kumulatif</Label>
+                      <Select
+                        value={formData.kepangkatan?.cummulativeCredit !== undefined && formData.kepangkatan?.cummulativeCredit !== null ? String(formData.kepangkatan.cummulativeCredit) : '0'}
+                        onValueChange={(val) => updateNestedField('kepangkatan', 'cummulativeCredit', Number(val) || 0)}
+                      >
+                        <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                          <SelectValue placeholder="Pilih Kredit Kumulatif" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                          {(() => {
+                            const credits = [0, 100, 150, 200, 300, 400, 550, 700, 850, 1050];
+                            const creditLabels: Record<number, string> = {
+                              0: '0 / Belum Ada',
+                              100: '100 (Asisten Ahli)',
+                              150: '150 (Asisten Ahli)',
+                              200: '200 (Lektor A)',
+                              300: '300 (Lektor B)',
+                              400: '400 (Lektor Kepala)',
+                              550: '550 (Lektor Kepala)',
+                              700: '700 (Lektor Kepala)',
+                              850: '850 (Guru Besar)',
+                              1050: '1050 (Guru Besar)'
+                            };
+                            const currentVal = formData.kepangkatan?.cummulativeCredit;
+                            const options = currentVal !== undefined && currentVal !== null && !credits.includes(Number(currentVal))
+                              ? [...credits, Number(currentVal)].sort((a, b) => a - b)
+                              : credits;
+                            return options.map(val => (
+                              <SelectItem key={val} value={String(val)} className="text-xs">
+                                {creditLabels[val] || String(val)}
+                              </SelectItem>
+                            ));
+                          })()}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="space-y-2"><Label>Nama Bank</Label><Input value={formData.banking_info?.bank_name || ''} onChange={e => updateNestedField('banking_info', 'bank_name', e.target.value)} /></div>
                     <div className="space-y-2"><Label>Nomor Rekening</Label><Input value={formData.banking_info?.account_number || ''} onChange={e => updateNestedField('banking_info', 'account_number', e.target.value)} /></div>
-                    <div className="grid grid-cols-4 gap-3">
-                      <div className="space-y-2">
-                        <Label>Potongan Zakat Infaq Sodaqoh (Rp)</Label>
-                        <Input 
-                          type="number" 
-                          value={formData.ziz?.deductionAmount ?? 0} 
-                          onChange={e => updateNestedField('ziz', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                          className="rounded-xl border-slate-200"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Potongan Tabungan (Rp)</Label>
-                        <Input 
-                          type="number" 
-                          value={formData.savings?.deductionAmount ?? 0} 
-                          onChange={e => updateNestedField('savings', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                          className="rounded-xl border-slate-200"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Potongan Pinlu/Tagihan (Rp)</Label>
-                        <Input 
-                          type="number" 
-                          value={formData.pinlu?.deductionAmount ?? 0} 
-                          onChange={e => updateNestedField('pinlu', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                          className="rounded-xl border-slate-200"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Potongan BNI Simponi / THT (Rp)</Label>
-                        <Input 
-                          type="number" 
-                          value={formData.tht?.deductionAmount ?? 0} 
-                          onChange={e => updateNestedField('tht', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                          className="rounded-xl border-slate-200"
-                        />
-                      </div>
-                    </div>
                   </div>
                   <div className="col-span-3 pt-2 border-t border-slate-100 space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Tanggungan Keluarga (Untuk Tunjangan)</h3>
@@ -1246,6 +1368,116 @@ export default function EmployeesPage() {
                       <div className="space-y-2"><Label>Anak SLTP</Label><Input type="number" value={formData.family_allowance_metrics?.children_sltp ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_sltp', e.target.value)} className="rounded-xl border-slate-200" /></div>
                       <div className="space-y-2"><Label>Anak SLTA</Label><Input type="number" value={formData.family_allowance_metrics?.children_slta ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_slta', e.target.value)} className="rounded-xl border-slate-200" /></div>
                       <div className="space-y-2"><Label>Anak Kuliah</Label><Input type="number" value={formData.family_allowance_metrics?.children_pt ?? 0} onChange={e => updateNestedField('family_allowance_metrics', 'children_pt', e.target.value)} className="rounded-xl border-slate-200" /></div>
+                    </div>
+                  </div>
+                  <div className="col-span-3 pt-4 border-t border-slate-100 space-y-4">
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                      <Coins className="w-4 h-4 text-indigo-500" />
+                      Nilai Konstanta Gaji &amp; Potongan
+                    </h3>
+                    
+                    {/* Tunjangan / Earnings */}
+                    <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-100 space-y-3">
+                      <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Tunjangan Tetap (Earning)</h4>
+                      <div className="grid grid-cols-5 gap-3">
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. BPJS TK (Rp)</Label>
+                          <Input 
+                            type="number" 
+                            value={formData.bpjs?.t_bpjs_tk ?? 0} 
+                            onChange={e => updateNestedField('bpjs', 't_bpjs_tk', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                            className="rounded-xl border-slate-200 text-xs bg-white"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. BPJS KES (Rp)</Label>
+                          <Input 
+                            type="number" 
+                            value={formData.bpjs?.t_bpjs_kes ?? 0} 
+                            onChange={e => updateNestedField('bpjs', 't_bpjs_kes', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                            className="rounded-xl border-slate-200 text-xs bg-white"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. Beras (Rp)</Label>
+                          <Input 
+                            type="number" 
+                            value={formData.salaryProfile?.tunjanganBeras ?? 0} 
+                            onChange={e => updateNestedField('salaryProfile', 'tunjanganBeras', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                            className="rounded-xl border-slate-200 text-xs bg-white"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. Kepangkatan (Rp)</Label>
+                          <Input 
+                            type="number" 
+                            value={formData.kepangkatan?.t_kepangkatan ?? 0} 
+                            onChange={e => updateNestedField('kepangkatan', 't_kepangkatan', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                            className="rounded-xl border-slate-200 text-xs bg-white"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. Instruksional (Rp)</Label>
+                          <Input 
+                            type="number" 
+                            value={formData.t_instruksional ?? 0} 
+                            onChange={e => setFormData((prev: any) => ({ ...prev, t_instruksional: e.target.value !== '' ? Number(e.target.value) : 0 }))} 
+                            className="rounded-xl border-slate-200 text-xs bg-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Potongan / Deductions */}
+                    <div className="p-4 bg-rose-50/70 rounded-2xl border border-rose-100 space-y-3">
+                      <h4 className="text-xs font-bold text-rose-800 uppercase tracking-wider">Potongan Tetap (Deduction)</h4>
+                      <div className="grid grid-cols-5 gap-3">
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Potongan BPJS (Rp)</Label>
+                          <Input 
+                            type="number" 
+                            value={formData.bpjs?.deductionAmount ?? 0} 
+                            onChange={e => updateNestedField('bpjs', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                            className="rounded-xl border-slate-200 text-xs bg-white"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Potongan Tabungan (Rp)</Label>
+                          <Input 
+                            type="number" 
+                            value={formData.savings?.deductionAmount ?? 0} 
+                            onChange={e => updateNestedField('savings', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                            className="rounded-xl border-slate-200 text-xs bg-white"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Potongan Zakat Infaq (Rp)</Label>
+                          <Input 
+                            type="number" 
+                            value={formData.ziz?.deductionAmount ?? 0} 
+                            onChange={e => updateNestedField('ziz', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                            className="rounded-xl border-slate-200 text-xs bg-white"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">BNI Simponi / THT (Rp)</Label>
+                          <Input 
+                            type="number" 
+                            value={formData.tht?.deductionAmount ?? 0} 
+                            onChange={e => updateNestedField('tht', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                            className="rounded-xl border-slate-200 text-xs bg-white"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Potongan Pinlu (Rp)</Label>
+                          <Input 
+                            type="number" 
+                            value={formData.pinlu?.deductionAmount ?? 0} 
+                            onChange={e => updateNestedField('pinlu', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
+                            className="rounded-xl border-slate-200 text-xs bg-white"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="col-span-3">

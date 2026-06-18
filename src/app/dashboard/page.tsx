@@ -40,6 +40,7 @@ import {
   FileSpreadsheet,
   FileText,
   Percent,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -49,6 +50,10 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
 } from 'recharts';
 
 // Indonesian Month Labels
@@ -67,6 +72,8 @@ const formatIDR = (amount: number) => {
   }).format(amount);
 };
 
+const PIE_COLORS = ['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#0ea5e9', '#a855f7'];
+
 // Convert Period ID (e.g., '2026_05') to readable Indonesian label (e.g., 'Mei 2026')
 const formatPeriodLabel = (periodId: string): string => {
   const parts = periodId.split('_');
@@ -83,13 +90,13 @@ interface PeriodAggregate {
   totalGross: number;
   totalDeductions: number;
   totalNet: number;
-  
+
   // Loyalis (White Collar) aggregates
   loyalisGross: number;
   loyalisDeductions: number;
   loyalisNet: number;
   loyalisCount: number;
-  
+
   // Pekarya (Blue Collar) aggregates
   pekaryaGross: number;
   pekaryaDeductions: number;
@@ -98,8 +105,10 @@ interface PeriodAggregate {
 
   totalSlipsCount: number;
   confirmedSlipsCount: number;
-  
+
   deductionsBreakdown: Record<string, number>;
+  loyalisDeductionsBreakdown: Record<string, number>;
+  pekaryaDeductionsBreakdown: Record<string, number>;
 }
 
 export default function TreasuryDashboard() {
@@ -113,11 +122,30 @@ export default function TreasuryDashboard() {
   const [employeesBlueCollar, setEmployeesBlueCollar] = useState<any[]>([]);
   const [slips, setSlips] = useState<any[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
+  const [filterCollar, setFilterCollar] = useState<'semua' | 'pekarya' | 'loyalis'>('semua');
+  const [deductionsView, setDeductionsView] = useState<'list' | 'pie'>('list');
+  const [animateBars, setAnimateBars] = useState(false);
+  const [animateListBars, setAnimateListBars] = useState(false);
 
-  // Hydration prevention
+  // Hydration prevention & starting animation trigger on mount
   useEffect(() => {
     setMounted(true);
+    const timer = setTimeout(() => {
+      setAnimateBars(true);
+    }, 100);
+    return () => clearTimeout(timer);
   }, []);
+
+  // Trigger starting animation on the deduction bars when toggling to 'Daftar' view
+  useEffect(() => {
+    if (deductionsView === 'list') {
+      setAnimateListBars(false);
+      const timer = setTimeout(() => {
+        setAnimateListBars(true);
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [deductionsView]);
 
   // Fetch data on mount
   useEffect(() => {
@@ -155,7 +183,7 @@ export default function TreasuryDashboard() {
     const activeLoyalis = employeesLoyalis.filter(
       e => e.personal_info?.status === 'AKTIF'
     ).length;
-    
+
     const activeBlueCollar = employeesBlueCollar.filter(
       e => e.flags?.isActive !== false
     ).length;
@@ -205,6 +233,8 @@ export default function TreasuryDashboard() {
           totalSlipsCount: 0,
           confirmedSlipsCount: 0,
           deductionsBreakdown: {},
+          loyalisDeductionsBreakdown: {},
+          pekaryaDeductionsBreakdown: {},
         };
       }
 
@@ -242,6 +272,11 @@ export default function TreasuryDashboard() {
         (d.deductions || []).forEach((de: any) => {
           const label = de.label || 'Lain-lain';
           agg.deductionsBreakdown[label] = (agg.deductionsBreakdown[label] || 0) + (de.amount || 0);
+          if (category === 'loyalis') {
+            agg.loyalisDeductionsBreakdown[label] = (agg.loyalisDeductionsBreakdown[label] || 0) + (de.amount || 0);
+          } else {
+            agg.pekaryaDeductionsBreakdown[label] = (agg.pekaryaDeductionsBreakdown[label] || 0) + (de.amount || 0);
+          }
         });
       }
     });
@@ -266,6 +301,38 @@ export default function TreasuryDashboard() {
     return periodAggregates[selectedPeriod] || null;
   }, [periodAggregates, selectedPeriod]);
 
+  // Filtered metrics based on selected filterCollar
+  const { filteredGross, filteredDeductions, filteredNet, filteredConfirmedCount, filteredActiveCount } = useMemo(() => {
+    if (!currentPeriodData) {
+      return { filteredGross: 0, filteredDeductions: 0, filteredNet: 0, filteredConfirmedCount: 0, filteredActiveCount: activeStaffCounts.total };
+    }
+    if (filterCollar === 'loyalis') {
+      return {
+        filteredGross: currentPeriodData.loyalisGross,
+        filteredDeductions: currentPeriodData.loyalisDeductions,
+        filteredNet: currentPeriodData.loyalisNet,
+        filteredConfirmedCount: currentPeriodData.loyalisCount,
+        filteredActiveCount: activeStaffCounts.loyalis,
+      };
+    } else if (filterCollar === 'pekarya') {
+      return {
+        filteredGross: currentPeriodData.pekaryaGross,
+        filteredDeductions: currentPeriodData.pekaryaDeductions,
+        filteredNet: currentPeriodData.pekaryaNet,
+        filteredConfirmedCount: currentPeriodData.pekaryaCount,
+        filteredActiveCount: activeStaffCounts.pekarya,
+      };
+    } else {
+      return {
+        filteredGross: currentPeriodData.totalGross,
+        filteredDeductions: currentPeriodData.totalDeductions,
+        filteredNet: currentPeriodData.totalNet,
+        filteredConfirmedCount: currentPeriodData.confirmedSlipsCount,
+        filteredActiveCount: activeStaffCounts.total,
+      };
+    }
+  }, [filterCollar, currentPeriodData, activeStaffCounts]);
+
   // Month-over-Month Delta Calculations
   const deltas = useMemo(() => {
     if (!selectedPeriod || sortedPeriods.length < 2) return null;
@@ -283,34 +350,72 @@ export default function TreasuryDashboard() {
       return ((curr - prev) / prev) * 100;
     };
 
-    return {
-      gross: calcPct(currAgg.totalGross, prevAgg.totalGross),
-      deductions: calcPct(currAgg.totalDeductions, prevAgg.totalDeductions),
-      net: calcPct(currAgg.totalNet, prevAgg.totalNet),
-      staff: calcPct(currAgg.confirmedSlipsCount, prevAgg.confirmedSlipsCount),
-    };
-  }, [selectedPeriod, sortedPeriods, periodAggregates]);
+    if (filterCollar === 'loyalis') {
+      return {
+        gross: calcPct(currAgg.loyalisGross, prevAgg.loyalisGross),
+        deductions: calcPct(currAgg.loyalisDeductions, prevAgg.loyalisDeductions),
+        net: calcPct(currAgg.loyalisNet, prevAgg.loyalisNet),
+        staff: calcPct(currAgg.loyalisCount, prevAgg.loyalisCount),
+      };
+    } else if (filterCollar === 'pekarya') {
+      return {
+        gross: calcPct(currAgg.pekaryaGross, prevAgg.pekaryaGross),
+        deductions: calcPct(currAgg.pekaryaDeductions, prevAgg.pekaryaDeductions),
+        net: calcPct(currAgg.pekaryaNet, prevAgg.pekaryaNet),
+        staff: calcPct(currAgg.pekaryaCount, prevAgg.pekaryaCount),
+      };
+    } else {
+      return {
+        gross: calcPct(currAgg.totalGross, prevAgg.totalGross),
+        deductions: calcPct(currAgg.totalDeductions, prevAgg.totalDeductions),
+        net: calcPct(currAgg.totalNet, prevAgg.totalNet),
+        staff: calcPct(currAgg.confirmedSlipsCount, prevAgg.confirmedSlipsCount),
+      };
+    }
+  }, [selectedPeriod, sortedPeriods, periodAggregates, filterCollar]);
 
   // Recharts Chart Data (Historical Trends)
   const chartData = useMemo(() => {
     return sortedPeriods.map(p => {
       const agg = periodAggregates[p];
+      let gross = agg.totalGross;
+      let deductions = agg.totalDeductions;
+      let net = agg.totalNet;
+
+      if (filterCollar === 'loyalis') {
+        gross = agg.loyalisGross;
+        deductions = agg.loyalisDeductions;
+        net = agg.loyalisNet;
+      } else if (filterCollar === 'pekarya') {
+        gross = agg.pekaryaGross;
+        deductions = agg.pekaryaDeductions;
+        net = agg.pekaryaNet;
+      }
+
       return {
         name: agg.label,
-        'Pendapatan Kotor': agg.totalGross,
-        'Potongan': agg.totalDeductions,
-        'Gaji Bersih': agg.totalNet,
+        'Pendapatan Kotor': gross,
+        'Potongan': deductions,
+        'Gaji Bersih': net,
       };
     });
-  }, [sortedPeriods, periodAggregates]);
+  }, [sortedPeriods, periodAggregates, filterCollar]);
 
   // Selected Period Deduction Breakdown (Sorted)
   const sortedDeductions = useMemo(() => {
     if (!currentPeriodData) return [];
-    return Object.entries(currentPeriodData.deductionsBreakdown)
+
+    let breakdown = currentPeriodData.deductionsBreakdown;
+    if (filterCollar === 'loyalis') {
+      breakdown = currentPeriodData.loyalisDeductionsBreakdown;
+    } else if (filterCollar === 'pekarya') {
+      breakdown = currentPeriodData.pekaryaDeductionsBreakdown;
+    }
+
+    return Object.entries(breakdown)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
-  }, [currentPeriodData]);
+  }, [currentPeriodData, filterCollar]);
 
   // Custom Chart Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -352,20 +457,20 @@ export default function TreasuryDashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/50 p-6 md:p-8 font-sans text-slate-800">
       <div className="max-w-[1400px] mx-auto space-y-8">
-        
+
         {/* Section 1: Header & Period Selector */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white/40 backdrop-blur-md p-6 rounded-3xl border border-slate-200/50 shadow-sm">
           <div>
             <span className="text-indigo-600 text-xs font-bold uppercase tracking-wider">Treasury & Financial Dashboard</span>
             <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 mt-1">
-              Yayasan Pendidikan Islam Darul 'Ulum (YAPETIDU)
+              Yayasan Pesantren Tinggi Darul 'Ulum (YAPETIDU)
             </h1>
             <p className="text-slate-500 text-sm mt-1">
               Selamat datang kembali, <span className="font-semibold text-slate-700">{profile.displayName || 'Bendahara'}</span>. Berikut ringkasan arus kas payroll Anda.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-4">
             <div className="flex items-center gap-2 bg-white/80 border border-slate-200 px-4 py-2 rounded-2xl shadow-sm">
               <Calendar className="w-4 h-4 text-indigo-500" />
               <span className="text-sm font-semibold text-slate-700">Periode Laporan:</span>
@@ -387,10 +492,43 @@ export default function TreasuryDashboard() {
               )}
             </div>
 
-            <div className="flex items-center gap-2 bg-indigo-50/50 border border-indigo-100/50 px-4 py-2 rounded-2xl">
+            <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setFilterCollar('semua')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${filterCollar === 'semua'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+                  }`}
+              >
+                Semua
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterCollar('pekarya')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${filterCollar === 'pekarya'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+                  }`}
+              >
+                Pekarya
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterCollar('loyalis')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${filterCollar === 'loyalis'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+                  }`}
+              >
+                Loyalis
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 bg-indigo-50/50 border border-indigo-100/50 px-4 py-2 rounded-2xl shrink-0">
               <Users className="w-4 h-4 text-indigo-600" />
               <span className="text-xs font-medium text-indigo-800">
-                Staf Aktif Master: <span className="font-bold">{activeStaffCounts.total} orang</span>
+                Staf Aktif Master: <span className="font-bold">{filteredActiveCount} orang</span>
               </span>
             </div>
           </div>
@@ -406,7 +544,7 @@ export default function TreasuryDashboard() {
               <div>
                 <p className="text-xs text-slate-500 font-medium">Status Konfirmasi Slip</p>
                 <p className="text-sm font-bold text-slate-800">
-                  {currentPeriodData.confirmedSlipsCount} / {activeStaffCounts.total} Slip Dikonfirmasi
+                  {filteredConfirmedCount} / {filteredActiveCount} Slip Dikonfirmasi
                 </p>
               </div>
             </div>
@@ -419,16 +557,16 @@ export default function TreasuryDashboard() {
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-slate-500 font-medium">Progress Penyelesaian Gaji</p>
                   <p className="text-xs font-bold text-indigo-600">
-                    {activeStaffCounts.total > 0
-                      ? Math.min(100, (currentPeriodData.confirmedSlipsCount / activeStaffCounts.total) * 100).toFixed(2)
+                    {filteredActiveCount > 0
+                      ? Math.min(100, (filteredConfirmedCount / filteredActiveCount) * 100).toFixed(2)
                       : "0.00"}%
                   </p>
                 </div>
                 <div className="w-full bg-slate-200 h-1.5 rounded-full mt-1 overflow-hidden">
-                  <div 
-                    className="bg-indigo-600 h-1.5 rounded-full transition-all duration-500" 
-                    style={{ 
-                      width: `${activeStaffCounts.total > 0 ? Math.min(100, (currentPeriodData.confirmedSlipsCount / activeStaffCounts.total) * 100) : 0}%` 
+                  <div
+                    className="bg-indigo-600 h-1.5 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${filteredActiveCount > 0 ? Math.min(100, (filteredConfirmedCount / filteredActiveCount) * 100) : 0}%`
                     }}
                   />
                 </div>
@@ -442,7 +580,7 @@ export default function TreasuryDashboard() {
               <div>
                 <p className="text-xs text-slate-500 font-medium">Menunggu Konfirmasi</p>
                 <p className="text-sm font-bold text-slate-800">
-                  {Math.max(0, activeStaffCounts.total - currentPeriodData.confirmedSlipsCount)} Slip Gaji
+                  {Math.max(0, filteredActiveCount - filteredConfirmedCount)} Slip Gaji
                 </p>
               </div>
             </div>
@@ -471,7 +609,7 @@ export default function TreasuryDashboard() {
           <>
             {/* Section 2: Summary Metric Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              
+
               {/* Card 1: Gross Revenue / Expenses */}
               <Card className="hover:shadow-lg transition-all duration-300 border-emerald-100 hover:border-emerald-200 bg-gradient-to-br from-white to-emerald-50/10">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -485,7 +623,7 @@ export default function TreasuryDashboard() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="text-2xl font-black text-slate-900 tracking-tight">
-                    {formatIDR(currentPeriodData.totalGross)}
+                    {formatIDR(filteredGross)}
                   </div>
                   <div className="flex items-center gap-1.5">
                     {deltas ? (
@@ -524,7 +662,7 @@ export default function TreasuryDashboard() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="text-2xl font-black text-slate-900 tracking-tight">
-                    {formatIDR(currentPeriodData.totalDeductions)}
+                    {formatIDR(filteredDeductions)}
                   </div>
                   <div className="flex items-center gap-1.5">
                     {deltas ? (
@@ -563,7 +701,7 @@ export default function TreasuryDashboard() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="text-2xl font-black text-indigo-600 tracking-tight">
-                    {formatIDR(currentPeriodData.totalNet)}
+                    {formatIDR(filteredNet)}
                   </div>
                   <div className="flex items-center gap-1.5">
                     {deltas ? (
@@ -602,7 +740,7 @@ export default function TreasuryDashboard() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="text-2xl font-black text-slate-900 tracking-tight">
-                    {currentPeriodData.confirmedSlipsCount} <span className="text-sm font-bold text-slate-400">Pegawai</span>
+                    {filteredConfirmedCount} <span className="text-sm font-bold text-slate-400">Pegawai</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     {deltas ? (
@@ -654,7 +792,7 @@ export default function TreasuryDashboard() {
                   </span>
                 </div>
               </CardHeader>
-              
+
               <CardContent className="p-6">
                 <div className="w-full h-[320px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -664,56 +802,56 @@ export default function TreasuryDashboard() {
                     >
                       <defs>
                         <linearGradient id="colorGross" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0.01}/>
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0.01} />
                         </linearGradient>
                         <linearGradient id="colorDeductions" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.15}/>
-                          <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.01}/>
+                          <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.15} />
+                          <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.01} />
                         </linearGradient>
                         <linearGradient id="colorNet" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15}/>
-                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0.01}/>
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0.01} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis 
-                        dataKey="name" 
-                        tickLine={false} 
+                      <XAxis
+                        dataKey="name"
+                        tickLine={false}
                         axisLine={false}
                         tick={{ fill: '#64748b', fontSize: 12, fontWeight: 500 }}
                         dy={10}
                       />
-                      <YAxis 
-                        tickLine={false} 
-                        axisLine={false} 
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
                         tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }}
                         tickFormatter={(value) => `Rp ${value / 1000000}jt`}
                       />
                       <Tooltip content={<CustomTooltip />} />
-                      <Area 
-                        type="monotone" 
-                        dataKey="Pendapatan Kotor" 
-                        stroke="#10b981" 
+                      <Area
+                        type="monotone"
+                        dataKey="Pendapatan Kotor"
+                        stroke="#10b981"
                         strokeWidth={3}
-                        fillOpacity={1} 
-                        fill="url(#colorGross)" 
+                        fillOpacity={1}
+                        fill="url(#colorGross)"
                       />
-                      <Area 
-                        type="monotone" 
-                        dataKey="Potongan" 
-                        stroke="#f43f5e" 
+                      <Area
+                        type="monotone"
+                        dataKey="Potongan"
+                        stroke="#f43f5e"
                         strokeWidth={3}
-                        fillOpacity={1} 
-                        fill="url(#colorDeductions)" 
+                        fillOpacity={1}
+                        fill="url(#colorDeductions)"
                       />
-                      <Area 
-                        type="monotone" 
-                        dataKey="Gaji Bersih" 
-                        stroke="#6366f1" 
+                      <Area
+                        type="monotone"
+                        dataKey="Gaji Bersih"
+                        stroke="#6366f1"
                         strokeWidth={3.5}
-                        fillOpacity={1} 
-                        fill="url(#colorNet)" 
+                        fillOpacity={1}
+                        fill="url(#colorNet)"
                       />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -723,7 +861,7 @@ export default function TreasuryDashboard() {
 
             {/* Section 4 & 5: Category Breakdown & Deduction Composition */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              
+
               {/* Section 4: Category Breakdown */}
               <Card className="shadow-md border-slate-200/60 flex flex-col justify-between">
                 <div>
@@ -732,69 +870,79 @@ export default function TreasuryDashboard() {
                       <Users className="w-5 h-5 text-indigo-500" /> Analisis Segmentasi Kategori
                     </CardTitle>
                     <CardDescription className="text-xs text-slate-500">
-                      Perbandingan beban anggaran gaji antara Loyalis vs Pekarya periode {formatPeriodLabel(selectedPeriod)}
+                      {filterCollar === 'semua'
+                        ? `Perbandingan beban anggaran gaji antara Loyalis vs Pekarya periode ${formatPeriodLabel(selectedPeriod)}`
+                        : filterCollar === 'loyalis'
+                          ? `Beban anggaran gaji untuk kategori Loyalis periode ${formatPeriodLabel(selectedPeriod)}`
+                          : `Beban anggaran gaji untuk kategori Pekarya periode ${formatPeriodLabel(selectedPeriod)}`}
                     </CardDescription>
                   </CardHeader>
-                  
-                  <CardContent className="p-6 space-y-6">
-                    
-                    {/* Visual Bar Proportion */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs font-bold">
-                        <span className="text-indigo-600">Loyalis ({((currentPeriodData.loyalisNet / (currentPeriodData.totalNet || 1)) * 100).toFixed(0)}%)</span>
-                        <span className="text-amber-600">Pekarya ({((currentPeriodData.pekaryaNet / (currentPeriodData.totalNet || 1)) * 100).toFixed(0)}%)</span>
-                      </div>
-                      <div className="w-full h-4 bg-slate-100 rounded-full flex overflow-hidden shadow-inner">
-                        <div 
-                          className="bg-indigo-500 h-full transition-all duration-500" 
-                          style={{ width: `${(currentPeriodData.loyalisNet / (currentPeriodData.totalNet || 1)) * 100}%` }}
-                          title={`Loyalis: ${formatIDR(currentPeriodData.loyalisNet)}`}
-                        />
-                        <div 
-                          className="bg-amber-500 h-full transition-all duration-500" 
-                          style={{ width: `${(currentPeriodData.pekaryaNet / (currentPeriodData.totalNet || 1)) * 100}%` }}
-                          title={`Pekarya: ${formatIDR(currentPeriodData.pekaryaNet)}`}
-                        />
-                      </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      
-                      {/* Loyalis Segment */}
-                      <div className="border border-indigo-100 bg-indigo-50/20 p-5 rounded-2xl space-y-3">
-                        <div className="flex items-center justify-between">
-                          <Badge className="bg-indigo-600 text-white rounded-lg">Loyalis</Badge>
-                          <span className="text-xs font-bold text-slate-500">{currentPeriodData.loyalisCount} Terbayar</span>
+                  <CardContent className="p-6 space-y-6">
+
+                    {/* Visual Bar Proportion */}
+                    {filterCollar === 'semua' && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold">
+                          <span className="text-indigo-600">Loyalis ({((currentPeriodData.loyalisNet / (currentPeriodData.totalNet || 1)) * 100).toFixed(0)}%)</span>
+                          <span className="text-amber-600">Pekarya ({((currentPeriodData.pekaryaNet / (currentPeriodData.totalNet || 1)) * 100).toFixed(0)}%)</span>
                         </div>
-                        
-                        <div className="space-y-1">
-                          <p className="text-xs text-slate-400 font-medium">Beban Bersih (Net Transfer)</p>
-                          <p className="text-lg font-black text-indigo-700">{formatIDR(currentPeriodData.loyalisNet)}</p>
-                        </div>
-                        
-                        <div className="pt-2 border-t border-indigo-100/50 flex justify-between text-xs font-semibold text-slate-500">
-                          <span>Kotor: {formatIDR(currentPeriodData.loyalisGross)}</span>
-                          <span>Potongan: {formatIDR(currentPeriodData.loyalisDeductions)}</span>
+                        <div className="w-full h-4 bg-slate-100 rounded-full flex overflow-hidden shadow-inner">
+                          <div
+                            className="bg-indigo-500 h-full transition-all duration-500"
+                            style={{ width: `${animateBars ? (currentPeriodData.loyalisNet / (currentPeriodData.totalNet || 1)) * 100 : 0}%` }}
+                            title={`Loyalis: ${formatIDR(currentPeriodData.loyalisNet)}`}
+                          />
+                          <div
+                            className="bg-amber-500 h-full transition-all duration-500"
+                            style={{ width: `${animateBars ? (currentPeriodData.pekaryaNet / (currentPeriodData.totalNet || 1)) * 100 : 0}%` }}
+                            title={`Pekarya: ${formatIDR(currentPeriodData.pekaryaNet)}`}
+                          />
                         </div>
                       </div>
+                    )}
+
+                    <div className={filterCollar === 'semua' ? "grid grid-cols-1 sm:grid-cols-2 gap-6" : "grid grid-cols-1 gap-6"}>
+
+                      {/* Loyalis Segment */}
+                      {(filterCollar === 'semua' || filterCollar === 'loyalis') && (
+                        <div className="border border-indigo-100 bg-indigo-50/20 p-5 rounded-2xl space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Badge className="bg-indigo-600 text-white rounded-lg">Loyalis</Badge>
+                            <span className="text-xs font-bold text-slate-500">{currentPeriodData.loyalisCount} Terbayar</span>
+                          </div>
+
+                          <div className="space-y-1">
+                            <p className="text-xs text-slate-400 font-medium">Beban Bersih (Net Transfer)</p>
+                            <p className="text-lg font-black text-indigo-700">{formatIDR(currentPeriodData.loyalisNet)}</p>
+                          </div>
+
+                          <div className="pt-2 border-t border-indigo-100/50 flex justify-between text-xs font-semibold text-slate-500">
+                            <span>Kotor: {formatIDR(currentPeriodData.loyalisGross)}</span>
+                            <span>Potongan: {formatIDR(currentPeriodData.loyalisDeductions)}</span>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Pekarya Segment */}
-                      <div className="border border-amber-100 bg-amber-50/20 p-5 rounded-2xl space-y-3">
-                        <div className="flex items-center justify-between">
-                          <Badge className="bg-amber-500 text-white rounded-lg">Pekarya</Badge>
-                          <span className="text-xs font-bold text-slate-500">{currentPeriodData.pekaryaCount} Terbayar</span>
+                      {(filterCollar === 'semua' || filterCollar === 'pekarya') && (
+                        <div className="border border-amber-100 bg-amber-50/20 p-5 rounded-2xl space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Badge className="bg-amber-500 text-white rounded-lg">Pekarya</Badge>
+                            <span className="text-xs font-bold text-slate-500">{currentPeriodData.pekaryaCount} Terbayar</span>
+                          </div>
+
+                          <div className="space-y-1">
+                            <p className="text-xs text-slate-400 font-medium">Beban Bersih (Net Transfer)</p>
+                            <p className="text-lg font-black text-amber-700">{formatIDR(currentPeriodData.pekaryaNet)}</p>
+                          </div>
+
+                          <div className="pt-2 border-t border-amber-100/50 flex justify-between text-xs font-semibold text-slate-500">
+                            <span>Kotor: {formatIDR(currentPeriodData.pekaryaGross)}</span>
+                            <span>Potongan: {formatIDR(currentPeriodData.pekaryaDeductions)}</span>
+                          </div>
                         </div>
-                        
-                        <div className="space-y-1">
-                          <p className="text-xs text-slate-400 font-medium">Beban Bersih (Net Transfer)</p>
-                          <p className="text-lg font-black text-amber-700">{formatIDR(currentPeriodData.pekaryaNet)}</p>
-                        </div>
-                        
-                        <div className="pt-2 border-t border-amber-100/50 flex justify-between text-xs font-semibold text-slate-500">
-                          <span>Kotor: {formatIDR(currentPeriodData.pekaryaGross)}</span>
-                          <span>Potongan: {formatIDR(currentPeriodData.pekaryaDeductions)}</span>
-                        </div>
-                      </div>
+                      )}
 
                     </div>
                   </CardContent>
@@ -804,28 +952,53 @@ export default function TreasuryDashboard() {
               {/* Section 5: Deduction Composition */}
               <Card className="shadow-md border-slate-200/60 flex flex-col justify-between">
                 <div>
-                  <CardHeader className="bg-slate-50/50 border-b border-slate-100 p-6">
-                    <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                      <PiggyBank className="w-5 h-5 text-indigo-500" /> Komposisi Potongan Gaji
-                    </CardTitle>
-                    <CardDescription className="text-xs text-slate-500">
-                      Rincian alokasi potongan untuk disalurkan ke BPJS, Koperasi, Yayasan, Zakat dll
-                    </CardDescription>
+                  <CardHeader className="bg-slate-50/50 border-b border-slate-100 p-6 flex flex-row justify-between items-center flex-wrap gap-4">
+                    <div>
+                      <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        <PiggyBank className="w-5 h-5 text-indigo-500" /> Komposisi Potongan Gaji
+                      </CardTitle>
+                      <CardDescription className="text-xs text-slate-500">
+                        Rincian alokasi potongan untuk disalurkan ke BPJS, Koperasi, Yayasan, Zakat dll
+                      </CardDescription>
+                    </div>
+
+                    <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setDeductionsView('list')}
+                        className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${deductionsView === 'list'
+                            ? 'bg-white text-indigo-600 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                          }`}
+                      >
+                        Daftar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeductionsView('pie')}
+                        className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${deductionsView === 'pie'
+                            ? 'bg-white text-indigo-600 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                          }`}
+                      >
+                        Pie Chart
+                      </button>
+                    </div>
                   </CardHeader>
-                  
+
                   <CardContent className="p-6">
                     {sortedDeductions.length === 0 ? (
                       <p className="text-center text-slate-400 text-sm py-12">Tidak ada potongan terpotong pada periode ini</p>
-                    ) : (
+                    ) : deductionsView === 'list' ? (
                       <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
                         {sortedDeductions.map((item, idx) => {
-                          const percentage = currentPeriodData.totalDeductions > 0
-                            ? (item.value / currentPeriodData.totalDeductions) * 100
+                          const percentage = filteredDeductions > 0
+                            ? (item.value / filteredDeductions) * 100
                             : 0;
 
                           // Harmonic colors for bars
                           const barColors = [
-                            'bg-indigo-500', 'bg-rose-500', 'bg-emerald-500', 
+                            'bg-indigo-500', 'bg-rose-500', 'bg-emerald-500',
                             'bg-amber-500', 'bg-sky-500', 'bg-purple-500'
                           ];
                           const colorClass = barColors[idx % barColors.length];
@@ -839,14 +1012,62 @@ export default function TreasuryDashboard() {
                                 </span>
                               </div>
                               <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                                <div 
+                                <div
                                   className={`${colorClass} h-full rounded-full transition-all duration-500`}
-                                  style={{ width: `${percentage}%` }}
+                                  style={{ width: `${animateListBars ? percentage : 0}%` }}
                                 />
                               </div>
                             </div>
                           );
                         })}
+                      </div>
+                    ) : (
+                      <div className="w-full h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Legend
+                              verticalAlign="top"
+                              align="left"
+                              layout="vertical"
+                              content={(props: any) => {
+                                const { payload } = props;
+                                if (!payload) return null;
+                                const sortedPayload = [...payload].sort((a, b) => {
+                                  const valA = a.payload?.value ?? 0;
+                                  const valB = b.payload?.value ?? 0;
+                                  return valB - valA;
+                                });
+                                return (
+                                  <div className="flex flex-col gap-1.5 pb-3">
+                                    {sortedPayload.map((entry, idx) => (
+                                      <div key={entry.value || idx} className="flex items-center gap-2 text-[11px] font-bold text-slate-600">
+                                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                                        <span>{formatIDR(entry.payload?.value ?? 0)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              }}
+                            />
+                            <Pie
+                              data={sortedDeductions}
+                              cx="50%"
+                              cy="50%"
+                              labelLine={true}
+                              label={({ name, percent }) => `${name}: ${(percent !== undefined ? percent * 100 : 0).toFixed(1)}%`}
+                              outerRadius={80}
+                              dataKey="value"
+                              nameKey="name"
+                              startAngle={90}
+                              endAngle={-270}
+                            >
+                              {sortedDeductions.map((entry, idx) => (
+                                <Cell key={`cell-${idx}`} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                              ))}
+                            </Pie>
+                            <Tooltip formatter={(value: any) => formatIDR(value)} />
+                          </PieChart>
+                        </ResponsiveContainer>
                       </div>
                     )}
                   </CardContent>
@@ -858,8 +1079,8 @@ export default function TreasuryDashboard() {
             {/* Section 6: Quick Navigation Cards */}
             <div className="space-y-4">
               <h3 className="text-lg font-bold text-slate-800">Navigasi Cepat Modul</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
                 {/* Nav Card 1 */}
                 <Link href="/dashboard/payroll">
                   <div className="group bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md hover:border-indigo-400 hover:-translate-y-1 transition-all duration-300 cursor-pointer flex justify-between items-start">
@@ -886,22 +1107,6 @@ export default function TreasuryDashboard() {
                       <h4 className="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">Master Data Pegawai</h4>
                       <p className="text-xs text-slate-500 leading-relaxed">
                         Kelola data induk pegawai Loyalis (Gaji Pokok/Jabatan Struktural) dan Pekarya (Harian/Mingguan).
-                      </p>
-                    </div>
-                    <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all mt-1" />
-                  </div>
-                </Link>
-
-                {/* Nav Card 3 */}
-                <Link href="/dashboard/payroll/constant-values">
-                  <div className="group bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md hover:border-indigo-400 hover:-translate-y-1 transition-all duration-300 cursor-pointer flex justify-between items-start">
-                    <div className="space-y-2">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all">
-                        <Percent className="w-5 h-5" />
-                      </div>
-                      <h4 className="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">Audit Nilai Konstan</h4>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        Konfigurasi parameter BPJS Kesehatan & Ketenagakerjaan, Zakat, Tunjangan Beras, dan Tunjangan Jabatan Pegawai.
                       </p>
                     </div>
                     <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all mt-1" />

@@ -97,22 +97,6 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
 
     let y = 31;
 
-    // Box top-right "NO URUT"
-    const boxX = 155;
-    const boxY = y;
-    const boxW = 40;
-    const boxH = 10;
-    doc.setDrawColor(0);
-    doc.setLineWidth(0.3);
-    doc.rect(boxX, boxY, boxW, boxH);
-    doc.line(boxX + 22, boxY, boxX + 22, boxY + boxH);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.text('NO URUT  :', boxX + 2, boxY + 6.5);
-    doc.setFontSize(13);
-    doc.text(data.employeeNo.toString(), boxX + 31, boxY + 7, { align: 'center' });
-
     doc.setFont('helvetica', 'bolditalic');
     doc.setFontSize(11);
     doc.text(`SLIP GAJI BULAN ${data.period.toUpperCase()}`, marginLeft, y + 6.5);
@@ -297,40 +281,18 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     const presItem = data.earnings.find(e => e.label.toUpperCase() === 'PRESENSI');
     const presAmt = presItem ? presItem.amount : 0;
     if (presAmt > 0) {
-      if (presAmt === 278850) {
-        leftRows.push({
-          type: 'presensi',
-          label: 'PRESENSI',
-          presensiCount: '169',
-          presensiUnit: 'Jam',
-          presensiTimes: 'x',
-          presensiRate: '1.650',
-          amount: presAmt
-        });
-      } else {
-        const hours = Math.round(presAmt / 1650);
-        if (hours * 1650 === presAmt) {
-          leftRows.push({
-            type: 'presensi',
-            label: 'PRESENSI',
-            presensiCount: hours.toString(),
-            presensiUnit: 'Jam',
-            presensiTimes: 'x',
-            presensiRate: '1.650',
-            amount: presAmt
-          });
-        } else {
-          leftRows.push({
-            type: 'presensi',
-            label: 'PRESENSI',
-            presensiCount: '-',
-            presensiUnit: 'Jam',
-            presensiTimes: 'x',
-            presensiRate: '-',
-            amount: presAmt
-          });
-        }
-      }
+      const rate = 1650;
+      const hours = presAmt / rate;
+      const hoursStr = Number(hours.toFixed(2)).toString().replace('.', ',');
+      leftRows.push({
+        type: 'presensi',
+        label: 'PRESENSI',
+        presensiCount: hoursStr,
+        presensiUnit: 'Jam',
+        presensiTimes: 'x',
+        presensiRate: '1.650',
+        amount: presAmt
+      });
     } else {
       leftRows.push({ type: 'presensi', label: 'PRESENSI', presensiCount: '-', presensiUnit: 'Jam', presensiTimes: 'x', presensiRate: '-', amount: 0 });
     }
@@ -400,53 +362,48 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     const rightRows: CustomSlipRow[] = [];
 
     // Rochmad
-    rightRows.push({ type: 'heading', label: '1   KOPERASI ROCHMAD' });
+    const rochmadDeduction = data.deductions.find(d => d.label.toUpperCase() === 'KOP. ROCHMAD' || d.label.toUpperCase() === 'KOPERASI ROCHMAD');
+    rightRows.push({ type: 'item', label: '1   KOPERASI ROCHMAD', amount: rochmadDeduction ? rochmadDeduction.amount : 0 });
 
     // BPJS
     const bpjsDeduction = data.deductions.find(d => d.label.toUpperCase() === 'BPJS');
-    rightRows.push({ type: 'item', label: '1   BPJS', amount: bpjsDeduction ? bpjsDeduction.amount : 0 });
+    rightRows.push({ type: 'item', label: '2   BPJS', amount: bpjsDeduction ? bpjsDeduction.amount : 0 });
 
     // Tabungan Hari Tua BNI Simponi
     const thtDeduction = data.deductions.find(d => d.label.toUpperCase() === 'TABUNGAN HARI TUA BNI SIMPONI' || d.label.toUpperCase() === 'THT');
-    rightRows.push({ type: 'item', label: '2   TABUNGAN HARI TUA BNI SIMPONI', amount: thtDeduction ? thtDeduction.amount : 0 });
+    rightRows.push({ type: 'item', label: '3   TABUNGAN HARI TUA BNI SIMPONI', amount: thtDeduction ? thtDeduction.amount : 0 });
 
     // Tabungan
     const tabDeduction = data.deductions.find(d => d.label.toUpperCase() === 'TABUNGAN');
-    rightRows.push({ type: 'item', label: '3   TABUNGAN', amount: tabDeduction ? tabDeduction.amount : 0 });
+    rightRows.push({ type: 'item', label: '4   TABUNGAN', amount: tabDeduction ? tabDeduction.amount : 0 });
 
     // Zakat Infaq Sodaqoh
     const zizDeduction = data.deductions.find(d => d.label.toUpperCase() === 'ZAKAT INFAQ SODAQOH' || d.label.toUpperCase() === 'ZIZ');
-    rightRows.push({ type: 'item', label: '4   ZAKAT INFAQ SODAQOH', amount: zizDeduction ? zizDeduction.amount : 0 });
+    rightRows.push({ type: 'item', label: '5   ZAKAT INFAQ SODAQOH', amount: zizDeduction ? zizDeduction.amount : 0 });
 
     // Revisi Gaji
     const revDeduction = data.deductions.find(d => d.label.toUpperCase() === 'REVISI GAJI');
-    rightRows.push({ type: 'item', label: '5   REVISI GAJI', amount: revDeduction ? revDeduction.amount : 0 });
+    rightRows.push({ type: 'item', label: '6   REVISI GAJI', amount: revDeduction ? revDeduction.amount : 0 });
 
     // Pinlu/Tagihan
     const pinluDeduction = data.deductions.find(d => d.label.toUpperCase() === 'PINLU/TAGIHAN');
-    rightRows.push({ type: 'item', label: '6   PINLU/TAGIHAN', amount: pinluDeduction ? pinluDeduction.amount : 0 });
+    rightRows.push({ type: 'item', label: '7   PINLU/TAGIHAN', amount: pinluDeduction ? pinluDeduction.amount : 0 });
 
     // Kop Unipdu
     const unipduDeduction = data.deductions.find(d => d.label.toUpperCase() === 'PINJAMAN KOP. UNIPDU' || d.label.toUpperCase() === 'KOP. UNIPDU REJOSO GEMILANG' || d.label.toUpperCase() === 'KOPERASI UNIPDU REJOSO GEMILANG');
-    rightRows.push({ type: 'item', label: '7   PINJAMAN KOP. UNIPDU', amount: unipduDeduction ? unipduDeduction.amount : 0 });
+    rightRows.push({ type: 'item', label: '8   PINJAMAN KOP. UNIPDU', amount: unipduDeduction ? unipduDeduction.amount : 0 });
 
     // Potongan Presensi
     const presPot = data.deductions.find(d => d.label.toUpperCase() === 'POTONGAN PRESENSI');
-    rightRows.push({ type: 'item', label: '8   POTONGAN PRESENSI', amount: presPot ? presPot.amount : 0 });
+    rightRows.push({ type: 'item', label: '9   POTONGAN PRESENSI', amount: presPot ? presPot.amount : 0 });
 
     // Potongan Bonus Presensi
     const bonusPresPot = data.deductions.find(d => d.label.toUpperCase() === 'POTONGAN BONUS PRESENSI');
-    rightRows.push({ type: 'item', label: '9   POTONGAN BONUS PRESENSI', amount: bonusPresPot ? bonusPresPot.amount : 0 });
+    rightRows.push({ type: 'item', label: '10  POTONGAN BONUS PRESENSI', amount: bonusPresPot ? bonusPresPot.amount : 0 });
 
     // Iuran Wajib Kop. UNIPDU
     const simpananWajibPot = data.deductions.find(d => d.label.toUpperCase() === 'IURAN WAJIB KOP. UNIPDU' || d.label.toUpperCase() === 'IURAN WAJIB KOP. REJOSO GEMILANG' || d.label.toUpperCase() === 'SIMPANAN WAJIB KOPERASI');
-    rightRows.push({ type: 'item', label: '10  IURAN WAJIB KOP. UNIPDU', amount: simpananWajibPot ? simpananWajibPot.amount : 0 });
-
-    // Koperasi Rochmad (if actual Rochmad amount is set)
-    const rochmadDeduction = data.deductions.find(d => d.label.toUpperCase() === 'KOP. ROCHMAD' || d.label.toUpperCase() === 'KOPERASI ROCHMAD');
-    if (rochmadDeduction && rochmadDeduction.amount > 0) {
-      rightRows.push({ type: 'item', label: '11  KOPERASI ROCHMAD', amount: rochmadDeduction.amount });
-    }
+    rightRows.push({ type: 'item', label: '11  IURAN WAJIB KOP. UNIPDU', amount: simpananWajibPot ? simpananWajibPot.amount : 0 });
 
     // ─── Drawing Rows ──────────────────────────────────────────────
     const numRows = Math.max(leftRows.length, rightRows.length);
