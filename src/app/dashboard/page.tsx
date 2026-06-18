@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
+import { useDashboardData } from '@/lib/DashboardDataContext';
 import {
   Card,
   CardHeader,
@@ -115,11 +116,11 @@ export default function TreasuryDashboard() {
   const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
 
+  const { employeesLoyalis, employeesBlueCollar, loading: contextLoading } = useDashboardData();
+
   // Component states
   const [mounted, setMounted] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
-  const [employeesLoyalis, setEmployeesLoyalis] = useState<any[]>([]);
-  const [employeesBlueCollar, setEmployeesBlueCollar] = useState<any[]>([]);
   const [slips, setSlips] = useState<any[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
   const [filterCollar, setFilterCollar] = useState<'semua' | 'pekarya' | 'loyalis'>('semua');
@@ -147,35 +148,24 @@ export default function TreasuryDashboard() {
     }
   }, [deductionsView]);
 
-  // Fetch data on mount
+  // Fetch slips data on mount (employees list is provided by layout context)
   useEffect(() => {
     if (!profile || profile.role !== 'super_admin') return;
 
-    const fetchData = async () => {
+    const fetchSlips = async () => {
       try {
         setDataLoading(true);
-        // Fetch Loyalis, BlueCollar, and SlipStates parallelly
-        const [loySnap, bcSnap, slipSnap] = await Promise.all([
-          getDocs(collection(db, 'Employees_Loyalis')),
-          getDocs(collection(db, 'Employees_BlueCollar')),
-          getDocs(collection(db, 'PayrollSlipStates')),
-        ]);
-
-        const loyData = loySnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const bcData = bcSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const slipSnap = await getDocs(collection(db, 'PayrollSlipStates'));
         const slipData = slipSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        setEmployeesLoyalis(loyData);
-        setEmployeesBlueCollar(bcData);
         setSlips(slipData);
       } catch (err) {
-        console.error('Error fetching dashboard data:', err);
+        console.error('Error fetching dashboard slips data:', err);
       } finally {
         setDataLoading(false);
       }
     };
 
-    fetchData();
+    fetchSlips();
   }, [profile]);
 
   // Master Active Counts
@@ -587,7 +577,7 @@ export default function TreasuryDashboard() {
           </div>
         )}
 
-        {dataLoading ? (
+        {contextLoading || dataLoading ? (
           <div className="h-[400px] flex flex-col items-center justify-center bg-white/40 border border-slate-200/50 rounded-3xl">
             <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
             <p className="text-slate-500 text-sm mt-3 font-medium">Sedang memproses data keuangan...</p>

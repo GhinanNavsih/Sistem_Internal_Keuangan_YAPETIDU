@@ -50,6 +50,7 @@ import {
 import { collection, getDocs, doc, getDoc, setDoc, query, where } from 'firebase/firestore';
 import { db, secondaryDb } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
+import { useDashboardData } from '@/lib/DashboardDataContext';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
 import PaySlipDialog, { SlipState, buildInitialEarnings, buildInitialDeductions } from '@/components/PaySlipDialog';
 import * as XLSX from 'xlsx';
@@ -110,6 +111,16 @@ interface EmployeeRow extends Employee {
 
 export default function PayrollValidationDashboard() {
   const { profile, logout } = useAuth();
+  const {
+    employeesLoyalis,
+    employeesBlueCollar,
+    salaryMatrixBlue,
+    salaryMatrixWhite,
+    functionalAllowanceMap: contextFunctionalAllowanceMap,
+    koperasiDeductions: contextKoperasiDeductions,
+    koperasiSavings: contextKoperasiSavings,
+    loading: contextLoading
+  } = useDashboardData();
 
   const getLoyalisPresenceBonus = (empId: string): number => {
     if (!loyalisPresenceData?.entries?.[empId]) return 0;
@@ -153,7 +164,8 @@ export default function PayrollValidationDashboard() {
   const isSavingRef = useRef(false);
   const [uploadingWa, setUploadingWa] = useState<Record<string, boolean>>({});
   const [salaryMatrix, setSalaryMatrix] = useState<SalaryMatrix>({});
-  const [loading, setLoading] = useState(true);
+  const [localLoading, setLocalLoading] = useState(false);
+  const loading = contextLoading || localLoading;
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' | null }>({ key: '', direction: null });
 
   // Collar type state (Lapangan / Blue Collar vs Kantor / White Collar Loyalis)
@@ -178,141 +190,11 @@ export default function PayrollValidationDashboard() {
   const [vakasiTambahanMap, setVakasiTambahanMap] = useState<Record<string, number>>({});
   const [vakasiTambahanListMap, setVakasiTambahanListMap] = useState<Record<string, { eventName: string; payGiven: number; isEndOfMonth?: boolean }[]>>({});
   const [functionalAllowanceMap, setFunctionalAllowanceMap] = useState<Record<string, number>>({});
-  const [koperasiDeductions, setKoperasiDeductions] = useState<Record<string, number>>({});
-  const [koperasiSavings, setKoperasiSavings] = useState<Record<string, number>>({});
+  const koperasiDeductions = contextKoperasiDeductions;
+  const koperasiSavings = contextKoperasiSavings;
   const [loyalisPresenceData, setLoyalisPresenceData] = useState<any | null>(null);
 
-  // ─── Fetch Koperasi Loans & perform matching ───────────────────
-  useEffect(() => {
-    if (!profile || profile.role !== 'super_admin') return;
-
-    const fetchKoperasiDeductions = async () => {
-      try {
-        // 1. Fetch active loans and users from Koperasi Unipdu
-        const [loanSnapshot, userSnapshot, loyalisSnap, blueCollarSnap] = await Promise.all([
-          getDocs(
-            query(
-              collection(secondaryDb, 'simpanPinjam'),
-              where('status', '==', 'Disetujui dan Aktif')
-            )
-          ),
-          getDocs(collection(secondaryDb, 'users')),
-          getDocs(collection(db, 'Employees_Loyalis')),
-          getDocs(collection(db, 'Employees_BlueCollar')),
-        ]);
-
-        const activeLoans = loanSnapshot.docs
-          .map(docSnap => ({ id: docSnap.id, ...docSnap.data() as any }))
-          .filter(loan => (loan.sisaHutang || 0) > 0);
-
-        const allEmployees: {
-          id: string;
-          originalName: string;
-          normalizedName: string;
-          koperasiAuthUid?: string | null;
-          koperasiUserId?: string | null;
-        }[] = [];
-
-        loyalisSnap.docs.forEach(docSnap => {
-          const data = docSnap.data();
-          const name = data.personal_info?.name || '';
-          if (name) {
-            allEmployees.push({
-              id: docSnap.id,
-              originalName: name,
-              normalizedName: normalizeName(name),
-              koperasiAuthUid: data.koperasiAuthUid || null,
-              koperasiUserId: data.koperasiUserId || null,
-            });
-          }
-        });
-
-        blueCollarSnap.docs.forEach(docSnap => {
-          const data = docSnap.data();
-          const name = data.name || '';
-          if (name) {
-            allEmployees.push({
-              id: docSnap.id,
-              originalName: name,
-              normalizedName: normalizeName(name),
-              koperasiAuthUid: data.koperasiAuthUid || null,
-              koperasiUserId: data.koperasiUserId || null,
-            });
-          }
-        });
-
-        // 3. Match names and build deduction map (employeeId -> cicilan)
-        const deductionMap: Record<string, number> = {};
-
-        activeLoans.forEach(loan => {
-          const spName = loan.userData?.namaLengkap || '';
-          const normalizedSP = normalizeName(spName);
-          const cicilan = Math.round(loan.jumlahPinjaman / loan.tenor);
-
-          // 1. Try match by koperasiAuthUid first!
-          let match = allEmployees.find(
-            emp => emp.koperasiAuthUid && emp.koperasiAuthUid === loan.userId
-          );
-
-          if (!match) {
-            // 2. Fallback to exact normalized name match
-            match = allEmployees.find(emp => emp.normalizedName === normalizedSP);
-          }
-
-          if (!match) {
-            // 3. Fallback to manual override
-            const overrideName = MANUAL_OVERRIDES[spName.trim()];
-            if (overrideName) {
-              match = allEmployees.find(emp => emp.originalName === overrideName);
-            }
-          }
-
-          if (match) {
-            deductionMap[match.id] = (deductionMap[match.id] || 0) + cicilan;
-          }
-        });
-
-        // 4. Match names for Koperasi membership and build savings map
-        const savingMap: Record<string, number> = {};
-        userSnapshot.docs.forEach(userDoc => {
-          const uData = userDoc.data();
-          const uName = uData.nama || '';
-          if (!uName) return;
-          const normalizedU = normalizeName(uName);
-          const uUid = uData.uid || userDoc.id;
-
-          let match = allEmployees.find(
-            emp =>
-              (emp.koperasiUserId && emp.koperasiUserId === userDoc.id) ||
-              (emp.koperasiAuthUid && emp.koperasiAuthUid === uUid)
-          );
-
-          if (!match) {
-            match = allEmployees.find(emp => emp.normalizedName === normalizedU);
-          }
-
-          if (!match) {
-            const overrideName = MANUAL_OVERRIDES[uName.trim()];
-            if (overrideName) {
-              match = allEmployees.find(emp => emp.originalName === overrideName);
-            }
-          }
-
-          if (match) {
-            const isYayasanSubsidy = uData.paymentStatus === 'Yayasan Subsidy';
-            savingMap[match.id] = isYayasanSubsidy ? 0 : 25000;
-          }
-        });
-
-        setKoperasiDeductions(deductionMap);
-        setKoperasiSavings(savingMap);
-      } catch (err) {
-        console.error('Error fetching/matching koperasi data:', err);
-      }
-    };
-
-    fetchKoperasiDeductions();
-  }, [profile]);
+  // Cooperative matched deductions/savings are pre-calculated at layout context level.
 
   // ─── Dialog state ──────────────────────────────────────────────
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -941,108 +823,37 @@ export default function PayrollValidationDashboard() {
   });
 
   useEffect(() => {
-    if (!profile || profile.role !== 'super_admin') return;
-    const fetchData = async () => {
-      try {
-        setLoading(true);
+    if (!profile || (profile.role !== 'super_admin' && profile.role !== 'employee_admin')) return;
 
-        const isLoyalis = payrollCollar === 'loyalis';
-        const empCollName = isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar';
-        const matrixCollName = isLoyalis ? 'SalaryMatrix_WhiteCollar' : 'SalaryMatrix';
+    const isLoyalis = payrollCollar === 'loyalis';
+    const list = isLoyalis ? employeesLoyalis : employeesBlueCollar;
+    const matrix = isLoyalis ? salaryMatrixWhite : salaryMatrixBlue;
 
-        // 1. Fetch Employees
-        const empSnapshot = await getDocs(collection(db, empCollName));
-        let index = 1;
-        const empList = empSnapshot.docs
-          .map(docSnap => {
-            const data = docSnap.data();
+    let index = 1;
+    const empList = list.map(data => {
+      const joinDateVal = isLoyalis
+        ? (data.employment_profile?.date_of_hire?.toDate?.() || (data.employment_profile?.date_of_hire ? new Date(data.employment_profile.date_of_hire) : new Date()))
+        : (data.employment?.startDate ? new Date(data.employment.startDate) : new Date());
 
-            const joinDateVal = isLoyalis
-              ? (data.employment_profile?.date_of_hire?.toDate?.() || (data.employment_profile?.date_of_hire ? new Date(data.employment_profile.date_of_hire) : new Date()))
-              : (data.employment?.startDate ? new Date(data.employment.startDate) : new Date());
+      const row: EmployeeRow = {
+        id: data.id,
+        name: isLoyalis ? (data.personal_info?.name || '') : (data.name || ''),
+        role: isLoyalis ? (data.employment_profile?.department_unit || 'Staf') : (data.employment?.jobCategory || ''),
+        gradeLevel: isLoyalis ? (data.academic_and_tier?.level_code || '') : (data.salaryProfile?.salaryGradeCode || ''),
+        joinDate: joinDateVal,
+        isActive: isLoyalis ? (data.personal_info?.status === 'AKTIF') : (data.flags?.isActive ?? true),
+        phoneNumber: isLoyalis ? (data.personal_info?.phone || '') : (data.phoneNumber || ''),
+        email: isLoyalis ? (data.personal_info?.email || '') : (data.email || ''),
+        raw: { ...data, employeeId: data.id },
+        rowIndex: index++,
+      };
+      return row;
+    });
 
-            const row: EmployeeRow = {
-              id: docSnap.id,
-              name: isLoyalis ? (data.personal_info?.name || '') : (data.name || ''),
-              role: isLoyalis ? (data.employment_profile?.department_unit || 'Staf') : (data.employment?.jobCategory || ''),
-              gradeLevel: isLoyalis ? (data.academic_and_tier?.level_code || '') : (data.salaryProfile?.salaryGradeCode || ''),
-              joinDate: joinDateVal,
-              isActive: isLoyalis ? (data.personal_info?.status === 'AKTIF') : (data.flags?.isActive ?? true),
-              phoneNumber: isLoyalis ? (data.personal_info?.phone || '') : (data.phoneNumber || ''),
-              email: isLoyalis ? (data.personal_info?.email || '') : (data.email || ''),
-              raw: { ...data, employeeId: docSnap.id },
-              rowIndex: index++,
-            };
-            return row;
-          });
-        setEmployees(empList);
-
-        // 2. Fetch Active Salary Matrix Version
-        const matrixRootRef = doc(db, matrixCollName, '_config');
-        const matrixRootSnap = await getDoc(matrixRootRef);
-
-        let activeVersion = '2026_v1';
-        if (matrixRootSnap.exists() && matrixRootSnap.data().activeVersion) {
-          activeVersion = matrixRootSnap.data().activeVersion;
-        }
-
-        // 3. Fetch Salary Matrix Rows for Active Version
-        const matrixSnapshot = await getDocs(collection(db, matrixCollName, activeVersion, 'rows'));
-        const matrix: SalaryMatrix = {};
-
-        matrixSnapshot.docs.forEach(matrixDoc => {
-          const data = matrixDoc.data();
-          const tahun = data.tahun;
-          const grades = data.salaries || {};
-
-          Object.entries(grades).forEach(([grade, amount]) => {
-            if (!matrix[grade]) matrix[grade] = {};
-            matrix[grade][tahun] = amount as number;
-          });
-        });
-
-        setSalaryMatrix(matrix);
-
-        // 4. Fetch Active Functional Matrix and calculate fAllowanceMap
-        const fAllowanceMap: Record<string, number> = {};
-        if (isLoyalis) {
-          const fConfigRef = doc(db, 'SalaryMatrix_Functional', '_config');
-          const fConfigSnap = await getDoc(fConfigRef);
-          let fVersion = '2026_v1';
-          if (fConfigSnap.exists() && fConfigSnap.data().activeVersion) {
-            fVersion = fConfigSnap.data().activeVersion;
-          }
-
-          const fSnapshot = await getDocs(collection(db, 'SalaryMatrix_Functional', fVersion, 'rows'));
-          const fMatrix: Record<string, { base_value: number; functional_tiers: Record<string, number> }> = {};
-          fSnapshot.docs.forEach(fDoc => {
-            const data = fDoc.data();
-            fMatrix[fDoc.id] = {
-              base_value: data.base_value || 0,
-              functional_tiers: data.functional_tiers || {},
-            };
-          });
-
-          empList.forEach(emp => {
-            const edLevel = emp.raw.academic_and_tier?.education_level;
-            const fTier = emp.raw.academic_and_tier?.functional_tier;
-            fAllowanceMap[emp.id] = matchFunctionalAllowance(edLevel, fTier, fMatrix);
-          });
-        } else {
-          empList.forEach(emp => {
-            fAllowanceMap[emp.id] = 0;
-          });
-        }
-        setFunctionalAllowanceMap(fAllowanceMap);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [payrollCollar, profile]);
+    setEmployees(empList);
+    setSalaryMatrix(matrix);
+    setFunctionalAllowanceMap(contextFunctionalAllowanceMap);
+  }, [payrollCollar, employeesLoyalis, employeesBlueCollar, salaryMatrixWhite, salaryMatrixBlue, contextFunctionalAllowanceMap, profile]);
 
   // ─── Fetch UraianGaji & persisted SlipStates for current period ──
   useEffect(() => {
@@ -1686,7 +1497,7 @@ export default function PayrollValidationDashboard() {
                   </select>
 
                   {/* Search Bar Input */}
-                  <div className="relative w-72 shrink-0">
+                  <div className="relative flex-1">
                     <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                       <Search className="w-4 h-4" />
                     </span>

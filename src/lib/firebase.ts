@@ -1,5 +1,10 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager
+} from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 
@@ -16,8 +21,20 @@ const firebaseConfig = {
 // Initialize Firebase (prevent multiple initializations during development)
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
+// Helper to initialize firestore with persistent cache on browser client only
+const getCachedDb = (appInstance: any) => {
+  if (typeof window !== "undefined") {
+    return initializeFirestore(appInstance, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      })
+    });
+  }
+  return getFirestore(appInstance);
+};
+
 // Initialize and export Firebase services
-export const db = getFirestore(app);
+export const db = getCachedDb(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
@@ -36,7 +53,8 @@ export const secondaryApp = getApps().some(a => a.name === 'secondary')
   ? getApp('secondary')
   : initializeApp(secondaryConfig, 'secondary');
 
-export const secondaryDb = getFirestore(secondaryApp);
+export const secondaryDb = getCachedDb(secondaryApp);
 export const secondaryAuth = getAuth(secondaryApp);
 
 export default app;
+

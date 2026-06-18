@@ -10,7 +10,7 @@ import {
   User,
 } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocFromCache } from 'firebase/firestore';
 
 export interface UserProfile {
   uid: string;
@@ -34,9 +34,41 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const docRef = doc(db, 'users', uid);
-  const docSnap = await getDoc(docRef);
-  if (docSnap.exists()) {
-    return { uid, ...docSnap.data() } as UserProfile;
+
+  // Race server getDoc against a 2.5-second timeout to prevent infinite loading state
+  const timeoutPromise = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), 2500)
+  );
+
+  try {
+    const docSnap = await Promise.race([
+      getDoc(docRef),
+      timeoutPromise
+    ]);
+
+    if (docSnap) {
+      if (docSnap.exists()) {
+        return { uid, ...docSnap.data() } as UserProfile;
+      }
+      return null;
+    }
+
+    // Server request timed out. Fall back to local cache.
+    console.warn("getUserProfile server request timed out. Falling back to cache...");
+    const cacheSnap = await getDocFromCache(docRef);
+    if (cacheSnap.exists()) {
+      return { uid, ...cacheSnap.data() } as UserProfile;
+    }
+  } catch (err) {
+    console.error("Error fetching user profile from server/cache:", err);
+    try {
+      const cacheSnap = await getDocFromCache(docRef);
+      if (cacheSnap.exists()) {
+        return { uid, ...cacheSnap.data() } as UserProfile;
+      }
+    } catch (cacheErr) {
+      console.error("Cache fallback failed:", cacheErr);
+    }
   }
   return null;
 }

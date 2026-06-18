@@ -74,6 +74,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { BlueCollarEmployee } from '@/types';
+import { useDashboardData } from '@/lib/DashboardDataContext';
 
 const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI'];
 
@@ -265,11 +266,13 @@ function getLocalISOString(): string {
 export default function EmployeesPage() {
   const router = useRouter();
   const { user, profile, loading: authLoading, logout } = useAuth();
+  const { employeesLoyalis, employeesBlueCollar, loading: contextLoading, refreshData } = useDashboardData();
 
   const [activeTab, setActiveTab] = useState('loyalis');
   const [tableViewMode, setTableViewMode] = useState<'default' | 'debug' | 'constant'>('default');
   const [employees, setEmployees] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [localLoading, setLocalLoading] = useState(false);
+  const loading = contextLoading || localLoading;
   const [searchQuery, setSearchQuery] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
@@ -444,18 +447,20 @@ export default function EmployeesPage() {
     setFormData(resetForm(activeTab));
   }, [activeTab]);
 
-  useEffect(() => { fetchEmployees(); }, [activeTab]);
+  // Sync page employees when context data or active tab changes
+  useEffect(() => {
+    const list = activeTab === 'loyalis' ? employeesLoyalis : employeesBlueCollar;
+    setEmployees([...list].sort((a, b) => getEmpId(a).localeCompare(getEmpId(b))));
+  }, [activeTab, employeesLoyalis, employeesBlueCollar]);
 
   const fetchEmployees = async () => {
     try {
-      setLoading(true);
-      const snap = await getDocs(collection(db, currentTab.collection));
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setEmployees(list.sort((a, b) => getEmpId(a).localeCompare(getEmpId(b))));
+      setLocalLoading(true);
+      await refreshData();
     } catch (err) {
-      console.error('Error fetching employees:', err);
+      console.error('Error refreshing employees:', err);
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
   };
 
@@ -675,7 +680,7 @@ export default function EmployeesPage() {
     if (!confirm('Hapus data karyawan ini?')) return;
     try {
       isSavingRef.current = true;
-      setLoading(true);
+      setLocalLoading(true);
       await deleteDoc(doc(db, currentTab.collection, employeeId));
       fetchEmployees();
       setMessage({ type: 'success', text: 'Karyawan dihapus.' });
@@ -685,7 +690,7 @@ export default function EmployeesPage() {
       setMessage({ type: 'error', text: 'Gagal menghapus data.' });
     } finally {
       isSavingRef.current = false;
-      setLoading(false);
+      setLocalLoading(false);
     }
   };
 
