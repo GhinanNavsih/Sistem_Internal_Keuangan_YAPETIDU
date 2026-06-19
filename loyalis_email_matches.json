@@ -1,0 +1,2279 @@
+[
+  {
+    "excel_id": "Loyalis_001",
+    "excel_name": "Prof. DR.H. Ahmad Zahro, MA.",
+    "db_id": "Loyalis_001",
+    "db_name": "Prof. DR.H. Ahmad Zahro, MA.",
+    "email_to_migrate": "amakzet@yahoo.com",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_002",
+    "excel_name": "Drs. H.M.Zaimuddin W.As'ad, MS",
+    "db_id": "Loyalis_002",
+    "db_name": "Drs. H.M.Zaimuddin W.As'ad, MS",
+    "email_to_migrate": "zaimuddinasad@yahoo.co.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_003",
+    "excel_name": "DR.dr.H.M. Zulfikar As'ad, MMR",
+    "db_id": "Loyalis_003",
+    "db_name": "DR.dr.H.M. Zulfikar As'ad, MMR",
+    "email_to_migrate": "mzulfikar26@yahoo.co.id",
+    "phone_to_migrate": "+62 812-3266-865",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_004",
+    "excel_name": "H. Misbakhul Munir, S. Kom.",
+    "db_id": "Loyalis_004",
+    "db_name": "H. Misbakhul Munir, S. Kom.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_005",
+    "excel_name": "Hj. Suspa Hariati, S. Sos.",
+    "db_id": "Loyalis_005",
+    "db_name": "Hj. Suspa Hariati, S. Sos.",
+    "email_to_migrate": "suspahariati@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 815-1567-4195",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_006",
+    "excel_name": "Abdullah Rikza, S. IP.M.Pdi.",
+    "db_id": "Loyalis_006",
+    "db_name": "Abdullah Rikza, S. IP.M.Pdi.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_007",
+    "excel_name": "Luluk Mahfiyah, SP",
+    "db_id": "Loyalis_007",
+    "db_name": "Luluk Mahfiyah, SP",
+    "email_to_migrate": "luluk.mahfiyah@staf.unipdu.ac.id",
+    "phone_to_migrate": "+628563042114",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_008",
+    "excel_name": "Nur Mulyawati. S.Sos",
+    "db_id": "Loyalis_008",
+    "db_name": "Nur Mulyawati. S.Sos",
+    "email_to_migrate": "nurmulyawati@staf.unipdu.ac.id",
+    "phone_to_migrate": "+6285233080691",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_009",
+    "excel_name": "Muhammad Zaky, SE.M.Pd",
+    "db_id": "Loyalis_009",
+    "db_name": "Muhammad Zaky, SE.M.Pd",
+    "email_to_migrate": "muhamadzaki@staf.unipdu.ac.id",
+    "phone_to_migrate": "+62 852-5811-2511",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_010",
+    "excel_name": "H. M. Abd. Natsir, M.AB",
+    "db_id": "Loyalis_010",
+    "db_name": "H. M. Abd. Natsir, M.AB",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_011",
+    "excel_name": "H. Harun Ar Rasyid, S.Pd.I",
+    "db_id": "Loyalis_011",
+    "db_name": "H. Harun Ar Rasyid, S.Pd.I",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_012",
+    "excel_name": "Dwi Kuswati, CA.",
+    "db_id": "Loyalis_012",
+    "db_name": "Dwi Kuswati, CA.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_013",
+    "excel_name": "Hj. Anna Qomariana, SE, M.Pdi",
+    "db_id": "Loyalis_013",
+    "db_name": "Hj. Anna Qomariana, SE, M.Pdi",
+    "email_to_migrate": "annaqomariana@fai.unipdu.ac.id",
+    "phone_to_migrate": "+6285851957170",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_014",
+    "excel_name": "Indah Sumiyarsih, SE.",
+    "db_id": "Loyalis_014",
+    "db_name": "Indah Sumiyarsih, SE.",
+    "email_to_migrate": "indahsumiyarsih@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 857-3300-2800",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_015",
+    "excel_name": "Lilik Nur Azizah, SE.",
+    "db_id": "Loyalis_015",
+    "db_name": "Lilik Nur Azizah, SE.",
+    "email_to_migrate": "liliknurazizah@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 813-3089-1976‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_016",
+    "excel_name": "M. Qomaruzzaman, S. Sos",
+    "db_id": "Loyalis_016",
+    "db_name": "M. Qomaruzzaman, S. Sos",
+    "email_to_migrate": "qomaruzzaman@staf.unipdu.ac.id",
+    "phone_to_migrate": "+62 858-1918-4401",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_017",
+    "excel_name": "M. Achyar",
+    "db_id": "Loyalis_017",
+    "db_name": "M. Achyar",
+    "email_to_migrate": "achyar@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 858-5131-6212‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_018",
+    "excel_name": "Arifah Retnowuni Dzulhilmi, S.Psi., M.Kes",
+    "db_id": "Loyalis_018",
+    "db_name": "Arifah Retnowuni Dzulhilmi, S.Psi., M.Kes",
+    "email_to_migrate": "arifahhilmi@gmail.com",
+    "phone_to_migrate": "‪+62 858-5546-4000‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_019",
+    "excel_name": "DR. H. Isrofil Amar,M.Ag.",
+    "db_id": "Loyalis_019",
+    "db_name": "DR. H. Isrofil Amar,M.Ag.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_020",
+    "excel_name": "H. M. Zahrul Azhar, S.IP., M.Kes.",
+    "db_id": "Loyalis_020",
+    "db_name": "H. M. Zahrul Azhar, S.IP., M.Kes.",
+    "email_to_migrate": "zahrulazhar.hans@gmail.com",
+    "phone_to_migrate": "‪+62 899-3992-323‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_021",
+    "excel_name": "Drs. H. M. Ansor Anwar, M.Pd.",
+    "db_id": "Loyalis_021",
+    "db_name": "Drs. H. M. Ansor Anwar, M.Pd.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_022",
+    "excel_name": "Kusnan, S. Kom.",
+    "db_id": "Loyalis_022",
+    "db_name": "Kusnan, S. Kom.",
+    "email_to_migrate": "kusnan@staf.unipdu.ac.id",
+    "phone_to_migrate": "081321124588",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_023",
+    "excel_name": "Asna Malini, S. Kom.",
+    "db_id": "Loyalis_023",
+    "db_name": "Asna Malini, S. Kom.",
+    "email_to_migrate": "asnamalini@staf.unipdu.ac.id",
+    "phone_to_migrate": "+628123516404",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_024",
+    "excel_name": "Mukhlisin, M. PdI.",
+    "db_id": "Loyalis_024",
+    "db_name": "Mukhlisin, M. PdI.",
+    "email_to_migrate": "mukhlisin@pps.unipdu.ac.id",
+    "phone_to_migrate": "+62 811-3088-440",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_025",
+    "excel_name": "DR. Drs. H. Ali Muhsin, M. Pd. I.",
+    "db_id": "Loyalis_025",
+    "db_name": "DR. Drs. H. Ali Muhsin, M. Pd. I.",
+    "email_to_migrate": "alimuhsin@fai.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 813-3245-1930‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_026",
+    "excel_name": "Lilik Maftukhatin, S.Pdi.M.Pdi",
+    "db_id": "Loyalis_026",
+    "db_name": "Lilik Maftukhatin, S.Pdi.M.Pdi",
+    "email_to_migrate": "lilikmaftuhatin@fai.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 856-5501-1125‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_027",
+    "excel_name": "Dr. Mujianto Sholichin, M. PdI.",
+    "db_id": "Loyalis_027",
+    "db_name": "Dr. Mujianto Sholichin, M. PdI.",
+    "email_to_migrate": "mujiantosolichin@fai.unipdu.ac.id",
+    "phone_to_migrate": "+6281913229816",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_028",
+    "excel_name": "Drs. M.Mundir",
+    "db_id": "Loyalis_028",
+    "db_name": "Drs. M.Mundir",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_029",
+    "excel_name": "Arifin, S.Ag.M.Pdi",
+    "db_id": "Loyalis_029",
+    "db_name": "Arifin, S.Ag.M.Pdi",
+    "email_to_migrate": "arifin@staf.unipdu.ac.id",
+    "phone_to_migrate": "+62 813-5762-5087",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_030",
+    "excel_name": "Lulus Oktavia Kartika sari, S.Pd",
+    "db_id": "Loyalis_030",
+    "db_name": "Lulus Oktavia Kartika sari, S.Pd",
+    "email_to_migrate": "lulusoktaviakartikasari@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 857-0755-5783‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_031",
+    "excel_name": "Dr. Hj. Uswatun Qoyyimah, SS., M. Ed.,Ph.D",
+    "db_id": "Loyalis_031",
+    "db_name": "Dr. Hj. Uswatun Qoyyimah, SS., M. Ed.,Ph.D",
+    "email_to_migrate": "uswatunqoyyimah@fbs.unipdu.ac.id",
+    "phone_to_migrate": "+62 821-4643-3107",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_032",
+    "excel_name": "Dr. Nuning Yudhi Prastyani, SS. M. Hum.",
+    "db_id": "Loyalis_032",
+    "db_name": "Dr. Nuning Yudhi Prastyani, SS. M. Hum.",
+    "email_to_migrate": "nuningyudhi@fbs.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 813-3137-6490",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_033",
+    "excel_name": "Trikaloka Handayani Putri, SS.M.Pd",
+    "db_id": "Loyalis_033",
+    "db_name": "Trikaloka Handayani Putri, SS.M.Pd",
+    "email_to_migrate": "trikalokahandayani@fbs.unipdu.ac.id",
+    "phone_to_migrate": "+6281330055562",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_034",
+    "excel_name": "Endang Suciati,SS,M.A",
+    "db_id": "Loyalis_034",
+    "db_name": "Endang Suciati,SS,M.A",
+    "email_to_migrate": "endangsuciati@fbs.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 856-4537-4382‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_035",
+    "excel_name": "H. Achmad Fanani, SS, M.Pd",
+    "db_id": "Loyalis_035",
+    "db_name": "H. Achmad Fanani, SS, M.Pd",
+    "email_to_migrate": "achmadfanani@fbs.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 857-3398-8210‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_036",
+    "excel_name": "Dwi Nur Cahyani, SS",
+    "db_id": "Loyalis_036",
+    "db_name": "Dwi Nur Cahyani, SS",
+    "email_to_migrate": "dwinurcahyani@staf.unipdu.ac.id",
+    "phone_to_migrate": "+62 857-8447-0709",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_037",
+    "excel_name": "Wahyuning Ucik, S.Sos",
+    "db_id": "Loyalis_037",
+    "db_name": "Wahyuning Ucik, S.Sos",
+    "email_to_migrate": "wahyuningucik@staf.unipdu.ac.id",
+    "phone_to_migrate": "+62 823-3544-9500",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_038",
+    "excel_name": "Siti Zainab Setiawati, Amd",
+    "db_id": "Loyalis_038",
+    "db_name": "Siti Zainab Setiawati, Amd",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_039",
+    "excel_name": "DR. Wiwik Maryati, S.Sos.M.SM",
+    "db_id": "Loyalis_039",
+    "db_name": "DR. Wiwik Maryati, S.Sos.M.SM",
+    "email_to_migrate": "wiwikmaryati@fia.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 813-3005-4231‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_040",
+    "excel_name": "Irva Arina Alawiyah, SE",
+    "db_id": "Loyalis_040",
+    "db_name": "Irva Arina Alawiyah, SE",
+    "email_to_migrate": "irvaarinaalawiyyah@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 856-4812-1575‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_041",
+    "excel_name": "Sholahuddin, S.Pdi",
+    "db_id": "Loyalis_041",
+    "db_name": "Sholahuddin, S.Pdi",
+    "email_to_migrate": "sholihuddin@staf.unipdu.ac.id",
+    "phone_to_migrate": "085745000908",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_042",
+    "excel_name": "Yosi Agustiawan ST., MMT, Ph.D",
+    "db_id": "Loyalis_042",
+    "db_name": "Yosi Agustiawan ST., MMT, Ph.D",
+    "email_to_migrate": "yosiagustiawan@ft.unipdu.ac.id",
+    "phone_to_migrate": "+62 813-3337-0829",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_043",
+    "excel_name": "M. Masrur, S. Kom.M. Kom.",
+    "db_id": "Loyalis_043",
+    "db_name": "M. Masrur, S. Kom.M. Kom.",
+    "email_to_migrate": "mukhamadmasrur@ft.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 856-5544-6789‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_044",
+    "excel_name": "A. Khaerudin, S. Ag.",
+    "db_id": "Loyalis_044",
+    "db_name": "A. Khaerudin, S. Ag.",
+    "email_to_migrate": "ahmadkhaerudin@puskom.unipdu.ac.id",
+    "phone_to_migrate": "+62 856-4850-0723",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_045",
+    "excel_name": "Emy Irsyadi, SE",
+    "db_id": "Loyalis_045",
+    "db_name": "Emy Irsyadi, SE",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_046",
+    "excel_name": "Imam Arifin, M.Pd",
+    "db_id": "Loyalis_046",
+    "db_name": "Imam Arifin, M.Pd",
+    "email_to_migrate": "imamarifin@staf.unipdu.ac.id",
+    "phone_to_migrate": "+62 858-5080-2645",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_047",
+    "excel_name": "Drs.H. Ir. Sumargono, M.Pd.",
+    "db_id": "Loyalis_047",
+    "db_name": "Drs.H. Ir. Sumargono, M.Pd.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_048",
+    "excel_name": "Sujarwo, ST.",
+    "db_id": "Loyalis_048",
+    "db_name": "Sujarwo, ST.",
+    "email_to_migrate": "jarwo@mipa.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 813-3575-6702‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_049",
+    "excel_name": "Dr. H. Achmad Zakaria, S.KM., M.Kes.",
+    "db_id": "Loyalis_049",
+    "db_name": "Dr. H. Achmad Zakaria, S.KM., M.Kes.",
+    "email_to_migrate": "achmadzakaria@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 822-3166-5513‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_050",
+    "excel_name": "H. Andi Yudianto, S.Kep.Ns.,M.Kes.",
+    "db_id": "Loyalis_050",
+    "db_name": "H. Andi Yudianto, S.Kep.Ns.,M.Kes.",
+    "email_to_migrate": "andiyudianto@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 856-4641-4903",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_051",
+    "excel_name": "Hj. Kurniawati, S. Kep., Ners.,M.Kep.",
+    "db_id": "Loyalis_051",
+    "db_name": "Hj. Kurniawati, S. Kep., Ners.,M.Kep.",
+    "email_to_migrate": "kurniawati@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 856-5585-0230",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_052",
+    "excel_name": "Ana Farida Ulfa, S. Kep., Ners.M.Kep.",
+    "db_id": "Loyalis_052",
+    "db_name": "Ana Farida Ulfa, S. Kep., Ners.M.Kep.",
+    "email_to_migrate": "anafaridaulfa@fik.unipdu.ac.id",
+    "phone_to_migrate": "+6281554474947",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_053",
+    "excel_name": "Dr. Hj. Masruroh Hasyim, S.Kep.Ns. M.Kes",
+    "db_id": "Loyalis_053",
+    "db_name": "Dr. Hj. Masruroh Hasyim, S.Kep.Ns. M.Kes",
+    "email_to_migrate": "masruroh@fik.unipdu.ac.id",
+    "phone_to_migrate": "+6281331349657",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_054",
+    "excel_name": "Pujiani, S.Kep. Ners., M.Kes",
+    "db_id": "Loyalis_054",
+    "db_name": "Pujiani, S.Kep. Ners., M.Kes",
+    "email_to_migrate": "pujiani@fik.unipdu.ac.id",
+    "phone_to_migrate": "+6285732682211",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_055",
+    "excel_name": "Hj.Sabrina Dwi Prihatini, SKM., M.Kes",
+    "db_id": "Loyalis_055",
+    "db_name": "Hj.Sabrina Dwi Prihatini, SKM., M.Kes",
+    "email_to_migrate": "sabrinadwiprihartini@fik.unipdu.ac.id",
+    "phone_to_migrate": "0813-3154-270",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_056",
+    "excel_name": "Ninik Azizah, SST.",
+    "db_id": "Loyalis_056",
+    "db_name": "Ninik Azizah, SST.",
+    "email_to_migrate": "ninikazizah@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 813-3199-3419‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_057",
+    "excel_name": "Suyati, SST. M. Kes",
+    "db_id": "Loyalis_057",
+    "db_name": "Suyati, SST. M. Kes",
+    "email_to_migrate": "suyati@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 822-3083-2000‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_058",
+    "excel_name": "Muzayyaroh, M.Keb.",
+    "db_id": "Loyalis_058",
+    "db_name": "Muzayyaroh, M.Keb.",
+    "email_to_migrate": "muzayyaroh@fik.unipdu.ac.id",
+    "phone_to_migrate": "+6281232444603",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_059",
+    "excel_name": "Dian Puspitayani, SST.M.Kes.",
+    "db_id": "Loyalis_059",
+    "db_name": "Dian Puspitayani, SST.M.Kes.",
+    "email_to_migrate": "puspitayanidian@gmail.com",
+    "phone_to_migrate": "‪+62 857-4605-2248‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_060",
+    "excel_name": "Helmi Anuchasari, S.KM., M.KM",
+    "db_id": "Loyalis_060",
+    "db_name": "Helmi Anuchasari, S.KM., M.KM",
+    "email_to_migrate": "helmiannuchasari@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 813-3563-7444‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_061",
+    "excel_name": "Moh. Rajin, S.Kep.Ners. M. Kes.",
+    "db_id": "Loyalis_061",
+    "db_name": "Moh. Rajin, S.Kep.Ners. M. Kes.",
+    "email_to_migrate": "mukhamadrajin@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 856-4893-8698",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_062",
+    "excel_name": "Zulfa Khusniyah, S.Kep.Ners.M.Pdi",
+    "db_id": "Loyalis_062",
+    "db_name": "Zulfa Khusniyah, S.Kep.Ners.M.Pdi",
+    "email_to_migrate": "zulfakhusniyah@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 857-4955-6026‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_063",
+    "excel_name": "Dr. Nasrudin, S.KM, M.Kes",
+    "db_id": "Loyalis_063",
+    "db_name": "Dr. Nasrudin, S.KM, M.Kes",
+    "email_to_migrate": "nasrudin@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 822-3214-5078",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_064",
+    "excel_name": "Indah Mukarromah, S.Kep.Ns.",
+    "db_id": "Loyalis_064",
+    "db_name": "Indah Mukarromah, S.Kep.Ns.",
+    "email_to_migrate": "indahmukarromah@fik.unipdu.ac.id",
+    "phone_to_migrate": "+62 857-3075-0019",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_065",
+    "excel_name": "Hudzaifah, SS",
+    "db_id": "Loyalis_065",
+    "db_name": "Hudzaifah, SS",
+    "email_to_migrate": "hudzaifah@staf.unipdu.ac.id",
+    "phone_to_migrate": "+62 812-8256-9008",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_066",
+    "excel_name": "Ita Fitria, S. Kom.",
+    "db_id": "Loyalis_066",
+    "db_name": "Ita Fitria, S. Kom.",
+    "email_to_migrate": "itafitria@staf.unipdu.ac.id",
+    "phone_to_migrate": "+62 822-2912-4243",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_067",
+    "excel_name": "Hj. Masrikah, S.AB",
+    "db_id": "Loyalis_067",
+    "db_name": "Hj. Masrikah, S.AB",
+    "email_to_migrate": "masrikah@staf.unipdu.ac.id",
+    "phone_to_migrate": "085853030712",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_068",
+    "excel_name": "Anggrea Maduratih, S.AB",
+    "db_id": "Loyalis_068",
+    "db_name": "Anggrea Maduratih, S.AB",
+    "email_to_migrate": "anggriamaduratih@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 812-1473-4154‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_069",
+    "excel_name": "Aizun Najih,S.Psi.",
+    "db_id": "Loyalis_069",
+    "db_name": "Aizun Najih,S.Psi.",
+    "email_to_migrate": "aizunnajih@staf.unipdu.ac.id",
+    "phone_to_migrate": "+62 858-5204-2220",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_070",
+    "excel_name": "Khamim Mansyur,S.AB",
+    "db_id": "Loyalis_070",
+    "db_name": "Khamim Mansyur,S.AB",
+    "email_to_migrate": "khamimmansyur@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_071",
+    "excel_name": "Alifah Nuriyati, S.Sos",
+    "db_id": "Loyalis_071",
+    "db_name": "Alifah Nuriyati, S.Sos",
+    "email_to_migrate": "alifahnuriyati@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 857-3287-4070",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_072",
+    "excel_name": "Hj. Masadah Endang Susilowati, S.AB",
+    "db_id": "Loyalis_072",
+    "db_name": "Hj. Masadah Endang Susilowati, S.AB",
+    "email_to_migrate": "masadahendangsusilowati@staf.unipdu.ac.id",
+    "phone_to_migrate": "+6285645538638",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_073",
+    "excel_name": "Abdul Ghofar,S.Kep.Ns.. M.Pdi",
+    "db_id": "Loyalis_073",
+    "db_name": "Abdul Ghofar,S.Kep.Ns.. M.Pdi",
+    "email_to_migrate": "abdulghofar@fik.unipdu.ac.id",
+    "phone_to_migrate": "+6285852952904",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_074",
+    "excel_name": "Hj. Mukhoirotin, S.Kep.Ners.",
+    "db_id": "Loyalis_074",
+    "db_name": "Hj. Mukhoirotin, S.Kep.Ners.",
+    "email_to_migrate": "mukhoirotin@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 813-3166-3390‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_075",
+    "excel_name": "Hj. Khotimah, S.Kep.Ners, M.Kes",
+    "db_id": "Loyalis_075",
+    "db_name": "Hj. Khotimah, S.Kep.Ners, M.Kes",
+    "email_to_migrate": "khotimah@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 856-4806-6285‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_076",
+    "excel_name": "Siti Muniroh, S. Kep. Ners.",
+    "db_id": "Loyalis_076",
+    "db_name": "Siti Muniroh, S. Kep. Ners.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_077",
+    "excel_name": "Dr. Hj. Herin Mawarti, S. Kep. Ners, M.Biomed",
+    "db_id": "Loyalis_077",
+    "db_name": "Dr. Hj. Herin Mawarti, S. Kep. Ners, M.Biomed",
+    "email_to_migrate": "herinmawarti@fik.unipdu.ac.id",
+    "phone_to_migrate": "+6285736347827",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_078",
+    "excel_name": "Wiwiek Widiatie, S. Kep. Ners.M.Kes",
+    "db_id": "Loyalis_078",
+    "db_name": "Wiwiek Widiatie, S. Kep. Ners.M.Kes",
+    "email_to_migrate": "wiwiekwidiatie@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 822-4522-2986‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_079",
+    "excel_name": "Khoiro Ummah,S.AB",
+    "db_id": "Loyalis_079",
+    "db_name": "Khoiro Ummah,S.AB",
+    "email_to_migrate": "khoiroummah@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 858-5382-5506‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_080",
+    "excel_name": "Siti Rofi'ah, A. Md.",
+    "db_id": "Loyalis_080",
+    "db_name": "Siti Rofi'ah, A. Md.",
+    "email_to_migrate": "sitirofiah@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 857-3392-5044‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_081",
+    "excel_name": "Nurdin Bramono, SS.M. Hum.",
+    "db_id": "Loyalis_081",
+    "db_name": "Nurdin Bramono, SS.M. Hum.",
+    "email_to_migrate": "nurdinbramono@staf.unipdu.ac.id",
+    "phone_to_migrate": "6285648362005",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_082",
+    "excel_name": "Ir. Syarif Hidayatulloh",
+    "db_id": "Loyalis_082",
+    "db_name": "Ir. Syarif Hidayatulloh",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_083",
+    "excel_name": "Abdul Hamid, S.Hi",
+    "db_id": "Loyalis_083",
+    "db_name": "Abdul Hamid, S.Hi",
+    "email_to_migrate": "abdulhamid@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 858-1173-4016‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_084",
+    "excel_name": "Andri Eko Zulfikar, S.Kom",
+    "db_id": "Loyalis_084",
+    "db_name": "Andri Eko Zulfikar, S.Kom",
+    "email_to_migrate": "andriekozulfikar@unipdu.ac.id",
+    "phone_to_migrate": "+62 857-4962-8920",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_085",
+    "excel_name": "Dra. Hj. Umi Hasunah Zaim, M.Thi",
+    "db_id": "Loyalis_085",
+    "db_name": "Dra. Hj. Umi Hasunah Zaim, M.Thi",
+    "email_to_migrate": "umihasunah@gmail.com",
+    "phone_to_migrate": "‪+62 815-5075-333‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_086",
+    "excel_name": "DR.H.Afifudin Dimyathi",
+    "db_id": "Loyalis_086",
+    "db_name": "DR.H.Afifudin Dimyathi",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_087",
+    "excel_name": "Nur Elizah, S.Pd. I",
+    "db_id": "Loyalis_087",
+    "db_name": "Nur Elizah, S.Pd. I",
+    "email_to_migrate": "nurelizah@staf.unipdu.ac.id",
+    "phone_to_migrate": "+62 856-4905-8687",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_088",
+    "excel_name": "M. Faizin, S.Pdi",
+    "db_id": "Loyalis_088",
+    "db_name": "M. Faizin, S.Pdi",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_089",
+    "excel_name": "Binti Qoni'ah, SS, M. Hum",
+    "db_id": "Loyalis_089",
+    "db_name": "Binti Qoni'ah, SS, M. Hum",
+    "email_to_migrate": "bintiqaniah@fbs.unipdu.ac.id",
+    "phone_to_migrate": "+6285736512227",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_090",
+    "excel_name": "Purwanti, S.Pd. I",
+    "db_id": "Loyalis_090",
+    "db_name": "Purwanti, S.Pd. I",
+    "email_to_migrate": "purwanti@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 856-4563-4001‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_091",
+    "excel_name": "Anisatul Barita,S.Sos",
+    "db_id": "Loyalis_091",
+    "db_name": "Anisatul Barita,S.Sos",
+    "email_to_migrate": "anisatulbarita@staf.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 856-4836-0068‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_092",
+    "excel_name": "Ahmad Izzul Iman, S.Kom",
+    "db_id": "Loyalis_092",
+    "db_name": "Ahmad Izzul Iman, S.Kom",
+    "email_to_migrate": "izzul.iman@puskom.unipdu.ac.id",
+    "phone_to_migrate": "+62 857-3372-0226",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_093",
+    "excel_name": "Mohammad Imsin, SE, MP",
+    "db_id": "Loyalis_093",
+    "db_name": "Mohammad Imsin, SE, MP",
+    "email_to_migrate": "mohammadimsin@fia.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_094",
+    "excel_name": "Siti Mutrofin, S Kom, M. Kom.",
+    "db_id": "Loyalis_094",
+    "db_name": "Siti Mutrofin, S Kom, M. Kom.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_095",
+    "excel_name": "Ahmad Farid, SS, MA, Ph.D",
+    "db_id": "Loyalis_095",
+    "db_name": "Ahmad Farid, SS, MA, Ph.D",
+    "email_to_migrate": "achmadfarid@fbs.unipdu.ac.id",
+    "phone_to_migrate": "+6285707026556",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_096",
+    "excel_name": "Dr. Muhammad Syafii, M.PdI",
+    "db_id": "Loyalis_096",
+    "db_name": "Dr. Muhammad Syafii, M.PdI",
+    "email_to_migrate": "muhammadsyafii@fai.unipdu.ac.id",
+    "phone_to_migrate": "+6285646163581",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_097",
+    "excel_name": "Hj. Afifa S. Zulfikar,SS.,M.Sc.",
+    "db_id": "Loyalis_097",
+    "db_name": "Hj. Afifa S. Zulfikar,SS.,M.Sc.",
+    "email_to_migrate": "afifasyamsunz@gmail.com",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_098",
+    "excel_name": "Didik Saudin, S.Kep Ners, M.Kep.",
+    "db_id": "Loyalis_098",
+    "db_name": "Didik Saudin, S.Kep Ners, M.Kep.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_099",
+    "excel_name": "Edi Wibowo Suwandi, S.Kep,Ners",
+    "db_id": "Loyalis_099",
+    "db_name": "Edi Wibowo Suwandi, S.Kep,Ners",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_100",
+    "excel_name": "Diah Ayu Fatmawati, S.Kep, Ners",
+    "db_id": "Loyalis_100",
+    "db_name": "Diah Ayu Fatmawati, S.Kep, Ners",
+    "email_to_migrate": "diahayufatmawati@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 857-4945-9880‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_101",
+    "excel_name": "Siti Urifah, S.Kep Ners",
+    "db_id": "Loyalis_101",
+    "db_name": "Siti Urifah, S.Kep Ners",
+    "email_to_migrate": "sitiurifah@fik.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 815-5644-4158‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_102",
+    "excel_name": "Irta Fitriana, SS, M.Hum",
+    "db_id": "Loyalis_102",
+    "db_name": "Irta Fitriana, SS, M.Hum",
+    "email_to_migrate": "irtafitriana@fbs.unipdu.ac.id",
+    "phone_to_migrate": "+6285645199831",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_103",
+    "excel_name": "Andik Wahyun Muqoyyidin,M.PdI",
+    "db_id": "Loyalis_103",
+    "db_name": "Andik Wahyun Muqoyyidin,M.PdI",
+    "email_to_migrate": "andikwm@fai.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_104",
+    "excel_name": "Dhikrul Hakim,M.PdI",
+    "db_id": "Loyalis_104",
+    "db_name": "Dhikrul Hakim,M.PdI",
+    "email_to_migrate": "dhikrulhakim@fai.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 821-4115-6392‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_105",
+    "excel_name": "Agus Mahfudin,M.Si",
+    "db_id": "Loyalis_105",
+    "db_name": "Agus Mahfudin,M.Si",
+    "email_to_migrate": "agusmahfudin@fai.unipdu.ac.id",
+    "phone_to_migrate": "‪+62 812-1639-892‬",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_106",
+    "excel_name": "Dr. H. M.Yahya Ashari,M.Pd",
+    "db_id": "Loyalis_106",
+    "db_name": "Dr. H. M.Yahya Ashari,M.Pd",
+    "email_to_migrate": "yahyaashari@fai.unipdu.ac.id",
+    "phone_to_migrate": "+628123514064",
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_107",
+    "excel_name": "M.Ali Nawawi, SE., MM",
+    "db_id": "Loyalis_107",
+    "db_name": "M.Ali Nawawi, SE., MM",
+    "email_to_migrate": "alinawawi@fia.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_108",
+    "excel_name": "Bambang Setyobudi,SE,MM",
+    "db_id": "Loyalis_108",
+    "db_name": "Bambang Setyobudi,SE,MM",
+    "email_to_migrate": "bambangsetyobudi@fia.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_109",
+    "excel_name": "Nurul Laili,S.Pd",
+    "db_id": "Loyalis_109",
+    "db_name": "Nurul Laili,S.Pd",
+    "email_to_migrate": "nurullaili@fbs.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_110",
+    "excel_name": "Bakri, S.Pd.I",
+    "db_id": "Loyalis_110",
+    "db_name": "Bakri, S.Pd.I",
+    "email_to_migrate": "bakri@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_111",
+    "excel_name": "H. Sufendi Hariyanto, S. Kep.Ners.M.MD",
+    "db_id": "Loyalis_111",
+    "db_name": "H. Sufendi Hariyanto, S. Kep.Ners.M.MD",
+    "email_to_migrate": "sufendihariyanto@fik.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_112",
+    "excel_name": "Afsah Novitasari, S.Si, M.Pd,",
+    "db_id": "Loyalis_112",
+    "db_name": "Afsah Novitasari, S.Si, M.Pd,",
+    "email_to_migrate": "afsahnovitasari@mipa.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_113",
+    "excel_name": "Haris Hidayatulloh, M.Hi",
+    "db_id": "Loyalis_113",
+    "db_name": "Haris Hidayatulloh, M.Hi",
+    "email_to_migrate": "harishidayatullah@fai.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_114",
+    "excel_name": "Indah Wahyuni, SS",
+    "db_id": "Loyalis_114",
+    "db_name": "Indah Wahyuni, SS",
+    "email_to_migrate": "indahwahyuni@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_115",
+    "excel_name": "Nur Feri Setiono",
+    "db_id": "Loyalis_115",
+    "db_name": "Nur Feri Setiono",
+    "email_to_migrate": "nurferisetiono@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_116",
+    "excel_name": "Yazid Bustomi, S.Kom",
+    "db_id": "Loyalis_116",
+    "db_name": "Yazid Bustomi, S.Kom",
+    "email_to_migrate": "yazidbastomi@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_117",
+    "excel_name": "Diema Hernyka Satyareni, S.Kom. M.Kom.",
+    "db_id": "Loyalis_117",
+    "db_name": "Diema Hernyka Satyareni, S.Kom. M.Kom.",
+    "email_to_migrate": "diemahernyka@ft.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_118",
+    "excel_name": "Dr. Nur Ulwiyah, M.PdI",
+    "db_id": "Loyalis_118",
+    "db_name": "Dr. Nur Ulwiyah, M.PdI",
+    "email_to_migrate": "nurulwiyah@fai.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_119",
+    "excel_name": "H. Moh Makmun Dr. M.HI",
+    "db_id": "Loyalis_119",
+    "db_name": "H. Moh Makmun Dr. M.HI",
+    "email_to_migrate": "makmun@fai.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_120",
+    "excel_name": "Indra Kusuma Wardani, S.Si,M.Pd.",
+    "db_id": "Loyalis_120",
+    "db_name": "Indra Kusuma Wardani, S.Si,M.Pd.",
+    "email_to_migrate": "indrakusumawardani@mipa.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_121",
+    "excel_name": "Mahmud Huda, S.H.I, M.S.I",
+    "db_id": "Loyalis_121",
+    "db_name": "Mahmud Huda, S.H.I, M.S.I",
+    "email_to_migrate": "mahmudhuda@fai.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_122",
+    "excel_name": "Muh. Ali Murtadlo. M.Kom",
+    "db_id": "Loyalis_122",
+    "db_name": "Muh. Ali Murtadlo. M.Kom",
+    "email_to_migrate": "alimurtadho@unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_123",
+    "excel_name": "Muh.Nur Khozin, SPdI",
+    "db_id": "Loyalis_123",
+    "db_name": "Muh.Nur Khozin, SPdI",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_124",
+    "excel_name": "Ahmad Arif",
+    "db_id": "Loyalis_124",
+    "db_name": "Ahmad Arif",
+    "email_to_migrate": "ahmadarif@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_125",
+    "excel_name": "Nurul Khoirun Nisa', S.Kep.,Ners.",
+    "db_id": "Loyalis_125",
+    "db_name": "Nurul Khoirun Nisa', S.Kep.,Ners.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_126",
+    "excel_name": "Adi Yusuf, M.Pd",
+    "db_id": "Loyalis_126",
+    "db_name": "Adi Yusuf, M.Pd",
+    "email_to_migrate": "adiyusuf@fbs.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_127",
+    "excel_name": "Vivin Eka Rahmawati, A. Md. Keb.",
+    "db_id": "Loyalis_127",
+    "db_name": "Vivin Eka Rahmawati, A. Md. Keb.",
+    "email_to_migrate": "vivinekarahmawati@fik.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_128",
+    "excel_name": "Yuyun Fitriani, A. Md. Keb.",
+    "db_id": "Loyalis_128",
+    "db_name": "Yuyun Fitriani, A. Md. Keb.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_129",
+    "excel_name": "Athi' Linda Yani,S.Kep Ners",
+    "db_id": "Loyalis_129",
+    "db_name": "Athi' Linda Yani,S.Kep Ners",
+    "email_to_migrate": "athilindayani@fik.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_130",
+    "excel_name": "Yulia Arofatus Sobah, S.Kom",
+    "db_id": "Loyalis_130",
+    "db_name": "Yulia Arofatus Sobah, S.Kom",
+    "email_to_migrate": "yuliaarofatus.s@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_131",
+    "excel_name": "Wim Banu Ukhrowi, SS",
+    "db_id": "Loyalis_131",
+    "db_name": "Wim Banu Ukhrowi, SS",
+    "email_to_migrate": "wimbanuukhrowi@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_132",
+    "excel_name": "Ivan Dwi Fibrian, S.Kom, M.I.Kom",
+    "db_id": "Loyalis_132",
+    "db_name": "Ivan Dwi Fibrian, S.Kom, M.I.Kom",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_133",
+    "excel_name": "Nufan Balafif, S.Kom., MM",
+    "db_id": "Loyalis_133",
+    "db_name": "Nufan Balafif, S.Kom., MM",
+    "email_to_migrate": "nufanbalafif@ft.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_134",
+    "excel_name": "Dewi Triloka Wulandari, S.ST,M,Tr.Keb",
+    "db_id": "Loyalis_134",
+    "db_name": "Dewi Triloka Wulandari, S.ST,M,Tr.Keb",
+    "email_to_migrate": "dewitrilokawulandari@fik.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_135",
+    "excel_name": "Dr. Miftakhul Ilmi, M.Pd",
+    "db_id": "Loyalis_135",
+    "db_name": "Dr. Miftakhul Ilmi, M.Pd",
+    "email_to_migrate": "miftah.ilmi@fai.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_136",
+    "excel_name": "Eddy Kurniawan, S.Kom,MM",
+    "db_id": "Loyalis_136",
+    "db_name": "Eddy Kurniawan, S.Kom,MM",
+    "email_to_migrate": "eddykurniawan@ft.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_137",
+    "excel_name": "Achmad Mundzir, S.HI",
+    "db_id": "Loyalis_137",
+    "db_name": "Achmad Mundzir, S.HI",
+    "email_to_migrate": "ahmadmundzir@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_138",
+    "excel_name": "Sandy Octavia Kunyono Rini, S.TP",
+    "db_id": "Loyalis_138",
+    "db_name": "Sandy Octavia Kunyono Rini, S.TP",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_139",
+    "excel_name": "Ika Vita Sari, SS",
+    "db_id": "Loyalis_139",
+    "db_name": "Ika Vita Sari, SS",
+    "email_to_migrate": "ikavitasari@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_140",
+    "excel_name": "Yuliana Ika Purnamasari, A.Md.Keb",
+    "db_id": "Loyalis_140",
+    "db_name": "Yuliana Ika Purnamasari, A.Md.Keb",
+    "email_to_migrate": "yulianaikapurnamasari@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_141",
+    "excel_name": "H.M. Samsukadi, Lc, M.Th.I",
+    "db_id": "Loyalis_141",
+    "db_name": "H.M. Samsukadi, Lc, M.Th.I",
+    "email_to_migrate": "samsukadi@fai.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_142",
+    "excel_name": "Yuliasnita Verlandes, SE, MSM",
+    "db_id": "Loyalis_142",
+    "db_name": "Yuliasnita Verlandes, SE, MSM",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_143",
+    "excel_name": "Zuliani,S. Kep. Ns. M. Kep.",
+    "db_id": "Loyalis_143",
+    "db_name": "Zuliani,S. Kep. Ns. M. Kep.",
+    "email_to_migrate": "zuliani@fik.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_144",
+    "excel_name": "Chandra Sukma Anugrah, S. Kom.",
+    "db_id": "Loyalis_144",
+    "db_name": "Chandra Sukma Anugrah, S. Kom.",
+    "email_to_migrate": "chandrasukma@ft.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_145",
+    "excel_name": "Ririn Susilowati, S.H.I, M.E.I",
+    "db_id": "Loyalis_145",
+    "db_name": "Ririn Susilowati, S.H.I, M.E.I",
+    "email_to_migrate": "ririnsusilawati@fia.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_146",
+    "excel_name": "Dian Novita Rohmatin, M.Pd",
+    "db_id": "Loyalis_146",
+    "db_name": "Dian Novita Rohmatin, M.Pd",
+    "email_to_migrate": "diannovitarohmatin@mipa.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_147",
+    "excel_name": "Nailul Fauziyah, S.Hum.M.Pd",
+    "db_id": "Loyalis_147",
+    "db_name": "Nailul Fauziyah, S.Hum.M.Pd",
+    "email_to_migrate": "nailulfauziyah@fbs.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_148",
+    "excel_name": "Sri Banun Titi Istiqomah, S.S.T",
+    "db_id": "Loyalis_148",
+    "db_name": "Sri Banun Titi Istiqomah, S.S.T",
+    "email_to_migrate": "sribanuntiti@fik.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_149",
+    "excel_name": "Maisaroh, M.Si",
+    "db_id": "Loyalis_149",
+    "db_name": "Maisaroh, M.Si",
+    "email_to_migrate": "maisarah@fbs.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_150",
+    "excel_name": "Teguh Priyo Utomo, S.Kom",
+    "db_id": "Loyalis_150",
+    "db_name": "Teguh Priyo Utomo, S.Kom",
+    "email_to_migrate": "teguh@ft.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_151",
+    "excel_name": "Ana Rahmawati, M.Pd",
+    "db_id": "Loyalis_151",
+    "db_name": "Ana Rahmawati, M.Pd",
+    "email_to_migrate": "annarahmawati@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_152",
+    "excel_name": "Roikhatur Roisah",
+    "db_id": "Loyalis_152",
+    "db_name": "Roikhatur Roisah",
+    "email_to_migrate": "roikhaturroisah@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_153",
+    "excel_name": "Ratna Wati, S.Kom",
+    "db_id": "Loyalis_153",
+    "db_name": "Ratna Wati, S.Kom",
+    "email_to_migrate": "ratnawati@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_154",
+    "excel_name": "Putri Rahayuningtyas, S.Pd,M.Pd.",
+    "db_id": "Loyalis_154",
+    "db_name": "Putri Rahayuningtyas, S.Pd,M.Pd.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_155",
+    "excel_name": "Rina Suci Andriani, M.Pd",
+    "db_id": "Loyalis_155",
+    "db_name": "Rina Suci Andriani, M.Pd",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_156",
+    "excel_name": "Fenny Vitiasaridessy, S.ST",
+    "db_id": "Loyalis_156",
+    "db_name": "Fenny Vitiasaridessy, S.ST",
+    "email_to_migrate": "fenyvitiasaridessy@fik.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_157",
+    "excel_name": "Zakiah, S.Keb. Bd.",
+    "db_id": "Loyalis_157",
+    "db_name": "Zakiah, S.Keb. Bd.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_158",
+    "excel_name": "Ardian Syaifuddin, Amd. Kep.",
+    "db_id": "Loyalis_158",
+    "db_name": "Ardian Syaifuddin, Amd. Kep.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_159",
+    "excel_name": "Dina Eka Sofiana, SE, M.A",
+    "db_id": "Loyalis_159",
+    "db_name": "Dina Eka Sofiana, SE, M.A",
+    "email_to_migrate": "dinaekashofiana@fia.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_160",
+    "excel_name": "Hendy, S.Si. M.Si",
+    "db_id": "Loyalis_160",
+    "db_name": "Hendy, S.Si. M.Si",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_161",
+    "excel_name": "Siti Roudhatul Jannah, SST.Keb. M. Tr. Keb.",
+    "db_id": "Loyalis_161",
+    "db_name": "Siti Roudhatul Jannah, SST.Keb. M. Tr. Keb.",
+    "email_to_migrate": "sitiroudhotuljannah@fik.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_162",
+    "excel_name": "Anna Rakhmawati, SS",
+    "db_id": "Loyalis_162",
+    "db_name": "Anna Rakhmawati, SS",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_163",
+    "excel_name": "Hosnatul Hasanah, S.Kom",
+    "db_id": "Loyalis_163",
+    "db_name": "Hosnatul Hasanah, S.Kom",
+    "email_to_migrate": "hosnatulhasanah@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_164",
+    "excel_name": "Darmaji, S. Kom",
+    "db_id": "Loyalis_164",
+    "db_name": "Darmaji, S. Kom",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_165",
+    "excel_name": "Suprapti, S.S., M.Pd.I",
+    "db_id": "Loyalis_165",
+    "db_name": "Suprapti, S.S., M.Pd.I",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_166",
+    "excel_name": "Imam Mutaqin, M.Pd.I",
+    "db_id": "Loyalis_166",
+    "db_name": "Imam Mutaqin, M.Pd.I",
+    "email_to_migrate": "imammutaqin@fai.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_167",
+    "excel_name": "Devin Prihar Ninuk, S.Kep Nes",
+    "db_id": "Loyalis_167",
+    "db_name": "Devin Prihar Ninuk, S.Kep Nes",
+    "email_to_migrate": "devinpriharninuk@fik.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_168",
+    "excel_name": "David Budi Hartanto, S.Kom",
+    "db_id": "Loyalis_168",
+    "db_name": "David Budi Hartanto, S.Kom",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_169",
+    "excel_name": "Sri Wahyuni, A.Ma. Pust",
+    "db_id": "Loyalis_169",
+    "db_name": "Sri Wahyuni, A.Ma. Pust",
+    "email_to_migrate": "sriwahyuni@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_170",
+    "excel_name": "M. Kirom",
+    "db_id": "Loyalis_170",
+    "db_name": "M. Kirom",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_171",
+    "excel_name": "Abid Datul Mukhoyaroh, S.Sos., M.A.B.",
+    "db_id": "Loyalis_171",
+    "db_name": "Abid Datul Mukhoyaroh, S.Sos., M.A.B.",
+    "email_to_migrate": "abiddatul@fia.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_172",
+    "excel_name": "Muhammad Saifuddin, M.Pd.",
+    "db_id": "Loyalis_172",
+    "db_name": "Muhammad Saifuddin, M.Pd.",
+    "email_to_migrate": "muhammadsaifuddin@fbs.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_173",
+    "excel_name": "Isbayu' Uliyah, S.Kom",
+    "db_id": "Loyalis_173",
+    "db_name": "Isbayu' Uliyah, S.Kom",
+    "email_to_migrate": "isbayuulyah@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_174",
+    "excel_name": "Endang Kurniawan, S.Kom., MM",
+    "db_id": "Loyalis_174",
+    "db_name": "Endang Kurniawan, S.Kom., MM",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_175",
+    "excel_name": "Erliyah Nurul Jannah, S.Kom.,M.Sc",
+    "db_id": "Loyalis_175",
+    "db_name": "Erliyah Nurul Jannah, S.Kom.,M.Sc",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_176",
+    "excel_name": "Ciptianingsari Ayu Vitantri, M.Pd.",
+    "db_id": "Loyalis_176",
+    "db_name": "Ciptianingsari Ayu Vitantri, M.Pd.",
+    "email_to_migrate": "ciptianingsariayu@mipa.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_177",
+    "excel_name": "Tafsillatul Mufida Asriningsih, M. Pd.",
+    "db_id": "Loyalis_177",
+    "db_name": "Tafsillatul Mufida Asriningsih, M. Pd.",
+    "email_to_migrate": "tafsillatul@mipa.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_178",
+    "excel_name": "Nurul Lailiyah",
+    "db_id": "Loyalis_178",
+    "db_name": "Nurul Lailiyah",
+    "email_to_migrate": "nurullailiyah@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_179",
+    "excel_name": "Mokhamad Dafid Andianto, S.Kep., Ners",
+    "db_id": "Loyalis_179",
+    "db_name": "Mokhamad Dafid Andianto, S.Kep., Ners",
+    "email_to_migrate": "m.dafidandianto@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_180",
+    "excel_name": "Ike Johan Prihatini, S.Keb., Bd.",
+    "db_id": "Loyalis_180",
+    "db_name": "Ike Johan Prihatini, S.Keb., Bd.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_181",
+    "excel_name": "Imam Latif Rosyadi, A. Md.",
+    "db_id": "Loyalis_181",
+    "db_name": "Imam Latif Rosyadi, A. Md.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_182",
+    "excel_name": "Zainudin, S.Kom",
+    "db_id": "Loyalis_182",
+    "db_name": "Zainudin, S.Kom",
+    "email_to_migrate": "zainudin@puskom.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_183",
+    "excel_name": "Ulumul Umah, M.Pd.",
+    "db_id": "Loyalis_183",
+    "db_name": "Ulumul Umah, M.Pd.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_184",
+    "excel_name": "Amrulloh,Lc,M.Th.I",
+    "db_id": "Loyalis_184",
+    "db_name": "Amrulloh,Lc,M.Th.I",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_185",
+    "excel_name": "Muhammad Miftakhul Syakhuddin",
+    "db_id": "Loyalis_185",
+    "db_name": "Muhammad Miftakhul Syakhuddin",
+    "email_to_migrate": "m.miftakhul.syaikhuddin@ft.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_186",
+    "excel_name": "Ahmad Dzulfikar, M.Pd",
+    "db_id": "Loyalis_186",
+    "db_name": "Ahmad Dzulfikar, M.Pd",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_187",
+    "excel_name": "Wiwit Denny Fitriana, S.Si.M.Si",
+    "db_id": "Loyalis_187",
+    "db_name": "Wiwit Denny Fitriana, S.Si.M.Si",
+    "email_to_migrate": "wiwitdenny@mipa.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_188",
+    "excel_name": "Khoirul Islam",
+    "db_id": "Loyalis_188",
+    "db_name": "Khoirul Islam",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_189",
+    "excel_name": "Galuh Tisna Widiana,M. Pd.",
+    "db_id": "Loyalis_189",
+    "db_name": "Galuh Tisna Widiana,M. Pd.",
+    "email_to_migrate": "galuhtisna@fai.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_190",
+    "excel_name": "Dr. H. Imam Baidlowi, MM",
+    "db_id": "Loyalis_190",
+    "db_name": "Dr. H. Imam Baidlowi, MM",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_191",
+    "excel_name": "Kusuma Wardhani Mas'udah,S.Si., M.Si",
+    "db_id": "Loyalis_191",
+    "db_name": "Kusuma Wardhani Mas'udah,S.Si., M.Si",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_192",
+    "excel_name": "Eka Nurjanah, M.Pd.",
+    "db_id": "Loyalis_192",
+    "db_name": "Eka Nurjanah, M.Pd.",
+    "email_to_migrate": "ekanurjanah@fai.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_193",
+    "excel_name": "Burhan Abdih, S.Kom.",
+    "db_id": "Loyalis_193",
+    "db_name": "Burhan Abdih, S.Kom.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_194",
+    "excel_name": "Thoif, S.Hi, M.Pd",
+    "db_id": "Loyalis_194",
+    "db_name": "Thoif, S.Hi, M.Pd",
+    "email_to_migrate": "thoif@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_195",
+    "excel_name": "Nisa Ayunda, S.Si. M.Si",
+    "db_id": "Loyalis_195",
+    "db_name": "Nisa Ayunda, S.Si. M.Si",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_196",
+    "excel_name": "Fitrotus Salamah, SS",
+    "db_id": "Loyalis_196",
+    "db_name": "Fitrotus Salamah, SS",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_197",
+    "excel_name": "H. Ahmad Haibat Kannaby Zaimuddin,S.I.P",
+    "db_id": "Loyalis_197",
+    "db_name": "H. Ahmad Haibat Kannaby Zaimuddin,S.I.P",
+    "email_to_migrate": "ahmadhaibatkannaby@fbb.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_198",
+    "excel_name": "Siti Dewi Muchlisoh",
+    "db_id": "Loyalis_198",
+    "db_name": "Siti Dewi Muchlisoh",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_199",
+    "excel_name": "M. Khoirul Abdillah , S.Kom",
+    "db_id": "Loyalis_199",
+    "db_name": "M. Khoirul Abdillah , S.Kom",
+    "email_to_migrate": "m.khoirulabdillah@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_200",
+    "excel_name": "Aji Muhtarom",
+    "db_id": "Loyalis_200",
+    "db_name": "Aji Muhtarom",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_201",
+    "excel_name": "Achmat Rosid",
+    "db_id": "Loyalis_201",
+    "db_name": "Achmat Rosid",
+    "email_to_migrate": "achmatrosid@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_202",
+    "excel_name": "Nurul Noviana, S.Pd.",
+    "db_id": "Loyalis_202",
+    "db_name": "Nurul Noviana, S.Pd.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_203",
+    "excel_name": "M. Zahrul Jihad, SH,M.Si",
+    "db_id": "Loyalis_203",
+    "db_name": "M. Zahrul Jihad, SH,M.Si",
+    "email_to_migrate": "zahruljihad@fia.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_204",
+    "excel_name": "Ni'mah Akbar Habibie",
+    "db_id": "Loyalis_204",
+    "db_name": "Ni'mah Akbar Habibie",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_205",
+    "excel_name": "Ircham Ali, S.Kom",
+    "db_id": "Loyalis_205",
+    "db_name": "Ircham Ali, S.Kom",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_206",
+    "excel_name": "Fatikhatus Sholikhah, S.Kom",
+    "db_id": "Loyalis_206",
+    "db_name": "Fatikhatus Sholikhah, S.Kom",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_207",
+    "excel_name": "Luxman Nul Khakim, S.Kep., Ners., M.Kep",
+    "db_id": "Loyalis_207",
+    "db_name": "Luxman Nul Khakim, S.Kep., Ners., M.Kep",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_208",
+    "excel_name": "Moh. Faizal Fuad Aziz, M.Pd.",
+    "db_id": "Loyalis_208",
+    "db_name": "Moh. Faizal Fuad Aziz, M.Pd.",
+    "email_to_migrate": "faizalfuadazis@fbs.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_209",
+    "excel_name": "Ainun Ni'mah",
+    "db_id": "Loyalis_209",
+    "db_name": "Ainun Ni'mah",
+    "email_to_migrate": "ainunnimah@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_210",
+    "excel_name": "Rendy Kusuma Indra Permana, S.S.",
+    "db_id": "Loyalis_210",
+    "db_name": "Rendy Kusuma Indra Permana, S.S.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_211",
+    "excel_name": "Siti Buryani",
+    "db_id": "Loyalis_211",
+    "db_name": "Siti Buryani",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_212",
+    "excel_name": "Mokhamad Abdul Rokhim",
+    "db_id": "Loyalis_212",
+    "db_name": "Mokhamad Abdul Rokhim",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_213",
+    "excel_name": "Serly Apririya Ardi, S.AB",
+    "db_id": "Loyalis_213",
+    "db_name": "Serly Apririya Ardi, S.AB",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_214",
+    "excel_name": "Muhamad Iqbal Prasetya, S.kom",
+    "db_id": "Loyalis_214",
+    "db_name": "Muhamad Iqbal Prasetya, S.kom",
+    "email_to_migrate": "m.iqbalprasetya@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_215",
+    "excel_name": "Sri Wahyuni,SS",
+    "db_id": "Loyalis_215",
+    "db_name": "Sri Wahyuni,SS",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_216",
+    "excel_name": "Tomy Syafrudin, M.Pd.",
+    "db_id": "Loyalis_216",
+    "db_name": "Tomy Syafrudin, M.Pd.",
+    "email_to_migrate": "tomy.syafrudin@mipa.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_217",
+    "excel_name": "Elly Megawati, S.IP",
+    "db_id": "Loyalis_217",
+    "db_name": "Elly Megawati, S.IP",
+    "email_to_migrate": "ellymegawati@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_218",
+    "excel_name": "Muhammad Ainun Abdurrahman, S.Kom",
+    "db_id": "Loyalis_218",
+    "db_name": "Muhammad Ainun Abdurrahman, S.Kom",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_219",
+    "excel_name": "Riftin Zakia Darajad, S. Kom",
+    "db_id": "Loyalis_219",
+    "db_name": "Riftin Zakia Darajad, S. Kom",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_220",
+    "excel_name": "Nora Izza Nabila",
+    "db_id": "Loyalis_220",
+    "db_name": "Nora Izza Nabila",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_221",
+    "excel_name": "Dra. Hj. Niswah Qonita",
+    "db_id": "Loyalis_221",
+    "db_name": "Dra. Hj. Niswah Qonita",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_222",
+    "excel_name": "Nuzulia Fitriatun Nisa', M.Pd.",
+    "db_id": "Loyalis_222",
+    "db_name": "Nuzulia Fitriatun Nisa', M.Pd.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_223",
+    "excel_name": "Alief Arsalam Muharram, S.Kom.",
+    "db_id": "Loyalis_223",
+    "db_name": "Alief Arsalam Muharram, S.Kom.",
+    "email_to_migrate": "aliefarsalan.muharram@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_224",
+    "excel_name": "Ima Rimayanti",
+    "db_id": "Loyalis_224",
+    "db_name": "Ima Rimayanti",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_225",
+    "excel_name": "Irvan Sarifudin, S. Kom.",
+    "db_id": "Loyalis_225",
+    "db_name": "Irvan Sarifudin, S. Kom.",
+    "email_to_migrate": "Irvansarifudin@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_226",
+    "excel_name": "Ryan Irwanda Pratama, S.Kom",
+    "db_id": "Loyalis_226",
+    "db_name": "Ryan Irwanda Pratama, S.Kom",
+    "email_to_migrate": "ryanirwanda@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_227",
+    "excel_name": "Ahmad Farhan, S.Kom",
+    "db_id": "Loyalis_227",
+    "db_name": "Ahmad Farhan, S.Kom",
+    "email_to_migrate": "ahmadfarhan@ft.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_228",
+    "excel_name": "Mey Lista Tauryawati, S.Si.M.Si.",
+    "db_id": "Loyalis_228",
+    "db_name": "Mey Lista Tauryawati, S.Si.M.Si.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_229",
+    "excel_name": "Andi Agung , S.Si.M.Si",
+    "db_id": "Loyalis_229",
+    "db_name": "Andi Agung , S.Si.M.Si",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_230",
+    "excel_name": "Siti Asiah, M.Pd.",
+    "db_id": "Loyalis_230",
+    "db_name": "Siti Asiah, M.Pd.",
+    "email_to_migrate": "sitiasiah@fai.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_231",
+    "excel_name": "Siti Nafiatul Azizah S.S",
+    "db_id": "Loyalis_231",
+    "db_name": "Siti Nafiatul Azizah S.S",
+    "email_to_migrate": "sitinafiatul@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_232",
+    "excel_name": "Beda Puspita Candra , M.Kom",
+    "db_id": "Loyalis_232",
+    "db_name": "Beda Puspita Candra , M.Kom",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_233",
+    "excel_name": "Rizka Kurnia Andaru , M.AB",
+    "db_id": "Loyalis_233",
+    "db_name": "Rizka Kurnia Andaru , M.AB",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_234",
+    "excel_name": "Nurul Aweni",
+    "db_id": "Loyalis_234",
+    "db_name": "Nurul Aweni",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_235",
+    "excel_name": "Cynthia Alvionita Ferima, S.Si., M.Si.",
+    "db_id": "Loyalis_235",
+    "db_name": "Cynthia Alvionita Ferima, S.Si., M.Si.",
+    "email_to_migrate": "cynthia.alvionita@mipa.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_236",
+    "excel_name": "Puspa Mia Widiyaningsih, M.Pd.",
+    "db_id": "Loyalis_236",
+    "db_name": "Puspa Mia Widiyaningsih, M.Pd.",
+    "email_to_migrate": "puspamiawidiyaningsih@fai.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_237",
+    "excel_name": "Maskuddin Nurcahyo",
+    "db_id": "Loyalis_237",
+    "db_name": "Maskuddin Nurcahyo",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_238",
+    "excel_name": "Moh. Shohibul Wafa , S.Kom.",
+    "db_id": "Loyalis_238",
+    "db_name": "Moh. Shohibul Wafa , S.Kom.",
+    "email_to_migrate": "shohibulwafa@ft.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_239",
+    "excel_name": "Herjanti Nursuksmaningtyas Santoso, S.S, M.Si.",
+    "db_id": "Loyalis_239",
+    "db_name": "Herjanti Nursuksmaningtyas Santoso, S.S, M.Si.",
+    "email_to_migrate": "herjantinursuksmaningtyas@fbs.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_240",
+    "excel_name": "Ichlasul Ayyub",
+    "db_id": "Loyalis_240",
+    "db_name": "Ichlasul Ayyub",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_241",
+    "excel_name": "Fandy Ahmad, S.Sos,M.Ag",
+    "db_id": "Loyalis_241",
+    "db_name": "Fandy Ahmad, S.Sos,M.Ag",
+    "email_to_migrate": "fandyahmad@fbb.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_242",
+    "excel_name": "H. Ahmad Laroibafih Zulfikar, S.H",
+    "db_id": "Loyalis_242",
+    "db_name": "H. Ahmad Laroibafih Zulfikar, S.H",
+    "email_to_migrate": "laroibafih213@gmail.com",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_243",
+    "excel_name": "Ashlaha Baladina, S.I.Kom.",
+    "db_id": "Loyalis_243",
+    "db_name": "Ashlaha Baladina, S.I.Kom.",
+    "email_to_migrate": "ashlahabaladina@humas.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_244",
+    "excel_name": "Fais Tanwirotul Fadhilah, S.AB.",
+    "db_id": "Loyalis_244",
+    "db_name": "Fais Tanwirotul Fadhilah, S.AB.",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_245",
+    "excel_name": "Ihwanus Sholihin, M.Pd",
+    "db_id": "Loyalis_245",
+    "db_name": "Ihwanus Sholihin, M.Pd",
+    "email_to_migrate": "ihwanussholihin@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_246",
+    "excel_name": "Fathmah Muthi'ah , S.Ag",
+    "db_id": "Loyalis_246",
+    "db_name": "Fathmah Muthi'ah , S.Ag",
+    "email_to_migrate": "fatmahmuthiah@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_247",
+    "excel_name": "Krisna Atikah Madjid, S.IP",
+    "db_id": "Loyalis_247",
+    "db_name": "Krisna Atikah Madjid, S.IP",
+    "email_to_migrate": "krisnaatikahmadjid@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_248",
+    "excel_name": "Muhammad Fajrul Alam Ulin Nuha, S.Kom., M.Kom",
+    "db_id": "Loyalis_248",
+    "db_name": "Muhammad Fajrul Alam Ulin Nuha, S.Kom., M.Kom",
+    "email_to_migrate": "fajrulalam@puskom.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_249",
+    "excel_name": "Muhammad Al Himmy Rusydy, S.KM",
+    "db_id": "Loyalis_249",
+    "db_name": "Muhammad Al Himmy Rusydy, S.KM",
+    "email_to_migrate": "m.alhimnyrusdy@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_250",
+    "excel_name": "Choirin",
+    "db_id": "Loyalis_250",
+    "db_name": "Choirin",
+    "email_to_migrate": "choirin@staf.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_251",
+    "excel_name": "dr. Muhammad Qoimam Bilqisthi Zulfikar, M.Sc, M.P.H",
+    "db_id": "Loyalis_251",
+    "db_name": "dr. Muhammad Qoimam Bilqisthi Zulfikar, M.Sc, M.P.H",
+    "email_to_migrate": "qoimam.zulfikar@unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": "Loyalis_252",
+    "excel_name": "Royyan Amigo, S.Mat., M.Mat",
+    "db_id": "Loyalis_252",
+    "db_name": "Royyan Amigo, S.Mat., M.Mat",
+    "email_to_migrate": "royyanamigo@saintek.unipdu.ac.id",
+    "phone_to_migrate": null,
+    "match_status": "exact_match"
+  },
+  {
+    "excel_id": null,
+    "excel_name": null,
+    "db_id": "Loyalis_253",
+    "db_name": "Muhammad Ghinan Navsih, S.Si.D",
+    "email_to_migrate": null,
+    "phone_to_migrate": null,
+    "match_status": "db_only_untouched"
+  }
+]

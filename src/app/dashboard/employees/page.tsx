@@ -181,6 +181,16 @@ const formatIDR = (val: number) => {
   return `Rp ${val.toLocaleString('id-ID')}`;
 };
 
+const formatNumberWithDots = (num: number): string => {
+  if (num === 0) return '';
+  return new Intl.NumberFormat('id-ID').format(num);
+};
+
+const parseDotsToNumber = (val: string): number => {
+  const clean = val.replace(/\./g, '').replace(/[^0-9]/g, '');
+  return Number(clean) || 0;
+};
+
 interface FieldChange {
   field: string;
   oldValue: any;
@@ -1387,48 +1397,68 @@ export default function EmployeesPage() {
                       <div className="grid grid-cols-5 gap-3">
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. BPJS TK (Rp)</Label>
-                          <Input 
-                            type="number" 
-                            value={formData.bpjs?.t_bpjs_tk ?? 0} 
-                            onChange={e => updateNestedField('bpjs', 't_bpjs_tk', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                            className="rounded-xl border-slate-200 text-xs bg-white"
-                          />
+                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
+                            <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                            <input
+                              type="text"
+                              value={formData.bpjs?.t_bpjs_tk ? formatNumberWithDots(formData.bpjs.t_bpjs_tk) : ''}
+                              onChange={e => updateNestedField('bpjs', 't_bpjs_tk', parseDotsToNumber(e.target.value))}
+                              placeholder="0"
+                              className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. BPJS KES (Rp)</Label>
-                          <Input 
-                            type="number" 
-                            value={formData.bpjs?.t_bpjs_kes ?? 0} 
-                            onChange={e => updateNestedField('bpjs', 't_bpjs_kes', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                            className="rounded-xl border-slate-200 text-xs bg-white"
-                          />
+                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
+                            <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                            <input
+                              type="text"
+                              value={formData.bpjs?.t_bpjs_kes ? formatNumberWithDots(formData.bpjs.t_bpjs_kes) : ''}
+                              onChange={e => updateNestedField('bpjs', 't_bpjs_kes', parseDotsToNumber(e.target.value))}
+                              placeholder="0"
+                              className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. Beras (Rp)</Label>
-                          <Input 
-                            type="number" 
-                            value={formData.salaryProfile?.tunjanganBeras ?? 0} 
-                            onChange={e => updateNestedField('salaryProfile', 'tunjanganBeras', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                            className="rounded-xl border-slate-200 text-xs bg-white"
-                          />
+                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
+                            <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                            <input
+                              type="text"
+                              value={formData.salaryProfile?.tunjanganBeras ? formatNumberWithDots(formData.salaryProfile.tunjanganBeras) : ''}
+                              onChange={e => updateNestedField('salaryProfile', 'tunjanganBeras', parseDotsToNumber(e.target.value))}
+                              placeholder="0"
+                              className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. Kepangkatan (Rp)</Label>
-                          <Input 
-                            type="number" 
-                            value={formData.kepangkatan?.t_kepangkatan ?? 0} 
-                            onChange={e => updateNestedField('kepangkatan', 't_kepangkatan', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                            className="rounded-xl border-slate-200 text-xs bg-white"
-                          />
+                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
+                            <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                            <input
+                              type="text"
+                              value={formData.kepangkatan?.t_kepangkatan ? formatNumberWithDots(formData.kepangkatan.t_kepangkatan) : ''}
+                              onChange={e => updateNestedField('kepangkatan', 't_kepangkatan', parseDotsToNumber(e.target.value))}
+                              placeholder="0"
+                              className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. Instruksional (Rp)</Label>
-                          <Input 
-                            type="number" 
-                            value={formData.t_instruksional ?? 0} 
-                            onChange={e => setFormData((prev: any) => ({ ...prev, t_instruksional: e.target.value !== '' ? Number(e.target.value) : 0 }))} 
-                            className="rounded-xl border-slate-200 text-xs bg-white"
-                          />
+                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
+                            <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                            <input
+                              type="text"
+                              value={formData.t_instruksional ? formatNumberWithDots(formData.t_instruksional) : ''}
+                              onChange={e => setFormData((prev: any) => ({ ...prev, t_instruksional: parseDotsToNumber(e.target.value) }))}
+                              placeholder="0"
+                              className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1439,48 +1469,68 @@ export default function EmployeesPage() {
                       <div className="grid grid-cols-5 gap-3">
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Potongan BPJS (Rp)</Label>
-                          <Input 
-                            type="number" 
-                            value={formData.bpjs?.deductionAmount ?? 0} 
-                            onChange={e => updateNestedField('bpjs', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                            className="rounded-xl border-slate-200 text-xs bg-white"
-                          />
+                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
+                            <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                            <input
+                              type="text"
+                              value={formData.bpjs?.deductionAmount ? formatNumberWithDots(formData.bpjs.deductionAmount) : ''}
+                              onChange={e => updateNestedField('bpjs', 'deductionAmount', parseDotsToNumber(e.target.value))}
+                              placeholder="0"
+                              className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Potongan Tabungan (Rp)</Label>
-                          <Input 
-                            type="number" 
-                            value={formData.savings?.deductionAmount ?? 0} 
-                            onChange={e => updateNestedField('savings', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                            className="rounded-xl border-slate-200 text-xs bg-white"
-                          />
+                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
+                            <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                            <input
+                              type="text"
+                              value={formData.savings?.deductionAmount ? formatNumberWithDots(formData.savings.deductionAmount) : ''}
+                              onChange={e => updateNestedField('savings', 'deductionAmount', parseDotsToNumber(e.target.value))}
+                              placeholder="0"
+                              className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Potongan Zakat Infaq (Rp)</Label>
-                          <Input 
-                            type="number" 
-                            value={formData.ziz?.deductionAmount ?? 0} 
-                            onChange={e => updateNestedField('ziz', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                            className="rounded-xl border-slate-200 text-xs bg-white"
-                          />
+                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
+                            <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                            <input
+                              type="text"
+                              value={formData.ziz?.deductionAmount ? formatNumberWithDots(formData.ziz.deductionAmount) : ''}
+                              onChange={e => updateNestedField('ziz', 'deductionAmount', parseDotsToNumber(e.target.value))}
+                              placeholder="0"
+                              className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">BNI Simponi / THT (Rp)</Label>
-                          <Input 
-                            type="number" 
-                            value={formData.tht?.deductionAmount ?? 0} 
-                            onChange={e => updateNestedField('tht', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                            className="rounded-xl border-slate-200 text-xs bg-white"
-                          />
+                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
+                            <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                            <input
+                              type="text"
+                              value={formData.tht?.deductionAmount ? formatNumberWithDots(formData.tht.deductionAmount) : ''}
+                              onChange={e => updateNestedField('tht', 'deductionAmount', parseDotsToNumber(e.target.value))}
+                              placeholder="0"
+                              className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Potongan Pinlu (Rp)</Label>
-                          <Input 
-                            type="number" 
-                            value={formData.pinlu?.deductionAmount ?? 0} 
-                            onChange={e => updateNestedField('pinlu', 'deductionAmount', e.target.value !== '' ? Number(e.target.value) : 0)} 
-                            className="rounded-xl border-slate-200 text-xs bg-white"
-                          />
+                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-red-400 focus-within:ring-1 focus-within:ring-red-200 transition-all">
+                            <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                            <input
+                              type="text"
+                              value={formData.pinlu?.deductionAmount ? formatNumberWithDots(formData.pinlu.deductionAmount) : ''}
+                              onChange={e => updateNestedField('pinlu', 'deductionAmount', parseDotsToNumber(e.target.value))}
+                              placeholder="0"
+                              className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1566,7 +1616,7 @@ export default function EmployeesPage() {
                               setShowSuggestions(false);
                             }
                           }}
-                          className="rounded-xl border-slate-200 text-xs h-9 bg-white"
+                          className="rounded-xl border-slate-200 text-sm h-8 bg-white"
                         />
                         {showSuggestions && dbPositions.filter(pos => pos.name.toLowerCase().includes(newPosName.toLowerCase())).length > 0 && (
                           <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto z-[9999]">
@@ -1599,7 +1649,7 @@ export default function EmployeesPage() {
                           value={newPosSatker}
                           onValueChange={(val) => setNewPosSatker(val || '')}
                         >
-                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-9 w-full">
+                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-sm h-8 w-full">
                             <SelectValue placeholder="Pilih Satker" />
                           </SelectTrigger>
                           <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
@@ -1624,13 +1674,19 @@ export default function EmployeesPage() {
                       </div>
                       <div className="w-36 space-y-1.5">
                         <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tunjangan (Rp)</Label>
-                        <Input
-                          type="number"
-                          placeholder="0"
-                          value={newPosAllowance}
-                          onChange={(e) => setNewPosAllowance(e.target.value !== '' ? Number(e.target.value) : '')}
-                          className="rounded-xl border-slate-200 text-xs h-9 bg-white text-right font-mono"
-                        />
+                        <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
+                          <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                          <input
+                            type="text"
+                            value={newPosAllowance ? formatNumberWithDots(newPosAllowance) : ''}
+                            onChange={(e) => {
+                              const parsed = parseDotsToNumber(e.target.value);
+                              setNewPosAllowance(parsed || '');
+                            }}
+                            placeholder="0"
+                            className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                          />
+                        </div>
                       </div>
                       <Button
                         type="button"
@@ -1649,7 +1705,7 @@ export default function EmployeesPage() {
                           setNewPosAllowance('');
                           setNewPosSatker('');
                         }}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold h-9 px-4 cursor-pointer shrink-0"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold h-8 px-4 cursor-pointer shrink-0"
                       >
                         <Plus className="w-4 h-4 mr-1.5" /> Tambah
                       </Button>

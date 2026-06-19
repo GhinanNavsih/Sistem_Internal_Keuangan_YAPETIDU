@@ -120,6 +120,7 @@ export default function TreasuryDashboard() {
 
   // Component states
   const [mounted, setMounted] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [dataLoading, setDataLoading] = useState(true);
   const [slips, setSlips] = useState<any[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
@@ -134,7 +135,20 @@ export default function TreasuryDashboard() {
     const timer = setTimeout(() => {
       setAnimateBars(true);
     }, 100);
-    return () => clearTimeout(timer);
+    
+    setProgress(0);
+    const progressTimer = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 90) return prev;
+        const diff = Math.random() * 15 + 5;
+        return Math.min(prev + diff, 90);
+      });
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(progressTimer);
+    };
   }, []);
 
   // Trigger starting animation on the deduction bars when toggling to 'Daftar' view
@@ -433,7 +447,15 @@ export default function TreasuryDashboard() {
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-lg shadow-indigo-200">
             <Loader2 className="w-6 h-6 text-white animate-spin" />
           </div>
-          <p className="text-sm text-slate-500 font-medium animate-pulse font-sans">Memuat Dashboard...</p>
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-sm text-slate-500 font-medium animate-pulse font-sans">Memuat Dashboard...</p>
+            <div className="w-48 h-1.5 bg-slate-200/80 rounded-full overflow-hidden shadow-inner">
+              <div 
+                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
         </div>
       </div>
     );

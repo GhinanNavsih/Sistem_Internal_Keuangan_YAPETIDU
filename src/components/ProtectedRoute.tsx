@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { Loader2 } from 'lucide-react';
@@ -9,6 +9,24 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const { user, profile, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    if (loading) {
+      setProgress(0);
+      const timer = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 90) return prev;
+          const diff = Math.random() * 15 + 5;
+          return Math.min(prev + diff, 90);
+        });
+      }, 100);
+      return () => clearInterval(timer);
+    } else {
+      setProgress(100);
+    }
+  }, [loading]);
 
   useEffect(() => {
     if (!loading) {
@@ -44,7 +62,15 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-lg shadow-indigo-200">
             <Loader2 className="w-6 h-6 text-white animate-spin" />
           </div>
-          <p className="text-sm text-slate-500 font-medium animate-pulse">Memeriksa sesi...</p>
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-sm text-slate-500 font-medium animate-pulse">Memeriksa sesi...</p>
+            <div className="w-48 h-1.5 bg-slate-200/80 rounded-full overflow-hidden shadow-inner">
+              <div 
+                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
         </div>
       </div>
     );
