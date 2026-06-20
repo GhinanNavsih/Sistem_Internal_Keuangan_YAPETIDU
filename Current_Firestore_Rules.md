@@ -119,7 +119,7 @@ service cloud.firestore {
 
     // 5b. Vakasi Tambahan (Variable Payout Event Entries for Loyalis)
     match /VakasiTambahan/{docId} {
-      // Authenticated users with a registered profile can read and write variable payouts
+      // Authenticated users with a registered profile (Super Admin and SatKer Loyalis) can read and write variable payouts
       allow read, write: if isSuperAdmin() || hasProfile();
     }
 
@@ -137,7 +137,7 @@ service cloud.firestore {
 
     // 5e. Loyalis Presence (Calculated stratum presence inputs for Loyalis)
     match /LoyalisPresence/{docId} {
-      // Authenticated users with a registered profile can read and write presence calculations
+      // Authenticated users with a registered profile (Super Admin and SatKer Loyalis) can read and write presence calculations
       allow read, write: if isSuperAdmin() || hasProfile();
     }
 

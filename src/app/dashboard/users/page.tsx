@@ -61,7 +61,7 @@ interface ManagedUser {
   uid: string;
   email: string;
   displayName?: string;
-  role: 'super_admin' | 'satker_head' | 'employee_admin' | 'honorer';
+  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer';
   permittedCategories: string[];
   linkedEmployeeId?: string;
   createdAt?: string;
@@ -71,6 +71,14 @@ interface CleaningEmployee {
   id: string;
   name: string;
   category: string;
+}
+
+interface DropdownEmployee {
+  id: string;
+  name: string;
+  type: 'Pekarya' | 'Loyalis' | 'Lainnya';
+  detail?: string;
+  email?: string;
 }
 
 export default function UserManagementPage() {
@@ -90,6 +98,13 @@ export default function UserManagementPage() {
   const [dynamicCategories, setDynamicCategories] = useState<string[]>(SUPPORTED_CATEGORIES);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Combined active employees for selection
+  const [allEmployees, setAllEmployees] = useState<DropdownEmployee[]>([]);
+  
+  // Suggestion visibility states
+  const [showNewNameSuggestions, setShowNewNameSuggestions] = useState(false);
+  const [showEditNameSuggestions, setShowEditNameSuggestions] = useState(false);
+
   // Notifications
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -102,7 +117,7 @@ export default function UserManagementPage() {
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
-  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'employee_admin' | 'honorer'>('satker_head');
+  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer'>('satker_head');
   const [newPermitted, setNewPermitted] = useState<string[]>([]);
   const [newLinkedEmployeeId, setNewLinkedEmployeeId] = useState('');
 
@@ -112,7 +127,7 @@ export default function UserManagementPage() {
   // Edit User modal state
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [editDisplayName, setEditDisplayName] = useState('');
-  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'employee_admin' | 'honorer'>('satker_head');
+  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer'>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
   const [editLinkedEmployeeId, setEditLinkedEmployeeId] = useState('');
 
@@ -125,8 +140,12 @@ export default function UserManagementPage() {
     setLoadingUsers(true);
     setErrorMsg(null);
     try {
-      // 1. Fetch available categories from Employees
-      const empSnapshot = await getDocs(collection(db, 'Employees_BlueCollar'));
+      // 1. Fetch available categories from Employees and build dropdown choices
+      const [empSnapshot, loyalisSnapshot] = await Promise.all([
+        getDocs(collection(db, 'Employees_BlueCollar')),
+        getDocs(collection(db, 'Employees_Loyalis'))
+      ]);
+
       const cats = new Set<string>(SUPPORTED_CATEGORIES);
       empSnapshot.docs.forEach(docSnap => {
         const cat = docSnap.data()?.employment?.jobCategory;
@@ -148,12 +167,43 @@ export default function UserManagementPage() {
         .sort((a, b) => a.name.localeCompare(b.name));
       setCleaningEmployees(cleaningList);
 
+      // Build consolidated list of employees for dropdown selection
+      const dropdownEmps: DropdownEmployee[] = [];
+      empSnapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data?.employment?.status === 'active') {
+          dropdownEmps.push({
+            id: docSnap.id,
+            name: data.name || '',
+            type: 'Pekarya',
+            detail: data.employment?.jobCategory || '',
+            email: data.email || '',
+          });
+        }
+      });
+
+      loyalisSnapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data?.personal_info?.status === 'AKTIF') {
+          dropdownEmps.push({
+            id: docSnap.id,
+            name: data.personal_info?.name || '',
+            type: 'Loyalis',
+            detail: data.employment_profile?.department_unit || '',
+            email: data.personal_info?.email || '',
+          });
+        }
+      });
+      dropdownEmps.sort((a, b) => a.name.localeCompare(b.name));
+      setAllEmployees(dropdownEmps);
+
       // 2. Fetch all user profiles from our API
       const idToken = await user.getIdToken();
-      const res = await fetch('/api/admin/users', {
+      const res = await fetch(`/api/admin/users?t=${Date.now()}`, {
         headers: {
           'Authorization': `Bearer ${idToken}`,
         },
+        cache: 'no-store',
       });
 
       if (!res.ok) {
@@ -266,6 +316,7 @@ export default function UserManagementPage() {
       setShowAddForm(false);
 
       // Refresh list
+      router.refresh();
       await fetchData();
     } catch (err: any) {
       setErrorMsg(err.message || 'Terjadi kesalahan saat memproses data.');
@@ -313,8 +364,28 @@ export default function UserManagementPage() {
         throw new Error(errData.error || 'Gagal memperbarui pengguna.');
       }
 
+      const updatedCategories = editRole === 'honorer'
+        ? (editLinkedEmployeeId ? [cleaningEmployees.find(e => e.id === editLinkedEmployeeId)?.category || ''] : [])
+        : editPermitted;
+
+      // Update local state directly so UI updates instantly
+      setUsers(prevUsers =>
+        prevUsers.map(u =>
+          u.uid === editingUser.uid
+            ? {
+                ...u,
+                displayName: editDisplayName,
+                role: editRole,
+                permittedCategories: updatedCategories,
+                linkedEmployeeId: editRole === 'honorer' ? editLinkedEmployeeId : undefined,
+              }
+            : u
+        )
+      );
+
       setSuccessMsg(`Profil ${editingUser.email} berhasil diperbarui.`);
       setEditingUser(null);
+      router.refresh();
       await fetchData();
     } catch (err: any) {
       setErrorMsg(err.message || 'Terjadi kesalahan saat menyimpan perubahan.');
@@ -352,6 +423,7 @@ export default function UserManagementPage() {
 
       setSuccessMsg(`Akun ${deletingUser.email} berhasil dihapus dari sistem.`);
       setDeletingUser(null);
+      router.refresh();
       await fetchData();
     } catch (err: any) {
       setErrorMsg(err.message || 'Terjadi kesalahan saat menghapus pengguna.');
@@ -456,16 +528,48 @@ export default function UserManagementPage() {
                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><User className="w-3.5 h-3.5" /> Data Kredensial</h3>
                     <div className="space-y-3">
                       <div>
-                        <Label htmlFor="displayName" className="text-xs font-semibold text-slate-500">Nama Lengkap</Label>
-                        <div className="relative mt-1">
-                          <User className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                        <Label htmlFor="displayName" className="text-xs font-semibold text-slate-500 block mb-1.5">Nama Lengkap</Label>
+                        <div className="relative">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 z-10" />
                           <Input
                             id="displayName"
-                            placeholder="Contoh: Achmad Satpam"
+                            placeholder="Ketik nama pegawai..."
                             value={newDisplayName}
-                            onChange={(e) => setNewDisplayName(e.target.value)}
-                            className="pl-9 rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20"
+                            onChange={(e) => {
+                              setNewDisplayName(e.target.value);
+                              setShowNewNameSuggestions(true);
+                            }}
+                            onFocus={() => setShowNewNameSuggestions(true)}
+                            onBlur={() => {
+                              setTimeout(() => setShowNewNameSuggestions(false), 200);
+                            }}
+                            className="pl-9 rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20 h-[42px]"
+                            autoComplete="off"
                           />
+                          {showNewNameSuggestions && (
+                            <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
+                              {allEmployees
+                                .filter(emp => emp.name.toLowerCase().includes(newDisplayName.toLowerCase()))
+                                .map(emp => (
+                                  <div
+                                    key={emp.id}
+                                    onMouseDown={() => {
+                                      setNewDisplayName(emp.name);
+                                      if (emp.email) {
+                                        setNewEmail(emp.email);
+                                      }
+                                      setShowNewNameSuggestions(false);
+                                    }}
+                                    className="p-3 text-xs font-bold text-slate-700 hover:bg-indigo-50/50 cursor-pointer transition-colors"
+                                  >
+                                    {emp.name} ({emp.type === 'Pekarya' ? `Pekarya - ${emp.detail}` : `Loyalis - ${emp.detail}`})
+                                  </div>
+                                ))}
+                              {allEmployees.filter(emp => emp.name.toLowerCase().includes(newDisplayName.toLowerCase())).length === 0 && (
+                                <div className="p-3 text-xs italic text-slate-400 bg-slate-50">Nama tidak ditemukan. Tetap gunakan "{newDisplayName}"</div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div>
@@ -532,6 +636,22 @@ export default function UserManagementPage() {
 
                         <div
                           onClick={() => {
+                            setNewRole('satker_head_loyalis');
+                            setNewPermitted([]);
+                          }}
+                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${newRole === 'satker_head_loyalis' ? 'border-violet-500 bg-violet-50/20 ring-2 ring-violet-500/10' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
+                        >
+                          <div className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 ${newRole === 'satker_head_loyalis' ? 'border-violet-600' : 'border-slate-300'}`}>
+                            {newRole === 'satker_head_loyalis' && <div className="w-2.5 h-2.5 rounded-full bg-violet-600" />}
+                          </div>
+                          <div>
+                            <span className="text-sm font-bold text-slate-900 block">Kepala Satuan Kerja Loyalis (SatKer Loyalis)</span>
+                            <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Dapat login dan mengelola data vakasi/kehadiran Loyalis pada halaman Vakasi Tambahan. Dilarang membuka menu dashboard lain.</span>
+                          </div>
+                        </div>
+
+                        <div
+                          onClick={() => {
                             setNewRole('employee_admin');
                             setNewPermitted([]); // employee admin manages all, no unit restrictions needed
                           }}
@@ -593,6 +713,10 @@ export default function UserManagementPage() {
                       ) : newRole === 'employee_admin' ? (
                         <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 text-emerald-800 text-xs leading-relaxed font-medium">
                           Employee Administrator secara otomatis memiliki akses penuh ke <strong>seluruh</strong> data pegawai (Master Data Pegawai). Checkbox dinonaktifkan.
+                        </div>
+                      ) : newRole === 'satker_head_loyalis' ? (
+                        <div className="p-4 rounded-2xl bg-violet-50/50 border border-violet-100 text-violet-800 text-xs leading-relaxed font-medium">
+                          Kepala Satuan Kerja Loyalis secara otomatis memiliki wewenang untuk <strong>seluruh</strong> data Loyalis. Checkbox dinonaktifkan.
                         </div>
                       ) : newRole === 'honorer' ? (
                         <div className="space-y-3">
@@ -746,6 +870,10 @@ export default function UserManagementPage() {
                               <Badge variant="secondary" className="bg-teal-50 text-teal-700 hover:bg-teal-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Honorer
                               </Badge>
+                            ) : u.role === 'satker_head_loyalis' ? (
+                              <Badge variant="secondary" className="bg-violet-50 text-violet-700 hover:bg-violet-100 font-bold px-2.5 py-0.5 rounded-full border-none">
+                                Kepala SatKer Loyalis
+                              </Badge>
                             ) : (
                               <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Kepala SatKer
@@ -757,6 +885,8 @@ export default function UserManagementPage() {
                               <span className="text-xs text-amber-600 font-bold italic">Semua Unit (Akses Penuh)</span>
                             ) : u.role === 'employee_admin' ? (
                               <span className="text-xs text-emerald-600 font-bold italic">Pegawai (Akses Penuh)</span>
+                            ) : u.role === 'satker_head_loyalis' ? (
+                              <span className="text-xs text-violet-600 font-bold italic">Loyalis (Akses Penuh)</span>
                             ) : u.role === 'honorer' ? (
                               <span className="text-xs text-teal-600 font-bold">
                                 {u.linkedEmployeeId
@@ -828,25 +958,67 @@ export default function UserManagementPage() {
             <div className="space-y-5 py-4">
               {/* Display Name */}
               <div>
-                <Label htmlFor="editName" className="text-xs font-semibold text-slate-500">Nama Lengkap</Label>
-                <Input
-                  id="editName"
-                  value={editDisplayName}
-                  onChange={(e) => setEditDisplayName(e.target.value)}
-                  className="rounded-xl border-slate-200 mt-1.5 focus:border-indigo-500 focus:ring-indigo-500/20"
-                />
+                <Label htmlFor="editName" className="text-xs font-semibold text-slate-500 block mb-1.5">Nama Lengkap</Label>
+                <div className="relative">
+                  <Input
+                    id="editName"
+                    placeholder="Ketik nama pegawai..."
+                    value={editDisplayName}
+                    onChange={(e) => {
+                      setEditDisplayName(e.target.value);
+                      setShowEditNameSuggestions(true);
+                    }}
+                    onFocus={() => setShowEditNameSuggestions(true)}
+                    onBlur={() => {
+                      setTimeout(() => setShowEditNameSuggestions(false), 200);
+                    }}
+                    className="rounded-xl border-slate-200 mt-0 focus:border-indigo-500 focus:ring-indigo-500/20 h-[42px]"
+                    autoComplete="off"
+                  />
+                  {showEditNameSuggestions && (
+                    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
+                      {allEmployees
+                        .filter(emp => emp.name.toLowerCase().includes(editDisplayName.toLowerCase()))
+                        .map(emp => (
+                          <div
+                            key={emp.id}
+                            onMouseDown={() => {
+                              setEditDisplayName(emp.name);
+                              setShowEditNameSuggestions(false);
+                            }}
+                            className="p-3 text-xs font-bold text-slate-700 hover:bg-indigo-50/50 cursor-pointer transition-colors"
+                          >
+                            {emp.name} ({emp.type === 'Pekarya' ? `Pekarya - ${emp.detail}` : `Loyalis - ${emp.detail}`})
+                          </div>
+                        ))}
+                      {allEmployees.filter(emp => emp.name.toLowerCase().includes(editDisplayName.toLowerCase())).length === 0 && (
+                        <div className="p-3 text-xs italic text-slate-400 bg-slate-50">Nama tidak ditemukan. Tetap gunakan "{editDisplayName}"</div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Role */}
               <div>
                 <Label className="text-xs font-semibold text-slate-500">Tingkat Otoritas</Label>
-                <div className="grid grid-cols-4 gap-2 mt-1.5">
+                <div className="grid grid-cols-3 gap-2 mt-1.5">
                   <button
                     type="button"
                     onClick={() => setEditRole('satker_head')}
                     className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'satker_head' ? 'border-indigo-500 bg-indigo-50/10 text-indigo-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
                   >
                     Kepala SatKer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditRole('satker_head_loyalis');
+                      setEditPermitted([]); // clear categories
+                    }}
+                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'satker_head_loyalis' ? 'border-violet-500 bg-violet-50/10 text-violet-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
+                  >
+                    Kepala SatKer Loyalis
                   </button>
                   <button
                     type="button"
@@ -891,6 +1063,10 @@ export default function UserManagementPage() {
                 ) : editRole === 'employee_admin' ? (
                   <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-800 text-[11px] font-medium leading-relaxed mt-1.5">
                     Employee Administrator memiliki hak akses penuh ke seluruh data pegawai. Pilihan dinonaktifkan.
+                  </div>
+                ) : editRole === 'satker_head_loyalis' ? (
+                  <div className="p-3 rounded-xl bg-violet-50 border border-violet-100 text-violet-800 text-[11px] font-medium leading-relaxed mt-1.5">
+                    Kepala Satuan Kerja Loyalis secara otomatis memiliki hak akses penuh ke seluruh data Loyalis. Pilihan dinonaktifkan.
                   </div>
                 ) : editRole === 'honorer' ? (
                   <div className="space-y-3 mt-1.5">

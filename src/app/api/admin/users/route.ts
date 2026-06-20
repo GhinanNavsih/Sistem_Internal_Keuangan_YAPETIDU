@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import admin from '@/lib/firebase-admin';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 
+export const dynamic = 'force-dynamic';
+
 // Helper to verify that the requester is an authorized super_admin
 async function verifySuperAdmin(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
@@ -39,7 +41,14 @@ export async function GET(req: NextRequest) {
       ...docSnap.data(),
     }));
 
-    return NextResponse.json({ users });
+    return NextResponse.json(
+      { users },
+      {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0, must-revalidate',
+        },
+      }
+    );
   } catch (error: any) {
     console.error('Error fetching users:', error);
     if (error.message === 'Unauthorized') {

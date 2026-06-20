@@ -928,7 +928,7 @@ export default function PayrollValidationDashboard() {
         const processDocs = (docs: any[]) => {
           docs.forEach(d => {
             const data = d.data();
-            if (data.period === periodToken) {
+            if (data.period === periodToken && (!data.status || data.status === 'approved')) {
               const eventNameVal = data.eventName || '';
               const workers = data.eventWorkers || {};
               Object.entries(workers).forEach(([empId, w]: [string, any]) => {

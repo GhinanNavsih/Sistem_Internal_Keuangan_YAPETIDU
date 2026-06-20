@@ -26,13 +26,14 @@ import {
   ArrowLeft, Upload, ScanLine, Loader2, CheckCircle2,
   FileText, AlertCircle, ImageIcon, Trash2, Eye, RotateCw, Sparkles, X,
   Crop, Building2, Code2, Database, ShieldCheck, Hash, Banknote, LogOut,
-  FileDown, Plus, Calendar, ClipboardCheck, FileSpreadsheet,
+  FileDown, Plus, Calendar, ClipboardCheck, FileSpreadsheet, Send, Clock, XCircle, RotateCcw, Save,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  collection, getDocs, doc, setDoc, getDoc, serverTimestamp, query, where, deleteDoc
+  collection, getDocs, doc, setDoc, getDoc, serverTimestamp, query, where, deleteDoc, onSnapshot
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import * as XLSX from 'xlsx';
 import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import {
@@ -100,10 +101,21 @@ export default function UraianPage() {
   const [activeTab, setActiveTab] = useState<'presensi' | 'vakasi_loyalis' | 'kegiatan_spj'>('vakasi_loyalis');
 
   useEffect(() => {
-    if (profile && profile.role !== 'super_admin' && activeTab === 'vakasi_loyalis') {
-      setActiveTab('presensi');
+    if (profile) {
+      if (profile.role === 'satker_head_loyalis' && activeTab !== 'vakasi_loyalis') {
+        setActiveTab('vakasi_loyalis');
+      } else if (profile.role !== 'super_admin' && profile.role !== 'satker_head_loyalis' && activeTab === 'vakasi_loyalis') {
+        setActiveTab('presensi');
+      }
     }
   }, [profile, activeTab]);
+
+  // Force isEndOfMonth to false for SatKer Loyalis
+  useEffect(() => {
+    if (profile?.role === 'satker_head_loyalis') {
+      setIsEndOfMonth(false);
+    }
+  }, [profile]);
 
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
@@ -168,6 +180,49 @@ export default function UraianPage() {
     isInvalid?: boolean;
   }[]>([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
   const [mobileSpjView, setMobileSpjView] = useState<'list' | 'form'>('list');
+
+  // ─── Approval Workflow States ──────────────────────────────────────────────
+  // File upload for SatKer Loyalis scanned report
+  const [reportFile, setReportFile] = useState<File | null>(null);
+  const [reportFileUrl, setReportFileUrl] = useState<string | null>(null);
+  const [reportFileName, setReportFileName] = useState<string | null>(null);
+  const [uploadingReport, setUploadingReport] = useState(false);
+
+  // Review dialog for Super Admin
+  const [showReviewDialog, setShowReviewDialog] = useState(false);
+  const [reviewAction, setReviewAction] = useState<'approved' | 'revision_needed' | 'declined'>('approved');
+  const [reviewNote, setReviewNote] = useState('');
+  const [reviewingEventId, setReviewingEventId] = useState<string | null>(null);
+
+  // Lightbox for file preview
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // Current event status (loaded from Firestore)
+  const [currentEventStatus, setCurrentEventStatus] = useState<string | null>(null);
+  const [currentEventReviewNote, setCurrentEventReviewNote] = useState<string | null>(null);
+
+  // Status Badge Helper for UI cards
+  const getStatusBadge = (status?: string) => {
+    const currentStatus = status || 'approved'; // default legacy events to approved
+    switch (currentStatus) {
+      case 'draft':
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200">Draft</span>;
+      case 'pending_review':
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200 animate-pulse">Menunggu Review</span>;
+      case 'approved':
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">Disetujui</span>;
+      case 'revision_needed':
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-orange-50 text-orange-700 border-orange-200">Perlu Revisi</span>;
+      case 'declined':
+        return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">Ditolak</span>;
+      default:
+        return null;
+    }
+  };
+
+  // Determine if the current event form should be read-only (SatKer Loyalis when approved or declined)
+  const isReadOnly = profile?.role === 'satker_head_loyalis' &&
+    (currentEventStatus === 'approved' || currentEventStatus === 'declined');
 
   // ─── Custom Column Dialog States ──────────────────────────────────────────
   const [customColumns, setCustomColumns] = useState<RekapColumn[]>([]);
@@ -255,31 +310,51 @@ export default function UraianPage() {
     fetchBlueCollar();
   }, []);
 
-  // ── Fetch Vakasi Tambahan Events ──
+  // ── Live Sync Vakasi Tambahan Events ──
   const fetchEvents = useCallback(async () => {
-    setLoadingEvents(true);
-    try {
-      const periodToken = `${year}-${String(month).padStart(2, '0')}`;
-      const q = query(
-        collection(db, 'VakasiTambahan'),
-        where('period', '==', periodToken)
-      );
-      const snap = await getDocs(q);
-      const list = snap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
-      setExistingEvents(list);
-    } catch (err) {
-      console.error('Error fetching events:', err);
-    } finally {
-      setLoadingEvents(false);
-    }
-  }, [month, year]);
+    // Keep as a dummy callback for backwards compatibility with call sites in save/delete/review handlers
+  }, []);
 
   useEffect(() => {
-    fetchEvents();
-  }, [fetchEvents]);
+    if (!profile) return;
+    setLoadingEvents(true);
+    const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+    const q = query(
+      collection(db, 'VakasiTambahan'),
+      where('period', '==', periodToken)
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
+      let list = snap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      })) as any[];
+
+      // Filter: if user is satker_head_loyalis, only show events created by them
+      if (profile.role === 'satker_head_loyalis') {
+        list = list.filter(evt => evt.submittedBy === profile.uid);
+      }
+
+      // Sort from latest to oldest using updatedAt
+      list.sort((a, b) => {
+        const getMs = (val: any) => {
+          if (!val) return Date.now(); // Fallback for new unsaved objects
+          if (typeof val.toMillis === 'function') return val.toMillis();
+          if (val.seconds) return val.seconds * 1000;
+          return 0;
+        };
+        return getMs(b.updatedAt) - getMs(a.updatedAt);
+      });
+
+      setExistingEvents(list);
+      setLoadingEvents(false);
+    }, (err) => {
+      console.error('Error listening to events:', err);
+      setLoadingEvents(false);
+    });
+
+    return () => unsubscribe();
+  }, [month, year, profile]);
 
   // ── Fetch Existing Loyalis Presence Data ──
   const fetchExistingPresence = useCallback(async () => {
@@ -404,6 +479,165 @@ export default function UraianPage() {
     return clean.slice(0, 10);
   };
 
+  // ── Upload Report File to Firebase Storage ──
+  const uploadReportFile = async (file: File, period: string, eventSeg: string): Promise<{ url: string; name: string }> => {
+    const ext = file.name.split('.').pop() || 'pdf';
+    const path = `vakasi_reports/${period}/${eventSeg}_${Date.now()}.${ext}`;
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(storageRef);
+    return { url, name: file.name };
+  };
+
+  // ── Handle Report File Selection ──
+  const handleReportFileChange = async (file: File) => {
+    const validTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+    if (!validTypes.includes(file.type)) {
+      setMessage({ type: 'error', text: 'Format file tidak valid. Gunakan PDF, JPG, JPEG, atau PNG.' });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setMessage({ type: 'error', text: 'Ukuran file terlalu besar (maks 10MB).' });
+      return;
+    }
+    setReportFile(file);
+    setReportFileName(file.name);
+
+    // Upload immediately
+    setUploadingReport(true);
+    try {
+      const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+      const eventSeg = sanitizeEventId(eventName || 'unnamed');
+      const result = await uploadReportFile(file, periodToken, eventSeg);
+      setReportFileUrl(result.url);
+      setMessage({ type: 'success', text: `File "${result.name}" berhasil diunggah.` });
+    } catch (err) {
+      console.error('Error uploading report file:', err);
+      setMessage({ type: 'error', text: 'Gagal mengunggah file laporan.' });
+      setReportFile(null);
+      setReportFileName(null);
+    } finally {
+      setUploadingReport(false);
+    }
+  };
+
+  // ── Submit for Review (SatKer Loyalis) ──
+  const handleSubmitForReview = async () => {
+    if (isSavingRef.current) return;
+    if (!eventName.trim()) {
+      setMessage({ type: 'error', text: 'Nama Kegiatan harus diisi.' });
+      return;
+    }
+    const activeWorkers = workerRows.filter(w => w.employeeId);
+    if (activeWorkers.length === 0) {
+      setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai.' });
+      return;
+    }
+    if (!reportFileUrl) {
+      setMessage({ type: 'error', text: 'Laporan yang ditandatangani harus diunggah sebelum submit.' });
+      return;
+    }
+    const ids = activeWorkers.map(w => w.employeeId);
+    if (new Set(ids).size !== ids.length) {
+      setMessage({ type: 'error', text: 'Ada duplikasi pegawai dalam kegiatan ini.' });
+      return;
+    }
+
+    isSavingRef.current = true;
+    setSaving(true);
+    try {
+      const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+      const eventSeg = sanitizeEventId(eventName);
+      const documentId = selectedEventId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
+
+      let totalPayout = 0;
+      const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
+
+      activeWorkers.forEach(w => {
+        workersMap[w.employeeId] = {
+          employeeName: w.employeeName,
+          payGiven: w.payGiven,
+        };
+        totalPayout += w.payGiven;
+      });
+
+      const payload = {
+        eventName,
+        period: periodToken,
+        totalPayout,
+        isEndOfMonth: false, // SatKer Loyalis can only create Tengah Bulan
+        departmentUnit: selectedDept || null,
+        eventWorkers: workersMap,
+        updatedAt: serverTimestamp(),
+        // Approval workflow fields
+        status: 'pending_review',
+        submittedBy: profile?.uid || null,
+        submittedByName: profile?.displayName || null,
+        reportFileUrl: reportFileUrl,
+        reportFileName: reportFileName,
+        submittedAt: serverTimestamp(),
+        // Clear any previous review data on re-submit
+        reviewNote: null,
+        reviewedBy: null,
+        reviewedAt: null,
+      };
+
+      await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
+      setMessage({ type: 'success', text: `Kegiatan "${eventName}" berhasil disubmit untuk review.` });
+
+      setSelectedEventId(null);
+      setEventName('');
+      setIsEndOfMonth(false);
+      setSelectedDept('');
+      setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+      setReportFile(null);
+      setReportFileUrl(null);
+      setReportFileName(null);
+      setCurrentEventStatus(null);
+      setCurrentEventReviewNote(null);
+      fetchEvents();
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: 'Gagal mensubmit kegiatan untuk review.' });
+    } finally {
+      isSavingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  // ── Review Event (Super Admin) ──
+  const handleReviewEvent = async (eventId: string, action: 'approved' | 'revision_needed' | 'declined', note: string) => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    setSaving(true);
+    try {
+      const updatePayload: Record<string, any> = {
+        status: action,
+        reviewedBy: profile?.uid || null,
+        reviewedAt: serverTimestamp(),
+        reviewNote: note || null,
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, 'VakasiTambahan', eventId), updatePayload, { merge: true });
+      const actionLabel = action === 'approved' ? 'disetujui' : action === 'revision_needed' ? 'diminta revisi' : 'ditolak';
+      setMessage({ type: 'success', text: `Kegiatan berhasil ${actionLabel}.` });
+
+      setShowReviewDialog(false);
+      setReviewNote('');
+      setReviewingEventId(null);
+      setCurrentEventStatus(action);
+      setCurrentEventReviewNote(note || null);
+      fetchEvents();
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: 'Gagal memproses review.' });
+    } finally {
+      isSavingRef.current = false;
+      setSaving(false);
+    }
+  };
+
   // Submit Handler
   const handleSaveEvent = async () => {
     if (isSavingRef.current) return;
@@ -440,7 +674,8 @@ export default function UraianPage() {
         totalPayout += w.payGiven;
       });
 
-      const payload = {
+      const isSuperAdmin = profile?.role === 'super_admin';
+      const payload: Record<string, any> = {
         eventName,
         period: periodToken,
         totalPayout,
@@ -448,7 +683,16 @@ export default function UraianPage() {
         departmentUnit: !isEndOfMonth ? selectedDept : null,
         eventWorkers: workersMap,
         updatedAt: serverTimestamp(),
+        // Super Admin events are auto-approved; SatKer Loyalis uses handleSubmitForReview for pending_review
+        status: isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'),
+        submittedBy: isSuperAdmin ? null : (profile?.uid || null),
+        submittedByName: isSuperAdmin ? null : (profile?.displayName || null),
       };
+      // Preserve report file info if present
+      if (reportFileUrl) {
+        payload.reportFileUrl = reportFileUrl;
+        payload.reportFileName = reportFileName;
+      }
 
       await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
       setMessage({ type: 'success', text: `Event "${eventName}" berhasil disimpan.` });
@@ -458,6 +702,11 @@ export default function UraianPage() {
       setIsEndOfMonth(false);
       setSelectedDept('');
       setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+      setReportFile(null);
+      setReportFileUrl(null);
+      setReportFileName(null);
+      setCurrentEventStatus(null);
+      setCurrentEventReviewNote(null);
       fetchEvents();
     } catch (err) {
       console.error(err);
@@ -482,6 +731,11 @@ export default function UraianPage() {
       setIsEndOfMonth(false);
       setSelectedDept('');
       setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+      setReportFile(null);
+      setReportFileUrl(null);
+      setReportFileName(null);
+      setCurrentEventStatus(null);
+      setCurrentEventReviewNote(null);
       fetchEvents();
     } catch (err) {
       console.error(err);
@@ -533,7 +787,8 @@ export default function UraianPage() {
         totalPayout += w.payGiven;
       });
 
-      const payload = {
+      const isSuperAdmin = profile?.role === 'super_admin';
+      const payload: Record<string, any> = {
         eventName: currentEventName,
         period: periodToken,
         totalPayout,
@@ -541,7 +796,15 @@ export default function UraianPage() {
         departmentUnit: !currentIsEndOfMonth ? currentDept : null,
         eventWorkers: workersMap,
         updatedAt: serverTimestamp(),
+        // Autosave: Super Admin = approved, SatKer Loyalis = draft
+        status: isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'),
+        submittedBy: isSuperAdmin ? null : (profile?.uid || null),
+        submittedByName: isSuperAdmin ? null : (profile?.displayName || null),
       };
+      if (reportFileUrl) {
+        payload.reportFileUrl = reportFileUrl;
+        payload.reportFileName = reportFileName;
+      }
 
       await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
       if (!activeId) {
@@ -1637,7 +1900,18 @@ export default function UraianPage() {
               </Select>
             )}
 
-            {profile?.role === 'satker_head' && (
+            {profile?.role === 'satker_head_loyalis' && (
+              <Button
+                onClick={() => setCetakKegiatanDialogOpen(true)}
+                variant="outline"
+                className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-indigo-600" />
+                Laporan Kegiatan Loyalis
+              </Button>
+            )}
+
+            {(profile?.role === 'satker_head' || profile?.role === 'satker_head_loyalis') && (
               <Button
                 variant="outline"
                 onClick={logout}
@@ -1988,6 +2262,11 @@ export default function UraianPage() {
                       setIsEndOfMonth(false);
                       setSelectedDept('');
                       setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+                      setReportFile(null);
+                      setReportFileUrl(null);
+                      setReportFileName(null);
+                      setCurrentEventStatus(null);
+                      setCurrentEventReviewNote(null);
                     }}
                     size="sm"
                     className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold flex items-center gap-1.5"
@@ -2064,6 +2343,11 @@ export default function UraianPage() {
                               showDropdown: false,
                             }));
                             setWorkerRows(rows);
+                            setReportFileUrl(evt.reportFileUrl || null);
+                            setReportFileName(evt.reportFileName || null);
+                            setReportFile(null);
+                            setCurrentEventStatus(evt.status || null);
+                            setCurrentEventReviewNote(evt.reviewNote || null);
                           }}
                           className={`p-4 rounded-2xl border transition-all cursor-pointer ${isActive
                             ? 'bg-indigo-50/50 border-indigo-200 shadow-sm animate-in fade-in'
@@ -2083,11 +2367,17 @@ export default function UraianPage() {
                               }`}>
                                 {evt.isEndOfMonth ? 'Akhir Bulan' : 'Tengah Bulan'}
                               </span>
+                              {!evt.isEndOfMonth && getStatusBadge(evt.status)}
                             </div>
                             <span className="text-xs font-bold text-indigo-600">
                               {fmtRp(evt.totalPayout || 0)}
                             </span>
                           </div>
+                          {!evt.isEndOfMonth && ['revision_needed', 'declined'].includes(evt.status) && evt.reviewNote && (
+                            <div className="mt-2 text-[10px] text-rose-600 bg-rose-50/50 border border-rose-100 rounded-lg p-2 font-medium line-clamp-2">
+                              <strong>Catatan:</strong> {evt.reviewNote}
+                            </div>
+                          )}
                           {!evt.isEndOfMonth && evt.departmentUnit && (
                             <div className="mt-2 flex items-center gap-1.5">
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
@@ -2106,18 +2396,26 @@ export default function UraianPage() {
 
             {/* Right side form */}
             <Card className="xl:col-span-8 bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-visible min-h-[500px] flex flex-col p-6 space-y-6 animate-in fade-in duration-500">
-              <div className="flex justify-between items-center border-b border-slate-50 pb-4">
-                <div>
-                  <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                    <Banknote className="w-4 h-4 text-indigo-500" />
-                    {selectedEventId ? 'Ubah Kegiatan' : 'Buat Kegiatan Baru'}
-                  </h3>
-                  <p className="text-slate-400 text-xs mt-0.5">Input detail kegiatan dan daftarkan pegawai loyalis penerima payout.</p>
+               <div className="flex justify-between items-center border-b border-slate-50 pb-4">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                      <Banknote className="w-4 h-4 text-indigo-500" />
+                      {selectedEventId ? 'Ubah Kegiatan' : 'Buat Kegiatan Baru'}
+                    </h3>
+                    <p className="text-slate-400 text-xs mt-0.5">Input detail kegiatan dan daftarkan pegawai loyalis penerima payout.</p>
+                  </div>
+                  {selectedEventId && (
+                    <div className="self-start mt-0.5">
+                      {getStatusBadge(currentEventStatus || undefined)}
+                    </div>
+                  )}
                 </div>
-                {selectedEventId && (
+                {selectedEventId && (profile?.role === 'super_admin' || !currentEventStatus || ['draft', 'pending_review', 'revision_needed'].includes(currentEventStatus)) && (
                   <Button
                     variant="ghost"
                     onClick={() => handleDeleteEvent(selectedEventId)}
+                    disabled={saving}
                     className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
@@ -2126,6 +2424,26 @@ export default function UraianPage() {
                 )}
               </div>
 
+              {/* Revision note banner */}
+              {selectedEventId && currentEventStatus === 'revision_needed' && currentEventReviewNote && (
+                <div className="p-4 bg-orange-50 border border-orange-100 rounded-2xl flex gap-3 text-orange-800 text-xs animate-in slide-in-from-top-1 duration-200">
+                  <AlertCircle className="w-5 h-5 text-orange-500 shrink-0" />
+                  <div>
+                    <p className="font-bold">Revisi Diperlukan dari Super Admin</p>
+                    <p className="mt-1 font-medium text-orange-700">{currentEventReviewNote}</p>
+                  </div>
+                </div>
+              )}
+              {selectedEventId && currentEventStatus === 'declined' && currentEventReviewNote && (
+                <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex gap-3 text-rose-800 text-xs animate-in slide-in-from-top-1 duration-200">
+                  <XCircle className="w-5 h-5 text-rose-500 shrink-0" />
+                  <div>
+                    <p className="font-bold">Kegiatan ini Ditolak</p>
+                    <p className="mt-1 font-medium text-rose-700">{currentEventReviewNote}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Event Name Input */}
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nama Kegiatan</label>
@@ -2133,6 +2451,7 @@ export default function UraianPage() {
                   type="text"
                   placeholder="Contoh: Vakasi Kepanitiaan Kerja Praktek 2025/26"
                   value={eventName}
+                  disabled={isReadOnly}
                   onChange={(e) => setEventName(e.target.value)}
                   onBlur={() => {
                     handleAutosave(workerRows, eventName, selectedEventId);
@@ -2142,95 +2461,203 @@ export default function UraianPage() {
               </div>
 
               {/* Event Period Type Segmented Toggle */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Tipe Kegiatan</label>
-                <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100/80">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEndOfMonth(false);
-                      handleAutosave(workerRows, eventName, selectedEventId, false);
-                    }}
-                    className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-200 ${
-                      !isEndOfMonth
-                        ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    Tengah Bulan (Vakasi Tambahan)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEndOfMonth(true);
-                      handleAutosave(workerRows, eventName, selectedEventId, true);
-                    }}
-                    className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-200 ${
-                      isEndOfMonth
-                        ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    Akhir Bulan (Kolom Tersendiri)
-                  </button>
+              {profile?.role !== 'satker_head_loyalis' && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Tipe Kegiatan</label>
+                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100/80">
+                    <button
+                      type="button"
+                      disabled={isReadOnly}
+                      onClick={() => {
+                        setIsEndOfMonth(false);
+                        handleAutosave(workerRows, eventName, selectedEventId, false);
+                      }}
+                      className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-200 ${
+                        !isEndOfMonth
+                          ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Tengah Bulan (Vakasi Tambahan)
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isReadOnly}
+                      onClick={() => {
+                        setIsEndOfMonth(true);
+                        handleAutosave(workerRows, eventName, selectedEventId, true);
+                      }}
+                      className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-200 ${
+                        isEndOfMonth
+                          ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Akhir Bulan (Kolom Tersendiri)
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Department Selector (only visible when Tengah Bulan is active) */}
+              {/* Department Selector & File Upload (only visible when Tengah Bulan is active) */}
               {!isEndOfMonth && (
-                <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                    <Building2 className="w-3.5 h-3.5 text-indigo-400" />
-                    Unit Kerja (Department)
-                  </label>
-                  <Select
-                    value={selectedDept}
-                    onValueChange={(val) => {
-                      setSelectedDept(val || '');
-                      handleAutosave(workerRows, eventName, selectedEventId, false, val || undefined);
-                    }}
-                  >
-                    <SelectTrigger className={`rounded-xl text-sm font-bold h-11 transition-all duration-200 border focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 ${
-                      selectedDept
-                        ? 'bg-indigo-50/60 border-indigo-200 text-indigo-700'
-                        : 'bg-white border-slate-200 text-slate-400'
-                    }`}>
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Building2 className={`w-4 h-4 shrink-0 ${selectedDept ? 'text-indigo-500' : 'text-slate-300'}`} />
-                        <SelectValue placeholder="Pilih Unit Kerja..." />
-                      </div>
-                    </SelectTrigger>
-                    <SelectContent alignItemWithTrigger={false} sideOffset={4} className="rounded-2xl border border-slate-100 shadow-2xl bg-white p-1.5 max-h-64 overflow-y-auto w-max min-w-[var(--radix-select-trigger-width)]">
-                      {/* Clear / All option */}
-                      <SelectItem
-                        value=""
-                        className="rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 focus:bg-slate-50 focus:text-slate-700 flex items-center gap-2 mb-1 border border-dashed border-slate-200 data-[highlighted]:bg-slate-50 data-[highlighted]:text-slate-700"
-                      >
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 text-[9px] font-black">✕</span>
-                          Semua Unit Kerja
-                        </span>
-                      </SelectItem>
-                      <div className="h-px bg-slate-100 my-1" />
-                      {departments.map(dept => (
+                <div className="space-y-6">
+                  {/* Department Selector */}
+                  <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-indigo-400" />
+                      Unit Kerja (Department)
+                    </label>
+                    <Select
+                      value={selectedDept}
+                      disabled={isReadOnly}
+                      onValueChange={(val) => {
+                        setSelectedDept(val || '');
+                        handleAutosave(workerRows, eventName, selectedEventId, false, val || undefined);
+                      }}
+                    >
+                      <SelectTrigger className={`rounded-xl text-sm font-bold h-11 transition-all duration-200 border focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 ${
+                        selectedDept
+                          ? 'bg-indigo-50/60 border-indigo-200 text-indigo-700'
+                          : 'bg-white border-slate-200 text-slate-400'
+                      }`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Building2 className={`w-4 h-4 shrink-0 ${selectedDept ? 'text-indigo-500' : 'text-slate-300'}`} />
+                          <SelectValue placeholder="Pilih Unit Kerja..." />
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent alignItemWithTrigger={false} sideOffset={4} className="rounded-2xl border border-slate-100 shadow-2xl bg-white p-1.5 max-h-64 overflow-y-auto w-max min-w-[var(--radix-select-trigger-width)]">
+                        {/* Clear / All option */}
                         <SelectItem
-                          key={dept}
-                          value={dept}
-                          className="rounded-xl text-xs font-bold uppercase text-slate-700 data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700 data-[state=checked]:bg-indigo-50 data-[state=checked]:text-indigo-700 focus:bg-indigo-50 focus:text-indigo-700 cursor-pointer"
+                          value=""
+                          className="rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 focus:bg-slate-50 focus:text-slate-700 flex items-center gap-2 mb-1 border border-dashed border-slate-200 data-[highlighted]:bg-slate-50 data-[highlighted]:text-slate-700"
                         >
-                          <span className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-300 shrink-0" />
-                            {dept}
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 text-[9px] font-black">✕</span>
+                            Semua Unit Kerja
                           </span>
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedDept && (
-                    <p className="text-[10px] text-indigo-500 font-bold flex items-center gap-1 animate-in fade-in duration-200">
-                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 inline-block" />
-                      Filter aktif: hanya menampilkan pegawai dari unit <span className="underline underline-offset-2">{selectedDept}</span>
-                    </p>
+                        <div className="h-px bg-slate-100 my-1" />
+                        {departments.map(dept => (
+                          <SelectItem
+                            key={dept}
+                            value={dept}
+                            className="rounded-xl text-xs font-bold uppercase text-slate-700 data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700 data-[state=checked]:bg-indigo-50 data-[state=checked]:text-indigo-700 focus:bg-indigo-50 focus:text-indigo-700 cursor-pointer"
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-300 shrink-0" />
+                              {dept}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedDept && (
+                      <p className="text-[10px] text-indigo-500 font-bold flex items-center gap-1 animate-in fade-in duration-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 inline-block" />
+                        Unit Kerja terpilih: <span className="underline underline-offset-2">{selectedDept}</span> (Daftar pegawai tidak dibatasi)
+                      </p>
+                    )}
+                  </div>
+
+                  {/* File Upload Area for SatKer Loyalis scanned report */}
+                  {(profile?.role === 'satker_head_loyalis' || reportFileUrl) && (
+                    <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                        Laporan Resmi yang Ditandatangani (Scanned Report)
+                      </label>
+                      
+                      {reportFileUrl ? (
+                        /* Show Preview/FileInfo */
+                        <div className="flex items-center justify-between p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-2xl">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                              {reportFileName?.toLowerCase().endsWith('.pdf') ? (
+                                <FileText className="w-5 h-5" />
+                              ) : (
+                                <ImageIcon className="w-5 h-5" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-700 truncate max-w-[200px] md:max-w-xs">
+                                {reportFileName || 'Laporan_Vakasi.pdf'}
+                              </p>
+                              <p className="text-[10px] text-indigo-500 font-medium">Berhasil diunggah</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            {/* Preview button */}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (reportFileUrl.toLowerCase().includes('.pdf') || reportFileName?.toLowerCase().endsWith('.pdf')) {
+                                  window.open(reportFileUrl, '_blank');
+                                } else {
+                                  setLightboxUrl(reportFileUrl);
+                                }
+                              }}
+                              className="h-8 text-xs font-bold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-100/50 rounded-lg px-2.5 flex items-center gap-1"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              Buka
+                            </Button>
+                            
+                            {/* Remove file button */}
+                            {!isReadOnly && profile?.role === 'satker_head_loyalis' && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  setReportFile(null);
+                                  setReportFileUrl(null);
+                                  setReportFileName(null);
+                                }}
+                                className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg"
+                              >
+                                <X className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        /* Show Upload Drag-and-Drop Area */
+                        profile?.role === 'satker_head_loyalis' && (
+                          <div className="border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-2xl p-6 text-center transition-all bg-slate-50/50 cursor-pointer relative group">
+                            <input
+                              type="file"
+                              accept=".pdf,image/jpeg,image/jpg,image/png"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleReportFileChange(file);
+                              }}
+                              disabled={uploadingReport}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer animate-none"
+                            />
+                            <div className="flex flex-col items-center justify-center space-y-2">
+                              {uploadingReport ? (
+                                <>
+                                  <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+                                  <p className="text-xs font-bold text-slate-600">Mengunggah file...</p>
+                                </>
+                              ) : (
+                                <>
+                                  <Upload className="w-8 h-8 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                                  <p className="text-xs font-bold text-slate-600">
+                                    <span className="text-indigo-600 underline">Pilih file</span> atau seret ke sini
+                                  </p>
+                                  <p className="text-[10px] text-slate-400 font-medium">Format: PDF, JPG, JPEG, PNG (Maks 10MB)</p>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -2262,13 +2689,13 @@ export default function UraianPage() {
                         <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">NO</th>
                         <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase">NAMA PEGAWAI</th>
                         <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-[220px]">JUMLAH (RP)</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-16 text-center">AKSI</th>
+                        {!isReadOnly && <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-16 text-center">AKSI</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {workerRows.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="text-center py-12 text-slate-400 text-xs font-semibold">
+                          <td colSpan={isReadOnly ? 3 : 4} className="text-center py-12 text-slate-400 text-xs font-semibold">
                             Belum ada pegawai ditambahkan. Klik tombol di bawah untuk menambahkan.
                           </td>
                         </tr>
@@ -2318,6 +2745,7 @@ export default function UraianPage() {
                                     type="text"
                                     placeholder="Cari nama pegawai..."
                                     value={row.searchText || ''}
+                                    disabled={isReadOnly}
                                     onChange={(e) => handleEmployeeSearch(rowIdx, e.target.value)}
                                     onFocus={() => {
                                       setWorkerRows(prev => {
@@ -2345,12 +2773,7 @@ export default function UraianPage() {
                                         .filter(Boolean);
                                       const filtered = loyalisEmployees
                                         .filter(emp => !otherSelectedIds.includes(emp.id))
-                                        .filter(emp => {
-                                          if (!isEndOfMonth && selectedDept) {
-                                            return emp.department === selectedDept;
-                                          }
-                                          return true;
-                                        })
+                                        
                                         .filter(emp =>
                                           emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
                                         );
@@ -2381,12 +2804,6 @@ export default function UraianPage() {
                                           .filter(Boolean);
                                         const filtered = loyalisEmployees
                                           .filter(emp => !otherSelectedIds.includes(emp.id))
-                                          .filter(emp => {
-                                            if (!isEndOfMonth && selectedDept) {
-                                              return emp.department === selectedDept;
-                                            }
-                                            return true;
-                                          })
                                           .filter(emp =>
                                             emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
                                           );
@@ -2427,6 +2844,7 @@ export default function UraianPage() {
                                   pattern="[0-9]*"
                                   placeholder="0"
                                   value={row.payGiven > 0 ? fmtRp(row.payGiven) : ''}
+                                  disabled={isReadOnly}
                                   onChange={(e) => {
                                     const inputEl = e.target;
                                     const rawVal = inputEl.value.replace(/\D/g, '');
@@ -2478,23 +2896,25 @@ export default function UraianPage() {
                                   className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full text-right"
                                 />
                               </td>
-                              <td className="px-4 py-4 text-center">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => {
-                                    setWorkerRows(prev => {
-                                      const copy = prev.filter((_, i) => i !== rowIdx);
-                                      handleAutosave(copy, eventName, selectedEventId);
-                                      return copy;
-                                    });
-                                  }}
-                                  className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl h-8 w-8"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </Button>
-                              </td>
+                              {!isReadOnly && (
+                                <td className="px-4 py-4 text-center">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                      setWorkerRows(prev => {
+                                        const copy = prev.filter((_, i) => i !== rowIdx);
+                                        handleAutosave(copy, eventName, selectedEventId);
+                                        return copy;
+                                      });
+                                    }}
+                                    className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl h-8 w-8"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </td>
+                              )}
                             </tr>
                           );
                         })
@@ -2504,49 +2924,135 @@ export default function UraianPage() {
                 </div>
 
                 {/* Add Employee button below the table */}
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    onClick={handleAddRow}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold px-4 h-9.5 shadow-md flex items-center gap-1.5 transition-all active:scale-95"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Tambah Pegawai
-                  </Button>
-                </div>
+                {!isReadOnly && (
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      onClick={handleAddRow}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold px-4 h-9.5 shadow-md flex items-center gap-1.5 transition-all active:scale-95"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Tambah Pegawai
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* Form submit footer actions */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-50 shrink-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setSelectedEventId(null);
-                    setEventName('');
-                    setIsEndOfMonth(false);
-                    setSelectedDept('');
-                    setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
-                  }}
-                  className="rounded-xl border-slate-200 text-slate-600"
-                >
-                  Batal
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleSaveEvent}
-                  disabled={saving || !eventName.trim()}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 flex items-center gap-2"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                  Simpan Kegiatan
-                </Button>
+              <div className="flex justify-between items-center pt-4 border-t border-slate-50 shrink-0">
+                {/* Left side: Review actions for Super Admin on pending events */}
+                <div>
+                  {profile?.role === 'super_admin' && selectedEventId && currentEventStatus === 'pending_review' && (
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        onClick={() => handleReviewEvent(selectedEventId, 'approved', '')}
+                        disabled={saving}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs px-4 h-10 flex items-center gap-1.5 shadow-sm transition-all"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Setujui
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          setReviewingEventId(selectedEventId);
+                          setReviewAction('revision_needed');
+                          setReviewNote('');
+                          setShowReviewDialog(true);
+                        }}
+                        disabled={saving}
+                        className="bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl text-xs px-4 h-10 flex items-center gap-1.5 shadow-sm transition-all"
+                      >
+                        <AlertCircle className="w-4 h-4" />
+                        Minta Revisi
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          setReviewingEventId(selectedEventId);
+                          setReviewAction('declined');
+                          setReviewNote('');
+                          setShowReviewDialog(true);
+                        }}
+                        disabled={saving}
+                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs px-4 h-10 flex items-center gap-1.5 shadow-sm transition-all"
+                      >
+                        <XCircle className="w-4 h-4" />
+                        Tolak
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right side: Save / Submit / Batal buttons */}
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedEventId(null);
+                      setEventName('');
+                      setIsEndOfMonth(false);
+                      setSelectedDept('');
+                      setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+                      setReportFile(null);
+                      setReportFileUrl(null);
+                      setReportFileName(null);
+                      setCurrentEventStatus(null);
+                      setCurrentEventReviewNote(null);
+                    }}
+                    className="rounded-xl border-slate-200 text-slate-600 text-xs h-10 font-bold px-4"
+                  >
+                    {isReadOnly ? 'Kembali' : 'Batal'}
+                  </Button>
+
+                  {!isReadOnly && (
+                    <>
+                      {/* For SatKer Loyalis, show "Simpan Draft" and "Submit untuk Review" */}
+                      {profile?.role === 'satker_head_loyalis' ? (
+                        <>
+                          <Button
+                            type="button"
+                            onClick={handleSaveEvent}
+                            disabled={saving || !eventName.trim()}
+                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs px-4 h-10 transition-all border border-slate-200/60"
+                          >
+                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
+                            Simpan Draft
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={handleSubmitForReview}
+                            disabled={saving || !eventName.trim() || !reportFileUrl}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs px-5 h-10 shadow-md flex items-center gap-1.5 transition-all active:scale-95"
+                          >
+                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                            {currentEventStatus === 'revision_needed' ? 'Re-submit untuk Review' : 'Submit untuk Review'}
+                          </Button>
+                        </>
+                      ) : (
+                        /* For Super Admin (or others), show standard "Simpan Kegiatan" which auto-approves */
+                        <Button
+                          type="button"
+                          onClick={handleSaveEvent}
+                          disabled={saving || !eventName.trim()}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs px-6 h-10 shadow-md flex items-center gap-1.5 transition-all"
+                        >
+                          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                          Simpan Kegiatan
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </Card>
           </div>
 
           {/* Loyalis Presence Calculator Section */}
-          <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
+          {profile?.role !== 'satker_head_loyalis' && (
+            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
             <div className="flex justify-between items-center border-b border-slate-50 pb-4">
               <div>
                 <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
@@ -2737,6 +3243,7 @@ export default function UraianPage() {
               </div>
             )}
           </Card>
+          )}
         </div>
       ) : (
           /* Tab 3: Kegiatan SPJ UI */
@@ -3446,6 +3953,100 @@ export default function UraianPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Review Dialog (Super Admin reason entry) ── */}
+      <Dialog open={showReviewDialog} onOpenChange={setShowReviewDialog}>
+        <DialogContent className="sm:max-w-md max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl animate-in fade-in duration-300">
+          <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-orange-50/80 to-rose-50/60 border-b border-slate-100 shrink-0">
+            <DialogTitle className="text-slate-800 flex items-center gap-3 font-bold text-lg">
+              {reviewAction === 'revision_needed' ? (
+                <>
+                  <AlertCircle className="w-5 h-5 text-orange-500" />
+                  Minta Revisi Kegiatan
+                </>
+              ) : (
+                <>
+                  <XCircle className="w-5 h-5 text-rose-500" />
+                  Tolak Kegiatan
+                </>
+              )}
+            </DialogTitle>
+            <p className="text-slate-500 text-xs mt-1">
+              Berikan alasan mengapa kegiatan ini memerlukan revisi atau ditolak. Catatan ini akan ditampilkan kepada Kepala SatKer.
+            </p>
+          </DialogHeader>
+
+          <div className="p-6 space-y-4 bg-white">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Alasan/Catatan</label>
+              <textarea
+                placeholder="Contoh: Lampiran berkas kurang jelas, mohon upload ulang..."
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 p-3 font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-28 resize-none focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5 shrink-0 rounded-b-3xl">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowReviewDialog(false);
+                setReviewNote('');
+              }}
+              className="rounded-xl text-slate-500 hover:bg-slate-100"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={() => {
+                if (reviewingEventId) {
+                  handleReviewEvent(reviewingEventId, reviewAction, reviewNote);
+                }
+              }}
+              disabled={saving || !reviewNote.trim()}
+              className={`rounded-xl px-6 text-white font-bold shadow-lg transition-all flex items-center gap-2 cursor-pointer ${
+                reviewAction === 'revision_needed'
+                  ? 'bg-orange-500 shadow-orange-100 hover:bg-orange-600'
+                  : 'bg-rose-600 shadow-rose-100 hover:bg-rose-700'
+              }`}
+            >
+              {saving ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                reviewAction === 'revision_needed' ? <AlertCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />
+              )}
+              Konfirmasi
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Image Lightbox Overlay ── */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-300"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <div className="relative max-w-4xl w-full max-h-[85vh] flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setLightboxUrl(null)}
+              className="absolute -top-12 right-0 text-white hover:bg-white/20 rounded-full h-10 w-10"
+            >
+              <X className="w-6 h-6" />
+            </Button>
+            <img
+              src={lightboxUrl}
+              alt="File Laporan Scan"
+              className="max-w-full max-h-[80vh] rounded-2xl object-contain shadow-2xl border border-white/10"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
