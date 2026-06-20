@@ -42,6 +42,8 @@ export interface SlipState {
   deductions: PaySlipField[];
   generatedAt?: string;
   confirmedAt?: string;
+  emailSent?: boolean;
+  emailSentAt?: string;
 }
 
 interface PaySlipDialogProps {

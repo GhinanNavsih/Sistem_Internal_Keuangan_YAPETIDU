@@ -46,11 +46,16 @@ import {
   Search,
   Mail,
   SlidersHorizontal,
+  X,
+  RefreshCw,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { collection, getDocs, doc, getDoc, setDoc, query, where } from 'firebase/firestore';
 import { db, secondaryDb } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
 import { useDashboardData } from '@/lib/DashboardDataContext';
+import { useBulkEmail } from '@/lib/BulkEmailContext';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
 import PaySlipDialog, { SlipState, buildInitialEarnings, buildInitialDeductions } from '@/components/PaySlipDialog';
 import * as XLSX from 'xlsx';
@@ -111,6 +116,7 @@ interface EmployeeRow extends Employee {
 
 export default function PayrollValidationDashboard() {
   const { profile, logout } = useAuth();
+  const { sendingBulkEmail, startBulkEmailJob, bulkEmailProgress, emailTargetCount, bulkEmailResults } = useBulkEmail();
   const {
     employeesLoyalis,
     employeesBlueCollar,
@@ -214,10 +220,8 @@ export default function PayrollValidationDashboard() {
   // New States for Email & Cetak/Kirim Fallbacks
   const [cetakKirimOpen, setCetakKirimOpen] = useState(false);
   const [sendingSingleEmail, setSendingSingleEmail] = useState(false);
-  const [sendingBulkEmail, setSendingBulkEmail] = useState(false);
-  const [bulkEmailProgress, setBulkEmailProgress] = useState(0);
-  const [emailTargetCount, setEmailTargetCount] = useState(0);
-  const [currentBulkEmailName, setCurrentBulkEmailName] = useState('');
+  const [bulkConfirmDialogOpen, setBulkConfirmDialogOpen] = useState(false);
+  const [bulkConfirmCount, setBulkConfirmCount] = useState(0);
 
   const handleExportExcel = () => {
     const filteredEmployees = getFilteredAndSortedEmployees();
@@ -886,6 +890,8 @@ export default function PayrollValidationDashboard() {
               deductions: data.deductions || [],
               generatedAt: data.generatedAt,
               confirmedAt: data.confirmedAt,
+              emailSent: data.emailSent || false,
+              emailSentAt: data.emailSentAt || undefined,
             };
           }
         });
@@ -1094,9 +1100,8 @@ export default function PayrollValidationDashboard() {
         familyMetrics: isLoyalis ? emp.raw.family_allowance_metrics : undefined,
       };
 
-      // 1. Generate PDF in memory
-      const doc = generatePaySlipPdf(slipData, false);
-      const pdfBase64 = doc.output('datauristring').split(',')[1];
+      const pdfDoc = generatePaySlipPdf(slipData, false);
+      const pdfBase64 = pdfDoc.output('datauristring').split(',')[1];
 
       // 2. Format a clean text breakdown
       const totalEarnings = slip.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
@@ -1149,6 +1154,25 @@ export default function PayrollValidationDashboard() {
         throw new Error(resData.error || 'Gagal mengirim email.');
       }
 
+      // Update emailSent status in Firestore
+      const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+      const realDocId = `${period}_${emp.id}`;
+      const slipRef = doc(db, 'PayrollSlipStates', realDocId);
+      await setDoc(slipRef, {
+        emailSent: true,
+        emailSentAt: new Date().toISOString()
+      }, { merge: true });
+
+      // Update local state in real-time
+      setSlipStates(prev => ({
+        ...prev,
+        [emp.id]: {
+          ...prev[emp.id],
+          emailSent: true,
+          emailSentAt: new Date().toISOString()
+        }
+      }));
+
       alert(`Email slip gaji berhasil dikirim ke "${emp.name}" (${email})!`);
       setCetakKirimOpen(false);
     } catch (err: any) {
@@ -1159,7 +1183,7 @@ export default function PayrollValidationDashboard() {
     }
   };
 
-  const handleBulkEmail = async () => {
+  const handleBulkEmail = () => {
     const isLoyalis = payrollCollar === 'loyalis';
 
     // Get confirmed employees with valid emails in the active filter list
@@ -1170,116 +1194,17 @@ export default function PayrollValidationDashboard() {
     });
 
     if (confirmedEmployees.length === 0) {
-      alert('Tidak ada karyawan terkonfirmasi dengan email terdaftar untuk dikirimi slip gaji.');
+      setNotification({ show: true, type: 'error', message: 'Tidak ada karyawan terkonfirmasi dengan email terdaftar untuk dikirimi slip gaji.' });
+      setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 5000);
       return;
     }
 
-    const confirmText = `Apakah Anda yakin ingin mengirimkan email slip gaji secara bulk ke ${confirmedEmployees.length} karyawan terkonfirmasi?`;
-    if (!window.confirm(confirmText)) {
-      return;
-    }
-
-    setSendingBulkEmail(true);
-    setBulkEmailProgress(0);
-    setEmailTargetCount(confirmedEmployees.length);
-
-    let successCount = 0;
-    let failCount = 0;
-
-    const formatIDR = (amount: number): string => {
-      return new Intl.NumberFormat('id-ID', {
-        style: 'currency',
-        currency: 'IDR',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      }).format(amount);
-    };
-
-    for (let i = 0; i < confirmedEmployees.length; i++) {
-      const emp = confirmedEmployees[i];
-      setCurrentBulkEmailName(emp.name);
-
-      const email = emp.email || emp.raw.personal_info?.email || emp.raw.email || '';
-      const slip = slipStates[emp.id];
-
-      try {
-        const slipData = {
-          employeeName: isLoyalis ? (emp.raw.personal_info?.name || '') : emp.name,
-          employeeNo: emp.rowIndex,
-          period: payrollPeriod.toUpperCase(),
-          jobCategory: isLoyalis
-            ? `STAF ${emp.raw.employment_profile?.department_unit || 'STAF'}`
-            : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
-          earnings: slip.earnings,
-          deductions: slip.deductions,
-          isLoyalis: isLoyalis,
-          niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
-          npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
-          familyMetrics: isLoyalis ? emp.raw.family_allowance_metrics : undefined,
-        };
-
-        // Generate PDF
-        const doc = generatePaySlipPdf(slipData, false);
-        const pdfBase64 = doc.output('datauristring').split(',')[1];
-
-        // Format breakdown
-        const totalEarnings = slip.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
-        const totalDeductions = slip.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
-        const netSalary = totalEarnings - totalDeductions;
-
-        let textBreakdown = `PENDAPATAN:\n`;
-        slip.earnings.forEach((e: any) => {
-          textBreakdown += `• ${e.label}: ${formatIDR(e.amount)}\n`;
-        });
-        textBreakdown += `Total Pendapatan: ${formatIDR(totalEarnings)}\n\n`;
-
-        textBreakdown += `POTONGAN:\n`;
-        if (slip.deductions.length > 0) {
-          slip.deductions.forEach((d: any) => {
-            textBreakdown += `• ${d.label}: ${formatIDR(d.amount)}\n`;
-          });
-          textBreakdown += `Total Potongan: ${formatIDR(totalDeductions)}\n\n`;
-        } else {
-          textBreakdown += `• Tidak ada potongan\n\n`;
-        }
-        textBreakdown += `GAJI BERSIH (Diterima): ${formatIDR(netSalary)}`;
-
-        // Send Email
-        const response = await fetch('/api/payroll/send-email', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email,
-            employeeName: slipData.employeeName,
-            period: payrollPeriod,
-            pdfBase64,
-            textBreakdown,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error('API failed');
-        }
-
-        successCount++;
-      } catch (err) {
-        console.error(`Failed to send bulk email to ${emp.name}:`, err);
-        failCount++;
-      }
-
-      // Add a 1.5-second delay to respect Google Workspace SMTP rate limits
-      if (i < confirmedEmployees.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      }
-
-      setBulkEmailProgress(i + 1);
-    }
-
-    setSendingBulkEmail(false);
-    alert(`Bulk sending selesai!\n\nBerhasil: ${successCount} email\nGagal: ${failCount} email`);
+    // Open styled confirmation dialog
+    setBulkConfirmCount(confirmedEmployees.length);
+    setBulkConfirmDialogOpen(true);
   };
+
+
 
   const handleBulkPdf = () => {
     const isLoyalis = payrollCollar === 'loyalis';
@@ -1678,11 +1603,21 @@ export default function PayrollValidationDashboard() {
                     const years = calculateYearsOfService(emp.joinDate, targetDate);
                     const gapok = calculateGapok(emp, salaryMatrix, targetDate);
                     const slip = slipStates[emp.id];
+                    const emailSentInQueue = bulkEmailResults.find(r => r.employeeId === emp.id)?.status === 'success';
+                    const isEmailSent = slip?.emailSent || emailSentInQueue;
 
                     return (
                       <TableRow key={emp.id} className="border-slate-100 hover:bg-slate-50/50 transition-colors">
                         <TableCell className="font-medium pl-8 py-4 w-[320px] max-w-[320px]">
-                          <span className="block truncate" title={emp.name}>{emp.name}</span>
+                          <div className="flex items-center gap-2">
+                            {isEmailSent && (
+                              <span 
+                                className="w-2.5 h-2.5 rounded-full bg-emerald-500 flex-shrink-0 animate-pulse" 
+                                title={slip?.emailSentAt ? `Email slip gaji terkirim pada: ${new Date(slip.emailSentAt).toLocaleString('id-ID')}` : 'Email slip gaji terkirim'}
+                              />
+                            )}
+                            <span className="block truncate" title={emp.name}>{emp.name}</span>
+                          </div>
                         </TableCell>
                         <TableCell className="py-4 w-[320px] max-w-[320px]">
                           <div className="flex flex-col">
@@ -2333,6 +2268,74 @@ export default function PayrollValidationDashboard() {
           <span className="text-sm font-semibold">{notification.message}</span>
         </div>
       )}
+
+      {/* ─── Bulk Email Confirmation Dialog ─────────────────── */}
+      <Dialog open={bulkConfirmDialogOpen} onOpenChange={setBulkConfirmDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Mail className="w-5 h-5 text-indigo-600" />
+              Konfirmasi Kirim Email Bulk
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 text-sm pt-2">
+              Anda akan mengirimkan email slip gaji kelompok <strong className="text-slate-700">{payrollCollar === 'loyalis' ? 'Loyalis' : 'Pekarya'}</strong> periode <strong className="text-slate-700">{payrollPeriod}</strong> ke <strong className="text-slate-700">{bulkConfirmCount} karyawan</strong> yang telah dikonfirmasi. Proses ini membutuhkan waktu sekitar <strong className="text-slate-700">{Math.ceil(bulkConfirmCount * 2 / 60)} menit</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setBulkConfirmDialogOpen(false)}
+              className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={() => {
+                setBulkConfirmDialogOpen(false);
+                const isLoyalis = payrollCollar === 'loyalis';
+                const dbPeriod = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+                const confirmedEmployees = displayEmployees.filter(emp => {
+                  const slip = slipStates[emp.id];
+                  const hasEmail = emp.email || emp.raw.personal_info?.email || emp.raw.email || '';
+                  return slip && slip.status === 'confirmed' && hasEmail;
+                });
+
+                const queueItems = confirmedEmployees.map(emp => {
+                  const slip = slipStates[emp.id];
+                  const email = emp.email || emp.raw.personal_info?.email || emp.raw.email || '';
+                  const slipData = {
+                    employeeName: isLoyalis ? (emp.raw.personal_info?.name || '') : emp.name,
+                    employeeNo: emp.rowIndex,
+                    period: payrollPeriod.toUpperCase(),
+                    jobCategory: isLoyalis
+                      ? `STAF ${emp.raw.employment_profile?.department_unit || 'STAF'}`
+                      : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
+                    earnings: slip.earnings,
+                    deductions: slip.deductions,
+                    isLoyalis: isLoyalis,
+                    niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
+                    npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
+                    familyMetrics: isLoyalis ? emp.raw.family_allowance_metrics : undefined,
+                  };
+                  return {
+                    employeeId: emp.id,
+                    employeeName: slipData.employeeName,
+                    email,
+                    slipData,
+                    status: 'pending' as const
+                  };
+                });
+
+                startBulkEmailJob(queueItems, payrollPeriod, dbPeriod);
+              }}
+              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              <Mail className="w-4 h-4 mr-2" />
+              Kirim Sekarang
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

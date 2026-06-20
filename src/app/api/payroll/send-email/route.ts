@@ -34,11 +34,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // Configure SMTP Transporter for Google Workspace SMTP Relay
+    // Configure SMTP Transporter for Google Workspace
     const transporter = nodemailer.createTransport({
-      host: 'smtp-relay.gmail.com',
-      port: 587,
-      secure: false, // Upgrade later with STARTTLS
+      service: 'gmail',
       auth: {
         user: smtpUser,
         pass: smtpPass,
@@ -177,6 +175,15 @@ export async function POST(request: Request) {
       to: email,
       subject: `[SLIP GAJI] YAPETIDU - ${formattedPeriod} - ${employeeName}`,
       html: htmlContent,
+      text: `Kepada Yth. Bapak/Ibu ${employeeName}\n\n` +
+            `Assalamualaikum wr. wb.\n\n` +
+            `Bersama dengan email ini, kami sampaikan dokumen resmi Slip Gaji Anda untuk periode ${formattedPeriod}.\n` +
+            `Dokumen PDF resmi telah kami lampirkan langsung pada email ini.\n\n` +
+            (textBreakdown ? `Rincian Slip Gaji:\n${textBreakdown}\n\n` : '') +
+            (terbilangText ? `${terbilangText}\n\n` : '') +
+            `Catatan: Jangan memberikan lampiran slip gaji ini kepada pihak lain untuk menjaga kerahasiaan data pribadi Anda.\n\n` +
+            `YAPETIDU Finance\n` +
+            `Jl. Raya Rejoso, Peterongan, Jombang, Jawa Timur.`
     };
 
     // Attach PDF if provided
