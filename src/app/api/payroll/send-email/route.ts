@@ -34,9 +34,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // Configure SMTP Transporter for Google
+    // Configure SMTP Transporter for Google Workspace SMTP Relay
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp-relay.gmail.com',
+      port: 587,
+      secure: false, // Upgrade later with STARTTLS
       auth: {
         user: smtpUser,
         pass: smtpPass,

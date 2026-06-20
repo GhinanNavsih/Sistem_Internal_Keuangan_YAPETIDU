@@ -1269,6 +1269,11 @@ export default function PayrollValidationDashboard() {
         failCount++;
       }
 
+      // Add a 1.5-second delay to respect Google Workspace SMTP rate limits
+      if (i < confirmedEmployees.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+
       setBulkEmailProgress(i + 1);
     }
 
