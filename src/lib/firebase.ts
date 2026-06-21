@@ -21,20 +21,29 @@ const firebaseConfig = {
 // Initialize Firebase (prevent multiple initializations during development)
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Helper to initialize firestore with persistent cache on browser client only
-const getCachedDb = (appInstance: any) => {
+// Helper to initialize firestore with persistent cache on browser client only, using window cache to avoid duplicates in development hot-reloads
+const getCachedDb = (appInstance: any, cacheKey: string) => {
   if (typeof window !== "undefined") {
-    return initializeFirestore(appInstance, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager()
-      })
-    });
+    const globalWithFirebase = window as any;
+    if (!globalWithFirebase[cacheKey]) {
+      try {
+        globalWithFirebase[cacheKey] = initializeFirestore(appInstance, {
+          localCache: persistentLocalCache({
+            tabManager: persistentMultipleTabManager()
+          })
+        });
+      } catch (err) {
+        console.warn(`Failed to initialize Firestore for ${cacheKey}, falling back to getFirestore:`, err);
+        globalWithFirebase[cacheKey] = getFirestore(appInstance);
+      }
+    }
+    return globalWithFirebase[cacheKey];
   }
   return getFirestore(appInstance);
 };
 
 // Initialize and export Firebase services
-export const db = getCachedDb(app);
+export const db = getCachedDb(app, "__firestore_db");
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
@@ -53,7 +62,7 @@ export const secondaryApp = getApps().some(a => a.name === 'secondary')
   ? getApp('secondary')
   : initializeApp(secondaryConfig, 'secondary');
 
-export const secondaryDb = getCachedDb(secondaryApp);
+export const secondaryDb = getCachedDb(secondaryApp, "__firestore_db_secondary");
 export const secondaryAuth = getAuth(secondaryApp);
 
 export default app;
