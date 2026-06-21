@@ -1943,16 +1943,7 @@ export default function UraianPage() {
               </Select>
             )}
 
-            {profile?.role === 'satker_head_loyalis' && (
-              <Button
-                onClick={() => setCetakKegiatanDialogOpen(true)}
-                variant="outline"
-                className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
-              >
-                <FileText className="w-4 h-4 text-indigo-600" />
-                Laporan Kegiatan Loyalis
-              </Button>
-            )}
+
 
             {(profile?.role === 'satker_head' || profile?.role === 'satker_head_loyalis') && (
               <Button
