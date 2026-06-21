@@ -256,9 +256,9 @@ export default function UraianPage() {
     }
   };
 
-  // Determine if the current event form should be read-only (SatKer Loyalis when approved or declined)
+  // Determine if the current event form should be read-only (SatKer Loyalis when approved, declined, or pending review)
   const isReadOnly = profile?.role === 'satker_head_loyalis' &&
-    (currentEventStatus === 'approved' || currentEventStatus === 'declined');
+    (currentEventStatus === 'approved' || currentEventStatus === 'declined' || currentEventStatus === 'pending_review');
 
   // ─── Custom Column Dialog States ──────────────────────────────────────────
   const [customColumns, setCustomColumns] = useState<RekapColumn[]>([]);
@@ -621,18 +621,12 @@ export default function UraianPage() {
       await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
       setMessage({ type: 'success', text: `Kegiatan "${eventName}" berhasil disubmit untuk review.` });
 
-      setSelectedEventId(null);
-      setEventName('');
-      setIsEndOfMonth(false);
-      setSelectedDept('');
-      setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
-      setReportFile(null);
-      setReportFileUrl(null);
-      setReportFileName(null);
-      setCurrentEventStatus(null);
+      setSelectedEventId(documentId);
+      setCurrentEventStatus('pending_review');
       setCurrentEventReviewNote(null);
-      setCurrentEventSubmittedBy(null);
-      setCurrentEventSubmittedByName(null);
+      setCurrentEventSubmittedBy(profile?.uid || null);
+      setCurrentEventSubmittedByName(profile?.displayName || null);
+      setReportFile(null);
       fetchEvents();
     } catch (err) {
       console.error(err);
@@ -742,18 +736,11 @@ export default function UraianPage() {
       await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
       setMessage({ type: 'success', text: `Event "${eventName}" berhasil disimpan.` });
 
-      setSelectedEventId(null);
-      setEventName('');
-      setIsEndOfMonth(false);
-      setSelectedDept('');
-      setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+      setSelectedEventId(documentId);
+      setCurrentEventStatus(isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'));
+      setCurrentEventSubmittedBy(finalSubmittedBy);
+      setCurrentEventSubmittedByName(finalSubmittedByName);
       setReportFile(null);
-      setReportFileUrl(null);
-      setReportFileName(null);
-      setCurrentEventStatus(null);
-      setCurrentEventReviewNote(null);
-      setCurrentEventSubmittedBy(null);
-      setCurrentEventSubmittedByName(null);
       fetchEvents();
     } catch (err) {
       console.error(err);
