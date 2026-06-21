@@ -200,6 +200,8 @@ export default function UraianPage() {
   // Current event status (loaded from Firestore)
   const [currentEventStatus, setCurrentEventStatus] = useState<string | null>(null);
   const [currentEventReviewNote, setCurrentEventReviewNote] = useState<string | null>(null);
+  const [currentEventSubmittedBy, setCurrentEventSubmittedBy] = useState<string | null>(null);
+  const [currentEventSubmittedByName, setCurrentEventSubmittedByName] = useState<string | null>(null);
 
   // Status Badge Helper for UI cards
   const getStatusBadge = (status?: string) => {
@@ -217,6 +219,40 @@ export default function UraianPage() {
         return <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">Ditolak</span>;
       default:
         return null;
+    }
+  };
+
+  // Helper for background colors in event cards based on status and active state
+  const getCardBgClass = (status?: string, active?: boolean) => {
+    const currentStatus = status || 'approved';
+    if (active) {
+      switch (currentStatus) {
+        case 'approved':
+          return 'bg-emerald-50/70 border-emerald-300 shadow-sm ring-1 ring-emerald-300/20';
+        case 'pending_review':
+          return 'bg-amber-50/70 border-amber-300 shadow-sm ring-1 ring-amber-300/20';
+        case 'declined':
+          return 'bg-rose-50/70 border-rose-300 shadow-sm ring-1 ring-rose-300/20';
+        case 'revision_needed':
+          return 'bg-orange-50/70 border-orange-300 shadow-sm ring-1 ring-orange-300/20';
+        case 'draft':
+        default:
+          return 'bg-indigo-50/50 border-indigo-300 shadow-sm ring-1 ring-indigo-300/20';
+      }
+    } else {
+      switch (currentStatus) {
+        case 'approved':
+          return 'bg-emerald-50/30 border-emerald-100 hover:border-emerald-200';
+        case 'pending_review':
+          return 'bg-amber-50/30 border-amber-100 hover:border-amber-200';
+        case 'declined':
+          return 'bg-rose-50/30 border-rose-100 hover:border-rose-200';
+        case 'revision_needed':
+          return 'bg-orange-50/30 border-orange-100 hover:border-orange-200';
+        case 'draft':
+        default:
+          return 'bg-white border-slate-100 hover:border-indigo-100';
+      }
     }
   };
 
@@ -595,6 +631,8 @@ export default function UraianPage() {
       setReportFileName(null);
       setCurrentEventStatus(null);
       setCurrentEventReviewNote(null);
+      setCurrentEventSubmittedBy(null);
+      setCurrentEventSubmittedByName(null);
       fetchEvents();
     } catch (err) {
       console.error(err);
@@ -675,6 +713,13 @@ export default function UraianPage() {
       });
 
       const isSuperAdmin = profile?.role === 'super_admin';
+      const finalSubmittedBy = selectedEventId
+        ? currentEventSubmittedBy
+        : (isSuperAdmin ? null : (profile?.uid || null));
+      const finalSubmittedByName = selectedEventId
+        ? currentEventSubmittedByName
+        : (isSuperAdmin ? null : (profile?.displayName || null));
+
       const payload: Record<string, any> = {
         eventName,
         period: periodToken,
@@ -685,8 +730,8 @@ export default function UraianPage() {
         updatedAt: serverTimestamp(),
         // Super Admin events are auto-approved; SatKer Loyalis uses handleSubmitForReview for pending_review
         status: isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'),
-        submittedBy: isSuperAdmin ? null : (profile?.uid || null),
-        submittedByName: isSuperAdmin ? null : (profile?.displayName || null),
+        submittedBy: finalSubmittedBy,
+        submittedByName: finalSubmittedByName,
       };
       // Preserve report file info if present
       if (reportFileUrl) {
@@ -707,6 +752,8 @@ export default function UraianPage() {
       setReportFileName(null);
       setCurrentEventStatus(null);
       setCurrentEventReviewNote(null);
+      setCurrentEventSubmittedBy(null);
+      setCurrentEventSubmittedByName(null);
       fetchEvents();
     } catch (err) {
       console.error(err);
@@ -736,6 +783,8 @@ export default function UraianPage() {
       setReportFileName(null);
       setCurrentEventStatus(null);
       setCurrentEventReviewNote(null);
+      setCurrentEventSubmittedBy(null);
+      setCurrentEventSubmittedByName(null);
       fetchEvents();
     } catch (err) {
       console.error(err);
@@ -788,6 +837,13 @@ export default function UraianPage() {
       });
 
       const isSuperAdmin = profile?.role === 'super_admin';
+      const finalSubmittedBy = activeId
+        ? currentEventSubmittedBy
+        : (isSuperAdmin ? null : (profile?.uid || null));
+      const finalSubmittedByName = activeId
+        ? currentEventSubmittedByName
+        : (isSuperAdmin ? null : (profile?.displayName || null));
+
       const payload: Record<string, any> = {
         eventName: currentEventName,
         period: periodToken,
@@ -798,8 +854,8 @@ export default function UraianPage() {
         updatedAt: serverTimestamp(),
         // Autosave: Super Admin = approved, SatKer Loyalis = draft
         status: isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'),
-        submittedBy: isSuperAdmin ? null : (profile?.uid || null),
-        submittedByName: isSuperAdmin ? null : (profile?.displayName || null),
+        submittedBy: finalSubmittedBy,
+        submittedByName: finalSubmittedByName,
       };
       if (reportFileUrl) {
         payload.reportFileUrl = reportFileUrl;
@@ -2022,7 +2078,7 @@ export default function UraianPage() {
           </div>
         )}
 
-        {message && (
+        {message && activeTab !== 'vakasi_loyalis' && (
           <div className={`mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />} {message.text}
           </div>
@@ -2267,6 +2323,8 @@ export default function UraianPage() {
                       setReportFileName(null);
                       setCurrentEventStatus(null);
                       setCurrentEventReviewNote(null);
+                      setCurrentEventSubmittedBy(null);
+                      setCurrentEventSubmittedByName(null);
                     }}
                     size="sm"
                     className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold flex items-center gap-1.5"
@@ -2337,7 +2395,7 @@ export default function UraianPage() {
                             const workers = evt.eventWorkers || {};
                             const rows = Object.entries(workers).map(([id, w]: [string, any]) => ({
                               employeeId: id,
-                              employeeName: w.employeeName,
+                                  employeeName: w.employeeName,
                               payGiven: w.payGiven,
                               searchText: w.employeeName,
                               showDropdown: false,
@@ -2348,11 +2406,10 @@ export default function UraianPage() {
                             setReportFile(null);
                             setCurrentEventStatus(evt.status || null);
                             setCurrentEventReviewNote(evt.reviewNote || null);
+                            setCurrentEventSubmittedBy(evt.submittedBy || null);
+                            setCurrentEventSubmittedByName(evt.submittedByName || null);
                           }}
-                          className={`p-4 rounded-2xl border transition-all cursor-pointer ${isActive
-                            ? 'bg-indigo-50/50 border-indigo-200 shadow-sm animate-in fade-in'
-                            : 'bg-white border-slate-100 hover:border-indigo-100'
-                            }`}
+                          className={`p-4 rounded-2xl border transition-all cursor-pointer outline-none focus:outline-none ${getCardBgClass(evt.status, isActive)}`}
                         >
                           <p className="font-bold text-slate-800 text-sm line-clamp-1">{evt.eventName}</p>
                           <div className="flex items-center justify-between mt-3">
@@ -2395,7 +2452,11 @@ export default function UraianPage() {
             </div>
 
             {/* Right side form */}
-            <Card className="xl:col-span-8 bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-visible min-h-[500px] flex flex-col p-6 space-y-6 animate-in fade-in duration-500">
+            <Card className={`xl:col-span-8 rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-visible min-h-[500px] flex flex-col p-6 space-y-6 animate-in fade-in duration-500 transition-colors duration-300 ${
+              currentEventStatus === 'pending_review'
+                ? 'bg-amber-50/40 border border-amber-200/50'
+                : 'bg-white border-none'
+            }`}>
                <div className="flex justify-between items-center border-b border-slate-50 pb-4">
                 <div className="flex items-center gap-3">
                   <div>
@@ -2938,6 +2999,13 @@ export default function UraianPage() {
                 )}
               </div>
 
+              {/* Error indicator bar below +Tambah Pegawai button */}
+              {message && (
+                <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'} animate-in fade-in duration-300`}>
+                  {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />} {message.text}
+                </div>
+              )}
+
               {/* Form submit footer actions */}
               <div className="flex justify-between items-center pt-4 border-t border-slate-50 shrink-0">
                 {/* Left side: Review actions for Super Admin on pending events */}
@@ -3001,6 +3069,8 @@ export default function UraianPage() {
                       setReportFileName(null);
                       setCurrentEventStatus(null);
                       setCurrentEventReviewNote(null);
+                      setCurrentEventSubmittedBy(null);
+                      setCurrentEventSubmittedByName(null);
                     }}
                     className="rounded-xl border-slate-200 text-slate-600 text-xs h-10 font-bold px-4"
                   >
@@ -3320,7 +3390,7 @@ export default function UraianPage() {
                             setSpjWorkerRows(rows);
                             setMobileSpjView('form');
                           }}
-                          className={`p-4 rounded-2xl border transition-all cursor-pointer ${isActive
+                          className={`p-4 rounded-2xl border transition-all cursor-pointer outline-none focus:outline-none ${isActive
                             ? 'bg-indigo-50/50 border-indigo-200 shadow-sm animate-in fade-in'
                             : 'bg-white border-slate-100 hover:border-indigo-100'
                             }`}
