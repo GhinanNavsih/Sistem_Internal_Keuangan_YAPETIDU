@@ -55,3 +55,8 @@ tmp/
 *.csv
 handoff.md
 scripts/output/
+
+# Firebase
+.firebase/
+firebase-debug.log*
+firebase-debug.*.log

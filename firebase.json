@@ -1,0 +1,6 @@
+{
+  "apphosting": {
+    "backendId": "internal-bak",
+    "rootDir": "/"
+  }
+}

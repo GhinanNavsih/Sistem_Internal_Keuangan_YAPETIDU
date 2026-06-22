@@ -1,0 +1,28 @@
+# Cloud Run service configuration
+runConfig:
+  cpu: 1
+  memoryMiB: 512
+  minInstances: 0
+  maxInstances: 10
+  concurrency: 80
+
+# Environment variables
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: "AIzaSyCbfQFInBd9jIfw-6F-261i3y1hSK7T1dg"
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "internal-bak.firebaseapp.com"
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "internal-bak"
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: "internal-bak.firebasestorage.app"
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "12358920235"
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:12358920235:web:7e181c72ad3f45f051a26e"
+  - variable: SMTP_USER
+    value: "admin.bak@unipdu.ac.id"
+  - variable: GEMINI_API_KEY
+    secret: gemini-api-key
+  - variable: SMTP_PASS
+    secret: smtp-pass
