@@ -15,7 +15,7 @@ import { doc, getDoc, getDocFromCache } from 'firebase/firestore';
 export interface UserProfile {
   uid: string;
   email: string;
-  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer';
+  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis';
   permittedCategories: string[];
   displayName?: string;
   linkedEmployeeId?: string;
@@ -35,14 +35,16 @@ const AuthContext = createContext<AuthContextType | null>(null);
 async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const docRef = doc(db, 'users', uid);
 
-  // Race server getDoc against a 2.5-second timeout to prevent infinite loading state
-  const timeoutPromise = new Promise<null>((resolve) =>
-    setTimeout(() => resolve(null), 2500)
-  );
-
   try {
+    const serverPromise = getDoc(docRef);
+    
+    // Race server getDoc against a 3-second timeout to prevent infinite loading state
+    const timeoutPromise = new Promise<null>((resolve) =>
+      setTimeout(() => resolve(null), 3000)
+    );
+
     const docSnap = await Promise.race([
-      getDoc(docRef),
+      serverPromise,
       timeoutPromise
     ]);
 
@@ -53,21 +55,32 @@ async function getUserProfile(uid: string): Promise<UserProfile | null> {
       return null;
     }
 
-    // Server request timed out. Fall back to local cache.
-    console.warn("getUserProfile server request timed out. Falling back to cache...");
-    const cacheSnap = await getDocFromCache(docRef);
-    if (cacheSnap.exists()) {
-      return { uid, ...cacheSnap.data() } as UserProfile;
-    }
-  } catch (err) {
-    console.error("Error fetching user profile from server/cache:", err);
+    // Server request timed out. Fall back to local cache if available.
+    console.warn("getUserProfile server request timed out. Trying cache fallback...");
     try {
       const cacheSnap = await getDocFromCache(docRef);
       if (cacheSnap.exists()) {
         return { uid, ...cacheSnap.data() } as UserProfile;
       }
     } catch (cacheErr) {
-      console.error("Cache fallback failed:", cacheErr);
+      console.warn("Cache fallback failed (no cached document). Waiting for server instead...", cacheErr);
+    }
+
+    // If cache fallback failed or document wasn't cached, wait for the server response to complete
+    const finalSnap = await serverPromise;
+    if (finalSnap.exists()) {
+      return { uid, ...finalSnap.data() } as UserProfile;
+    }
+    return null;
+  } catch (err) {
+    console.error("Error fetching user profile:", err);
+    try {
+      const cacheSnap = await getDocFromCache(docRef);
+      if (cacheSnap.exists()) {
+        return { uid, ...cacheSnap.data() } as UserProfile;
+      }
+    } catch (cacheErr) {
+      console.error("Cache fallback after error failed:", cacheErr);
     }
   }
   return null;
