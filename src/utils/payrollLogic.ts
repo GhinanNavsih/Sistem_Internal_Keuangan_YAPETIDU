@@ -19,7 +19,10 @@ export function calculateGapok(
   if (!gradeMatrix) return 0;
   
   const availableYears = Object.keys(gradeMatrix).map(Number).sort((a, b) => b - a);
-  const applicableYear = availableYears.find((y) => years >= y);
+  const minYear = Math.min(...availableYears);
+  const effectiveYears = years < minYear ? minYear : years;
+  
+  const applicableYear = availableYears.find((y) => effectiveYears >= y);
 
   if (applicableYear !== undefined) {
     return gradeMatrix[applicableYear];

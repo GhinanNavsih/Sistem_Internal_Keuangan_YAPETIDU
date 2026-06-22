@@ -74,6 +74,8 @@ export default function LoginPage() {
     if (!loading && user && profile) {
       if (profile.role === 'honorer') {
         router.replace('/employee/activities');
+      } else if (profile.role === 'loyalis') {
+        router.replace('/employee/payslip');
       } else {
         router.replace('/dashboard/payroll');
       }
@@ -111,8 +113,11 @@ export default function LoginPage() {
   // Show loading spinner while auth state resolves
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 flex items-center justify-center relative overflow-hidden">
+        {/* Subtle decorative blobs */}
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
+        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin relative z-10" />
       </div>
     );
   }
@@ -121,7 +126,7 @@ export default function LoginPage() {
   if (user) return null;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex font-sans selection:bg-indigo-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 flex font-sans selection:bg-indigo-100 relative overflow-hidden">
       {/* ── Left decorative panel ──────────────────────────── */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-800 flex-col items-center justify-center p-16">
         {/* Decorative orbs */}
@@ -182,8 +187,8 @@ export default function LoginPage() {
       <div className="flex-1 flex items-center justify-center p-8 relative overflow-hidden">
         {/* Subtle background blobs */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-20 -right-20 w-80 h-80 rounded-full bg-indigo-100/60 blur-3xl" />
-          <div className="absolute -bottom-20 -left-20 w-80 h-80 rounded-full bg-purple-100/60 blur-3xl" />
+          <div className="absolute -top-20 -right-20 w-96 h-96 rounded-full bg-indigo-100/40 blur-[120px]" />
+          <div className="absolute -bottom-20 -left-20 w-80 h-80 rounded-full bg-purple-100/30 blur-[100px]" />
         </div>
 
         <div className="relative w-full max-w-md">

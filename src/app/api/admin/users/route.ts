@@ -88,8 +88,8 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
     };
 
-    // Attach linked employee ID for honorer accounts
-    if (role === 'honorer' && linkedEmployeeId) {
+    // Attach linked employee ID for honorer/loyalis accounts
+    if ((role === 'honorer' || role === 'loyalis') && linkedEmployeeId) {
       profile.linkedEmployeeId = linkedEmployeeId;
     }
 
@@ -147,8 +147,8 @@ export async function PUT(req: NextRequest) {
       updatedAt: new Date().toISOString(),
     };
 
-    // Attach or clear linked employee ID for honorer accounts
-    if (role === 'honorer' && linkedEmployeeId) {
+    // Attach or clear linked employee ID for honorer/loyalis accounts
+    if ((role === 'honorer' || role === 'loyalis') && linkedEmployeeId) {
       updatePayload.linkedEmployeeId = linkedEmployeeId;
     } else {
       updatePayload.linkedEmployeeId = admin.firestore.FieldValue.delete();

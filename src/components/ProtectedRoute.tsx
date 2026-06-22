@@ -56,6 +56,11 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
           if (!pathname.startsWith('/employee/')) {
             router.replace('/employee/activities');
           }
+        } else if (profile.role === 'loyalis') {
+          // Loyalis employees are ONLY allowed to access /employee/payslip
+          if (pathname !== '/employee/payslip') {
+            router.replace('/employee/payslip');
+          }
         }
       }
     }
@@ -95,6 +100,9 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     return null;
   }
   if (profile.role === 'honorer' && !pathname.startsWith('/employee/')) {
+    return null;
+  }
+  if (profile.role === 'loyalis' && pathname !== '/employee/payslip') {
     return null;
   }
 

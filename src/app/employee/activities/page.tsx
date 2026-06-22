@@ -385,16 +385,22 @@ export default function EmployeeActivitiesPage() {
   // ── Loading State ──
   if (!profile) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 flex items-center justify-center relative overflow-hidden">
+        {/* Subtle decorative blobs */}
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
+        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin relative z-10" />
       </div>
     );
   }
 
   if (!profile.linkedEmployeeId) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-teal-50/40 via-white to-cyan-50/40 flex items-center justify-center p-6">
-        <Card className="max-w-md w-full rounded-3xl border-none shadow-xl bg-white">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 flex items-center justify-center p-6 relative overflow-hidden">
+        {/* Subtle decorative blobs */}
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
+        <Card className="max-w-md w-full rounded-3xl border-none shadow-xl bg-white relative z-10">
           <CardContent className="p-8 text-center space-y-4">
             <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-50 flex items-center justify-center">
               <AlertCircle className="w-8 h-8 text-rose-500" />
@@ -418,10 +424,13 @@ export default function EmployeeActivitiesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-50/40 via-white to-cyan-50/40 font-sans selection:bg-teal-100 text-slate-800">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800">
+      {/* Subtle decorative blobs */}
+      <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-100 shadow-sm">
+      <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-100 shadow-sm relative z-20">
         <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shadow-lg shadow-teal-200/50">
@@ -443,7 +452,7 @@ export default function EmployeeActivitiesPage() {
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-5 space-y-5">
+      <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 relative z-10">
 
         {/* ── Notifications ────────────────────────────────────────────── */}
         {message && (

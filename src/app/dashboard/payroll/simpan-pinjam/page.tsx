@@ -315,9 +315,14 @@ export default function SimpanPinjamReviewPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center flex-col">
-        <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mb-4" />
-        <p className="text-slate-500 font-medium">Memuat data simpan pinjam...</p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 flex items-center justify-center flex-col relative overflow-hidden">
+        {/* Subtle decorative blobs */}
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
+        <div className="flex flex-col items-center gap-3 relative z-10">
+          <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mb-4" />
+          <p className="text-slate-500 font-medium">Memuat data simpan pinjam...</p>
+        </div>
       </div>
     );
   }
@@ -325,8 +330,11 @@ export default function SimpanPinjamReviewPage() {
   // Auth Guard check (Only super_admin can view)
   if (profile?.role !== 'super_admin') {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <Card className="max-w-md w-full p-8 text-center bg-white rounded-2xl shadow-md border-none">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 flex items-center justify-center p-6 relative overflow-hidden">
+        {/* Subtle decorative blobs */}
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
+        <Card className="max-w-md w-full p-8 text-center bg-white rounded-2xl shadow-md border-none relative z-10">
           <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-slate-800 mb-2">Akses Ditolak</h2>
           <p className="text-slate-500 mb-6">Anda tidak memiliki izin yang cukup untuk mengakses halaman audit simpan pinjam koperasi.</p>
@@ -349,8 +357,11 @@ export default function SimpanPinjamReviewPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50/40 via-white to-purple-50/40 p-8 font-sans text-slate-800">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 p-8 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800">
+      {/* Subtle decorative blobs */}
+      <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
+      <div className="max-w-7xl mx-auto relative z-10">
         
         {/* Header navigation bar */}
         <div className="flex flex-wrap justify-between items-center gap-4 mb-8">

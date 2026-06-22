@@ -528,8 +528,11 @@ export default function ActivityReviewPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50/40 via-white to-purple-50/40 p-6 lg:p-8 font-sans selection:bg-indigo-100 text-slate-800">
-      <div className="max-w-[1600px] mx-auto space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 p-6 lg:p-8 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800">
+      {/* Subtle decorative blobs */}
+      <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
+      <div className="max-w-[1600px] mx-auto space-y-6 relative z-10">
 
         {/* ── Header ─────────────────────────────────────────────────── */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

@@ -71,31 +71,37 @@ service cloud.firestore {
 
     // 4. Salary Matrix — Blue Collar (Base Wages configuration)
     match /SalaryMatrix/{version} {
-      // Only Super Admins can read or write the master salary configuration
-      allow read, write: if isSuperAdmin();
+      // Super Admins can manage, any profile user can read
+      allow read: if hasProfile();
+      allow write: if isSuperAdmin();
       
       match /rows/{rowId} {
-        allow read, write: if isSuperAdmin();
+        allow read: if hasProfile();
+        allow write: if isSuperAdmin();
       }
     }
 
     // 4b. Salary Matrix — White Collar (Base Wages configuration)
     match /SalaryMatrix_WhiteCollar/{version} {
-      // Only Super Admins can read or write the white collar salary configuration
-      allow read, write: if isSuperAdmin();
+      // Super Admins can manage, any profile user can read
+      allow read: if hasProfile();
+      allow write: if isSuperAdmin();
       
       match /rows/{rowId} {
-        allow read, write: if isSuperAdmin();
+        allow read: if hasProfile();
+        allow write: if isSuperAdmin();
       }
     }
 
     // 4c. Salary Matrix — Functional (Workload and education allowance configuration)
     match /SalaryMatrix_Functional/{version} {
-      // Only Super Admins can read or write the functional salary configuration
-      allow read, write: if isSuperAdmin();
+      // Super Admins can manage, any profile user can read
+      allow read: if hasProfile();
+      allow write: if isSuperAdmin();
       
       match /rows/{rowId} {
-        allow read, write: if isSuperAdmin();
+        allow read: if hasProfile();
+        allow write: if isSuperAdmin();
       }
     }
 

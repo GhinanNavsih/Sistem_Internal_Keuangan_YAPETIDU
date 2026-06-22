@@ -61,7 +61,7 @@ interface ManagedUser {
   uid: string;
   email: string;
   displayName?: string;
-  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer';
+  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis';
   permittedCategories: string[];
   linkedEmployeeId?: string;
   createdAt?: string;
@@ -117,7 +117,7 @@ export default function UserManagementPage() {
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
-  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer'>('satker_head');
+  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis'>('satker_head');
   const [newPermitted, setNewPermitted] = useState<string[]>([]);
   const [newLinkedEmployeeId, setNewLinkedEmployeeId] = useState('');
 
@@ -127,7 +127,7 @@ export default function UserManagementPage() {
   // Edit User modal state
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [editDisplayName, setEditDisplayName] = useState('');
-  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer'>('satker_head');
+  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis'>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
   const [editLinkedEmployeeId, setEditLinkedEmployeeId] = useState('');
 
@@ -295,8 +295,8 @@ export default function UserManagementPage() {
           password: newPassword,
           displayName: newDisplayName,
           role: newRole,
-          permittedCategories: newRole === 'honorer' ? (newLinkedEmployeeId ? [cleaningEmployees.find(e => e.id === newLinkedEmployeeId)?.category || ''] : []) : newPermitted,
-          linkedEmployeeId: newRole === 'honorer' ? newLinkedEmployeeId : undefined,
+          permittedCategories: (newRole === 'honorer' || newRole === 'loyalis') ? (newLinkedEmployeeId ? [allEmployees.find(e => e.id === newLinkedEmployeeId)?.detail || ''] : []) : newPermitted,
+          linkedEmployeeId: (newRole === 'honorer' || newRole === 'loyalis') ? newLinkedEmployeeId : undefined,
         }),
       });
 
@@ -354,8 +354,8 @@ export default function UserManagementPage() {
           uid: editingUser.uid,
           displayName: editDisplayName,
           role: editRole,
-          permittedCategories: editRole === 'honorer' ? (editLinkedEmployeeId ? [cleaningEmployees.find(e => e.id === editLinkedEmployeeId)?.category || ''] : []) : editPermitted,
-          linkedEmployeeId: editRole === 'honorer' ? editLinkedEmployeeId : undefined,
+          permittedCategories: (editRole === 'honorer' || editRole === 'loyalis') ? (editLinkedEmployeeId ? [allEmployees.find(e => e.id === editLinkedEmployeeId)?.detail || ''] : []) : editPermitted,
+          linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis') ? editLinkedEmployeeId : undefined,
         }),
       });
 
@@ -364,8 +364,8 @@ export default function UserManagementPage() {
         throw new Error(errData.error || 'Gagal memperbarui pengguna.');
       }
 
-      const updatedCategories = editRole === 'honorer'
-        ? (editLinkedEmployeeId ? [cleaningEmployees.find(e => e.id === editLinkedEmployeeId)?.category || ''] : [])
+      const updatedCategories = (editRole === 'honorer' || editRole === 'loyalis')
+        ? (editLinkedEmployeeId ? [allEmployees.find(e => e.id === editLinkedEmployeeId)?.detail || ''] : [])
         : editPermitted;
 
       // Update local state directly so UI updates instantly
@@ -377,7 +377,7 @@ export default function UserManagementPage() {
                 displayName: editDisplayName,
                 role: editRole,
                 permittedCategories: updatedCategories,
-                linkedEmployeeId: editRole === 'honorer' ? editLinkedEmployeeId : undefined,
+                linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis') ? editLinkedEmployeeId : undefined,
               }
             : u
         )
@@ -449,8 +449,11 @@ export default function UserManagementPage() {
   if (profile?.role !== 'super_admin') return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50/40 via-white to-purple-50/40 p-6 lg:p-8 font-sans selection:bg-indigo-100 text-slate-800">
-      <div className="max-w-[1400px] mx-auto space-y-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 p-6 lg:p-8 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800">
+      {/* Subtle decorative blobs */}
+      <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
+      <div className="max-w-[1400px] mx-auto space-y-8 relative z-10">
         
         {/* Navigation & Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -697,6 +700,23 @@ export default function UserManagementPage() {
                             <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Akun untuk karyawan kebersihan yang hanya dapat mengakses halaman lapor kegiatan harian. Harus dihubungkan ke data pegawai.</span>
                           </div>
                         </div>
+
+                        <div
+                          onClick={() => {
+                            setNewRole('loyalis');
+                            setNewPermitted([]);
+                            setNewLinkedEmployeeId('');
+                          }}
+                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${newRole === 'loyalis' ? 'border-sky-500 bg-sky-50/20 ring-2 ring-sky-500/10' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
+                        >
+                          <div className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 ${newRole === 'loyalis' ? 'border-sky-600' : 'border-slate-300'}`}>
+                            {newRole === 'loyalis' && <div className="w-2.5 h-2.5 rounded-full bg-sky-600" />}
+                          </div>
+                          <div>
+                            <span className="text-sm font-bold text-slate-900 block">Karyawan Loyalis (Lihat Slip Gaji)</span>
+                            <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Akun untuk karyawan Loyalis (white collar) yang hanya dapat mengakses halaman slip gaji. Harus dihubungkan ke data pegawai.</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -730,10 +750,30 @@ export default function UserManagementPage() {
                           >
                             <option value="">-- Pilih Karyawan --</option>
                             {cleaningEmployees.map(emp => (
-                              <option key={emp.id} value={emp.id}>
-                                {emp.name} ({emp.category})
-                              </option>
+                                <option key={emp.id} value={emp.id}>
+                                  {emp.name} ({emp.category})
+                                </option>
                             ))}
+                          </select>
+                        </div>
+                      ) : newRole === 'loyalis' ? (
+                        <div className="space-y-3">
+                          <div className="p-4 rounded-2xl bg-sky-50/50 border border-sky-100 text-sky-800 text-xs leading-relaxed font-medium">
+                            Pilih karyawan Loyalis yang akan dihubungkan ke akun ini. Akun Loyalis hanya bisa mengakses halaman slip gaji.
+                          </div>
+                          <select
+                            value={newLinkedEmployeeId}
+                            onChange={(e) => setNewLinkedEmployeeId(e.target.value)}
+                            className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20"
+                          >
+                            <option value="">-- Pilih Karyawan --</option>
+                            {allEmployees
+                              .filter(emp => emp.type === 'Loyalis')
+                              .map(emp => (
+                                <option key={emp.id} value={emp.id}>
+                                  {emp.name} ({emp.detail})
+                                </option>
+                              ))}
                           </select>
                         </div>
                       ) : (
@@ -847,7 +887,7 @@ export default function UserManagementPage() {
                         <TableRow key={u.uid} className="border-slate-50 hover:bg-slate-50/40 transition-colors">
                           <TableCell className="font-bold pl-8 py-4.5">
                             <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${u.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : u.role === 'employee_admin' ? 'bg-emerald-100 text-emerald-700' : u.role === 'honorer' ? 'bg-teal-100 text-teal-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${u.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : u.role === 'employee_admin' ? 'bg-emerald-100 text-emerald-700' : u.role === 'honorer' ? 'bg-teal-100 text-teal-700' : u.role === 'loyalis' ? 'bg-sky-100 text-sky-700' : 'bg-indigo-100 text-indigo-700'}`}>
                                 {(u.displayName || u.email).substring(0, 2).toUpperCase()}
                               </div>
                               <div>
@@ -874,6 +914,10 @@ export default function UserManagementPage() {
                               <Badge variant="secondary" className="bg-violet-50 text-violet-700 hover:bg-violet-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Kepala SatKer Loyalis
                               </Badge>
+                            ) : u.role === 'loyalis' ? (
+                              <Badge variant="secondary" className="bg-sky-50 text-sky-700 hover:bg-sky-100 font-bold px-2.5 py-0.5 rounded-full border-none">
+                                Karyawan Loyalis
+                              </Badge>
                             ) : (
                               <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Kepala SatKer
@@ -891,6 +935,13 @@ export default function UserManagementPage() {
                               <span className="text-xs text-teal-600 font-bold">
                                 {u.linkedEmployeeId
                                   ? cleaningEmployees.find(e => e.id === u.linkedEmployeeId)?.name || u.linkedEmployeeId
+                                  : <span className="text-rose-500 italic">Belum Terhubung</span>
+                                }
+                              </span>
+                            ) : u.role === 'loyalis' ? (
+                              <span className="text-xs text-sky-600 font-bold">
+                                {u.linkedEmployeeId
+                                  ? allEmployees.find(e => e.id === u.linkedEmployeeId)?.name || u.linkedEmployeeId
                                   : <span className="text-rose-500 italic">Belum Terhubung</span>
                                 }
                               </span>
@@ -1050,6 +1101,17 @@ export default function UserManagementPage() {
                   >
                     Honorer
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditRole('loyalis');
+                      setEditPermitted([]);
+                      setEditLinkedEmployeeId('');
+                    }}
+                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'loyalis' ? 'border-sky-500 bg-sky-50/10 text-sky-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
+                  >
+                    Loyalis
+                  </button>
                 </div>
               </div>
 
@@ -1084,6 +1146,26 @@ export default function UserManagementPage() {
                           {emp.name} ({emp.category})
                         </option>
                       ))}
+                    </select>
+                  </div>
+                ) : editRole === 'loyalis' ? (
+                  <div className="space-y-3 mt-1.5">
+                    <div className="p-3 rounded-xl bg-sky-50 border border-sky-100 text-sky-800 text-[11px] font-medium leading-relaxed">
+                      Pilih karyawan Loyalis yang dihubungkan ke akun ini.
+                    </div>
+                    <select
+                      value={editLinkedEmployeeId}
+                      onChange={(e) => setEditLinkedEmployeeId(e.target.value)}
+                      className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20"
+                    >
+                      <option value="">-- Pilih Karyawan --</option>
+                      {allEmployees
+                        .filter(emp => emp.type === 'Loyalis')
+                        .map(emp => (
+                          <option key={emp.id} value={emp.id}>
+                            {emp.name} ({emp.detail})
+                          </option>
+                        ))}
                     </select>
                   </div>
                 ) : (

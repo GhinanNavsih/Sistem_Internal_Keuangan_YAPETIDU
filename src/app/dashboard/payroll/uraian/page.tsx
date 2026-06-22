@@ -1220,6 +1220,37 @@ export default function UraianPage() {
     reader.readAsBinaryString(file);
   }, [loyalisEmployees, matchExcelName]);
 
+  const handleSaveWorkingDaysConfig = async () => {
+    if (isSavingPresenceRef.current) return;
+    isSavingPresenceRef.current = true;
+    setSavingPresence(true);
+    try {
+      const periodToken = `${year}_${String(month).padStart(2, '0')}`;
+      
+      // Preserve existing entries if they exist, otherwise initialize empty
+      const existingEntries = existingPresence?.entries || {};
+
+      const payload = {
+        period: periodToken,
+        workingDays,
+        expectedHours,
+        mode: calcMode,
+        entries: existingEntries,
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, 'LoyalisPresence', periodToken), payload, { merge: true });
+      setMessage({ type: 'success', text: `Konfigurasi hari kerja (${workingDays} hari) berhasil disimpan.` });
+      fetchExistingPresence();
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: 'Gagal menyimpan konfigurasi hari kerja.' });
+    } finally {
+      isSavingPresenceRef.current = false;
+      setSavingPresence(false);
+    }
+  };
+
   const handleSavePresence = async () => {
     if (isSavingPresenceRef.current || !uploadedData || uploadedData.length === 0) return;
 
@@ -1862,8 +1893,11 @@ export default function UraianPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-6 lg:p-8 pb-24 lg:pb-32 font-sans selection:bg-indigo-100">
-      <div className="max-w-[1600px] mx-auto space-y-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 p-6 lg:p-8 pb-24 lg:pb-32 font-sans selection:bg-indigo-100 relative overflow-hidden">
+      {/* Subtle decorative blobs */}
+      <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
+      <div className="max-w-[1600px] mx-auto space-y-8 relative z-10">
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
@@ -1877,7 +1911,7 @@ export default function UraianPage() {
                     router.back();
                   }
                 }}
-                className="group -ml-2 mb-2 text-slate-500 hover:text-indigo-600"
+                className="group -ml-2 mb-2 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50"
               >
                 <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
                 Kembali
@@ -1885,7 +1919,7 @@ export default function UraianPage() {
             ) : (
               <div className="h-2" />
             )}
-            <h1 className="text-3xl font-bold text-slate-900">
+            <h1 className="text-3xl font-bold text-slate-800">
               {activeTab === 'presensi'
                 ? 'Rekap Presensi Pekarya'
                 : activeTab === 'vakasi_loyalis'
@@ -1902,7 +1936,7 @@ export default function UraianPage() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
-              <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200">
+              <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
                 <SelectValue>
                   {activeTab === 'vakasi_loyalis' ? (
                     `${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`
@@ -1932,13 +1966,13 @@ export default function UraianPage() {
               </SelectContent>
             </Select>
             <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
-              <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all"><SelectValue /></SelectTrigger>
               <SelectContent>{YEARS.map(y => (<SelectItem key={y} value={String(y)}>{y}</SelectItem>))}</SelectContent>
             </Select>
 
             {activeTab === 'presensi' && category && allowedCategories.length > 0 && (
               <Select value={category} onValueChange={(v) => v && setCategory(v)}>
-                <SelectTrigger className="w-48 bg-white shadow-sm border-slate-200"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-48 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all"><SelectValue /></SelectTrigger>
                 <SelectContent>{allowedCategories.map(c => (<SelectItem key={c} value={c}>{c}</SelectItem>))}</SelectContent>
               </Select>
             )}
@@ -1949,7 +1983,7 @@ export default function UraianPage() {
               <Button
                 variant="outline"
                 onClick={logout}
-                className="rounded-xl text-rose-600 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center gap-2 shadow-sm"
+                className="rounded-xl text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-all cursor-pointer flex items-center gap-2 shadow-sm"
               >
                 <LogOut className="w-4 h-4" />
                 Keluar
@@ -2022,12 +2056,12 @@ export default function UraianPage() {
         {/* Premium Tab Switcher - Only shown for Super Admin */}
         {profile?.role === 'super_admin' && (
           <div className="flex flex-wrap items-center justify-between gap-4 w-full">
-            <div className="flex bg-slate-100 p-1 rounded-xl w-fit shadow-sm border border-slate-200">
+            <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
               <button
                 onClick={() => setActiveTab('presensi')}
-                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'presensi'
-                  ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
-                  : 'text-slate-500 hover:text-slate-800'
+                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'presensi'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                   }`}
               >
                 <ScanLine className="w-4.5 h-4.5" />
@@ -2035,9 +2069,9 @@ export default function UraianPage() {
               </button>
               <button
                 onClick={() => setActiveTab('vakasi_loyalis')}
-                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTab === 'vakasi_loyalis'
-                  ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
-                  : 'text-slate-500 hover:text-slate-800'
+                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'vakasi_loyalis'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                   }`}
               >
                 <Banknote className="w-4.5 h-4.5" />
@@ -2540,7 +2574,7 @@ export default function UraianPage() {
 
               {/* Department Selector & File Upload (only visible when Tengah Bulan is active) */}
               {!isEndOfMonth && (
-                <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                   {/* Department Selector */}
                   <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
@@ -2664,9 +2698,9 @@ export default function UraianPage() {
                           </div>
                         </div>
                       ) : (
-                        /* Show Upload Drag-and-Drop Area */
+                        /* Show Upload Compact Area */
                         profile?.role === 'satker_head_loyalis' && (
-                          <div className="border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-2xl p-6 text-center transition-all bg-slate-50/50 cursor-pointer relative group">
+                          <div className="border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-2xl p-3 text-center transition-all bg-slate-50/50 cursor-pointer relative group h-11 flex items-center justify-center">
                             <input
                               type="file"
                               accept=".pdf,image/jpeg,image/jpg,image/png"
@@ -2677,19 +2711,18 @@ export default function UraianPage() {
                               disabled={uploadingReport}
                               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer animate-none"
                             />
-                            <div className="flex flex-col items-center justify-center space-y-2">
+                            <div className="flex items-center justify-center gap-2">
                               {uploadingReport ? (
                                 <>
-                                  <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-                                  <p className="text-xs font-bold text-slate-600">Mengunggah file...</p>
+                                  <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
+                                  <p className="text-xs font-bold text-slate-600">Mengunggah...</p>
                                 </>
                               ) : (
                                 <>
-                                  <Upload className="w-8 h-8 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                                  <Upload className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" />
                                   <p className="text-xs font-bold text-slate-600">
-                                    <span className="text-indigo-600 underline">Pilih file</span> atau seret ke sini
+                                    <span className="text-indigo-600 underline">Pilih berkas</span> (PDF, Img)
                                   </p>
-                                  <p className="text-[10px] text-slate-400 font-medium">Format: PDF, JPG, JPEG, PNG (Maks 10MB)</p>
                                 </>
                               )}
                             </div>
@@ -3123,8 +3156,22 @@ export default function UraianPage() {
               )}
             </div>
 
-            {/* Status Indicator */}
-            {existingPresence && !uploadedData && (
+            {/* Status Indicator for pre-configured working days */}
+            {existingPresence && Object.keys(existingPresence.entries || {}).length === 0 && !uploadedData && (
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
+                <Calendar className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-blue-800 text-xs font-bold">Hari Kerja Telah Dikonfigurasi</h4>
+                  <p className="text-blue-600/90 text-[11px] mt-0.5 leading-relaxed">
+                    Jumlah hari kerja periode ini ({MONTHS_ID[month - 1]} {year}) telah diatur sebanyak <strong>{existingPresence.workingDays || 25} hari</strong>.
+                    Silakan pilih dan unggah file Excel rekap kehadiran di bawah untuk melengkapi perhitungan bonus presensi pegawai.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Status Indicator for complete data */}
+            {existingPresence && Object.keys(existingPresence.entries || {}).length > 0 && !uploadedData && (
               <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-start gap-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
                 <div>
@@ -3143,19 +3190,30 @@ export default function UraianPage() {
             )}
 
             {/* Settings and File Upload Input */}
-            {!existingPresence && (
+            {(!existingPresence || Object.keys(existingPresence.entries || {}).length === 0) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
                 {/* 1. Working Days */}
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jumlah Hari Kerja (n)</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={31}
-                    value={workingDays}
-                    onChange={(e) => setWorkingDays(Math.max(1, parseInt(e.target.value) || 0))}
-                    className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={workingDays}
+                      onChange={(e) => setWorkingDays(Math.max(1, parseInt(e.target.value) || 0))}
+                      className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleSaveWorkingDaysConfig}
+                      disabled={savingPresence}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 px-4 rounded-xl shadow-md transition-all flex items-center gap-1.5 shrink-0"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>Simpan</span>
+                    </Button>
+                  </div>
                 </div>
 
                 {/* 2. File Upload */}

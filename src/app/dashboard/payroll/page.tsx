@@ -129,31 +129,42 @@ export default function PayrollValidationDashboard() {
   } = useDashboardData();
 
   const getLoyalisPresenceBonus = (empId: string): number => {
-    if (!loyalisPresenceData?.entries?.[empId]) return 0;
-    if (loyalisPresenceData.entries[empId].isNotFoundInExcel) return 0;
+    if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
+      const entry = loyalisPresenceData.entries[empId];
+      if (!entry || entry.isNotFoundInExcel) return 0;
+    }
     return 250000;
   };
 
   const getLoyalisPresenceDeduction = (empId: string): number => {
-    if (!loyalisPresenceData?.entries?.[empId]) return 0;
-    if (loyalisPresenceData.entries[empId].isNotFoundInExcel) return 0;
-    return loyalisPresenceData.entries[empId].deduction || 0;
+    if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
+      const entry = loyalisPresenceData.entries[empId];
+      if (entry && !entry.isNotFoundInExcel) {
+        return entry.deduction || 0;
+      }
+    }
+    return 0;
   };
 
   const getLoyalisPresensiEarning = (empId: string): number => {
-    if (!loyalisPresenceData?.entries?.[empId]) return 0;
-    if (loyalisPresenceData.entries[empId].isNotFoundInExcel) return 0;
-    const workingDays = loyalisPresenceData.workingDays || 25;
-    const expectedHours = loyalisPresenceData.expectedHours || 6.5;
+    const workingDays = loyalisPresenceData?.workingDays || 25;
+    const expectedHours = loyalisPresenceData?.expectedHours || 6.5;
+    if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
+      const entry = loyalisPresenceData.entries[empId];
+      if (!entry || entry.isNotFoundInExcel) return 0;
+    }
     return Math.round(workingDays * expectedHours * 1650);
   };
 
   const getLoyalisPresensiDeduction = (empId: string): number => {
-    if (!loyalisPresenceData?.entries?.[empId]) return 0;
-    if (loyalisPresenceData.entries[empId].isNotFoundInExcel) return 0;
-    const entry = loyalisPresenceData.entries[empId];
-    const absenceMinutes = entry.absenceMinutes || 0;
-    return Math.round((absenceMinutes / 60) * 1650);
+    if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
+      const entry = loyalisPresenceData.entries[empId];
+      if (entry && !entry.isNotFoundInExcel) {
+        const absenceMinutes = entry.absenceMinutes || 0;
+        return Math.round((absenceMinutes / 60) * 1650);
+      }
+    }
+    return 0;
   };
 
   const [targetDate, setTargetDate] = useState(() => {
@@ -761,7 +772,7 @@ export default function PayrollValidationDashboard() {
         deductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
       } else {
         const gapok = calculateGapok(emp, salaryMatrix, targetDate);
-        const cat = emp.raw.employment?.jobCategory;
+        const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
         const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
         const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
         earnings = calculateTotalEarnings(
@@ -1321,8 +1332,11 @@ export default function PayrollValidationDashboard() {
   const payrollPeriod = getPayrollPeriod(targetDate);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50/80 to-white p-8 font-sans text-slate-800">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 p-8 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800">
+      {/* Subtle decorative blobs */}
+      <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
+      <div className="max-w-7xl mx-auto relative z-10">
         {/* Header Section */}
         <div className="flex justify-between items-center mb-6">
           <div className="flex gap-2">
@@ -1638,7 +1652,7 @@ export default function PayrollValidationDashboard() {
                               const totalEarnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
                               return formatIDR(totalEarnings);
                             }
-                            const cat = emp.raw.employment?.jobCategory;
+                            const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
                             const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
                             const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
                             const gapokVal = calculateGapok(emp, salaryMatrix, targetDate);
@@ -1661,7 +1675,7 @@ export default function PayrollValidationDashboard() {
                               const totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
                               return formatIDR(totalEarnings - totalDeductions);
                             }
-                            const cat = emp.raw.employment?.jobCategory;
+                            const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
                             const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
                             const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
                             const gapokVal = calculateGapok(emp, salaryMatrix, targetDate);
@@ -1744,7 +1758,7 @@ export default function PayrollValidationDashboard() {
         activeTab={payrollCollar}
         uraianEntry={(() => {
           if (!selectedEmployee) return undefined;
-          const cat = selectedEmployee.raw.employment?.jobCategory;
+          const cat = payrollCollar === 'loyalis' ? selectedEmployee.role : selectedEmployee.raw.employment?.jobCategory;
           const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
           const uraianDoc = uraianMap[`${period}_${cat}`];
           return uraianDoc?.entries?.[selectedEmployee.id] ?? undefined;
@@ -1754,7 +1768,7 @@ export default function PayrollValidationDashboard() {
         tunjanganFungsional={selectedEmployee ? functionalAllowanceMap[selectedEmployee.id] ?? 0 : 0}
         customColumns={(() => {
           if (!selectedEmployee) return undefined;
-          const cat = selectedEmployee.raw.employment?.jobCategory;
+          const cat = payrollCollar === 'loyalis' ? selectedEmployee.role : selectedEmployee.raw.employment?.jobCategory;
           const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
           const uraianDoc = uraianMap[`${period}_${cat}`];
           return uraianDoc?.customColumns ?? undefined;
