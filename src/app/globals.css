@@ -140,3 +140,9 @@ input[type=number] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* Remove focus outline from Recharts chart containers and elements */
+.recharts-wrapper,
+.recharts-wrapper * {
+  outline: none !important;
+}

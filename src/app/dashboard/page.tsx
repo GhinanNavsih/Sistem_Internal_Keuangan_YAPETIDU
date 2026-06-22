@@ -39,6 +39,7 @@ import {
   FileText,
   Percent,
   SlidersHorizontal,
+  PieChart as PieIcon,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -73,6 +74,39 @@ const formatIDR = (amount: number) => {
 };
 
 const PIE_COLORS = ['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#0ea5e9', '#a855f7'];
+
+const GROUP_COLOR_MAP: Record<string, { hex: string; bg: string }> = {
+  // Loyalis Departments
+  'REKTORAT': { hex: '#10b981', bg: 'bg-emerald-500' }, // Green
+  'FAK. ILMU KESEHATAN': { hex: '#6366f1', bg: 'bg-indigo-500' }, // Indigo
+  'UPT & LEMBAGA': { hex: '#f43f5e', bg: 'bg-rose-500' }, // Rose/Pink
+  'FAK. BISNIS, BAHASA DAN PENDIDIKAN': { hex: '#f59e0b', bg: 'bg-amber-500' }, // Amber/Orange
+  'FAK. AGAMA ISLAM': { hex: '#0ea5e9', bg: 'bg-sky-500' }, // Sky Blue
+  'FAK. SAINS DAN TEKNOLOGI': { hex: '#a855f7', bg: 'bg-purple-500' }, // Purple
+  'PASCASARJANA': { hex: '#ec4899', bg: 'bg-pink-500' }, // Pink
+
+  // Pekarya Job Categories
+  'SATPAM': { hex: '#6366f1', bg: 'bg-indigo-500' },
+  'SOPIR': { hex: '#10b981', bg: 'bg-emerald-500' },
+  'PEKARYA': { hex: '#f43f5e', bg: 'bg-rose-500' },
+  'TEKNISI': { hex: '#f59e0b', bg: 'bg-amber-500' },
+  'KEBERSIHAN_IC': { hex: '#0ea5e9', bg: 'bg-sky-500' },
+  'KEBERSIHAN_PONTI': { hex: '#a855f7', bg: 'bg-purple-500' },
+  'PONTI': { hex: '#ec4899', bg: 'bg-pink-500' },
+};
+
+const getGroupColorInfo = (name: string, idx: number) => {
+  const normalizedName = name.trim().toUpperCase();
+  if (GROUP_COLOR_MAP[normalizedName]) {
+    return GROUP_COLOR_MAP[normalizedName];
+  }
+  const hexColors = ['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#0ea5e9', '#a855f7', '#ec4899'];
+  const bgColors = ['bg-indigo-500', 'bg-rose-500', 'bg-emerald-500', 'bg-amber-500', 'bg-sky-500', 'bg-purple-500', 'bg-pink-500'];
+  return {
+    hex: hexColors[idx % hexColors.length],
+    bg: bgColors[idx % bgColors.length],
+  };
+};
 
 // Convert Period ID (e.g., '2026_05') to readable Indonesian label (e.g., 'Mei 2026')
 const formatPeriodLabel = (periodId: string): string => {
@@ -115,6 +149,232 @@ interface PeriodAggregate {
   pekaryaEarningsBreakdown: Record<string, number>;
 }
 
+interface EarningShareSectionProps {
+  title: string;
+  subtitle: string;
+  data: { name: string; value: number; percentage: number }[];
+  totalGross: number;
+  animateList: boolean;
+  type: 'loyalis' | 'pekarya';
+  shareOfEarningView: 'list' | 'pie' | 'bar';
+  selectedShareGroup: { type: 'loyalis' | 'pekarya'; name: string } | null;
+  setSelectedShareGroup: React.Dispatch<React.SetStateAction<{ type: 'loyalis' | 'pekarya'; name: string } | null>>;
+}
+
+const EarningShareSection: React.FC<EarningShareSectionProps> = ({
+  title,
+  subtitle,
+  data,
+  totalGross,
+  animateList,
+  type,
+  shareOfEarningView,
+  selectedShareGroup,
+  setSelectedShareGroup,
+}) => {
+  const chartData = useMemo(() => {
+    return data.map((item) => {
+      const isSelected = selectedShareGroup && selectedShareGroup.type === type && selectedShareGroup.name === item.name;
+      const isAnySelected = selectedShareGroup && selectedShareGroup.type === type;
+      return {
+        ...item,
+        isSelected,
+        isAnySelected,
+      };
+    });
+  }, [data, selectedShareGroup, type]);
+
+  if (data.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[300px] border border-dashed border-slate-200 rounded-2xl p-6 bg-slate-50/20 w-full">
+        <p className="text-sm text-slate-400 font-medium animate-pulse">Tidak ada data untuk ditampilkan</p>
+      </div>
+    );
+  }
+
+  const handleChartClick = (name: string | undefined) => {
+    if (!name) return;
+    setSelectedShareGroup((prev) => {
+      if (prev && prev.type === type && prev.name === name) {
+        return null; // Toggle off
+      }
+      return { type, name };
+    });
+  };
+
+  return (
+    <div className="flex flex-col justify-between flex-1 w-full">
+      <div>
+        <div className="mb-4">
+          <h4 className="text-sm font-bold text-slate-700">{title}</h4>
+          <p className="text-[11px] text-slate-400 mt-0.5">{subtitle}</p>
+        </div>
+
+        {shareOfEarningView === 'list' ? (
+          <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+            {chartData.map((item, idx) => {
+              const colorInfo = getGroupColorInfo(item.name, idx);
+              const colorClass = colorInfo.bg;
+              const isSelected = item.isSelected;
+              const isAnySelected = item.isAnySelected;
+              const rowClass = `group/row transition-all duration-200 cursor-pointer rounded-xl p-2 border border-transparent ${
+                isSelected 
+                  ? 'bg-indigo-50/90 border-indigo-200/80 shadow-md scale-[1.01]' 
+                  : isAnySelected 
+                    ? 'opacity-25 scale-[0.97] hover:opacity-100 hover:scale-100 hover:bg-indigo-50/20' 
+                    : 'hover:bg-indigo-50/30'
+              }`;
+
+              return (
+                <div key={item.name} className={rowClass} onClick={() => handleChartClick(item.name)}>
+                  <div className="flex items-center justify-between text-xs font-semibold">
+                    <span className="text-slate-700 truncate max-w-[200px]" title={item.name}>
+                      {item.name}
+                    </span>
+                    <span className="text-slate-900 font-bold shrink-0">
+                      {formatIDR(item.value)}{' '}
+                      <span className="text-slate-400 text-[10px] ml-1">({item.percentage.toFixed(1)}%)</span>
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1.5">
+                    <div
+                      className={`${colorClass} h-full rounded-full transition-all duration-500`}
+                      style={{ width: `${animateList ? item.percentage : 0}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : shareOfEarningView === 'bar' ? (
+          <div className="w-full h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 65 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis
+                  dataKey="name"
+                  tickFormatter={(val) => val.length > 15 ? `${val.substring(0, 15)}...` : val}
+                  tick={{ fill: '#64748b', fontSize: 9, fontWeight: 500 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={75}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  tickFormatter={(val) => `Rp ${val / 1000000}jt`}
+                  tick={{ fill: '#64748b', fontSize: 10, fontWeight: 500 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip formatter={(value: any) => formatIDR(value)} />
+                <Bar dataKey="value" radius={[4, 4, 0, 0]} onClick={(entry) => handleChartClick(entry.name)}>
+                  {chartData.map((entry, idx) => {
+                    const isSelected = entry.isSelected;
+                    const isAnySelected = entry.isAnySelected;
+                    const cellOpacity = isAnySelected ? (isSelected ? 1.0 : 0.18) : 0.85;
+                    const colorInfo = getGroupColorInfo(entry.name, idx);
+                    return (
+                      <Cell 
+                        key={`cell-${idx}`} 
+                        fill={colorInfo.hex} 
+                        opacity={cellOpacity}
+                        stroke={isSelected ? '#4f46e5' : 'none'}
+                        strokeWidth={isSelected ? 2.5 : 0}
+                        className="cursor-pointer transition-all duration-200 outline-none"
+                      />
+                    );
+                  })}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="w-full h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Legend
+                  verticalAlign="top"
+                  align="left"
+                  layout="vertical"
+                  content={(props: any) => {
+                    const { payload } = props;
+                    if (!payload) return null;
+                    const sortedPayload = [...payload].sort((a, b) => {
+                      const valA = a.payload?.value ?? 0;
+                      const valB = b.payload?.value ?? 0;
+                      return valB - valA;
+                    });
+                    return (
+                      <div className="flex flex-col gap-1.5 pb-3 max-h-[100px] overflow-y-auto pr-2 mb-2">
+                        {sortedPayload.map((entry, idx) => {
+                          const name = entry.payload?.name;
+                          const isSelected = selectedShareGroup && selectedShareGroup.type === type && selectedShareGroup.name === name;
+                          const isAnySelected = selectedShareGroup && selectedShareGroup.type === type;
+                          const colorInfo = getGroupColorInfo(name || '', idx);
+                          return (
+                            <div 
+                              key={entry.value || idx} 
+                              onClick={() => handleChartClick(name)}
+                              className={`flex items-center gap-2 text-[10px] font-bold cursor-pointer transition-all p-1 rounded-md border border-transparent ${
+                                isSelected 
+                                  ? 'bg-indigo-50/80 text-indigo-700 border-indigo-200/50 shadow-sm' 
+                                  : isAnySelected 
+                                    ? 'opacity-25 hover:opacity-100 hover:bg-slate-50' 
+                                    : 'text-slate-600 hover:bg-slate-50'
+                              }`}
+                            >
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colorInfo.hex }} />
+                              <span className="truncate max-w-[120px]">{name}</span>
+                              <span className="text-slate-400">({((entry.payload?.value / totalGross) * 100).toFixed(1)}%)</span>
+                              <span className="ml-auto font-black text-slate-700">{formatIDR(entry.payload?.value)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  }}
+                />
+                <Pie
+                  data={chartData}
+                  cx="50%"
+                  cy="60%"
+                  innerRadius={50}
+                  outerRadius={75}
+                  labelLine={false}
+                  dataKey="value"
+                  nameKey="name"
+                  startAngle={90}
+                  endAngle={-270}
+                  onClick={(entry) => handleChartClick(entry.name)}
+                >
+                  {chartData.map((entry, idx) => {
+                    const isSelected = entry.isSelected;
+                    const isAnySelected = entry.isAnySelected;
+                    const cellOpacity = isAnySelected ? (isSelected ? 1.0 : 0.18) : 0.85;
+                    const colorInfo = getGroupColorInfo(entry.name, idx);
+                    return (
+                      <Cell 
+                        key={`cell-${idx}`} 
+                        fill={colorInfo.hex} 
+                        opacity={cellOpacity}
+                        stroke={isSelected ? '#4f46e5' : 'none'}
+                        strokeWidth={isSelected ? 2.5 : 0}
+                        className="cursor-pointer transition-all duration-200 outline-none"
+                      />
+                    );
+                  })}
+                </Pie>
+                <Tooltip formatter={(value: any) => formatIDR(value)} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default function TreasuryDashboard() {
   const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -142,6 +402,9 @@ export default function TreasuryDashboard() {
   const [animateBars, setAnimateBars] = useState(false);
   const [animateListBars, setAnimateListBars] = useState(false);
   const [animateEarningsListBars, setAnimateEarningsListBars] = useState(false);
+  const [shareOfEarningView, setShareOfEarningView] = useState<'list' | 'pie' | 'bar'>('list');
+  const [animateShareOfEarningListBars, setAnimateShareOfEarningListBars] = useState(false);
+  const [selectedShareGroup, setSelectedShareGroup] = useState<{ type: 'loyalis' | 'pekarya'; name: string } | null>(null);
 
   // Period-specific draft calculation states
   const [selectedPeriodUraianMap, setSelectedPeriodUraianMap] = useState<Record<string, any>>({});
@@ -192,6 +455,22 @@ export default function TreasuryDashboard() {
       return () => clearTimeout(timer);
     }
   }, [earningsView]);
+
+  // Trigger starting animation on the share of earning bars when toggling to 'Daftar' view
+  useEffect(() => {
+    if (shareOfEarningView === 'list') {
+      setAnimateShareOfEarningListBars(false);
+      const timer = setTimeout(() => {
+        setAnimateShareOfEarningListBars(true);
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [shareOfEarningView]);
+
+  // Reset selected Share of Earning group when page filters change
+  useEffect(() => {
+    setSelectedShareGroup(null);
+  }, [filterCollar, selectedPeriod]);
 
   // Fetch slips data on mount (employees list is provided by layout context)
   useEffect(() => {
@@ -824,39 +1103,378 @@ export default function TreasuryDashboard() {
     }
   }, [selectedPeriod, sortedPeriods, periodAggregates, filterCollar]);
 
-  // Recharts Chart Data (Historical Trends)
-  const chartData = useMemo(() => {
-    return sortedPeriods.map(p => {
-      const agg = periodAggregates[p];
-      let gross = agg.totalGross;
-      let deductions = agg.totalDeductions;
-      let net = agg.totalNet;
+  // Selected Period Share of Earning Data
+  const shareOfEarningData = useMemo(() => {
+    if (!selectedPeriod) return { loyalis: [], pekarya: [], totalLoyalisGross: 0, totalPekaryaGross: 0 };
 
-      if (filterCollar === 'loyalis') {
-        gross = agg.loyalisGross;
-        deductions = agg.loyalisDeductions;
-        net = agg.loyalisNet;
-      } else if (filterCollar === 'pekarya') {
-        gross = agg.pekaryaGross;
-        deductions = agg.pekaryaDeductions;
-        net = agg.pekaryaNet;
+    const loyalisMap: Record<string, number> = {};
+    const pekaryaMap: Record<string, number> = {};
+    let totalLoyalisGross = 0;
+    let totalPekaryaGross = 0;
+
+    // Slips lookup for selectedPeriod
+    const selectedPeriodSlipsMap: Record<string, any> = {};
+    slips.forEach(d => {
+      const period = d.period || d.id.substring(0, 7);
+      const employeeId = d.employeeId || d.id.substring(period.length + 1);
+      if (period === selectedPeriod) {
+        selectedPeriodSlipsMap[employeeId] = d;
+      }
+    });
+
+    const parts = selectedPeriod.split('_');
+    const targetDateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+
+    const activeLoyalis = employeesLoyalis.filter(e => e.personal_info?.status === 'AKTIF');
+    const activePekarya = employeesBlueCollar.filter(e => e.flags?.isActive !== false);
+
+    // 1. Process Loyalis
+    activeLoyalis.forEach(emp => {
+      const slip = selectedPeriodSlipsMap[emp.id];
+      let gross = 0;
+
+      if (slip && slip.status !== 'draft' && slip.earnings) {
+        gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+      } else {
+        const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
+                            (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
+        const gradeLevel = emp.academic_and_tier?.level_code || '';
+        const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
+        const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
+
+        const getLoyalisPresenceBonus = (empId: string): number => {
+          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+            const entry = selectedPeriodLoyalisPresence.entries[empId];
+            if (!entry || entry.isNotFoundInExcel) return 0;
+          }
+          return 250000;
+        };
+
+        const getLoyalisPresensiEarning = (empId: string): number => {
+          const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
+          const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
+          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+            const entry = selectedPeriodLoyalisPresence.entries[empId];
+            if (!entry || entry.isNotFoundInExcel) return 0;
+          }
+          return Math.round(workingDays * expectedHours * 1650);
+        };
+
+        gross = calculateTotalEarnings(
+          emp,
+          gapokVal,
+          undefined,
+          selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
+          functionalAllowanceMap[emp.id] ?? 0,
+          getLoyalisPresenceBonus(emp.id),
+          getLoyalisPresensiEarning(emp.id)
+        );
       }
 
-      return {
-        name: agg.label,
-        'Pendapatan Kotor': gross,
-        'Potongan': deductions,
-        'Gaji Bersih': net,
-      };
+      const dept = emp.employment_profile?.department_unit || 'LAIN-LAIN';
+      loyalisMap[dept] = (loyalisMap[dept] || 0) + gross;
+      totalLoyalisGross += gross;
     });
-  }, [sortedPeriods, periodAggregates, filterCollar]);
+
+    // 2. Process Pekarya
+    activePekarya.forEach(emp => {
+      const slip = selectedPeriodSlipsMap[emp.id];
+      let gross = 0;
+
+      if (slip && slip.status !== 'draft' && slip.earnings) {
+        gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+      } else {
+        const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
+        const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
+        const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
+        const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
+        const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
+
+        gross = calculateTotalEarnings(
+          emp,
+          gapokVal,
+          uraianEntry
+        );
+      }
+
+      const category = emp.employment?.jobCategory || 'LAIN-LAIN';
+      pekaryaMap[category] = (pekaryaMap[category] || 0) + gross;
+      totalPekaryaGross += gross;
+    });
+
+    const loyalisList = Object.entries(loyalisMap)
+      .map(([name, value]) => ({
+        name,
+        value,
+        percentage: totalLoyalisGross > 0 ? (value / totalLoyalisGross) * 100 : 0,
+      }))
+      .sort((a, b) => b.value - a.value);
+
+    const pekaryaList = Object.entries(pekaryaMap)
+      .map(([name, value]) => ({
+        name,
+        value,
+        percentage: totalPekaryaGross > 0 ? (value / totalPekaryaGross) * 100 : 0,
+      }))
+      .sort((a, b) => b.value - a.value);
+
+    return {
+      loyalis: loyalisList,
+      pekarya: pekaryaList,
+      totalLoyalisGross,
+      totalPekaryaGross,
+    };
+  }, [
+    selectedPeriod,
+    slips,
+    employeesLoyalis,
+    employeesBlueCollar,
+    salaryMatrixBlue,
+    salaryMatrixWhite,
+    functionalAllowanceMap,
+    selectedPeriodLoyalisPresence,
+    selectedPeriodVakasiTambahanMap,
+    selectedPeriodUraianMap,
+  ]);
+
+  // Selected Group Composition (Drilldown details when a share group is selected)
+  const selectedGroupComposition = useMemo(() => {
+    if (!selectedPeriod || !selectedShareGroup) {
+      return null;
+    }
+
+    const earningsMap: Record<string, number> = {};
+    const deductionsMap: Record<string, number> = {};
+    let totalGross = 0;
+    let totalDeductions = 0;
+
+    // Slips lookup for selectedPeriod
+    const selectedPeriodSlipsMap: Record<string, any> = {};
+    slips.forEach(d => {
+      const period = d.period || d.id.substring(0, 7);
+      const employeeId = d.employeeId || d.id.substring(period.length + 1);
+      if (period === selectedPeriod) {
+        selectedPeriodSlipsMap[employeeId] = d;
+      }
+    });
+
+    const parts = selectedPeriod.split('_');
+    const targetDateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+
+    const getDraftDeductionsList = (emp: any, isLoyalis: boolean) => {
+      const list: { label: string; amount: number }[] = [];
+      const kopUnipduAmount = koperasiDeductions[emp.id] || 0;
+      const kopSaving = koperasiSavings[emp.id] || 0;
+
+      if (isLoyalis) {
+        const getLoyalisPresenceDeduction = (empId: string): number => {
+          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+            const entry = selectedPeriodLoyalisPresence.entries[empId];
+            if (entry && !entry.isNotFoundInExcel) {
+              return entry.deduction || 0;
+            }
+          }
+          return 0;
+        };
+
+        const getLoyalisPresensiDeduction = (empId: string): number => {
+          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+            const entry = selectedPeriodLoyalisPresence.entries[empId];
+            if (entry && !entry.isNotFoundInExcel) {
+              const absenceMinutes = entry.absenceMinutes || 0;
+              return Math.round((absenceMinutes / 60) * 1650);
+            }
+          }
+          return 0;
+        };
+
+        const bpjsAmt = emp.bpjs?.deductionAmount || 0;
+        const thtAmt = emp.tht?.deductionAmount || 0;
+        const savingsAmt = emp.savings?.deductionAmount || 0;
+        const zizAmt = emp.ziz?.deductionAmount || 0;
+        const pinluAmt = emp.pinlu?.deductionAmount || 0;
+        const presDeduct = getLoyalisPresensiDeduction(emp.id);
+        const presBonusDeduct = getLoyalisPresenceDeduction(emp.id);
+
+        if (bpjsAmt) list.push({ label: 'BPJS', amount: bpjsAmt });
+        if (thtAmt) list.push({ label: 'Tabungan Hari Tua BNI Simponi', amount: thtAmt });
+        if (savingsAmt) list.push({ label: 'Tabungan', amount: savingsAmt });
+        if (zizAmt) list.push({ label: 'Zakat Infaq Sodaqoh', amount: zizAmt });
+        if (pinluAmt) list.push({ label: 'Pinlu/Tagihan', amount: pinluAmt });
+        if (kopUnipduAmount) list.push({ label: 'Pinjaman Kop. UNIPDU', amount: kopUnipduAmount });
+        if (presDeduct) list.push({ label: 'Potongan Presensi', amount: presDeduct });
+        if (presBonusDeduct) list.push({ label: 'Potongan Bonus Presensi', amount: presBonusDeduct });
+        if (kopSaving) list.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: kopSaving });
+      } else {
+        const bpjsAmt = emp.bpjs?.deductionAmount ? Math.round(emp.bpjs.deductionAmount) : 0;
+        const kopRochmadAmount = emp.deductions?.koperasiRochmad || 0;
+
+        if (bpjsAmt) list.push({ label: 'BPJS', amount: bpjsAmt });
+        if (kopRochmadAmount) list.push({ label: 'Kop. Rochmad', amount: kopRochmadAmount });
+        if (kopUnipduAmount) list.push({ label: 'Pinjaman Kop. UNIPDU', amount: kopUnipduAmount });
+        if (kopSaving) list.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: kopSaving });
+      }
+      return list;
+    };
+
+    if (selectedShareGroup.type === 'loyalis') {
+      const activeLoyalis = employeesLoyalis.filter(
+        e => e.personal_info?.status === 'AKTIF' && (e.employment_profile?.department_unit || 'LAIN-LAIN') === selectedShareGroup.name
+      );
+
+      activeLoyalis.forEach(emp => {
+        const slip = selectedPeriodSlipsMap[emp.id];
+        let gross = 0;
+        let deductionsList: { label: string; amount: number }[] = [];
+        let earningsList: { label: string; amount: number }[] = [];
+
+        if (slip && slip.status !== 'draft' && slip.earnings && slip.deductions) {
+          gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+          deductionsList = slip.deductions;
+          earningsList = slip.earnings;
+        } else {
+          const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
+                              (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
+          const gradeLevel = emp.academic_and_tier?.level_code || '';
+          const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
+          const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
+
+          const getLoyalisPresenceBonus = (empId: string): number => {
+            if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+              const entry = selectedPeriodLoyalisPresence.entries[empId];
+              if (!entry || entry.isNotFoundInExcel) return 0;
+            }
+            return 250000;
+          };
+
+          const getLoyalisPresensiEarning = (empId: string): number => {
+            const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
+            const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
+            if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+              const entry = selectedPeriodLoyalisPresence.entries[empId];
+              if (!entry || entry.isNotFoundInExcel) return 0;
+            }
+            return Math.round(workingDays * expectedHours * 1650);
+          };
+
+          gross = calculateTotalEarnings(
+            emp,
+            gapokVal,
+            undefined,
+            selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
+            functionalAllowanceMap[emp.id] ?? 0,
+            getLoyalisPresenceBonus(emp.id),
+            getLoyalisPresensiEarning(emp.id)
+          );
+
+          earningsList = buildInitialEarnings(
+            emp,
+            gapokVal,
+            'loyalis',
+            undefined,
+            selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
+            undefined,
+            functionalAllowanceMap[emp.id] ?? 0,
+            undefined,
+            getLoyalisPresenceBonus(emp.id),
+            getLoyalisPresensiEarning(emp.id)
+          );
+
+          deductionsList = getDraftDeductionsList(emp, true);
+        }
+
+        totalGross += gross;
+        earningsList.forEach((e: any) => {
+          const label = e.label || 'Lain-lain';
+          earningsMap[label] = (earningsMap[label] || 0) + (e.amount || 0);
+        });
+
+        deductionsList.forEach((de: any) => {
+          const label = de.label || 'Lain-lain';
+          deductionsMap[label] = (deductionsMap[label] || 0) + (de.amount || 0);
+          totalDeductions += (de.amount || 0);
+        });
+      });
+    } else if (selectedShareGroup.type === 'pekarya') {
+      const activePekarya = employeesBlueCollar.filter(
+        e => e.flags?.isActive !== false && (e.employment?.jobCategory || 'LAIN-LAIN') === selectedShareGroup.name
+      );
+
+      activePekarya.forEach(emp => {
+        const slip = selectedPeriodSlipsMap[emp.id];
+        let gross = 0;
+        let deductionsList: { label: string; amount: number }[] = [];
+        let earningsList: { label: string; amount: number }[] = [];
+
+        if (slip && slip.status !== 'draft' && slip.earnings && slip.deductions) {
+          gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+          deductionsList = slip.deductions;
+          earningsList = slip.earnings;
+        } else {
+          const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
+          const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
+          const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
+          const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
+          const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
+
+          gross = calculateTotalEarnings(
+            emp,
+            gapokVal,
+            uraianEntry
+          );
+
+          earningsList = buildInitialEarnings(
+            emp,
+            gapokVal,
+            'pekarya',
+            uraianEntry
+          );
+
+          deductionsList = getDraftDeductionsList(emp, false);
+        }
+
+        totalGross += gross;
+        earningsList.forEach((e: any) => {
+          const label = e.label || 'Lain-lain';
+          earningsMap[label] = (earningsMap[label] || 0) + (e.amount || 0);
+        });
+
+        deductionsList.forEach((de: any) => {
+          const label = de.label || 'Lain-lain';
+          deductionsMap[label] = (deductionsMap[label] || 0) + (de.amount || 0);
+          totalDeductions += (de.amount || 0);
+        });
+      });
+    }
+
+    return {
+      earningsBreakdown: earningsMap,
+      deductionsBreakdown: deductionsMap,
+      totalGross,
+      totalDeductions
+    };
+  }, [
+    selectedPeriod,
+    selectedShareGroup,
+    slips,
+    employeesLoyalis,
+    employeesBlueCollar,
+    salaryMatrixBlue,
+    salaryMatrixWhite,
+    functionalAllowanceMap,
+    selectedPeriodLoyalisPresence,
+    selectedPeriodVakasiTambahanMap,
+    selectedPeriodUraianMap
+  ]);
 
   // Selected Period Deduction Breakdown (Sorted)
   const sortedDeductions = useMemo(() => {
     if (!currentPeriodData) return [];
 
     let breakdown = currentPeriodData.deductionsBreakdown;
-    if (filterCollar === 'loyalis') {
+    if (selectedGroupComposition) {
+      breakdown = selectedGroupComposition.deductionsBreakdown;
+    } else if (filterCollar === 'loyalis') {
       breakdown = currentPeriodData.loyalisDeductionsBreakdown;
     } else if (filterCollar === 'pekarya') {
       breakdown = currentPeriodData.pekaryaDeductionsBreakdown;
@@ -866,14 +1484,16 @@ export default function TreasuryDashboard() {
       .map(([name, value]) => ({ name, value }))
       .filter(item => item.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [currentPeriodData, filterCollar]);
+  }, [currentPeriodData, filterCollar, selectedGroupComposition]);
 
   // Selected Period Earnings Breakdown (Sorted & Filtered > 0)
   const sortedEarnings = useMemo(() => {
     if (!currentPeriodData) return [];
 
     let breakdown = currentPeriodData.earningsBreakdown;
-    if (filterCollar === 'loyalis') {
+    if (selectedGroupComposition) {
+      breakdown = selectedGroupComposition.earningsBreakdown;
+    } else if (filterCollar === 'loyalis') {
       breakdown = currentPeriodData.loyalisEarningsBreakdown;
     } else if (filterCollar === 'pekarya') {
       breakdown = currentPeriodData.pekaryaEarningsBreakdown;
@@ -895,16 +1515,26 @@ export default function TreasuryDashboard() {
       .map(([name, value]) => ({ name, value }))
       .filter(item => item.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [currentPeriodData, filterCollar, selectedPeriodVakasiEvents]);
+  }, [currentPeriodData, filterCollar, selectedPeriodVakasiEvents, selectedGroupComposition]);
+
+  const currentFilteredGross = useMemo(() => {
+    if (selectedGroupComposition) return selectedGroupComposition.totalGross;
+    return filteredGross;
+  }, [selectedGroupComposition, filteredGross]);
+
+  const currentFilteredDeductions = useMemo(() => {
+    if (selectedGroupComposition) return selectedGroupComposition.totalDeductions;
+    return filteredDeductions;
+  }, [selectedGroupComposition, filteredDeductions]);
 
   // Selected Period Earnings for Pie Chart (Group < 5% into 'Lainnya')
   const pieEarningsData = useMemo(() => {
-    if (filteredGross === 0) return [];
+    if (currentFilteredGross === 0) return [];
     const mainItems: { name: string; value: number }[] = [];
     let otherSum = 0;
 
     sortedEarnings.forEach(item => {
-      const pct = (item.value / filteredGross) * 100;
+      const pct = (item.value / currentFilteredGross) * 100;
       if (pct < 5) {
         otherSum += item.value;
       } else {
@@ -916,16 +1546,16 @@ export default function TreasuryDashboard() {
       mainItems.push({ name: 'Lainnya', value: otherSum });
     }
     return mainItems;
-  }, [sortedEarnings, filteredGross]);
+  }, [sortedEarnings, currentFilteredGross]);
 
   // Selected Period Deductions for Pie Chart (Group < 5% into 'Lainnya')
   const pieDeductionsData = useMemo(() => {
-    if (filteredDeductions === 0) return [];
+    if (currentFilteredDeductions === 0) return [];
     const mainItems: { name: string; value: number }[] = [];
     let otherSum = 0;
 
     sortedDeductions.forEach(item => {
-      const pct = (item.value / filteredDeductions) * 100;
+      const pct = (item.value / currentFilteredDeductions) * 100;
       if (pct < 5) {
         otherSum += item.value;
       } else {
@@ -937,7 +1567,7 @@ export default function TreasuryDashboard() {
       mainItems.push({ name: 'Lainnya', value: otherSum });
     }
     return mainItems;
-  }, [sortedDeductions, filteredDeductions]);
+  }, [sortedDeductions, currentFilteredDeductions]);
 
   // Custom Chart Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -956,6 +1586,8 @@ export default function TreasuryDashboard() {
     }
     return null;
   };
+
+
 
   if (authLoading || !mounted) {
     return (
@@ -1316,94 +1948,124 @@ export default function TreasuryDashboard() {
 
             </div>
 
-            {/* Section 3: Historical Trend Chart */}
+
+
+            {/* Section 3: Share of Earning Breakdown */}
             <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-slate-200/50 shadow-sm overflow-hidden">
               <div className="bg-slate-50/30 border-b border-slate-100/80 p-6 flex flex-row items-center justify-between flex-wrap gap-4">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-indigo-500" /> Tren Pengeluaran Payroll
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Histori perbandingan Pendapatan Kotor, Potongan, dan Gaji Bersih per bulan
-                  </p>
+                <div className="flex flex-col md:flex-row md:items-center gap-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                      <PieIcon className="w-5 h-5 text-indigo-500" /> Proporsi Pengeluaran Gaji (Share of Earning)
+                    </h3>
+                    <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                      <p className="text-xs text-slate-500">
+                        Distribusi total pendapatan kotor berdasarkan Satuan Kerja (Loyalis) dan Kategori Kerja (Pekarya) pada periode {selectedPeriod ? formatPeriodLabel(selectedPeriod) : ''}
+                      </p>
+                      {selectedShareGroup && (
+                        <Badge 
+                          variant="outline" 
+                          className="bg-indigo-50 text-indigo-700 border-indigo-200/80 rounded-lg py-0.5 px-2 flex items-center gap-1.5 text-[10px] font-bold cursor-pointer hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 transition-colors"
+                          onClick={() => setSelectedShareGroup(null)}
+                          title="Klik untuk menghapus filter"
+                        >
+                          Filter: {selectedShareGroup.name}
+                          <span className="font-bold text-[11px] hover:text-rose-900 shrink-0">×</span>
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-4 text-xs font-bold">
-                  <span className="flex items-center gap-1.5 text-emerald-600">
-                    <span className="w-3 h-3 bg-emerald-500 rounded-full inline-block"></span> Pendapatan Kotor
-                  </span>
-                  <span className="flex items-center gap-1.5 text-rose-600">
-                    <span className="w-3 h-3 bg-rose-500 rounded-full inline-block"></span> Potongan
-                  </span>
-                  <span className="flex items-center gap-1.5 text-indigo-600">
-                    <span className="w-3 h-3 bg-indigo-500 rounded-full inline-block"></span> Gaji Bersih
-                  </span>
+                <div className="flex bg-slate-100/80 p-0.5 rounded-xl border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShareOfEarningView('list')}
+                    className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${shareOfEarningView === 'list'
+                      ? 'bg-white text-indigo-600 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                  >
+                    Daftar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShareOfEarningView('bar')}
+                    className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${shareOfEarningView === 'bar'
+                      ? 'bg-white text-indigo-600 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                  >
+                    Bar Graph
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShareOfEarningView('pie')}
+                    className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${shareOfEarningView === 'pie'
+                      ? 'bg-white text-indigo-600 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                  >
+                    Pie Chart
+                  </button>
                 </div>
               </div>
 
               <div className="p-6">
-                <div className="w-full h-[320px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                      data={chartData}
-                      margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
-                    >
-                      <defs>
-                        <linearGradient id="colorGross" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0.01} />
-                        </linearGradient>
-                        <linearGradient id="colorDeductions" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.15} />
-                          <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.01} />
-                        </linearGradient>
-                        <linearGradient id="colorNet" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
-                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0.01} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis
-                        dataKey="name"
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fill: '#64748b', fontSize: 12, fontWeight: 500 }}
-                        dy={10}
-                      />
-                      <YAxis
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }}
-                        tickFormatter={(value) => `Rp ${value / 1000000}jt`}
-                      />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Area
-                        type="monotone"
-                        dataKey="Pendapatan Kotor"
-                        stroke="#10b981"
-                        strokeWidth={3}
-                        fillOpacity={1}
-                        fill="url(#colorGross)"
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="Potongan"
-                        stroke="#f43f5e"
-                        strokeWidth={3}
-                        fillOpacity={1}
-                        fill="url(#colorDeductions)"
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="Gaji Bersih"
-                        stroke="#6366f1"
-                        strokeWidth={3.5}
-                        fillOpacity={1}
-                        fill="url(#colorNet)"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
+                {filterCollar === 'semua' ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <EarningShareSection
+                      title="Staf Loyalis (Per SatKer)"
+                      subtitle="Distribusi total pendapatan kotor Loyalis per Satuan Kerja"
+                      data={shareOfEarningData.loyalis}
+                      totalGross={shareOfEarningData.totalLoyalisGross}
+                      animateList={animateShareOfEarningListBars}
+                      type="loyalis"
+                      shareOfEarningView={shareOfEarningView}
+                      selectedShareGroup={selectedShareGroup}
+                      setSelectedShareGroup={setSelectedShareGroup}
+                    />
+                    <EarningShareSection
+                      title="Staf Pekarya (Per Kategori Kerja)"
+                      subtitle="Distribusi total pendapatan kotor Pekarya per Kategori Kerja"
+                      data={shareOfEarningData.pekarya}
+                      totalGross={shareOfEarningData.totalPekaryaGross}
+                      animateList={animateShareOfEarningListBars}
+                      type="pekarya"
+                      shareOfEarningView={shareOfEarningView}
+                      selectedShareGroup={selectedShareGroup}
+                      setSelectedShareGroup={setSelectedShareGroup}
+                    />
+                  </div>
+                ) : filterCollar === 'loyalis' ? (
+                  <div className="w-full">
+                    <EarningShareSection
+                      title="Staf Loyalis (Per SatKer)"
+                      subtitle="Distribusi total pendapatan kotor Loyalis per Satuan Kerja"
+                      data={shareOfEarningData.loyalis}
+                      totalGross={shareOfEarningData.totalLoyalisGross}
+                      animateList={animateShareOfEarningListBars}
+                      type="loyalis"
+                      shareOfEarningView={shareOfEarningView}
+                      selectedShareGroup={selectedShareGroup}
+                      setSelectedShareGroup={setSelectedShareGroup}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-full">
+                    <EarningShareSection
+                      title="Staf Pekarya (Per Kategori Kerja)"
+                      subtitle="Distribusi total pendapatan kotor Pekarya per Kategori Kerja"
+                      data={shareOfEarningData.pekarya}
+                      totalGross={shareOfEarningData.totalPekaryaGross}
+                      animateList={animateShareOfEarningListBars}
+                      type="pekarya"
+                      shareOfEarningView={shareOfEarningView}
+                      selectedShareGroup={selectedShareGroup}
+                      setSelectedShareGroup={setSelectedShareGroup}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1419,7 +2081,10 @@ export default function TreasuryDashboard() {
                         <Banknote className="w-5 h-5 text-indigo-500" /> Komposisi Penerimaan Gaji
                       </h3>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Rincian alokasi penerimaan kotor pegawai untuk gaji pokok, tunjangan, vakasi, dll
+                        {selectedShareGroup 
+                          ? `Rincian alokasi penerimaan kotor untuk kelompok: ${selectedShareGroup.name}`
+                          : "Rincian alokasi penerimaan kotor pegawai untuk gaji pokok, tunjangan, vakasi, dll"
+                        }
                       </p>
                     </div>
 
@@ -1463,8 +2128,8 @@ export default function TreasuryDashboard() {
                     ) : earningsView === 'list' ? (
                       <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
                         {sortedEarnings.map((item, idx) => {
-                          const percentage = filteredGross > 0
-                            ? (item.value / filteredGross) * 100
+                          const percentage = currentFilteredGross > 0
+                            ? (item.value / currentFilteredGross) * 100
                             : 0;
 
                           // Harmonic colors for bars
@@ -1570,7 +2235,10 @@ export default function TreasuryDashboard() {
                         <PiggyBank className="w-5 h-5 text-indigo-500" /> Komposisi Potongan Gaji
                       </h3>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Rincian alokasi potongan untuk disalurkan ke BPJS, Koperasi, Yayasan, Zakat dll
+                        {selectedShareGroup 
+                          ? `Rincian alokasi potongan untuk kelompok: ${selectedShareGroup.name}`
+                          : "Rincian alokasi potongan untuk disalurkan ke BPJS, Koperasi, Yayasan, Zakat dll"
+                        }
                       </p>
                     </div>
 
@@ -1614,8 +2282,8 @@ export default function TreasuryDashboard() {
                     ) : deductionsView === 'list' ? (
                       <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
                         {sortedDeductions.map((item, idx) => {
-                          const percentage = filteredDeductions > 0
-                            ? (item.value / filteredDeductions) * 100
+                          const percentage = currentFilteredDeductions > 0
+                            ? (item.value / currentFilteredDeductions) * 100
                             : 0;
 
                           // Harmonic colors for bars
