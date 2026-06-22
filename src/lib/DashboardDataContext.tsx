@@ -198,6 +198,10 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       });
       setKoperasiDeductions(deductionMap);
 
+      const loyEmployees = allEmployees.filter(emp =>
+        loyList.some(loy => loy.id === emp.id)
+      );
+
       const savingMap: Record<string, number> = {};
       userSnapshot.docs.forEach(userDoc => {
         const uData = userDoc.data();
@@ -206,20 +210,20 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         const normalizedU = normalizeName(uName);
         const uUid = uData.uid || userDoc.id;
 
-        let match = allEmployees.find(
+        let match = loyEmployees.find(
           emp =>
             (emp.koperasiUserId && emp.koperasiUserId === userDoc.id) ||
             (emp.koperasiAuthUid && emp.koperasiAuthUid === uUid)
         );
 
         if (!match) {
-          match = allEmployees.find(emp => emp.normalizedName === normalizedU);
+          match = loyEmployees.find(emp => emp.normalizedName === normalizedU);
         }
 
         if (!match) {
           const overrideName = MANUAL_OVERRIDES[uName.trim()];
           if (overrideName) {
-            match = allEmployees.find(emp => emp.originalName === overrideName);
+            match = loyEmployees.find(emp => emp.originalName === overrideName);
           }
         }
 

@@ -280,7 +280,9 @@ export function buildInitialDeductions(
     deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: koperasiDeduction });
 
     // Simpanan Wajib Koperasi
-    deductions.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving });
+    if (koperasiSaving) {
+      deductions.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving });
+    }
   }
 
   return deductions;
