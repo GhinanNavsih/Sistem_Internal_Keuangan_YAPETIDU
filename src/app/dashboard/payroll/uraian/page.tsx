@@ -202,6 +202,7 @@ export default function UraianPage() {
   const [currentEventReviewNote, setCurrentEventReviewNote] = useState<string | null>(null);
   const [currentEventSubmittedBy, setCurrentEventSubmittedBy] = useState<string | null>(null);
   const [currentEventSubmittedByName, setCurrentEventSubmittedByName] = useState<string | null>(null);
+  const [currentEventSubmittedByEmail, setCurrentEventSubmittedByEmail] = useState<string | null>(null);
 
   // Status Badge Helper for UI cards
   const getStatusBadge = (status?: string) => {
@@ -609,6 +610,7 @@ export default function UraianPage() {
         status: 'pending_review',
         submittedBy: profile?.uid || null,
         submittedByName: profile?.displayName || null,
+        submittedByEmail: profile?.email || null,
         reportFileUrl: reportFileUrl,
         reportFileName: reportFileName,
         submittedAt: serverTimestamp(),
@@ -626,6 +628,7 @@ export default function UraianPage() {
       setCurrentEventReviewNote(null);
       setCurrentEventSubmittedBy(profile?.uid || null);
       setCurrentEventSubmittedByName(profile?.displayName || null);
+      setCurrentEventSubmittedByEmail(profile?.email || null);
       setReportFile(null);
       fetchEvents();
     } catch (err) {
@@ -664,6 +667,32 @@ export default function UraianPage() {
     } catch (err) {
       console.error(err);
       setMessage({ type: 'error', text: 'Gagal memproses review.' });
+    } finally {
+      isSavingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  // ── Unverify Event (Super Admin) ──
+  const handleUnverifyEvent = async (eventId: string) => {
+    if (isSavingRef.current) return;
+    if (!confirm('Apakah Anda yakin ingin membatalkan persetujuan kegiatan ini? Status akan kembali menjadi Menunggu Review.')) return;
+    isSavingRef.current = true;
+    setSaving(true);
+    try {
+      const updatePayload: Record<string, any> = {
+        status: 'pending_review',
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, 'VakasiTambahan', eventId), updatePayload, { merge: true });
+      setMessage({ type: 'success', text: 'Persetujuan kegiatan berhasil dibatalkan.' });
+
+      setCurrentEventStatus('pending_review');
+      fetchEvents();
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: 'Gagal membatalkan persetujuan.' });
     } finally {
       isSavingRef.current = false;
       setSaving(false);
@@ -709,10 +738,13 @@ export default function UraianPage() {
       const isSuperAdmin = profile?.role === 'super_admin';
       const finalSubmittedBy = selectedEventId
         ? currentEventSubmittedBy
-        : (isSuperAdmin ? null : (profile?.uid || null));
+        : (profile?.uid || null);
       const finalSubmittedByName = selectedEventId
         ? currentEventSubmittedByName
-        : (isSuperAdmin ? null : (profile?.displayName || null));
+        : (profile?.displayName || null);
+      const finalSubmittedByEmail = selectedEventId
+        ? currentEventSubmittedByEmail
+        : (profile?.email || null);
 
       const payload: Record<string, any> = {
         eventName,
@@ -726,6 +758,7 @@ export default function UraianPage() {
         status: isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'),
         submittedBy: finalSubmittedBy,
         submittedByName: finalSubmittedByName,
+        submittedByEmail: finalSubmittedByEmail,
       };
       // Preserve report file info if present
       if (reportFileUrl) {
@@ -740,6 +773,7 @@ export default function UraianPage() {
       setCurrentEventStatus(isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'));
       setCurrentEventSubmittedBy(finalSubmittedBy);
       setCurrentEventSubmittedByName(finalSubmittedByName);
+      setCurrentEventSubmittedByEmail(finalSubmittedByEmail);
       setReportFile(null);
       fetchEvents();
     } catch (err) {
@@ -758,6 +792,34 @@ export default function UraianPage() {
     try {
       isSavingRef.current = true;
       setSaving(true);
+
+      const eventRef = doc(db, 'VakasiTambahan', eventId);
+      const eventSnap = await getDoc(eventRef);
+      if (eventSnap.exists()) {
+        const eventData = eventSnap.data();
+        const eventWorkers = eventData.eventWorkers || {};
+        const eventPeriod = eventData.period;
+        const nameOfEvent = eventData.eventName;
+
+        if (eventPeriod && nameOfEvent) {
+          const slipPeriod = eventPeriod.replace('-', '_');
+          for (const workerId of Object.keys(eventWorkers)) {
+            const slipDocId = `${slipPeriod}_${workerId}`;
+            const slipRef = doc(db, 'PayrollSlipStates', slipDocId);
+            const slipSnap = await getDoc(slipRef);
+            if (slipSnap.exists()) {
+              const slipData = slipSnap.data();
+              const oldEarnings = slipData.earnings || [];
+              const newEarnings = oldEarnings.filter((e: any) => e.label !== nameOfEvent);
+              await setDoc(slipRef, {
+                ...slipData,
+                earnings: newEarnings,
+              }, { merge: true });
+            }
+          }
+        }
+      }
+
       await deleteDoc(doc(db, 'VakasiTambahan', eventId));
       setMessage({ type: 'success', text: 'Event Vakasi Tambahan berhasil dihapus.' });
       setSelectedEventId(null);
@@ -772,6 +834,7 @@ export default function UraianPage() {
       setCurrentEventReviewNote(null);
       setCurrentEventSubmittedBy(null);
       setCurrentEventSubmittedByName(null);
+      setCurrentEventSubmittedByEmail(null);
       fetchEvents();
     } catch (err) {
       console.error(err);
@@ -826,10 +889,13 @@ export default function UraianPage() {
       const isSuperAdmin = profile?.role === 'super_admin';
       const finalSubmittedBy = activeId
         ? currentEventSubmittedBy
-        : (isSuperAdmin ? null : (profile?.uid || null));
+        : (profile?.uid || null);
       const finalSubmittedByName = activeId
         ? currentEventSubmittedByName
-        : (isSuperAdmin ? null : (profile?.displayName || null));
+        : (profile?.displayName || null);
+      const finalSubmittedByEmail = activeId
+        ? currentEventSubmittedByEmail
+        : (profile?.email || null);
 
       const payload: Record<string, any> = {
         eventName: currentEventName,
@@ -843,6 +909,7 @@ export default function UraianPage() {
         status: isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'),
         submittedBy: finalSubmittedBy,
         submittedByName: finalSubmittedByName,
+        submittedByEmail: finalSubmittedByEmail,
       };
       if (reportFileUrl) {
         payload.reportFileUrl = reportFileUrl;
@@ -2337,6 +2404,7 @@ export default function UraianPage() {
                       setCurrentEventReviewNote(null);
                       setCurrentEventSubmittedBy(null);
                       setCurrentEventSubmittedByName(null);
+                      setCurrentEventSubmittedByEmail(null);
                     }}
                     size="sm"
                     className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold flex items-center gap-1.5"
@@ -2418,8 +2486,30 @@ export default function UraianPage() {
                             setReportFile(null);
                             setCurrentEventStatus(evt.status || null);
                             setCurrentEventReviewNote(evt.reviewNote || null);
-                            setCurrentEventSubmittedBy(evt.submittedBy || null);
-                            setCurrentEventSubmittedByName(evt.submittedByName || null);
+                            const subBy = evt.submittedBy || null;
+                            setCurrentEventSubmittedBy(subBy);
+                            if (!subBy) {
+                              setCurrentEventSubmittedByName('Super Admin');
+                              setCurrentEventSubmittedByEmail(null);
+                            } else {
+                              setCurrentEventSubmittedByName(evt.submittedByName || null);
+                              if (!evt.submittedByEmail) {
+                                getDoc(doc(db, 'users', subBy)).then(uSnap => {
+                                  if (uSnap.exists()) {
+                                    const uData = uSnap.data();
+                                    setCurrentEventSubmittedByEmail(uData.email || null);
+                                    if (!evt.submittedByName) {
+                                      setCurrentEventSubmittedByName(uData.displayName || null);
+                                    }
+                                  }
+                                }).catch(err => {
+                                  console.error("Error fetching user email dynamically:", err);
+                                  setCurrentEventSubmittedByEmail(null);
+                                });
+                              } else {
+                                setCurrentEventSubmittedByEmail(evt.submittedByEmail || null);
+                              }
+                            }
                           }}
                           className={`p-4 rounded-2xl border transition-all cursor-pointer outline-none focus:outline-none ${getCardBgClass(evt.status, isActive)}`}
                         >
@@ -2477,6 +2567,18 @@ export default function UraianPage() {
                       {selectedEventId ? 'Ubah Kegiatan' : 'Buat Kegiatan Baru'}
                     </h3>
                     <p className="text-slate-400 text-xs mt-0.5">Input detail kegiatan dan daftarkan pegawai loyalis penerima payout.</p>
+                    {selectedEventId && (currentEventSubmittedByName || currentEventSubmittedByEmail) && (
+                      <p className="text-slate-500 text-[11px] mt-1.5 flex items-center gap-1.5">
+                        <Send className="w-3 h-3 text-slate-400" />
+                        <span>Dikirim oleh:</span>
+                        <span className="font-bold text-slate-700">{currentEventSubmittedByName || 'Staf'}</span>
+                        {currentEventSubmittedByEmail && (
+                          <span className="text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 text-[10px] font-semibold font-mono">
+                            {currentEventSubmittedByEmail}
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
                   {selectedEventId && (
                     <div className="self-start mt-0.5">
@@ -3062,6 +3164,17 @@ export default function UraianPage() {
                       </Button>
                     </div>
                   )}
+                  {profile?.role === 'super_admin' && selectedEventId && currentEventStatus === 'approved' && (
+                    <Button
+                      type="button"
+                      onClick={() => handleUnverifyEvent(selectedEventId)}
+                      disabled={saving}
+                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs px-4 h-10 flex items-center gap-1.5 shadow-sm transition-all active:scale-95 animate-in fade-in"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      Batalkan Persetujuan
+                    </Button>
+                  )}
                 </div>
 
                 {/* Right side: Save / Submit / Batal buttons */}
@@ -3082,6 +3195,7 @@ export default function UraianPage() {
                       setCurrentEventReviewNote(null);
                       setCurrentEventSubmittedBy(null);
                       setCurrentEventSubmittedByName(null);
+                      setCurrentEventSubmittedByEmail(null);
                     }}
                     className="rounded-xl border-slate-200 text-slate-600 text-xs h-10 font-bold px-4"
                   >
