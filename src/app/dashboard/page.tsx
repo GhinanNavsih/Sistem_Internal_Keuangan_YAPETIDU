@@ -130,12 +130,14 @@ interface PeriodAggregate {
   loyalisDeductions: number;
   loyalisNet: number;
   loyalisCount: number;
+  confirmedLoyalisCount: number;
 
   // Pekarya (Blue Collar) aggregates
   pekaryaGross: number;
   pekaryaDeductions: number;
   pekaryaNet: number;
   pekaryaCount: number;
+  confirmedPekaryaCount: number;
 
   totalSlipsCount: number;
   confirmedSlipsCount: number;
@@ -604,10 +606,12 @@ export default function TreasuryDashboard() {
           loyalisDeductions: 0,
           loyalisNet: 0,
           loyalisCount: 0,
+          confirmedLoyalisCount: 0,
           pekaryaGross: 0,
           pekaryaDeductions: 0,
           pekaryaNet: 0,
           pekaryaCount: 0,
+          confirmedPekaryaCount: 0,
           totalSlipsCount: 0,
           confirmedSlipsCount: 0,
           deductionsBreakdown: {},
@@ -636,10 +640,12 @@ export default function TreasuryDashboard() {
           loyalisDeductions: 0,
           loyalisNet: 0,
           loyalisCount: 0,
+          confirmedLoyalisCount: 0,
           pekaryaGross: 0,
           pekaryaDeductions: 0,
           pekaryaNet: 0,
           pekaryaCount: 0,
+          confirmedPekaryaCount: 0,
           totalSlipsCount: 0,
           confirmedSlipsCount: 0,
           deductionsBreakdown: {},
@@ -664,10 +670,12 @@ export default function TreasuryDashboard() {
         loyalisDeductions: 0,
         loyalisNet: 0,
         loyalisCount: 0,
+        confirmedLoyalisCount: 0,
         pekaryaGross: 0,
         pekaryaDeductions: 0,
         pekaryaNet: 0,
         pekaryaCount: 0,
+        confirmedPekaryaCount: 0,
         totalSlipsCount: 0,
         confirmedSlipsCount: 0,
         deductionsBreakdown: {},
@@ -752,7 +760,8 @@ export default function TreasuryDashboard() {
       // Include confirmed, printed, and draft slips in historical sums
       const isEligible = d.status === 'confirmed' || d.status === 'printed' || d.status === 'draft';
       if (isEligible) {
-        if (d.status === 'confirmed' || d.status === 'printed') {
+        const isConfirmed = d.status === 'confirmed' || d.status === 'printed';
+        if (isConfirmed) {
           agg.confirmedSlipsCount++;
         }
 
@@ -771,11 +780,17 @@ export default function TreasuryDashboard() {
           agg.loyalisDeductions += deductions;
           agg.loyalisNet += net;
           agg.loyalisCount++;
+          if (isConfirmed) {
+            agg.confirmedLoyalisCount++;
+          }
         } else {
           agg.pekaryaGross += gross;
           agg.pekaryaDeductions += deductions;
           agg.pekaryaNet += net;
           agg.pekaryaCount++;
+          if (isConfirmed) {
+            agg.confirmedPekaryaCount++;
+          }
         }
 
         (d.deductions || []).forEach((de: any) => {
@@ -835,6 +850,7 @@ export default function TreasuryDashboard() {
         if (slip && slip.status !== 'draft' && slip.earnings && slip.deductions) {
           if (slip.status === 'confirmed' || slip.status === 'printed') {
             agg.confirmedSlipsCount++;
+            agg.confirmedLoyalisCount++;
           }
           gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
           deductions = slip.deductions.reduce((sum: number, de: any) => sum + (de.amount || 0), 0);
@@ -936,6 +952,7 @@ export default function TreasuryDashboard() {
         if (slip && slip.status !== 'draft' && slip.earnings && slip.deductions) {
           if (slip.status === 'confirmed' || slip.status === 'printed') {
             agg.confirmedSlipsCount++;
+            agg.confirmedPekaryaCount++;
           }
           gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
           deductions = slip.deductions.reduce((sum: number, de: any) => sum + (de.amount || 0), 0);
@@ -1040,7 +1057,7 @@ export default function TreasuryDashboard() {
         filteredGross: currentPeriodData.loyalisGross,
         filteredDeductions: currentPeriodData.loyalisDeductions,
         filteredNet: currentPeriodData.loyalisNet,
-        filteredConfirmedCount: currentPeriodData.loyalisCount,
+        filteredConfirmedCount: currentPeriodData.confirmedLoyalisCount,
         filteredActiveCount: activeStaffCounts.loyalis,
       };
     } else if (filterCollar === 'pekarya') {
@@ -1048,7 +1065,7 @@ export default function TreasuryDashboard() {
         filteredGross: currentPeriodData.pekaryaGross,
         filteredDeductions: currentPeriodData.pekaryaDeductions,
         filteredNet: currentPeriodData.pekaryaNet,
-        filteredConfirmedCount: currentPeriodData.pekaryaCount,
+        filteredConfirmedCount: currentPeriodData.confirmedPekaryaCount,
         filteredActiveCount: activeStaffCounts.pekarya,
       };
     } else {

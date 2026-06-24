@@ -253,7 +253,7 @@ export default function PayrollValidationDashboard() {
       let earningsList: { label: string; amount: number }[] = [];
       let deductionsList: { label: string; amount: number }[] = [];
 
-      if (slip && slip.earnings && slip.deductions) {
+      if (slip && slip.status === 'confirmed' && slip.earnings && slip.deductions) {
         earningsList = slip.earnings.map(e => ({ label: e.label, amount: e.amount }));
         deductionsList = slip.deductions.map(d => ({ label: d.label, amount: d.amount }));
       } else {
@@ -542,7 +542,7 @@ export default function PayrollValidationDashboard() {
         empDeductions[key] = 0;
       });
 
-      if (slip && slip.earnings && slip.deductions) {
+      if (slip && slip.status === 'confirmed' && slip.earnings && slip.deductions) {
         earnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
         slip.deductions.forEach(d => {
           const sanitized = sanitizeDeductionLabel(d.label);
@@ -631,7 +631,7 @@ export default function PayrollValidationDashboard() {
       let totalDeductions = 0;
       let netSalary = 0;
 
-      if (slip && slip.earnings && slip.deductions) {
+      if (slip && slip.status === 'confirmed' && slip.earnings && slip.deductions) {
         earnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
         totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
         netSalary = earnings - totalDeductions;
@@ -767,7 +767,7 @@ export default function PayrollValidationDashboard() {
       let earnings = 0;
       let deductions = 0;
 
-      if (slip && slip.earnings && slip.deductions) {
+      if (slip && slip.status === 'confirmed' && slip.earnings && slip.deductions) {
         earnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
         deductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
       } else {
@@ -1648,7 +1648,7 @@ export default function PayrollValidationDashboard() {
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
                           {(() => {
-                            if (slip && slip.earnings) {
+                            if (slip && slip.status === 'confirmed' && slip.earnings) {
                               const totalEarnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
                               return formatIDR(totalEarnings);
                             }
@@ -1661,7 +1661,7 @@ export default function PayrollValidationDashboard() {
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
                           {(() => {
-                            if (slip && slip.deductions) {
+                            if (slip && slip.status === 'confirmed' && slip.deductions) {
                               const totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
                               return formatIDR(totalDeductions);
                             }
@@ -1670,7 +1670,7 @@ export default function PayrollValidationDashboard() {
                         </TableCell>
                         <TableCell className="py-4 font-bold text-indigo-700">
                           {(() => {
-                            if (slip && slip.earnings && slip.deductions) {
+                            if (slip && slip.status === 'confirmed' && slip.earnings && slip.deductions) {
                               const totalEarnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
                               const totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
                               return formatIDR(totalEarnings - totalDeductions);
