@@ -68,10 +68,10 @@ export default function CetakGabunganDialog({
   const [selectedCategory, setSelectedCategory] = useState<string>('');
 
   React.useEffect(() => {
-    if (open && categories.length > 0) {
-      setSelectedCategory(categories[0]);
+    if (open) {
+      setSelectedCategory('Semua');
     }
-  }, [open, categories]);
+  }, [open]);
 
   const handlePrint = () => {
     if (!selectedCategory) return;
@@ -80,11 +80,14 @@ export default function CetakGabunganDialog({
     const activeLoyalis = employees.filter(emp => {
       const raw = emp.raw;
       const isLoyalis = emp.id?.startsWith('Loyalis_') || raw.employeeId?.startsWith('Loyalis_') || !!raw.personal_info;
-      return isLoyalis && emp.isActive && emp.role === selectedCategory;
+      return isLoyalis && emp.isActive && (selectedCategory === 'Semua' || emp.role === selectedCategory);
     });
 
     if (activeLoyalis.length === 0) {
-      alert(`Tidak ada karyawan Loyalis aktif ditemukan di unit "${selectedCategory}".`);
+      alert(selectedCategory === 'Semua'
+        ? 'Tidak ada karyawan Loyalis aktif ditemukan.'
+        : `Tidak ada karyawan Loyalis aktif ditemukan di unit "${selectedCategory}".`
+      );
       return;
     }
 
@@ -298,7 +301,7 @@ export default function CetakGabunganDialog({
 
     // 4. Generate the PDF
     generateGabunganPdf({
-      department: selectedCategory,
+      department: selectedCategory === 'Semua' ? 'Semua Unit' : selectedCategory,
       period: periodName,
       rows,
     });
@@ -336,6 +339,7 @@ export default function CetakGabunganDialog({
                 onChange={(e) => setSelectedCategory(e.target.value)}
                 className="w-full bg-white border border-slate-200 text-slate-600 text-sm font-semibold rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm"
               >
+                <option value="Semua">Semua (Semua Unit)</option>
                 {categories.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
