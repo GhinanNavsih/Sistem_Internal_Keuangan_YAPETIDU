@@ -119,6 +119,52 @@ const getEmpStartDate = (emp: any) => {
   return emp.employment?.startDate || '';
 };
 
+const getEmpMasaKerja = (emp: any): string => {
+  const tmtVal = emp.employment_profile?.date_recognized;
+  if (!tmtVal) return '-';
+  
+  let tmtDate: Date;
+  if (typeof tmtVal.toDate === 'function') {
+    tmtDate = tmtVal.toDate();
+  } else {
+    tmtDate = new Date(tmtVal);
+  }
+  
+  if (isNaN(tmtDate.getTime())) return '-';
+  
+  const today = new Date();
+  let years = today.getFullYear() - tmtDate.getFullYear();
+  let months = today.getMonth() - tmtDate.getMonth();
+  let days = today.getDate() - tmtDate.getDate();
+
+  if (days < 0) {
+    months -= 1;
+    const prevMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+    days += prevMonth.getDate();
+  }
+
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+
+  if (years < 0) {
+    return '0 Bulan';
+  }
+
+  const parts = [];
+  if (years > 0) {
+    parts.push(`${years} Tahun`);
+  }
+  if (months > 0) {
+    parts.push(`${months} Bulan`);
+  }
+  if (parts.length === 0) {
+    return '0 Bulan';
+  }
+  return parts.join(' ');
+};
+
 const calculateStructuralAllowance = (positions: any[]): number => {
   if (!positions || positions.length === 0) return 0;
   const sorted = [...positions].sort((a, b) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
@@ -1011,6 +1057,7 @@ export default function EmployeesPage() {
                     <TableHead className="font-semibold text-slate-900">Gol.</TableHead>
                     <TableHead className="font-semibold text-slate-900 text-center">Status</TableHead>
                     <TableHead className="font-semibold text-slate-900">Mulai Kerja</TableHead>
+                    <TableHead className="font-semibold text-slate-900">Masa Kerja</TableHead>
                     <TableHead className="font-semibold text-slate-900 text-right pr-8">Aksi</TableHead>
                   </TableRow>
                 )}
@@ -1057,7 +1104,7 @@ export default function EmployeesPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? 7 : (tableViewMode === 'debug' ? 6 : (activeTab === 'loyalis' ? 14 : 6))} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? 8 : (tableViewMode === 'debug' ? 6 : (activeTab === 'loyalis' ? 14 : 6))} className="h-64 text-center">
                       <div className="flex flex-col items-center gap-3 text-slate-400">
                         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                         <p>Memuat data pegawai...</p>
@@ -1066,7 +1113,7 @@ export default function EmployeesPage() {
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={tableViewMode === 'default' ? 7 : (tableViewMode === 'debug' ? 6 : (activeTab === 'loyalis' ? 14 : 6))} className="h-64 text-center">
+                    <TableCell colSpan={tableViewMode === 'default' ? 8 : (tableViewMode === 'debug' ? 6 : (activeTab === 'loyalis' ? 14 : 6))} className="h-64 text-center">
                       <p className="text-slate-400">Tidak ada pegawai yang ditemukan.</p>
                     </TableCell>
                   </TableRow>
@@ -1104,6 +1151,9 @@ export default function EmployeesPage() {
                         {getEmpStartDate(emp)
                           ? new Date(getEmpStartDate(emp)).toLocaleDateString('id-ID', { year: 'numeric', month: 'short' })
                           : '-'}
+                      </TableCell>
+                      <TableCell className="text-slate-500 text-sm">
+                        {getEmpMasaKerja(emp)}
                       </TableCell>
                       <TableCell className="text-right pr-8">
                         <div className="flex justify-end gap-1">
