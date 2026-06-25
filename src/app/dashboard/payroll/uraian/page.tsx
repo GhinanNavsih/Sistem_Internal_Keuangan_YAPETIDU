@@ -1152,10 +1152,13 @@ export default function UraianPage() {
   const displayRows = useMemo(() => {
     if (uploadedData) {
       const matchedIds = new Set(uploadedData.map(r => r.employeeId).filter(Boolean));
-      const uploadedRows = uploadedData.map((row, idx) => {
+      
+      const matchedRows: any[] = [];
+      const unmatchedExcelRows: any[] = [];
+
+      uploadedData.forEach((row) => {
         const calc = calculatePresenceStratum(row.minutes, calcMode, workingDays, expectedHours);
-        return {
-          idx,
+        const mappedRow = {
           excelName: row.excelName,
           employeeId: row.employeeId,
           employeeName: row.employeeName,
@@ -1167,31 +1170,45 @@ export default function UraianPage() {
           isMatched: !!row.employeeId,
           isNotFoundInExcel: false,
         };
+
+        if (row.employeeId) {
+          matchedRows.push(mappedRow);
+        } else {
+          unmatchedExcelRows.push(mappedRow);
+        }
       });
 
-      const unmatchedEmployees = loyalisEmployees.filter(emp => !matchedIds.has(emp.id));
-      const unmatchedRows = unmatchedEmployees.map((emp, uidx) => {
-        return {
-          idx: uploadedRows.length + uidx,
-          excelName: '-',
-          employeeId: emp.id,
-          employeeName: emp.name,
-          minutes: 0,
-          absenceMinutes: 0,
-          stratum: 5,
-          deduction: 0,
-          netBonus: 0,
-          isMatched: true,
-          isNotFoundInExcel: true,
-        };
-      });
+      // Sort matched rows alphabetically by employee name
+      matchedRows.sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
 
-      return [...uploadedRows, ...unmatchedRows];
+      // Sort unmatched excel rows alphabetically by excel name
+      unmatchedExcelRows.sort((a, b) => (a.excelName || '').localeCompare(b.excelName || ''));
+
+      // Unmatched employees from database (not found in Excel)
+      const unmatchedDbRows = loyalisEmployees
+        .filter(emp => !matchedIds.has(emp.id))
+        .map((emp) => {
+          return {
+            excelName: '-',
+            employeeId: emp.id,
+            employeeName: emp.name,
+            minutes: 0,
+            absenceMinutes: 0,
+            stratum: 5,
+            deduction: 0,
+            netBonus: 0,
+            isMatched: true,
+            isNotFoundInExcel: true,
+          };
+        })
+        .sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
+
+      const combined = [...matchedRows, ...unmatchedExcelRows, ...unmatchedDbRows];
+      return combined.map((row, idx) => ({ ...row, idx }));
     }
     if (existingPresence && existingPresence.entries) {
-      return Object.values(existingPresence.entries).map((entry: any, idx) => {
+      const entriesList = Object.values(existingPresence.entries).map((entry: any) => {
         return {
-          idx,
           excelName: entry.excelName,
           employeeId: entry.employeeId,
           employeeName: entry.employeeName,
@@ -1203,7 +1220,12 @@ export default function UraianPage() {
           isMatched: true,
           isNotFoundInExcel: !!entry.isNotFoundInExcel,
         };
-      }).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+      });
+
+      const matched = entriesList.filter(e => !e.isNotFoundInExcel).sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
+      const unmatched = entriesList.filter(e => e.isNotFoundInExcel).sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
+
+      return [...matched, ...unmatched].map((row, idx) => ({ ...row, idx }));
     }
     return null;
   }, [uploadedData, loyalisEmployees, existingPresence, calcMode, workingDays, expectedHours, calculatePresenceStratum]);
