@@ -88,7 +88,7 @@ export async function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData):
 
   data.employees.forEach(emp => {
     emp.earnings.forEach(e => {
-      if (e.label !== 'Gapok') {
+      if (e.label !== 'Gapok' && e.label !== 'Gaji Pokok') {
         earningLabelsSet.add(e.label);
       }
     });

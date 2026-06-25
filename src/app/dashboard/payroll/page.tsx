@@ -850,12 +850,17 @@ export default function PayrollValidationDashboard() {
         ? (data.employment_profile?.date_of_hire?.toDate?.() || (data.employment_profile?.date_of_hire ? new Date(data.employment_profile.date_of_hire) : new Date()))
         : (data.employment?.startDate ? new Date(data.employment.startDate) : new Date());
 
+      const dateRecognizedVal = isLoyalis
+        ? (data.employment_profile?.date_recognized?.toDate?.() || (data.employment_profile?.date_recognized ? new Date(data.employment_profile.date_recognized) : undefined))
+        : undefined;
+
       const row: EmployeeRow = {
         id: data.id,
         name: isLoyalis ? (data.personal_info?.name || '') : (data.name || ''),
         role: isLoyalis ? (data.employment_profile?.department_unit || 'Staf') : (data.employment?.jobCategory || ''),
         gradeLevel: isLoyalis ? (data.academic_and_tier?.level_code || '') : (data.salaryProfile?.salaryGradeCode || ''),
         joinDate: joinDateVal,
+        dateRecognized: dateRecognizedVal,
         isActive: isLoyalis ? (data.personal_info?.status === 'AKTIF') : (data.flags?.isActive ?? true),
         phoneNumber: isLoyalis ? (data.personal_info?.phone || '') : (data.phoneNumber || ''),
         email: isLoyalis ? (data.personal_info?.email || '') : (data.email || ''),

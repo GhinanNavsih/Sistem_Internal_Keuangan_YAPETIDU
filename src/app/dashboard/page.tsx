@@ -861,10 +861,13 @@ export default function TreasuryDashboard() {
           // Dynamic draft fallback
           const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
                               (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
+          const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
+                                    (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
           const gradeLevel = emp.academic_and_tier?.level_code || '';
 
           const mappedEmp = {
             joinDate: joinDateVal,
+            dateRecognized: dateRecognizedVal,
             gradeLevel: gradeLevel
           } as any;
 
@@ -1155,8 +1158,10 @@ export default function TreasuryDashboard() {
       } else {
         const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
                             (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
+        const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
+                                  (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
         const gradeLevel = emp.academic_and_tier?.level_code || '';
-        const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
+        const mappedEmp = { joinDate: joinDateVal, dateRecognized: dateRecognizedVal, gradeLevel } as any;
         const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
 
         const getLoyalisPresenceBonus = (empId: string): number => {
@@ -1352,8 +1357,10 @@ export default function TreasuryDashboard() {
         } else {
           const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
                               (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
+          const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
+                                    (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
           const gradeLevel = emp.academic_and_tier?.level_code || '';
-          const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
+          const mappedEmp = { joinDate: joinDateVal, dateRecognized: dateRecognizedVal, gradeLevel } as any;
           const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
 
           const getLoyalisPresenceBonus = (empId: string): number => {

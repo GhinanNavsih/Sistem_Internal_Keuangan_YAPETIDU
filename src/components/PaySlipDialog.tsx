@@ -197,8 +197,8 @@ export function buildInitialEarnings(
     const columns = REKAP_COLUMNS[jobCategory] || [];
     const allCols = [...columns, ...(customColumns || [])];
 
-    // Gapok – always known
-    earnings.push({ label: 'Gapok', amount: gapok });
+    // Gaji Pokok – always known
+    earnings.push({ label: 'Gaji Pokok', amount: gapok });
 
     if (allCols.length > 0 && uraian) {
       // Auto-fill from UraianGaji data using column config

@@ -276,7 +276,7 @@ function getLocalISOString(): string {
 export default function EmployeesPage() {
   const router = useRouter();
   const { user, profile, loading: authLoading, logout } = useAuth();
-  const { employeesLoyalis, employeesBlueCollar, loading: contextLoading, refreshData } = useDashboardData();
+  const { employeesLoyalis, employeesBlueCollar, gradeCodesBlue, gradeCodesWhite, loading: contextLoading, refreshData } = useDashboardData();
 
   const [activeTab, setActiveTab] = useState('loyalis');
   const [tableViewMode, setTableViewMode] = useState<'default' | 'debug' | 'constant'>('default');
@@ -498,8 +498,15 @@ export default function EmployeesPage() {
     
     // For Loyalis, make sure structural_positions is initialized as array
     if (activeTab === 'loyalis') {
+      const normalizedLevelCode = emp.academic_and_tier?.level_code
+        ? emp.academic_and_tier.level_code.replace(/^Gol\.\s*/i, '').trim()
+        : '';
       setFormData({
         ...emp,
+        academic_and_tier: {
+          ...emp.academic_and_tier,
+          level_code: normalizedLevelCode,
+        },
         employment_profile: {
           structural_positions: [],
           ...emp.employment_profile,
@@ -525,7 +532,16 @@ export default function EmployeesPage() {
         t_instruksional: emp.t_instruksional || 0,
       });
     } else {
-      setFormData({ ...emp });
+      const normalizedGradeCode = emp.salaryProfile?.salaryGradeCode
+        ? emp.salaryProfile.salaryGradeCode.trim()
+        : '';
+      setFormData({
+        ...emp,
+        salaryProfile: {
+          ...emp.salaryProfile,
+          salaryGradeCode: normalizedGradeCode,
+        }
+      });
     }
     setIsDialogOpen(true);
   };
@@ -614,6 +630,8 @@ export default function EmployeesPage() {
             cummulativeCredit: Number(formData.kepangkatan?.cummulativeCredit) || 0,
           },
           t_instruksional: Number(formData.t_instruksional) || 0,
+          koperasiUserId: formData.koperasiUserId !== undefined ? formData.koperasiUserId : null,
+          koperasiAuthUid: formData.koperasiAuthUid !== undefined ? formData.koperasiAuthUid : null,
           audit: {
             updatedAt: serverTimestamp(),
             ...(editingEmployee ? {} : { createdAt: serverTimestamp(), sourceFile: 'Web Dashboard' }),
@@ -1318,7 +1336,36 @@ export default function EmployeesPage() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-2"><Label>Golongan</Label><Input placeholder="Gol. G" value={formData.academic_and_tier?.level_code || ''} onChange={e => updateNestedField('academic_and_tier', 'level_code', e.target.value)} /></div>
+                      <div className="space-y-2">
+                        <Label>Golongan</Label>
+                        <Select
+                          value={formData.academic_and_tier?.level_code || ''}
+                          onValueChange={(val) => updateNestedField('academic_and_tier', 'level_code', val)}
+                        >
+                          <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                            <SelectValue placeholder="Pilih Golongan" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                            {(() => {
+                              const defaultWhiteGrades = [
+                                'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+                                'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+                                'Y', 'Z', 'AA', 'AB', 'AC', 'AD'
+                              ];
+                              const whiteGrades = gradeCodesWhite && gradeCodesWhite.length > 0 ? gradeCodesWhite : defaultWhiteGrades;
+                              const currentVal = formData.academic_and_tier?.level_code;
+                              const options = currentVal && !whiteGrades.includes(currentVal)
+                                ? [...whiteGrades, currentVal]
+                                : whiteGrades;
+                              return options.map(code => (
+                                <SelectItem key={code} value={code} className="text-xs">
+                                  {code}
+                                </SelectItem>
+                              ));
+                            })()}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div className="space-y-2">
                         <Label>Beban Kerja</Label>
                         <Select
@@ -1733,7 +1780,38 @@ export default function EmployeesPage() {
                       </Select>
                     </div>
                     <div className="space-y-2"><Label>Tanggal Mulai</Label><Input type="date" value={formData.employment?.startDate || ''} onChange={e => setFormData((prev: any) => ({ ...prev, employment: { ...(prev.employment || { status: 'active', jobCategory: 'OTHER', endDate: null }), startDate: e.target.value } as any }))} className="rounded-xl border-slate-200" /></div>
-                    <div className="space-y-2"><Label>Golongan (Grade)</Label><Input value={formData.salaryProfile?.salaryGradeCode || ''} onChange={e => setFormData((prev: any) => ({ ...prev, salaryProfile: { ...(prev.salaryProfile || { baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' }), salaryGradeCode: e.target.value } as any }))} className="rounded-xl border-slate-200" placeholder="D, F, K..." /></div>
+                    <div className="space-y-2">
+                      <Label>Golongan (Grade)</Label>
+                      <Select
+                        value={formData.salaryProfile?.salaryGradeCode || ''}
+                        onValueChange={(val) => setFormData((prev: any) => ({
+                          ...prev,
+                          salaryProfile: {
+                            ...(prev.salaryProfile || { baseSalaryAmount: 0, salaryMatrixVersion: '2026_v1' }),
+                            salaryGradeCode: val
+                          } as any
+                        }))}
+                      >
+                        <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
+                          <SelectValue placeholder="Pilih Golongan" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                          {(() => {
+                            const defaultBlueGrades = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'];
+                            const blueGrades = gradeCodesBlue && gradeCodesBlue.length > 0 ? gradeCodesBlue : defaultBlueGrades;
+                            const currentVal = formData.salaryProfile?.salaryGradeCode;
+                            const options = currentVal && !blueGrades.includes(currentVal)
+                              ? [...blueGrades, currentVal]
+                              : blueGrades;
+                            return options.map(code => (
+                              <SelectItem key={code} value={code} className="text-xs">
+                                {code}
+                              </SelectItem>
+                            ));
+                          })()}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Finansial</h3>

@@ -12,7 +12,8 @@ export function calculateGapok(
   matrix: SalaryMatrix,
   targetDate: Date
 ): number {
-  const years = calculateYearsOfService(employee.joinDate, targetDate);
+  const baseDate = employee.dateRecognized || employee.joinDate;
+  const years = calculateYearsOfService(baseDate, targetDate);
   const gradeKey = employee.gradeLevel ? employee.gradeLevel.replace(/^Gol\.\s*/i, '') : '';
   const gradeMatrix = matrix[gradeKey] || matrix[employee.gradeLevel];
   
@@ -212,5 +213,8 @@ export const MANUAL_OVERRIDES: Record<string, string> = {
   'Dian Puspita Yani ': 'Dian Puspitayani, SST.M.Kes.',
   'Dian Puspita Yani': 'Dian Puspitayani, SST.M.Kes.',
   'Sabrina Dwi Prihartini': 'Hj.Sabrina Dwi Prihatini, SKM., M.Kes',
+  'Mujianto Solichin': 'Dr. Mujianto Sholichin, M. PdI.',
+  'Siti Roudhotul Jannah ': 'Siti Roudhatul Jannah, SST.Keb. M. Tr. Keb.',
+  'Siti Roudhotul Jannah': 'Siti Roudhatul Jannah, SST.Keb. M. Tr. Keb.',
 };
 

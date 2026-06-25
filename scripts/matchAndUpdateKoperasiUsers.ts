@@ -127,6 +127,9 @@ const MANUAL_OVERRIDES: Record<string, string> = {
   'Dian Puspita Yani ': 'Dian Puspitayani, SST.M.Kes.',
   'Dian Puspita Yani': 'Dian Puspitayani, SST.M.Kes.',
   'Sabrina Dwi Prihartini': 'Hj.Sabrina Dwi Prihatini, SKM., M.Kes',
+  'Mujianto Solichin': 'Dr. Mujianto Sholichin, M. PdI.',
+  'Siti Roudhotul Jannah ': 'Siti Roudhatul Jannah, SST.Keb. M. Tr. Keb.',
+  'Siti Roudhotul Jannah': 'Siti Roudhatul Jannah, SST.Keb. M. Tr. Keb.',
 };
 
 async function main() {

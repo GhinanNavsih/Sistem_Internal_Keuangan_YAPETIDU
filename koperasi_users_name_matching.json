@@ -1,102 +1,102 @@
 {
-  "generatedAt": "2026-06-11T05:11:14.483Z",
+  "generatedAt": "2026-06-25T03:32:43.842Z",
   "summary": {
-    "totalKoperasiUsers": 197,
-    "matched": 185,
-    "unmatched": 7,
-    "matchedToUpdate": 180,
-    "matchedUnchanged": 5
+    "totalKoperasiUsers": 201,
+    "matched": 190,
+    "unmatched": 6,
+    "matchedToUpdate": 5,
+    "matchedUnchanged": 185
   },
   "matched": [
     {
+      "koperasiDocId": "Ahmad_Khaerudin_1751942924131",
+      "koperasiName": "A. Khaerudin, S. Ag.",
+      "internalName": "A. Khaerudin, S. Ag.",
+      "internalDocId": "Loyalis_044",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "a. khaerudin",
+      "needsUpdate": false
+    },
+    {
       "koperasiDocId": "Abdul_Ghofar_1751521367274",
-      "koperasiName": "Abdul Ghofar",
+      "koperasiName": "Abdul Ghofar,S.Kep.Ns.. M.Pdi",
       "internalName": "Abdul Ghofar,S.Kep.Ns.. M.Pdi",
       "internalDocId": "Loyalis_073",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "abdul ghofar",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Abdul_Hamid_1751170628000",
-      "koperasiName": "Abdul Hamid",
+      "koperasiName": "Abdul Hamid, S.Hi",
       "internalName": "Abdul Hamid, S.Hi",
       "internalDocId": "Loyalis_083",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "abdul hamid",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Abdul_Khanan_1750561942802",
-      "koperasiName": "Abdul Khanan",
+      "koperasiName": "ABDUL KHANAN",
       "internalName": "ABDUL KHANAN",
       "internalDocId": "BC_002",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "abdul khanan",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Abdul_Kholik_1750561941257",
-      "koperasiName": "Abdul Kholik",
+      "koperasiName": "ABDUL KHOLIK",
       "internalName": "ABDUL KHOLIK",
       "internalDocId": "BC_001",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "abdul kholik",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Abdul_Rouf_1749360289817",
-      "koperasiName": "Abdul Rouf",
+      "koperasiName": "ABDUL ROUF",
       "internalName": "ABDUL ROUF",
       "internalDocId": "BC_052",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "abdul rouf",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Abdullah_Rikza__1751872369260",
-      "koperasiName": "Abdullah Rikza ",
+      "koperasiName": "Abdullah Rikza, S. IP.M.Pdi.",
       "internalName": "Abdullah Rikza, S. IP.M.Pdi.",
       "internalDocId": "Loyalis_006",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "abdullah rikza",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Abid_Datul_Mukhoyaroh_1757579734677",
-      "koperasiName": "Abid Datul Mukhoyaroh",
+      "koperasiName": "Abid Datul Mukhoyaroh, S.Sos., M.A.B.",
       "internalName": "Abid Datul Mukhoyaroh, S.Sos., M.A.B.",
       "internalDocId": "Loyalis_171",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "abid datul mukhoyaroh",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Abin_Mustofa_1749358706845",
-      "koperasiName": "Abin Mustofa",
+      "koperasiName": "ABIN MUSTOFA",
       "internalName": "ABIN MUSTOFA",
       "internalDocId": "BC_032",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "abin mustofa",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
-      "koperasiDocId": "Achmad_Fanani__1752828250894",
-      "koperasiName": "Achmad Fanani ",
-      "internalName": "H. Achmad Fanani, SS, M.Pd",
-      "internalDocId": "Loyalis_035",
+      "koperasiDocId": "Ahmad_Mundzir_1753607890008",
+      "koperasiName": "Achmad Mundzir, S.HI",
+      "internalName": "Achmad Mundzir, S.HI",
+      "internalDocId": "Loyalis_137",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "achmad fanani",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Achmad_Zakaria_1757469278917",
-      "koperasiName": "Achmad Zakaria",
-      "internalName": "Dr. H. Achmad Zakaria, S.KM., M.Kes.",
-      "internalDocId": "Loyalis_049",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "achmad zakaria",
-      "needsUpdate": true
+      "normalizedKey": "achmad mundzir",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Achmat_Rosid_1760772662219",
@@ -108,49 +108,40 @@
       "needsUpdate": false
     },
     {
-      "koperasiDocId": "Achyar_1757300128644",
-      "koperasiName": "Achyar",
-      "internalName": "M. Achyar",
-      "internalDocId": "Loyalis_017",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "achyar",
-      "needsUpdate": true
-    },
-    {
       "koperasiDocId": "Afsah_Novita_Sari_1757134004849",
-      "koperasiName": "Afsah Novita Sari",
+      "koperasiName": "Afsah Novitasari, S.Si, M.Pd,",
       "internalName": "Afsah Novitasari, S.Si, M.Pd,",
       "internalDocId": "Loyalis_112",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "afsah novita sari",
-      "needsUpdate": true
+      "normalizedKey": "afsah novitasari",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Agus_Joko_Purnomo_1749361509124",
-      "koperasiName": "Agus Joko Purnomo",
+      "koperasiName": "AGUS JOKO PURNOMO",
       "internalName": "AGUS JOKO PURNOMO",
       "internalDocId": "BC_005",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "agus joko purnomo",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Agus_Mahfudin_1762236059811",
-      "koperasiName": "Agus Mahfudin",
+      "koperasiName": "Agus Mahfudin,M.Si",
       "internalName": "Agus Mahfudin,M.Si",
       "internalDocId": "Loyalis_105",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "agus",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Agus_Riawan_1749360299143",
-      "koperasiName": "Agus Riawan",
+      "koperasiName": "AGUS RIAWAN",
       "internalName": "AGUS RIAWAN",
       "internalDocId": "BC_050",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "agus riawan",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Ahmad_Arif_1749892892166",
@@ -163,273 +154,237 @@
     },
     {
       "koperasiDocId": "Ahmad_Izzul_Iman_1750919344822",
-      "koperasiName": "Ahmad Izzul Iman",
+      "koperasiName": "Ahmad Izzul Iman, S.Kom",
       "internalName": "Ahmad Izzul Iman, S.Kom",
       "internalDocId": "Loyalis_092",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "ahmad izzul iman",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Ahmad_Khaerudin_1751942924131",
-      "koperasiName": "Ahmad Khaerudin",
-      "internalName": "A. Khaerudin, S. Ag.",
-      "internalDocId": "Loyalis_044",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "ahmad khaerudin",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Ahmad_Mundzir_1753607890008",
-      "koperasiName": "Ahmad Mundzir",
-      "internalName": "Achmad Mundzir, S.HI",
-      "internalDocId": "Loyalis_137",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "ahmad mundzir",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Ahmad_Zahro_1753502267224",
-      "koperasiName": "Ahmad Zahro",
-      "internalName": "Prof. DR.H. Ahmad Zahro, MA.",
-      "internalDocId": "Loyalis_001",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "ahmad zahro",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Aifi_Rokhim_1749358691166",
-      "koperasiName": "Aifi Rokhim",
+      "koperasiName": "AIFI ROHIM",
       "internalName": "AIFI ROHIM",
       "internalDocId": "BC_010",
       "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "aifi rokhim",
-      "needsUpdate": true
+      "normalizedKey": "aifi rohim",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Aizun_Najih_1751424505195",
-      "koperasiName": "Aizun Najih",
+      "koperasiName": "Aizun Najih,S.Psi.",
       "internalName": "Aizun Najih,S.Psi.",
       "internalDocId": "Loyalis_069",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "aizun najih",
-      "needsUpdate": true
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Sunan_1750561948893",
+      "koperasiName": "ALFIS SUNAN",
+      "internalName": "ALFIS SUNAN",
+      "internalDocId": "BC_009",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "alfis sunan",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Alief_Arsalan_Muharram_1751687105906",
-      "koperasiName": "Alief Arsalan Muharram",
+      "koperasiName": "Alief Arsalam Muharram, S.Kom.",
       "internalName": "Alief Arsalam Muharram, S.Kom.",
       "internalDocId": "Loyalis_223",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "alief arsalan muharram",
-      "needsUpdate": true
+      "normalizedKey": "alief arsalam muharram",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Alifah_Nuriyati_1750037240958",
-      "koperasiName": "Alifah Nuriyati",
+      "koperasiName": "Alifah Nuriyati, S.Sos",
       "internalName": "Alifah Nuriyati, S.Sos",
       "internalDocId": "Loyalis_071",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "alifah nuriyati",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Alimin_1749358697943",
-      "koperasiName": "Alimin",
+      "koperasiName": "ALIMIN",
       "internalName": "ALIMIN",
       "internalDocId": "BC_026",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "alimin",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Amir_1749358690163",
-      "koperasiName": "Amir",
+      "koperasiName": "AMIR",
       "internalName": "AMIR",
       "internalDocId": "BC_011",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "amir",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Amrulloh_1772437100022",
-      "koperasiName": "Amrulloh",
+      "koperasiName": "Amrulloh,Lc,M.Th.I",
       "internalName": "Amrulloh,Lc,M.Th.I",
       "internalDocId": "Loyalis_184",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "amrulloh",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Ana_Farida_Ulfa_1751440310483",
-      "koperasiName": "Ana Farida Ulfa",
+      "koperasiName": "Ana Farida Ulfa, S. Kep., Ners.M.Kep.",
       "internalName": "Ana Farida Ulfa, S. Kep., Ners.M.Kep.",
       "internalDocId": "Loyalis_052",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "ana farida ulfa",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
-      "koperasiDocId": "Andi_Yudianto_1751440129541",
-      "koperasiName": "Andi Yudianto",
-      "internalName": "H. Andi Yudianto, S.Kep.Ns.,M.Kes.",
-      "internalDocId": "Loyalis_050",
+      "koperasiDocId": "Ana_Rahmawati_1781925878966",
+      "koperasiName": "Ana Rahmawati",
+      "internalName": "Ana Rahmawati, M.Pd",
+      "internalDocId": "Loyalis_151",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "andi yudianto",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Andi_Yudianto_1752564949353",
-      "koperasiName": "Andi Yudianto",
-      "internalName": "H. Andi Yudianto, S.Kep.Ns.,M.Kes.",
-      "internalDocId": "Loyalis_050",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "andi yudianto",
+      "normalizedKey": "ana rahmawati",
       "needsUpdate": true
     },
     {
       "koperasiDocId": "Andik_Priyo_Utomo_1749358707832",
-      "koperasiName": "Andik Priyo Utomo",
+      "koperasiName": "ANDIK PRIYO UTOMO",
       "internalName": "ANDIK PRIYO UTOMO",
       "internalDocId": "BC_034",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "andik priyo utomo",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Andik_Priyo_Utomo_1762270626608",
-      "koperasiName": "Andik Priyo Utomo",
+      "koperasiName": "ANDIK PRIYO UTOMO",
       "internalName": "ANDIK PRIYO UTOMO",
       "internalDocId": "BC_034",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "andik priyo utomo",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Andri_Eko_Zulfikar_1751248674430",
-      "koperasiName": "Andri Eko Zulfikar",
+      "koperasiName": "Andri Eko Zulfikar, S.Kom",
       "internalName": "Andri Eko Zulfikar, S.Kom",
       "internalDocId": "Loyalis_084",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "andri eko zulfikar",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Anggria_Maduratih_1751866046993",
-      "koperasiName": "Anggria Maduratih",
+      "koperasiName": "Anggrea Maduratih, S.AB",
       "internalName": "Anggrea Maduratih, S.AB",
       "internalDocId": "Loyalis_068",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "anggria",
-      "needsUpdate": true
+      "normalizedKey": "anggrea",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Anisatul_Barita_1751006254406",
-      "koperasiName": "Anisatul Barita",
+      "koperasiName": "Anisatul Barita,S.Sos",
       "internalName": "Anisatul Barita,S.Sos",
       "internalDocId": "Loyalis_091",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "anisatul barita",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Anna_Qomariana_1749966894642",
-      "koperasiName": "Anna Qomariana",
-      "internalName": "Hj. Anna Qomariana, SE, M.Pdi",
-      "internalDocId": "Loyalis_013",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "anna qomariana",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Arifin_1756616331737",
-      "koperasiName": "Arifin",
+      "koperasiName": "Arifin, S.Ag.M.Pdi",
       "internalName": "Arifin, S.Ag.M.Pdi",
       "internalDocId": "Loyalis_029",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "arifin",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Asna_Malini_1749700501967",
-      "koperasiName": "Asna Malini",
+      "koperasiName": "Asna Malini, S. Kom.",
       "internalName": "Asna Malini, S. Kom.",
       "internalDocId": "Loyalis_023",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "asna",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Bakri_1772682169957",
-      "koperasiName": "Bakri",
+      "koperasiName": "Bakri, S.Pd.I",
       "internalName": "Bakri, S.Pd.I",
       "internalDocId": "Loyalis_110",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "bakri",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Bambang_Hariyono_1749358695042",
-      "koperasiName": "Bambang Hariyono",
+      "koperasiName": "BAMBANG HARIYONO",
       "internalName": "BAMBANG HARIYONO",
       "internalDocId": "BC_020",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "bambang hariyono",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Bambang_Setyobudi_1751510846039",
-      "koperasiName": "Bambang Setyobudi",
+      "koperasiName": "Bambang Setyobudi,SE,MM",
       "internalName": "Bambang Setyobudi,SE,MM",
       "internalDocId": "Loyalis_108",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "bambang",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Bastomi_1749358699776",
-      "koperasiName": "Bastomi",
+      "koperasiName": "BASTOMI",
       "internalName": "BASTOMI",
       "internalDocId": "BC_028",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "bastomi",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Binti_Qaniah_1777169770337",
-      "koperasiName": "Binti Qaniah",
+      "koperasiName": "Binti Qoni'ah, SS, M. Hum",
       "internalName": "Binti Qoni'ah, SS, M. Hum",
       "internalDocId": "Loyalis_089",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "binti qaniah",
-      "needsUpdate": true
+      "normalizedKey": "binti qoni'ah",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Buamat_1750561945883",
-      "koperasiName": "Buamat",
+      "koperasiName": "BUAMAT",
       "internalName": "BUAMAT",
       "internalDocId": "BC_007",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "buamat",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Budianto_1749360298171",
-      "koperasiName": "Budianto",
+      "koperasiName": "BUDIANTO",
       "internalName": "BUDIANTO",
       "internalDocId": "BC_049",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "budianto",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Chandra_Sukma_Anugrah_1751880819976",
-      "koperasiName": "Chandra Sukma Anugrah",
+      "koperasiName": "Chandra Sukma Anugrah, S. Kom.",
       "internalName": "Chandra Sukma Anugrah, S. Kom.",
       "internalDocId": "Loyalis_144",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "chandra sukma anugrah",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Choirin_1749360295036",
@@ -442,768 +397,885 @@
     },
     {
       "koperasiDocId": "Devin_Prihar_Ninuk__1751440919926",
-      "koperasiName": "Devin Prihar Ninuk ",
+      "koperasiName": "Devin Prihar Ninuk, S.Kep Nes",
       "internalName": "Devin Prihar Ninuk, S.Kep Nes",
       "internalDocId": "Loyalis_167",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "devin prihar ninuk",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Dewi_Triloka_Wulandari_1751613712395",
-      "koperasiName": "Dewi Triloka Wulandari",
+      "koperasiName": "Dewi Triloka Wulandari, S.ST,M,Tr.Keb",
       "internalName": "Dewi Triloka Wulandari, S.ST,M,Tr.Keb",
       "internalDocId": "Loyalis_134",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "dewi triloka wulandari",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Diah_Ayu_Fatmawati_1751869607567",
-      "koperasiName": "Diah Ayu Fatmawati",
-      "internalName": "Diah Ayu Fatmawati, S.Kep, Ners",
-      "internalDocId": "Loyalis_100",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "diah ayu fatmawati",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Dian_Puspita_Yani__1753512843897",
-      "koperasiName": "Dian Puspita Yani ",
-      "internalName": "Dian Puspitayani, SST.M.Kes.",
-      "internalDocId": "Loyalis_059",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "dian puspita yani",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Didik_Siswanto_1749358701756",
-      "koperasiName": "Didik Siswanto",
-      "internalName": "DIDIK SISWANTO",
-      "internalDocId": "BC_024",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "didik siswanto",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Dina_Eka_Shofiana__1754553615820",
-      "koperasiName": "Dina Eka Shofiana ",
-      "internalName": "Dina Eka Sofiana, SE, M.A",
-      "internalDocId": "Loyalis_159",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "dina eka",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Dodik_Suhandoko_1749358702742",
-      "koperasiName": "Dodik Suhandoko",
-      "internalName": "DODIK SUHANDOKO",
-      "internalDocId": "BC_035",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "dodik suhandoko",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Dr._Dhikrul_Hakim_M.pd.i_1751880943782",
-      "koperasiName": "Dr. Dhikrul Hakim M.pd.i",
+      "koperasiName": "Dhikrul Hakim,M.PdI",
       "internalName": "Dhikrul Hakim,M.PdI",
       "internalDocId": "Loyalis_104",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "dhikrul hakim",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
-      "koperasiDocId": "Dwi_Nurcahyani_1751424217609",
-      "koperasiName": "Dwi Nurcahyani",
-      "internalName": "Dwi Nur Cahyani, SS",
-      "internalDocId": "Loyalis_036",
+      "koperasiDocId": "Diah_Ayu_Fatmawati_1751869607567",
+      "koperasiName": "Diah Ayu Fatmawati, S.Kep, Ners",
+      "internalName": "Diah Ayu Fatmawati, S.Kep, Ners",
+      "internalDocId": "Loyalis_100",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "dwi nurcahyani",
-      "needsUpdate": true
+      "normalizedKey": "diah ayu fatmawati",
+      "needsUpdate": false
     },
     {
-      "koperasiDocId": "Eddy_Kurniawan_1757133455338",
-      "koperasiName": "Eddy Kurniawan",
-      "internalName": "Eddy Kurniawan, S.Kom,MM",
-      "internalDocId": "Loyalis_136",
+      "koperasiDocId": "Dian_Puspita_Yani__1753512843897",
+      "koperasiName": "Dian Puspitayani, SST.M.Kes.",
+      "internalName": "Dian Puspitayani, SST.M.Kes.",
+      "internalDocId": "Loyalis_059",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "eddy kurniawan",
-      "needsUpdate": true
+      "normalizedKey": "dian puspitayani",
+      "needsUpdate": false
     },
     {
-      "koperasiDocId": "Eka_Nurjanah_1751516247074",
-      "koperasiName": "Eka Nurjanah",
-      "internalName": "Eka Nurjanah, M.Pd.",
-      "internalDocId": "Loyalis_192",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "eka nurjanah",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Eko_Suprayitno_1749360303084",
-      "koperasiName": "Eko Suprayitno",
-      "internalName": "EKO SUPRAYITNO",
-      "internalDocId": "BC_060",
+      "koperasiDocId": "Didik_Siswanto_1749358701756",
+      "koperasiName": "DIDIK SISWANTO",
+      "internalName": "DIDIK SISWANTO",
+      "internalDocId": "BC_024",
       "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "eko suprayitno",
-      "needsUpdate": true
+      "normalizedKey": "didik siswanto",
+      "needsUpdate": false
     },
     {
-      "koperasiDocId": "Endang_Suciati_1755576786042",
-      "koperasiName": "Endang Suciati",
-      "internalName": "Endang Suciati,SS,M.A",
-      "internalDocId": "Loyalis_034",
+      "koperasiDocId": "Dina_Eka_Shofiana__1754553615820",
+      "koperasiName": "Dina Eka Sofiana, SE, M.A",
+      "internalName": "Dina Eka Sofiana, SE, M.A",
+      "internalDocId": "Loyalis_159",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "endang suciati",
-      "needsUpdate": true
+      "normalizedKey": "dina eka sofiana",
+      "needsUpdate": false
     },
     {
-      "koperasiDocId": "Feny_Vitiasari_Dessy_1751869168787",
-      "koperasiName": "Feny Vitiasari Dessy",
-      "internalName": "Fenny Vitiasaridessy, S.ST",
-      "internalDocId": "Loyalis_156",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "feny vitiasari dessy",
-      "needsUpdate": true
+      "koperasiDocId": "Dodik_Suhandoko_1749358702742",
+      "koperasiName": "DODIK SUHANDOKO",
+      "internalName": "DODIK SUHANDOKO",
+      "internalDocId": "BC_035",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "dodik suhandoko",
+      "needsUpdate": false
     },
     {
-      "koperasiDocId": "Galuh_Tisna_Widiana_1755565618643",
-      "koperasiName": "Galuh Tisna Widiana",
-      "internalName": "Galuh Tisna Widiana,M. Pd.",
-      "internalDocId": "Loyalis_189",
+      "koperasiDocId": "Achmad_Zakaria_1757469278917",
+      "koperasiName": "Dr. H. Achmad Zakaria, S.KM., M.Kes.",
+      "internalName": "Dr. H. Achmad Zakaria, S.KM., M.Kes.",
+      "internalDocId": "Loyalis_049",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "galuh tisna widiana",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Haris_Hidayatulloh__1760417355146",
-      "koperasiName": "Haris Hidayatulloh ",
-      "internalName": "Haris Hidayatulloh, M.Hi",
-      "internalDocId": "Loyalis_113",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "haris hidayatulloh",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Harun_Arrosyid_1752374068271",
-      "koperasiName": "Harun Arrosyid",
-      "internalName": "H. Harun Ar Rasyid, S.Pd.I",
-      "internalDocId": "Loyalis_011",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "harun arrosyid",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Helmi_Annuchasari_1760924665953",
-      "koperasiName": "Helmi Annuchasari",
-      "internalName": "Helmi Anuchasari, S.KM., M.KM",
-      "internalDocId": "Loyalis_060",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "helmi annuchasari",
-      "needsUpdate": true
+      "normalizedKey": "achmad zakaria",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Herin_Mawarti_1751869659668",
-      "koperasiName": "Herin Mawarti",
+      "koperasiName": "Dr. Hj. Herin Mawarti, S. Kep. Ners, M.Biomed",
       "internalName": "Dr. Hj. Herin Mawarti, S. Kep. Ners, M.Biomed",
       "internalDocId": "Loyalis_077",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "herin",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Herjanti_Nursuksmaningtyas_Santoso_1757310508898",
-      "koperasiName": "Herjanti Nursuksmaningtyas Santoso",
-      "internalName": "Herjanti Nursuksmaningtyas Santoso, S.S, M.Si.",
-      "internalDocId": "Loyalis_239",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "herjanti nursuksmaningtyas santoso",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Hudzaifah_1751434450740",
-      "koperasiName": "Hudzaifah",
-      "internalName": "Hudzaifah, SS",
-      "internalDocId": "Loyalis_065",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "hudzaifah",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Ihwanus_Sholihin_1751851864285",
-      "koperasiName": "Ihwanus Sholihin",
-      "internalName": "Ihwanus Sholihin, M.Pd",
-      "internalDocId": "Loyalis_245",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "ihwanus",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Ika_Vita_Sari_1752201647570",
-      "koperasiName": "Ika Vita Sari",
-      "internalName": "Ika Vita Sari, SS",
-      "internalDocId": "Loyalis_139",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "ika vita sari",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Imam_Arifin_1751425180173",
-      "koperasiName": "Imam Arifin",
-      "internalName": "Imam Arifin, M.Pd",
-      "internalDocId": "Loyalis_046",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "imam arifin",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Imam_Mutaqin_1751963155712",
-      "koperasiName": "Imam Mutaqin",
-      "internalName": "Imam Mutaqin, M.Pd.I",
-      "internalDocId": "Loyalis_166",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "imam mutaqin",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Indah_Mukarromah_1752372207809",
-      "koperasiName": "Indah Mukarromah",
-      "internalName": "Indah Mukarromah, S.Kep.Ns.",
-      "internalDocId": "Loyalis_064",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "indah mukarromah",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Indah_Sumiyarsih_1749700496530",
-      "koperasiName": "Indah Sumiyarsih",
-      "internalName": "Indah Sumiyarsih, SE.",
-      "internalDocId": "Loyalis_014",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "indah sumiyarsih",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Indah_Wahyuni_1749700540822",
-      "koperasiName": "Indah Wahyuni",
-      "internalName": "Indah Wahyuni, SS",
-      "internalDocId": "Loyalis_114",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "indah wahyuni",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Indra_Kusuma_Wardani_1751878441468",
-      "koperasiName": "Indra Kusuma Wardani",
-      "internalName": "Indra Kusuma Wardani, S.Si,M.Pd.",
-      "internalDocId": "Loyalis_120",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "indra kusuma wardani",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Irianto_1749358700739",
-      "koperasiName": "Irianto",
-      "internalName": "IRIANTO",
-      "internalDocId": "BC_027",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "irianto",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Irva_Arina_Alawiyyah_1750230241900",
-      "koperasiName": "Irva Arina Alawiyyah",
-      "internalName": "Irva Arina Alawiyah, SE",
-      "internalDocId": "Loyalis_040",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "irva arina alawiyyah",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Isbayu_Ulwiyah_1751865662455",
-      "koperasiName": "Isbayu Uliyah",
-      "internalName": "Isbayu' Uliyah, S.Kom",
-      "internalDocId": "Loyalis_173",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "isbayu uliyah",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Ita_Fitria_1751343187438",
-      "koperasiName": "Ita Fitria",
-      "internalName": "Ita Fitria, S. Kom.",
-      "internalDocId": "Loyalis_066",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "ita fitria",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Jamaluddin_Malik_1749360293083",
-      "koperasiName": "Jamaluddin Malik",
-      "internalName": "JAMALUDDIN MALIK",
-      "internalDocId": "BC_045",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "jamaluddin",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Khamim_Masyur_1751440032670",
-      "koperasiName": "Khamim Masyur",
-      "internalName": "Khamim Mansyur,S.AB",
-      "internalDocId": "Loyalis_070",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "khamim",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Khoiro_Ummah_1751422966485",
-      "koperasiName": "Khoiro Ummah",
-      "internalName": "Khoiro Ummah,S.AB",
-      "internalDocId": "Loyalis_079",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "khoiro ummah",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Khoirul_Anwar_1749358687212",
-      "koperasiName": "Khoirul Anwar",
-      "internalName": "KHOIRUL A",
-      "internalDocId": "BC_023",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "khoirul anwar",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Khotimah_1752553740987",
-      "koperasiName": "Khotimah",
-      "internalName": "Hj. Khotimah, S.Kep.Ners, M.Kes",
-      "internalDocId": "Loyalis_075",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "khotimah",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Kris_Aditya_1749360290816",
-      "koperasiName": "Kris Aditya",
-      "internalName": "KRIS ADITYA",
-      "internalDocId": "BC_046",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "kris aditya",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Lilik_Maftuhatin_1757227684362",
-      "koperasiName": "Lilik Maftuhatin",
-      "internalName": "Lilik Maftukhatin, S.Pdi.M.Pdi",
-      "internalDocId": "Loyalis_026",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "lilik",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Lilik_Nur_Azizah_1749707774524",
-      "koperasiName": "Lilik Nur Azizah",
-      "internalName": "Lilik Nur Azizah, SE.",
-      "internalDocId": "Loyalis_015",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "lilik nur azizah",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Luluk_Mahfiyah_1751869833856",
-      "koperasiName": "Luluk Mahfiyah",
-      "internalName": "Luluk Mahfiyah, SP",
-      "internalDocId": "Loyalis_007",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "luluk",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Lulus_Oktavia_Kartikasari_1751426688006",
-      "koperasiName": "Lulus Oktavia Kartikasari",
-      "internalName": "Lulus Oktavia Kartika sari, S.Pd",
-      "internalDocId": "Loyalis_030",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "lulus oktavia kartikasari",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "M_Abdul_Rokhim_1751862039867",
-      "koperasiName": "M Abdul Rokhim",
-      "internalName": "Mokhamad Abdul Rokhim",
-      "internalDocId": "Loyalis_212",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "m abdul rokhim",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "M_Ali_Nawawi_1752043277475",
-      "koperasiName": "M Ali Nawawi",
-      "internalName": "M.Ali Nawawi, SE., MM",
-      "internalDocId": "Loyalis_107",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "m ali nawawi",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "M_Fatoni_1749358689160",
-      "koperasiName": "M Fatoni",
-      "internalName": "FATHONI",
-      "internalDocId": "BC_012",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "m fatoni",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "M_Qomaruzzaman_1751426146158",
-      "koperasiName": "M Qomaruzzaman",
-      "internalName": "M. Qomaruzzaman, S. Sos",
-      "internalDocId": "Loyalis_016",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "m qomaruzzaman",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Madzkur_Rozi_1749360297160",
-      "koperasiName": "Madzkur Rozi",
-      "internalName": "MADZKUR ROZI",
-      "internalDocId": "BC_048",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "madzkur rozi",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Mahmud_Huda_1755668888885",
-      "koperasiName": "Mahmud Huda",
-      "internalName": "Mahmud Huda, S.H.I, M.S.I",
-      "internalDocId": "Loyalis_121",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "mahmud huda",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Maisarah__1751947192865",
-      "koperasiName": "Maisarah ",
-      "internalName": "Maisaroh, M.Si",
-      "internalDocId": "Loyalis_149",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "maisarah",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Marianto_1749358709764",
-      "koperasiName": "Marianto",
-      "internalName": "MARIANTO",
-      "internalDocId": "BC_022",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "marianto",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Masadah_Endang_Susilowati_1751439520149",
-      "koperasiName": "Masadah Endang Susilowati",
-      "internalName": "Hj. Masadah Endang Susilowati, S.AB",
-      "internalDocId": "Loyalis_072",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "masadah endang susilowati",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Masrikah_1751437601680",
-      "koperasiName": "Masrikah",
-      "internalName": "Hj. Masrikah, S.AB",
-      "internalDocId": "Loyalis_067",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "masrikah",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Masruroh_Hasyim_1751441310088",
-      "koperasiName": "Masruroh Hasyim",
+      "koperasiName": "Dr. Hj. Masruroh Hasyim, S.Kep.Ns. M.Kes",
       "internalName": "Dr. Hj. Masruroh Hasyim, S.Kep.Ns. M.Kes",
       "internalDocId": "Loyalis_053",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "masruroh hasyim",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
-      "koperasiDocId": "Matraji_1749358711665",
-      "koperasiName": "Matraji",
-      "internalName": "MATRAJI",
-      "internalDocId": "BC_018",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "matraji",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Miftakhul_Arif_1749360296213",
-      "koperasiName": "Miftakhul Arif",
-      "internalName": "MIFTAKHUL ARIF",
-      "internalDocId": "BC_042",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "miftakhul arif",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Mochamad_Samsukadi_1771907978539",
-      "koperasiName": "Mochamad Samsukadi",
-      "internalName": "H.M. Samsukadi, Lc, M.Th.I",
-      "internalDocId": "Loyalis_141",
+      "koperasiDocId": "Uswatun_Qoyyimah_1751438226549",
+      "koperasiName": "Dr. Hj. Uswatun Qoyyimah, SS., M. Ed.,Ph.D",
+      "internalName": "Dr. Hj. Uswatun Qoyyimah, SS., M. Ed.,Ph.D",
+      "internalDocId": "Loyalis_031",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "mochamad samsukadi",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Moh_Samsul_Hidayat_1749358705899",
-      "koperasiName": "Moh Samsul Hidayat",
-      "internalName": "MOH SAMSUL HIDAYAT",
-      "internalDocId": "BC_036",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "moh samsul hidayat",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Moh._Makmun_1760508093347",
-      "koperasiName": "Moh. Makmun",
-      "internalName": "H. Moh Makmun Dr. M.HI",
-      "internalDocId": "Loyalis_119",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "moh",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Mokhamad_Dafid_Andianto_1751424416558",
-      "koperasiName": "Mokhamad Dafid Andianto",
-      "internalName": "Mokhamad Dafid Andianto, S.Kep., Ners",
-      "internalDocId": "Loyalis_179",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "mokhamad dafid andianto",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Muhadi_1750561944900",
-      "koperasiName": "Muhadi",
-      "internalName": "MUHADI",
-      "internalDocId": "BC_008",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "muhadi",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Muhamad_Zaki__1769915017485",
-      "koperasiName": "Muhamad Zaki ",
-      "internalName": "Muhammad Zaky, SE.M.Pd",
-      "internalDocId": "Loyalis_009",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "muhamad zaki",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "OvrBgCmhCCX8AJmmfxo64Gm5FtI2",
-      "koperasiName": "Muhammad Fajrul Alam Ulin Nuha",
-      "internalName": "Muhammad Fajrul Alam Ulin Nuha, S.Kom., M.Kom",
-      "internalDocId": "Loyalis_248",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "muhammad fajrul alam ulin nuha",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Muhammad_Fuady_1749358708793",
-      "koperasiName": "Muhammad Fuady",
-      "internalName": "MUHAMAD FUADY",
-      "internalDocId": "BC_037",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "muhammad fuady",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Muhammad_Miftakhul_Syaikhuddin_1750735078313",
-      "koperasiName": "Muhammad Miftakhul Syaikhuddin",
-      "internalName": "Muhammad Miftakhul Syakhuddin",
-      "internalDocId": "Loyalis_185",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "muhammad miftakhul syaikhuddin",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Muhammad_Soleh_1749360300394",
-      "koperasiName": "Muhammad Soleh",
-      "internalName": "MUHAMMAD SOLEH",
-      "internalDocId": "BC_051",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "muhammad soleh",
-      "needsUpdate": true
+      "normalizedKey": "uswatun qoyyimah",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Muhammad_Syafii_1767069218971",
-      "koperasiName": "Muhammad Syafii",
+      "koperasiName": "Dr. Muhammad Syafii, M.PdI",
       "internalName": "Dr. Muhammad Syafii, M.PdI",
       "internalDocId": "Loyalis_096",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "muhammad syafii",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
-      "koperasiDocId": "Muhammad_Wahyudi_1749360288713",
-      "koperasiName": "Muhammad Wahyudi",
-      "internalName": "MUHAMMAD WAHYUDI",
-      "internalDocId": "BC_043",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "muhammad wahyudi",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Muhammad_Zaimuddin_Wijaya_Asad_1751437774450",
-      "koperasiName": "Muhammad Zaimuddin Wijaya Asad",
-      "internalName": "Drs. H.M.Zaimuddin W.As'ad, MS",
-      "internalDocId": "Loyalis_002",
+      "koperasiDocId": "Nuning_Yudhi_Prasetyani__1751868822015",
+      "koperasiName": "Dr. Nuning Yudhi Prastyani, SS. M. Hum.",
+      "internalName": "Dr. Nuning Yudhi Prastyani, SS. M. Hum.",
+      "internalDocId": "Loyalis_032",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "muhammad zaimuddin wijaya asad",
-      "needsUpdate": true
+      "normalizedKey": "nuning yudhi prastyani",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Nur_Ulwiyah_1752558718062",
+      "koperasiName": "Dr. Nur Ulwiyah, M.PdI",
+      "internalName": "Dr. Nur Ulwiyah, M.PdI",
+      "internalDocId": "Loyalis_118",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "nur ulwiyah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Wiwik_Maryati_1751879454620",
+      "koperasiName": "DR. Wiwik Maryati, S.Sos.M.SM",
+      "internalName": "DR. Wiwik Maryati, S.Sos.M.SM",
+      "internalDocId": "Loyalis_039",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "wiwik",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Muhammad_Zulfikar_Asumta__1751437889024",
-      "koperasiName": "Muhammad Zulfikar Asumta ",
+      "koperasiName": "DR.dr.H.M. Zulfikar As'ad, MMR",
       "internalName": "DR.dr.H.M. Zulfikar As'ad, MMR",
       "internalDocId": "Loyalis_003",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "muhammad zulfikar asumta",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Mujiono_1749358685889",
-      "koperasiName": "Mujiono",
-      "internalName": "MUJIONO",
-      "internalDocId": "BC_016",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "mujiono",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Mukhamad_Masrur_1780722546276",
-      "koperasiName": "Mukhamad Masrur",
-      "internalName": "M. Masrur, S. Kom.M. Kom.",
-      "internalDocId": "Loyalis_043",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "mukhamad",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Mukhlisin_1752636455363",
-      "koperasiName": "Mukhlisin",
-      "internalName": "Mukhlisin, M. PdI.",
-      "internalDocId": "Loyalis_024",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "mukhlisin",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Mukhoirotin__1760161715166",
-      "koperasiName": "Mukhoirotin ",
-      "internalName": "Hj. Mukhoirotin, S.Kep.Ners.",
-      "internalDocId": "Loyalis_074",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "mukhoirotin",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Musthofa_1749360294061",
-      "koperasiName": "Musthofa",
-      "internalName": "MUSTHOFA",
-      "internalDocId": "BC_047",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "musthofa",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Muzayyaroh_1760158224182",
-      "koperasiName": "Muzayyaroh",
-      "internalName": "Muzayyaroh, M.Keb.",
-      "internalDocId": "Loyalis_058",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "muzayyaroh",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Nailul_Fauziyah_1767856893336",
-      "koperasiName": "Nailul Fauziyah",
-      "internalName": "Nailul Fauziyah, S.Hum.M.Pd",
-      "internalDocId": "Loyalis_147",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "nailul fauziyah",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Nanang_Abdul_Ajis_1749358712650",
-      "koperasiName": "Nanang Abdul Ajis",
-      "internalName": "NANANG ABDUL AJIS",
-      "internalDocId": "BC_030",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "nanang abdul ajis",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Ninik_Azizah_1750950862121",
-      "koperasiName": "Ninik Azizah",
-      "internalName": "Ninik Azizah, SST.",
-      "internalDocId": "Loyalis_056",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "ninik azizah",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Nisa_Ayunda_1757135483865",
-      "koperasiName": "Nisa Ayunda",
-      "internalName": "Nisa Ayunda, S.Si. M.Si",
-      "internalDocId": "Loyalis_195",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "nisa ayunda",
-      "needsUpdate": true
+      "normalizedKey": "dr.dr.h.m. zulfikar as'ad",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Niswah_Qonita_1751865271973",
-      "koperasiName": "Niswah Qonita",
+      "koperasiName": "Dra. Hj. Niswah Qonita",
       "internalName": "Dra. Hj. Niswah Qonita",
       "internalDocId": "Loyalis_221",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "niswah qonita",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Muhammad_Zaimuddin_Wijaya_Asad_1751437774450",
+      "koperasiName": "Drs. H.M.Zaimuddin W.As'ad, MS",
+      "internalName": "Drs. H.M.Zaimuddin W.As'ad, MS",
+      "internalDocId": "Loyalis_002",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "h.m.zaimuddin w.as'ad",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Dwi_Nurcahyani_1751424217609",
+      "koperasiName": "Dwi Nur Cahyani, SS",
+      "internalName": "Dwi Nur Cahyani, SS",
+      "internalDocId": "Loyalis_036",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "dwi nur cahyani",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Eddy_Kurniawan_1757133455338",
+      "koperasiName": "Eddy Kurniawan, S.Kom,MM",
+      "internalName": "Eddy Kurniawan, S.Kom,MM",
+      "internalDocId": "Loyalis_136",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "eddy kurniawan",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Eka_Nurjanah_1751516247074",
+      "koperasiName": "Eka Nurjanah, M.Pd.",
+      "internalName": "Eka Nurjanah, M.Pd.",
+      "internalDocId": "Loyalis_192",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "eka nurjanah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Eko_Suprayitno_1749360303084",
+      "koperasiName": "EKO SUPRAYITNO",
+      "internalName": "EKO SUPRAYITNO",
+      "internalDocId": "BC_060",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "eko suprayitno",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Endang_Suciati_1755576786042",
+      "koperasiName": "Endang Suciati,SS,M.A",
+      "internalName": "Endang Suciati,SS,M.A",
+      "internalDocId": "Loyalis_034",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "endang suciati",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "M_Fatoni_1749358689160",
+      "koperasiName": "FATHONI",
+      "internalName": "FATHONI",
+      "internalDocId": "BC_012",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "fathoni",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Feny_Vitiasari_Dessy_1751869168787",
+      "koperasiName": "Fenny Vitiasaridessy, S.ST",
+      "internalName": "Fenny Vitiasaridessy, S.ST",
+      "internalDocId": "Loyalis_156",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "fenny vitiasaridessy",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Galuh_Tisna_Widiana_1755565618643",
+      "koperasiName": "Galuh Tisna Widiana,M. Pd.",
+      "internalName": "Galuh Tisna Widiana,M. Pd.",
+      "internalDocId": "Loyalis_189",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "galuh tisna widiana",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Achmad_Fanani__1752828250894",
+      "koperasiName": "H. Achmad Fanani, SS, M.Pd",
+      "internalName": "H. Achmad Fanani, SS, M.Pd",
+      "internalDocId": "Loyalis_035",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "achmad fanani",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Andi_Yudianto_1751440129541",
+      "koperasiName": "H. Andi Yudianto, S.Kep.Ns.,M.Kes.",
+      "internalName": "H. Andi Yudianto, S.Kep.Ns.,M.Kes.",
+      "internalDocId": "Loyalis_050",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "andi yudianto",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Andi_Yudianto_1752564949353",
+      "koperasiName": "H. Andi Yudianto, S.Kep.Ns.,M.Kes.",
+      "internalName": "H. Andi Yudianto, S.Kep.Ns.,M.Kes.",
+      "internalDocId": "Loyalis_050",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "andi yudianto",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Harun_Arrosyid_1752374068271",
+      "koperasiName": "H. Harun Ar Rasyid, S.Pd.I",
+      "internalName": "H. Harun Ar Rasyid, S.Pd.I",
+      "internalDocId": "Loyalis_011",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "harun ar rasyid",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Moh._Makmun_1760508093347",
+      "koperasiName": "H. Moh Makmun Dr. M.HI",
+      "internalName": "H. Moh Makmun Dr. M.HI",
+      "internalDocId": "Loyalis_119",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "moh",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Mochamad_Samsukadi_1771907978539",
+      "koperasiName": "H.M. Samsukadi, Lc, M.Th.I",
+      "internalName": "H.M. Samsukadi, Lc, M.Th.I",
+      "internalDocId": "Loyalis_141",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "h.m. samsukadi",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Haris_Hidayatulloh__1760417355146",
+      "koperasiName": "Haris Hidayatulloh, M.Hi",
+      "internalName": "Haris Hidayatulloh, M.Hi",
+      "internalDocId": "Loyalis_113",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "haris hidayatulloh",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Helmi_Annuchasari_1760924665953",
+      "koperasiName": "Helmi Anuchasari, S.KM., M.KM",
+      "internalName": "Helmi Anuchasari, S.KM., M.KM",
+      "internalDocId": "Loyalis_060",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "helmi anuchasari",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Herjanti_Nursuksmaningtyas_Santoso_1757310508898",
+      "koperasiName": "Herjanti Nursuksmaningtyas Santoso, S.S, M.Si.",
+      "internalName": "Herjanti Nursuksmaningtyas Santoso, S.S, M.Si.",
+      "internalDocId": "Loyalis_239",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "herjanti nursuksmaningtyas santoso",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Anna_Qomariana_1749966894642",
+      "koperasiName": "Hj. Anna Qomariana, SE, M.Pdi",
+      "internalName": "Hj. Anna Qomariana, SE, M.Pdi",
+      "internalDocId": "Loyalis_013",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "anna qomariana",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Khotimah_1752553740987",
+      "koperasiName": "Hj. Khotimah, S.Kep.Ners, M.Kes",
+      "internalName": "Hj. Khotimah, S.Kep.Ners, M.Kes",
+      "internalDocId": "Loyalis_075",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "khotimah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Masadah_Endang_Susilowati_1751439520149",
+      "koperasiName": "Hj. Masadah Endang Susilowati, S.AB",
+      "internalName": "Hj. Masadah Endang Susilowati, S.AB",
+      "internalDocId": "Loyalis_072",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "masadah endang susilowati",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Masrikah_1751437601680",
+      "koperasiName": "Hj. Masrikah, S.AB",
+      "internalName": "Hj. Masrikah, S.AB",
+      "internalDocId": "Loyalis_067",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "masrikah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Mukhoirotin__1760161715166",
+      "koperasiName": "Hj. Mukhoirotin, S.Kep.Ners.",
+      "internalName": "Hj. Mukhoirotin, S.Kep.Ners.",
+      "internalDocId": "Loyalis_074",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "mukhoirotin",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Suspahariati_1750644824815",
+      "koperasiName": "Hj. Suspa Hariati, S. Sos.",
+      "internalName": "Hj. Suspa Hariati, S. Sos.",
+      "internalDocId": "Loyalis_005",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "suspa hariati",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Sabrina_Dwi_Prihartini_1751940120694",
+      "koperasiName": "Hj.Sabrina Dwi Prihatini, SKM., M.Kes",
+      "internalName": "Hj.Sabrina Dwi Prihatini, SKM., M.Kes",
+      "internalDocId": "Loyalis_055",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "hj.sabrina dwi prihatini",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Hudzaifah_1751434450740",
+      "koperasiName": "Hudzaifah, SS",
+      "internalName": "Hudzaifah, SS",
+      "internalDocId": "Loyalis_065",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "hudzaifah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Ihwanus_Sholihin_1751851864285",
+      "koperasiName": "Ihwanus Sholihin, M.Pd",
+      "internalName": "Ihwanus Sholihin, M.Pd",
+      "internalDocId": "Loyalis_245",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "ihwanus",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Ika_Vita_Sari_1752201647570",
+      "koperasiName": "Ika Vita Sari, SS",
+      "internalName": "Ika Vita Sari, SS",
+      "internalDocId": "Loyalis_139",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "ika vita sari",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Imam_Arifin_1751425180173",
+      "koperasiName": "Imam Arifin, M.Pd",
+      "internalName": "Imam Arifin, M.Pd",
+      "internalDocId": "Loyalis_046",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "imam arifin",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Imam_Mutaqin_1751963155712",
+      "koperasiName": "Imam Mutaqin, M.Pd.I",
+      "internalName": "Imam Mutaqin, M.Pd.I",
+      "internalDocId": "Loyalis_166",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "imam mutaqin",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Indah_Mukarromah_1752372207809",
+      "koperasiName": "Indah Mukarromah, S.Kep.Ns.",
+      "internalName": "Indah Mukarromah, S.Kep.Ns.",
+      "internalDocId": "Loyalis_064",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "indah mukarromah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Indah_Sumiyarsih_1749700496530",
+      "koperasiName": "Indah Sumiyarsih, SE.",
+      "internalName": "Indah Sumiyarsih, SE.",
+      "internalDocId": "Loyalis_014",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "indah sumiyarsih",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Indah_Wahyuni_1749700540822",
+      "koperasiName": "Indah Wahyuni, SS",
+      "internalName": "Indah Wahyuni, SS",
+      "internalDocId": "Loyalis_114",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "indah wahyuni",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Indra_Kusuma_Wardani_1751878441468",
+      "koperasiName": "Indra Kusuma Wardani, S.Si,M.Pd.",
+      "internalName": "Indra Kusuma Wardani, S.Si,M.Pd.",
+      "internalDocId": "Loyalis_120",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "indra kusuma wardani",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Irianto_1749358700739",
+      "koperasiName": "IRIANTO",
+      "internalName": "IRIANTO",
+      "internalDocId": "BC_027",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "irianto",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Irva_Arina_Alawiyyah_1750230241900",
+      "koperasiName": "Irva Arina Alawiyah, SE",
+      "internalName": "Irva Arina Alawiyah, SE",
+      "internalDocId": "Loyalis_040",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "irva arina alawiyah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Isbayu_Ulwiyah_1751865662455",
+      "koperasiName": "Isbayu' Uliyah, S.Kom",
+      "internalName": "Isbayu' Uliyah, S.Kom",
+      "internalDocId": "Loyalis_173",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "isbayu' uliyah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Ita_Fitria_1751343187438",
+      "koperasiName": "Ita Fitria, S. Kom.",
+      "internalName": "Ita Fitria, S. Kom.",
+      "internalDocId": "Loyalis_066",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "ita fitria",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Jamaluddin_Malik_1749360293083",
+      "koperasiName": "JAMALUDDIN MALIK",
+      "internalName": "JAMALUDDIN MALIK",
+      "internalDocId": "BC_045",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "jamaluddin",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Khamim_Masyur_1751440032670",
+      "koperasiName": "Khamim Mansyur,S.AB",
+      "internalName": "Khamim Mansyur,S.AB",
+      "internalDocId": "Loyalis_070",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "khamim",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Khoiro_Ummah_1751422966485",
+      "koperasiName": "Khoiro Ummah,S.AB",
+      "internalName": "Khoiro Ummah,S.AB",
+      "internalDocId": "Loyalis_079",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "khoiro ummah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Khoirul_Anwar_1749358687212",
+      "koperasiName": "KHOIRUL A",
+      "internalName": "KHOIRUL A",
+      "internalDocId": "BC_023",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "khoirul a",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Kris_Aditya_1749360290816",
+      "koperasiName": "KRIS ADITYA",
+      "internalName": "KRIS ADITYA",
+      "internalDocId": "BC_046",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "kris aditya",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Lilik_Maftuhatin_1757227684362",
+      "koperasiName": "Lilik Maftukhatin, S.Pdi.M.Pdi",
+      "internalName": "Lilik Maftukhatin, S.Pdi.M.Pdi",
+      "internalDocId": "Loyalis_026",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "lilik",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Lilik_Nur_Azizah_1749707774524",
+      "koperasiName": "Lilik Nur Azizah, SE.",
+      "internalName": "Lilik Nur Azizah, SE.",
+      "internalDocId": "Loyalis_015",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "lilik nur azizah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Luluk_Mahfiyah_1751869833856",
+      "koperasiName": "Luluk Mahfiyah, SP",
+      "internalName": "Luluk Mahfiyah, SP",
+      "internalDocId": "Loyalis_007",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "luluk",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Lulus_Oktavia_Kartikasari_1751426688006",
+      "koperasiName": "Lulus Oktavia Kartika sari, S.Pd",
+      "internalName": "Lulus Oktavia Kartika sari, S.Pd",
+      "internalDocId": "Loyalis_030",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "lulus oktavia kartika sari",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Achyar_1757300128644",
+      "koperasiName": "M. Achyar",
+      "internalName": "M. Achyar",
+      "internalDocId": "Loyalis_017",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "m. achyar",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Mukhamad_Masrur_1780722546276",
+      "koperasiName": "M. Masrur, S. Kom.M. Kom.",
+      "internalName": "M. Masrur, S. Kom.M. Kom.",
+      "internalDocId": "Loyalis_043",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "m",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "M_Qomaruzzaman_1751426146158",
+      "koperasiName": "M. Qomaruzzaman, S. Sos",
+      "internalName": "M. Qomaruzzaman, S. Sos",
+      "internalDocId": "Loyalis_016",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "m. qomaruzzaman",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "M_Ali_Nawawi_1752043277475",
+      "koperasiName": "M.Ali Nawawi, SE., MM",
+      "internalName": "M.Ali Nawawi, SE., MM",
+      "internalDocId": "Loyalis_107",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "m.ali nawawi",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Madzkur_Rozi_1749360297160",
+      "koperasiName": "MADZKUR ROZI",
+      "internalName": "MADZKUR ROZI",
+      "internalDocId": "BC_048",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "madzkur rozi",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Mahmud_Huda_1755668888885",
+      "koperasiName": "Mahmud Huda, S.H.I, M.S.I",
+      "internalName": "Mahmud Huda, S.H.I, M.S.I",
+      "internalDocId": "Loyalis_121",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "mahmud huda",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Maisarah__1751947192865",
+      "koperasiName": "Maisaroh, M.Si",
+      "internalName": "Maisaroh, M.Si",
+      "internalDocId": "Loyalis_149",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "maisaroh",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Marianto_1749358709764",
+      "koperasiName": "MARIANTO",
+      "internalName": "MARIANTO",
+      "internalDocId": "BC_022",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "marianto",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Matraji_1749358711665",
+      "koperasiName": "MATRAJI",
+      "internalName": "MATRAJI",
+      "internalDocId": "BC_018",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "matraji",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Miftakhul_Arif_1749360296213",
+      "koperasiName": "MIFTAKHUL ARIF",
+      "internalName": "MIFTAKHUL ARIF",
+      "internalDocId": "BC_042",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "miftakhul arif",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Moh_Samsul_Hidayat_1749358705899",
+      "koperasiName": "MOH SAMSUL HIDAYAT",
+      "internalName": "MOH SAMSUL HIDAYAT",
+      "internalDocId": "BC_036",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "moh samsul hidayat",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "M_Abdul_Rokhim_1751862039867",
+      "koperasiName": "Mokhamad Abdul Rokhim",
+      "internalName": "Mokhamad Abdul Rokhim",
+      "internalDocId": "Loyalis_212",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "mokhamad abdul rokhim",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Mokhamad_Dafid_Andianto_1751424416558",
+      "koperasiName": "Mokhamad Dafid Andianto, S.Kep., Ners",
+      "internalName": "Mokhamad Dafid Andianto, S.Kep., Ners",
+      "internalDocId": "Loyalis_179",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "mokhamad dafid andianto",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Muhadi_1750561944900",
+      "koperasiName": "MUHADI",
+      "internalName": "MUHADI",
+      "internalDocId": "BC_008",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "muhadi",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Muhammad_Fuady_1749358708793",
+      "koperasiName": "MUHAMAD FUADY",
+      "internalName": "MUHAMAD FUADY",
+      "internalDocId": "BC_037",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "muhamad fuady",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "OvrBgCmhCCX8AJmmfxo64Gm5FtI2",
+      "koperasiName": "Muhammad Fajrul Alam Ulin Nuha, S.Kom., M.Kom",
+      "internalName": "Muhammad Fajrul Alam Ulin Nuha, S.Kom., M.Kom",
+      "internalDocId": "Loyalis_248",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "muhammad fajrul alam ulin nuha",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Muhammad_Ghinan_Navsih_1778116993296",
+      "koperasiName": "Muhammad Ghinan Navsih",
+      "internalName": "Muhammad Ghinan Navsih, S.Si.D",
+      "internalDocId": "Loyalis_253",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "muhammad ghinan navsih",
       "needsUpdate": true
     },
     {
+      "koperasiDocId": "Muhammad_Miftakhul_Syaikhuddin_1750735078313",
+      "koperasiName": "Muhammad Miftakhul Syakhuddin",
+      "internalName": "Muhammad Miftakhul Syakhuddin",
+      "internalDocId": "Loyalis_185",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "muhammad miftakhul syakhuddin",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Muhammad_Soleh_1749360300394",
+      "koperasiName": "MUHAMMAD SOLEH",
+      "internalName": "MUHAMMAD SOLEH",
+      "internalDocId": "BC_051",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "muhammad soleh",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Muhammad_Wahyudi_1749360288713",
+      "koperasiName": "MUHAMMAD WAHYUDI",
+      "internalName": "MUHAMMAD WAHYUDI",
+      "internalDocId": "BC_043",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "muhammad wahyudi",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Muhamad_Zaki__1769915017485",
+      "koperasiName": "Muhammad Zaky, SE.M.Pd",
+      "internalName": "Muhammad Zaky, SE.M.Pd",
+      "internalDocId": "Loyalis_009",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "muhammad zaky",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Mujianto_Solichin_1782105759440",
+      "koperasiName": "Mujianto Solichin",
+      "internalName": "Dr. Mujianto Sholichin, M. PdI.",
+      "internalDocId": "Loyalis_027",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "mujianto solichin",
+      "needsUpdate": true
+    },
+    {
+      "koperasiDocId": "Mujiono_1749358685889",
+      "koperasiName": "MUJIONO",
+      "internalName": "MUJIONO",
+      "internalDocId": "BC_016",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "mujiono",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Mukhlisin_1752636455363",
+      "koperasiName": "Mukhlisin, M. PdI.",
+      "internalName": "Mukhlisin, M. PdI.",
+      "internalDocId": "Loyalis_024",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "mukhlisin",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Musthofa_1749360294061",
+      "koperasiName": "MUSTHOFA",
+      "internalName": "MUSTHOFA",
+      "internalDocId": "BC_047",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "musthofa",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Muzayyaroh_1760158224182",
+      "koperasiName": "Muzayyaroh, M.Keb.",
+      "internalName": "Muzayyaroh, M.Keb.",
+      "internalDocId": "Loyalis_058",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "muzayyaroh",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Nailul_Fauziyah_1767856893336",
+      "koperasiName": "Nailul Fauziyah, S.Hum.M.Pd",
+      "internalName": "Nailul Fauziyah, S.Hum.M.Pd",
+      "internalDocId": "Loyalis_147",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "nailul fauziyah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Nanang_Abdul_Ajis_1749358712650",
+      "koperasiName": "NANANG ABDUL AJIS",
+      "internalName": "NANANG ABDUL AJIS",
+      "internalDocId": "BC_030",
+      "internalCollection": "Employees_BlueCollar",
+      "normalizedKey": "nanang abdul ajis",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Ninik_Azizah_1750950862121",
+      "koperasiName": "Ninik Azizah, SST.",
+      "internalName": "Ninik Azizah, SST.",
+      "internalDocId": "Loyalis_056",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "ninik azizah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Nisa_Ayunda_1757135483865",
+      "koperasiName": "Nisa Ayunda, S.Si. M.Si",
+      "internalName": "Nisa Ayunda, S.Si. M.Si",
+      "internalDocId": "Loyalis_195",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "nisa ayunda",
+      "needsUpdate": false
+    },
+    {
       "koperasiDocId": "Nufan_Balafif_1751077678609",
-      "koperasiName": "Nufan Balafif",
+      "koperasiName": "Nufan Balafif, S.Kom., MM",
       "internalName": "Nufan Balafif, S.Kom., MM",
       "internalDocId": "Loyalis_133",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "nufan balafif",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Nuning_Yudhi_Prasetyani__1751868822015",
-      "koperasiName": "Nuning Yudhi Prasetyani ",
-      "internalName": "Dr. Nuning Yudhi Prastyani, SS. M. Hum.",
-      "internalDocId": "Loyalis_032",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "nuning yudhi prasetyani",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Nur_Cahyadi_1749360291977",
-      "koperasiName": "Nur Cahyadi",
+      "koperasiName": "NUR CAHYADI",
       "internalName": "NUR CAHYADI",
       "internalDocId": "BC_044",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "nur cahyadi",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Nur_Elizah_1760580865767",
-      "koperasiName": "Nur Elizah",
+      "koperasiName": "Nur Elizah, S.Pd. I",
       "internalName": "Nur Elizah, S.Pd. I",
       "internalDocId": "Loyalis_087",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "nur elizah",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Nur_Feri_Setiono_1751427416586",
@@ -1216,93 +1288,93 @@
     },
     {
       "koperasiDocId": "Nur_Mulyawati_1750056809600",
-      "koperasiName": "Nur Mulyawati",
+      "koperasiName": "Nur Mulyawati. S.Sos",
       "internalName": "Nur Mulyawati. S.Sos",
       "internalDocId": "Loyalis_008",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "nur mulyawati",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Nur_Ulwiyah_1752558718062",
-      "koperasiName": "Nur Ulwiyah",
-      "internalName": "Dr. Nur Ulwiyah, M.PdI",
-      "internalDocId": "Loyalis_118",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "nur ulwiyah",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Nurul_1752558917088",
-      "koperasiName": "Nurul Laili",
+      "koperasiName": "Nurul Laili,S.Pd",
       "internalName": "Nurul Laili,S.Pd",
       "internalDocId": "Loyalis_109",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "nurul laili",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Nurul_Lailiyah.s.ab.m.si_1757310762032",
-      "koperasiName": "Nurul Lailiyah.s.ab.m.si",
+      "koperasiName": "Nurul Lailiyah",
       "internalName": "Nurul Lailiyah",
       "internalDocId": "Loyalis_178",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "nurul lailiyah.s.ab.m.si",
-      "needsUpdate": true
+      "normalizedKey": "nurul lailiyah",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Poedji_Utomo_1749358717081",
-      "koperasiName": "Poedji Utomo",
+      "koperasiName": "POEDJI UTOMO",
       "internalName": "POEDJI UTOMO",
       "internalDocId": "BC_063",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "poedji utomo",
-      "needsUpdate": true
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Ahmad_Zahro_1753502267224",
+      "koperasiName": "Prof. DR.H. Ahmad Zahro, MA.",
+      "internalName": "Prof. DR.H. Ahmad Zahro, MA.",
+      "internalDocId": "Loyalis_001",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "dr.h. ahmad zahro",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Pujiani_S._Kep._Ns._M._Kes_1751443917636",
-      "koperasiName": "Pujiani S. Kep. Ns. M. Kes",
+      "koperasiName": "Pujiani, S.Kep. Ners., M.Kes",
       "internalName": "Pujiani, S.Kep. Ners., M.Kes",
       "internalDocId": "Loyalis_054",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "pujiani s. kep",
-      "needsUpdate": true
+      "normalizedKey": "pujiani",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Purwanti_1751507696495",
-      "koperasiName": "Purwanti",
+      "koperasiName": "Purwanti, S.Pd. I",
       "internalName": "Purwanti, S.Pd. I",
       "internalDocId": "Loyalis_090",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "purwanti",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Puspa_Mia_Widiyaningsih_1757396752801",
-      "koperasiName": "Puspa Mia Widiyaningsih",
+      "koperasiName": "Puspa Mia Widiyaningsih, M.Pd.",
       "internalName": "Puspa Mia Widiyaningsih, M.Pd.",
       "internalDocId": "Loyalis_236",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "puspa mia widiyaningsih",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Ratna_Wati_1751685625560",
-      "koperasiName": "Ratna Wati",
+      "koperasiName": "Ratna Wati, S.Kom",
       "internalName": "Ratna Wati, S.Kom",
       "internalDocId": "Loyalis_153",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "ratna wati",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Ririn_Susilawati_1753672408103",
-      "koperasiName": "Ririn Susilawati",
+      "koperasiName": "Ririn Susilowati, S.H.I, M.E.I",
       "internalName": "Ririn Susilowati, S.H.I, M.E.I",
       "internalDocId": "Loyalis_145",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "ririn susilawati",
-      "needsUpdate": true
+      "normalizedKey": "ririn susilowati",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Roikhatur_Roisah_1749704104006",
@@ -1315,363 +1387,336 @@
     },
     {
       "koperasiDocId": "Rudi__1750561947911",
-      "koperasiName": "Rudi ",
+      "koperasiName": "RUDI",
       "internalName": "RUDI",
       "internalDocId": "BC_006",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "rudi",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Rusmanto_1749358688188",
-      "koperasiName": "Rusmanto",
+      "koperasiName": "RUSMANTO",
       "internalName": "RUSMANTO",
       "internalDocId": "BC_033",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "rusmanto",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Sabrina_Dwi_Prihartini_1751940120694",
-      "koperasiName": "Sabrina Dwi Prihartini",
-      "internalName": "Hj.Sabrina Dwi Prihatini, SKM., M.Kes",
-      "internalDocId": "Loyalis_055",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "sabrina dwi prihartini",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Samsul_Hadi_1749358704828",
-      "koperasiName": "Samsul Hadi",
+      "koperasiName": "SAMSUL HADI",
       "internalName": "SAMSUL HADI",
       "internalDocId": "BC_064",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "samsul hadi",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Samsun_1749358715115",
-      "koperasiName": "Samsun",
+      "koperasiName": "SAMSUN",
       "internalName": "SAMSUN",
       "internalDocId": "BC_057",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "samsun",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Sholihuddin_1752043011085",
-      "koperasiName": "Sholihuddin",
+      "koperasiName": "Sholahuddin, S.Pdi",
       "internalName": "Sholahuddin, S.Pdi",
       "internalDocId": "Loyalis_041",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "sholihuddin",
-      "needsUpdate": true
+      "normalizedKey": "sholahuddin",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Siti_Asiah_M._Pd_1752634135456",
-      "koperasiName": "Siti Asiah M. Pd",
+      "koperasiName": "Siti Asiah, M.Pd.",
       "internalName": "Siti Asiah, M.Pd.",
       "internalDocId": "Loyalis_230",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "siti asiah m. pd",
-      "needsUpdate": true
+      "normalizedKey": "siti asiah",
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Siti_Rofiah_1751431844526",
-      "koperasiName": "Siti Rofiah",
+      "koperasiName": "Siti Rofi'ah, A. Md.",
       "internalName": "Siti Rofi'ah, A. Md.",
       "internalDocId": "Loyalis_080",
       "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "siti rofiah",
+      "normalizedKey": "siti rofi'ah",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Siti_Roudhotul_Jannah__1781925730421",
+      "koperasiName": "Siti Roudhotul Jannah ",
+      "internalName": "Siti Roudhatul Jannah, SST.Keb. M. Tr. Keb.",
+      "internalDocId": "Loyalis_161",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "siti roudhotul jannah",
       "needsUpdate": true
     },
     {
       "koperasiDocId": "Siti_Urifah_1757331335439",
-      "koperasiName": "Siti Urifah",
+      "koperasiName": "Siti Urifah, S.Kep Ners",
       "internalName": "Siti Urifah, S.Kep Ners",
       "internalDocId": "Loyalis_101",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "siti urifah",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Slamet__1749358694095",
-      "koperasiName": "Slamet ",
+      "koperasiName": "SLAMET",
       "internalName": "SLAMET",
       "internalDocId": "BC_019",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "slamet",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Slamet_Gangsar_1749358703843",
-      "koperasiName": "Slamet Gangsar",
+      "koperasiName": "SLAMET GANGSAR",
       "internalName": "SLAMET GANGSAR",
       "internalDocId": "BC_031",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "slamet gangsar",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Slamet_Raharjo_1754883321180",
-      "koperasiName": "Slamet Raharjo",
+      "koperasiName": "SLAMET RAHARJO",
       "internalName": "SLAMET RAHARJO",
       "internalDocId": "BC_025",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "slamet raharjo",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Slamet_Riadi_1749358692960",
-      "koperasiName": "Slamet Riadi",
+      "koperasiName": "SLAMET RIADI",
       "internalName": "SLAMET RIADI",
       "internalDocId": "BC_029",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "slamet riadi",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Soeharto_1749358710735",
-      "koperasiName": "Soeharto",
+      "koperasiName": "SOEHARTO",
       "internalName": "SOEHARTO",
       "internalDocId": "BC_017",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "soeharto",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Sri_Wahyuni__1751426791431",
-      "koperasiName": "Sri Wahyuni ",
+      "koperasiName": "Sri Wahyuni, A.Ma. Pust",
       "internalName": "Sri Wahyuni, A.Ma. Pust",
       "internalDocId": "Loyalis_169",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "sri wahyuni",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Subachin_1749358696995",
-      "koperasiName": "Subachin",
+      "koperasiName": "SUBACHIN",
       "internalName": "SUBACHIN",
       "internalDocId": "BC_021",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "subachin",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Sugeng_Prayitno_1751173835643",
-      "koperasiName": "Sugeng Prayitno CS",
+      "koperasiName": "SUGENG PRAYITNO CS",
       "internalName": "SUGENG PRAYITNO CS",
       "internalDocId": "BC_062",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "sugeng prayitno cs",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Sugeng_Prayitno_1749358716094",
-      "koperasiName": "Sugeng Prayitno Satpam",
+      "koperasiName": "SUGENG PRAYITNO SATPAM",
       "internalName": "SUGENG PRAYITNO SATPAM",
       "internalDocId": "BC_061",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "sugeng prayitno satpam",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Suhariono_1749356787551",
-      "koperasiName": "Suhariono",
+      "koperasiName": "SUHARIONO",
       "internalName": "SUHARIONO",
       "internalDocId": "BC_015",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "suhariono",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Sunan_1750561948893",
-      "koperasiName": "Sunan",
-      "internalName": "ALFIS SUNAN",
-      "internalDocId": "BC_009",
-      "internalCollection": "Employees_BlueCollar",
-      "normalizedKey": "sunan",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Suspahariati_1750644824815",
-      "koperasiName": "Suspahariati",
-      "internalName": "Hj. Suspa Hariati, S. Sos.",
-      "internalDocId": "Loyalis_005",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "suspahariati",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Suyati_1752201333065",
-      "koperasiName": "Suyati",
+      "koperasiName": "Suyati, SST. M. Kes",
       "internalName": "Suyati, SST. M. Kes",
       "internalDocId": "Loyalis_057",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "suyati",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Tafsillatul_Mufida_Asriningsih_1751729750871",
-      "koperasiName": "Tafsillatul Mufida Asriningsih",
+      "koperasiName": "Tafsillatul Mufida Asriningsih, M. Pd.",
       "internalName": "Tafsillatul Mufida Asriningsih, M. Pd.",
       "internalDocId": "Loyalis_177",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "tafsillatul mufida asriningsih",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Teguh_Priyo_Utomo_1751526489174",
-      "koperasiName": "Teguh Priyo Utomo",
+      "koperasiName": "Teguh Priyo Utomo, S.Kom",
       "internalName": "Teguh Priyo Utomo, S.Kom",
       "internalDocId": "Loyalis_150",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "teguh priyo utomo",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Thoif_1751868732886",
-      "koperasiName": "Thoif",
+      "koperasiName": "Thoif, S.Hi, M.Pd",
       "internalName": "Thoif, S.Hi, M.Pd",
       "internalDocId": "Loyalis_194",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "thoif",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Trikaloka_Handayani_Putri_1751511178567",
-      "koperasiName": "Trikaloka Handayani Putri",
+      "koperasiName": "Trikaloka Handayani Putri, SS.M.Pd",
       "internalName": "Trikaloka Handayani Putri, SS.M.Pd",
       "internalDocId": "Loyalis_033",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "trikaloka handayani putri",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Tutas_Subawanto_1749360302121",
-      "koperasiName": "Tutas Subawanto",
+      "koperasiName": "TUTAS SUBAWANTO",
       "internalName": "TUTAS SUBAWANTO",
       "internalDocId": "BC_038",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "tutas subawanto",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Uswatun_Qoyyimah_1751438226549",
-      "koperasiName": "Uswatun Qoyyimah",
-      "internalName": "Dr. Hj. Uswatun Qoyyimah, SS., M. Ed.,Ph.D",
-      "internalDocId": "Loyalis_031",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "uswatun qoyyimah",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Vivin_Eka_Rahmawati_1751868889175",
-      "koperasiName": "Vivin Eka Rahmawati",
+      "koperasiName": "Vivin Eka Rahmawati, A. Md. Keb.",
       "internalName": "Vivin Eka Rahmawati, A. Md. Keb.",
       "internalDocId": "Loyalis_127",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "vivin eka rahmawati",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Wahyu_Ning_Ucik_1751433152679",
-      "koperasiName": "Wahyuning Ucik",
+      "koperasiName": "Wahyuning Ucik, S.Sos",
       "internalName": "Wahyuning Ucik, S.Sos",
       "internalDocId": "Loyalis_037",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "wahyuning ucik",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Wawan_Wirawan_1749358713862",
-      "koperasiName": "Wawan Wirawan",
+      "koperasiName": "WAWAN WIRAWAN",
       "internalName": "WAWAN WIRAWAN",
       "internalDocId": "BC_056",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "wawan wirawan",
+      "needsUpdate": false
+    },
+    {
+      "koperasiDocId": "Wim_Banu_Ukhrowi_1782010901907",
+      "koperasiName": "Wim Banu Ukhrowi",
+      "internalName": "Wim Banu Ukhrowi, SS",
+      "internalDocId": "Loyalis_131",
+      "internalCollection": "Employees_Loyalis",
+      "normalizedKey": "wim banu ukhrowi",
       "needsUpdate": true
     },
     {
       "koperasiDocId": "Wiwiek_Widiatie_1751335156048",
-      "koperasiName": "Wiwiek Widiatie",
+      "koperasiName": "Wiwiek Widiatie, S. Kep. Ners.M.Kes",
       "internalName": "Wiwiek Widiatie, S. Kep. Ners.M.Kes",
       "internalDocId": "Loyalis_078",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "wiwiek widiatie",
-      "needsUpdate": true
-    },
-    {
-      "koperasiDocId": "Wiwik_Maryati_1751879454620",
-      "koperasiName": "Wiwik Maryati",
-      "internalName": "DR. Wiwik Maryati, S.Sos.M.SM",
-      "internalDocId": "Loyalis_039",
-      "internalCollection": "Employees_Loyalis",
-      "normalizedKey": "wiwik",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Wiwit_Denny_Fitriana_1751880755540",
-      "koperasiName": "Wiwit Denny Fitriana",
+      "koperasiName": "Wiwit Denny Fitriana, S.Si.M.Si",
       "internalName": "Wiwit Denny Fitriana, S.Si.M.Si",
       "internalDocId": "Loyalis_187",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "wiwit denny fitriana",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Yosi_Agustiawan_1751438054357",
-      "koperasiName": "Yosi Agustiawan",
+      "koperasiName": "Yosi Agustiawan ST., MMT, Ph.D",
       "internalName": "Yosi Agustiawan ST., MMT, Ph.D",
       "internalDocId": "Loyalis_042",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "yosi agustiawan",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Yulia_Arofatus_Sobah_1751423818169",
-      "koperasiName": "Yulia Arofatus Sobah",
+      "koperasiName": "Yulia Arofatus Sobah, S.Kom",
       "internalName": "Yulia Arofatus Sobah, S.Kom",
       "internalDocId": "Loyalis_130",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "yulia arofatus sobah",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Yunianto_1750561943930",
-      "koperasiName": "Yunianto",
+      "koperasiName": "YUNIANTO",
       "internalName": "YUNIANTO",
       "internalDocId": "BC_003",
       "internalCollection": "Employees_BlueCollar",
       "normalizedKey": "yunianto",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Zainudin_1751427299222",
-      "koperasiName": "Zainudin",
+      "koperasiName": "Zainudin, S.Kom",
       "internalName": "Zainudin, S.Kom",
       "internalDocId": "Loyalis_182",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "zainudin",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Zulfa_Khusniyah_1751074874107",
-      "koperasiName": "Zulfa Khusniyah",
+      "koperasiName": "Zulfa Khusniyah, S.Kep.Ners.M.Pdi",
       "internalName": "Zulfa Khusniyah, S.Kep.Ners.M.Pdi",
       "internalDocId": "Loyalis_062",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "zulfa khusniyah",
-      "needsUpdate": true
+      "needsUpdate": false
     },
     {
       "koperasiDocId": "Zuliani_1751525023154",
-      "koperasiName": "Zuliani",
+      "koperasiName": "Zuliani,S. Kep. Ns. M. Kep.",
       "internalName": "Zuliani,S. Kep. Ns. M. Kep.",
       "internalDocId": "Loyalis_143",
       "internalCollection": "Employees_Loyalis",
       "normalizedKey": "zuliani",
-      "needsUpdate": true
+      "needsUpdate": false
     }
   ],
   "unmatched": [
@@ -1699,11 +1744,6 @@
       "koperasiDocId": "Muhammad_Fajrul_Alam_Ulin_Nuha_1745143463041",
       "koperasiName": "Muhammad Fajrul Alam Ulin Nuha testing",
       "normalizedKey": "muhammad fajrul alam ulin nuha testing"
-    },
-    {
-      "koperasiDocId": "Muhammad_Ghinan_Navsih_1778116993296",
-      "koperasiName": "Muhammad Ghinan Navsih",
-      "normalizedKey": "muhammad ghinan navsih"
     },
     {
       "koperasiDocId": "Niar_Deni_Wahyuni_1778117980631",

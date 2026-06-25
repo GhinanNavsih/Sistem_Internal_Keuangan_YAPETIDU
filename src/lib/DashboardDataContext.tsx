@@ -12,6 +12,8 @@ interface DashboardDataContextType {
   employeesBlueCollar: any[];
   salaryMatrixBlue: SalaryMatrix;
   salaryMatrixWhite: SalaryMatrix;
+  gradeCodesBlue: string[];
+  gradeCodesWhite: string[];
   functionalAllowanceMap: Record<string, number>;
   koperasiDeductions: Record<string, number>;
   koperasiSavings: Record<string, number>;
@@ -27,6 +29,8 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   const [employeesBlueCollar, setEmployeesBlueCollar] = useState<any[]>([]);
   const [salaryMatrixBlue, setSalaryMatrixBlue] = useState<SalaryMatrix>({});
   const [salaryMatrixWhite, setSalaryMatrixWhite] = useState<SalaryMatrix>({});
+  const [gradeCodesBlue, setGradeCodesBlue] = useState<string[]>([]);
+  const [gradeCodesWhite, setGradeCodesWhite] = useState<string[]>([]);
   const [functionalAllowanceMap, setFunctionalAllowanceMap] = useState<Record<string, number>>({});
   const [koperasiDeductions, setKoperasiDeductions] = useState<Record<string, number>>({});
   const [koperasiSavings, setKoperasiSavings] = useState<Record<string, number>>({});
@@ -82,11 +86,24 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       }
 
       // Fetch versions data rows in parallel
-      const [matrixBlueSnap, matrixWhiteSnap, fSnap] = await Promise.all([
+      const [
+        matrixBlueSnap,
+        matrixWhiteSnap,
+        fSnap,
+        blueVersionSnap,
+        whiteVersionSnap
+      ] = await Promise.all([
         getDocs(collection(db, 'SalaryMatrix', activeBlueVersion, 'rows')),
         getDocs(collection(db, 'SalaryMatrix_WhiteCollar', activeWhiteVersion, 'rows')),
-        getDocs(collection(db, 'SalaryMatrix_Functional', activeFunctionalVersion, 'rows'))
+        getDocs(collection(db, 'SalaryMatrix_Functional', activeFunctionalVersion, 'rows')),
+        getDoc(doc(db, 'SalaryMatrix', activeBlueVersion)),
+        getDoc(doc(db, 'SalaryMatrix_WhiteCollar', activeWhiteVersion))
       ]);
+
+      const gCodesBlue = blueVersionSnap.exists() ? (blueVersionSnap.data()?.metadata?.gradeCodes || []) : [];
+      const gCodesWhite = whiteVersionSnap.exists() ? (whiteVersionSnap.data()?.metadata?.gradeCodes || []) : [];
+      setGradeCodesBlue(gCodesBlue);
+      setGradeCodesWhite(gCodesWhite);
 
       // Process blue matrix
       const matrixBlue: SalaryMatrix = {};
@@ -252,6 +269,8 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         employeesBlueCollar,
         salaryMatrixBlue,
         salaryMatrixWhite,
+        gradeCodesBlue,
+        gradeCodesWhite,
         functionalAllowanceMap,
         koperasiDeductions,
         koperasiSavings,

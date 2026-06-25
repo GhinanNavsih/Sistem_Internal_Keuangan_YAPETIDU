@@ -105,8 +105,8 @@ function buildInitialEarnings(
   const jobCategory = emp.employment?.jobCategory || '';
   const columns = REKAP_COLUMNS[jobCategory];
 
-  // Gapok
-  earnings.push({ label: 'Gapok', amount: gapok });
+  // Gaji Pokok
+  earnings.push({ label: 'Gaji Pokok', amount: gapok });
 
   if (columns && uraian) {
     for (const col of columns) {

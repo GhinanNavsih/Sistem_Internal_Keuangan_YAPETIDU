@@ -87,6 +87,7 @@ export interface Employee {
   isActive: boolean;
   phoneNumber?: string;
   email?: string;
+  dateRecognized?: Date;
 }
 
 // ─── Rekap Presensi / Uraian Gaji ────────────────────────────────────────────
