@@ -754,7 +754,6 @@ export default function EmployeeActivitiesPage() {
                     setFormName(formCustomName || '');
                   }
                 }}
-                modal={false}
               >
                 <SelectTrigger className="w-full text-base sm:text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
                   <SelectValue />

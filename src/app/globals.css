@@ -146,3 +146,18 @@ input[type=number] {
 .recharts-wrapper * {
   outline: none !important;
 }
+
+/* Prevent zoom-in / zoom-out behavior on mobile focus */
+@media screen and (max-width: 768px) {
+  input,
+  select,
+  textarea,
+  button,
+  [role="combobox"],
+  [data-slot="select-trigger"],
+  [data-slot="select-content"],
+  [data-slot="select-item"],
+  select[data-slot="select-trigger"] {
+    font-size: 16px !important;
+  }
+}
