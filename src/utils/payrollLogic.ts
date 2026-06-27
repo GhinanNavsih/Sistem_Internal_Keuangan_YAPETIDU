@@ -4,7 +4,13 @@ import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firesto
 import { db } from '@/lib/firebase';
 
 export function calculateYearsOfService(joinDate: Date, targetDate: Date): number {
-  return differenceInYears(targetDate, joinDate);
+  const nextMonth5th = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 5);
+  
+  // Normalize both dates to midnight local time to avoid time of day / timezone mismatches
+  const d1 = new Date(joinDate.getFullYear(), joinDate.getMonth(), joinDate.getDate());
+  const d2 = new Date(nextMonth5th.getFullYear(), nextMonth5th.getMonth(), nextMonth5th.getDate());
+  
+  return differenceInYears(d2, d1);
 }
 
 export function calculateGapok(

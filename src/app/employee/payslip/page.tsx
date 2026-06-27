@@ -39,7 +39,8 @@ import {
   TrendingUp,
   TrendingDown,
   Coins,
-  KeyRound
+  KeyRound,
+  Lock,
 } from 'lucide-react';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
 import { MONTHS_ID } from '@/utils/rekapConfig';
@@ -528,7 +529,7 @@ export default function EmployeePayslipPage() {
 
   // Client-side PDF trigger
   const handleDownloadPdf = () => {
-    if (!employeeData) return;
+    if (!employeeData || !isConfirmed) return;
     const slipData: PaySlipData = {
       employeeName: employeeData.personal_info?.name || profile?.displayName || 'Karyawan',
       employeeNo: 1, // Placeholder
@@ -778,7 +779,7 @@ export default function EmployeePayslipPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
                 
                 {/* Earnings List */}
-                <div className="p-6 md:p-8 space-y-4">
+                <div className="p-6 md:p-8 space-y-4 bg-emerald-50/15">
                   <h4 className="text-xs font-bold text-emerald-700 uppercase tracking-widest flex items-center gap-1.5">
                     <TrendingUp className="w-4 h-4 text-emerald-500" />
                     I. PENERIMAAN (EARNINGS)
@@ -798,7 +799,7 @@ export default function EmployeePayslipPage() {
                 </div>
 
                 {/* Deductions List */}
-                <div className="p-6 md:p-8 space-y-4">
+                <div className="p-6 md:p-8 space-y-4 bg-rose-50/15">
                   <h4 className="text-xs font-bold text-rose-700 uppercase tracking-widest flex items-center gap-1.5">
                     <TrendingDown className="w-4 h-4 text-rose-500" />
                     II. POTONGAN (DEDUCTIONS)
@@ -859,15 +860,30 @@ export default function EmployeePayslipPage() {
             </Card>
 
             {/* ── Download Action Button ────────────────────────────────────── */}
-            <div className="flex justify-center">
-              <Button
-                onClick={handleDownloadPdf}
-                className="rounded-2xl px-8 py-6 text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-150 hover:shadow-2xl hover:shadow-indigo-250 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center gap-2 cursor-pointer"
-              >
-                <Download className="w-5 h-5" />
-                Unduh Slip Gaji (PDF)
-              </Button>
-            </div>
+            {isConfirmed ? (
+              <div className="flex justify-center">
+                <Button
+                  onClick={handleDownloadPdf}
+                  className="rounded-2xl px-8 py-6 text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-150 hover:shadow-2xl hover:shadow-indigo-250 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center gap-2 cursor-pointer"
+                >
+                  <Download className="w-5 h-5" />
+                  Unduh Slip Gaji (PDF)
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2.5">
+                <Button
+                  disabled
+                  className="rounded-2xl px-8 py-6 text-sm font-bold bg-slate-100 text-slate-400 border border-slate-200/60 shadow-none cursor-not-allowed flex items-center gap-2"
+                >
+                  <Lock className="w-5 h-5 text-slate-400" />
+                  Unduh Slip Gaji (PDF)
+                </Button>
+                <p className="text-[11px] font-semibold text-amber-600 bg-amber-50/60 border border-amber-100/50 px-3 py-1 rounded-full animate-pulse">
+                  Slip gaji masih berupa DRAFT. Hubungi BAK untuk melakukan konfirmasi final sebelum mengunduh.
+                </p>
+              </div>
+            )}
 
           </div>
         )}

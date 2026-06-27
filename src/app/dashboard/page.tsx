@@ -86,10 +86,11 @@ const GROUP_COLOR_MAP: Record<string, { hex: string; bg: string }> = {
   'PASCASARJANA': { hex: '#ec4899', bg: 'bg-pink-500' }, // Pink
 
   // Pekarya Job Categories
-  'SATPAM': { hex: '#6366f1', bg: 'bg-indigo-500' },
+  'SATPAM': { hex: '#ef4444', bg: 'bg-red-500' },
   'SOPIR': { hex: '#10b981', bg: 'bg-emerald-500' },
   'PEKARYA': { hex: '#f43f5e', bg: 'bg-rose-500' },
   'TEKNISI': { hex: '#f59e0b', bg: 'bg-amber-500' },
+  'KEBERSIHAN': { hex: '#3b82f6', bg: 'bg-blue-500' },
   'KEBERSIHAN_IC': { hex: '#0ea5e9', bg: 'bg-sky-500' },
   'KEBERSIHAN_PONTI': { hex: '#a855f7', bg: 'bg-purple-500' },
   'PONTI': { hex: '#ec4899', bg: 'bg-pink-500' },
@@ -308,28 +309,17 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
                       return valB - valA;
                     });
                     return (
-                      <div className="flex flex-col gap-1.5 pb-3 max-h-[100px] overflow-y-auto pr-2 mb-2">
+                      <div className="flex flex-col gap-1.5 pb-3">
                         {sortedPayload.map((entry, idx) => {
                           const name = entry.payload?.name;
-                          const isSelected = selectedShareGroup && selectedShareGroup.type === type && selectedShareGroup.name === name;
-                          const isAnySelected = selectedShareGroup && selectedShareGroup.type === type;
-                          const colorInfo = getGroupColorInfo(name || '', idx);
                           return (
                             <div 
                               key={entry.value || idx} 
                               onClick={() => handleChartClick(name)}
-                              className={`flex items-center gap-2 text-[10px] font-bold cursor-pointer transition-all p-1 rounded-md border border-transparent ${
-                                isSelected 
-                                  ? 'bg-indigo-50/80 text-indigo-700 border-indigo-200/50 shadow-sm' 
-                                  : isAnySelected 
-                                    ? 'opacity-25 hover:opacity-100 hover:bg-slate-50' 
-                                    : 'text-slate-600 hover:bg-slate-50'
-                              }`}
+                              className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer"
                             >
-                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colorInfo.hex }} />
-                              <span className="truncate max-w-[120px]">{name}</span>
-                              <span className="text-slate-400">({((entry.payload?.value / totalGross) * 100).toFixed(1)}%)</span>
-                              <span className="ml-auto font-black text-slate-700">{formatIDR(entry.payload?.value)}</span>
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                              <span>{formatIDR(entry.payload?.value ?? 0)}</span>
                             </div>
                           );
                         })}
@@ -340,10 +330,10 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
                 <Pie
                   data={chartData}
                   cx="50%"
-                  cy="60%"
-                  innerRadius={50}
-                  outerRadius={75}
-                  labelLine={false}
+                  cy="50%"
+                  labelLine={true}
+                  label={({ name, percent }) => `${name}: ${(percent !== undefined ? percent * 100 : 0).toFixed(1)}%`}
+                  outerRadius={80}
                   dataKey="value"
                   nameKey="name"
                   startAngle={90}
@@ -360,8 +350,8 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
                         key={`cell-${idx}`} 
                         fill={colorInfo.hex} 
                         opacity={cellOpacity}
-                        stroke={isSelected ? '#4f46e5' : 'none'}
-                        strokeWidth={isSelected ? 2.5 : 0}
+                        stroke={isSelected ? '#4f46e5' : '#fff'}
+                        strokeWidth={isSelected ? 2.5 : 1}
                         className="cursor-pointer transition-all duration-200 outline-none"
                       />
                     );

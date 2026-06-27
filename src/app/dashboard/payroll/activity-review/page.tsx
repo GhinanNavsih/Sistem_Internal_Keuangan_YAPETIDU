@@ -81,7 +81,7 @@ interface ActivityReport {
   jobCategory: string;
   period: string;
   activityName: string;
-  activityType?: 'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya';
+  activityType?: 'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya' | 'Buang Sampah';
   activityDate: string;
   timeStart: string;
   timeEnd: string;
@@ -100,6 +100,10 @@ function fmtRp(val: number): string {
 }
 
 function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: string, activityName?: string): number {
+  if (activityType === 'Buang Sampah' || activityName === 'Buang Sampah') {
+    return 5000;
+  }
+  
   if (!timeStart || !timeEnd) return 0;
   
   // Parse HH:MM format
@@ -783,7 +787,9 @@ export default function ActivityReviewPage() {
                             {activity.activityDate}
                           </TableCell>
                           <TableCell className="text-sm text-slate-600 font-medium whitespace-nowrap">
-                            {activity.timeStart} – {activity.timeEnd}
+                            {activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
+                              ? activity.timeStart
+                              : `${activity.timeStart} – ${activity.timeEnd}`}
                           </TableCell>
                           <TableCell>
                             <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[10px] font-bold rounded-lg px-2 py-0.5`}>
@@ -911,7 +917,11 @@ export default function ActivityReviewPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400 font-semibold">Waktu</span>
-                <span className="font-bold text-slate-700">{declineTarget?.timeStart} – {declineTarget?.timeEnd}</span>
+                <span className="font-bold text-slate-700">
+                  {declineTarget?.activityType === 'Buang Sampah' || declineTarget?.activityName === 'Buang Sampah'
+                    ? declineTarget?.timeStart
+                    : `${declineTarget?.timeStart} – ${declineTarget?.timeEnd}`}
+                </span>
               </div>
             </div>
             <div className="space-y-1.5">

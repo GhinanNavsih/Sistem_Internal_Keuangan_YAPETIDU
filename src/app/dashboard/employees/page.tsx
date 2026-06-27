@@ -59,6 +59,9 @@ import {
   LayoutGrid,
   SlidersHorizontal,
   Coins,
+  ChevronsUpDown,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -132,14 +135,15 @@ const getEmpMasaKerja = (emp: any): string => {
   
   if (isNaN(tmtDate.getTime())) return '-';
   
-  const today = new Date();
-  let years = today.getFullYear() - tmtDate.getFullYear();
-  let months = today.getMonth() - tmtDate.getMonth();
-  let days = today.getDate() - tmtDate.getDate();
+  const now = new Date();
+  const nextMonth5th = new Date(now.getFullYear(), now.getMonth() + 1, 5);
+  let years = nextMonth5th.getFullYear() - tmtDate.getFullYear();
+  let months = nextMonth5th.getMonth() - tmtDate.getMonth();
+  let days = nextMonth5th.getDate() - tmtDate.getDate();
 
   if (days < 0) {
     months -= 1;
-    const prevMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+    const prevMonth = new Date(nextMonth5th.getFullYear(), nextMonth5th.getMonth(), 0);
     days += prevMonth.getDate();
   }
 
@@ -226,6 +230,11 @@ const getDebugRows = (employeesList: any[], activeTab: string) => {
 const formatIDR = (val: number) => {
   return `Rp ${val.toLocaleString('id-ID')}`;
 };
+
+function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | 'desc' | null }) {
+  if (!active || !direction) return <ChevronsUpDown className="w-3 h-3 text-slate-300 ml-1.5 inline-block shrink-0" />;
+  return direction === 'asc' ? <ChevronUp className="w-3 h-3 text-indigo-500 ml-1.5 inline-block shrink-0" /> : <ChevronDown className="w-3 h-3 text-indigo-500 ml-1.5 inline-block shrink-0" />;
+}
 
 const formatNumberWithDots = (num: number): string => {
   if (num === 0) return '';
@@ -330,6 +339,18 @@ export default function EmployeesPage() {
   const [localLoading, setLocalLoading] = useState(false);
   const loading = contextLoading || localLoading;
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' | null }>({ key: '', direction: null });
+
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' | null = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
+      direction = null;
+    }
+    setSortConfig({ key, direction });
+  };
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
@@ -508,6 +529,25 @@ export default function EmployeesPage() {
     const list = activeTab === 'loyalis' ? employeesLoyalis : employeesBlueCollar;
     setEmployees([...list].sort((a, b) => getEmpId(a).localeCompare(getEmpId(b))));
   }, [activeTab, employeesLoyalis, employeesBlueCollar]);
+
+  // Automatically sync job_role with the highest paying structural position for Loyalis
+  useEffect(() => {
+    if (activeTab === 'loyalis' && isDialogOpen) {
+      const positions = formData.employment_profile?.structural_positions || [];
+      const sorted = [...positions].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
+      const highestPayingName = sorted[0]?.name || '';
+      
+      if (formData.employment_profile?.job_role !== highestPayingName) {
+        setFormData((prev: any) => ({
+          ...prev,
+          employment_profile: {
+            ...(prev.employment_profile || {}),
+            job_role: highestPayingName
+          }
+        }));
+      }
+    }
+  }, [formData.employment_profile?.structural_positions, activeTab, isDialogOpen, formData.employment_profile?.job_role]);
 
   const fetchEmployees = async () => {
     try {
@@ -808,16 +848,160 @@ export default function EmployeesPage() {
     setTimeout(() => setMessage(null), 3000);
   };
 
-  const filtered = employees.filter(emp => {
-    const name = getEmpName(emp);
-    const nik = getEmpNikOrNiy(emp);
-    const id = getEmpId(emp);
-    return (
-      name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (nik && String(nik).includes(searchQuery)) ||
-      id.includes(searchQuery)
-    );
-  });
+  const getFilteredAndSortedEmployees = () => {
+    let list = employees.filter(emp => {
+      const name = getEmpName(emp);
+      const nik = getEmpNikOrNiy(emp);
+      const id = getEmpId(emp);
+      return (
+        name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (nik && String(nik).includes(searchQuery)) ||
+        id.includes(searchQuery)
+      );
+    });
+
+    if (!sortConfig.key || !sortConfig.direction) {
+      return list;
+    }
+
+    return [...list].sort((a, b) => {
+      let aVal: any;
+      let bVal: any;
+
+      switch (sortConfig.key) {
+        case 'id':
+          aVal = getEmpId(a);
+          bVal = getEmpId(b);
+          break;
+        case 'name':
+          aVal = getEmpName(a).toLowerCase();
+          bVal = getEmpName(b).toLowerCase();
+          break;
+        case 'category':
+          aVal = getEmpCategory(a).toLowerCase();
+          bVal = getEmpCategory(b).toLowerCase();
+          break;
+        case 'grade':
+          aVal = getEmpGrade(a).toLowerCase();
+          bVal = getEmpGrade(b).toLowerCase();
+          break;
+        case 'status':
+          aVal = getEmpIsActive(a) ? 1 : 0;
+          bVal = getEmpIsActive(b) ? 1 : 0;
+          break;
+        case 'startDate': {
+          const aDateStr = getEmpStartDate(a);
+          const bDateStr = getEmpStartDate(b);
+          aVal = aDateStr ? new Date(aDateStr).getTime() : 0;
+          bVal = bDateStr ? new Date(bDateStr).getTime() : 0;
+          break;
+        }
+        case 'masaKerja': {
+          const aTmt = a.employment_profile?.date_recognized;
+          const bTmt = b.employment_profile?.date_recognized;
+          const aTime = aTmt ? (aTmt.toDate ? aTmt.toDate().getTime() : new Date(aTmt).getTime()) : 0;
+          const bTime = bTmt ? (bTmt.toDate ? bTmt.toDate().getTime() : new Date(bTmt).getTime()) : 0;
+          aVal = -aTime;
+          bVal = -bTime;
+          break;
+        }
+        case 't_bpjs_tk':
+          aVal = a.bpjs?.t_bpjs_tk || 0;
+          bVal = b.bpjs?.t_bpjs_tk || 0;
+          break;
+        case 't_bpjs_kes':
+          aVal = a.bpjs?.t_bpjs_kes || 0;
+          bVal = b.bpjs?.t_bpjs_kes || 0;
+          break;
+        case 't_beras':
+          aVal = a.salaryProfile?.tunjanganBeras || 0;
+          bVal = b.salaryProfile?.tunjanganBeras || 0;
+          break;
+        case 'bpjs_pekarya':
+          aVal = a.bpjs?.allowanceAmount || 0;
+          bVal = b.bpjs?.allowanceAmount || 0;
+          break;
+        case 'pot_bpjs':
+          aVal = a.bpjs?.deductionAmount || 0;
+          bVal = b.bpjs?.deductionAmount || 0;
+          break;
+        case 't_jabatan':
+          aVal = (a.employment_profile?.structural_positions || []).reduce((sum: number, pos: any) => sum + (Number(pos.allowance) || 0), 0);
+          bVal = (b.employment_profile?.structural_positions || []).reduce((sum: number, pos: any) => sum + (Number(pos.allowance) || 0), 0);
+          break;
+        case 't_kepangkatan':
+          aVal = a.kepangkatan?.t_kepangkatan || 0;
+          bVal = b.kepangkatan?.t_kepangkatan || 0;
+          break;
+        case 't_instruksional':
+          aVal = a.t_instruksional || 0;
+          bVal = b.t_instruksional || 0;
+          break;
+        case 'pot_tabungan':
+          aVal = a.savings?.deductionAmount || 0;
+          bVal = b.savings?.deductionAmount || 0;
+          break;
+        case 'zis':
+          aVal = a.ziz?.deductionAmount || 0;
+          bVal = b.ziz?.deductionAmount || 0;
+          break;
+        case 'pot_bni':
+          aVal = a.tht?.deductionAmount || 0;
+          bVal = b.tht?.deductionAmount || 0;
+          break;
+        case 'pot_pinlu':
+          aVal = a.pinlu?.deductionAmount || 0;
+          bVal = b.pinlu?.deductionAmount || 0;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  };
+
+  const filtered = getFilteredAndSortedEmployees();
+
+  const getSortedDebugRows = (debugRows: any[]) => {
+    if (!sortConfig.key || !sortConfig.direction) return debugRows;
+
+    return [...debugRows].sort((a, b) => {
+      let aVal: any;
+      let bVal: any;
+
+      switch (sortConfig.key) {
+        case 'id':
+          aVal = getEmpId(a);
+          bVal = getEmpId(b);
+          break;
+        case 'name':
+          aVal = getEmpName(a).toLowerCase();
+          bVal = getEmpName(b).toLowerCase();
+          break;
+        case 'debugJabatan':
+          aVal = (a.debugJabatan || '').toLowerCase();
+          bVal = (b.debugJabatan || '').toLowerCase();
+          break;
+        case 'debugSatker':
+          aVal = (a.debugSatker || '').toLowerCase();
+          bVal = (b.debugSatker || '').toLowerCase();
+          break;
+        case 'debugTunjangan':
+          aVal = a.debugTunjangan || 0;
+          bVal = b.debugTunjangan || 0;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  };
 
   const handleExportExcel = () => {
     if (filtered.length === 0) {
@@ -1051,52 +1235,112 @@ export default function EmployeesPage() {
               <TableHeader className="bg-slate-50/50">
                 {tableViewMode === 'default' && (
                   <TableRow className="border-slate-100">
-                    <TableHead className="w-24 font-semibold text-slate-900 pl-8">ID</TableHead>
-                    <TableHead className="font-semibold text-slate-900 w-[320px]">Nama Lengkap</TableHead>
-                    <TableHead className="font-semibold text-slate-900 w-[320px]">Kategori</TableHead>
-                    <TableHead className="font-semibold text-slate-900">Gol.</TableHead>
-                    <TableHead className="font-semibold text-slate-900 text-center">Status</TableHead>
-                    <TableHead className="font-semibold text-slate-900">Mulai Kerja</TableHead>
-                    <TableHead className="font-semibold text-slate-900">Masa Kerja</TableHead>
-                    <TableHead className="font-semibold text-slate-900 text-right pr-8">Aksi</TableHead>
+                    <TableHead onClick={() => handleSort('id')} className="w-24 font-semibold text-slate-900 pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">ID <SortIcon active={sortConfig.key === 'id'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[320px] cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">Nama Lengkap <SortIcon active={sortConfig.key === 'name'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('category')} className="font-semibold text-slate-900 w-[320px] cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">Kategori <SortIcon active={sortConfig.key === 'category'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('grade')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">Gol. <SortIcon active={sortConfig.key === 'grade'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('status')} className="font-semibold text-slate-900 text-center cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center justify-center">Status <SortIcon active={sortConfig.key === 'status'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('startDate')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">Mulai Kerja <SortIcon active={sortConfig.key === 'startDate'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('masaKerja')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">Masa Kerja <SortIcon active={sortConfig.key === 'masaKerja'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>
                   </TableRow>
                 )}
                 {tableViewMode === 'debug' && (
                   <TableRow className="border-slate-100">
-                    <TableHead className="w-24 font-semibold text-slate-900 pl-8">ID</TableHead>
-                    <TableHead className="font-semibold text-slate-900 w-[300px]">Nama Lengkap</TableHead>
-                    <TableHead className="font-semibold text-slate-900 w-[300px]">Nama Jabatan</TableHead>
-                    <TableHead className="font-semibold text-slate-900">SatKer (department_unit)</TableHead>
-                    <TableHead className="font-semibold text-slate-900 text-right">Tunjangan Jabatan</TableHead>
-                    <TableHead className="font-semibold text-slate-900 text-right pr-8">Aksi</TableHead>
+                    <TableHead onClick={() => handleSort('id')} className="w-24 font-semibold text-slate-900 pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">ID <SortIcon active={sortConfig.key === 'id'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[300px] cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">Nama Lengkap <SortIcon active={sortConfig.key === 'name'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('debugJabatan')} className="font-semibold text-slate-900 w-[300px] cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">Nama Jabatan <SortIcon active={sortConfig.key === 'debugJabatan'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('debugSatker')} className="font-semibold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center">SatKer (department_unit) <SortIcon active={sortConfig.key === 'debugSatker'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead onClick={() => handleSort('debugTunjangan')} className="font-semibold text-slate-900 text-right cursor-pointer hover:text-indigo-600 transition-colors">
+                      <div className="flex items-center justify-end">Tunjangan Jabatan <SortIcon active={sortConfig.key === 'debugTunjangan'} direction={sortConfig.direction} /></div>
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>
                   </TableRow>
                 )}
                 {tableViewMode === 'constant' && (
                   activeTab === 'loyalis' ? (
                     <TableRow className="border-slate-100">
-                      <TableHead className="w-24 font-semibold text-slate-900 pl-8">ID</TableHead>
-                      <TableHead className="font-semibold text-slate-900 w-[200px]">Nama Lengkap</TableHead>
-                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. BPJS TK</TableHead>
-                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. BPJS KES</TableHead>
-                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. Beras</TableHead>
-                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. Jabatan</TableHead>
-                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. Kepangkatan</TableHead>
-                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. Instruksional</TableHead>
-                      <TableHead className="font-semibold text-rose-800 bg-rose-50/40 text-right">Pot. BPJS</TableHead>
-                      <TableHead className="font-semibold text-rose-800 bg-rose-50/40 text-right">Pot. Tabungan</TableHead>
-                      <TableHead className="font-semibold text-rose-800 bg-rose-50/40 text-right">ZIS</TableHead>
-                      <TableHead className="font-semibold text-rose-800 bg-rose-50/40 text-right">Pot. BNI Simponi</TableHead>
-                      <TableHead className="font-semibold text-rose-800 bg-rose-50/40 text-right">Pot. Pinlu/Tagihan</TableHead>
-                      <TableHead className="font-semibold text-slate-900 text-right pr-8">Aksi</TableHead>
+                      <TableHead onClick={() => handleSort('id')} className="w-24 font-semibold text-slate-900 pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
+                        <div className="flex items-center">ID <SortIcon active={sortConfig.key === 'id'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[200px] cursor-pointer hover:text-indigo-600 transition-colors">
+                        <div className="flex items-center">Nama Lengkap <SortIcon active={sortConfig.key === 'name'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('t_bpjs_tk')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
+                        <div className="flex items-center justify-end">T. BPJS TK <SortIcon active={sortConfig.key === 't_bpjs_tk'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('t_bpjs_kes')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
+                        <div className="flex items-center justify-end">T. BPJS KES <SortIcon active={sortConfig.key === 't_bpjs_kes'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('t_beras')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
+                        <div className="flex items-center justify-end">T. Beras <SortIcon active={sortConfig.key === 't_beras'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('t_jabatan')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
+                        <div className="flex items-center justify-end">T. Jabatan <SortIcon active={sortConfig.key === 't_jabatan'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('t_kepangkatan')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
+                        <div className="flex items-center justify-end">T. Kepangkatan <SortIcon active={sortConfig.key === 't_kepangkatan'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('t_instruksional')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
+                        <div className="flex items-center justify-end">T. Instruksional <SortIcon active={sortConfig.key === 't_instruksional'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('pot_bpjs')} className="font-semibold text-rose-800 bg-rose-50/40 text-right cursor-pointer hover:text-rose-900 transition-colors">
+                        <div className="flex items-center justify-end">Pot. BPJS <SortIcon active={sortConfig.key === 'pot_bpjs'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('pot_tabungan')} className="font-semibold text-rose-800 bg-rose-50/40 text-right cursor-pointer hover:text-rose-900 transition-colors">
+                        <div className="flex items-center justify-end">Pot. Tabungan <SortIcon active={sortConfig.key === 'pot_tabungan'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('zis')} className="font-semibold text-rose-800 bg-rose-50/40 text-right cursor-pointer hover:text-rose-900 transition-colors">
+                        <div className="flex items-center justify-end">ZIS <SortIcon active={sortConfig.key === 'zis'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('pot_bni')} className="font-semibold text-rose-800 bg-rose-50/40 text-right cursor-pointer hover:text-rose-900 transition-colors">
+                        <div className="flex items-center justify-end">Pot. BNI Simponi <SortIcon active={sortConfig.key === 'pot_bni'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('pot_pinlu')} className="font-semibold text-rose-800 bg-rose-50/40 text-right cursor-pointer hover:text-rose-900 transition-colors">
+                        <div className="flex items-center justify-end">Pot. Pinlu/Tagihan <SortIcon active={sortConfig.key === 'pot_pinlu'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead className="font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>
                     </TableRow>
                   ) : (
                     <TableRow className="border-slate-100">
-                      <TableHead className="w-24 font-semibold text-slate-900 pl-8">ID</TableHead>
-                      <TableHead className="font-semibold text-slate-900 w-[250px]">Nama Lengkap</TableHead>
-                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">BPJS Pekarya</TableHead>
-                      <TableHead className="font-semibold text-emerald-800 bg-emerald-50/40 text-right">T. Beras</TableHead>
-                      <TableHead className="font-semibold text-rose-800 bg-rose-50/40 text-right">Pot. BPJS</TableHead>
-                      <TableHead className="font-semibold text-slate-900 text-right pr-8">Aksi</TableHead>
+                      <TableHead onClick={() => handleSort('id')} className="w-24 font-semibold text-slate-900 pl-8 cursor-pointer hover:text-indigo-600 transition-colors">
+                        <div className="flex items-center">ID <SortIcon active={sortConfig.key === 'id'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('name')} className="font-semibold text-slate-900 w-[250px] cursor-pointer hover:text-indigo-600 transition-colors">
+                        <div className="flex items-center">Nama Lengkap <SortIcon active={sortConfig.key === 'name'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('bpjs_pekarya')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
+                        <div className="flex items-center justify-end">BPJS Pekarya <SortIcon active={sortConfig.key === 'bpjs_pekarya'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('t_beras')} className="font-semibold text-emerald-800 bg-emerald-50/40 text-right cursor-pointer hover:text-indigo-800 transition-colors">
+                        <div className="flex items-center justify-end">T. Beras <SortIcon active={sortConfig.key === 't_beras'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead onClick={() => handleSort('pot_bpjs')} className="font-semibold text-rose-800 bg-rose-50/40 text-right cursor-pointer hover:text-rose-900 transition-colors">
+                        <div className="flex items-center justify-end">Pot. BPJS <SortIcon active={sortConfig.key === 'pot_bpjs'} direction={sortConfig.direction} /></div>
+                      </TableHead>
+                      <TableHead className="font-semibold text-slate-900 text-right pr-8 select-none">Aksi</TableHead>
                     </TableRow>
                   )
                 )}
@@ -1168,7 +1412,7 @@ export default function EmployeesPage() {
                     </TableRow>
                   ))
                 ) : tableViewMode === 'debug' ? (
-                  getDebugRows(filtered, activeTab).map(empRow => (
+                  getSortedDebugRows(getDebugRows(filtered, activeTab)).map(empRow => (
                     <TableRow key={empRow.rowKey} className="hover:bg-slate-50/30 transition-colors border-slate-50">
                       <TableCell className="font-bold text-slate-400 pl-8 font-mono text-xs">{getEmpId(empRow)}</TableCell>
                       <TableCell className="w-[320px] max-w-[320px]">
@@ -1283,7 +1527,16 @@ export default function EmployeesPage() {
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Pekerjaan</h3>
-                    <div className="space-y-2"><Label>Jabatan</Label><Input placeholder="DOSEN, TENDIK, dll." value={formData.employment_profile?.job_role || ''} onChange={e => updateNestedField('employment_profile', 'job_role', e.target.value)} /></div>
+                    <div className="space-y-2">
+                      <Label>Jabatan</Label>
+                      <Input
+                        placeholder="Belum ada jabatan struktural"
+                        value={formData.employment_profile?.job_role || ''}
+                        readOnly
+                        disabled
+                        className="rounded-xl border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
+                      />
+                    </div>
                     <div className="space-y-2">
                       <Label>Departemen / Unit</Label>
                       {!isCustomDept ? (

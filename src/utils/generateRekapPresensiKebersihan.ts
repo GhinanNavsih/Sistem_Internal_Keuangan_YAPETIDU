@@ -20,6 +20,10 @@ export interface RekapPresensiKebersihanyData {
   employees: KebersihanyEmployee[];
   isEmptyTemplate?: boolean;
   customColumns?: RekapColumn[];
+  signature?: {
+    name: string;
+    title: string;
+  };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -350,8 +354,11 @@ export async function generateRekapPresensiKebersihanyPdf(
   doc.setFontSize(8.5);
 
   const isSatpam = data.category === 'SATPAM';
-  const sigName = isSatpam ? 'H. Rohmatul Akbar, ST' : 'Harun Arrosyid, S. Pd. I';
-  const sigTitle = isSatpam ? 'Majlis Kamtib' : 'KA. Biro Administrasi Umum';
+  const defaultSigName = isSatpam ? 'H. Rohmatul Akbar, ST' : 'Harun Arrosyid, S. Pd. I';
+  const defaultSigTitle = isSatpam ? 'Majlis Kamtib' : 'KA. Biro Administrasi Umum';
+
+  const sigName = data.signature?.name || defaultSigName;
+  const sigTitle = data.signature?.title || defaultSigTitle;
 
   doc.text(sigName, sigX, sigLineY + 5, { align: 'center' });
   doc.setFont('helvetica', 'normal');

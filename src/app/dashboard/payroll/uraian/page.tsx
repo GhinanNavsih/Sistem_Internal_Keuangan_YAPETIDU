@@ -261,6 +261,55 @@ export default function UraianPage() {
   const isReadOnly = profile?.role === 'satker_head_loyalis' &&
     (currentEventStatus === 'approved' || currentEventStatus === 'declined' || currentEventStatus === 'pending_review');
 
+  // ─── Custom Signature Dialog States ────────────────────────────────────────
+  const [signatureConfig, setSignatureConfig] = useState<Record<string, { name: string, title: string }>>({});
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [sigModalName, setSigModalName] = useState('');
+  const [sigModalTitle, setSigModalTitle] = useState('');
+  const [sigModalSearch, setSigModalSearch] = useState('');
+  const [selectedSigEmpId, setSelectedSigEmpId] = useState('');
+  const [employeesForSignature, setEmployeesForSignature] = useState<{ id: string, name: string, role: string, collection: string }[]>([]);
+  const [loadingSigEmployees, setLoadingSigEmployees] = useState(false);
+
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isLongPressRef = useRef(false);
+
+  const startPress = () => {
+    isLongPressRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressRef.current = true;
+      handleOpenSignatureModal();
+    }, 800);
+  };
+
+  const endPress = (e: React.MouseEvent | React.TouchEvent) => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+    if (isLongPressRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
+  const handlePdfClick = (e: React.MouseEvent) => {
+    if (isLongPressRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    handleExportPdf();
+  };
+
+  const handleEmptyPdfClick = (e: React.MouseEvent) => {
+    if (isLongPressRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    handleExportEmptyPdf();
+  };
+
   // ─── Custom Column Dialog States ──────────────────────────────────────────
   const [customColumns, setCustomColumns] = useState<RekapColumn[]>([]);
   const [isCustomColDialogOpen, setIsCustomColDialogOpen] = useState(false);
@@ -318,6 +367,101 @@ export default function UraianPage() {
     };
     fetchDepartments();
   }, []);
+
+  // ── Fetch Signature Configurations ──
+  useEffect(() => {
+    const fetchSignatures = async () => {
+      try {
+        const docRef = doc(db, 'Settings', 'signatures');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setSignatureConfig(docSnap.data());
+        }
+      } catch (err) {
+        console.error('Error fetching signature settings:', err);
+      }
+    };
+    fetchSignatures();
+  }, []);
+
+  const fetchEmployeesForSignature = async () => {
+    setLoadingSigEmployees(true);
+    try {
+      const [loyalisSnap, blueCollarSnap] = await Promise.all([
+        getDocs(query(collection(db, 'Employees_Loyalis'), where('personal_info.status', '==', 'AKTIF'))),
+        getDocs(query(collection(db, 'Employees_BlueCollar'), where('employment.status', '==', 'active')))
+      ]);
+
+      const loyalisList = loyalisSnap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: data.personal_info?.name || '',
+          role: data.employment_profile?.job_role || 'Pegawai Loyalis',
+          collection: 'Employees_Loyalis'
+        };
+      });
+
+      const blueCollarList = blueCollarSnap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: data.name || '',
+          role: data.employment?.jobCategory || 'Pekarya',
+          collection: 'Employees_BlueCollar'
+        };
+      });
+
+      const combined = [...loyalisList, ...blueCollarList].sort((a, b) => a.name.localeCompare(b.name));
+      setEmployeesForSignature(combined);
+    } catch (err) {
+      console.error('Error loading signature employees:', err);
+    } finally {
+      setLoadingSigEmployees(false);
+    }
+  };
+
+  const handleSelectEmployeeForSignature = (emp: { id: string, name: string, role: string }) => {
+    setSelectedSigEmpId(emp.id);
+    setSigModalName(emp.name);
+    setSigModalTitle(emp.role);
+    setSigModalSearch('');
+  };
+
+  const handleOpenSignatureModal = () => {
+    fetchEmployeesForSignature();
+    const currentSig = signatureConfig[category];
+    if (currentSig) {
+      setSigModalName(currentSig.name);
+      setSigModalTitle(currentSig.title);
+    } else {
+      const isSatpam = category === 'SATPAM';
+      setSigModalName(isSatpam ? 'H. Rohmatul Akbar, ST' : 'Harun Arrosyid, S. Pd. I');
+      setSigModalTitle(isSatpam ? 'Majlis Kamtib' : 'KA. Biro Administrasi Umum');
+    }
+    setSigModalSearch('');
+    setSelectedSigEmpId('');
+    setShowSignatureModal(true);
+  };
+
+  const handleSaveSignature = async () => {
+    try {
+      const updatedConfig = {
+        ...signatureConfig,
+        [category]: {
+          name: sigModalName,
+          title: sigModalTitle
+        }
+      };
+      await setDoc(doc(db, 'Settings', 'signatures'), updatedConfig, { merge: true });
+      setSignatureConfig(updatedConfig);
+      setMessage({ type: 'success', text: `Tanda tangan untuk kategori ${category} berhasil diperbarui.` });
+      setShowSignatureModal(false);
+    } catch (err) {
+      console.error('Error saving signature:', err);
+      setMessage({ type: 'error', text: 'Gagal menyimpan pengaturan tanda tangan.' });
+    }
+  };
 
   // ── Fetch Blue Collar Employees for SPJ ──
   useEffect(() => {
@@ -1957,6 +2101,7 @@ export default function UraianPage() {
       category,
       employees: empRows,
       customColumns,
+      signature: signatureConfig[category],
     });
   };
 
@@ -1978,6 +2123,7 @@ export default function UraianPage() {
       employees: empRows,
       isEmptyTemplate: true,
       customColumns,
+      signature: signatureConfig[category],
     });
   };
 
@@ -2084,18 +2230,6 @@ export default function UraianPage() {
         {/* Global Action Bar (only shown on Presensi tab) */}
         {activeTab === 'presensi' && (
           <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-[20px] border border-slate-200/60 shadow-sm">
-            <Button
-              onClick={() => {
-                setActiveTab('kegiatan_spj');
-                setMobileSpjView('list');
-                window.history.pushState({ tab: 'kegiatan_spj', from: activeTab }, '');
-              }}
-              variant="outline"
-              className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm"
-            >
-              <Calendar className="w-4 h-4" />
-              Kegiatan SPJ
-            </Button>
             {['KEBERSIHAN', 'KEBERSIHAN_IC'].includes(category) && (
               <Button
                 onClick={() => router.push('/dashboard/payroll/activity-review')}
@@ -2121,9 +2255,16 @@ export default function UraianPage() {
             </Button>
             {saved && (
               <Button
-                onClick={handleExportPdf}
+                onMouseDown={startPress}
+                onMouseUp={endPress}
+                onMouseLeave={() => {
+                  if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+                }}
+                onTouchStart={startPress}
+                onTouchEnd={endPress}
+                onClick={handlePdfClick}
                 variant="outline"
-                className="rounded-xl border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 transition-all font-semibold flex items-center gap-2 shadow-sm"
+                className="rounded-xl border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer select-none"
               >
                 <FileDown className="w-4 h-4" />
                 Ekspor Laporan PDF
@@ -2131,9 +2272,16 @@ export default function UraianPage() {
             )}
             {category && employees.length > 0 && (
               <Button
-                onClick={handleExportEmptyPdf}
+                onMouseDown={startPress}
+                onMouseUp={endPress}
+                onMouseLeave={() => {
+                  if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+                }}
+                onTouchStart={startPress}
+                onTouchEnd={endPress}
+                onClick={handleEmptyPdfClick}
                 variant="outline"
-                className="rounded-xl border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-all font-semibold flex items-center gap-2 shadow-sm"
+                className="rounded-xl border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer select-none"
               >
                 <FileText className="w-4 h-4" />
                 Ekspor Templat Kosong (Darurat)
@@ -2168,14 +2316,16 @@ export default function UraianPage() {
               </button>
             </div>
 
-            <Button
-              onClick={() => setCetakKegiatanDialogOpen(true)}
-              variant="outline"
-              className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
-            >
-              <FileText className="w-4 h-4 text-indigo-600" />
-              Laporan Kegiatan Loyalis
-            </Button>
+            {activeTab !== 'presensi' && (
+              <Button
+                onClick={() => setCetakKegiatanDialogOpen(true)}
+                variant="outline"
+                className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-indigo-600" />
+                Laporan Kegiatan Loyalis
+              </Button>
+            )}
           </div>
         )}
 
@@ -4260,6 +4410,132 @@ export default function UraianPage() {
                 reviewAction === 'revision_needed' ? <AlertCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />
               )}
               Konfirmasi
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Custom Signature Dialog ── */}
+      <Dialog open={showSignatureModal} onOpenChange={setShowSignatureModal}>
+        <DialogContent className="sm:max-w-md max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl animate-in fade-in duration-300">
+          <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-indigo-50/80 to-purple-50/60 border-b border-slate-100 shrink-0">
+            <DialogTitle className="text-slate-800 flex items-center gap-3 font-bold text-lg">
+              <FileText className="w-5 h-5 text-indigo-500" />
+              Tanda Tangan Laporan PDF
+            </DialogTitle>
+            <p className="text-slate-500 text-xs mt-1">
+              Pilih pegawai dan jabatan yang akan menandatangani laporan PDF untuk Kategori: <span className="font-bold text-indigo-600">{category}</span>.
+            </p>
+          </DialogHeader>
+
+          <div className="p-6 space-y-4 bg-white overflow-y-auto max-h-[50vh]">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Cari Pegawai</label>
+              <Input
+                type="text"
+                placeholder="Masukkan nama pegawai untuk mencari..."
+                value={sigModalSearch}
+                onChange={(e) => setSigModalSearch(e.target.value)}
+                className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10"
+              />
+            </div>
+
+            {sigModalSearch.trim().length > 0 && (
+              <div className="border border-slate-100 rounded-xl overflow-hidden shadow-inner max-h-40 overflow-y-auto divide-y divide-slate-100">
+                {loadingSigEmployees ? (
+                  <div className="p-4 text-xs text-slate-500 text-center flex items-center justify-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Memuat data...
+                  </div>
+                ) : (() => {
+                  const filtered = employeesForSignature.filter(emp =>
+                    emp.name.toLowerCase().includes(sigModalSearch.toLowerCase())
+                  );
+                  if (filtered.length === 0) {
+                    return <div className="p-4 text-xs text-slate-500 text-center">Tidak ditemukan pegawai dengan nama tersebut.</div>;
+                  }
+                  return filtered.map(emp => (
+                    <button
+                      key={emp.id}
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleSelectEmployeeForSignature(emp);
+                      }}
+                      className={`w-full text-left p-3 text-xs font-semibold hover:bg-slate-50 transition-colors flex justify-between items-center ${selectedSigEmpId === emp.id ? 'bg-indigo-50/50 text-indigo-700' : 'text-slate-700'}`}
+                    >
+                      <span>{emp.name}</span>
+                      <span className="text-[10px] text-slate-400 font-normal uppercase tracking-wider">
+                        {emp.role} ({emp.collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'})
+                      </span>
+                    </button>
+                  ));
+                })()}
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nama Penandatangan</label>
+              <div className="relative flex items-center w-full">
+                <Input
+                  type="text"
+                  placeholder="Nama Lengkap beserta gelar..."
+                  value={sigModalName}
+                  onChange={(e) => {
+                    setSigModalName(e.target.value);
+                    setSelectedSigEmpId('');
+                  }}
+                  className={`rounded-xl font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10 w-full transition-all duration-300 ${
+                    selectedSigEmpId
+                      ? 'border-emerald-300 bg-emerald-50/50 text-emerald-800 focus:border-emerald-500 focus:ring-emerald-100 pr-10'
+                      : 'border-slate-200 pr-3'
+                  }`}
+                />
+                {selectedSigEmpId && (
+                  <CheckCircle2 key={selectedSigEmpId} className="w-5 h-5 text-emerald-500 absolute right-3 pointer-events-none animate-in zoom-in-50 duration-300" />
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jabatan Penandatangan</label>
+              <div className="relative flex items-center w-full">
+                <Input
+                  type="text"
+                  placeholder="Jabatan..."
+                  value={sigModalTitle}
+                  onChange={(e) => {
+                    setSigModalTitle(e.target.value);
+                    setSelectedSigEmpId('');
+                  }}
+                  className={`rounded-xl font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10 w-full transition-all duration-300 ${
+                    selectedSigEmpId
+                      ? 'border-emerald-300 bg-emerald-50/50 text-emerald-800 focus:border-emerald-500 focus:ring-emerald-100 pr-10'
+                      : 'border-slate-200 pr-3'
+                  }`}
+                />
+                {selectedSigEmpId && (
+                  <CheckCircle2 key={selectedSigEmpId} className="w-5 h-5 text-emerald-500 absolute right-3 pointer-events-none animate-in zoom-in-50 duration-300" />
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5 shrink-0 rounded-b-3xl">
+            <Button
+              variant="ghost"
+              onClick={() => setShowSignatureModal(false)}
+              className="rounded-xl text-slate-500 hover:bg-slate-100"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleSaveSignature}
+              disabled={!sigModalName.trim() || !sigModalTitle.trim()}
+              className="rounded-xl px-6 bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Save className="w-4 h-4" />
+              Simpan
             </Button>
           </div>
         </DialogContent>

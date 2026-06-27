@@ -72,7 +72,7 @@ interface ActivityReport {
   jobCategory: string;
   period: string;
   activityName: string;
-  activityType?: 'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya';
+  activityType?: 'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya' | 'Buang Sampah';
   activityDate: string;
   timeStart: string;
   timeEnd: string;
@@ -91,6 +91,10 @@ function fmtRp(val: number): string {
 }
 
 function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: string, activityName?: string): number {
+  if (activityType === 'Buang Sampah' || activityName === 'Buang Sampah') {
+    return 5000;
+  }
+  
   if (!timeStart || !timeEnd) return 0;
   
   // Parse HH:MM format
@@ -190,7 +194,7 @@ export default function EmployeeActivitiesPage() {
   // ── Form state ──
   const [showForm, setShowForm] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ActivityReport | null>(null);
-  const [formActivityType, setFormActivityType] = useState<'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya'>('Piket');
+  const [formActivityType, setFormActivityType] = useState<'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya' | 'Buang Sampah'>('Piket');
   const [formName, setFormName] = useState('Piket');
   const [formCustomName, setFormCustomName] = useState('');
   const [formDate, setFormDate] = useState(getTodayISO());
@@ -288,7 +292,7 @@ export default function EmployeeActivitiesPage() {
 
   const openEditForm = (activity: ActivityReport) => {
     setEditingActivity(activity);
-    const type = activity.activityType || (['Piket', 'Standby', 'Ro\'an'].includes(activity.activityName) ? activity.activityName : 'Lainnya');
+    const type = activity.activityType || (['Piket', 'Standby', 'Ro\'an', 'Buang Sampah'].includes(activity.activityName) ? activity.activityName : 'Lainnya');
     setFormActivityType(type as any);
     if (type === 'Lainnya') {
       setFormCustomName(activity.activityName);
@@ -307,6 +311,8 @@ export default function EmployeeActivitiesPage() {
     e.preventDefault();
     if (!profile?.linkedEmployeeId || isSubmittingRef.current) return;
 
+    const isBuangSampah = formActivityType === 'Buang Sampah';
+
     if (!formName.trim()) {
       setMessage({ type: 'error', text: 'Jenis kegiatan harus diisi.' });
       return;
@@ -315,13 +321,19 @@ export default function EmployeeActivitiesPage() {
       setMessage({ type: 'error', text: 'Tanggal kegiatan harus diisi.' });
       return;
     }
-    if (!formTimeStart || !formTimeEnd) {
-      setMessage({ type: 'error', text: 'Waktu mulai dan selesai harus diisi.' });
+    if (!formTimeStart) {
+      setMessage({ type: 'error', text: 'Waktu mulai harus diisi.' });
       return;
     }
-    if (formTimeEnd <= formTimeStart) {
-      setMessage({ type: 'error', text: 'Waktu selesai harus lebih dari waktu mulai.' });
-      return;
+    if (!isBuangSampah) {
+      if (!formTimeEnd) {
+        setMessage({ type: 'error', text: 'Waktu selesai harus diisi.' });
+        return;
+      }
+      if (formTimeEnd <= formTimeStart) {
+        setMessage({ type: 'error', text: 'Waktu selesai harus lebih dari waktu mulai.' });
+        return;
+      }
     }
 
     isSubmittingRef.current = true;
@@ -334,7 +346,7 @@ export default function EmployeeActivitiesPage() {
           activityType: formActivityType,
           activityDate: formDate,
           timeStart: formTimeStart,
-          timeEnd: formTimeEnd,
+          timeEnd: isBuangSampah ? '' : formTimeEnd,
           status: 'pending',
           fee: 0,
           declineReason: '',
@@ -363,7 +375,7 @@ export default function EmployeeActivitiesPage() {
           activityType: formActivityType,
           activityDate: formDate,
           timeStart: formTimeStart,
-          timeEnd: formTimeEnd,
+          timeEnd: isBuangSampah ? '' : formTimeEnd,
           status: 'pending',
           fee: 0,
           submittedAt: serverTimestamp(),
@@ -609,7 +621,11 @@ export default function EmployeeActivitiesPage() {
                         <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-[11px] text-slate-400 font-medium">{activity.activityDate}</span>
                           <span className="text-[11px] text-slate-300">•</span>
-                          <span className="text-[11px] text-slate-400 font-medium">{activity.timeStart} – {activity.timeEnd}</span>
+                          <span className="text-[11px] text-slate-400 font-medium">
+                            {activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
+                              ? activity.timeStart
+                              : `${activity.timeStart} – ${activity.timeEnd}`}
+                          </span>
                         </div>
                       </div>
 
@@ -636,7 +652,9 @@ export default function EmployeeActivitiesPage() {
                           <div>
                             <span className="text-[10px] font-bold text-slate-400 uppercase">Waktu</span>
                             <p className="text-sm font-semibold text-slate-700 mt-0.5">
-                              {activity.timeStart} – {activity.timeEnd}
+                              {activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
+                                ? activity.timeStart
+                                : `${activity.timeStart} – ${activity.timeEnd}`}
                             </p>
                           </div>
                         </div>
@@ -738,13 +756,14 @@ export default function EmployeeActivitiesPage() {
                 }}
                 modal={false}
               >
-                <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                <SelectTrigger className="w-full text-base sm:text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-base sm:text-sm">
                   <SelectItem value="Piket">Piket</SelectItem>
                   <SelectItem value="Standby">Standby</SelectItem>
                   <SelectItem value="Ro'an">Ro'an</SelectItem>
+                  <SelectItem value="Buang Sampah">Buang Sampah</SelectItem>
                   <SelectItem value="Lainnya">Lainnya</SelectItem>
                 </SelectContent>
               </Select>
@@ -764,7 +783,7 @@ export default function EmployeeActivitiesPage() {
                     setFormCustomName(e.target.value);
                     setFormName(e.target.value);
                   }}
-                  className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-sm"
+                  className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
                   required
                   autoFocus
                   autoComplete="off"
@@ -782,13 +801,13 @@ export default function EmployeeActivitiesPage() {
                 type="date"
                 value={formDate}
                 onChange={(e) => setFormDate(e.target.value)}
-                className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-sm"
+                className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
                 required
               />
             </div>
 
             {/* Time Range */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className={formActivityType === 'Buang Sampah' ? 'grid grid-cols-1' : 'grid grid-cols-2 gap-3'}>
               <div className="space-y-1.5">
                 <Label htmlFor="timeStart" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                   Waktu Mulai
@@ -800,27 +819,29 @@ export default function EmployeeActivitiesPage() {
                     type="time"
                     value={formTimeStart}
                     onChange={(e) => setFormTimeStart(e.target.value)}
-                    className="pl-9 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-sm"
+                    className="pl-9 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
                     required
                   />
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="timeEnd" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Waktu Selesai
-                </Label>
-                <div className="relative">
-                  <Timer className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  <Input
-                    id="timeEnd"
-                    type="time"
-                    value={formTimeEnd}
-                    onChange={(e) => setFormTimeEnd(e.target.value)}
-                    className="pl-9 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-sm"
-                    required
-                  />
+              {formActivityType !== 'Buang Sampah' && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="timeEnd" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Waktu Selesai
+                  </Label>
+                  <div className="relative">
+                    <Timer className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    <Input
+                      id="timeEnd"
+                      type="time"
+                      value={formTimeEnd}
+                      onChange={(e) => setFormTimeEnd(e.target.value)}
+                      className="pl-9 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
+                      required
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Submit */}
