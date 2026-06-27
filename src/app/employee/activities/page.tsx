@@ -744,28 +744,60 @@ export default function EmployeeActivitiesPage() {
               <Label htmlFor="activityType" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                 Jenis Kegiatan
               </Label>
-              <Select
-                value={formActivityType}
-                onValueChange={(val: any) => {
-                  setFormActivityType(val);
-                  if (val !== 'Lainnya') {
-                    setFormName(val);
-                  } else {
-                    setFormName(formCustomName || '');
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full text-base sm:text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-base sm:text-sm">
-                  <SelectItem value="Piket">Piket</SelectItem>
-                  <SelectItem value="Standby">Standby</SelectItem>
-                  <SelectItem value="Ro'an">Ro'an</SelectItem>
-                  <SelectItem value="Buang Sampah">Buang Sampah</SelectItem>
-                  <SelectItem value="Lainnya">Lainnya</SelectItem>
-                </SelectContent>
-              </Select>
+              {/* Native select on mobile for bug-free scrolling/zooming */}
+              <div className="block sm:hidden">
+                <select
+                  value={formActivityType}
+                  onChange={(e) => {
+                    const val = e.target.value as any;
+                    setFormActivityType(val);
+                    if (val !== 'Lainnya') {
+                      setFormName(val);
+                    } else {
+                      setFormName(formCustomName || '');
+                    }
+                  }}
+                  className="w-full text-base font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3 pr-10 appearance-none focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
+                  style={{
+                    backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2394a3b8\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")',
+                    backgroundPosition: 'right 12px center',
+                    backgroundSize: '16px 16px',
+                    backgroundRepeat: 'no-repeat',
+                  }}
+                >
+                  <option value="Piket">Piket</option>
+                  <option value="Standby">Standby</option>
+                  <option value="Ro'an">Ro'an</option>
+                  <option value="Buang Sampah">Buang Sampah</option>
+                  <option value="Lainnya">Lainnya</option>
+                </select>
+              </div>
+
+              {/* Custom select on larger screens (tablet/desktop) */}
+              <div className="hidden sm:block">
+                <Select
+                  value={formActivityType}
+                  onValueChange={(val: any) => {
+                    setFormActivityType(val);
+                    if (val !== 'Lainnya') {
+                      setFormName(val);
+                    } else {
+                      setFormName(formCustomName || '');
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                    <SelectItem value="Piket">Piket</SelectItem>
+                    <SelectItem value="Standby">Standby</SelectItem>
+                    <SelectItem value="Ro'an">Ro'an</SelectItem>
+                    <SelectItem value="Buang Sampah">Buang Sampah</SelectItem>
+                    <SelectItem value="Lainnya">Lainnya</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Custom Activity Name (shown only if 'Lainnya' is selected) */}
