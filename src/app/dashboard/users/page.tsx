@@ -732,9 +732,23 @@ export default function UserManagementPage() {
 
                   {/* Permitted Categories */}
                   <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> Unit Kerja Diijinkan</h3>
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> {
+                      newRole === 'honorer' ? 'Hubungkan Karyawan' :
+                      newRole === 'loyalis' ? 'Hubungkan Karyawan' :
+                      newRole === 'super_admin' ? 'Hak Akses' :
+                      newRole === 'employee_admin' ? 'Hak Akses' :
+                      newRole === 'satker_head_loyalis' ? 'Hak Akses' :
+                      'Unit Kerja Diijinkan'
+                    }</h3>
                     <div className="space-y-3">
-                      <Label className="text-xs font-semibold text-slate-500 block leading-tight">Pilih Satuan Kerja (Khusus Kepala SatKer)</Label>
+                      <Label className="text-xs font-semibold text-slate-500 block leading-tight">{
+                        newRole === 'honorer' ? 'Pilih karyawan Pekarya yang akan dihubungkan' :
+                        newRole === 'loyalis' ? 'Pilih karyawan Loyalis yang akan dihubungkan' :
+                        newRole === 'super_admin' ? 'Akses otomatis ke seluruh sistem' :
+                        newRole === 'employee_admin' ? 'Akses otomatis ke data pegawai' :
+                        newRole === 'satker_head_loyalis' ? 'Akses otomatis ke data Loyalis' :
+                        'Pilih Satuan Kerja (Khusus Kepala SatKer)'
+                      }</Label>
                       {newRole === 'super_admin' ? (
                         <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-100 text-amber-800 text-xs leading-relaxed font-medium">
                           Super Administrator secara otomatis memiliki akses penuh ke <strong>seluruh</strong> Satuan Kerja. Checkbox dinonaktifkan.
