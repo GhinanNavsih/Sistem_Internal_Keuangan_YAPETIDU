@@ -131,7 +131,7 @@ function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: 
   const rate = isPiketOrStandby ? 2000 : 2500;
   
   let fee = halfHours * rate;
-  if (halfHours >= 4) {
+  if (halfHours > 4) {
     fee += 7500;
   }
   
@@ -181,6 +181,9 @@ const YEARS = Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i);
 
 export default function EmployeeActivitiesPage() {
   const { profile, logout, user } = useAuth();
+
+  const userJobCategory = profile?.permittedCategories?.[0] || '';
+  const isKebersihan = userJobCategory === 'KEBERSIHAN' || userJobCategory === 'KEBERSIHAN_IC';
 
   // ── Period ──
   const [month, setMonth] = useState(new Date().getMonth() + 1);
@@ -280,8 +283,10 @@ export default function EmployeeActivitiesPage() {
 
   // ── Form Handlers ──
   const resetForm = () => {
-    setFormActivityType('Piket');
-    setFormName('Piket');
+    const defaultType = isKebersihan ? 'Piket' : 'Lainnya';
+    const defaultName = isKebersihan ? 'Piket' : '';
+    setFormActivityType(defaultType);
+    setFormName(defaultName);
     setFormCustomName('');
     setFormDate(getTodayISO());
     setFormTimeStart('');
@@ -292,7 +297,9 @@ export default function EmployeeActivitiesPage() {
 
   const openEditForm = (activity: ActivityReport) => {
     setEditingActivity(activity);
-    const type = activity.activityType || (['Piket', 'Standby', 'Ro\'an', 'Buang Sampah'].includes(activity.activityName) ? activity.activityName : 'Lainnya');
+    const type = isKebersihan
+      ? (activity.activityType || (['Piket', 'Standby', 'Ro\'an', 'Buang Sampah'].includes(activity.activityName) ? activity.activityName : 'Lainnya'))
+      : 'Lainnya';
     setFormActivityType(type as any);
     if (type === 'Lainnya') {
       setFormCustomName(activity.activityName);
@@ -739,80 +746,104 @@ export default function EmployeeActivitiesPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="p-5 space-y-4">
-            {/* Activity Type Selection */}
-            <div className="space-y-1.5">
-              <Label htmlFor="activityType" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Jenis Kegiatan
-              </Label>
-              {/* Native select on mobile for bug-free scrolling/zooming */}
-              <div className="block sm:hidden">
-                <select
-                  value={formActivityType}
-                  onChange={(e) => {
-                    const val = e.target.value as any;
-                    setFormActivityType(val);
-                    if (val !== 'Lainnya') {
-                      setFormName(val);
-                    } else {
-                      setFormName(formCustomName || '');
-                    }
-                  }}
-                  className="w-full text-base font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3 pr-10 appearance-none focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
-                  style={{
-                    backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2394a3b8\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")',
-                    backgroundPosition: 'right 12px center',
-                    backgroundSize: '16px 16px',
-                    backgroundRepeat: 'no-repeat',
-                  }}
-                >
-                  <option value="Piket">Piket</option>
-                  <option value="Standby">Standby</option>
-                  <option value="Ro'an">Ro'an</option>
-                  <option value="Buang Sampah">Buang Sampah</option>
-                  <option value="Lainnya">Lainnya</option>
-                </select>
-              </div>
+            {isKebersihan ? (
+              <>
+                {/* Activity Type Selection */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="activityType" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Jenis Kegiatan
+                  </Label>
+                  {/* Native select on mobile for bug-free scrolling/zooming */}
+                  <div className="block sm:hidden">
+                    <select
+                      value={formActivityType}
+                      onChange={(e) => {
+                        const val = e.target.value as any;
+                        setFormActivityType(val);
+                        if (val !== 'Lainnya') {
+                          setFormName(val);
+                        } else {
+                          setFormName(formCustomName || '');
+                        }
+                      }}
+                      className="w-full text-base font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3 pr-10 appearance-none focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
+                      style={{
+                        backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2394a3b8\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")',
+                        backgroundPosition: 'right 12px center',
+                        backgroundSize: '16px 16px',
+                        backgroundRepeat: 'no-repeat',
+                      }}
+                    >
+                      <option value="Piket">Piket</option>
+                      <option value="Standby">Standby</option>
+                      <option value="Ro'an">Ro'an</option>
+                      <option value="Buang Sampah">Buang Sampah</option>
+                      <option value="Lainnya">Lainnya</option>
+                    </select>
+                  </div>
 
-              {/* Custom select on larger screens (tablet/desktop) */}
-              <div className="hidden sm:block">
-                <Select
-                  value={formActivityType}
-                  onValueChange={(val: any) => {
-                    setFormActivityType(val);
-                    if (val !== 'Lainnya') {
-                      setFormName(val);
-                    } else {
-                      setFormName(formCustomName || '');
-                    }
-                  }}
-                >
-                  <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
-                    <SelectItem value="Piket">Piket</SelectItem>
-                    <SelectItem value="Standby">Standby</SelectItem>
-                    <SelectItem value="Ro'an">Ro'an</SelectItem>
-                    <SelectItem value="Buang Sampah">Buang Sampah</SelectItem>
-                    <SelectItem value="Lainnya">Lainnya</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+                  {/* Custom select on larger screens (tablet/desktop) */}
+                  <div className="hidden sm:block">
+                    <Select
+                      value={formActivityType}
+                      onValueChange={(val: any) => {
+                        setFormActivityType(val);
+                        if (val !== 'Lainnya') {
+                          setFormName(val);
+                        } else {
+                          setFormName(formCustomName || '');
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                        <SelectItem value="Piket">Piket</SelectItem>
+                        <SelectItem value="Standby">Standby</SelectItem>
+                        <SelectItem value="Ro'an">Ro'an</SelectItem>
+                        <SelectItem value="Buang Sampah">Buang Sampah</SelectItem>
+                        <SelectItem value="Lainnya">Lainnya</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
 
-            {/* Custom Activity Name (shown only if 'Lainnya' is selected) */}
-            {formActivityType === 'Lainnya' && (
-              <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
-                <Label htmlFor="activityCustomName" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Jenis Kegiatan Kustom
+                {/* Custom Activity Name (shown only if 'Lainnya' is selected) */}
+                {formActivityType === 'Lainnya' && (
+                  <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <Label htmlFor="activityCustomName" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Jenis Kegiatan Kustom
+                    </Label>
+                    <Input
+                      id="activityCustomName"
+                      placeholder="Contoh: Memindahkan Barang"
+                      value={formCustomName}
+                      onChange={(e) => {
+                        setFormCustomName(e.target.value);
+                        setFormName(e.target.value);
+                      }}
+                      className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
+                      required
+                      autoFocus
+                      autoComplete="off"
+                    />
+                  </div>
+                )}
+              </>
+            ) : (
+              /* Free text input for other job categories */
+              <div className="space-y-1.5 animate-in fade-in duration-200">
+                <Label htmlFor="activityNameInput" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Nama Kegiatan
                 </Label>
                 <Input
-                  id="activityCustomName"
-                  placeholder="Contoh: Memindahkan Barang"
-                  value={formCustomName}
+                  id="activityNameInput"
+                  placeholder="Masukkan nama kegiatan..."
+                  value={formName}
                   onChange={(e) => {
-                    setFormCustomName(e.target.value);
                     setFormName(e.target.value);
+                    setFormCustomName(e.target.value);
                   }}
                   className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
                   required
