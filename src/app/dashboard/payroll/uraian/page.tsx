@@ -2643,7 +2643,7 @@ export default function UraianPage() {
 
                   {profile?.role === 'super_admin' && (
                     <div className="mb-4">
-                      <Select value={filterDept} onValueChange={setFilterDept}>
+                      <Select value={filterDept} onValueChange={(v) => setFilterDept(v ?? '')}>
                         <SelectTrigger className="w-full bg-slate-50 border-slate-200/60 rounded-xl font-semibold text-xs text-slate-600 hover:border-indigo-300 transition-all">
                           <div className="flex items-center gap-2">
                             <Building2 className="w-3.5 h-3.5 text-slate-400" />
