@@ -105,6 +105,18 @@ service cloud.firestore {
       }
     }
 
+    // 4d. Salary Matrix — Kepangkatan (Credit score allowance configuration)
+    match /SalaryMatrix_Kepangkatan/{version} {
+      // Super Admins can manage, any profile user can read
+      allow read: if hasProfile();
+      allow write: if isSuperAdmin();
+      
+      match /rows/{rowId} {
+        allow read: if hasProfile();
+        allow write: if isSuperAdmin();
+      }
+    }
+
     // 5. Uraian Gaji (Attendance and Presensi Rekap Entries)
     match /UraianGaji/{docId} {
       // Standard users can only read presensi rekap for their assigned SatKers
