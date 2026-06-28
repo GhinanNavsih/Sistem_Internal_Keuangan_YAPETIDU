@@ -15,6 +15,7 @@ interface DashboardDataContextType {
   gradeCodesBlue: string[];
   gradeCodesWhite: string[];
   functionalAllowanceMap: Record<string, number>;
+  kepangkatanAllowanceMap: Record<string, number>;
   koperasiDeductions: Record<string, number>;
   koperasiSavings: Record<string, number>;
   loading: boolean;
@@ -32,6 +33,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   const [gradeCodesBlue, setGradeCodesBlue] = useState<string[]>([]);
   const [gradeCodesWhite, setGradeCodesWhite] = useState<string[]>([]);
   const [functionalAllowanceMap, setFunctionalAllowanceMap] = useState<Record<string, number>>({});
+  const [kepangkatanAllowanceMap, setKepangkatanAllowanceMap] = useState<Record<string, number>>({});
   const [koperasiDeductions, setKoperasiDeductions] = useState<Record<string, number>>({});
   const [koperasiSavings, setKoperasiSavings] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -52,6 +54,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         matrixBlueConfigSnap,
         matrixWhiteConfigSnap,
         fConfigSnap,
+        kepConfigSnap,
         loanSnapshot,
         userSnapshot
       ] = await Promise.all([
@@ -60,6 +63,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         getDoc(doc(db, 'SalaryMatrix', '_config')),
         getDoc(doc(db, 'SalaryMatrix_WhiteCollar', '_config')),
         getDoc(doc(db, 'SalaryMatrix_Functional', '_config')),
+        getDoc(doc(db, 'SalaryMatrix_Kepangkatan', '_config')),
         getDocs(query(collection(secondaryDb, 'simpanPinjam'), where('status', '==', 'Disetujui dan Aktif'))),
         getDocs(collection(secondaryDb, 'users'))
       ]);
@@ -85,17 +89,24 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         activeFunctionalVersion = fConfigSnap.data().activeVersion;
       }
 
+      let activeKepangkatanVersion = '2026_v1';
+      if (kepConfigSnap.exists() && kepConfigSnap.data().activeVersion) {
+        activeKepangkatanVersion = kepConfigSnap.data().activeVersion;
+      }
+
       // Fetch versions data rows in parallel
       const [
         matrixBlueSnap,
         matrixWhiteSnap,
         fSnap,
+        kepSnap,
         blueVersionSnap,
         whiteVersionSnap
       ] = await Promise.all([
         getDocs(collection(db, 'SalaryMatrix', activeBlueVersion, 'rows')),
         getDocs(collection(db, 'SalaryMatrix_WhiteCollar', activeWhiteVersion, 'rows')),
         getDocs(collection(db, 'SalaryMatrix_Functional', activeFunctionalVersion, 'rows')),
+        getDocs(collection(db, 'SalaryMatrix_Kepangkatan', activeKepangkatanVersion, 'rows')),
         getDoc(doc(db, 'SalaryMatrix', activeBlueVersion)),
         getDoc(doc(db, 'SalaryMatrix_WhiteCollar', activeWhiteVersion))
       ]);
@@ -148,6 +159,22 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         fAllowanceMap[empData.id] = matchFunctionalAllowance(edLevel, fTier, fMatrix);
       });
       setFunctionalAllowanceMap(fAllowanceMap);
+
+      // Process Kepangkatan matrix
+      const kepMatrix: Record<number, number> = {};
+      kepSnap.docs.forEach(d => {
+        const data = d.data();
+        const credit = Number(data.credit_score) || 0;
+        const allowance = Number(data.allowance) || 0;
+        kepMatrix[credit] = allowance;
+      });
+
+      const kepAllowanceMap: Record<string, number> = {};
+      loyList.forEach((empData: any) => {
+        const credit = Number(empData.kepangkatan?.cummulativeCredit) || 0;
+        kepAllowanceMap[empData.id] = kepMatrix[credit] || 0;
+      });
+      setKepangkatanAllowanceMap(kepAllowanceMap);
 
       // Process cooperative loan deductions & cooperative savings
       const activeLoans = loanSnapshot.docs
@@ -272,6 +299,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         gradeCodesBlue,
         gradeCodesWhite,
         functionalAllowanceMap,
+        kepangkatanAllowanceMap,
         koperasiDeductions,
         koperasiSavings,
         loading,

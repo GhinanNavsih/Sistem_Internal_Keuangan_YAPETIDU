@@ -259,6 +259,7 @@ export default function EmployeePayslipPage() {
         const [
           matrixWhiteConfigSnap,
           fConfigSnap,
+          kepConfigSnap,
           presenceSnap,
           vakasiSnap,
           loanSnapshot,
@@ -266,6 +267,7 @@ export default function EmployeePayslipPage() {
         ] = await Promise.all([
           getDoc(doc(db, 'SalaryMatrix_WhiteCollar', '_config')),
           getDoc(doc(db, 'SalaryMatrix_Functional', '_config')),
+          getDoc(doc(db, 'SalaryMatrix_Kepangkatan', '_config')),
           getDoc(doc(db, 'LoyalisPresence', periodKey)),
           getDocs(collection(db, 'VakasiTambahan')),
           getDocs(query(collection(secondaryDb, 'simpanPinjam'), where('status', '==', 'Disetujui dan Aktif'))),
@@ -275,11 +277,13 @@ export default function EmployeePayslipPage() {
         // Resolve active matrix versions
         const activeWhiteVersion = matrixWhiteConfigSnap.exists() ? (matrixWhiteConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
         const activeFunctionalVersion = fConfigSnap.exists() ? (fConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
+        const activeKepVersion = kepConfigSnap.exists() ? (kepConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
 
         // Load active versions rows
-        const [matrixWhiteSnap, fSnap] = await Promise.all([
+        const [matrixWhiteSnap, fSnap, kepSnap] = await Promise.all([
           getDocs(collection(db, 'SalaryMatrix_WhiteCollar', activeWhiteVersion, 'rows')),
-          getDocs(collection(db, 'SalaryMatrix_Functional', activeFunctionalVersion, 'rows'))
+          getDocs(collection(db, 'SalaryMatrix_Functional', activeFunctionalVersion, 'rows')),
+          getDocs(collection(db, 'SalaryMatrix_Kepangkatan', activeKepVersion, 'rows'))
         ]);
 
         // Process White Matrix
@@ -304,6 +308,15 @@ export default function EmployeePayslipPage() {
           };
         });
 
+        // Process Kepangkatan Matrix
+        const kepMatrix: Record<number, number> = {};
+        kepSnap.docs.forEach(d => {
+          const data = d.data();
+          const credit = Number(data.credit_score) || 0;
+          const allowance = Number(data.allowance) || 0;
+          kepMatrix[credit] = allowance;
+        });
+
         // Calculate Gaji Pokok (Gapok)
         const gapok = calculateGapok(employee, matrixWhite, targetDate);
 
@@ -311,6 +324,10 @@ export default function EmployeePayslipPage() {
         const edLevel = employee.academic_and_tier?.education_level;
         const fTier = employee.academic_and_tier?.functional_tier;
         const tunjFungsional = matchFunctionalAllowance(edLevel, fTier, fMatrix);
+
+        // Calculate Tunjangan Kepangkatan dynamically
+        const credit = Number(employee.kepangkatan?.cummulativeCredit) || 0;
+        const tunjKepangkatan = kepMatrix[credit] || 0;
 
         // Calculate presence-based values
         let presenceBonus = 0;
@@ -426,8 +443,7 @@ export default function EmployeePayslipPage() {
         earnings.push({ label: 'T. Keluarga', amount: tunjKeluarga });
         earnings.push({ label: 'T. Fungsional', amount: tunjFungsional });
 
-        const tKepangkatan = employee.kepangkatan?.t_kepangkatan || 0;
-        earnings.push({ label: 'Kepangkatan', amount: tKepangkatan });
+        earnings.push({ label: 'Kepangkatan', amount: tunjKepangkatan });
 
         const tInstruksional = employee.t_instruksional || 0;
         earnings.push({ label: 'T. Instruksional', amount: tInstruksional });

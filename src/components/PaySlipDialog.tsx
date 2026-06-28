@@ -62,6 +62,7 @@ interface PaySlipDialogProps {
   vakasiTambahanSum?: number;
   vakasiTambahanList?: { eventName: string; payGiven: number }[];
   tunjanganFungsional?: number;
+  tunjanganKepangkatan?: number;
   customColumns?: RekapColumn[];
   koperasiDeduction?: number;
   presenceBonus?: number;
@@ -103,6 +104,7 @@ export function buildInitialEarnings(
   vakasiTambahanSum?: number,
   vakasiTambahanList?: { eventName: string; payGiven: number }[],
   tunjanganFungsional?: number,
+  tunjanganKepangkatan?: number,
   customColumns?: RekapColumn[],
   presenceBonus = 0,
   presensiEarning = 0
@@ -131,7 +133,9 @@ export function buildInitialEarnings(
     earnings.push({ label: 'T. Fungsional', amount: tunjanganFungsional ?? 0 });
 
     // Kepangkatan
-    const tKepangkatan = emp.kepangkatan?.t_kepangkatan || 0;
+    const tKepangkatan = tunjanganKepangkatan !== undefined 
+      ? tunjanganKepangkatan 
+      : (emp.kepangkatan?.t_kepangkatan || 0);
     earnings.push({ label: 'Kepangkatan', amount: tKepangkatan });
 
     // Instruksional
@@ -306,6 +310,7 @@ export default function PaySlipDialog({
   vakasiTambahanSum,
   vakasiTambahanList = [],
   tunjanganFungsional,
+  tunjanganKepangkatan = 0,
   customColumns,
   koperasiDeduction = 0,
   presenceBonus = 0,
@@ -330,6 +335,7 @@ export default function PaySlipDialog({
         vakasiTambahanSum,
         vakasiTambahanList,
         tunjanganFungsional,
+        tunjanganKepangkatan,
         customColumns,
         presenceBonus,
         presensiEarning

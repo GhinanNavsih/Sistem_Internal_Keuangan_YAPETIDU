@@ -40,6 +40,13 @@ interface FunctionalRow {
   functional_tiers: Record<string, number>;
 }
 
+interface KepangkatanRow {
+  id: string;
+  credit_score: number;
+  designation: string;
+  allowance: number;
+}
+
 export default function SalaryMasterPage() {
   const [rows, setRows] = useState<SalaryRow[]>([]);
   const [gradeCodes, setGradeCodes] = useState<string[]>([]);
@@ -49,13 +56,16 @@ export default function SalaryMasterPage() {
   const isSavingRef = useRef(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   
-  const [selectedTab, setSelectedTab] = useState<'blue_collar' | 'white_collar' | 'functional'>('blue_collar');
+  const [selectedTab, setSelectedTab] = useState<'blue_collar' | 'white_collar' | 'functional' | 'kepangkatan'>('blue_collar');
   const [whiteCollarRows, setWhiteCollarRows] = useState<SalaryRow[]>([]);
   const [whiteCollarGrades, setWhiteCollarGrades] = useState<string[]>([]);
   const [whiteCollarVersion, setWhiteCollarVersion] = useState<string>('');
 
   const [functionalRows, setFunctionalRows] = useState<FunctionalRow[]>([]);
   const [functionalVersion, setFunctionalVersion] = useState<string>('');
+
+  const [kepangkatanRows, setKepangkatanRows] = useState<KepangkatanRow[]>([]);
+  const [kepangkatanVersion, setKepangkatanVersion] = useState<string>('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -122,6 +132,22 @@ export default function SalaryMasterPage() {
           ...docSnapshot.data()
         })) as FunctionalRow[];
         setFunctionalRows(funcRowsList.sort((a, b) => a.education_level.localeCompare(b.education_level)));
+
+        // 6. Fetch Kepangkatan Matrix from Firestore
+        const kepConfigRef = doc(db, 'SalaryMatrix_Kepangkatan', '_config');
+        const kepConfigSnap = await getDoc(kepConfigRef);
+        let kepVersion = '2026_v1';
+        if (kepConfigSnap.exists() && kepConfigSnap.data().activeVersion) {
+          kepVersion = kepConfigSnap.data().activeVersion;
+        }
+        setKepangkatanVersion(kepVersion);
+
+        const kepRowsSnapshot = await getDocs(collection(db, 'SalaryMatrix_Kepangkatan', kepVersion, 'rows'));
+        const kepRowsList = kepRowsSnapshot.docs.map(docSnapshot => ({
+          id: docSnapshot.id,
+          ...docSnapshot.data()
+        })) as KepangkatanRow[];
+        setKepangkatanRows(kepRowsList.sort((a, b) => a.credit_score - b.credit_score));
       } catch (error) {
         console.error("Error fetching salary matrix:", error);
       } finally {
@@ -183,6 +209,16 @@ export default function SalaryMasterPage() {
     }));
   };
 
+  const handleKepangkatanChange = (id: string, value: string) => {
+    const numValue = parseInt(value.replace(/[^0-9]/g, '')) || 0;
+    setKepangkatanRows(prev => prev.map(row => {
+      if (row.id === id) {
+        return { ...row, allowance: numValue };
+      }
+      return row;
+    }));
+  };
+
   const saveChanges = async () => {
     if (isSavingRef.current) return;
     try {
@@ -228,6 +264,19 @@ export default function SalaryMasterPage() {
           });
         });
         const metaRef = doc(db, 'SalaryMatrix_Functional', functionalVersion);
+        batch.update(metaRef, {
+          'metadata.updatedAt': serverTimestamp(),
+        });
+      } else if (selectedTab === 'kepangkatan') {
+        // Save Kepangkatan allowance rows
+        kepangkatanRows.forEach(row => {
+          const rowRef = doc(db, 'SalaryMatrix_Kepangkatan', kepangkatanVersion, 'rows', row.id);
+          batch.update(rowRef, {
+            allowance: row.allowance,
+            updatedAt: serverTimestamp()
+          });
+        });
+        const metaRef = doc(db, 'SalaryMatrix_Kepangkatan', kepangkatanVersion);
         batch.update(metaRef, {
           'metadata.updatedAt': serverTimestamp(),
         });
@@ -329,10 +378,21 @@ export default function SalaryMasterPage() {
               <FileSpreadsheet className="w-4 h-4" />
               Tunjangan Fungsional (Staf)
             </button>
+            <button
+              onClick={() => setSelectedTab('kepangkatan')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                selectedTab === 'kepangkatan'
+                  ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/20'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Tunjangan Kepangkatan
+            </button>
           </div>
 
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs sm:text-sm font-medium w-fit">
-            Versi Aktif: {selectedTab === 'blue_collar' ? activeVersion : selectedTab === 'white_collar' ? whiteCollarVersion : functionalVersion}
+            Versi Aktif: {selectedTab === 'blue_collar' ? activeVersion : selectedTab === 'white_collar' ? whiteCollarVersion : selectedTab === 'functional' ? functionalVersion : kepangkatanVersion}
           </div>
         </div>
 
@@ -403,6 +463,69 @@ export default function SalaryMasterPage() {
                               />
                             </TableCell>
                           ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              );
+            }
+
+            if (selectedTab === 'kepangkatan') {
+              return (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-slate-50/50 sticky top-0 z-10 backdrop-blur-sm">
+                      <TableRow className="border-slate-100">
+                        <TableHead className="w-48 font-semibold text-slate-900 bg-slate-50/80 pl-8 align-middle text-center">
+                          Kredit Kumulatif
+                        </TableHead>
+                        <TableHead className="w-64 font-semibold text-slate-900 bg-slate-50/80 align-middle text-left">
+                          Jabatan (Pangkat)
+                        </TableHead>
+                        <TableHead className="w-64 font-semibold text-slate-900 bg-slate-50/80 align-middle text-right pr-8">
+                          Tunjangan Kepangkatan (Rp)
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {loading ? (
+                        <TableRow>
+                          <TableCell colSpan={3} className="h-64 text-center">
+                            <div className="flex flex-col items-center gap-3 text-slate-400">
+                              <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                              <p className="animate-pulse">Memuat matriks kepangkatan...</p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : kepangkatanRows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={3} className="h-64 text-center text-slate-400">
+                            <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                            Tidak ada data kepangkatan untuk ditampilkan.
+                          </TableCell>
+                        </TableRow>
+                      ) : kepangkatanRows.map((row) => (
+                        <TableRow key={row.id} className="hover:bg-slate-50/30 transition-colors border-slate-50">
+                          <TableCell className="font-bold text-slate-700 pl-8 text-center bg-slate-50/10">
+                            {row.credit_score}
+                          </TableCell>
+                          <TableCell className="font-semibold text-slate-600 text-left">
+                            {row.designation}
+                          </TableCell>
+                          <TableCell className="p-2 pr-8 text-right">
+                            <div className="flex justify-end">
+                              <div className="flex items-center h-9 rounded-lg bg-white border border-slate-200 px-2.5 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-200 transition-all max-w-[200px]">
+                                <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
+                                <Input
+                                  type="text"
+                                  value={row.allowance?.toLocaleString('id-ID') || '0'}
+                                  onChange={(e) => handleKepangkatanChange(row.id, e.target.value)}
+                                  className="text-right font-semibold border-none p-0 h-full outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
+                                />
+                              </div>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

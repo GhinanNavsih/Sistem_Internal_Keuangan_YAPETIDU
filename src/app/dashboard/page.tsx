@@ -377,6 +377,7 @@ export default function TreasuryDashboard() {
     salaryMatrixBlue,
     salaryMatrixWhite,
     functionalAllowanceMap,
+    kepangkatanAllowanceMap,
     koperasiDeductions,
     koperasiSavings,
     loading: contextLoading
@@ -888,7 +889,8 @@ export default function TreasuryDashboard() {
             selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
             functionalAllowanceMap[emp.id] ?? 0,
             getLoyalisPresenceBonus(emp.id),
-            getLoyalisPresensiEarning(emp.id)
+            getLoyalisPresensiEarning(emp.id),
+            kepangkatanAllowanceMap[emp.id] ?? 0
           );
 
           earningsList = buildInitialEarnings(
@@ -899,6 +901,7 @@ export default function TreasuryDashboard() {
             selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
             undefined,
             functionalAllowanceMap[emp.id] ?? 0,
+            kepangkatanAllowanceMap[emp.id] ?? 0,
             undefined,
             getLoyalisPresenceBonus(emp.id),
             getLoyalisPresensiEarning(emp.id)
@@ -1378,7 +1381,8 @@ export default function TreasuryDashboard() {
             selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
             functionalAllowanceMap[emp.id] ?? 0,
             getLoyalisPresenceBonus(emp.id),
-            getLoyalisPresensiEarning(emp.id)
+            getLoyalisPresensiEarning(emp.id),
+            kepangkatanAllowanceMap[emp.id] ?? 0
           );
 
           earningsList = buildInitialEarnings(
@@ -1389,6 +1393,7 @@ export default function TreasuryDashboard() {
             selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
             undefined,
             functionalAllowanceMap[emp.id] ?? 0,
+            kepangkatanAllowanceMap[emp.id] ?? 0,
             undefined,
             getLoyalisPresenceBonus(emp.id),
             getLoyalisPresensiEarning(emp.id)

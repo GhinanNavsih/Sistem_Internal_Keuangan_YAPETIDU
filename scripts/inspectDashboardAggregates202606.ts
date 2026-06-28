@@ -157,6 +157,7 @@ async function run() {
         undefined,
         functionalAllowanceMap[emp.id] ?? 0,
         undefined,
+        undefined,
         getLoyalisPresenceBonus(emp.id),
         getLoyalisPresensiEarning(emp.id)
       );

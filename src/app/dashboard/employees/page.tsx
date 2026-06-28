@@ -331,7 +331,7 @@ function getLocalISOString(): string {
 export default function EmployeesPage() {
   const router = useRouter();
   const { user, profile, loading: authLoading, logout } = useAuth();
-  const { employeesLoyalis, employeesBlueCollar, gradeCodesBlue, gradeCodesWhite, loading: contextLoading, refreshData } = useDashboardData();
+  const { employeesLoyalis, employeesBlueCollar, gradeCodesBlue, gradeCodesWhite, loading: contextLoading, refreshData, kepangkatanAllowanceMap } = useDashboardData();
 
   const [activeTab, setActiveTab] = useState('loyalis');
   const [tableViewMode, setTableViewMode] = useState<'default' | 'debug' | 'constant'>('default');
@@ -488,7 +488,7 @@ export default function EmployeesPage() {
         tht: { deductionAmount: 0 },
         bpjs: { t_bpjs_tk: 0, t_bpjs_kes: 0, deductionAmount: 0 },
         salaryProfile: { tunjanganBeras: 0 },
-        kepangkatan: { t_kepangkatan: 0, cummulativeCredit: 0 },
+        kepangkatan: { cummulativeCredit: 0 },
         t_instruksional: 0,
       };
     }
@@ -611,7 +611,6 @@ export default function EmployeesPage() {
           ...emp.salaryProfile
         },
         kepangkatan: {
-          t_kepangkatan: 0,
           cummulativeCredit: 0,
           ...emp.kepangkatan
         },
@@ -712,7 +711,6 @@ export default function EmployeesPage() {
             tunjanganBeras: Number(formData.salaryProfile?.tunjanganBeras) || 0,
           },
           kepangkatan: {
-            t_kepangkatan: Number(formData.kepangkatan?.t_kepangkatan) || 0,
             cummulativeCredit: Number(formData.kepangkatan?.cummulativeCredit) || 0,
           },
           t_instruksional: Number(formData.t_instruksional) || 0,
@@ -930,8 +928,8 @@ export default function EmployeesPage() {
           bVal = (b.employment_profile?.structural_positions || []).reduce((sum: number, pos: any) => sum + (Number(pos.allowance) || 0), 0);
           break;
         case 't_kepangkatan':
-          aVal = a.kepangkatan?.t_kepangkatan || 0;
-          bVal = b.kepangkatan?.t_kepangkatan || 0;
+          aVal = kepangkatanAllowanceMap[a.id] || 0;
+          bVal = kepangkatanAllowanceMap[b.id] || 0;
           break;
         case 't_instruksional':
           aVal = a.t_instruksional || 0;
@@ -1466,7 +1464,7 @@ export default function EmployeesPage() {
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">
                             {formatIDR((emp.employment_profile?.structural_positions || []).reduce((sum: number, pos: any) => sum + (Number(pos.allowance) || 0), 0))}
                           </TableCell>
-                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(emp.kepangkatan?.t_kepangkatan || 0)}</TableCell>
+                          <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(kepangkatanAllowanceMap[emp.id] || 0)}</TableCell>
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-emerald-50/10">{formatIDR(emp.t_instruksional || 0)}</TableCell>
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-rose-50/10">{formatIDR(emp.bpjs?.deductionAmount || 0)}</TableCell>
                           <TableCell className="text-right font-medium text-slate-700 text-xs bg-rose-50/10">{formatIDR(emp.savings?.deductionAmount || 0)}</TableCell>
@@ -1787,19 +1785,7 @@ export default function EmployeesPage() {
                             />
                           </div>
                         </div>
-                        <div className="space-y-2">
-                          <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. Kepangkatan (Rp)</Label>
-                          <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">
-                            <span className="text-xs font-semibold text-slate-400 mr-1 select-none">Rp</span>
-                            <input
-                              type="text"
-                              value={formData.kepangkatan?.t_kepangkatan ? formatNumberWithDots(formData.kepangkatan.t_kepangkatan) : ''}
-                              onChange={e => updateNestedField('kepangkatan', 't_kepangkatan', parseDotsToNumber(e.target.value))}
-                              placeholder="0"
-                              className="w-full bg-transparent border-none p-0 h-full text-right text-sm outline-none focus:outline-none focus:ring-0 focus:border-none tabular-nums text-slate-900 font-sans"
-                            />
-                          </div>
-                        </div>
+
                         <div className="space-y-2">
                           <Label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">T. Instruksional (Rp)</Label>
                           <div className="flex items-center h-8 rounded-xl bg-white border border-slate-200 px-2.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-200 transition-all">

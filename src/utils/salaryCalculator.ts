@@ -30,7 +30,8 @@ export function calculateTotalEarnings(
   vakasiTambahanSum?: number,
   tunjanganFungsional?: number,
   presenceBonus = 0,
-  presensiEarning = 0
+  presensiEarning = 0,
+  tunjanganKepangkatan?: number
 ): number {
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
     // White Collar / Loyalis calculations
@@ -64,7 +65,9 @@ export function calculateTotalEarnings(
     total += structuralAllowance;
 
     // Kepangkatan
-    const tKepangkatan = emp.kepangkatan?.t_kepangkatan || 0;
+    const tKepangkatan = tunjanganKepangkatan !== undefined 
+      ? tunjanganKepangkatan 
+      : (emp.kepangkatan?.t_kepangkatan || 0);
     total += tKepangkatan;
 
     // Instruksional

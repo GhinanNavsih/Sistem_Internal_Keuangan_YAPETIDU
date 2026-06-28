@@ -35,6 +35,7 @@ interface CetakGabunganDialogProps {
   salaryMatrix: any;
   targetDate: Date;
   functionalAllowanceMap: Record<string, number>;
+  kepangkatanAllowanceMap?: Record<string, number>;
   getLoyalisPresenceBonus: (empId: string) => number;
   getLoyalisPresenceDeduction: (empId: string) => number;
   getLoyalisPresensiEarning: (empId: string) => number;
@@ -55,6 +56,7 @@ export default function CetakGabunganDialog({
   salaryMatrix,
   targetDate,
   functionalAllowanceMap,
+  kepangkatanAllowanceMap,
   getLoyalisPresenceBonus,
   getLoyalisPresenceDeduction,
   getLoyalisPresensiEarning,
@@ -157,7 +159,7 @@ export default function CetakGabunganDialog({
       const fallbackTunjKeluarga = fallbackGapok ? Math.round(fallbackGapok * familyPct) : 0;
 
       const fallbackTunjFungsional = functionalAllowanceMap[emp.id] || 0;
-      const fallbackKepangkatan = raw.kepangkatan?.t_kepangkatan || 0;
+      const fallbackKepangkatan = kepangkatanAllowanceMap?.[emp.id] ?? (raw.kepangkatan?.t_kepangkatan || 0);
       const fallbackTHariTua = fallbackGapok ? Math.round(fallbackGapok * 0.1) : 0;
       const fallbackTBpjsTk = raw.bpjs?.t_bpjs_tk || 0;
       const fallbackTBpjsKes = raw.bpjs?.t_bpjs_kes || 0;

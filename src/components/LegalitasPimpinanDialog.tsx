@@ -41,6 +41,7 @@ interface LegalitasPimpinanDialogProps {
   periodName: string;
   vakasiTambahanMap?: Record<string, number>;
   functionalAllowanceMap?: Record<string, number>;
+  kepangkatanAllowanceMap?: Record<string, number>;
   slipStates?: Record<string, any>;
   koperasiDeductions?: Record<string, number>;
   koperasiSavings?: Record<string, number>;
@@ -57,7 +58,8 @@ function buildInitialEarnings(
   vakasiTambahanSum?: number,
   tunjanganFungsional?: number,
   presenceBonus = 0,
-  presensiEarning = 0
+  presensiEarning = 0,
+  tunjanganKepangkatan?: number
 ): PaySlipField[] {
   const earnings: PaySlipField[] = [];
 
@@ -87,6 +89,12 @@ function buildInitialEarnings(
 
     // Vakasi Tambahan
     earnings.push({ label: 'Vakasi Tambahan', amount: vakasiTambahanSum ?? 0 });
+
+    // Kepangkatan
+    const tKepangkatan = tunjanganKepangkatan !== undefined 
+      ? tunjanganKepangkatan 
+      : (emp.kepangkatan?.t_kepangkatan || 0);
+    earnings.push({ label: 'Kepangkatan', amount: tKepangkatan });
 
     // Presensi
     earnings.push({ label: 'Presensi', amount: presensiEarning });
@@ -185,6 +193,7 @@ export default function LegalitasPimpinanDialog({
   periodName,
   vakasiTambahanMap,
   functionalAllowanceMap,
+  kepangkatanAllowanceMap,
   slipStates,
   koperasiDeductions = {},
   koperasiSavings = {},
@@ -245,7 +254,7 @@ export default function LegalitasPimpinanDialog({
         const pDeduction = getLoyalisPresenceDeduction ? getLoyalisPresenceDeduction(emp.id) : 0;
         const presEarning = getLoyalisPresensiEarning ? getLoyalisPresensiEarning(emp.id) : 0;
         const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
-        earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning);
+        earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0);
         deductions = buildInitialDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
         totalDeductions = calculateTotalDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
         totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);

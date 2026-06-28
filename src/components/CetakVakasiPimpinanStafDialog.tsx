@@ -34,6 +34,7 @@ interface CetakVakasiPimpinanStafDialogProps {
   salaryMatrix: any;
   targetDate: Date;
   functionalAllowanceMap: Record<string, number>;
+  kepangkatanAllowanceMap?: Record<string, number>;
   getLoyalisPresenceBonus: (empId: string) => number;
   getLoyalisPresenceDeduction: (empId: string) => number;
   getLoyalisPresensiEarning: (empId: string) => number;
@@ -50,6 +51,7 @@ export default function CetakVakasiPimpinanStafDialog({
   salaryMatrix,
   targetDate,
   functionalAllowanceMap,
+  kepangkatanAllowanceMap,
   getLoyalisPresenceBonus,
   getLoyalisPresenceDeduction,
   getLoyalisPresensiEarning,
@@ -110,8 +112,7 @@ export default function CetakVakasiPimpinanStafDialog({
       const tunjFungsional = functionalAllowanceMap[emp.id] || 0;
 
       // Kepangkatan
-      const hasKepangkatan = raw.kepangkatan?.t_kepangkatan !== undefined;
-      const kepangkatan = hasKepangkatan ? (raw.kepangkatan?.t_kepangkatan || 0) : undefined;
+      const kepangkatan = kepangkatanAllowanceMap?.[emp.id] ?? (raw.kepangkatan?.t_kepangkatan || 0);
 
       // T. Hari Tua
       const tHariTua = gapok ? Math.round(gapok * 0.1) : undefined;

@@ -36,6 +36,7 @@ interface CetakPayrollDialogProps {
   onPrintPdf: () => void;
   vakasiTambahanMap?: Record<string, number>;
   functionalAllowanceMap?: Record<string, number>;
+  kepangkatanAllowanceMap?: Record<string, number>;
   slipStates?: Record<string, any>;
   koperasiDeductions?: Record<string, number>;
   koperasiSavings?: Record<string, number>;
@@ -56,6 +57,7 @@ export default function CetakPayrollDialog({
   onPrintPdf,
   vakasiTambahanMap,
   functionalAllowanceMap,
+  kepangkatanAllowanceMap,
   slipStates,
   koperasiDeductions,
   koperasiSavings,
@@ -116,7 +118,7 @@ export default function CetakPayrollDialog({
         const pDeduction = getLoyalisPresenceDeduction ? getLoyalisPresenceDeduction(emp.id) : 0;
         const presEarning = getLoyalisPresensiEarning ? getLoyalisPresensiEarning(emp.id) : 0;
         const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
-        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning);
+        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0);
         totalDeductions = calculateTotalDeductions(emp.raw, kopDeduction, pDeduction, presDeduction, kopSaving);
         netSalary = calculateNetSalary(earnings, totalDeductions);
       }
