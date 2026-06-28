@@ -125,16 +125,16 @@ const getEmpStartDate = (emp: any) => {
 const getEmpMasaKerja = (emp: any): string => {
   const tmtVal = emp.employment_profile?.date_recognized;
   if (!tmtVal) return '-';
-  
+
   let tmtDate: Date;
   if (typeof tmtVal.toDate === 'function') {
     tmtDate = tmtVal.toDate();
   } else {
     tmtDate = new Date(tmtVal);
   }
-  
+
   if (isNaN(tmtDate.getTime())) return '-';
-  
+
   const now = new Date();
   const nextMonth5th = new Date(now.getFullYear(), now.getMonth() + 1, 5);
   let years = nextMonth5th.getFullYear() - tmtDate.getFullYear();
@@ -262,7 +262,7 @@ interface PendingEdit {
 
 function getObjectDiff(oldObj: any, newObj: any, prefix = ''): FieldChange[] {
   const diffs: FieldChange[] = [];
-  
+
   const getValueString = (val: any): any => {
     if (val && typeof val.toDate === 'function') {
       return val.toDate().toISOString().split('T')[0];
@@ -274,7 +274,7 @@ function getObjectDiff(oldObj: any, newObj: any, prefix = ''): FieldChange[] {
   };
 
   const keys = new Set([...Object.keys(oldObj || {}), ...Object.keys(newObj || {})]);
-  
+
   keys.forEach(key => {
     if (key === 'audit' || key === 'id' || key === 'updatedAt' || key === 'createdAt') return;
 
@@ -313,7 +313,7 @@ function getLocalISOString(): string {
   const tzo = -date.getTimezoneOffset();
   const dif = tzo >= 0 ? '+' : '-';
   const pad = (num: number) => String(Math.floor(Math.abs(num))).padStart(2, '0');
-  
+
   const year = date.getFullYear();
   const month = pad(date.getMonth() + 1);
   const day = pad(date.getDate());
@@ -321,10 +321,10 @@ function getLocalISOString(): string {
   const minutes = pad(date.getMinutes());
   const seconds = pad(date.getSeconds());
   const ms = String(date.getMilliseconds()).padStart(3, '0');
-  
+
   const offsetHours = pad(tzo / 60);
   const offsetMinutes = pad(tzo % 60);
-  
+
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}${dif}${offsetHours}:${offsetMinutes}`;
 }
 
@@ -536,7 +536,7 @@ export default function EmployeesPage() {
       const positions = formData.employment_profile?.structural_positions || [];
       const sorted = [...positions].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
       const highestPayingName = sorted[0]?.name || '';
-      
+
       if (formData.employment_profile?.job_role !== highestPayingName) {
         setFormData((prev: any) => ({
           ...prev,
@@ -581,7 +581,7 @@ export default function EmployeesPage() {
     setEditingEmployee(emp);
     setIsCustomDept(false);
     setCustomDeptValue('');
-    
+
     // For Loyalis, make sure structural_positions is initialized as array
     if (activeTab === 'loyalis') {
       const normalizedLevelCode = emp.academic_and_tier?.level_code
@@ -821,7 +821,7 @@ export default function EmployeesPage() {
       };
 
       await addDoc(collection(db, 'EmpEditLog'), logPayload);
-      
+
       setPendingEdits([]);
       localStorage.removeItem('pending_employee_edits');
       setIsLogOpen(false);
@@ -1061,7 +1061,7 @@ export default function EmployeesPage() {
     const workbook = XLSX.utils.book_new();
     const sheetName = activeTab === 'loyalis' ? 'Loyalis' : 'Pekarya';
     XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-    
+
     // Auto-fit column widths for premium, beautiful spreadsheet presentation!
     const colWidths = Object.keys(exportData[0] || {}).map(key => {
       const maxLength = Math.max(
@@ -1192,33 +1192,30 @@ export default function EmployeesPage() {
           <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-100 gap-1">
             <button
               onClick={() => setTableViewMode('default')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                tableViewMode === 'default'
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'default'
                   ? 'bg-slate-900 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-slate-50'
-              }`}
+                }`}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
               Tampilan Default
             </button>
             <button
               onClick={() => setTableViewMode('debug')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                tableViewMode === 'debug'
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'debug'
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-slate-50'
-              }`}
+                }`}
             >
               <Building2 className="w-3.5 h-3.5" />
               Debug Jabatan
             </button>
             <button
               onClick={() => setTableViewMode('constant')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                tableViewMode === 'constant'
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'constant'
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-slate-50'
-              }`}
+                }`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
               Nilai Konstanta
@@ -1741,7 +1738,7 @@ export default function EmployeesPage() {
                       <Coins className="w-4 h-4 text-indigo-500" />
                       Nilai Konstanta Gaji &amp; Potongan
                     </h3>
-                    
+
                     {/* Tunjangan / Earnings */}
                     <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-100 space-y-3">
                       <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Tunjangan Tetap (Earning)</h4>
@@ -1888,7 +1885,7 @@ export default function EmployeesPage() {
                       <Building2 className="w-4 h-4 text-indigo-500" />
                       Tunjangan Jabatan Struktural Tambahan
                     </h3>
-                    
+
                     {/* Existing positions list */}
                     <div className="space-y-2">
                       {(() => {
@@ -1898,7 +1895,7 @@ export default function EmployeesPage() {
                         return sorted.map((pos: any, posIdx: number) => {
                           const originalAllowance = Number(pos.allowance) || 0;
                           const halvedAllowance = posIdx === 0 ? originalAllowance : Math.round(originalAllowance / 2);
-                          
+
                           return (
                             <div key={pos.originalIndex} className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
                               <div className="flex-1 font-semibold text-slate-800 text-xs">
@@ -2147,7 +2144,7 @@ export default function EmployeesPage() {
               <p className="text-xs text-slate-400 mt-0.5">Terdapat <span className="font-semibold text-indigo-400">{pendingEdits.length}</span> perubahan data pegawai.</p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2 shrink-0">
             <Button
               variant="ghost"
@@ -2193,7 +2190,7 @@ export default function EmployeesPage() {
                     {edit.tab === 'loyalis' ? 'Loyalis' : 'Pekarya'}
                   </Badge>
                 </div>
-                
+
                 <div className="space-y-2">
                   {edit.changes.map((c, cIdx) => (
                     <div key={cIdx} className="grid grid-cols-3 gap-2 text-xs items-center leading-normal">
@@ -2220,7 +2217,7 @@ export default function EmployeesPage() {
               <Trash2 className="w-4 h-4" />
               Bersihkan Daftar
             </Button>
-            
+
             <div className="flex gap-2">
               <Button type="button" variant="ghost" onClick={() => setIsLogOpen(false)} className="rounded-xl">Tutup</Button>
               <Button

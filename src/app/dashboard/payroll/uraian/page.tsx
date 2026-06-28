@@ -26,7 +26,7 @@ import {
   ArrowLeft, Upload, ScanLine, Loader2, CheckCircle2,
   FileText, AlertCircle, ImageIcon, Trash2, Eye, RotateCw, Sparkles, X,
   Crop, Building2, Code2, Database, ShieldCheck, Hash, Banknote, LogOut,
-  FileDown, Plus, Calendar, ClipboardCheck, FileSpreadsheet, Send, Clock, XCircle, RotateCcw, Save,
+  FileDown, Plus, Calendar, ClipboardCheck, FileSpreadsheet, Send, Clock, XCircle, RotateCcw, Save, Users,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -98,13 +98,13 @@ export default function UraianPage() {
   }, [allowedCategories, category]);
 
   // ── Tab State ──
-  const [activeTab, setActiveTab] = useState<'presensi' | 'vakasi_loyalis' | 'kegiatan_spj'>('vakasi_loyalis');
+  const [activeTab, setActiveTab] = useState<'presensi' | 'vakasi_loyalis' | 'kegiatan_spj' | 'presensi_loyalis'>('vakasi_loyalis');
 
   useEffect(() => {
     if (profile) {
       if (profile.role === 'satker_head_loyalis' && activeTab !== 'vakasi_loyalis') {
         setActiveTab('vakasi_loyalis');
-      } else if (profile.role !== 'super_admin' && profile.role !== 'satker_head_loyalis' && activeTab === 'vakasi_loyalis') {
+      } else if (profile.role !== 'super_admin' && profile.role !== 'satker_head_loyalis' && (activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis')) {
         setActiveTab('presensi');
       }
     }
@@ -133,6 +133,11 @@ export default function UraianPage() {
   const [loadingLoyalis, setLoadingLoyalis] = useState(false);
   const [existingEvents, setExistingEvents] = useState<any[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [filterDept, setFilterDept] = useState<string>('');
+  const filteredEvents = useMemo(() => {
+    if (!filterDept) return existingEvents;
+    return existingEvents.filter(evt => evt.departmentUnit === filterDept);
+  }, [existingEvents, filterDept]);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number>(0);
 
   // ── Loyalis Presence Calculator States ──
@@ -144,6 +149,18 @@ export default function UraianPage() {
   const isSavingPresenceRef = useRef(false);
   const [existingPresence, setExistingPresence] = useState<any>(null);
   const [loadingPresence, setLoadingPresence] = useState(false);
+
+  // ── Pekarya Presence Calculator States ──
+  const [presensiTargetType, setPresensiTargetType] = useState<'loyalis' | 'pekarya'>('loyalis');
+  const [pekaryaWorkingDays, setPekaryaWorkingDays] = useState<number>(25);
+  const [pekaryaHolidays, setPekaryaHolidays] = useState<number>(0);
+  const [selectedPekaryaCategory, setSelectedPekaryaCategory] = useState<string>('SATPAM');
+
+  useEffect(() => {
+    if (activeTab === 'presensi_loyalis' && presensiTargetType === 'pekarya' && selectedPekaryaCategory) {
+      setCategory(selectedPekaryaCategory);
+    }
+  }, [activeTab, presensiTargetType, selectedPekaryaCategory]);
 
   // Form States
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -585,11 +602,11 @@ export default function UraianPage() {
       try {
         const prevMonthDate = new Date(year, month - 2, 26);
         const currentMonthDate = new Date(year, month - 1, 25);
-        
+
         const formatDate = (d: Date) => {
           return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         };
-        
+
         const startDateStr = formatDate(prevMonthDate);
         const endDateStr = formatDate(currentMonthDate);
         const prevMonthToken = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1218,15 +1235,15 @@ export default function UraianPage() {
   };
 
   // ── Presence Calculator Helper functions ──
-  
+
   const matchExcelName = useCallback((excelName: string, employees: any[]) => {
     if (!excelName) return null;
     const cleanExcel = normalizeName(excelName);
-    
+
     // 1. Direct match on normalized name
     let found = employees.find(emp => normalizeName(emp.name) === cleanExcel);
     if (found) return found;
-    
+
     // 2. Manual overrides check
     const overridden = MANUAL_OVERRIDES[excelName.trim()];
     if (overridden) {
@@ -1234,13 +1251,13 @@ export default function UraianPage() {
       found = employees.find(emp => normalizeName(emp.name) === cleanOverridden);
       if (found) return found;
     }
-    
+
     // 3. Containment match (fallback)
     found = employees.find(emp => {
       const dbNorm = normalizeName(emp.name);
       return dbNorm.includes(cleanExcel) || cleanExcel.includes(dbNorm);
     });
-    
+
     return found || null;
   }, []);
 
@@ -1296,7 +1313,7 @@ export default function UraianPage() {
   const displayRows = useMemo(() => {
     if (uploadedData) {
       const matchedIds = new Set(uploadedData.map(r => r.employeeId).filter(Boolean));
-      
+
       const matchedRows: any[] = [];
       const unmatchedExcelRows: any[] = [];
 
@@ -1459,7 +1476,7 @@ export default function UraianPage() {
     setSavingPresence(true);
     try {
       const periodToken = `${year}_${String(month).padStart(2, '0')}`;
-      
+
       // Preserve existing entries if they exist, otherwise initialize empty
       const existingEntries = existingPresence?.entries || {};
 
@@ -1496,7 +1513,7 @@ export default function UraianPage() {
       // 1. Process matched employees from Excel
       uploadedData.forEach(row => {
         if (!row.employeeId) return;
-        
+
         const calc = calculatePresenceStratum(row.minutes, calcMode, workingDays, expectedHours);
         entriesMap[row.employeeId] = {
           employeeId: row.employeeId,
@@ -1568,6 +1585,31 @@ export default function UraianPage() {
       isSavingPresenceRef.current = false;
       setSavingPresence(false);
     }
+  };
+
+  const handleApplyPekaryaPresence = () => {
+    if (!employees || employees.length === 0) {
+      setMessage({ type: 'error', text: 'Tidak ada data pegawai yang dimuat untuk kategori ini.' });
+      return;
+    }
+
+    setTableData(prev => {
+      const updated = { ...prev };
+      employees.forEach(emp => {
+        updated[emp.employeeId] = {
+          ...updated[emp.employeeId],
+          harian: pekaryaWorkingDays,
+          jumatLibur: pekaryaHolidays,
+        };
+      });
+      return updated;
+    });
+
+    setSaved(false);
+    setMessage({
+      type: 'success',
+      text: `Berhasil menerapkan presensi (Hari Kerja: ${pekaryaWorkingDays}, Hari Libur: ${pekaryaHolidays}) untuk ${employees.length} pegawai. Silakan kembali ke tab 'Rekap Uraian' untuk memeriksa dan menyimpan data.`,
+    });
   };
 
   const [imageStats, setImageStats] = useState<{ w: number, h: number, size: number, type: string } | null>(null);
@@ -1917,7 +1959,7 @@ export default function UraianPage() {
     const entries: Record<string, UraianEntry> = {};
     for (const emp of employees) {
       const rawValues = tableData[emp.employeeId] ?? {};
-      const storedValues: Record<string, number> = { 
+      const storedValues: Record<string, number> = {
         ...rawValues,
         spj: rawValues.spj !== undefined ? rawValues.spj : getComputedSpj(emp.employeeId),
       };
@@ -2064,7 +2106,7 @@ export default function UraianPage() {
 
     const empRows = employees.map((emp, idx) => {
       const rawValues = tableData[emp.employeeId] ?? {};
-      const computedValues: Record<string, number> = { 
+      const computedValues: Record<string, number> = {
         ...rawValues,
         spj: rawValues.spj !== undefined ? rawValues.spj : getComputedSpj(emp.employeeId),
       };
@@ -2156,24 +2198,28 @@ export default function UraianPage() {
             )}
             <h1 className="text-3xl font-bold text-slate-800">
               {activeTab === 'presensi'
-                ? 'Rekap Presensi Pekarya'
+                ? 'Rekap Uraian Pekarya'
                 : activeTab === 'vakasi_loyalis'
                   ? 'Vakasi Tambahan (Loyalis)'
-                  : 'Kegiatan SPJ (Pekarya)'}
+                  : activeTab === 'presensi_loyalis'
+                    ? 'Kalkulator Presensi Loyalis'
+                    : 'Kegiatan SPJ (Pekarya)'}
             </h1>
             <p className="text-slate-500 text-sm">
               {activeTab === 'presensi'
                 ? 'Upload rekap PDF/Gambar untuk auto-input'
                 : activeTab === 'vakasi_loyalis'
                   ? 'Kelola pembayaran kegiatan variabel loyalis bulanan'
-                  : 'Kelola pembayaran kegiatan variabel pekarya bulanan'}
+                  : activeTab === 'presensi_loyalis'
+                    ? 'Hitung strata dan bonus presensi loyalis'
+                    : 'Kelola pembayaran kegiatan variabel pekarya bulanan'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
               <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
                 <SelectValue>
-                  {activeTab === 'vakasi_loyalis' ? (
+                  {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' ? (
                     `${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`
                   ) : (
                     `${MONTHS_ID[month - 1]} (26 ${MONTHS_ID[(month - 2 + 12) % 12].slice(0, 3)} – 25 ${MONTHS_ID[month - 1].slice(0, 3)})`
@@ -2189,7 +2235,7 @@ export default function UraianPage() {
                     <SelectItem key={i + 1} value={String(i + 1)}>
                       <div className="flex flex-col py-0.5">
                         <span className="font-semibold">{m}</span>
-                        {activeTab === 'vakasi_loyalis' ? (
+                        {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' ? (
                           <span className="text-[11px] text-slate-400">1 – {lastDay} {m}</span>
                         ) : (
                           <span className="text-[11px] text-slate-400">26 {prevMonth.slice(0, 3)} – 25 {m.slice(0, 3)} · Bayar 5 {nextMonth.slice(0, 3)}</span>
@@ -2226,6 +2272,55 @@ export default function UraianPage() {
             )}
           </div>
         </div>
+
+        {/* Premium Tab Switcher - Only shown for Super Admin */}
+        {profile?.role === 'super_admin' && (
+          <div className="flex flex-wrap items-center justify-between gap-4 w-full">
+            <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
+              <button
+                onClick={() => setActiveTab('presensi')}
+                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'presensi'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                  }`}
+              >
+                <ScanLine className="w-4.5 h-4.5" />
+                Rekap Uraian  (Pekarya)
+              </button>
+              <button
+                onClick={() => setActiveTab('vakasi_loyalis')}
+                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'vakasi_loyalis'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                  }`}
+              >
+                <Banknote className="w-4.5 h-4.5" />
+                Vakasi Tambahan (Loyalis)
+              </button>
+              <button
+                onClick={() => setActiveTab('presensi_loyalis')}
+                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'presensi_loyalis'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                  }`}
+              >
+                <FileSpreadsheet className="w-4.5 h-4.5" />
+                Presensi
+              </button>
+            </div>
+
+            {activeTab === 'vakasi_loyalis' && (
+              <Button
+                onClick={() => setCetakKegiatanDialogOpen(true)}
+                variant="outline"
+                className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-indigo-600" />
+                Laporan Kegiatan Loyalis
+              </Button>
+            )}
+          </div>
+        )}
 
         {/* Global Action Bar (only shown on Presensi tab) */}
         {activeTab === 'presensi' && (
@@ -2285,45 +2380,6 @@ export default function UraianPage() {
               >
                 <FileText className="w-4 h-4" />
                 Ekspor Templat Kosong (Darurat)
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/* Premium Tab Switcher - Only shown for Super Admin */}
-        {profile?.role === 'super_admin' && (
-          <div className="flex flex-wrap items-center justify-between gap-4 w-full">
-            <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
-              <button
-                onClick={() => setActiveTab('presensi')}
-                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'presensi'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                  }`}
-              >
-                <ScanLine className="w-4.5 h-4.5" />
-                Rekap Presensi (Pekarya)
-              </button>
-              <button
-                onClick={() => setActiveTab('vakasi_loyalis')}
-                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'vakasi_loyalis'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                  }`}
-              >
-                <Banknote className="w-4.5 h-4.5" />
-                Vakasi Tambahan (Loyalis)
-              </button>
-            </div>
-
-            {activeTab !== 'presensi' && (
-              <Button
-                onClick={() => setCetakKegiatanDialogOpen(true)}
-                variant="outline"
-                className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
-              >
-                <FileText className="w-4 h-4 text-indigo-600" />
-                Laporan Kegiatan Loyalis
               </Button>
             )}
           </div>
@@ -2433,7 +2489,7 @@ export default function UraianPage() {
                   <table className={`w-full text-left ${hasScanData ? 'border-separate border-spacing-y-4' : 'border-collapse'}`}>
                     <thead className="sticky top-0 z-20 bg-[#F8FAFC]">
                       <tr>
-                        <th 
+                        <th
                           className={`px-6 py-4 text-[10px] font-bold uppercase text-slate-950 tracking-wider sticky top-0 z-20 bg-[#F8FAFC] ${!hasScanData ? 'border-b border-slate-300' : ''}`}
                           style={{ width: '220px', minWidth: '220px' }}
                         >
@@ -2496,7 +2552,7 @@ export default function UraianPage() {
                             </tr>
                           )}
                           <tr className={`${hasScanData ? 'group-hover/row:bg-indigo-50/30' : 'hover:bg-slate-50'} transition-all duration-200`}>
-                            <td 
+                            <td
                               className={`px-6 py-5 ${hasScanData ? `mx-2 border-l-2 border-y-2 border-slate-400 ${!bounds ? 'rounded-l-2xl' : ''} bg-white shadow-sm ring-1 ring-black/15` : 'border-b border-slate-300'}`}
                               style={{ width: '220px', minWidth: '220px' }}
                             >
@@ -2506,11 +2562,11 @@ export default function UraianPage() {
                             {columns.map((col, colIdx) => {
                               const isSpj = col.key === 'spj';
                               const cellValue = (isSpj && tableData[emp.employeeId]?.[col.key] === undefined)
-                                ? (getComputedSpj(emp.employeeId) || 0) 
+                                ? (getComputedSpj(emp.employeeId) || 0)
                                 : (tableData[emp.employeeId]?.[col.key] ?? '');
                               return (
-                                <td 
-                                  key={col.key} 
+                                <td
+                                  key={col.key}
                                   className={`px-3 py-5 ${hasScanData ? 'border-y-2 border-slate-400 bg-white shadow-sm ring-1 ring-black/15' : 'border-b border-slate-300'}`}
                                   style={{ width: '160px', minWidth: '160px' }}
                                 >
@@ -2519,13 +2575,12 @@ export default function UraianPage() {
                                     type="text"
                                     value={cellValue}
                                     onChange={(e) => updateCell(emp.employeeId, col.key, e.target.value)}
-                                    className={`h-10 text-center font-bold transition-all ${
-                                      isSpj
-                                        ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
-                                        : hasScanData
-                                          ? 'rounded-xl border-slate-400 bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
-                                          : 'bg-white border-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10'
-                                    }`}
+                                    className={`h-10 text-center font-bold transition-all ${isSpj
+                                      ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
+                                      : hasScanData
+                                        ? 'rounded-xl border-slate-400 bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
+                                        : 'bg-white border-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10'
+                                      }`}
                                     onKeyDown={(e) => {
                                       let nextRow = empIdx, nextCol = colIdx, shouldMove = false;
                                       if (e.key === 'Enter') { e.preventDefault(); shouldMove = true; if (e.shiftKey) { nextCol = colIdx + 1; if (nextCol >= columns.length) { nextCol = 0; nextRow = empIdx + 1; } } else nextRow = empIdx + 1; }
@@ -2557,1087 +2612,1173 @@ export default function UraianPage() {
           /* Tab 2: Vakasi Tambahan (Loyalis) UI */
           <div className="space-y-8 animate-in fade-in duration-500">
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-            {/* Left side list of existing events */}
-            <div className="xl:col-span-4 space-y-6">
-              <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-bold text-slate-800 text-sm">Daftar Kegiatan</h3>
-                  <Button
-                    onClick={() => {
-                      setSelectedEventId(null);
-                      setEventName('');
-                      setIsEndOfMonth(false);
-                      setSelectedDept('');
-                      setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
-                      setReportFile(null);
-                      setReportFileUrl(null);
-                      setReportFileName(null);
-                      setCurrentEventStatus(null);
-                      setCurrentEventReviewNote(null);
-                      setCurrentEventSubmittedBy(null);
-                      setCurrentEventSubmittedByName(null);
-                      setCurrentEventSubmittedByEmail(null);
-                    }}
-                    size="sm"
-                    className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold flex items-center gap-1.5"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Baru
-                  </Button>
-                </div>
+              {/* Left side list of existing events */}
+              <div className="xl:col-span-4 space-y-6">
+                <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-slate-800 text-sm">Daftar Kegiatan</h3>
+                    <Button
+                      onClick={() => {
+                        setSelectedEventId(null);
+                        setEventName('');
+                        setIsEndOfMonth(false);
+                        setSelectedDept('');
+                        setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+                        setReportFile(null);
+                        setReportFileUrl(null);
+                        setReportFileName(null);
+                        setCurrentEventStatus(null);
+                        setCurrentEventReviewNote(null);
+                        setCurrentEventSubmittedBy(null);
+                        setCurrentEventSubmittedByName(null);
+                        setCurrentEventSubmittedByEmail(null);
+                      }}
+                      size="sm"
+                      className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Baru
+                    </Button>
+                  </div>
 
-                {loadingEvents ? (
-                  <div className="py-12 flex justify-center text-slate-400">
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                  </div>
-                ) : existingEvents.length === 0 && selectedEventId !== null ? (
-                  <div className="py-12 text-center text-slate-400 text-xs font-semibold">
-                    <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    Belum ada kegiatan terdaftar di periode ini.
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                    {/* Empty / Draft Kegiatan Card */}
-                    {!selectedEventId && (
-                      <div
-                        className="p-4 rounded-2xl border bg-indigo-50/30 border-indigo-200 shadow-sm border-dashed animate-in fade-in"
-                      >
-                        <p className="font-bold text-indigo-600 text-sm line-clamp-1 italic">
-                          {eventName.trim() !== '' ? eventName : 'Kegiatan Baru (Tanpa Nama)'}
-                        </p>
-                        <div className="flex items-center justify-between mt-3">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[10px] text-indigo-400 font-bold bg-indigo-50/50 px-2 py-0.5 rounded border border-indigo-100">
-                              {workerRows.filter(r => r.employeeId).length} Orang
-                            </span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                              isEndOfMonth 
-                                ? 'bg-amber-50 text-amber-700 border-amber-100' 
-                                : 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                            }`}>
-                              {isEndOfMonth ? 'Akhir Bulan' : 'Tengah Bulan'}
-                            </span>
+                  {profile?.role === 'super_admin' && (
+                    <div className="mb-4">
+                      <Select value={filterDept} onValueChange={setFilterDept}>
+                        <SelectTrigger className="w-full bg-slate-50 border-slate-200/60 rounded-xl font-semibold text-xs text-slate-600 hover:border-indigo-300 transition-all">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                            <SelectValue placeholder="Filter Unit Kerja..." />
                           </div>
-                          <span className="text-xs font-bold text-indigo-600">
-                            {fmtRp(workerRows.reduce((sum, r) => sum + (r.payGiven || 0), 0))}
-                          </span>
-                        </div>
-                        {!isEndOfMonth && selectedDept && (
-                          <div className="mt-2 flex items-center gap-1.5">
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
-                              <Building2 className="w-2.5 h-2.5" />
-                              {selectedDept}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {existingEvents.map(evt => {
-                      const isActive = selectedEventId === evt.id;
-                      return (
-                        <div
-                          key={evt.id}
-                          onClick={() => {
-                            setSelectedEventId(evt.id);
-                            setEventName(evt.eventName);
-                            setIsEndOfMonth(!!evt.isEndOfMonth);
-                            setSelectedDept(evt.departmentUnit || '');
-                            // Load workers
-                            const workers = evt.eventWorkers || {};
-                            const rows = Object.entries(workers).map(([id, w]: [string, any]) => ({
-                              employeeId: id,
-                                  employeeName: w.employeeName,
-                              payGiven: w.payGiven,
-                              searchText: w.employeeName,
-                              showDropdown: false,
-                            }));
-                            setWorkerRows(rows);
-                            setReportFileUrl(evt.reportFileUrl || null);
-                            setReportFileName(evt.reportFileName || null);
-                            setReportFile(null);
-                            setCurrentEventStatus(evt.status || null);
-                            setCurrentEventReviewNote(evt.reviewNote || null);
-                            const subBy = evt.submittedBy || null;
-                            setCurrentEventSubmittedBy(subBy);
-                            if (!subBy) {
-                              setCurrentEventSubmittedByName('Super Admin');
-                              setCurrentEventSubmittedByEmail(null);
-                            } else {
-                              setCurrentEventSubmittedByName(evt.submittedByName || null);
-                              if (!evt.submittedByEmail) {
-                                getDoc(doc(db, 'users', subBy)).then(uSnap => {
-                                  if (uSnap.exists()) {
-                                    const uData = uSnap.data();
-                                    setCurrentEventSubmittedByEmail(uData.email || null);
-                                    if (!evt.submittedByName) {
-                                      setCurrentEventSubmittedByName(uData.displayName || null);
-                                    }
-                                  }
-                                }).catch(err => {
-                                  console.error("Error fetching user email dynamically:", err);
-                                  setCurrentEventSubmittedByEmail(null);
-                                });
-                              } else {
-                                setCurrentEventSubmittedByEmail(evt.submittedByEmail || null);
-                              }
-                            }
-                          }}
-                          className={`p-4 rounded-2xl border transition-all cursor-pointer outline-none focus:outline-none ${getCardBgClass(evt.status, isActive)}`}
-                        >
-                          <p className="font-bold text-slate-800 text-sm line-clamp-1">{evt.eventName}</p>
-                          <div className="flex items-center justify-between mt-3">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
-                                {Object.keys(evt.eventWorkers || {}).length} Orang
-                              </span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                                evt.isEndOfMonth 
-                                  ? 'bg-amber-50 text-amber-700 border-amber-100' 
-                                  : 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                              }`}>
-                                {evt.isEndOfMonth ? 'Akhir Bulan' : 'Tengah Bulan'}
-                              </span>
-                              {!evt.isEndOfMonth && getStatusBadge(evt.status)}
-                            </div>
-                            <span className="text-xs font-bold text-indigo-600">
-                              {fmtRp(evt.totalPayout || 0)}
-                            </span>
-                          </div>
-                          {!evt.isEndOfMonth && ['revision_needed', 'declined'].includes(evt.status) && evt.reviewNote && (
-                            <div className="mt-2 text-[10px] text-rose-600 bg-rose-50/50 border border-rose-100 rounded-lg p-2 font-medium line-clamp-2">
-                              <strong>Catatan:</strong> {evt.reviewNote}
-                            </div>
-                          )}
-                          {!evt.isEndOfMonth && evt.departmentUnit && (
-                            <div className="mt-2 flex items-center gap-1.5">
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
-                                <Building2 className="w-2.5 h-2.5" />
-                                {evt.departmentUnit}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Card>
-            </div>
-
-            {/* Right side form */}
-            <Card className={`xl:col-span-8 rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-visible min-h-[500px] flex flex-col p-6 space-y-6 animate-in fade-in duration-500 transition-colors duration-300 ${
-              currentEventStatus === 'pending_review'
-                ? 'bg-amber-50/40 border border-amber-200/50'
-                : 'bg-white border-none'
-            }`}>
-               <div className="flex justify-between items-center border-b border-slate-50 pb-4">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                      <Banknote className="w-4 h-4 text-indigo-500" />
-                      {selectedEventId ? 'Ubah Kegiatan' : 'Buat Kegiatan Baru'}
-                    </h3>
-                    <p className="text-slate-400 text-xs mt-0.5">Input detail kegiatan dan daftarkan pegawai loyalis penerima payout.</p>
-                    {selectedEventId && (currentEventSubmittedByName || currentEventSubmittedByEmail) && (
-                      <p className="text-slate-500 text-[11px] mt-1.5 flex items-center gap-1.5">
-                        <Send className="w-3 h-3 text-slate-400" />
-                        <span>Dikirim oleh:</span>
-                        <span className="font-bold text-slate-700">{currentEventSubmittedByName || 'Staf'}</span>
-                        {currentEventSubmittedByEmail && (
-                          <span className="text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 text-[10px] font-semibold font-mono">
-                            {currentEventSubmittedByEmail}
-                          </span>
-                        )}
-                      </p>
-                    )}
-                  </div>
-                  {selectedEventId && (
-                    <div className="self-start mt-0.5">
-                      {getStatusBadge(currentEventStatus || undefined)}
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white max-h-60 overflow-y-auto">
+                          <SelectItem value="" className="text-xs font-bold text-slate-500">Semua Unit Kerja</SelectItem>
+                          {departments.map(dept => (
+                            <SelectItem key={dept} value={dept} className="text-xs font-semibold uppercase">
+                              {dept}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   )}
-                </div>
-                {selectedEventId && (profile?.role === 'super_admin' || !currentEventStatus || ['draft', 'pending_review', 'revision_needed'].includes(currentEventStatus)) && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => handleDeleteEvent(selectedEventId)}
-                    disabled={saving}
-                    className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Hapus
-                  </Button>
-                )}
-              </div>
 
-              {/* Revision note banner */}
-              {selectedEventId && currentEventStatus === 'revision_needed' && currentEventReviewNote && (
-                <div className="p-4 bg-orange-50 border border-orange-100 rounded-2xl flex gap-3 text-orange-800 text-xs animate-in slide-in-from-top-1 duration-200">
-                  <AlertCircle className="w-5 h-5 text-orange-500 shrink-0" />
-                  <div>
-                    <p className="font-bold">Revisi Diperlukan dari Super Admin</p>
-                    <p className="mt-1 font-medium text-orange-700">{currentEventReviewNote}</p>
-                  </div>
-                </div>
-              )}
-              {selectedEventId && currentEventStatus === 'declined' && currentEventReviewNote && (
-                <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex gap-3 text-rose-800 text-xs animate-in slide-in-from-top-1 duration-200">
-                  <XCircle className="w-5 h-5 text-rose-500 shrink-0" />
-                  <div>
-                    <p className="font-bold">Kegiatan ini Ditolak</p>
-                    <p className="mt-1 font-medium text-rose-700">{currentEventReviewNote}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Event Name Input */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nama Kegiatan</label>
-                <Input
-                  type="text"
-                  placeholder="Contoh: Vakasi Kepanitiaan Kerja Praktek 2025/26"
-                  value={eventName}
-                  disabled={isReadOnly}
-                  onChange={(e) => setEventName(e.target.value)}
-                  onBlur={() => {
-                    handleAutosave(workerRows, eventName, selectedEventId);
-                  }}
-                  className="rounded-xl border-slate-200 font-bold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-11"
-                />
-              </div>
-
-              {/* Event Period Type Segmented Toggle */}
-              {profile?.role !== 'satker_head_loyalis' && (
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Tipe Kegiatan</label>
-                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100/80">
-                    <button
-                      type="button"
-                      disabled={isReadOnly}
-                      onClick={() => {
-                        setIsEndOfMonth(false);
-                        handleAutosave(workerRows, eventName, selectedEventId, false);
-                      }}
-                      className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-200 ${
-                        !isEndOfMonth
-                          ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
-                          : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      Tengah Bulan (Vakasi Tambahan)
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isReadOnly}
-                      onClick={() => {
-                        setIsEndOfMonth(true);
-                        handleAutosave(workerRows, eventName, selectedEventId, true);
-                      }}
-                      className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-200 ${
-                        isEndOfMonth
-                          ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
-                          : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      Akhir Bulan (Kolom Tersendiri)
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Department Selector & File Upload (only visible when Tengah Bulan is active) */}
-              {!isEndOfMonth && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                  {/* Department Selector */}
-                  <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                      <Building2 className="w-3.5 h-3.5 text-indigo-400" />
-                      Unit Kerja (Department)
-                    </label>
-                    <Select
-                      value={selectedDept}
-                      disabled={isReadOnly}
-                      onValueChange={(val) => {
-                        setSelectedDept(val || '');
-                        handleAutosave(workerRows, eventName, selectedEventId, false, val || undefined);
-                      }}
-                    >
-                      <SelectTrigger className={`rounded-xl text-sm font-bold h-11 transition-all duration-200 border focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 ${
-                        selectedDept
-                          ? 'bg-indigo-50/60 border-indigo-200 text-indigo-700'
-                          : 'bg-white border-slate-200 text-slate-400'
-                      }`}>
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Building2 className={`w-4 h-4 shrink-0 ${selectedDept ? 'text-indigo-500' : 'text-slate-300'}`} />
-                          <SelectValue placeholder="Pilih Unit Kerja..." />
-                        </div>
-                      </SelectTrigger>
-                      <SelectContent alignItemWithTrigger={false} sideOffset={4} className="rounded-2xl border border-slate-100 shadow-2xl bg-white p-1.5 max-h-64 overflow-y-auto w-max min-w-[var(--radix-select-trigger-width)]">
-                        {/* Clear / All option */}
-                        <SelectItem
-                          value=""
-                          className="rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 focus:bg-slate-50 focus:text-slate-700 flex items-center gap-2 mb-1 border border-dashed border-slate-200 data-[highlighted]:bg-slate-50 data-[highlighted]:text-slate-700"
-                        >
-                          <span className="flex items-center gap-1.5">
-                            <span className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 text-[9px] font-black">✕</span>
-                            Semua Unit Kerja
-                          </span>
-                        </SelectItem>
-                        <div className="h-px bg-slate-100 my-1" />
-                        {departments.map(dept => (
-                          <SelectItem
-                            key={dept}
-                            value={dept}
-                            className="rounded-xl text-xs font-bold uppercase text-slate-700 data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700 data-[state=checked]:bg-indigo-50 data-[state=checked]:text-indigo-700 focus:bg-indigo-50 focus:text-indigo-700 cursor-pointer"
+                  {loadingEvents ? (
+                    <div className="py-12 flex justify-center text-slate-400">
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    </div>
+                  ) : filteredEvents.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 text-xs font-semibold">
+                      <Calendar className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                      {filterDept ? 'Tidak ada kegiatan untuk unit ini.' : 'Belum ada kegiatan terdaftar di periode ini.'}
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                      {filteredEvents.map(evt => {
+                        const isActive = selectedEventId === evt.id;
+                        return (
+                          <div
+                            key={evt.id}
+                            onClick={() => {
+                              setSelectedEventId(evt.id);
+                              setEventName(evt.eventName);
+                              setIsEndOfMonth(!!evt.isEndOfMonth);
+                              setSelectedDept(evt.departmentUnit || '');
+                              // Load workers
+                              const workers = evt.eventWorkers || {};
+                              const rows = Object.entries(workers).map(([id, w]: [string, any]) => ({
+                                employeeId: id,
+                                employeeName: w.employeeName,
+                                payGiven: w.payGiven,
+                                searchText: w.employeeName,
+                                showDropdown: false,
+                              }));
+                              setWorkerRows(rows);
+                              setReportFileUrl(evt.reportFileUrl || null);
+                              setReportFileName(evt.reportFileName || null);
+                              setReportFile(null);
+                              setCurrentEventStatus(evt.status || null);
+                              setCurrentEventReviewNote(evt.reviewNote || null);
+                              const subBy = evt.submittedBy || null;
+                              setCurrentEventSubmittedBy(subBy);
+                              if (!subBy) {
+                                setCurrentEventSubmittedByName('Super Admin');
+                                setCurrentEventSubmittedByEmail(null);
+                              } else {
+                                setCurrentEventSubmittedByName(evt.submittedByName || null);
+                                if (!evt.submittedByEmail) {
+                                  getDoc(doc(db, 'users', subBy)).then(uSnap => {
+                                    if (uSnap.exists()) {
+                                      const uData = uSnap.data();
+                                      setCurrentEventSubmittedByEmail(uData.email || null);
+                                      if (!evt.submittedByName) {
+                                        setCurrentEventSubmittedByName(uData.displayName || null);
+                                      }
+                                    }
+                                  }).catch(err => {
+                                    console.error("Error fetching user email dynamically:", err);
+                                    setCurrentEventSubmittedByEmail(null);
+                                  });
+                                } else {
+                                  setCurrentEventSubmittedByEmail(evt.submittedByEmail || null);
+                                }
+                              }
+                            }}
+                            className={`p-4 rounded-2xl border transition-all cursor-pointer outline-none focus:outline-none ${getCardBgClass(evt.status, isActive)}`}
                           >
-                            <span className="flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-300 shrink-0" />
-                              {dept}
+                            <p className="font-bold text-slate-800 text-sm line-clamp-1">{evt.eventName}</p>
+                            <div className="flex items-center justify-between mt-3">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                                  {Object.keys(evt.eventWorkers || {}).length} Orang
+                                </span>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${evt.isEndOfMonth
+                                  ? 'bg-amber-50 text-amber-700 border-amber-100'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                  }`}>
+                                  {evt.isEndOfMonth ? 'Akhir Bulan' : 'Tengah Bulan'}
+                                </span>
+                                {!evt.isEndOfMonth && getStatusBadge(evt.status)}
+                              </div>
+                              <span className="text-xs font-bold text-indigo-600">
+                                {fmtRp(evt.totalPayout || 0)}
+                              </span>
+                            </div>
+                            {!evt.isEndOfMonth && ['revision_needed', 'declined'].includes(evt.status) && evt.reviewNote && (
+                              <div className="mt-2 text-[10px] text-rose-600 bg-rose-50/50 border border-rose-100 rounded-lg p-2 font-medium line-clamp-2">
+                                <strong>Catatan:</strong> {evt.reviewNote}
+                              </div>
+                            )}
+                            {!evt.isEndOfMonth && evt.departmentUnit && (
+                              <div className="mt-2 flex items-center gap-1.5">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                                  <Building2 className="w-2.5 h-2.5" />
+                                  {evt.departmentUnit}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Card>
+              </div>
+
+              {/* Right side form */}
+              <Card className={`xl:col-span-8 rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-visible min-h-[500px] flex flex-col p-6 space-y-6 animate-in fade-in duration-500 transition-colors duration-300 ${currentEventStatus === 'pending_review'
+                ? 'bg-amber-50/40 border border-amber-200/50'
+                : 'bg-white border-none'
+                }`}>
+                <div className="flex justify-between items-center border-b border-slate-50 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                        <Banknote className="w-4 h-4 text-indigo-500" />
+                        {selectedEventId ? 'Ubah Kegiatan' : 'Buat Kegiatan Baru'}
+                      </h3>
+                      <p className="text-slate-400 text-xs mt-0.5">Input detail kegiatan dan daftarkan pegawai loyalis penerima payout.</p>
+                      {selectedEventId && (currentEventSubmittedByName || currentEventSubmittedByEmail) && (
+                        <p className="text-slate-500 text-[11px] mt-1.5 flex items-center gap-1.5">
+                          <Send className="w-3 h-3 text-slate-400" />
+                          <span>Dikirim oleh:</span>
+                          <span className="font-bold text-slate-700">{currentEventSubmittedByName || 'Staf'}</span>
+                          {currentEventSubmittedByEmail && (
+                            <span className="text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 text-[10px] font-semibold font-mono">
+                              {currentEventSubmittedByEmail}
                             </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {selectedDept && (
-                      <p className="text-[10px] text-indigo-500 font-bold flex items-center gap-1 animate-in fade-in duration-200">
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 inline-block" />
-                        Unit Kerja terpilih: <span className="underline underline-offset-2">{selectedDept}</span> (Daftar pegawai tidak dibatasi)
-                      </p>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                    {selectedEventId && (
+                      <div className="self-start mt-0.5">
+                        {getStatusBadge(currentEventStatus || undefined)}
+                      </div>
                     )}
                   </div>
+                  {selectedEventId && (profile?.role === 'super_admin' || !currentEventStatus || ['draft', 'pending_review', 'revision_needed'].includes(currentEventStatus)) && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => handleDeleteEvent(selectedEventId)}
+                      disabled={saving}
+                      className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Hapus
+                    </Button>
+                  )}
+                </div>
 
-                  {/* File Upload Area for SatKer Loyalis scanned report */}
-                  {(profile?.role === 'satker_head_loyalis' || reportFileUrl) && (
+                {/* Revision note banner */}
+                {selectedEventId && currentEventStatus === 'revision_needed' && currentEventReviewNote && (
+                  <div className="p-4 bg-orange-50 border border-orange-100 rounded-2xl flex gap-3 text-orange-800 text-xs animate-in slide-in-from-top-1 duration-200">
+                    <AlertCircle className="w-5 h-5 text-orange-500 shrink-0" />
+                    <div>
+                      <p className="font-bold">Revisi Diperlukan dari Super Admin</p>
+                      <p className="mt-1 font-medium text-orange-700">{currentEventReviewNote}</p>
+                    </div>
+                  </div>
+                )}
+                {selectedEventId && currentEventStatus === 'declined' && currentEventReviewNote && (
+                  <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex gap-3 text-rose-800 text-xs animate-in slide-in-from-top-1 duration-200">
+                    <XCircle className="w-5 h-5 text-rose-500 shrink-0" />
+                    <div>
+                      <p className="font-bold">Kegiatan ini Ditolak</p>
+                      <p className="mt-1 font-medium text-rose-700">{currentEventReviewNote}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Event Name Input */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nama Kegiatan</label>
+                  <Input
+                    type="text"
+                    placeholder="Contoh: Vakasi Kepanitiaan Kerja Praktek 2025/26"
+                    value={eventName}
+                    disabled={isReadOnly}
+                    onChange={(e) => setEventName(e.target.value)}
+                    onBlur={() => {
+                      handleAutosave(workerRows, eventName, selectedEventId);
+                    }}
+                    className="rounded-xl border-slate-200 font-bold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-11"
+                  />
+                </div>
+
+                {/* Event Period Type Segmented Toggle */}
+                {profile?.role !== 'satker_head_loyalis' && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Tipe Kegiatan</label>
+                    <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100/80">
+                      <button
+                        type="button"
+                        disabled={isReadOnly}
+                        onClick={() => {
+                          setIsEndOfMonth(false);
+                          handleAutosave(workerRows, eventName, selectedEventId, false);
+                        }}
+                        className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-200 ${!isEndOfMonth
+                          ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
+                          : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                      >
+                        Tengah Bulan (Vakasi Tambahan)
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isReadOnly}
+                        onClick={() => {
+                          setIsEndOfMonth(true);
+                          handleAutosave(workerRows, eventName, selectedEventId, true);
+                        }}
+                        className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-200 ${isEndOfMonth
+                          ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
+                          : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                      >
+                        Akhir Bulan (Kolom Tersendiri)
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Department Selector & File Upload (only visible when Tengah Bulan is active) */}
+                {!isEndOfMonth && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                    {/* Department Selector */}
                     <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
                       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-indigo-400" />
-                        Laporan Resmi yang Ditandatangani (Scanned Report)
+                        <Building2 className="w-3.5 h-3.5 text-indigo-400" />
+                        Unit Kerja (Department)
                       </label>
-                      
-                      {reportFileUrl ? (
-                        /* Show Preview/FileInfo */
-                        <div className="flex items-center justify-between p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-2xl">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-                              {reportFileName?.toLowerCase().endsWith('.pdf') ? (
-                                <FileText className="w-5 h-5" />
-                              ) : (
-                                <ImageIcon className="w-5 h-5" />
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-700 truncate max-w-[200px] md:max-w-xs">
-                                {reportFileName || 'Laporan_Vakasi.pdf'}
-                              </p>
-                              <p className="text-[10px] text-indigo-500 font-medium">Berhasil diunggah</p>
-                            </div>
+                      <Select
+                        value={selectedDept}
+                        disabled={isReadOnly}
+                        onValueChange={(val) => {
+                          setSelectedDept(val || '');
+                          handleAutosave(workerRows, eventName, selectedEventId, false, val || undefined);
+                        }}
+                      >
+                        <SelectTrigger className={`rounded-xl text-sm font-bold h-11 transition-all duration-200 border focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 ${selectedDept
+                          ? 'bg-indigo-50/60 border-indigo-200 text-indigo-700'
+                          : 'bg-white border-slate-200 text-slate-400'
+                          }`}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Building2 className={`w-4 h-4 shrink-0 ${selectedDept ? 'text-indigo-500' : 'text-slate-300'}`} />
+                            <SelectValue placeholder="Pilih Unit Kerja..." />
                           </div>
-                          
-                          <div className="flex items-center gap-2">
-                            {/* Preview button */}
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                if (reportFileUrl.toLowerCase().includes('.pdf') || reportFileName?.toLowerCase().endsWith('.pdf')) {
-                                  window.open(reportFileUrl, '_blank');
-                                } else {
-                                  setLightboxUrl(reportFileUrl);
-                                }
-                              }}
-                              className="h-8 text-xs font-bold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-100/50 rounded-lg px-2.5 flex items-center gap-1"
+                        </SelectTrigger>
+                        <SelectContent alignItemWithTrigger={false} sideOffset={4} className="rounded-2xl border border-slate-100 shadow-2xl bg-white p-1.5 max-h-64 overflow-y-auto w-max min-w-[var(--radix-select-trigger-width)]">
+                          {/* Clear / All option */}
+                          <SelectItem
+                            value=""
+                            className="rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 focus:bg-slate-50 focus:text-slate-700 flex items-center gap-2 mb-1 border border-dashed border-slate-200 data-[highlighted]:bg-slate-50 data-[highlighted]:text-slate-700"
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <span className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 text-[9px] font-black">✕</span>
+                              Semua Unit Kerja
+                            </span>
+                          </SelectItem>
+                          <div className="h-px bg-slate-100 my-1" />
+                          {departments.map(dept => (
+                            <SelectItem
+                              key={dept}
+                              value={dept}
+                              className="rounded-xl text-xs font-bold uppercase text-slate-700 data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700 data-[state=checked]:bg-indigo-50 data-[state=checked]:text-indigo-700 focus:bg-indigo-50 focus:text-indigo-700 cursor-pointer"
                             >
-                              <Eye className="w-3.5 h-3.5" />
-                              Buka
-                            </Button>
-                            
-                            {/* Remove file button */}
-                            {!isReadOnly && profile?.role === 'satker_head_loyalis' && (
+                              <span className="flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-300 shrink-0" />
+                                {dept}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {selectedDept && (
+                        <p className="text-[10px] text-indigo-500 font-bold flex items-center gap-1 animate-in fade-in duration-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 inline-block" />
+                          Unit Kerja terpilih: <span className="underline underline-offset-2">{selectedDept}</span> (Daftar pegawai tidak dibatasi)
+                        </p>
+                      )}
+                    </div>
+
+                    {/* File Upload Area for SatKer Loyalis scanned report */}
+                    {(profile?.role === 'satker_head_loyalis' || reportFileUrl) && (
+                      <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-indigo-400" />
+                          Laporan Resmi yang Ditandatangani (Scanned Report)
+                        </label>
+
+                        {reportFileUrl ? (
+                          /* Show Preview/FileInfo */
+                          <div className="flex items-center justify-between p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-2xl">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                                {reportFileName?.toLowerCase().endsWith('.pdf') ? (
+                                  <FileText className="w-5 h-5" />
+                                ) : (
+                                  <ImageIcon className="w-5 h-5" />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-slate-700 truncate max-w-[200px] md:max-w-xs">
+                                  {reportFileName || 'Laporan_Vakasi.pdf'}
+                                </p>
+                                <p className="text-[10px] text-indigo-500 font-medium">Berhasil diunggah</p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {/* Preview button */}
                               <Button
                                 type="button"
                                 variant="ghost"
-                                size="icon"
+                                size="sm"
                                 onClick={() => {
-                                  setReportFile(null);
-                                  setReportFileUrl(null);
-                                  setReportFileName(null);
+                                  if (reportFileUrl.toLowerCase().includes('.pdf') || reportFileName?.toLowerCase().endsWith('.pdf')) {
+                                    window.open(reportFileUrl, '_blank');
+                                  } else {
+                                    setLightboxUrl(reportFileUrl);
+                                  }
                                 }}
-                                className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg"
+                                className="h-8 text-xs font-bold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-100/50 rounded-lg px-2.5 flex items-center gap-1"
                               >
-                                <X className="w-4 h-4" />
+                                <Eye className="w-3.5 h-3.5" />
+                                Buka
                               </Button>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        /* Show Upload Compact Area */
-                        profile?.role === 'satker_head_loyalis' && (
-                          <div className="border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-2xl p-3 text-center transition-all bg-slate-50/50 cursor-pointer relative group h-11 flex items-center justify-center">
-                            <input
-                              type="file"
-                              accept=".pdf,image/jpeg,image/jpg,image/png"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) handleReportFileChange(file);
-                              }}
-                              disabled={uploadingReport}
-                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer animate-none"
-                            />
-                            <div className="flex items-center justify-center gap-2">
-                              {uploadingReport ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
-                                  <p className="text-xs font-bold text-slate-600">Mengunggah...</p>
-                                </>
-                              ) : (
-                                <>
-                                  <Upload className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" />
-                                  <p className="text-xs font-bold text-slate-600">
-                                    <span className="text-indigo-600 underline">Pilih berkas</span> (PDF, Img)
-                                  </p>
-                                </>
+
+                              {/* Remove file button */}
+                              {!isReadOnly && profile?.role === 'satker_head_loyalis' && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => {
+                                    setReportFile(null);
+                                    setReportFileUrl(null);
+                                    setReportFileName(null);
+                                  }}
+                                  className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg"
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
                               )}
                             </div>
                           </div>
-                        )
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+                        ) : (
+                          /* Show Upload Compact Area */
+                          profile?.role === 'satker_head_loyalis' && (
+                            <div className="border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-2xl p-3 text-center transition-all bg-slate-50/50 cursor-pointer relative group h-11 flex items-center justify-center">
+                              <input
+                                type="file"
+                                accept=".pdf,image/jpeg,image/jpg,image/png"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleReportFileChange(file);
+                                }}
+                                disabled={uploadingReport}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer animate-none"
+                              />
+                              <div className="flex items-center justify-center gap-2">
+                                {uploadingReport ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
+                                    <p className="text-xs font-bold text-slate-600">Mengunggah...</p>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Upload className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                                    <p className="text-xs font-bold text-slate-600">
+                                      <span className="text-indigo-600 underline">Pilih berkas</span> (PDF, Img)
+                                    </p>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
-              {/* Live Running Total header mockup in Excel screenshot */}
-              <div className="bg-blue-50/20 backdrop-blur-sm rounded-2xl p-6 text-blue-900 shadow-[0_4px_20px_rgba(59,130,246,0.05)] flex items-center justify-between border-2 border-blue-500 transition-all duration-300">
-                <div>
-                  <span className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">Aggregate Validation</span>
-                  <h4 className="text-xl font-black mt-1 text-blue-900">JUMLAH</h4>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">Total Payout</span>
-                  <p className="text-3xl font-black text-blue-800 mt-1 tracking-tight">
-                    {fmtRp(workerRows.reduce((sum, r) => sum + (r.payGiven || 0), 0))}
-                  </p>
-                </div>
-              </div>
-
-              {/* Iterative Workers grid */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Daftar Pegawai &amp; Jumlah</span>
+                {/* Live Running Total header mockup in Excel screenshot */}
+                <div className="bg-blue-50/20 backdrop-blur-sm rounded-2xl p-6 text-blue-900 shadow-[0_4px_20px_rgba(59,130,246,0.05)] flex items-center justify-between border-2 border-blue-500 transition-all duration-300">
+                  <div>
+                    <span className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">Aggregate Validation</span>
+                    <h4 className="text-xl font-black mt-1 text-blue-900">JUMLAH</h4>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">Total Payout</span>
+                    <p className="text-3xl font-black text-blue-800 mt-1 tracking-tight">
+                      {fmtRp(workerRows.reduce((sum, r) => sum + (r.payGiven || 0), 0))}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="border border-slate-100 rounded-2xl shadow-sm overflow-visible bg-white">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-100">
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">NO</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase">NAMA PEGAWAI</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-[220px]">JUMLAH (RP)</th>
-                        {!isReadOnly && <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-16 text-center">AKSI</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {workerRows.length === 0 ? (
-                        <tr>
-                          <td colSpan={isReadOnly ? 3 : 4} className="text-center py-12 text-slate-400 text-xs font-semibold">
-                            Belum ada pegawai ditambahkan. Klik tombol di bawah untuk menambahkan.
-                          </td>
+                {/* Iterative Workers grid */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Daftar Pegawai &amp; Jumlah</span>
+                  </div>
+
+                  <div className="border border-slate-100 rounded-2xl shadow-sm overflow-visible bg-white">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                          <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">NO</th>
+                          <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase">NAMA PEGAWAI</th>
+                          <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-[220px]">JUMLAH (RP)</th>
+                          {!isReadOnly && <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-16 text-center">AKSI</th>}
                         </tr>
-                      ) : (
-                        workerRows.map((row, rowIdx) => {
-                          const handleEmployeeSearch = (index: number, text: string) => {
-                            setWorkerRows(prev => {
-                              const copy = [...prev];
-                              copy[index] = { ...copy[index], searchText: text, showDropdown: true };
-                              return copy;
-                            });
-                            setActiveSuggestionIndex(0);
-                          };
-                          const selectEmployee = (index: number, emp: any) => {
-                            setWorkerRows(prev => {
-                              const copy = [...prev];
-                              copy[index] = {
-                                ...copy[index],
-                                employeeId: emp.id,
-                                employeeName: emp.name,
-                                searchText: emp.name,
-                                showDropdown: false,
-                              };
-                              if (copy[index].employeeId && copy[index].payGiven > 0) {
-                                handleAutosave(copy, eventName, selectedEventId);
-                              }
-                              return copy;
-                            });
-                            setTimeout(() => {
-                              const inputEl = document.getElementById(`pay-input-${index}`);
-                              if (inputEl) {
-                                inputEl.focus();
-                                (inputEl as HTMLInputElement).select();
-                              }
-                            }, 50);
-                          };
+                      </thead>
+                      <tbody>
+                        {workerRows.length === 0 ? (
+                          <tr>
+                            <td colSpan={isReadOnly ? 3 : 4} className="text-center py-12 text-slate-400 text-xs font-semibold">
+                              Belum ada pegawai ditambahkan. Klik tombol di bawah untuk menambahkan.
+                            </td>
+                          </tr>
+                        ) : (
+                          workerRows.map((row, rowIdx) => {
+                            const handleEmployeeSearch = (index: number, text: string) => {
+                              setWorkerRows(prev => {
+                                const copy = [...prev];
+                                copy[index] = { ...copy[index], searchText: text, showDropdown: true };
+                                return copy;
+                              });
+                              setActiveSuggestionIndex(0);
+                            };
+                            const selectEmployee = (index: number, emp: any) => {
+                              setWorkerRows(prev => {
+                                const copy = [...prev];
+                                copy[index] = {
+                                  ...copy[index],
+                                  employeeId: emp.id,
+                                  employeeName: emp.name,
+                                  searchText: emp.name,
+                                  showDropdown: false,
+                                };
+                                if (copy[index].employeeId && copy[index].payGiven > 0) {
+                                  handleAutosave(copy, eventName, selectedEventId);
+                                }
+                                return copy;
+                              });
+                              setTimeout(() => {
+                                const inputEl = document.getElementById(`pay-input-${index}`);
+                                if (inputEl) {
+                                  inputEl.focus();
+                                  (inputEl as HTMLInputElement).select();
+                                }
+                              }, 50);
+                            };
 
-                          return (
-                            <tr key={rowIdx} className={`border-b border-slate-50 hover:bg-slate-50/30 transition-colors animate-in fade-in slide-in-from-top-1 ${row.showDropdown ? 'relative z-50' : 'relative z-0'}`}>
-                              <td className="px-4 py-4 text-xs font-bold text-slate-400 text-center">
-                                {rowIdx + 1}
-                              </td>
-                              <td className="px-4 py-4 relative">
-                                <div className="relative">
-                                  <Input
-                                    id={`search-input-${rowIdx}`}
-                                    type="text"
-                                    placeholder="Cari nama pegawai..."
-                                    value={row.searchText || ''}
-                                    disabled={isReadOnly}
-                                    onChange={(e) => handleEmployeeSearch(rowIdx, e.target.value)}
-                                    onFocus={() => {
-                                      setWorkerRows(prev => {
-                                        const copy = [...prev];
-                                        copy[rowIdx] = { ...copy[rowIdx], showDropdown: true };
-                                        return copy;
-                                      });
-                                      setActiveSuggestionIndex(0);
-                                    }}
-                                    onBlur={() => {
-                                      setTimeout(() => {
+                            return (
+                              <tr key={rowIdx} className={`border-b border-slate-50 hover:bg-slate-50/30 transition-colors animate-in fade-in slide-in-from-top-1 ${row.showDropdown ? 'relative z-50' : 'relative z-0'}`}>
+                                <td className="px-4 py-4 text-xs font-bold text-slate-400 text-center">
+                                  {rowIdx + 1}
+                                </td>
+                                <td className="px-4 py-4 relative">
+                                  <div className="relative">
+                                    <Input
+                                      id={`search-input-${rowIdx}`}
+                                      type="text"
+                                      placeholder="Cari nama pegawai..."
+                                      value={row.searchText || ''}
+                                      disabled={isReadOnly}
+                                      onChange={(e) => handleEmployeeSearch(rowIdx, e.target.value)}
+                                      onFocus={() => {
                                         setWorkerRows(prev => {
                                           const copy = [...prev];
-                                          if (copy[rowIdx]) {
-                                            copy[rowIdx] = { ...copy[rowIdx], showDropdown: false };
-                                          }
+                                          copy[rowIdx] = { ...copy[rowIdx], showDropdown: true };
                                           return copy;
                                         });
-                                      }, 200);
-                                    }}
-                                    onKeyDown={(e) => {
-                                      const otherSelectedIds = workerRows
-                                        .filter((_, i) => i !== rowIdx)
-                                        .map(w => w.employeeId)
-                                        .filter(Boolean);
-                                      const filtered = loyalisEmployees
-                                        .filter(emp => !otherSelectedIds.includes(emp.id))
-                                        
-                                        .filter(emp =>
-                                          emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
-                                        );
-                                      if (row.showDropdown && filtered.length > 0) {
-                                        if (e.key === 'ArrowDown') {
-                                          e.preventDefault();
-                                          setActiveSuggestionIndex(prev => (prev + 1) % filtered.length);
-                                        } else if (e.key === 'ArrowUp') {
-                                          e.preventDefault();
-                                          setActiveSuggestionIndex(prev => (prev - 1 + filtered.length) % filtered.length);
-                                        } else if (e.key === 'Enter') {
-                                          e.preventDefault();
-                                          const selectedEmp = filtered[activeSuggestionIndex];
-                                          if (selectedEmp) {
-                                            selectEmployee(rowIdx, selectedEmp);
-                                          }
-                                        }
-                                      }
-                                    }}
-                                    className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
-                                  />
-                                  {row.showDropdown && (
-                                    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
-                                      {(() => {
+                                        setActiveSuggestionIndex(0);
+                                      }}
+                                      onBlur={() => {
+                                        setTimeout(() => {
+                                          setWorkerRows(prev => {
+                                            const copy = [...prev];
+                                            if (copy[rowIdx]) {
+                                              copy[rowIdx] = { ...copy[rowIdx], showDropdown: false };
+                                            }
+                                            return copy;
+                                          });
+                                        }, 200);
+                                      }}
+                                      onKeyDown={(e) => {
                                         const otherSelectedIds = workerRows
                                           .filter((_, i) => i !== rowIdx)
                                           .map(w => w.employeeId)
                                           .filter(Boolean);
                                         const filtered = loyalisEmployees
                                           .filter(emp => !otherSelectedIds.includes(emp.id))
+
                                           .filter(emp =>
                                             emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
                                           );
-
-                                        if (filtered.length === 0) {
-                                          return <div className="p-4 text-center text-slate-400 text-xs font-semibold">Pegawai tidak ditemukan</div>;
+                                        if (row.showDropdown && filtered.length > 0) {
+                                          if (e.key === 'ArrowDown') {
+                                            e.preventDefault();
+                                            setActiveSuggestionIndex(prev => (prev + 1) % filtered.length);
+                                          } else if (e.key === 'ArrowUp') {
+                                            e.preventDefault();
+                                            setActiveSuggestionIndex(prev => (prev - 1 + filtered.length) % filtered.length);
+                                          } else if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const selectedEmp = filtered[activeSuggestionIndex];
+                                            if (selectedEmp) {
+                                              selectEmployee(rowIdx, selectedEmp);
+                                            }
+                                          }
                                         }
+                                      }}
+                                      className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
+                                    />
+                                    {row.showDropdown && (
+                                      <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
+                                        {(() => {
+                                          const otherSelectedIds = workerRows
+                                            .filter((_, i) => i !== rowIdx)
+                                            .map(w => w.employeeId)
+                                            .filter(Boolean);
+                                          const filtered = loyalisEmployees
+                                            .filter(emp => !otherSelectedIds.includes(emp.id))
+                                            .filter(emp =>
+                                              emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())
+                                            );
 
-                                        return filtered.map((emp, empIdx) => {
-                                          const isActive = empIdx === activeSuggestionIndex;
-                                          return (
-                                            <div
-                                              key={emp.id}
-                                              onClick={() => selectEmployee(rowIdx, emp)}
-                                              className={`px-4 py-2.5 text-xs font-semibold cursor-pointer transition-colors text-left ${isActive
-                                                ? 'bg-indigo-50 text-indigo-600 font-bold'
-                                                : 'hover:bg-indigo-50 hover:text-indigo-600 text-slate-700'
-                                                }`}
-                                            >
-                                              <p className={isActive ? 'text-indigo-700' : 'text-slate-800'}>{emp.name}</p>
-                                              <p className={`text-[10px] font-mono mt-0.5 ${isActive ? 'text-indigo-400' : 'text-slate-400'}`}>{emp.role} · {emp.id}</p>
-                                            </div>
-                                          );
-                                        });
-                                      })()}
-                                    </div>
+                                          if (filtered.length === 0) {
+                                            return <div className="p-4 text-center text-slate-400 text-xs font-semibold">Pegawai tidak ditemukan</div>;
+                                          }
+
+                                          return filtered.map((emp, empIdx) => {
+                                            const isActive = empIdx === activeSuggestionIndex;
+                                            return (
+                                              <div
+                                                key={emp.id}
+                                                onClick={() => selectEmployee(rowIdx, emp)}
+                                                className={`px-4 py-2.5 text-xs font-semibold cursor-pointer transition-colors text-left ${isActive
+                                                  ? 'bg-indigo-50 text-indigo-600 font-bold'
+                                                  : 'hover:bg-indigo-50 hover:text-indigo-600 text-slate-700'
+                                                  }`}
+                                              >
+                                                <p className={isActive ? 'text-indigo-700' : 'text-slate-800'}>{emp.name}</p>
+                                                <p className={`text-[10px] font-mono mt-0.5 ${isActive ? 'text-indigo-400' : 'text-slate-400'}`}>{emp.role} · {emp.id}</p>
+                                              </div>
+                                            );
+                                          });
+                                        })()}
+                                      </div>
+                                    )}
+                                  </div>
+                                  {row.employeeId && (
+                                    <span className="text-[9px] font-bold text-indigo-500 font-mono mt-1 block">ID: {row.employeeId}</span>
                                   )}
-                                </div>
-                                {row.employeeId && (
-                                  <span className="text-[9px] font-bold text-indigo-500 font-mono mt-1 block">ID: {row.employeeId}</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-4">
-                                <Input
-                                  id={`pay-input-${rowIdx}`}
-                                  type="text"
-                                  inputMode="numeric"
-                                  pattern="[0-9]*"
-                                  placeholder="0"
-                                  value={row.payGiven > 0 ? fmtRp(row.payGiven) : ''}
-                                  disabled={isReadOnly}
-                                  onChange={(e) => {
-                                    const inputEl = e.target;
-                                    const rawVal = inputEl.value.replace(/\D/g, '');
-                                    const val = parseInt(rawVal, 10) || 0;
+                                </td>
+                                <td className="px-4 py-4">
+                                  <Input
+                                    id={`pay-input-${rowIdx}`}
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    placeholder="0"
+                                    value={row.payGiven > 0 ? fmtRp(row.payGiven) : ''}
+                                    disabled={isReadOnly}
+                                    onChange={(e) => {
+                                      const inputEl = e.target;
+                                      const rawVal = inputEl.value.replace(/\D/g, '');
+                                      const val = parseInt(rawVal, 10) || 0;
 
-                                    const selectionStart = inputEl.selectionStart || 0;
-                                    const valueBefore = inputEl.value;
-                                    const digitsBeforeCursor = valueBefore.slice(0, selectionStart).replace(/\D/g, '').length;
+                                      const selectionStart = inputEl.selectionStart || 0;
+                                      const valueBefore = inputEl.value;
+                                      const digitsBeforeCursor = valueBefore.slice(0, selectionStart).replace(/\D/g, '').length;
 
-                                    setWorkerRows(prev => {
-                                      const copy = [...prev];
-                                      copy[rowIdx] = { ...copy[rowIdx], payGiven: val };
-                                      return copy;
-                                    });
+                                      setWorkerRows(prev => {
+                                        const copy = [...prev];
+                                        copy[rowIdx] = { ...copy[rowIdx], payGiven: val };
+                                        return copy;
+                                      });
 
-                                    requestAnimationFrame(() => {
-                                      if (!inputEl) return;
-                                      const newValue = inputEl.value;
-                                      let newSelectionStart = selectionStart;
-                                      if (digitsBeforeCursor > 0) {
-                                        let digitsFound = 0;
-                                        for (let i = 0; i < newValue.length; i++) {
-                                          if (/\d/.test(newValue[i])) {
-                                            digitsFound++;
-                                          }
-                                          if (digitsFound === digitsBeforeCursor) {
-                                            newSelectionStart = i + 1;
-                                            break;
+                                      requestAnimationFrame(() => {
+                                        if (!inputEl) return;
+                                        const newValue = inputEl.value;
+                                        let newSelectionStart = selectionStart;
+                                        if (digitsBeforeCursor > 0) {
+                                          let digitsFound = 0;
+                                          for (let i = 0; i < newValue.length; i++) {
+                                            if (/\d/.test(newValue[i])) {
+                                              digitsFound++;
+                                            }
+                                            if (digitsFound === digitsBeforeCursor) {
+                                              newSelectionStart = i + 1;
+                                              break;
+                                            }
                                           }
                                         }
-                                      }
-                                      inputEl.setSelectionRange(newSelectionStart, newSelectionStart);
-                                    });
-                                  }}
-                                  onBlur={() => {
-                                    if (row.employeeId && row.payGiven > 0) {
-                                      handleAutosave(workerRows, eventName, selectedEventId);
-                                    }
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
+                                        inputEl.setSelectionRange(newSelectionStart, newSelectionStart);
+                                      });
+                                    }}
+                                    onBlur={() => {
                                       if (row.employeeId && row.payGiven > 0) {
                                         handleAutosave(workerRows, eventName, selectedEventId);
                                       }
-                                      handleAddRow();
-                                    }
-                                  }}
-                                  className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full text-right"
-                                />
-                              </td>
-                              {!isReadOnly && (
-                                <td className="px-4 py-4 text-center">
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => {
-                                      setWorkerRows(prev => {
-                                        const copy = prev.filter((_, i) => i !== rowIdx);
-                                        handleAutosave(copy, eventName, selectedEventId);
-                                        return copy;
-                                      });
                                     }}
-                                    className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl h-8 w-8"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </Button>
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        if (row.employeeId && row.payGiven > 0) {
+                                          handleAutosave(workerRows, eventName, selectedEventId);
+                                        }
+                                        handleAddRow();
+                                      }
+                                    }}
+                                    className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full text-right"
+                                  />
                                 </td>
-                              )}
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Add Employee button below the table */}
-                {!isReadOnly && (
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      onClick={handleAddRow}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold px-4 h-9.5 shadow-md flex items-center gap-1.5 transition-all active:scale-95"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Tambah Pegawai
-                    </Button>
+                                {!isReadOnly && (
+                                  <td className="px-4 py-4 text-center">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => {
+                                        setWorkerRows(prev => {
+                                          const copy = prev.filter((_, i) => i !== rowIdx);
+                                          handleAutosave(copy, eventName, selectedEventId);
+                                          return copy;
+                                        });
+                                      }}
+                                      className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl h-8 w-8"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
                   </div>
-                )}
-              </div>
 
-              {/* Error indicator bar below +Tambah Pegawai button */}
-              {message && (
-                <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'} animate-in fade-in duration-300`}>
-                  {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />} {message.text}
-                </div>
-              )}
-
-              {/* Form submit footer actions */}
-              <div className="flex justify-between items-center pt-4 border-t border-slate-50 shrink-0">
-                {/* Left side: Review actions for Super Admin on pending events */}
-                <div>
-                  {profile?.role === 'super_admin' && selectedEventId && currentEventStatus === 'pending_review' && (
-                    <div className="flex gap-2">
+                  {/* Add Employee button below the table */}
+                  {!isReadOnly && (
+                    <div className="flex justify-end">
                       <Button
                         type="button"
-                        onClick={() => handleReviewEvent(selectedEventId, 'approved', '')}
-                        disabled={saving}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs px-4 h-10 flex items-center gap-1.5 shadow-sm transition-all"
+                        onClick={handleAddRow}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold px-4 h-9.5 shadow-md flex items-center gap-1.5 transition-all active:scale-95"
                       >
-                        <CheckCircle2 className="w-4 h-4" />
-                        Setujui
-                      </Button>
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          setReviewingEventId(selectedEventId);
-                          setReviewAction('revision_needed');
-                          setReviewNote('');
-                          setShowReviewDialog(true);
-                        }}
-                        disabled={saving}
-                        className="bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl text-xs px-4 h-10 flex items-center gap-1.5 shadow-sm transition-all"
-                      >
-                        <AlertCircle className="w-4 h-4" />
-                        Minta Revisi
-                      </Button>
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          setReviewingEventId(selectedEventId);
-                          setReviewAction('declined');
-                          setReviewNote('');
-                          setShowReviewDialog(true);
-                        }}
-                        disabled={saving}
-                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs px-4 h-10 flex items-center gap-1.5 shadow-sm transition-all"
-                      >
-                        <XCircle className="w-4 h-4" />
-                        Tolak
+                        <Plus className="w-3.5 h-3.5" />
+                        Tambah Pegawai
                       </Button>
                     </div>
                   )}
-                  {profile?.role === 'super_admin' && selectedEventId && currentEventStatus === 'approved' && (
-                    <Button
-                      type="button"
-                      onClick={() => handleUnverifyEvent(selectedEventId)}
-                      disabled={saving}
-                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs px-4 h-10 flex items-center gap-1.5 shadow-sm transition-all active:scale-95 animate-in fade-in"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      Batalkan Persetujuan
-                    </Button>
-                  )}
                 </div>
 
-                {/* Right side: Save / Submit / Batal buttons */}
-                <div className="flex gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setSelectedEventId(null);
-                      setEventName('');
-                      setIsEndOfMonth(false);
-                      setSelectedDept('');
-                      setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
-                      setReportFile(null);
-                      setReportFileUrl(null);
-                      setReportFileName(null);
-                      setCurrentEventStatus(null);
-                      setCurrentEventReviewNote(null);
-                      setCurrentEventSubmittedBy(null);
-                      setCurrentEventSubmittedByName(null);
-                      setCurrentEventSubmittedByEmail(null);
-                    }}
-                    className="rounded-xl border-slate-200 text-slate-600 text-xs h-10 font-bold px-4"
-                  >
-                    {isReadOnly ? 'Kembali' : 'Batal'}
-                  </Button>
+                {/* Error indicator bar below +Tambah Pegawai button */}
+                {message && (
+                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'} animate-in fade-in duration-300`}>
+                    {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />} {message.text}
+                  </div>
+                )}
 
-                  {!isReadOnly && (
-                    <>
-                      {/* For SatKer Loyalis, show "Simpan Draft" and "Submit untuk Review" */}
-                      {profile?.role === 'satker_head_loyalis' ? (
-                        <>
+                {/* Form submit footer actions */}
+                <div className="flex justify-between items-center pt-4 border-t border-slate-50 shrink-0">
+                  {/* Left side: Review actions for Super Admin on pending events */}
+                  <div>
+                    {profile?.role === 'super_admin' && selectedEventId && currentEventStatus === 'pending_review' && (
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          onClick={() => handleReviewEvent(selectedEventId, 'approved', '')}
+                          disabled={saving}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs px-4 h-10 flex items-center gap-1.5 shadow-sm transition-all"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          Setujui
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            setReviewingEventId(selectedEventId);
+                            setReviewAction('revision_needed');
+                            setReviewNote('');
+                            setShowReviewDialog(true);
+                          }}
+                          disabled={saving}
+                          className="bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl text-xs px-4 h-10 flex items-center gap-1.5 shadow-sm transition-all"
+                        >
+                          <AlertCircle className="w-4 h-4" />
+                          Minta Revisi
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            setReviewingEventId(selectedEventId);
+                            setReviewAction('declined');
+                            setReviewNote('');
+                            setShowReviewDialog(true);
+                          }}
+                          disabled={saving}
+                          className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs px-4 h-10 flex items-center gap-1.5 shadow-sm transition-all"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          Tolak
+                        </Button>
+                      </div>
+                    )}
+                    {profile?.role === 'super_admin' && selectedEventId && currentEventStatus === 'approved' && (
+                      <Button
+                        type="button"
+                        onClick={() => handleUnverifyEvent(selectedEventId)}
+                        disabled={saving}
+                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs px-4 h-10 flex items-center gap-1.5 shadow-sm transition-all active:scale-95 animate-in fade-in"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        Batalkan Persetujuan
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Right side: Save / Submit / Batal buttons */}
+                  <div className="flex gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedEventId(null);
+                        setEventName('');
+                        setIsEndOfMonth(false);
+                        setSelectedDept('');
+                        setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+                        setReportFile(null);
+                        setReportFileUrl(null);
+                        setReportFileName(null);
+                        setCurrentEventStatus(null);
+                        setCurrentEventReviewNote(null);
+                        setCurrentEventSubmittedBy(null);
+                        setCurrentEventSubmittedByName(null);
+                        setCurrentEventSubmittedByEmail(null);
+                      }}
+                      className="rounded-xl border-slate-200 text-slate-600 text-xs h-10 font-bold px-4"
+                    >
+                      {isReadOnly ? 'Kembali' : 'Batal'}
+                    </Button>
+
+                    {!isReadOnly && (
+                      <>
+                        {/* For SatKer Loyalis, show "Simpan Draft" and "Submit untuk Review" */}
+                        {profile?.role === 'satker_head_loyalis' ? (
+                          <>
+                            <Button
+                              type="button"
+                              onClick={handleSaveEvent}
+                              disabled={saving || !eventName.trim()}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs px-4 h-10 transition-all border border-slate-200/60"
+                            >
+                              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
+                              Simpan Draft
+                            </Button>
+                            <Button
+                              type="button"
+                              onClick={handleSubmitForReview}
+                              disabled={saving || !eventName.trim() || !reportFileUrl}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs px-5 h-10 shadow-md flex items-center gap-1.5 transition-all active:scale-95"
+                            >
+                              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                              {currentEventStatus === 'revision_needed' ? 'Re-submit untuk Review' : 'Submit untuk Review'}
+                            </Button>
+                          </>
+                        ) : (
+                          /* For Super Admin (or others), show standard "Simpan Kegiatan" which auto-approves */
                           <Button
                             type="button"
                             onClick={handleSaveEvent}
                             disabled={saving || !eventName.trim()}
-                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs px-4 h-10 transition-all border border-slate-200/60"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs px-6 h-10 shadow-md flex items-center gap-1.5 transition-all"
                           >
-                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
-                            Simpan Draft
+                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                            Simpan Kegiatan
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+          </div>
+        ) : activeTab === 'presensi_loyalis' ? (
+          /* Tab 4: Presence Calculator Section */
+          <div className="space-y-8 animate-in fade-in duration-500">
+            {/* Target Type Toggle */}
+            <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
+              <button
+                type="button"
+                onClick={() => setPresensiTargetType('loyalis')}
+                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  presensiTargetType === 'loyalis'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                Loyalis
+              </button>
+              <button
+                type="button"
+                onClick={() => setPresensiTargetType('pekarya')}
+                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  presensiTargetType === 'pekarya'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                Pekarya
+              </button>
+            </div>
+
+            {presensiTargetType === 'pekarya' ? (
+              <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
+                <div className="flex justify-between items-center border-b border-slate-50 pb-4">
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                      <FileSpreadsheet className="w-4 h-4 text-indigo-500" />
+                      Kalkulator Presensi Pekarya
+                    </h3>
+                    <p className="text-slate-400 text-xs mt-0.5">
+                      Input jumlah hari kerja dan hari libur untuk mengisi kolom Harian serta Jumat & Libur secara otomatis.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+                  {/* 1. Category Selector */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Satuan Kerja Pekarya</label>
+                    <Select
+                      value={selectedPekaryaCategory}
+                      onValueChange={(val) => val && setSelectedPekaryaCategory(val)}
+                    >
+                      <SelectTrigger className="w-full bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+                        <SelectValue placeholder="Pilih Satker..." />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                        {['SATPAM', 'KEBERSIHAN', 'TEKNISI', 'SOPIR'].map(c => (
+                          <SelectItem key={c} value={c}>
+                            {c}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* 2. Jumlah Hari Kerja */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jumlah Hari Kerja</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={31}
+                      value={pekaryaWorkingDays}
+                      onChange={(e) => setPekaryaWorkingDays(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
+                    />
+                  </div>
+
+                  {/* 3. Jumlah Hari Libur */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jumlah Hari Libur</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={31}
+                      value={pekaryaHolidays}
+                      onChange={(e) => setPekaryaHolidays(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-4 border-t border-slate-50">
+                  <Button
+                    type="button"
+                    onClick={handleApplyPekaryaPresence}
+                    disabled={!selectedPekaryaCategory || employees.length === 0}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    Terapkan ke Tabel ({employees.length} Pegawai)
+                  </Button>
+                </div>
+              </Card>
+            ) : (
+              profile?.role !== 'satker_head_loyalis' && (
+                <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
+                  <div className="flex justify-between items-center border-b border-slate-50 pb-4">
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+                        Kalkulator Bonus Presensi Loyalis via Excel
+                      </h3>
+                      <p className="text-slate-400 text-xs mt-0.5">Unggah data rekap kehadiran bulanan untuk menghitung strata dan bonus presensi.</p>
+                    </div>
+                    {existingPresence && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleDeletePresence}
+                        disabled={savingPresence}
+                        className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Hapus Data
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Status Indicator for pre-configured working days */}
+                  {existingPresence && Object.keys(existingPresence.entries || {}).length === 0 && !uploadedData && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
+                      <Calendar className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-blue-800 text-xs font-bold">Hari Kerja Telah Dikonfigurasi</h4>
+                        <p className="text-blue-600/90 text-[11px] mt-0.5 leading-relaxed">
+                          Jumlah hari kerja periode ini ({MONTHS_ID[month - 1]} {year}) telah diatur sebanyak <strong>{existingPresence.workingDays || 25} hari</strong>.
+                          Silakan pilih dan unggah file Excel rekap kehadiran di bawah untuk melengkapi perhitungan bonus presensi pegawai.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Status Indicator for complete data */}
+                  {existingPresence && Object.keys(existingPresence.entries || {}).length > 0 && !uploadedData && (
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-start gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-emerald-800 text-xs font-bold">Data Presensi Telah Disimpan</h4>
+                        <p className="text-emerald-600/90 text-[11px] mt-0.5 leading-relaxed">
+                          Periode ini ({MONTHS_ID[month - 1]} {year}) sudah memiliki data presensi dengan {Object.keys(existingPresence.entries || {}).length} pegawai terdaftar.
+                          Jika ingin memperbarui data, silakan hapus data saat ini terlebih dahulu.
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-4 text-[10px] text-emerald-700 font-bold bg-white/50 px-3 py-1.5 rounded-xl border border-emerald-100/50 w-fit">
+                          <span>Hari Kerja: {existingPresence.workingDays || 25} hari</span>
+                          <span>Target: 390 menit/hari</span>
+                          <span>Mode Input: {existingPresence.mode === 'worked' ? 'Menit Kerja' : 'Menit Absen'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Settings and File Upload Input */}
+                  {(!existingPresence || Object.keys(existingPresence.entries || {}).length === 0) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+                      {/* 1. Working Days */}
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jumlah Hari Kerja (n)</label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={31}
+                            value={workingDays}
+                            onChange={(e) => setWorkingDays(Math.max(1, parseInt(e.target.value) || 0))}
+                            className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleSaveWorkingDaysConfig}
+                            disabled={savingPresence}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 px-4 rounded-xl shadow-md transition-all flex items-center gap-1.5 shrink-0"
+                          >
+                            <Save className="w-4 h-4" />
+                            <span>Simpan</span>
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* 2. File Upload */}
+                      <div className="relative">
+                        <Input
+                          type="file"
+                          accept=".xlsx, .xls"
+                          id="presence-excel-file"
+                          onChange={handleExcelUpload}
+                          className="hidden"
+                        />
+                        <Button
+                          type="button"
+                          onClick={() => document.getElementById('presence-excel-file')?.click()}
+                          className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold h-10 flex items-center justify-center gap-2 transition-all"
+                        >
+                          <Upload className="w-4 h-4 text-slate-400" />
+                          Pilih File Excel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Review Table */}
+                  {displayRows && (
+                    <div className="space-y-4 pt-4 border-t border-slate-100 animate-in fade-in">
+                      <div className="flex flex-wrap justify-between items-center gap-4">
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            {uploadedData ? 'Preview Hasil Perhitungan Strata' : 'Data Perhitungan Strata Tersimpan'}
+                          </span>
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
+                            <span className="text-[10px] bg-slate-50 text-slate-600 border border-slate-200/60 px-2 py-0.5 rounded-full font-semibold">
+                              Total Menit Kerja Kehadiran Penuh: {(workingDays * expectedHours * 60).toLocaleString('id-ID')} menit
+                            </span>
+                            <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-full font-semibold">
+                              Gaji Standar Presensi: {fmtRp(workingDays * expectedHours * 1650)}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-semibold">
+                          Total Data: {displayRows.length} baris ({displayRows.filter(r => r.employeeId).length} Terhubung)
+                        </span>
+                      </div>
+
+                      <div className="border border-slate-100 rounded-2xl overflow-auto shadow-sm max-h-[800px] bg-white">
+                        <table className="w-full text-left border-collapse">
+                          <thead className="sticky top-0 bg-slate-50 z-10 shadow-[0_1px_0_0_rgba(241,245,249,1)]">
+                            <tr className="bg-slate-50 border-b border-slate-100">
+                              <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">NO</th>
+                              <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase">NAMA EXCEL</th>
+                              <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase">PEGAWAI TERHUBUNG</th>
+                              <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-center">MENIT KERJA EXCEL</th>
+                              <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-center">ABSEN (MENIT)</th>
+                              <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-24 text-center">STRATA</th>
+                              <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-right">POT. BONUS</th>
+                              <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-right">NET BONUS</th>
+                              <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-36 text-right">POT. PRESENSI</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {displayRows.map((row, idx) => {
+                              return (
+                                <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                  <td className="px-4 py-3 text-xs text-slate-400 text-center font-mono">{idx + 1}</td>
+                                  <td className="px-4 py-3 text-xs font-bold text-slate-700">{row.excelName}</td>
+                                  <td className="px-4 py-3 text-xs">
+                                    {row.isMatched ? (
+                                      <div>
+                                        <p className="font-bold text-indigo-600">{row.employeeName}</p>
+                                        <p className="text-[10px] text-slate-400 font-mono">ID: {row.employeeId}</p>
+                                      </div>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-rose-500 bg-rose-50 border border-rose-100 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                        <AlertCircle className="w-3 h-3" />
+                                        Tidak cocok
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-xs font-bold text-slate-600 text-center font-mono">{row.minutes}</td>
+                                  <td className="px-4 py-3 text-xs text-slate-600 text-center font-mono">{row.isMatched && !row.isNotFoundInExcel ? row.absenceMinutes : 0}</td>
+                                  <td className="px-4 py-3 text-center">
+                                    {row.isMatched && !row.isNotFoundInExcel ? (
+                                      <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full ${row.stratum === 1 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                          row.stratum === 2 ? 'bg-blue-50 text-blue-600 border border-blue-100' :
+                                            row.stratum === 3 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                                              row.stratum === 4 ? 'bg-orange-50 text-orange-600 border border-orange-100' :
+                                                'bg-rose-50 text-rose-600 border border-rose-100'
+                                        }`}>
+                                        Strata {row.stratum}
+                                      </span>
+                                    ) : '-'}
+                                  </td>
+                                  <td className="px-4 py-3 text-xs font-bold text-slate-600 text-right font-mono">
+                                    {row.isMatched && !row.isNotFoundInExcel ? fmtRp(row.deduction) : fmtRp(0)}
+                                  </td>
+                                  <td className="px-4 py-3 text-xs font-black text-indigo-600 text-right font-mono">
+                                    {row.isMatched && !row.isNotFoundInExcel ? fmtRp(row.netBonus) : fmtRp(0)}
+                                  </td>
+                                  <td className="px-4 py-3 text-xs font-bold text-red-500 text-right font-mono">
+                                    {row.isMatched && !row.isNotFoundInExcel ? fmtRp((row.absenceMinutes / 60) * 1650) : fmtRp(0)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Actions Footer */}
+                      {uploadedData && (
+                        <div className="flex justify-end gap-3 pt-4 border-t border-slate-50">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setUploadedData(null)}
+                            className="rounded-xl border-slate-200 text-slate-600 text-xs font-bold"
+                          >
+                            Batal
                           </Button>
                           <Button
                             type="button"
-                            onClick={handleSubmitForReview}
-                            disabled={saving || !eventName.trim() || !reportFileUrl}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs px-5 h-10 shadow-md flex items-center gap-1.5 transition-all active:scale-95"
+                            onClick={handleSavePresence}
+                            disabled={savingPresence || uploadedData.filter(r => r.employeeId).length === 0}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
                           >
-                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                            {currentEventStatus === 'revision_needed' ? 'Re-submit untuk Review' : 'Submit untuk Review'}
+                            {savingPresence ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                            Simpan Data Presensi
                           </Button>
-                        </>
-                      ) : (
-                        /* For Super Admin (or others), show standard "Simpan Kegiatan" which auto-approves */
-                        <Button
-                          type="button"
-                          onClick={handleSaveEvent}
-                          disabled={saving || !eventName.trim()}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs px-6 h-10 shadow-md flex items-center gap-1.5 transition-all"
-                        >
-                          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                          Simpan Kegiatan
-                        </Button>
+                        </div>
                       )}
-                    </>
-                  )}
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {/* Loyalis Presence Calculator Section */}
-          {profile?.role !== 'satker_head_loyalis' && (
-            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
-            <div className="flex justify-between items-center border-b border-slate-50 pb-4">
-              <div>
-                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
-                  Kalkulator Bonus Presensi Loyalis via Excel
-                </h3>
-                <p className="text-slate-400 text-xs mt-0.5">Unggah data rekap kehadiran bulanan untuk menghitung strata dan bonus presensi.</p>
-              </div>
-              {existingPresence && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleDeletePresence}
-                  disabled={savingPresence}
-                  className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Hapus Data
-                </Button>
-              )}
-            </div>
-
-            {/* Status Indicator for pre-configured working days */}
-            {existingPresence && Object.keys(existingPresence.entries || {}).length === 0 && !uploadedData && (
-              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
-                <Calendar className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-blue-800 text-xs font-bold">Hari Kerja Telah Dikonfigurasi</h4>
-                  <p className="text-blue-600/90 text-[11px] mt-0.5 leading-relaxed">
-                    Jumlah hari kerja periode ini ({MONTHS_ID[month - 1]} {year}) telah diatur sebanyak <strong>{existingPresence.workingDays || 25} hari</strong>.
-                    Silakan pilih dan unggah file Excel rekap kehadiran di bawah untuk melengkapi perhitungan bonus presensi pegawai.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Status Indicator for complete data */}
-            {existingPresence && Object.keys(existingPresence.entries || {}).length > 0 && !uploadedData && (
-              <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-start gap-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-emerald-800 text-xs font-bold">Data Presensi Telah Disimpan</h4>
-                  <p className="text-emerald-600/90 text-[11px] mt-0.5 leading-relaxed">
-                    Periode ini ({MONTHS_ID[month - 1]} {year}) sudah memiliki data presensi dengan {Object.keys(existingPresence.entries || {}).length} pegawai terdaftar. 
-                    Jika ingin memperbarui data, silakan hapus data saat ini terlebih dahulu.
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-4 text-[10px] text-emerald-700 font-bold bg-white/50 px-3 py-1.5 rounded-xl border border-emerald-100/50 w-fit">
-                    <span>Hari Kerja: {existingPresence.workingDays || 25} hari</span>
-                    <span>Target: 390 menit/hari</span>
-                    <span>Mode Input: {existingPresence.mode === 'worked' ? 'Menit Kerja' : 'Menit Absen'}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Settings and File Upload Input */}
-            {(!existingPresence || Object.keys(existingPresence.entries || {}).length === 0) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
-                {/* 1. Working Days */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jumlah Hari Kerja (n)</label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="number"
-                      min={1}
-                      max={31}
-                      value={workingDays}
-                      onChange={(e) => setWorkingDays(Math.max(1, parseInt(e.target.value) || 0))}
-                      className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
-                    />
-                    <Button
-                      type="button"
-                      onClick={handleSaveWorkingDaysConfig}
-                      disabled={savingPresence}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 px-4 rounded-xl shadow-md transition-all flex items-center gap-1.5 shrink-0"
-                    >
-                      <Save className="w-4 h-4" />
-                      <span>Simpan</span>
-                    </Button>
-                  </div>
-                </div>
-
-                {/* 2. File Upload */}
-                <div className="relative">
-                  <Input
-                    type="file"
-                    accept=".xlsx, .xls"
-                    id="presence-excel-file"
-                    onChange={handleExcelUpload}
-                    className="hidden"
-                  />
-                  <Button
-                    type="button"
-                    onClick={() => document.getElementById('presence-excel-file')?.click()}
-                    className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold h-10 flex items-center justify-center gap-2 transition-all"
-                  >
-                    <Upload className="w-4 h-4 text-slate-400" />
-                    Pilih File Excel
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Review Table */}
-            {displayRows && (
-              <div className="space-y-4 pt-4 border-t border-slate-100 animate-in fade-in">
-                <div className="flex flex-wrap justify-between items-center gap-4">
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      {uploadedData ? 'Preview Hasil Perhitungan Strata' : 'Data Perhitungan Strata Tersimpan'}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-2 mt-1">
-                      <span className="text-[10px] bg-slate-50 text-slate-600 border border-slate-200/60 px-2 py-0.5 rounded-full font-semibold">
-                        Total Menit Kerja Kehadiran Penuh: {(workingDays * expectedHours * 60).toLocaleString('id-ID')} menit
-                      </span>
-                      <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-full font-semibold">
-                        Gaji Standar Presensi: {fmtRp(workingDays * expectedHours * 1650)}
-                      </span>
                     </div>
-                  </div>
-                  <span className="text-[10px] text-slate-400 font-semibold">
-                    Total Data: {displayRows.length} baris ({displayRows.filter(r => r.employeeId).length} Terhubung)
-                  </span>
-                </div>
-
-                <div className="border border-slate-100 rounded-2xl overflow-auto shadow-sm max-h-[800px] bg-white">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="sticky top-0 bg-slate-50 z-10 shadow-[0_1px_0_0_rgba(241,245,249,1)]">
-                      <tr className="bg-slate-50 border-b border-slate-100">
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">NO</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase">NAMA EXCEL</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase">PEGAWAI TERHUBUNG</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-center">MENIT KERJA EXCEL</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-center">ABSEN (MENIT)</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-24 text-center">STRATA</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-right">POT. BONUS</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-right">NET BONUS</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-36 text-right">POT. PRESENSI</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayRows.map((row, idx) => {
-                        return (
-                          <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                            <td className="px-4 py-3 text-xs text-slate-400 text-center font-mono">{idx + 1}</td>
-                            <td className="px-4 py-3 text-xs font-bold text-slate-700">{row.excelName}</td>
-                            <td className="px-4 py-3 text-xs">
-                              {row.isMatched ? (
-                                <div>
-                                  <p className="font-bold text-indigo-600">{row.employeeName}</p>
-                                  <p className="text-[10px] text-slate-400 font-mono">ID: {row.employeeId}</p>
-                                </div>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-rose-500 bg-rose-50 border border-rose-100 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                  <AlertCircle className="w-3 h-3" />
-                                  Tidak cocok
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-xs font-bold text-slate-600 text-center font-mono">{row.minutes}</td>
-                            <td className="px-4 py-3 text-xs text-slate-600 text-center font-mono">{row.isMatched && !row.isNotFoundInExcel ? row.absenceMinutes : 0}</td>
-                            <td className="px-4 py-3 text-center">
-                              {row.isMatched && !row.isNotFoundInExcel ? (
-                                <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                  row.stratum === 1 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                                  row.stratum === 2 ? 'bg-blue-50 text-blue-600 border border-blue-100' :
-                                  row.stratum === 3 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                                  row.stratum === 4 ? 'bg-orange-50 text-orange-600 border border-orange-100' :
-                                  'bg-rose-50 text-rose-600 border border-rose-100'
-                                }`}>
-                                  Strata {row.stratum}
-                                </span>
-                              ) : '-'}
-                            </td>
-                            <td className="px-4 py-3 text-xs font-bold text-slate-600 text-right font-mono">
-                              {row.isMatched && !row.isNotFoundInExcel ? fmtRp(row.deduction) : fmtRp(0)}
-                            </td>
-                            <td className="px-4 py-3 text-xs font-black text-indigo-600 text-right font-mono">
-                              {row.isMatched && !row.isNotFoundInExcel ? fmtRp(row.netBonus) : fmtRp(0)}
-                            </td>
-                            <td className="px-4 py-3 text-xs font-bold text-red-500 text-right font-mono">
-                              {row.isMatched && !row.isNotFoundInExcel ? fmtRp((row.absenceMinutes / 60) * 1650) : fmtRp(0)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Actions Footer */}
-                {uploadedData && (
-                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-50">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setUploadedData(null)}
-                      className="rounded-xl border-slate-200 text-slate-600 text-xs font-bold"
-                    >
-                      Batal
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={handleSavePresence}
-                      disabled={savingPresence || uploadedData.filter(r => r.employeeId).length === 0}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all"
-                    >
-                      {savingPresence ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                      Simpan Data Presensi
-                    </Button>
-                  </div>
-                )}
-              </div>
+                  )}
+                </Card>
+              )
             )}
-          </Card>
-          )}
-        </div>
-      ) : (
+          </div>
+        ) : (
           /* Tab 3: Kegiatan SPJ UI */
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
             {/* Left side list of existing events */}
@@ -3765,7 +3906,7 @@ export default function UraianPage() {
                   </Button>
                 )}
               </div>
- 
+
               {/* Event Details Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2 space-y-2">
@@ -3802,7 +3943,7 @@ export default function UraianPage() {
                   />
                 </div>
               </div>
- 
+
               {/* Live Running Total */}
               <div className="bg-blue-50/20 backdrop-blur-sm rounded-2xl p-4 md:p-6 text-blue-900 shadow-[0_4px_20px_rgba(59,130,246,0.05)] flex items-center justify-between border-2 border-blue-500 transition-all duration-300">
                 <div>
@@ -3904,7 +4045,7 @@ export default function UraianPage() {
                                                   return profile.permittedCategories?.includes(emp.category);
                                                 })
                                                 .find(emp => emp.name.toLowerCase() === text.toLowerCase());
-                                              
+
                                               if (match) {
                                                 copy[rowIdx] = {
                                                   ...copy[rowIdx],
@@ -3961,11 +4102,10 @@ export default function UraianPage() {
                                         }
                                       }
                                     }}
-                                    className={`rounded-xl font-bold text-slate-700 text-xs h-10 w-full transition-all ${
-                                      row.isInvalid
-                                        ? 'border-red-500 focus:border-red-500 focus:ring-red-100 ring-2 ring-red-100'
-                                        : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100'
-                                    }`}
+                                    className={`rounded-xl font-bold text-slate-700 text-xs h-10 w-full transition-all ${row.isInvalid
+                                      ? 'border-red-500 focus:border-red-500 focus:ring-red-100 ring-2 ring-red-100'
+                                      : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100'
+                                      }`}
                                   />
                                   {row.showDropdown && (
                                     <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
@@ -4398,11 +4538,10 @@ export default function UraianPage() {
                 }
               }}
               disabled={saving || !reviewNote.trim()}
-              className={`rounded-xl px-6 text-white font-bold shadow-lg transition-all flex items-center gap-2 cursor-pointer ${
-                reviewAction === 'revision_needed'
-                  ? 'bg-orange-500 shadow-orange-100 hover:bg-orange-600'
-                  : 'bg-rose-600 shadow-rose-100 hover:bg-rose-700'
-              }`}
+              className={`rounded-xl px-6 text-white font-bold shadow-lg transition-all flex items-center gap-2 cursor-pointer ${reviewAction === 'revision_needed'
+                ? 'bg-orange-500 shadow-orange-100 hover:bg-orange-600'
+                : 'bg-rose-600 shadow-rose-100 hover:bg-rose-700'
+                }`}
             >
               {saving ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -4485,11 +4624,10 @@ export default function UraianPage() {
                     setSigModalName(e.target.value);
                     setSelectedSigEmpId('');
                   }}
-                  className={`rounded-xl font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10 w-full transition-all duration-300 ${
-                    selectedSigEmpId
-                      ? 'border-emerald-300 bg-emerald-50/50 text-emerald-800 focus:border-emerald-500 focus:ring-emerald-100 pr-10'
-                      : 'border-slate-200 pr-3'
-                  }`}
+                  className={`rounded-xl font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10 w-full transition-all duration-300 ${selectedSigEmpId
+                    ? 'border-emerald-300 bg-emerald-50/50 text-emerald-800 focus:border-emerald-500 focus:ring-emerald-100 pr-10'
+                    : 'border-slate-200 pr-3'
+                    }`}
                 />
                 {selectedSigEmpId && (
                   <CheckCircle2 key={selectedSigEmpId} className="w-5 h-5 text-emerald-500 absolute right-3 pointer-events-none animate-in zoom-in-50 duration-300" />
@@ -4508,11 +4646,10 @@ export default function UraianPage() {
                     setSigModalTitle(e.target.value);
                     setSelectedSigEmpId('');
                   }}
-                  className={`rounded-xl font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10 w-full transition-all duration-300 ${
-                    selectedSigEmpId
-                      ? 'border-emerald-300 bg-emerald-50/50 text-emerald-800 focus:border-emerald-500 focus:ring-emerald-100 pr-10'
-                      : 'border-slate-200 pr-3'
-                  }`}
+                  className={`rounded-xl font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10 w-full transition-all duration-300 ${selectedSigEmpId
+                    ? 'border-emerald-300 bg-emerald-50/50 text-emerald-800 focus:border-emerald-500 focus:ring-emerald-100 pr-10'
+                    : 'border-slate-200 pr-3'
+                    }`}
                 />
                 {selectedSigEmpId && (
                   <CheckCircle2 key={selectedSigEmpId} className="w-5 h-5 text-emerald-500 absolute right-3 pointer-events-none animate-in zoom-in-50 duration-300" />
