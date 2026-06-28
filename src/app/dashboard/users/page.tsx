@@ -120,6 +120,8 @@ export default function UserManagementPage() {
   const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis'>('satker_head');
   const [newPermitted, setNewPermitted] = useState<string[]>([]);
   const [newLinkedEmployeeId, setNewLinkedEmployeeId] = useState('');
+  const [newEmployeeSearchText, setNewEmployeeSearchText] = useState('');
+  const [showNewEmployeeSuggestions, setShowNewEmployeeSuggestions] = useState(false);
 
   // Cleaning employees for honorer linking
   const [cleaningEmployees, setCleaningEmployees] = useState<CleaningEmployee[]>([]);
@@ -130,6 +132,8 @@ export default function UserManagementPage() {
   const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis'>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
   const [editLinkedEmployeeId, setEditLinkedEmployeeId] = useState('');
+  const [editEmployeeSearchText, setEditEmployeeSearchText] = useState('');
+  const [showEditEmployeeSuggestions, setShowEditEmployeeSuggestions] = useState(false);
 
   // Delete User modal state
   const [deletingUser, setDeletingUser] = useState<ManagedUser | null>(null);
@@ -153,12 +157,8 @@ export default function UserManagementPage() {
       });
       setDynamicCategories(Array.from(cats).sort());
 
-      // Also build list of cleaning employees for honorer linking
+      // Also build list of Pekarya employees for honorer linking
       const cleaningList: CleaningEmployee[] = empSnapshot.docs
-        .filter(docSnap => {
-          const cat = docSnap.data()?.employment?.jobCategory;
-          return cat === 'KEBERSIHAN' || cat === 'KEBERSIHAN_IC';
-        })
         .map(docSnap => ({
           id: docSnap.id,
           name: docSnap.data()?.name || '',
@@ -313,6 +313,7 @@ export default function UserManagementPage() {
       setNewRole('satker_head');
       setNewPermitted([]);
       setNewLinkedEmployeeId('');
+      setNewEmployeeSearchText('');
       setShowAddForm(false);
 
       // Refresh list
@@ -333,6 +334,14 @@ export default function UserManagementPage() {
     setEditRole(u.role);
     setEditPermitted(u.permittedCategories || []);
     setEditLinkedEmployeeId(u.linkedEmployeeId || '');
+
+    // Find the employee in cleaningEmployees
+    const matchedEmp = cleaningEmployees.find(emp => emp.id === u.linkedEmployeeId);
+    if (matchedEmp) {
+      setEditEmployeeSearchText(`${matchedEmp.name} (${matchedEmp.category})`);
+    } else {
+      setEditEmployeeSearchText('');
+    }
   };
 
   // Submit Edit changes
@@ -741,20 +750,49 @@ export default function UserManagementPage() {
                       ) : newRole === 'honorer' ? (
                         <div className="space-y-3">
                           <div className="p-4 rounded-2xl bg-teal-50/50 border border-teal-100 text-teal-800 text-xs leading-relaxed font-medium">
-                            Pilih karyawan kebersihan yang akan dihubungkan ke akun ini. Akun honorer hanya bisa mengakses halaman lapor kegiatan.
+                            Pilih karyawan Pekarya yang akan dihubungkan ke akun ini. Akun honorer hanya bisa mengakses halaman lapor kegiatan.
                           </div>
-                          <select
-                            value={newLinkedEmployeeId}
-                            onChange={(e) => setNewLinkedEmployeeId(e.target.value)}
-                            className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
-                          >
-                            <option value="">-- Pilih Karyawan --</option>
-                            {cleaningEmployees.map(emp => (
-                                <option key={emp.id} value={emp.id}>
-                                  {emp.name} ({emp.category})
-                                </option>
-                            ))}
-                          </select>
+                          <div className="relative">
+                            <Input
+                              placeholder="Cari nama karyawan Pekarya..."
+                              value={newEmployeeSearchText}
+                              onChange={(e) => {
+                                setNewEmployeeSearchText(e.target.value);
+                                if (!e.target.value) {
+                                  setNewLinkedEmployeeId('');
+                                }
+                                setShowNewEmployeeSuggestions(true);
+                              }}
+                              onFocus={() => setShowNewEmployeeSuggestions(true)}
+                              onBlur={() => {
+                                setTimeout(() => setShowNewEmployeeSuggestions(false), 200);
+                              }}
+                              className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 h-[42px]"
+                              autoComplete="off"
+                            />
+                            {showNewEmployeeSuggestions && (
+                              <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
+                                {cleaningEmployees
+                                  .filter(emp => emp.name.toLowerCase().includes(newEmployeeSearchText.toLowerCase()))
+                                  .map(emp => (
+                                    <div
+                                      key={emp.id}
+                                      onMouseDown={() => {
+                                        setNewLinkedEmployeeId(emp.id);
+                                        setNewEmployeeSearchText(`${emp.name} (${emp.category})`);
+                                        setShowNewEmployeeSuggestions(false);
+                                      }}
+                                      className="p-3 text-xs font-bold text-slate-700 hover:bg-teal-50/50 cursor-pointer transition-colors"
+                                    >
+                                      {emp.name} ({emp.category})
+                                    </div>
+                                  ))}
+                                {cleaningEmployees.filter(emp => emp.name.toLowerCase().includes(newEmployeeSearchText.toLowerCase())).length === 0 && (
+                                  <div className="p-3 text-xs italic text-slate-400 bg-slate-50">Karyawan tidak ditemukan.</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ) : newRole === 'loyalis' ? (
                         <div className="space-y-3">
@@ -1133,20 +1171,49 @@ export default function UserManagementPage() {
                 ) : editRole === 'honorer' ? (
                   <div className="space-y-3 mt-1.5">
                     <div className="p-3 rounded-xl bg-teal-50 border border-teal-100 text-teal-800 text-[11px] font-medium leading-relaxed">
-                      Pilih karyawan kebersihan yang dihubungkan ke akun ini.
+                      Pilih karyawan Pekarya yang dihubungkan ke akun ini.
                     </div>
-                    <select
-                      value={editLinkedEmployeeId}
-                      onChange={(e) => setEditLinkedEmployeeId(e.target.value)}
-                      className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
-                    >
-                      <option value="">-- Pilih Karyawan --</option>
-                      {cleaningEmployees.map(emp => (
-                        <option key={emp.id} value={emp.id}>
-                          {emp.name} ({emp.category})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <Input
+                        placeholder="Cari nama karyawan Pekarya..."
+                        value={editEmployeeSearchText}
+                        onChange={(e) => {
+                          setEditEmployeeSearchText(e.target.value);
+                          if (!e.target.value) {
+                            setEditLinkedEmployeeId('');
+                          }
+                          setShowEditEmployeeSuggestions(true);
+                        }}
+                        onFocus={() => setShowEditEmployeeSuggestions(true)}
+                        onBlur={() => {
+                          setTimeout(() => setShowEditEmployeeSuggestions(false), 200);
+                        }}
+                        className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 h-[42px]"
+                        autoComplete="off"
+                      />
+                      {showEditEmployeeSuggestions && (
+                        <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
+                          {cleaningEmployees
+                            .filter(emp => emp.name.toLowerCase().includes(editEmployeeSearchText.toLowerCase()))
+                            .map(emp => (
+                              <div
+                                key={emp.id}
+                                onMouseDown={() => {
+                                  setEditLinkedEmployeeId(emp.id);
+                                  setEditEmployeeSearchText(`${emp.name} (${emp.category})`);
+                                  setShowEditEmployeeSuggestions(false);
+                                }}
+                                className="p-3 text-xs font-bold text-slate-700 hover:bg-teal-50/50 cursor-pointer transition-colors"
+                              >
+                                {emp.name} ({emp.category})
+                              </div>
+                            ))}
+                          {cleaningEmployees.filter(emp => emp.name.toLowerCase().includes(editEmployeeSearchText.toLowerCase())).length === 0 && (
+                            <div className="p-3 text-xs italic text-slate-400 bg-slate-50">Karyawan tidak ditemukan.</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ) : editRole === 'loyalis' ? (
                   <div className="space-y-3 mt-1.5">
