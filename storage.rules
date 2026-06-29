@@ -1,0 +1,34 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper to check if user is logged in
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper to fetch user profile from Firestore
+    function getUserData() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    // Check if user is Super Admin
+    function isSuperAdmin() {
+      return isAuthenticated() && getUserData().role == 'super_admin';
+    }
+    
+    // Check if user is Employee Admin (Kepala Satker)
+    function isEmployeeAdmin() {
+      return isAuthenticated() && getUserData().role == 'employee_admin';
+    }
+
+    // Rules for vakasi reports folder
+    match /vakasi_reports/{period}/{filename} {
+      // Allow any authenticated user to view the reports (e.g. employees or admins)
+      allow read: if isAuthenticated();
+      
+      // Only allow Super Admins and Employee Admins (Kepala Satker) to upload or delete reports
+      allow write: if isSuperAdmin() || isEmployeeAdmin();
+    }
+  }
+}

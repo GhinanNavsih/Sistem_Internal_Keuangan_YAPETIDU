@@ -1080,6 +1080,10 @@ export default function UraianPage() {
       await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
       if (!activeId) {
         setSelectedEventId(documentId);
+        setCurrentEventStatus(isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'));
+        setCurrentEventSubmittedBy(finalSubmittedBy);
+        setCurrentEventSubmittedByName(finalSubmittedByName);
+        setCurrentEventSubmittedByEmail(finalSubmittedByEmail);
       }
       fetchEvents();
     } catch (err) {

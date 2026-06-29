@@ -2,5 +2,8 @@
   "apphosting": {
     "backendId": "internal-bak",
     "rootDir": "/"
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }
