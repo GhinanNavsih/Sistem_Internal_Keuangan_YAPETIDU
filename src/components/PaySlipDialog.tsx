@@ -198,7 +198,7 @@ export function buildInitialEarnings(
     }
   } else {
     const jobCategory = emp.employment?.jobCategory || '';
-    const columns = REKAP_COLUMNS[jobCategory] || [];
+    const columns = REKAP_COLUMNS[jobCategory] || REKAP_COLUMNS.KEBERSIHAN;
     const allCols = [...columns, ...(customColumns || [])];
 
     // Gaji Pokok – always known

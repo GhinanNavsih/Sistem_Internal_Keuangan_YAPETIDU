@@ -111,7 +111,7 @@ function buildInitialEarnings(
   }
 
   const jobCategory = emp.employment?.jobCategory || '';
-  const columns = REKAP_COLUMNS[jobCategory];
+  const columns = REKAP_COLUMNS[jobCategory] || REKAP_COLUMNS.KEBERSIHAN;
 
   // Gaji Pokok
   earnings.push({ label: 'Gaji Pokok', amount: gapok });
@@ -237,7 +237,7 @@ export default function LegalitasPimpinanDialog({
       let netSalary = 0;
       let gapokVal = gapok;
 
-      if (slip && slip.earnings && slip.deductions) {
+      if (slip && slip.status === 'confirmed' && slip.earnings && slip.deductions) {
         earnings = slip.earnings;
         deductions = slip.deductions;
         totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);

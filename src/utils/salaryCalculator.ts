@@ -105,7 +105,7 @@ export function calculateTotalEarnings(
 
   let total = gapok;
   const jobCategory = emp.employment?.jobCategory || '';
-  const columns = REKAP_COLUMNS[jobCategory];
+  const columns = REKAP_COLUMNS[jobCategory] || REKAP_COLUMNS.KEBERSIHAN;
 
   if (columns && uraian) {
     const processedKeys = new Set<string>();
