@@ -1932,28 +1932,30 @@ export default function PayrollValidationDashboard() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mt-4">
             {/* Card 1: Cetak Legalitas Pimpinan */}
-            <button
-              onClick={() => {
-                setPrintSelectorOpen(false);
-                setLegalitasDialogOpen(true);
-              }}
-              className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
-            >
-              <div className="flex-shrink-0 p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
-                <Award className="w-5 h-5" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-indigo-900 transition-colors">
-                  Legalitas Pimpinan
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  Cetak slip validasi pimpinan untuk pengesahan resmi.
-                </p>
-              </div>
-              <div className="flex-shrink-0 self-center pl-2">
-                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all duration-200" />
-              </div>
-            </button>
+            {payrollCollar !== 'loyalis' && (
+              <button
+                onClick={() => {
+                  setPrintSelectorOpen(false);
+                  setLegalitasDialogOpen(true);
+                }}
+                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-indigo-50/30 hover:border-indigo-100 transition-all duration-200 text-left outline-none cursor-pointer"
+              >
+                <div className="flex-shrink-0 p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100/70 transition-colors">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-indigo-900 transition-colors">
+                    Legalitas Pimpinan
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    Cetak slip validasi pimpinan untuk pengesahan resmi.
+                  </p>
+                </div>
+                <div className="flex-shrink-0 self-center pl-2">
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all duration-200" />
+                </div>
+              </button>
+            )}
 
             {/* Card 2: Cetak Rekap Gaji */}
             <button

@@ -95,15 +95,31 @@ export async function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData):
     emp.deductions.forEach(d => deductionLabelsSet.add(d.label));
   });
 
-  const earningLabels = Array.from(earningLabelsSet);
-  const deductionLabels = Array.from(deductionLabelsSet);
+  // Filter out columns where all employees have 0 or NaN values
+  const earningLabels = Array.from(earningLabelsSet).filter(label => {
+    return data.employees.some(emp => {
+      const field = emp.earnings.find(e => e.label === label);
+      return field && typeof field.amount === 'number' && !isNaN(field.amount) && field.amount !== 0;
+    });
+  });
+
+  const deductionLabels = Array.from(deductionLabelsSet).filter(label => {
+    return data.employees.some(emp => {
+      const field = emp.deductions.find(d => d.label === label);
+      return field && typeof field.amount === 'number' && !isNaN(field.amount) && field.amount !== 0;
+    });
+  });
+
+  const showGapok = data.employees.some(emp => typeof emp.gapok === 'number' && !isNaN(emp.gapok) && emp.gapok !== 0);
 
   // Body data
   const body = data.employees.map(emp => {
     const row: any[] = [];
     row.push(emp.employeeNo.toString());
     row.push(emp.name);
-    row.push(formatIDR(emp.gapok));
+    if (showGapok) {
+      row.push(formatIDR(emp.gapok));
+    }
 
     // Earnings
     earningLabels.forEach(label => {
@@ -134,7 +150,9 @@ export async function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData):
   const totalRow: any[] = [];
   totalRow.push(''); // NO
   totalRow.push('TOTAL'); // NAMA
-  totalRow.push(''); // GAPOK
+  if (showGapok) {
+    totalRow.push(''); // GAPOK
+  }
 
   earningLabels.forEach(() => {
     totalRow.push('');
@@ -149,22 +167,34 @@ export async function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData):
 
   body.push(totalRow);
 
-  const head = [
-    [
-      { content: 'NO', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'NAMA', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'GAPOK', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'VAKASI', colSpan: earningLabels.length, styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'JUMLAH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'POTONGAN', colSpan: deductionLabels.length, styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'JUMLAH POTONGAN', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
-      { content: 'GAJI BERSIH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } }
-    ],
-    [
-      ...earningLabels.map(l => ({ content: l.toUpperCase(), styles: { halign: 'center' as const, valign: 'middle' as const } })),
-      ...deductionLabels.map(l => ({ content: l.toUpperCase(), styles: { halign: 'center' as const, valign: 'middle' as const } }))
-    ]
+  const firstHeaderRow: any[] = [
+    { content: 'NO', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
+    { content: 'NAMA', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } }
   ];
+  if (showGapok) {
+    firstHeaderRow.push({ content: 'GAPOK', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } });
+  }
+  if (earningLabels.length > 0) {
+    firstHeaderRow.push({ content: 'VAKASI', colSpan: earningLabels.length, styles: { halign: 'center' as const, valign: 'middle' as const } });
+  }
+  firstHeaderRow.push({ content: 'JUMLAH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } });
+  if (deductionLabels.length > 0) {
+    firstHeaderRow.push({ content: 'POTONGAN', colSpan: deductionLabels.length, styles: { halign: 'center' as const, valign: 'middle' as const } });
+  }
+  firstHeaderRow.push(
+    { content: 'JUMLAH POTONGAN', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
+    { content: 'GAJI BERSIH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } }
+  );
+
+  const secondHeaderRow: any[] = [
+    ...earningLabels.map(l => ({ content: l.toUpperCase(), styles: { halign: 'center' as const, valign: 'middle' as const } })),
+    ...deductionLabels.map(l => ({ content: l.toUpperCase(), styles: { halign: 'center' as const, valign: 'middle' as const } }))
+  ];
+
+  const hasSubHeaders = earningLabels.length > 0 || deductionLabels.length > 0;
+  const head = hasSubHeaders
+    ? [firstHeaderRow, secondHeaderRow]
+    : [firstHeaderRow.map(item => ({ ...item, rowSpan: 1, colSpan: 1 }))];
 
   autoTable(doc, {
     startY: y,
@@ -195,7 +225,6 @@ export async function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData):
     columnStyles: {
       0: { halign: 'center' }, // NO
       1: { halign: 'left' },   // NAMA
-      2: { halign: 'center' }, // GAPOK
     },
     didParseCell: (data) => {
       // Body columns alignment
@@ -208,9 +237,10 @@ export async function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData):
         if (isLastRow) {
           data.cell.styles.fontStyle = 'bold';
         } else {
-          const isJumlah = data.column.index === 3 + earningLabels.length;
-          const isJumlahPotongan = data.column.index === 3 + earningLabels.length + 1 + deductionLabels.length;
-          const isGajiBersih = data.column.index === 3 + earningLabels.length + 1 + deductionLabels.length + 1;
+          const baseIndex = showGapok ? 3 : 2;
+          const isJumlah = data.column.index === baseIndex + earningLabels.length;
+          const isJumlahPotongan = data.column.index === baseIndex + earningLabels.length + 1 + deductionLabels.length;
+          const isGajiBersih = data.column.index === baseIndex + earningLabels.length + 1 + deductionLabels.length + 1;
           if (isJumlah || isJumlahPotongan || isGajiBersih) {
             data.cell.styles.fontStyle = 'bold';
           }

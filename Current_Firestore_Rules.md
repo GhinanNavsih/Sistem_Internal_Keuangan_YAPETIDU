@@ -159,6 +159,12 @@ service cloud.firestore {
       allow read, write: if isSuperAdmin() || hasProfile();
     }
 
+    // 5f. Pelaporan Kegiatan (Activity Reports for Loyalis)
+    match /PelaporanKegiatan/{docId} {
+      // Authenticated users with a registered profile (Super Admin and SatKer Loyalis) can read and write
+      allow read, write: if isSuperAdmin() || hasProfile();
+    }
+
     // 6. EmpEditLog (Employee Edit / Change Audit Logs)
     match /EmpEditLog/{docId} {
       // Only Super Admins can view change logs

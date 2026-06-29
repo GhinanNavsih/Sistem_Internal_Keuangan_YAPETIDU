@@ -50,6 +50,7 @@ import {
   type KebersihanyEmployee,
 } from '@/utils/generateRekapPresensiKebersihan';
 import CetakKegiatanLoyalisDialog from '@/components/CetakKegiatanLoyalisDialog';
+import { generatePelaporanKegiatanPdf } from '@/utils/generatePelaporanKegiatanPdf';
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 
@@ -98,13 +99,13 @@ export default function UraianPage() {
   }, [allowedCategories, category]);
 
   // ── Tab State ──
-  const [activeTab, setActiveTab] = useState<'presensi' | 'vakasi_loyalis' | 'kegiatan_spj' | 'presensi_loyalis'>('vakasi_loyalis');
+  const [activeTab, setActiveTab] = useState<'presensi' | 'vakasi_loyalis' | 'kegiatan_spj' | 'presensi_loyalis' | 'pelaporan_kegiatan'>('vakasi_loyalis');
 
   useEffect(() => {
     if (profile) {
-      if (profile.role === 'satker_head_loyalis' && activeTab !== 'vakasi_loyalis') {
+      if (profile.role === 'satker_head_loyalis' && activeTab !== 'vakasi_loyalis' && activeTab !== 'pelaporan_kegiatan') {
         setActiveTab('vakasi_loyalis');
-      } else if (profile.role !== 'super_admin' && profile.role !== 'satker_head_loyalis' && (activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis')) {
+      } else if (profile.role !== 'super_admin' && profile.role !== 'satker_head_loyalis' && (activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' || activeTab === 'pelaporan_kegiatan')) {
         setActiveTab('presensi');
       }
     }
@@ -197,6 +198,184 @@ export default function UraianPage() {
     isInvalid?: boolean;
   }[]>([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
   const [mobileSpjView, setMobileSpjView] = useState<'list' | 'form'>('list');
+
+  // ── Pelaporan Kegiatan States ──
+  const [pelaporanList, setPelaporanList] = useState<any[]>([]);
+  const [loadingPelaporan, setLoadingPelaporan] = useState(false);
+  const [selectedPelaporanId, setSelectedPelaporanId] = useState<string | null>(null);
+  const [pelaporanTitle, setPelaporanTitle] = useState('');
+  const [pelaporanDept, setPelaporanDept] = useState('');
+  const [pelaporanRows, setPelaporanRows] = useState<{
+    employeeId: string;
+    employeeName: string;
+    role: string;
+    activityDone: string;
+    payGiven: number;
+    showDropdown?: boolean;
+    searchText?: string;
+  }[]>([{ employeeId: '', employeeName: '', role: '', activityDone: '', payGiven: 0, searchText: '', showDropdown: false }]);
+  const [pelaporanSignatures, setPelaporanSignatures] = useState<{
+    label: string;
+    name: string;
+    title: string;
+  }[]>([
+    { label: 'Dibuat oleh:', name: '', title: '' },
+    { label: 'Mengetahui:', name: '', title: '' },
+    { label: 'Menyetujui:', name: '', title: '' },
+  ]);
+  const [savingPelaporan, setSavingPelaporan] = useState(false);
+  const [activePelaporanSuggestionIndex, setActivePelaporanSuggestionIndex] = useState<number>(0);
+  const [mobilePelaporanView, setMobilePelaporanView] = useState<'list' | 'form'>('list');
+
+  // ── Live Sync Pelaporan Kegiatan ──
+  useEffect(() => {
+    if (!profile) return;
+    setLoadingPelaporan(true);
+    const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+    const q = query(
+      collection(db, 'PelaporanKegiatan'),
+      where('period', '==', periodToken)
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
+      let list = snap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      })) as any[];
+
+      // Scope: if user is satker_head_loyalis, only show reports created by them
+      if (profile.role === 'satker_head_loyalis') {
+        list = list.filter(evt => evt.submittedBy === profile.uid);
+      }
+
+      // Sort by updatedAt descending
+      list.sort((a, b) => {
+        const getMs = (val: any) => {
+          if (!val) return Date.now();
+          if (typeof val.toMillis === 'function') return val.toMillis();
+          if (val.seconds) return val.seconds * 1000;
+          return 0;
+        };
+        return getMs(b.updatedAt) - getMs(a.updatedAt);
+      });
+
+      setPelaporanList(list);
+      setLoadingPelaporan(false);
+    }, (err) => {
+      console.error('Error listening to PelaporanKegiatan:', err);
+      setLoadingPelaporan(false);
+    });
+
+    return () => unsubscribe();
+  }, [month, year, profile]);
+
+  // Helper to save Pelaporan Kegiatan
+  const handleSavePelaporan = async () => {
+    if (savingPelaporan) return;
+    if (!pelaporanTitle.trim()) {
+      setMessage({ type: 'error', text: 'Judul Laporan harus diisi.' });
+      return;
+    }
+    if (!pelaporanDept) {
+      setMessage({ type: 'error', text: 'Unit Kerja harus dipilih.' });
+      return;
+    }
+    const cleanRows = pelaporanRows.filter(r => r.employeeId);
+    if (cleanRows.length === 0) {
+      setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai dalam tabel.' });
+      return;
+    }
+
+    // Check for duplicates
+    const ids = cleanRows.map(r => r.employeeId);
+    if (new Set(ids).size !== ids.length) {
+      setMessage({ type: 'error', text: 'Ada duplikasi pegawai dalam tabel.' });
+      return;
+    }
+
+    setSavingPelaporan(true);
+    try {
+      const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+      const docId = selectedPelaporanId || `${periodToken}_${pelaporanDept}_${Math.random().toString(36).substring(2, 8)}`;
+      
+      const payload = {
+        title: pelaporanTitle,
+        period: periodToken,
+        departmentUnit: pelaporanDept,
+        rows: cleanRows.map(r => ({
+          employeeId: r.employeeId,
+          employeeName: r.employeeName,
+          role: r.role,
+          activityDone: r.activityDone,
+          payGiven: r.payGiven
+        })),
+        signatures: pelaporanSignatures,
+        submittedBy: profile?.uid || null,
+        submittedByName: profile?.displayName || null,
+        updatedAt: serverTimestamp(),
+        createdAt: selectedPelaporanId ? undefined : serverTimestamp(),
+      };
+
+      // Filter out undefined fields
+      const cleanedPayload = JSON.parse(JSON.stringify(payload));
+      cleanedPayload.updatedAt = serverTimestamp();
+      if (!selectedPelaporanId) {
+        cleanedPayload.createdAt = serverTimestamp();
+      }
+
+      await setDoc(doc(db, 'PelaporanKegiatan', docId), cleanedPayload, { merge: true });
+      setSelectedPelaporanId(docId);
+      setMessage({ type: 'success', text: 'Laporan Kegiatan berhasil disimpan.' });
+    } catch (err) {
+      console.error('Error saving PelaporanKegiatan:', err);
+      setMessage({ type: 'error', text: 'Gagal menyimpan Laporan Kegiatan.' });
+    } finally {
+      setSavingPelaporan(false);
+    }
+  };
+
+  // Helper to delete Pelaporan Kegiatan
+  const handleDeletePelaporan = async (id: string) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus laporan ini?')) return;
+    try {
+      await deleteDoc(doc(db, 'PelaporanKegiatan', id));
+      if (selectedPelaporanId === id) {
+        setSelectedPelaporanId(null);
+        setPelaporanTitle('');
+        setPelaporanDept('');
+        setPelaporanRows([{ employeeId: '', employeeName: '', role: '', activityDone: '', payGiven: 0, searchText: '', showDropdown: false }]);
+        setPelaporanSignatures([
+          { label: 'Dibuat oleh:', name: '', title: '' },
+          { label: 'Mengetahui:', name: '', title: '' },
+          { label: 'Menyetujui:', name: '', title: '' },
+        ]);
+      }
+      setMessage({ type: 'success', text: 'Laporan Kegiatan berhasil dihapus.' });
+    } catch (err) {
+      console.error('Error deleting PelaporanKegiatan:', err);
+      setMessage({ type: 'error', text: 'Gagal menghapus Laporan Kegiatan.' });
+    }
+  };
+
+  // Helper to print Pelaporan Kegiatan PDF
+  const handlePrintPelaporan = (title: string, dept: string, rows: any[], sigs: any[]) => {
+    const periodToken = `${MONTHS_ID[month - 1]} ${year}`;
+    const formattedRows = rows.map(r => ({
+      employeeId: r.employeeId,
+      employeeName: r.employeeName,
+      role: r.role,
+      activityDone: r.activityDone,
+      payGiven: Number(r.payGiven) || 0
+    }));
+
+    generatePelaporanKegiatanPdf({
+      title,
+      period: periodToken,
+      departmentUnit: dept,
+      rows: formattedRows,
+      signatures: sigs
+    });
+  };
 
   // ─── Approval Workflow States ──────────────────────────────────────────────
   // File upload for SatKer Loyalis scanned report
@@ -2207,7 +2386,9 @@ export default function UraianPage() {
                   ? 'Vakasi Tambahan (Loyalis)'
                   : activeTab === 'presensi_loyalis'
                     ? 'Kalkulator Presensi Loyalis'
-                    : 'Kegiatan SPJ (Pekarya)'}
+                    : activeTab === 'pelaporan_kegiatan'
+                      ? 'Pelaporan Kegiatan'
+                      : 'Kegiatan SPJ (Pekarya)'}
             </h1>
             <p className="text-slate-500 text-sm">
               {activeTab === 'presensi'
@@ -2216,7 +2397,9 @@ export default function UraianPage() {
                   ? 'Kelola pembayaran kegiatan variabel loyalis bulanan'
                   : activeTab === 'presensi_loyalis'
                     ? 'Hitung strata dan bonus presensi loyalis'
-                    : 'Kelola pembayaran kegiatan variabel pekarya bulanan'}
+                    : activeTab === 'pelaporan_kegiatan'
+                      ? 'Buat dan cetak laporan pertanggungjawaban kegiatan loyalis'
+                      : 'Kelola pembayaran kegiatan variabel pekarya bulanan'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -2277,20 +2460,22 @@ export default function UraianPage() {
           </div>
         </div>
 
-        {/* Premium Tab Switcher - Only shown for Super Admin */}
-        {profile?.role === 'super_admin' && (
+        {/* Premium Tab Switcher - Only shown for Super Admin & Satker Head Loyalis */}
+        {(profile?.role === 'super_admin' || profile?.role === 'satker_head_loyalis') && (
           <div className="flex flex-wrap items-center justify-between gap-4 w-full">
             <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
-              <button
-                onClick={() => setActiveTab('presensi')}
-                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'presensi'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                  }`}
-              >
-                <ScanLine className="w-4.5 h-4.5" />
-                Rekap Uraian  (Pekarya)
-              </button>
+              {profile?.role === 'super_admin' && (
+                <button
+                  onClick={() => setActiveTab('presensi')}
+                  className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'presensi'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                    }`}
+                >
+                  <ScanLine className="w-4.5 h-4.5" />
+                  Rekap Uraian (Pekarya)
+                </button>
+              )}
               <button
                 onClick={() => setActiveTab('vakasi_loyalis')}
                 className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'vakasi_loyalis'
@@ -2302,15 +2487,27 @@ export default function UraianPage() {
                 Vakasi Tambahan (Loyalis)
               </button>
               <button
-                onClick={() => setActiveTab('presensi_loyalis')}
-                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'presensi_loyalis'
+                onClick={() => setActiveTab('pelaporan_kegiatan')}
+                className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'pelaporan_kegiatan'
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                   }`}
               >
-                <FileSpreadsheet className="w-4.5 h-4.5" />
-                Presensi
+                <ClipboardCheck className="w-4.5 h-4.5" />
+                Pelaporan Kegiatan
               </button>
+              {profile?.role === 'super_admin' && (
+                <button
+                  onClick={() => setActiveTab('presensi_loyalis')}
+                  className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeTab === 'presensi_loyalis'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                    }`}
+                >
+                  <FileSpreadsheet className="w-4.5 h-4.5" />
+                  Presensi
+                </button>
+              )}
             </div>
 
             {activeTab === 'vakasi_loyalis' && (
@@ -3781,6 +3978,472 @@ export default function UraianPage() {
                 </Card>
               )
             )}
+          </div>
+        ) : activeTab === 'pelaporan_kegiatan' ? (
+          /* Tab: Pelaporan Kegiatan UI */
+          <div className="flex flex-col gap-8">
+            {/* Top Section: Daftar Laporan Kegiatan */}
+            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="font-bold text-slate-800 text-sm">Daftar Laporan Kegiatan</h3>
+                  <p className="text-slate-400 text-xs mt-0.5">Pilih laporan di bawah untuk mengedit, mencetak, atau menghapus.</p>
+                </div>
+              </div>
+
+              {loadingPelaporan ? (
+                <div className="py-12 flex justify-center text-slate-400">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {/* Dashed "Buat Baru" Card */}
+                  <div
+                    onClick={() => {
+                      setSelectedPelaporanId(null);
+                      setPelaporanTitle('');
+                      setPelaporanDept('');
+                      setPelaporanRows([{ employeeId: '', employeeName: '', role: '', activityDone: '', payGiven: 0, searchText: '', showDropdown: false }]);
+                      setPelaporanSignatures([
+                        { label: 'Dibuat oleh:', name: '', title: '' },
+                        { label: 'Mengetahui:', name: '', title: '' },
+                        { label: 'Menyetujui:', name: '', title: '' },
+                      ]);
+                    }}
+                    className="p-4 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/10 transition-all cursor-pointer flex flex-col items-center justify-center min-h-[110px] gap-2 text-center group"
+                  >
+                    <Plus className="w-5 h-5 text-slate-450 group-hover:text-indigo-500 group-hover:scale-110 transition-all" />
+                    <span className="text-xs font-bold text-slate-650 group-hover:text-indigo-605">Buat Laporan Baru</span>
+                  </div>
+
+                  {/* Empty / Draft Report Card (only if it is new and unsaved) */}
+                  {!selectedPelaporanId && (
+                    <div className="p-4 rounded-2xl border bg-indigo-50/30 border-indigo-200 shadow-sm flex flex-col justify-between min-h-[110px] scale-[1.02]">
+                      <div>
+                        <p className="font-bold text-indigo-600 text-sm line-clamp-1 italic">
+                          {pelaporanTitle.trim() !== '' ? pelaporanTitle : 'Laporan Baru (Tanpa Judul)'}
+                        </p>
+                        <p className="text-[10px] text-indigo-450 font-bold mt-1 uppercase tracking-wider">{pelaporanDept || 'Belum Pilih Unit'}</p>
+                      </div>
+                      <div className="flex items-center justify-between mt-3">
+                        <span className="text-[10px] text-indigo-450 font-bold bg-indigo-50/50 px-2 py-0.5 rounded border border-indigo-100">
+                          {pelaporanRows.filter(r => r.employeeId).length} Orang
+                        </span>
+                        <span className="text-xs font-bold text-indigo-600">
+                          {fmtRp(pelaporanRows.reduce((sum, r) => sum + (r.payGiven || 0), 0))}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {pelaporanList.map(rpt => {
+                    const isActive = selectedPelaporanId === rpt.id;
+                    return (
+                      <div
+                        key={rpt.id}
+                        onClick={() => {
+                          setSelectedPelaporanId(rpt.id);
+                          setPelaporanTitle(rpt.title);
+                          setPelaporanDept(rpt.departmentUnit || '');
+                          setPelaporanRows(rpt.rows.map((r: any) => ({
+                            ...r,
+                            searchText: r.employeeName,
+                            showDropdown: false
+                          })));
+                          setPelaporanSignatures(rpt.signatures || [
+                            { label: 'Dibuat oleh:', name: '', title: '' },
+                            { label: 'Mengetahui:', name: '', title: '' },
+                            { label: 'Menyetujui:', name: '', title: '' },
+                          ]);
+                        }}
+                        className={`p-4 rounded-2xl border transition-all cursor-pointer outline-none focus:outline-none flex flex-col justify-between min-h-[110px] ${isActive
+                          ? 'bg-indigo-50/50 border-indigo-300 shadow-md ring-1 ring-indigo-300/25 scale-[1.02]'
+                          : 'bg-white border-slate-100 hover:border-indigo-150 hover:shadow-sm'
+                          }`}
+                      >
+                        <div>
+                          <p className="font-bold text-slate-800 text-sm line-clamp-1">{rpt.title}</p>
+                          <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">{rpt.departmentUnit}</p>
+                        </div>
+                        <div className="flex items-center justify-between mt-3">
+                          <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                            {rpt.rows.length} Orang
+                          </span>
+                          <span className="text-xs font-bold text-indigo-650">
+                            {fmtRp(rpt.rows.reduce((sum: number, r: any) => sum + (r.payGiven || 0), 0))}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+
+            {/* Bottom Section: Editor Form */}
+            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-visible p-4 md:p-6 space-y-4 md:space-y-6 animate-in fade-in duration-500">
+              <div className="flex justify-between items-center border-b border-slate-50 pb-4">
+                <div>
+                  <h3 className="font-bold text-slate-800 text-xs md:text-sm flex items-center gap-2">
+                    <ClipboardCheck className="w-4 h-4 text-indigo-500" />
+                    {selectedPelaporanId ? 'Ubah Laporan Kegiatan' : 'Buat Laporan Kegiatan Baru'}
+                  </h3>
+                  <p className="text-slate-400 text-[10px] md:text-xs mt-0.5">Buat laporan pertanggungjawaban kegiatan loyalis dengan tabel pay dan tanda tangan.</p>
+                </div>
+              </div>
+
+              {/* Static Letterhead Preview */}
+              <div className="border border-slate-200/80 rounded-2xl p-4 bg-slate-50/40 relative overflow-hidden flex items-center gap-4">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50/30 rounded-full blur-2xl pointer-events-none" />
+                <img src="/Logo UNIPDU.png" alt="UNIPDU" className="w-12 h-12 shrink-0 object-contain" />
+                <div className="space-y-0.5">
+                  <h4 className="text-xs font-black text-slate-800 tracking-wide uppercase">UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM</h4>
+                  <p className="text-[10px] text-slate-500 font-medium">Pusat Pengisian Gaji & Administrasi Keuangan Kepegawaian</p>
+                  <p className="text-[9px] text-slate-400 font-mono">Static UNIPDU Letterhead Logo & Layout</p>
+                </div>
+              </div>
+
+              {/* Title Input */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Judul Laporan (Title)</label>
+                <Input
+                  type="text"
+                  placeholder="E.g., LAPORAN RINCIAN KEGIATAN KEPANITIAAN YAYASAN..."
+                  value={pelaporanTitle}
+                  onChange={(e) => setPelaporanTitle(e.target.value)}
+                  className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-11 w-full uppercase"
+                />
+              </div>
+
+              {/* Department Selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Unit Kerja (Department)</label>
+                <Select
+                  value={pelaporanDept}
+                  onValueChange={(val) => setPelaporanDept(val || '')}
+                >
+                  <SelectTrigger className={`rounded-xl text-sm font-bold h-11 border focus:ring-4 focus:ring-indigo-100 ${pelaporanDept ? 'bg-indigo-50/60 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-400'}`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Building2 className="w-4 h-4 shrink-0" />
+                      <SelectValue placeholder="Pilih Unit Kerja..." />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent className="rounded-2xl border border-slate-100 shadow-2xl bg-white p-1.5 max-h-64 overflow-y-auto w-max min-w-[var(--radix-select-trigger-width)]">
+                    {departments.map(dept => (
+                      <SelectItem
+                        key={dept}
+                        value={dept}
+                        className="rounded-xl text-xs font-bold uppercase text-slate-700 data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700 cursor-pointer"
+                      >
+                        {dept}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Dynamic Table of Employees */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tabel Alokasi Vakasi Kegiatan</span>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setPelaporanRows(prev => [...prev, { employeeId: '', employeeName: '', role: '', activityDone: '', payGiven: 0, searchText: '', showDropdown: false }]);
+                    }}
+                    size="sm"
+                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Tambah Baris
+                  </Button>
+                </div>
+
+                <div className="border border-slate-150 rounded-2xl shadow-sm overflow-visible bg-white">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-10 text-center">NO</th>
+                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-[180px]">NAMA PEGAWAI</th>
+                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-[140px]">JABATAN</th>
+                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase">URAIAN KEGIATAN</th>
+                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-[150px]">VAKASI (RP)</th>
+                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">AKSI</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pelaporanRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="text-center py-12 text-slate-400 text-xs font-semibold">
+                            Belum ada pegawai ditambahkan. Klik tombol di atas untuk menambahkan.
+                          </td>
+                        </tr>
+                      ) : (
+                        pelaporanRows.map((row, idx) => {
+                          const handleEmpSearch = (text: string) => {
+                            setPelaporanRows(prev => {
+                              const copy = [...prev];
+                              copy[idx] = { ...copy[idx], searchText: text, showDropdown: true };
+                              return copy;
+                            });
+                            setActivePelaporanSuggestionIndex(0);
+                          };
+
+                          const selectEmp = (emp: any) => {
+                            setPelaporanRows(prev => {
+                              const copy = [...prev];
+                              copy[idx] = {
+                                ...copy[idx],
+                                employeeId: emp.id,
+                                employeeName: emp.name,
+                                role: emp.role || 'Pegawai',
+                                searchText: emp.name,
+                                showDropdown: false,
+                              };
+                              return copy;
+                            });
+                          };
+
+                          return (
+                            <tr key={idx} className={`border-b border-slate-50 hover:bg-slate-50/30 transition-colors ${row.showDropdown ? 'relative z-50' : 'relative z-0'}`}>
+                              <td className="px-3 py-3 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
+                              <td className="px-3 py-3 relative">
+                                <div className="relative">
+                                  <Input
+                                    type="text"
+                                    placeholder="Cari nama..."
+                                    value={row.searchText || ''}
+                                    onChange={(e) => handleEmpSearch(e.target.value)}
+                                    onFocus={() => {
+                                      setPelaporanRows(prev => {
+                                        const copy = [...prev];
+                                        copy[idx] = { ...copy[idx], showDropdown: true };
+                                        return copy;
+                                      });
+                                      setActivePelaporanSuggestionIndex(0);
+                                    }}
+                                    onBlur={() => {
+                                      setTimeout(() => {
+                                        setPelaporanRows(prev => {
+                                          const copy = [...prev];
+                                          if (copy[idx]) copy[idx] = { ...copy[idx], showDropdown: false };
+                                          return copy;
+                                        });
+                                      }, 200);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      const otherSelectedIds = pelaporanRows
+                                        .filter((_, i) => i !== idx)
+                                        .map(w => w.employeeId)
+                                        .filter(Boolean);
+                                      const filtered = loyalisEmployees
+                                        .filter(emp => !otherSelectedIds.includes(emp.id))
+                                        .filter(emp => emp.name.toLowerCase().includes((row.searchText || '').toLowerCase()));
+                                      
+                                      if (row.showDropdown && filtered.length > 0) {
+                                        if (e.key === 'ArrowDown') {
+                                          e.preventDefault();
+                                          setActivePelaporanSuggestionIndex(prev => (prev + 1) % filtered.length);
+                                        } else if (e.key === 'ArrowUp') {
+                                          e.preventDefault();
+                                          setActivePelaporanSuggestionIndex(prev => (prev - 1 + filtered.length) % filtered.length);
+                                        } else if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          const selectedEmp = filtered[activePelaporanSuggestionIndex];
+                                          if (selectedEmp) selectEmp(selectedEmp);
+                                        }
+                                      }
+                                    }}
+                                    className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-9 w-full"
+                                  />
+                                  {row.showDropdown && (
+                                    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
+                                      {(() => {
+                                        const otherSelectedIds = pelaporanRows
+                                          .filter((_, i) => i !== idx)
+                                          .map(w => w.employeeId)
+                                          .filter(Boolean);
+                                        const filtered = loyalisEmployees
+                                          .filter(emp => !otherSelectedIds.includes(emp.id))
+                                          .filter(emp => emp.name.toLowerCase().includes((row.searchText || '').toLowerCase()));
+
+                                        if (filtered.length === 0) {
+                                          return <div className="p-4 text-center text-slate-400 text-xs font-semibold">Pegawai tidak ditemukan</div>;
+                                        }
+
+                                        return filtered.map((emp, empIdx) => {
+                                          const isAct = empIdx === activePelaporanSuggestionIndex;
+                                          return (
+                                            <div
+                                              key={emp.id}
+                                              onClick={() => selectEmp(emp)}
+                                              className={`px-3 py-2 text-xs font-semibold cursor-pointer transition-colors text-left ${isAct ? 'bg-indigo-50 text-indigo-600 font-bold' : 'hover:bg-indigo-50 hover:text-indigo-600 text-slate-700'}`}
+                                            >
+                                              <p className={isAct ? 'text-indigo-700' : 'text-slate-800'}>{emp.name}</p>
+                                              <p className="text-[9px] text-slate-400 mt-0.5">{emp.role} · {emp.id}</p>
+                                            </div>
+                                          );
+                                        });
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3 py-3">
+                                <Input
+                                  type="text"
+                                  placeholder="Jabatan"
+                                  value={row.role || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setPelaporanRows(prev => {
+                                      const copy = [...prev];
+                                      copy[idx] = { ...copy[idx], role: val };
+                                      return copy;
+                                    });
+                                  }}
+                                  className="rounded-xl border-slate-200 font-semibold text-slate-700 text-xs h-9 w-full"
+                                />
+                              </td>
+                              <td className="px-3 py-3">
+                                <Input
+                                  type="text"
+                                  placeholder="Tulis tugas/uraian..."
+                                  value={row.activityDone || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setPelaporanRows(prev => {
+                                      const copy = [...prev];
+                                      copy[idx] = { ...copy[idx], activityDone: val };
+                                      return copy;
+                                    });
+                                  }}
+                                  className="rounded-xl border-slate-200 font-medium text-slate-700 text-xs h-9 w-full"
+                                />
+                              </td>
+                              <td className="px-3 py-3">
+                                <Input
+                                  type="text"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  placeholder="0"
+                                  value={row.payGiven > 0 ? fmtRp(row.payGiven) : ''}
+                                  onChange={(e) => {
+                                    const rawVal = e.target.value.replace(/\D/g, '');
+                                    const val = parseInt(rawVal, 10) || 0;
+                                    setPelaporanRows(prev => {
+                                      const copy = [...prev];
+                                      copy[idx] = { ...copy[idx], payGiven: val };
+                                      return copy;
+                                    });
+                                  }}
+                                  className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-9 w-full text-right"
+                                />
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => {
+                                    setPelaporanRows(prev => prev.filter((_, i) => i !== idx));
+                                  }}
+                                  className="h-8 w-8 text-rose-500 hover:text-rose-655 hover:bg-rose-50 rounded-lg cursor-pointer"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Signatures Setup Section */}
+              <div className="space-y-4 pt-2 border-t border-slate-100">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Konfigurasi Tanda Tangan (Maks 3)</span>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {pelaporanSignatures.map((sig, sIdx) => {
+                    const updateSig = (field: 'label' | 'name' | 'title', val: string) => {
+                      setPelaporanSignatures(prev => {
+                        const copy = [...prev];
+                        copy[sIdx] = { ...copy[sIdx], [field]: val };
+                        return copy;
+                      });
+                    };
+
+                    return (
+                      <div key={sIdx} className="p-4 rounded-2xl border border-slate-150 bg-slate-50/30 space-y-3">
+                        <span className="text-[10px] font-bold text-indigo-500 uppercase">Posisi {sIdx + 1}</span>
+                        <div className="space-y-2">
+                          <Input
+                            type="text"
+                            placeholder="Label (e.g., Mengetahui,)"
+                            value={sig.label}
+                            onChange={(e) => updateSig('label', e.target.value)}
+                            className="rounded-lg border-slate-200 text-xs h-8 font-semibold"
+                          />
+                          <Input
+                            type="text"
+                            placeholder="Nama Lengkap"
+                            value={sig.name}
+                            onChange={(e) => updateSig('name', e.target.value)}
+                            className="rounded-lg border-slate-200 text-xs h-8 font-bold"
+                          />
+                          <Input
+                            type="text"
+                            placeholder="Jabatan/Titel"
+                            value={sig.title}
+                            onChange={(e) => updateSig('title', e.target.value)}
+                            className="rounded-lg border-slate-200 text-xs h-8 font-medium text-slate-500"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap justify-between gap-3 pt-6 border-t border-slate-100 mt-auto">
+                <div>
+                  {selectedPelaporanId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleDeletePelaporan(selectedPelaporanId)}
+                      className="rounded-xl border-rose-200 text-rose-650 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Hapus Laporan
+                    </Button>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    onClick={handleSavePelaporan}
+                    disabled={savingPelaporan}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
+                  >
+                    {savingPelaporan ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Simpan Laporan
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => handlePrintPelaporan(pelaporanTitle, pelaporanDept, pelaporanRows, pelaporanSignatures)}
+                    disabled={!pelaporanTitle || !pelaporanDept || pelaporanRows.filter(r => r.employeeId).length === 0}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Cetak PDF
+                  </Button>
+                </div>
+              </div>
+            </Card>
           </div>
         ) : (
           /* Tab 3: Kegiatan SPJ UI */
