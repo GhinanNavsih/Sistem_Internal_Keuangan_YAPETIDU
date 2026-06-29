@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
+import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
@@ -1643,6 +1644,7 @@ export default function TreasuryDashboard() {
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
       <div className="max-w-[1400px] mx-auto space-y-8 relative z-10">
+        <GlobalHeader />
 
         {/* Section 1: Header & Period Selector */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white/40 backdrop-blur-md p-6 rounded-3xl border border-slate-200/50 shadow-sm">

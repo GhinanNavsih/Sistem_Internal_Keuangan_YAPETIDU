@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import GlobalHeader from '@/components/GlobalHeader';
 import { useRouter } from 'next/navigation';
 import {
   Card,
@@ -27,6 +28,7 @@ import {
   FileText, AlertCircle, ImageIcon, Trash2, Eye, RotateCw, Sparkles, X,
   Crop, Building2, Code2, Database, ShieldCheck, Hash, Banknote, LogOut,
   FileDown, Plus, Calendar, ClipboardCheck, FileSpreadsheet, Send, Clock, XCircle, RotateCcw, Save, Users,
+  ChevronDown, ChevronRight, ToggleLeft, ToggleRight, Receipt, Layers,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -203,29 +205,70 @@ export default function UraianPage() {
   const [pelaporanList, setPelaporanList] = useState<any[]>([]);
   const [loadingPelaporan, setLoadingPelaporan] = useState(false);
   const [selectedPelaporanId, setSelectedPelaporanId] = useState<string | null>(null);
-  const [pelaporanTitle, setPelaporanTitle] = useState('');
+  const [pelaporanReportName, setPelaporanReportName] = useState('');
   const [pelaporanDept, setPelaporanDept] = useState('');
-  const [pelaporanRows, setPelaporanRows] = useState<{
-    employeeId: string;
-    employeeName: string;
-    role: string;
-    activityDone: string;
-    payGiven: number;
-    showDropdown?: boolean;
-    searchText?: string;
-  }[]>([{ employeeId: '', employeeName: '', role: '', activityDone: '', payGiven: 0, searchText: '', showDropdown: false }]);
   const [pelaporanSignatures, setPelaporanSignatures] = useState<{
     label: string;
     name: string;
     title: string;
   }[]>([
-    { label: 'Dibuat oleh:', name: '', title: '' },
-    { label: 'Mengetahui:', name: '', title: '' },
-    { label: 'Menyetujui:', name: '', title: '' },
+    { label: 'Menyetujui,', name: '', title: '' },
+    { label: '', name: '', title: '' },
+    { label: '', name: '', title: 'Direktur' },
   ]);
   const [savingPelaporan, setSavingPelaporan] = useState(false);
   const [activePelaporanSuggestionIndex, setActivePelaporanSuggestionIndex] = useState<number>(0);
-  const [mobilePelaporanView, setMobilePelaporanView] = useState<'list' | 'form'>('list');
+
+  // Section enable toggles
+  const [realisasiEnabled, setRealisasiEnabled] = useState(true);
+  const [vakasiPengujiEnabled, setVakasiPengujiEnabled] = useState(true);
+  const [kepanitiaaanEnabled, setKepanitiaaanEnabled] = useState(true);
+  const [receiptEnabled, setReceiptEnabled] = useState(false);
+
+  // Accordion expanded states
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ realisasi: true, vakasiPenguji: false, kepanitiaan: false, kwitansi: false });
+  const toggleSection = (key: string) => setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+
+  // Section 1: Realisasi Keuangan
+  const [realisasiTitle, setRealisasiTitle] = useState('REALISASI ');
+  const [realisasiRows, setRealisasiRows] = useState<{
+    type: 'item' | 'group_header';
+    uraian: string;
+    rincianQty: string;
+    rincianRate: number;
+    realisasi: number;
+  }[]>([{ type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
+  const [kepanitiaaanPercentage, setKepanitiaaanPercentage] = useState(10);
+
+  // Section 2: Vakasi Penguji
+  const [vakasiPengujiTitle, setVakasiPengujiTitle] = useState('VAKASI PENGUJI ');
+  const [vakasiRoles, setVakasiRoles] = useState<{ name: string; rate: number }[]>([{ name: 'Ketua', rate: 200000 }, { name: 'Penguji', rate: 175000 }, { name: 'Sekretaris', rate: 125000 }]);
+  const [vakasiPengujiRows, setVakasiPengujiRows] = useState<{
+    employeeId: string;
+    employeeName: string;
+    roleQtys: Record<string, number>;
+    searchText?: string;
+    showDropdown?: boolean;
+  }[]>([{ employeeId: '', employeeName: '', roleQtys: {}, searchText: '', showDropdown: false }]);
+
+  // Section 3: Vakasi Kepanitiaan
+  const [kepanitiaaanTitle, setKepanitiaaanTitle] = useState('VAKASI KEPANITIAAN ');
+  const [kepanitiaaanPhases, setKepanitiaaanPhases] = useState<{ name: string }[]>([{ name: 'Persiapan' }, { name: 'Pelaksanaan' }, { name: 'Kepanitiaan' }]);
+  const [kepanitiaaanRows, setKepanitiaaanRows] = useState<{
+    name: string;
+    employeeId?: string;
+    phaseAmounts: Record<string, number>;
+    searchText?: string;
+    showDropdown?: boolean;
+  }[]>([{ name: '', phaseAmounts: {}, searchText: '', showDropdown: false }]);
+
+  // Section 4: Kwitansi / Receipts
+  const [receiptTitle, setReceiptTitle] = useState('KWITANSI PEMBELIAN ');
+  const [receiptRows, setReceiptRows] = useState<{
+    itemName: string;
+    qty: number;
+    unitPrice: number;
+  }[]>([{ itemName: '', qty: 1, unitPrice: 0 }]);
 
   // ── Live Sync Pelaporan Kegiatan ──
   useEffect(() => {
@@ -269,27 +312,77 @@ export default function UraianPage() {
     return () => unsubscribe();
   }, [month, year, profile]);
 
+  // Helper: reset all pelaporan form states to defaults
+  const resetPelaporanForm = () => {
+    setSelectedPelaporanId(null);
+    setPelaporanReportName('');
+    setPelaporanDept('');
+    setRealisasiEnabled(true);
+    setVakasiPengujiEnabled(true);
+    setKepanitiaaanEnabled(true);
+    setReceiptEnabled(false);
+    setRealisasiTitle('REALISASI ');
+    setRealisasiRows([{ type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
+    setKepanitiaaanPercentage(10);
+    setVakasiPengujiTitle('VAKASI PENGUJI ');
+    setVakasiRoles([{ name: 'Ketua', rate: 200000 }, { name: 'Penguji', rate: 175000 }, { name: 'Sekretaris', rate: 125000 }]);
+    setVakasiPengujiRows([{ employeeId: '', employeeName: '', roleQtys: {}, searchText: '', showDropdown: false }]);
+    setKepanitiaaanTitle('VAKASI KEPANITIAAN ');
+    setKepanitiaaanPhases([{ name: 'Persiapan' }, { name: 'Pelaksanaan' }, { name: 'Kepanitiaan' }]);
+    setKepanitiaaanRows([{ name: '', phaseAmounts: {}, searchText: '', showDropdown: false }]);
+    setReceiptTitle('KWITANSI PEMBELIAN ');
+    setReceiptRows([{ itemName: '', qty: 1, unitPrice: 0 }]);
+    setPelaporanSignatures([
+      { label: 'Menyetujui,', name: '', title: '' },
+      { label: '', name: '', title: '' },
+      { label: '', name: '', title: 'Direktur' },
+    ]);
+    setExpandedSections({ realisasi: true, vakasiPenguji: false, kepanitiaan: false, kwitansi: false });
+  };
+
+  // Helper: load a report from Firestore data into form states
+  const loadPelaporanFromData = (rpt: any) => {
+    setSelectedPelaporanId(rpt.id);
+    setPelaporanReportName(rpt.reportName || rpt.title || '');
+    setPelaporanDept(rpt.departmentUnit || '');
+    // Toggles
+    setRealisasiEnabled(rpt.realisasiEnabled !== false);
+    setVakasiPengujiEnabled(rpt.vakasiPengujiEnabled !== false);
+    setKepanitiaaanEnabled(rpt.kepanitiaaanEnabled !== false);
+    setReceiptEnabled(rpt.receiptEnabled === true);
+    // Section 1
+    setRealisasiTitle(rpt.realisasiTitle || 'REALISASI ');
+    setRealisasiRows(rpt.realisasiRows?.length > 0 ? rpt.realisasiRows : [{ type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
+    setKepanitiaaanPercentage(rpt.kepanitiaaanPercentage ?? 10);
+    // Section 2
+    setVakasiPengujiTitle(rpt.vakasiPengujiTitle || 'VAKASI PENGUJI ');
+    setVakasiRoles(rpt.vakasiRoles?.length > 0 ? rpt.vakasiRoles : [{ name: 'Ketua', rate: 200000 }, { name: 'Penguji', rate: 175000 }, { name: 'Sekretaris', rate: 125000 }]);
+    setVakasiPengujiRows(rpt.vakasiPengujiRows?.length > 0 ? rpt.vakasiPengujiRows.map((r: any) => ({ ...r, searchText: r.employeeName || '', showDropdown: false })) : [{ employeeId: '', employeeName: '', roleQtys: {}, searchText: '', showDropdown: false }]);
+    // Section 3
+    setKepanitiaaanTitle(rpt.kepanitiaaanTitle || 'VAKASI KEPANITIAAN ');
+    setKepanitiaaanPhases(rpt.kepanitiaaanPhases?.length > 0 ? rpt.kepanitiaaanPhases : [{ name: 'Persiapan' }, { name: 'Pelaksanaan' }, { name: 'Kepanitiaan' }]);
+    setKepanitiaaanRows(rpt.kepanitiaaanRows?.length > 0 ? rpt.kepanitiaaanRows.map((r: any) => ({ ...r, searchText: r.name || '', showDropdown: false })) : [{ name: '', phaseAmounts: {}, searchText: '', showDropdown: false }]);
+    // Section 4
+    setReceiptTitle(rpt.receiptTitle || 'KWITANSI PEMBELIAN ');
+    setReceiptRows(rpt.receiptRows?.length > 0 ? rpt.receiptRows : [{ itemName: '', qty: 1, unitPrice: 0 }]);
+    // Signatures
+    setPelaporanSignatures(rpt.signatures?.length > 0 ? rpt.signatures : [
+      { label: 'Menyetujui,', name: '', title: '' },
+      { label: '', name: '', title: '' },
+      { label: '', name: '', title: 'Direktur' },
+    ]);
+    setExpandedSections({ realisasi: true, vakasiPenguji: false, kepanitiaan: false, kwitansi: false });
+  };
+
   // Helper to save Pelaporan Kegiatan
   const handleSavePelaporan = async () => {
     if (savingPelaporan) return;
-    if (!pelaporanTitle.trim()) {
-      setMessage({ type: 'error', text: 'Judul Laporan harus diisi.' });
+    if (!pelaporanReportName.trim()) {
+      setMessage({ type: 'error', text: 'Nama Laporan harus diisi.' });
       return;
     }
     if (!pelaporanDept) {
       setMessage({ type: 'error', text: 'Unit Kerja harus dipilih.' });
-      return;
-    }
-    const cleanRows = pelaporanRows.filter(r => r.employeeId);
-    if (cleanRows.length === 0) {
-      setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai dalam tabel.' });
-      return;
-    }
-
-    // Check for duplicates
-    const ids = cleanRows.map(r => r.employeeId);
-    if (new Set(ids).size !== ids.length) {
-      setMessage({ type: 'error', text: 'Ada duplikasi pegawai dalam tabel.' });
       return;
     }
 
@@ -298,32 +391,51 @@ export default function UraianPage() {
       const periodToken = `${year}-${String(month).padStart(2, '0')}`;
       const docId = selectedPelaporanId || `${periodToken}_${pelaporanDept}_${Math.random().toString(36).substring(2, 8)}`;
       
-      const payload = {
-        title: pelaporanTitle,
+      const payload: any = {
+        reportName: pelaporanReportName,
+        title: pelaporanReportName, // backward compat for grid display
         period: periodToken,
         departmentUnit: pelaporanDept,
-        rows: cleanRows.map(r => ({
+        // Section toggles
+        realisasiEnabled,
+        vakasiPengujiEnabled,
+        kepanitiaaanEnabled,
+        receiptEnabled,
+        // Section 1
+        realisasiTitle,
+        realisasiRows: realisasiRows.filter(r => r.uraian.trim() || r.type === 'group_header'),
+        kepanitiaaanPercentage,
+        // Section 2
+        vakasiPengujiTitle,
+        vakasiRoles,
+        vakasiPengujiRows: vakasiPengujiRows.filter(r => r.employeeId).map(r => ({
           employeeId: r.employeeId,
           employeeName: r.employeeName,
-          role: r.role,
-          activityDone: r.activityDone,
-          payGiven: r.payGiven
+          roleQtys: r.roleQtys,
         })),
+        // Section 3
+        kepanitiaaanTitle,
+        kepanitiaaanPhases,
+        kepanitiaaanRows: kepanitiaaanRows.filter(r => r.name.trim()).map(r => ({
+          name: r.name,
+          employeeId: r.employeeId || null,
+          phaseAmounts: r.phaseAmounts,
+        })),
+        // Section 4
+        receiptTitle,
+        receiptRows: receiptRows.filter(r => r.itemName.trim()),
+        // Signatures
         signatures: pelaporanSignatures,
         submittedBy: profile?.uid || null,
         submittedByName: profile?.displayName || null,
         updatedAt: serverTimestamp(),
-        createdAt: selectedPelaporanId ? undefined : serverTimestamp(),
       };
 
-      // Filter out undefined fields
-      const cleanedPayload = JSON.parse(JSON.stringify(payload));
-      cleanedPayload.updatedAt = serverTimestamp();
       if (!selectedPelaporanId) {
-        cleanedPayload.createdAt = serverTimestamp();
+        payload.createdAt = serverTimestamp();
       }
 
-      await setDoc(doc(db, 'PelaporanKegiatan', docId), cleanedPayload, { merge: true });
+      await setDoc(doc(db, 'PelaporanKegiatan', docId), payload, { merge: true });
       setSelectedPelaporanId(docId);
       setMessage({ type: 'success', text: 'Laporan Kegiatan berhasil disimpan.' });
     } catch (err) {
@@ -340,15 +452,7 @@ export default function UraianPage() {
     try {
       await deleteDoc(doc(db, 'PelaporanKegiatan', id));
       if (selectedPelaporanId === id) {
-        setSelectedPelaporanId(null);
-        setPelaporanTitle('');
-        setPelaporanDept('');
-        setPelaporanRows([{ employeeId: '', employeeName: '', role: '', activityDone: '', payGiven: 0, searchText: '', showDropdown: false }]);
-        setPelaporanSignatures([
-          { label: 'Dibuat oleh:', name: '', title: '' },
-          { label: 'Mengetahui:', name: '', title: '' },
-          { label: 'Menyetujui:', name: '', title: '' },
-        ]);
+        resetPelaporanForm();
       }
       setMessage({ type: 'success', text: 'Laporan Kegiatan berhasil dihapus.' });
     } catch (err) {
@@ -358,22 +462,33 @@ export default function UraianPage() {
   };
 
   // Helper to print Pelaporan Kegiatan PDF
-  const handlePrintPelaporan = (title: string, dept: string, rows: any[], sigs: any[]) => {
+  const handlePrintPelaporan = () => {
     const periodToken = `${MONTHS_ID[month - 1]} ${year}`;
-    const formattedRows = rows.map(r => ({
-      employeeId: r.employeeId,
-      employeeName: r.employeeName,
-      role: r.role,
-      activityDone: r.activityDone,
-      payGiven: Number(r.payGiven) || 0
-    }));
-
     generatePelaporanKegiatanPdf({
-      title,
+      reportName: pelaporanReportName,
       period: periodToken,
-      departmentUnit: dept,
-      rows: formattedRows,
-      signatures: sigs
+      departmentUnit: pelaporanDept,
+      signatures: pelaporanSignatures,
+      // Section toggles
+      realisasiEnabled,
+      vakasiPengujiEnabled,
+      kepanitiaaanEnabled,
+      receiptEnabled,
+      // Section 1
+      realisasiTitle,
+      realisasiRows,
+      kepanitiaaanPercentage,
+      // Section 2
+      vakasiPengujiTitle,
+      vakasiRoles,
+      vakasiPengujiRows: vakasiPengujiRows.filter(r => r.employeeId),
+      // Section 3
+      kepanitiaaanTitle,
+      kepanitiaaanPhases,
+      kepanitiaaanRows: kepanitiaaanRows.filter(r => r.name.trim()),
+      // Section 4
+      receiptTitle,
+      receiptRows: receiptRows.filter(r => r.itemName.trim()),
     });
   };
 
@@ -2358,18 +2473,15 @@ export default function UraianPage() {
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
       <div className="max-w-[1600px] mx-auto space-y-8 relative z-10">
+        <GlobalHeader />
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
-            {profile?.role === 'super_admin' || activeTab === 'kegiatan_spj' ? (
+            {profile?.role !== 'super_admin' && activeTab === 'kegiatan_spj' ? (
               <Button
                 variant="ghost"
                 onClick={() => {
-                  if (activeTab === 'kegiatan_spj') {
-                    window.history.back();
-                  } else {
-                    router.back();
-                  }
+                  window.history.back();
                 }}
                 className="group -ml-2 mb-2 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50"
               >
@@ -3980,9 +4092,9 @@ export default function UraianPage() {
             )}
           </div>
         ) : activeTab === 'pelaporan_kegiatan' ? (
-          /* Tab: Pelaporan Kegiatan UI */
+          /* Tab: Pelaporan Kegiatan UI — Multi-Section Accordion */
           <div className="flex flex-col gap-8">
-            {/* Top Section: Daftar Laporan Kegiatan */}
+            {/* Top Section: Daftar Laporan Kegiatan Grid */}
             <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
               <div className="flex justify-between items-center mb-6">
                 <div>
@@ -3990,87 +4102,52 @@ export default function UraianPage() {
                   <p className="text-slate-400 text-xs mt-0.5">Pilih laporan di bawah untuk mengedit, mencetak, atau menghapus.</p>
                 </div>
               </div>
-
               {loadingPelaporan ? (
-                <div className="py-12 flex justify-center text-slate-400">
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                </div>
+                <div className="py-12 flex justify-center text-slate-400"><Loader2 className="w-6 h-6 animate-spin" /></div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {/* Dashed "Buat Baru" Card */}
+                  {/* Buat Baru Card */}
                   <div
-                    onClick={() => {
-                      setSelectedPelaporanId(null);
-                      setPelaporanTitle('');
-                      setPelaporanDept('');
-                      setPelaporanRows([{ employeeId: '', employeeName: '', role: '', activityDone: '', payGiven: 0, searchText: '', showDropdown: false }]);
-                      setPelaporanSignatures([
-                        { label: 'Dibuat oleh:', name: '', title: '' },
-                        { label: 'Mengetahui:', name: '', title: '' },
-                        { label: 'Menyetujui:', name: '', title: '' },
-                      ]);
-                    }}
+                    onClick={() => resetPelaporanForm()}
                     className="p-4 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/10 transition-all cursor-pointer flex flex-col items-center justify-center min-h-[110px] gap-2 text-center group"
                   >
-                    <Plus className="w-5 h-5 text-slate-450 group-hover:text-indigo-500 group-hover:scale-110 transition-all" />
-                    <span className="text-xs font-bold text-slate-650 group-hover:text-indigo-605">Buat Laporan Baru</span>
+                    <Plus className="w-5 h-5 text-slate-400 group-hover:text-indigo-500 group-hover:scale-110 transition-all" />
+                    <span className="text-xs font-bold text-slate-500 group-hover:text-indigo-600">Buat Laporan Baru</span>
                   </div>
-
-                  {/* Empty / Draft Report Card (only if it is new and unsaved) */}
+                  {/* Draft card */}
                   {!selectedPelaporanId && (
                     <div className="p-4 rounded-2xl border bg-indigo-50/30 border-indigo-200 shadow-sm flex flex-col justify-between min-h-[110px] scale-[1.02]">
                       <div>
                         <p className="font-bold text-indigo-600 text-sm line-clamp-1 italic">
-                          {pelaporanTitle.trim() !== '' ? pelaporanTitle : 'Laporan Baru (Tanpa Judul)'}
+                          {pelaporanReportName.trim() !== '' ? pelaporanReportName : 'Laporan Baru (Tanpa Judul)'}
                         </p>
-                        <p className="text-[10px] text-indigo-450 font-bold mt-1 uppercase tracking-wider">{pelaporanDept || 'Belum Pilih Unit'}</p>
+                        <p className="text-[10px] text-indigo-400 font-bold mt-1 uppercase tracking-wider">{pelaporanDept || 'Belum Pilih Unit'}</p>
                       </div>
                       <div className="flex items-center justify-between mt-3">
-                        <span className="text-[10px] text-indigo-450 font-bold bg-indigo-50/50 px-2 py-0.5 rounded border border-indigo-100">
-                          {pelaporanRows.filter(r => r.employeeId).length} Orang
-                        </span>
-                        <span className="text-xs font-bold text-indigo-600">
-                          {fmtRp(pelaporanRows.reduce((sum, r) => sum + (r.payGiven || 0), 0))}
+                        <span className="text-[10px] text-indigo-400 font-bold bg-indigo-50/50 px-2 py-0.5 rounded border border-indigo-100">
+                          {[realisasiEnabled, vakasiPengujiEnabled, kepanitiaaanEnabled, receiptEnabled].filter(Boolean).length} Seksi Aktif
                         </span>
                       </div>
                     </div>
                   )}
-
                   {pelaporanList.map(rpt => {
                     const isActive = selectedPelaporanId === rpt.id;
                     return (
                       <div
                         key={rpt.id}
-                        onClick={() => {
-                          setSelectedPelaporanId(rpt.id);
-                          setPelaporanTitle(rpt.title);
-                          setPelaporanDept(rpt.departmentUnit || '');
-                          setPelaporanRows(rpt.rows.map((r: any) => ({
-                            ...r,
-                            searchText: r.employeeName,
-                            showDropdown: false
-                          })));
-                          setPelaporanSignatures(rpt.signatures || [
-                            { label: 'Dibuat oleh:', name: '', title: '' },
-                            { label: 'Mengetahui:', name: '', title: '' },
-                            { label: 'Menyetujui:', name: '', title: '' },
-                          ]);
-                        }}
+                        onClick={() => loadPelaporanFromData(rpt)}
                         className={`p-4 rounded-2xl border transition-all cursor-pointer outline-none focus:outline-none flex flex-col justify-between min-h-[110px] ${isActive
                           ? 'bg-indigo-50/50 border-indigo-300 shadow-md ring-1 ring-indigo-300/25 scale-[1.02]'
                           : 'bg-white border-slate-100 hover:border-indigo-150 hover:shadow-sm'
                           }`}
                       >
                         <div>
-                          <p className="font-bold text-slate-800 text-sm line-clamp-1">{rpt.title}</p>
+                          <p className="font-bold text-slate-800 text-sm line-clamp-1">{rpt.reportName || rpt.title}</p>
                           <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-wider">{rpt.departmentUnit}</p>
                         </div>
                         <div className="flex items-center justify-between mt-3">
                           <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
-                            {rpt.rows.length} Orang
-                          </span>
-                          <span className="text-xs font-bold text-indigo-650">
-                            {fmtRp(rpt.rows.reduce((sum: number, r: any) => sum + (r.payGiven || 0), 0))}
+                            {[rpt.realisasiEnabled !== false, rpt.vakasiPengujiEnabled !== false, rpt.kepanitiaaanEnabled !== false, rpt.receiptEnabled === true].filter(Boolean).length} Seksi
                           </span>
                         </div>
                       </div>
@@ -4080,326 +4157,450 @@ export default function UraianPage() {
               )}
             </Card>
 
-            {/* Bottom Section: Editor Form */}
-            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-visible p-4 md:p-6 space-y-4 md:space-y-6 animate-in fade-in duration-500">
+            {/* Editor Form Card */}
+            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-visible p-4 md:p-6 space-y-5 animate-in fade-in duration-500">
+              {/* Header */}
               <div className="flex justify-between items-center border-b border-slate-50 pb-4">
                 <div>
                   <h3 className="font-bold text-slate-800 text-xs md:text-sm flex items-center gap-2">
                     <ClipboardCheck className="w-4 h-4 text-indigo-500" />
                     {selectedPelaporanId ? 'Ubah Laporan Kegiatan' : 'Buat Laporan Kegiatan Baru'}
                   </h3>
-                  <p className="text-slate-400 text-[10px] md:text-xs mt-0.5">Buat laporan pertanggungjawaban kegiatan loyalis dengan tabel pay dan tanda tangan.</p>
+                  <p className="text-slate-400 text-[10px] md:text-xs mt-0.5">Laporan kegiatan multi-seksi dengan realisasi, vakasi, kepanitiaan, dan kwitansi.</p>
                 </div>
               </div>
 
-              {/* Static Letterhead Preview */}
+              {/* Letterhead Preview */}
               <div className="border border-slate-200/80 rounded-2xl p-4 bg-slate-50/40 relative overflow-hidden flex items-center gap-4">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50/30 rounded-full blur-2xl pointer-events-none" />
                 <img src="/Logo UNIPDU.png" alt="UNIPDU" className="w-12 h-12 shrink-0 object-contain" />
                 <div className="space-y-0.5">
                   <h4 className="text-xs font-black text-slate-800 tracking-wide uppercase">UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM</h4>
                   <p className="text-[10px] text-slate-500 font-medium">Pusat Pengisian Gaji & Administrasi Keuangan Kepegawaian</p>
-                  <p className="text-[9px] text-slate-400 font-mono">Static UNIPDU Letterhead Logo & Layout</p>
                 </div>
               </div>
 
-              {/* Title Input */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Judul Laporan (Title)</label>
-                <Input
-                  type="text"
-                  placeholder="E.g., LAPORAN RINCIAN KEGIATAN KEPANITIAAN YAYASAN..."
-                  value={pelaporanTitle}
-                  onChange={(e) => setPelaporanTitle(e.target.value)}
-                  className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-11 w-full uppercase"
-                />
+              {/* Report Name & Department */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nama Laporan</label>
+                  <Input
+                    type="text"
+                    placeholder="E.g., Ujian Proposal Tesis Pascasarjana..."
+                    value={pelaporanReportName}
+                    onChange={(e) => setPelaporanReportName(e.target.value)}
+                    className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-11 w-full"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Unit Kerja (Department)</label>
+                  <Select value={pelaporanDept} onValueChange={(val) => setPelaporanDept(val || '')}>
+                    <SelectTrigger className={`rounded-xl text-sm font-bold h-11 border focus:ring-4 focus:ring-indigo-100 ${pelaporanDept ? 'bg-indigo-50/60 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-400'}`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Building2 className="w-4 h-4 shrink-0" />
+                        <SelectValue placeholder="Pilih Unit Kerja..." />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl border border-slate-100 shadow-2xl bg-white p-1.5 max-h-64 overflow-y-auto w-max min-w-[var(--radix-select-trigger-width)]">
+                      {departments.map(dept => (
+                        <SelectItem key={dept} value={dept} className="rounded-xl text-xs font-bold uppercase text-slate-700 data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700 cursor-pointer">{dept}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              {/* Department Selector */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Unit Kerja (Department)</label>
-                <Select
-                  value={pelaporanDept}
-                  onValueChange={(val) => setPelaporanDept(val || '')}
-                >
-                  <SelectTrigger className={`rounded-xl text-sm font-bold h-11 border focus:ring-4 focus:ring-indigo-100 ${pelaporanDept ? 'bg-indigo-50/60 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-400'}`}>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Building2 className="w-4 h-4 shrink-0" />
-                      <SelectValue placeholder="Pilih Unit Kerja..." />
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent className="rounded-2xl border border-slate-100 shadow-2xl bg-white p-1.5 max-h-64 overflow-y-auto w-max min-w-[var(--radix-select-trigger-width)]">
-                    {departments.map(dept => (
-                      <SelectItem
-                        key={dept}
-                        value={dept}
-                        className="rounded-xl text-xs font-bold uppercase text-slate-700 data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700 cursor-pointer"
-                      >
-                        {dept}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Dynamic Table of Employees */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tabel Alokasi Vakasi Kegiatan</span>
-                  <Button
+              {/* Section Toggles */}
+              <div className="flex flex-wrap gap-3 pt-2">
+                {[
+                  { key: 'realisasi', label: 'Realisasi Keuangan', enabled: realisasiEnabled, toggle: setRealisasiEnabled, icon: <Banknote className="w-3.5 h-3.5" /> },
+                  { key: 'vakasiPenguji', label: 'Vakasi Penguji', enabled: vakasiPengujiEnabled, toggle: setVakasiPengujiEnabled, icon: <Users className="w-3.5 h-3.5" /> },
+                  { key: 'kepanitiaan', label: 'Vakasi Kepanitiaan', enabled: kepanitiaaanEnabled, toggle: setKepanitiaaanEnabled, icon: <Layers className="w-3.5 h-3.5" /> },
+                  { key: 'kwitansi', label: 'Kwitansi', enabled: receiptEnabled, toggle: setReceiptEnabled, icon: <Receipt className="w-3.5 h-3.5" /> },
+                ].map(s => (
+                  <button
+                    key={s.key}
                     type="button"
-                    onClick={() => {
-                      setPelaporanRows(prev => [...prev, { employeeId: '', employeeName: '', role: '', activityDone: '', payGiven: 0, searchText: '', showDropdown: false }]);
-                    }}
-                    size="sm"
-                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"
+                    onClick={() => s.toggle(!s.enabled)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${s.enabled
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                      : 'bg-slate-50 border-slate-150 text-slate-400'
+                      }`}
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    Tambah Baris
-                  </Button>
-                </div>
-
-                <div className="border border-slate-150 rounded-2xl shadow-sm overflow-visible bg-white">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-100">
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-10 text-center">NO</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-[180px]">NAMA PEGAWAI</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-[140px]">JABATAN</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase">URAIAN KEGIATAN</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-[150px]">VAKASI (RP)</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">AKSI</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pelaporanRows.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="text-center py-12 text-slate-400 text-xs font-semibold">
-                            Belum ada pegawai ditambahkan. Klik tombol di atas untuk menambahkan.
-                          </td>
-                        </tr>
-                      ) : (
-                        pelaporanRows.map((row, idx) => {
-                          const handleEmpSearch = (text: string) => {
-                            setPelaporanRows(prev => {
-                              const copy = [...prev];
-                              copy[idx] = { ...copy[idx], searchText: text, showDropdown: true };
-                              return copy;
-                            });
-                            setActivePelaporanSuggestionIndex(0);
-                          };
-
-                          const selectEmp = (emp: any) => {
-                            setPelaporanRows(prev => {
-                              const copy = [...prev];
-                              copy[idx] = {
-                                ...copy[idx],
-                                employeeId: emp.id,
-                                employeeName: emp.name,
-                                role: emp.role || 'Pegawai',
-                                searchText: emp.name,
-                                showDropdown: false,
-                              };
-                              return copy;
-                            });
-                          };
-
-                          return (
-                            <tr key={idx} className={`border-b border-slate-50 hover:bg-slate-50/30 transition-colors ${row.showDropdown ? 'relative z-50' : 'relative z-0'}`}>
-                              <td className="px-3 py-3 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
-                              <td className="px-3 py-3 relative">
-                                <div className="relative">
-                                  <Input
-                                    type="text"
-                                    placeholder="Cari nama..."
-                                    value={row.searchText || ''}
-                                    onChange={(e) => handleEmpSearch(e.target.value)}
-                                    onFocus={() => {
-                                      setPelaporanRows(prev => {
-                                        const copy = [...prev];
-                                        copy[idx] = { ...copy[idx], showDropdown: true };
-                                        return copy;
-                                      });
-                                      setActivePelaporanSuggestionIndex(0);
-                                    }}
-                                    onBlur={() => {
-                                      setTimeout(() => {
-                                        setPelaporanRows(prev => {
-                                          const copy = [...prev];
-                                          if (copy[idx]) copy[idx] = { ...copy[idx], showDropdown: false };
-                                          return copy;
-                                        });
-                                      }, 200);
-                                    }}
-                                    onKeyDown={(e) => {
-                                      const otherSelectedIds = pelaporanRows
-                                        .filter((_, i) => i !== idx)
-                                        .map(w => w.employeeId)
-                                        .filter(Boolean);
-                                      const filtered = loyalisEmployees
-                                        .filter(emp => !otherSelectedIds.includes(emp.id))
-                                        .filter(emp => emp.name.toLowerCase().includes((row.searchText || '').toLowerCase()));
-                                      
-                                      if (row.showDropdown && filtered.length > 0) {
-                                        if (e.key === 'ArrowDown') {
-                                          e.preventDefault();
-                                          setActivePelaporanSuggestionIndex(prev => (prev + 1) % filtered.length);
-                                        } else if (e.key === 'ArrowUp') {
-                                          e.preventDefault();
-                                          setActivePelaporanSuggestionIndex(prev => (prev - 1 + filtered.length) % filtered.length);
-                                        } else if (e.key === 'Enter') {
-                                          e.preventDefault();
-                                          const selectedEmp = filtered[activePelaporanSuggestionIndex];
-                                          if (selectedEmp) selectEmp(selectedEmp);
-                                        }
-                                      }
-                                    }}
-                                    className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-9 w-full"
-                                  />
-                                  {row.showDropdown && (
-                                    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
-                                      {(() => {
-                                        const otherSelectedIds = pelaporanRows
-                                          .filter((_, i) => i !== idx)
-                                          .map(w => w.employeeId)
-                                          .filter(Boolean);
-                                        const filtered = loyalisEmployees
-                                          .filter(emp => !otherSelectedIds.includes(emp.id))
-                                          .filter(emp => emp.name.toLowerCase().includes((row.searchText || '').toLowerCase()));
-
-                                        if (filtered.length === 0) {
-                                          return <div className="p-4 text-center text-slate-400 text-xs font-semibold">Pegawai tidak ditemukan</div>;
-                                        }
-
-                                        return filtered.map((emp, empIdx) => {
-                                          const isAct = empIdx === activePelaporanSuggestionIndex;
-                                          return (
-                                            <div
-                                              key={emp.id}
-                                              onClick={() => selectEmp(emp)}
-                                              className={`px-3 py-2 text-xs font-semibold cursor-pointer transition-colors text-left ${isAct ? 'bg-indigo-50 text-indigo-600 font-bold' : 'hover:bg-indigo-50 hover:text-indigo-600 text-slate-700'}`}
-                                            >
-                                              <p className={isAct ? 'text-indigo-700' : 'text-slate-800'}>{emp.name}</p>
-                                              <p className="text-[9px] text-slate-400 mt-0.5">{emp.role} · {emp.id}</p>
-                                            </div>
-                                          );
-                                        });
-                                      })()}
-                                    </div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-3 py-3">
-                                <Input
-                                  type="text"
-                                  placeholder="Jabatan"
-                                  value={row.role || ''}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setPelaporanRows(prev => {
-                                      const copy = [...prev];
-                                      copy[idx] = { ...copy[idx], role: val };
-                                      return copy;
-                                    });
-                                  }}
-                                  className="rounded-xl border-slate-200 font-semibold text-slate-700 text-xs h-9 w-full"
-                                />
-                              </td>
-                              <td className="px-3 py-3">
-                                <Input
-                                  type="text"
-                                  placeholder="Tulis tugas/uraian..."
-                                  value={row.activityDone || ''}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setPelaporanRows(prev => {
-                                      const copy = [...prev];
-                                      copy[idx] = { ...copy[idx], activityDone: val };
-                                      return copy;
-                                    });
-                                  }}
-                                  className="rounded-xl border-slate-200 font-medium text-slate-700 text-xs h-9 w-full"
-                                />
-                              </td>
-                              <td className="px-3 py-3">
-                                <Input
-                                  type="text"
-                                  inputMode="numeric"
-                                  pattern="[0-9]*"
-                                  placeholder="0"
-                                  value={row.payGiven > 0 ? fmtRp(row.payGiven) : ''}
-                                  onChange={(e) => {
-                                    const rawVal = e.target.value.replace(/\D/g, '');
-                                    const val = parseInt(rawVal, 10) || 0;
-                                    setPelaporanRows(prev => {
-                                      const copy = [...prev];
-                                      copy[idx] = { ...copy[idx], payGiven: val };
-                                      return copy;
-                                    });
-                                  }}
-                                  className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-9 w-full text-right"
-                                />
-                              </td>
-                              <td className="px-3 py-3 text-center">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => {
-                                    setPelaporanRows(prev => prev.filter((_, i) => i !== idx));
-                                  }}
-                                  className="h-8 w-8 text-rose-500 hover:text-rose-655 hover:bg-rose-50 rounded-lg cursor-pointer"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                    {s.enabled ? <ToggleRight className="w-4 h-4 text-indigo-500" /> : <ToggleLeft className="w-4 h-4" />}
+                    {s.icon}
+                    {s.label}
+                  </button>
+                ))}
               </div>
 
-              {/* Signatures Setup Section */}
+              {/* SECTION 1: REALISASI KEUANGAN */}
+              {realisasiEnabled && (() => {
+                const items = realisasiRows.filter(r => r.type === 'item' && r.uraian.trim());
+                const parseQty = (q: string): number => {
+                  if (!q) return 0;
+                  const trimmed = q.trim();
+                  if (trimmed.endsWith('%')) return parseFloat(trimmed.replace('%', '')) / 100;
+                  return parseFloat(trimmed) || 0;
+                };
+                const jumlahAnggaran = items.reduce((sum, r) => sum + (parseQty(r.rincianQty) * r.rincianRate), 0);
+                const jumlahRealisasi = items.reduce((sum, r) => sum + r.realisasi, 0);
+                const kepanitiaaanAnggaran = jumlahAnggaran * (kepanitiaaanPercentage / 100);
+                const kepanitiaaanRealisasi = jumlahRealisasi * (kepanitiaaanPercentage / 100);
+                const totalAnggaran = jumlahAnggaran + kepanitiaaanAnggaran;
+                const totalRealisasi = jumlahRealisasi + kepanitiaaanRealisasi;
+                return (
+                  <div className="border border-slate-150 rounded-2xl overflow-hidden">
+                    <button type="button" onClick={() => toggleSection('realisasi')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-emerald-50 to-emerald-50/40 hover:from-emerald-100/60 transition-all cursor-pointer">
+                      <div className="flex items-center gap-2.5">
+                        <Banknote className="w-4 h-4 text-emerald-600" />
+                        <span className="font-bold text-emerald-800 text-xs uppercase tracking-wider">Seksi 1: Realisasi Keuangan</span>
+                      </div>
+                      {expandedSections.realisasi ? <ChevronDown className="w-4 h-4 text-emerald-500" /> : <ChevronRight className="w-4 h-4 text-emerald-500" />}
+                    </button>
+                    {expandedSections.realisasi && (
+                      <div className="p-4 md:p-5 space-y-4 bg-white">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Judul Seksi (di PDF)</label>
+                          <Input type="text" placeholder="REALISASI UJIAN PROPOSAL TESIS..." value={realisasiTitle} onChange={(e) => setRealisasiTitle(e.target.value)} className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full uppercase" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button type="button" size="sm" onClick={() => setRealisasiRows(prev => [...prev, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }])} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Baris</Button>
+                          <Button type="button" size="sm" onClick={() => setRealisasiRows(prev => [...prev, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }])} variant="outline" className="border-emerald-200 text-emerald-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"><Layers className="w-3.5 h-3.5" /> Tambah Header Grup</Button>
+                        </div>
+                        <div className="border border-slate-150 rounded-2xl shadow-sm overflow-hidden bg-white">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-100">
+                                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-10 text-center">NO</th>
+                                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase">URAIAN</th>
+                                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[80px] text-center">QTY</th>
+                                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[100px] text-center">RATE</th>
+                                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[120px] text-right">ANGGARAN</th>
+                                <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[120px] text-right">REALISASI</th>
+                                <th className="px-3 py-2.5 w-10"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {realisasiRows.map((row, idx) => {
+                                const itemNum = row.type === 'item' ? realisasiRows.slice(0, idx + 1).filter(r => r.type === 'item').length : null;
+                                if (row.type === 'group_header') {
+                                  return (
+                                    <tr key={idx} className="bg-slate-50/60 border-b border-slate-100">
+                                      <td className="px-3 py-2.5 text-xs font-bold text-slate-400 text-center"></td>
+                                      <td colSpan={5} className="px-3 py-2.5"><Input type="text" placeholder="Nama grup (e.g., Alokasi Biaya Operasional)..." value={row.uraian} onChange={(e) => { const val = e.target.value; setRealisasiRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-800 text-xs h-8 w-full bg-transparent" /></td>
+                                      <td className="px-3 py-2.5 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setRealisasiRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                                    </tr>
+                                  );
+                                }
+                                const anggaran = parseQty(row.rincianQty) * row.rincianRate;
+                                return (
+                                  <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
+                                    <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{itemNum}</td>
+                                    <td className="px-3 py-2"><Input type="text" placeholder="Uraian pengeluaran..." value={row.uraian} onChange={(e) => { const val = e.target.value; setRealisasiRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} className="rounded-lg border-slate-200 font-medium text-slate-700 text-xs h-8 w-full" /></td>
+                                    <td className="px-3 py-2"><Input type="text" placeholder="10 / 20%" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setRealisasiRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], rincianQty: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-8 w-full text-center" /></td>
+                                    <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setRealisasiRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], rincianRate: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-8 w-full text-right" /></td>
+                                    <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(anggaran)}</td>
+                                    <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setRealisasiRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-8 w-full text-right" /></td>
+                                    <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setRealisasiRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                                  </tr>
+                                );
+                              })}
+                              <tr className="bg-slate-50 border-t-2 border-slate-200">
+                                <td colSpan={4} className="px-3 py-2.5 text-xs font-bold text-slate-700 text-right">Jumlah Pengeluaran</td>
+                                <td className="px-3 py-2.5 text-xs font-black text-slate-800 text-right font-mono">{fmtRp(jumlahAnggaran)}</td>
+                                <td className="px-3 py-2.5 text-xs font-black text-slate-800 text-right font-mono">{fmtRp(jumlahRealisasi)}</td>
+                                <td></td>
+                              </tr>
+                              <tr className="bg-slate-50/50">
+                                <td colSpan={3} className="px-3 py-2 text-xs font-bold text-slate-600 text-right">Kepanitiaan</td>
+                                <td className="px-3 py-2"><div className="flex items-center gap-1 justify-end"><Input type="number" value={kepanitiaaanPercentage} onChange={(e) => setKepanitiaaanPercentage(parseFloat(e.target.value) || 0)} className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-7 w-16 text-center" /><span className="text-xs font-bold text-slate-500">%</span></div></td>
+                                <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(kepanitiaaanAnggaran)}</td>
+                                <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(kepanitiaaanRealisasi)}</td>
+                                <td></td>
+                              </tr>
+                              <tr className="bg-emerald-50/50 border-t border-emerald-200">
+                                <td colSpan={4} className="px-3 py-2.5 text-xs font-black text-emerald-800 text-right uppercase">Total Pengeluaran</td>
+                                <td className="px-3 py-2.5 text-xs font-black text-emerald-700 text-right font-mono">{fmtRp(totalAnggaran)}</td>
+                                <td className="px-3 py-2.5 text-xs font-black text-emerald-700 text-right font-mono">{fmtRp(totalRealisasi)}</td>
+                                <td></td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* SECTION 2: VAKASI PENGUJI */}
+              {vakasiPengujiEnabled && (
+                <div className="border border-slate-150 rounded-2xl overflow-hidden">
+                  <button type="button" onClick={() => toggleSection('vakasiPenguji')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-blue-50 to-blue-50/40 hover:from-blue-100/60 transition-all cursor-pointer">
+                    <div className="flex items-center gap-2.5">
+                      <Users className="w-4 h-4 text-blue-600" />
+                      <span className="font-bold text-blue-800 text-xs uppercase tracking-wider">Seksi 2: Vakasi Penguji</span>
+                    </div>
+                    {expandedSections.vakasiPenguji ? <ChevronDown className="w-4 h-4 text-blue-500" /> : <ChevronRight className="w-4 h-4 text-blue-500" />}
+                  </button>
+                  {expandedSections.vakasiPenguji && (
+                    <div className="p-4 md:p-5 space-y-4 bg-white">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Judul Seksi (di PDF)</label>
+                        <Input type="text" placeholder="VAKASI PENGUJI UJIAN PROPOSAL TESIS..." value={vakasiPengujiTitle} onChange={(e) => setVakasiPengujiTitle(e.target.value)} className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full uppercase" />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Daftar Role & Tarif</span>
+                          <Button type="button" size="sm" onClick={() => setVakasiRoles(prev => [...prev, { name: '', rate: 0 }])} className="bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Role</Button>
+                        </div>
+                        <div className="flex flex-wrap gap-3">
+                          {vakasiRoles.map((role, rIdx) => (
+                            <div key={rIdx} className="flex items-center gap-2 p-2.5 rounded-xl border border-blue-100 bg-blue-50/20">
+                              <Input type="text" placeholder="Nama Role" value={role.name} onChange={(e) => { const val = e.target.value; setVakasiRoles(prev => { const c = [...prev]; c[rIdx] = { ...c[rIdx], name: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-8 w-28" />
+                              <Input type="text" inputMode="numeric" placeholder="Tarif" value={role.rate > 0 ? fmtRp(role.rate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setVakasiRoles(prev => { const c = [...prev]; c[rIdx] = { ...c[rIdx], rate: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-8 w-28 text-right" />
+                              {vakasiRoles.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setVakasiRoles(prev => prev.filter((_, i) => i !== rIdx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><X className="w-3.5 h-3.5" /></Button>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tabel Pegawai</span>
+                        <Button type="button" size="sm" onClick={() => setVakasiPengujiRows(prev => [...prev, { employeeId: '', employeeName: '', roleQtys: {}, searchText: '', showDropdown: false }])} className="bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Pegawai</Button>
+                      </div>
+                      <div className="border border-slate-150 rounded-2xl shadow-sm overflow-visible bg-white">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-100">
+                              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-10 text-center">NO</th>
+                              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[180px]">NAMA</th>
+                              {vakasiRoles.map((role, rIdx) => (
+                                <th key={rIdx} className="px-3 py-2.5 text-[10px] font-bold text-blue-600 uppercase text-center">{role.name || `Role ${rIdx + 1}`}<br /><span className="text-slate-400 font-normal">@{fmtRp(role.rate)}</span></th>
+                              ))}
+                              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[120px] text-right">JUMLAH</th>
+                              <th className="px-3 py-2.5 w-10"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {vakasiPengujiRows.map((row, idx) => {
+                              const rowTotal = vakasiRoles.reduce((sum, role) => sum + ((row.roleQtys[role.name] || 0) * role.rate), 0);
+                              const handleEmpSearch = (text: string) => { setVakasiPengujiRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], searchText: text, showDropdown: true }; return c; }); setActivePelaporanSuggestionIndex(0); };
+                              const selectEmp = (emp: any) => { setVakasiPengujiRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], employeeId: emp.id, employeeName: emp.name, searchText: emp.name, showDropdown: false }; return c; }); };
+                              return (
+                                <tr key={idx} className={`border-b border-slate-50 hover:bg-slate-50/30 transition-colors ${row.showDropdown ? 'relative z-50' : 'relative z-0'}`}>
+                                  <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
+                                  <td className="px-3 py-2 relative">
+                                    <div className="relative">
+                                      <Input type="text" placeholder="Cari nama..." value={row.searchText || ''} onChange={(e) => handleEmpSearch(e.target.value)}
+                                        onFocus={() => { setVakasiPengujiRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], showDropdown: true }; return c; }); setActivePelaporanSuggestionIndex(0); }}
+                                        onBlur={() => { setTimeout(() => { setVakasiPengujiRows(prev => { const c = [...prev]; if (c[idx]) c[idx] = { ...c[idx], showDropdown: false }; return c; }); }, 200); }}
+                                        className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-8 w-full" />
+                                      {row.showDropdown && (
+                                        <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
+                                          {(() => {
+                                            const otherIds = vakasiPengujiRows.filter((_, i) => i !== idx).map(w => w.employeeId).filter(Boolean);
+                                            const filtered = loyalisEmployees.filter(emp => !otherIds.includes(emp.id)).filter(emp => emp.name.toLowerCase().includes((row.searchText || '').toLowerCase()));
+                                            if (filtered.length === 0) return <div className="p-3 text-center text-slate-400 text-xs font-semibold">Tidak ditemukan</div>;
+                                            return filtered.map((emp, empIdx) => (
+                                              <div key={emp.id} onClick={() => selectEmp(emp)} className={`px-3 py-2 text-xs font-semibold cursor-pointer transition-colors text-left ${empIdx === activePelaporanSuggestionIndex ? 'bg-blue-50 text-blue-600 font-bold' : 'hover:bg-blue-50 hover:text-blue-600 text-slate-700'}`}>
+                                                <p>{emp.name}</p><p className="text-[9px] text-slate-400 mt-0.5">{emp.role} · {emp.id}</p>
+                                              </div>
+                                            ));
+                                          })()}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                  {vakasiRoles.map((role, rIdx) => (
+                                    <td key={rIdx} className="px-3 py-2 text-center">
+                                      <Input type="number" min={0} placeholder="0" value={row.roleQtys[role.name] || ''} onChange={(e) => { const val = parseInt(e.target.value) || 0; setVakasiPengujiRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], roleQtys: { ...c[idx].roleQtys, [role.name]: val } }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-8 w-16 text-center mx-auto" />
+                                    </td>
+                                  ))}
+                                  <td className="px-3 py-2 text-xs font-black text-slate-700 text-right font-mono">{fmtRp(rowTotal)}</td>
+                                  <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setVakasiPengujiRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                                </tr>
+                              );
+                            })}
+                            <tr className="bg-blue-50/50 border-t-2 border-blue-200">
+                              <td colSpan={2 + vakasiRoles.length} className="px-3 py-2.5 text-xs font-black text-blue-800 text-right uppercase">Grand Total</td>
+                              <td className="px-3 py-2.5 text-xs font-black text-blue-700 text-right font-mono">{fmtRp(vakasiPengujiRows.reduce((sum, row) => sum + vakasiRoles.reduce((s, role) => s + ((row.roleQtys[role.name] || 0) * role.rate), 0), 0))}</td>
+                              <td></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SECTION 3: VAKASI KEPANITIAAN */}
+              {kepanitiaaanEnabled && (
+                <div className="border border-slate-150 rounded-2xl overflow-hidden">
+                  <button type="button" onClick={() => toggleSection('kepanitiaan')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-violet-50 to-violet-50/40 hover:from-violet-100/60 transition-all cursor-pointer">
+                    <div className="flex items-center gap-2.5">
+                      <Layers className="w-4 h-4 text-violet-600" />
+                      <span className="font-bold text-violet-800 text-xs uppercase tracking-wider">Seksi 3: Vakasi Kepanitiaan</span>
+                    </div>
+                    {expandedSections.kepanitiaan ? <ChevronDown className="w-4 h-4 text-violet-500" /> : <ChevronRight className="w-4 h-4 text-violet-500" />}
+                  </button>
+                  {expandedSections.kepanitiaan && (
+                    <div className="p-4 md:p-5 space-y-4 bg-white">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Judul Seksi (di PDF)</label>
+                        <Input type="text" placeholder="VAKASI KEPANITIAAN UJIAN PROPOSAL TESIS..." value={kepanitiaaanTitle} onChange={(e) => setKepanitiaaanTitle(e.target.value)} className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full uppercase" />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tahap / Fase</span>
+                          <Button type="button" size="sm" onClick={() => setKepanitiaaanPhases(prev => [...prev, { name: '' }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Fase</Button>
+                        </div>
+                        <div className="flex flex-wrap gap-3">
+                          {kepanitiaaanPhases.map((phase, pIdx) => (
+                            <div key={pIdx} className="flex items-center gap-2 p-2.5 rounded-xl border border-violet-100 bg-violet-50/20">
+                              <Input type="text" placeholder="Nama Fase" value={phase.name} onChange={(e) => { const val = e.target.value; setKepanitiaaanPhases(prev => { const c = [...prev]; c[pIdx] = { ...c[pIdx], name: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-8 w-32" />
+                              {kepanitiaaanPhases.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanPhases(prev => prev.filter((_, i) => i !== pIdx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><X className="w-3.5 h-3.5" /></Button>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tabel Anggota</span>
+                        <Button type="button" size="sm" onClick={() => setKepanitiaaanRows(prev => [...prev, { name: '', phaseAmounts: {}, searchText: '', showDropdown: false }])} className="bg-violet-50 hover:bg-violet-100 text-violet-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Anggota</Button>
+                      </div>
+                      <div className="border border-slate-150 rounded-2xl shadow-sm overflow-visible bg-white">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-100">
+                              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-10 text-center">NO</th>
+                              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[200px]">NAMA</th>
+                              {kepanitiaaanPhases.map((phase, pIdx) => (<th key={pIdx} className="px-3 py-2.5 text-[10px] font-bold text-violet-600 uppercase text-center">{phase.name || `Fase ${pIdx + 1}`}</th>))}
+                              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[120px] text-right">JUMLAH</th>
+                              <th className="px-3 py-2.5 w-10"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {kepanitiaaanRows.map((row, idx) => {
+                              const rowTotal = kepanitiaaanPhases.reduce((sum, phase) => sum + (row.phaseAmounts[phase.name] || 0), 0);
+                              return (
+                                <tr key={idx} className={`border-b border-slate-50 hover:bg-slate-50/30 transition-colors ${row.showDropdown ? 'relative z-50' : 'relative z-0'}`}>
+                                  <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
+                                  <td className="px-3 py-2 relative">
+                                    <div className="relative">
+                                      <Input type="text" placeholder="Cari / ketik nama..." value={row.searchText || ''}
+                                        onChange={(e) => { const text = e.target.value; setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], name: text, searchText: text, showDropdown: true }; return c; }); setActivePelaporanSuggestionIndex(0); }}
+                                        onFocus={() => { setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], showDropdown: true }; return c; }); setActivePelaporanSuggestionIndex(0); }}
+                                        onBlur={() => { setTimeout(() => { setKepanitiaaanRows(prev => { const c = [...prev]; if (c[idx]) c[idx] = { ...c[idx], showDropdown: false }; return c; }); }, 200); }}
+                                        className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-8 w-full" />
+                                      {row.showDropdown && (row.searchText || '').length > 0 && (
+                                        <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
+                                          {(() => {
+                                            const filtered = loyalisEmployees.filter(emp => emp.name.toLowerCase().includes((row.searchText || '').toLowerCase()));
+                                            if (filtered.length === 0) return null;
+                                            return filtered.slice(0, 8).map((emp, empIdx) => (
+                                              <div key={emp.id} onClick={() => { setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], name: emp.name, employeeId: emp.id, searchText: emp.name, showDropdown: false }; return c; }); }}
+                                                className={`px-3 py-2 text-xs font-semibold cursor-pointer transition-colors text-left ${empIdx === activePelaporanSuggestionIndex ? 'bg-violet-50 text-violet-600 font-bold' : 'hover:bg-violet-50 hover:text-violet-600 text-slate-700'}`}>
+                                                <p>{emp.name}</p><p className="text-[9px] text-slate-400 mt-0.5">{emp.role} · {emp.id}</p>
+                                              </div>
+                                            ));
+                                          })()}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                  {kepanitiaaanPhases.map((phase, pIdx) => (
+                                    <td key={pIdx} className="px-3 py-2 text-center">
+                                      <Input type="text" inputMode="numeric" placeholder="0" value={(row.phaseAmounts[phase.name] || 0) > 0 ? fmtRp(row.phaseAmounts[phase.name] || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], phaseAmounts: { ...c[idx].phaseAmounts, [phase.name]: val } }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-8 w-24 text-right mx-auto" />
+                                    </td>
+                                  ))}
+                                  <td className="px-3 py-2 text-xs font-black text-slate-700 text-right font-mono">{fmtRp(rowTotal)}</td>
+                                  <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setKepanitiaaanRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                                </tr>
+                              );
+                            })}
+                            <tr className="bg-violet-50/50 border-t-2 border-violet-200">
+                              <td colSpan={2 + kepanitiaaanPhases.length} className="px-3 py-2.5 text-xs font-black text-violet-800 text-right uppercase">Total</td>
+                              <td className="px-3 py-2.5 text-xs font-black text-violet-700 text-right font-mono">{fmtRp(kepanitiaaanRows.reduce((sum, row) => sum + kepanitiaaanPhases.reduce((s, phase) => s + (row.phaseAmounts[phase.name] || 0), 0), 0))}</td>
+                              <td></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SECTION 4: KWITANSI */}
+              {receiptEnabled && (
+                <div className="border border-slate-150 rounded-2xl overflow-hidden">
+                  <button type="button" onClick={() => toggleSection('kwitansi')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-amber-50 to-amber-50/40 hover:from-amber-100/60 transition-all cursor-pointer">
+                    <div className="flex items-center gap-2.5">
+                      <Receipt className="w-4 h-4 text-amber-600" />
+                      <span className="font-bold text-amber-800 text-xs uppercase tracking-wider">Seksi 4: Kwitansi / Pembelian</span>
+                    </div>
+                    {expandedSections.kwitansi ? <ChevronDown className="w-4 h-4 text-amber-500" /> : <ChevronRight className="w-4 h-4 text-amber-500" />}
+                  </button>
+                  {expandedSections.kwitansi && (
+                    <div className="p-4 md:p-5 space-y-4 bg-white">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Judul Seksi (di PDF)</label>
+                        <Input type="text" placeholder="KWITANSI PEMBELIAN KONSUMSI..." value={receiptTitle} onChange={(e) => setReceiptTitle(e.target.value)} className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full uppercase" />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Daftar Pembelian</span>
+                        <Button type="button" size="sm" onClick={() => setReceiptRows(prev => [...prev, { itemName: '', qty: 1, unitPrice: 0 }])} className="bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Tambah Item</Button>
+                      </div>
+                      <div className="border border-slate-150 rounded-2xl shadow-sm overflow-hidden bg-white">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-100">
+                              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-10 text-center">NO</th>
+                              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase">NAMA ITEM</th>
+                              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[80px] text-center">QTY</th>
+                              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[130px] text-right">HARGA SATUAN</th>
+                              <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[130px] text-right">TOTAL</th>
+                              <th className="px-3 py-2.5 w-10"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {receiptRows.map((row, idx) => (
+                              <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
+                                <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
+                                <td className="px-3 py-2"><Input type="text" placeholder="Nama barang..." value={row.itemName} onChange={(e) => { const val = e.target.value; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], itemName: val }; return c; }); }} className="rounded-lg border-slate-200 font-medium text-slate-700 text-xs h-8 w-full" /></td>
+                                <td className="px-3 py-2"><Input type="number" min={1} value={row.qty} onChange={(e) => { const val = parseInt(e.target.value) || 1; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], qty: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-8 w-full text-center" /></td>
+                                <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.unitPrice > 0 ? fmtRp(row.unitPrice) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setReceiptRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], unitPrice: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-700 text-xs h-8 w-full text-right" /></td>
+                                <td className="px-3 py-2 text-xs font-black text-slate-700 text-right font-mono">{fmtRp(row.qty * row.unitPrice)}</td>
+                                <td className="px-3 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={() => setReceiptRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                              </tr>
+                            ))}
+                            <tr className="bg-amber-50/50 border-t-2 border-amber-200">
+                              <td colSpan={4} className="px-3 py-2.5 text-xs font-black text-amber-800 text-right uppercase">Grand Total</td>
+                              <td className="px-3 py-2.5 text-xs font-black text-amber-700 text-right font-mono">{fmtRp(receiptRows.reduce((sum, r) => sum + (r.qty * r.unitPrice), 0))}</td>
+                              <td></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Shared Signature Config */}
               <div className="space-y-4 pt-2 border-t border-slate-100">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Konfigurasi Tanda Tangan (Maks 3)</span>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {pelaporanSignatures.map((sig, sIdx) => {
-                    const updateSig = (field: 'label' | 'name' | 'title', val: string) => {
-                      setPelaporanSignatures(prev => {
-                        const copy = [...prev];
-                        copy[sIdx] = { ...copy[sIdx], [field]: val };
-                        return copy;
-                      });
-                    };
-
+                    const updateSig = (field: 'label' | 'name' | 'title', val: string) => { setPelaporanSignatures(prev => { const c = [...prev]; c[sIdx] = { ...c[sIdx], [field]: val }; return c; }); };
                     return (
                       <div key={sIdx} className="p-4 rounded-2xl border border-slate-150 bg-slate-50/30 space-y-3">
                         <span className="text-[10px] font-bold text-indigo-500 uppercase">Posisi {sIdx + 1}</span>
                         <div className="space-y-2">
-                          <Input
-                            type="text"
-                            placeholder="Label (e.g., Mengetahui,)"
-                            value={sig.label}
-                            onChange={(e) => updateSig('label', e.target.value)}
-                            className="rounded-lg border-slate-200 text-xs h-8 font-semibold"
-                          />
-                          <Input
-                            type="text"
-                            placeholder="Nama Lengkap"
-                            value={sig.name}
-                            onChange={(e) => updateSig('name', e.target.value)}
-                            className="rounded-lg border-slate-200 text-xs h-8 font-bold"
-                          />
-                          <Input
-                            type="text"
-                            placeholder="Jabatan/Titel"
-                            value={sig.title}
-                            onChange={(e) => updateSig('title', e.target.value)}
-                            className="rounded-lg border-slate-200 text-xs h-8 font-medium text-slate-500"
-                          />
+                          <Input type="text" placeholder="Label (e.g., Mengetahui,)" value={sig.label} onChange={(e) => updateSig('label', e.target.value)} className="rounded-lg border-slate-200 text-xs h-8 font-semibold" />
+                          <Input type="text" placeholder="Nama Lengkap" value={sig.name} onChange={(e) => updateSig('name', e.target.value)} className="rounded-lg border-slate-200 text-xs h-8 font-bold" />
+                          <Input type="text" placeholder="Jabatan/Titel" value={sig.title} onChange={(e) => updateSig('title', e.target.value)} className="rounded-lg border-slate-200 text-xs h-8 font-medium text-slate-500" />
                         </div>
                       </div>
                     );
@@ -4411,40 +4612,24 @@ export default function UraianPage() {
               <div className="flex flex-wrap justify-between gap-3 pt-6 border-t border-slate-100 mt-auto">
                 <div>
                   {selectedPelaporanId && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => handleDeletePelaporan(selectedPelaporanId)}
-                      className="rounded-xl border-rose-200 text-rose-650 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Hapus Laporan
+                    <Button type="button" variant="outline" onClick={() => handleDeletePelaporan(selectedPelaporanId)} className="rounded-xl border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 h-10 cursor-pointer">
+                      <Trash2 className="w-4 h-4" /> Hapus Laporan
                     </Button>
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    onClick={handleSavePelaporan}
-                    disabled={savingPelaporan}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
-                  >
+                  <Button type="button" onClick={handleSavePelaporan} disabled={savingPelaporan} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer">
                     {savingPelaporan ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     Simpan Laporan
                   </Button>
-                  <Button
-                    type="button"
-                    onClick={() => handlePrintPelaporan(pelaporanTitle, pelaporanDept, pelaporanRows, pelaporanSignatures)}
-                    disabled={!pelaporanTitle || !pelaporanDept || pelaporanRows.filter(r => r.employeeId).length === 0}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
-                  >
-                    <FileText className="w-4 h-4" />
-                    Cetak PDF
+                  <Button type="button" onClick={handlePrintPelaporan} disabled={!pelaporanReportName.trim() || !pelaporanDept} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer">
+                    <FileText className="w-4 h-4" /> Cetak PDF
                   </Button>
                 </div>
               </div>
             </Card>
           </div>
+
         ) : (
           /* Tab 3: Kegiatan SPJ UI */
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">

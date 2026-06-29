@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
+import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
@@ -1089,17 +1090,11 @@ export default function EmployeesPage() {
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
       <div className="max-w-[1400px] mx-auto relative z-10">
+        <GlobalHeader />
 
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-4">
-            {profile?.role === 'super_admin' && (
-              <Link href="/dashboard/payroll">
-                <Button variant="ghost" size="icon" className="rounded-full bg-white shadow-sm border border-slate-200 hover:bg-slate-50">
-                  <ArrowLeft className="w-5 h-5 text-slate-600" />
-                </Button>
-              </Link>
-            )}
             <div>
               <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
                 <Users className="w-6 h-6 text-indigo-500" />

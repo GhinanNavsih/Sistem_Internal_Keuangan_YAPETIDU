@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { calculateYearsOfService, calculateGapok, matchFunctionalAllowance, normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import {
@@ -1348,47 +1349,7 @@ export default function PayrollValidationDashboard() {
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
       <div className="max-w-7xl mx-auto relative z-10">
         {/* Header Section */}
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex gap-2">
-            <Link href="/dashboard">
-              <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:bg-slate-50">
-                ← Kembali
-              </Button>
-            </Link>
-            <Button
-              variant="outline"
-              onClick={logout}
-              className="rounded-xl shadow-sm bg-white border-slate-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Keluar
-            </Button>
-          </div>
-          <div className="flex gap-3">
-            {profile?.role === 'super_admin' && (
-              <Link href="/dashboard/users">
-                <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50/50 hover:border-indigo-200 transition-all font-bold">
-                  <UserCog className="w-4 h-4 mr-2" /> Manajemen Akses
-                </Button>
-              </Link>
-            )}
-            <Link href="/dashboard/employees">
-              <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">
-                <Users className="w-4 h-4 mr-2" /> Data Pegawai
-              </Button>
-            </Link>
-            <Link href={`/dashboard/payroll/uraian?month=${targetDate.getMonth() + 1}&year=${targetDate.getFullYear()}`}>
-              <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">
-                <FileSpreadsheet className="w-4 h-4 mr-2" /> Rekap & Vakasi Tambahan
-              </Button>
-            </Link>
-            <Link href="/dashboard/payroll/simpan-pinjam">
-              <Button variant="outline" className="rounded-xl shadow-sm bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-100 transition-all">
-                <Banknote className="w-4 h-4 mr-2" /> Simpan Pinjam
-              </Button>
-            </Link>
-          </div>
-        </div>
+        <GlobalHeader />
 
         {/* Main Card */}
         <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden">

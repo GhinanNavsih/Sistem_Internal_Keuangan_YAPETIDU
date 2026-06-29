@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
+import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { db, secondaryDb } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
@@ -362,15 +363,18 @@ export default function SimpanPinjamReviewPage() {
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
       <div className="max-w-7xl mx-auto relative z-10">
+        <GlobalHeader />
         
         {/* Header navigation bar */}
         <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
           <div className="flex items-center gap-3">
-            <Link href="/dashboard/payroll">
-              <Button variant="outline" className="rounded-xl bg-white shadow-sm border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer">
-                <ArrowLeft className="w-4 h-4 mr-2" /> Kembali
-              </Button>
-            </Link>
+            {profile?.role !== 'super_admin' && (
+              <Link href="/dashboard/payroll">
+                <Button variant="outline" className="rounded-xl bg-white shadow-sm border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer">
+                  <ArrowLeft className="w-4 h-4 mr-2" /> Kembali
+                </Button>
+              </Link>
+            )}
             <div className="flex items-center gap-2 px-3 py-1 bg-indigo-50 border border-indigo-100 rounded-xl">
               <Banknote className="w-5 h-5 text-indigo-600" />
               <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wider">Audit Panel</span>

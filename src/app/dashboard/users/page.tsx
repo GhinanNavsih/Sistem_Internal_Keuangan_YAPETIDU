@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
@@ -463,16 +464,11 @@ export default function UserManagementPage() {
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
       <div className="max-w-[1400px] mx-auto space-y-8 relative z-10">
+        <GlobalHeader />
         
         {/* Navigation & Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1.5">
-            <Link href="/dashboard/payroll">
-              <Button variant="ghost" className="group -ml-2 mb-2 text-slate-500 hover:text-indigo-600 transition-colors">
-                <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
-                Kembali ke Dashboard
-              </Button>
-            </Link>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-inner">
                 <UserCog className="w-5 h-5" />
