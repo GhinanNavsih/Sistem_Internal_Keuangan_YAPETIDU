@@ -4745,7 +4745,7 @@ export default function UraianPage() {
                 const jumlahPengeluaranRealisasi = expItems.reduce((sum, r) => sum + r.realisasi, 0);
 
                 const kepanitiaaanAnggaran = jumlahPengeluaranAnggaran * (kepanitiaaanPercentage / 100);
-                const kepanitiaaanRealisasi = jumlahPengeluaranRealisasi * (kepanitiaaanPercentage / 100);
+                const kepanitiaaanRealisasi = jumlahPengeluaranAnggaran * (kepanitiaaanPercentage / 100);
                 
                 const totalPengeluaranAnggaran = jumlahPengeluaranAnggaran + kepanitiaaanAnggaran;
                 const totalPengeluaranRealisasi = jumlahPengeluaranRealisasi + kepanitiaaanRealisasi;
@@ -4793,6 +4793,7 @@ export default function UraianPage() {
                                   const anggaran = parseQty(row.rincianQty) * row.rincianRate;
                                   return (
                                     <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
+                                      <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
                                       <td className="px-3 py-2"><Input type="text" placeholder="Biaya Test, Kontribusi, dll..." value={row.uraian} onChange={(e) => { const val = e.target.value; setPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pemasukan', idx, 0)} data-table="pemasukan" data-row={idx} data-col={0} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
                                       <td className="px-3 py-2"><Input type="text" placeholder="250 Siswa" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pemasukan', idx, 1)} data-table="pemasukan" data-row={idx} data-col={1} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
                                       <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pemasukan', idx, 2)} data-table="pemasukan" data-row={idx} data-col={2} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>

@@ -88,7 +88,7 @@ const formatIDR = (amount: number): string => {
 const parseQty = (q: string): number => {
   if (!q) return 0;
   const trimmed = q.trim();
-  
+
   // Split by 'x', 'X', or '*'
   const parts = trimmed.split(/[xX\*]/);
   if (parts.length > 1) {
@@ -255,7 +255,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       // 1. Pemasukan Header
       tableRows.push([
         { content: '', styles: { fontStyle: 'bold' as const } },
-        { content: 'Pemasukan', colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
+        { content: 'Pemasukan', colSpan: 4, styles: { fontStyle: 'bold' as const } },
       ]);
       let pIdx = 0;
       data.pemasukanRows.forEach(row => {
@@ -278,7 +278,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       // 2. Dana Pengembangan Header
       tableRows.push([
         { content: '', styles: { fontStyle: 'bold' as const } },
-        { content: 'Dana Pengembangan', colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
+        { content: 'Dana Pengembangan', colSpan: 4, styles: { fontStyle: 'bold' as const } },
       ]);
       const yayasanPct = data.yayasanPercentage ?? 20;
       const unipduPct = data.unipduPercentage ?? 20;
@@ -303,22 +303,30 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       ]);
 
       // 3. Dana Operasional Header
+      const totalPengembanganAnggaran = yayasanAnggaran + unipduAnggaran;
+      const totalPengembanganRealisasi = yayasanRealisasi + unipduRealisasi;
+      const danaOperasionalAnggaran = totalPemasukanAnggaran - totalPengembanganAnggaran;
+      const danaOperasionalRealisasi = totalPemasukanRealisasi - totalPengembanganRealisasi;
+
       tableRows.push([
         { content: '', styles: { fontStyle: 'bold' as const } },
-        { content: 'Dana Operasional', colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
+        { content: 'Dana Operasional', styles: { fontStyle: 'bold' as const } },
+        '',
+        { content: formatIDR(danaOperasionalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const } },
+        { content: formatIDR(danaOperasionalRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const } }
       ]);
 
-      // 4. A. Pengeluaran Header
+      // 4. Pengeluaran Header
       tableRows.push([
         { content: '', styles: { fontStyle: 'bold' as const } },
-        { content: 'A. Pengeluaran', colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
+        { content: 'Pengeluaran', colSpan: 4, styles: { fontStyle: 'bold' as const } },
       ]);
       let oIdx = 0;
       data.pengeluaranRows.forEach(row => {
         if (row.type === 'group_header') {
           tableRows.push([
             { content: '', styles: { fontStyle: 'bold' as const } },
-            { content: row.uraian, colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
+            { content: row.uraian, colSpan: 4, styles: { fontStyle: 'bold' as const } },
           ]);
         } else {
           oIdx++;
@@ -340,7 +348,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       const jumlahRealisasi = expItems.reduce((sum, r) => sum + r.realisasi, 0);
       const kepPerc = data.kepanitiaaanPercentage / 100;
       const kepAnggaran = jumlahAnggaran * kepPerc;
-      const kepRealisasi = jumlahRealisasi * kepPerc;
+      const kepRealisasi = jumlahAnggaran * kepPerc;
       const totalAnggaran = jumlahAnggaran + kepAnggaran;
       const totalRealisasi = jumlahRealisasi + kepRealisasi;
 
@@ -357,7 +365,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
         if (row.type === 'group_header') {
           tableRows.push([
             { content: '', styles: { fontStyle: 'bold' as const } },
-            { content: row.uraian, colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
+            { content: row.uraian, colSpan: 4, styles: { fontStyle: 'bold' as const } },
           ]);
         } else {
           itemNum++;
@@ -378,7 +386,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       const jumlahRealisasi = items.reduce((sum, r) => sum + r.realisasi, 0);
       const kepPerc = data.kepanitiaaanPercentage / 100;
       const kepAnggaran = jumlahAnggaran * kepPerc;
-      const kepRealisasi = jumlahRealisasi * kepPerc;
+      const kepRealisasi = jumlahAnggaran * kepPerc;
       const totalAnggaran = jumlahAnggaran + kepAnggaran;
       const totalRealisasi = jumlahRealisasi + kepRealisasi;
 
@@ -398,7 +406,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       theme: 'grid',
       headStyles: { ...headStyles, halign: 'center' as const },
       bodyStyles,
-      styles: { fontSize: 8, cellPadding: 2.5, lineColor: [0, 0, 0], lineWidth: 0.15 },
+      styles: { fontSize: 8, cellPadding: 1.5, lineColor: [0, 0, 0], lineWidth: 0.05 },
       tableWidth,
       columnStyles: {
         0: { cellWidth: 10, halign: 'center' as const },
@@ -481,7 +489,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       theme: 'grid',
       headStyles: { ...headStyles, halign: 'center' as const },
       bodyStyles,
-      styles: { fontSize: 7.5, cellPadding: 2, lineColor: [0, 0, 0], lineWidth: 0.15 },
+      styles: { fontSize: 7.5, cellPadding: 1.2, lineColor: [0, 0, 0], lineWidth: 0.05 },
       tableWidth,
       columnStyles: colStyles,
     });
@@ -553,7 +561,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       theme: 'grid',
       headStyles: { ...headStyles, halign: 'center' as const },
       bodyStyles,
-      styles: { fontSize: 8, cellPadding: 2.5, lineColor: [0, 0, 0], lineWidth: 0.15 },
+      styles: { fontSize: 8, cellPadding: 1.5, lineColor: [0, 0, 0], lineWidth: 0.05 },
       tableWidth,
       columnStyles: colStyles,
     });
@@ -600,7 +608,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       theme: 'grid',
       headStyles: { ...headStyles, halign: 'center' as const },
       bodyStyles,
-      styles: { fontSize: 8.5, cellPadding: 3, lineColor: [0, 0, 0], lineWidth: 0.15 },
+      styles: { fontSize: 8.5, cellPadding: 1.8, lineColor: [0, 0, 0], lineWidth: 0.05 },
       tableWidth,
       columnStyles: {
         0: { cellWidth: 10, halign: 'center' as const },
