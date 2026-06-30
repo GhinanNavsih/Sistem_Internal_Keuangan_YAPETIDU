@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
-import { LogOut, UserCog, Users, FileSpreadsheet, Banknote } from 'lucide-react';
+import { LogOut, UserCog, Users, FileSpreadsheet, Banknote, Coins } from 'lucide-react';
 
 export default function GlobalHeader() {
   const pathname = usePathname();
@@ -15,8 +15,11 @@ export default function GlobalHeader() {
     return null;
   }
 
-  const getButtonStyle = (paths: string[]) => {
-    const isActive = paths.some(p => pathname === p || (p !== '/dashboard' && pathname.startsWith(p)));
+  const getButtonStyle = (paths: string[], exact = false) => {
+    const isActive = paths.some(p => {
+      if (exact) return pathname === p;
+      return pathname === p || (p !== '/dashboard' && pathname.startsWith(p));
+    });
     if (isActive) {
       return "rounded-xl shadow-sm bg-indigo-50/50 border-indigo-200 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-100/50 transition-all font-bold cursor-pointer";
     }
@@ -58,6 +61,11 @@ export default function GlobalHeader() {
         <Link href="/dashboard/employees">
           <Button variant="outline" className={getButtonStyle(['/dashboard/employees'])}>
             <Users className="w-4 h-4 mr-2" /> Data Pegawai
+          </Button>
+        </Link>
+        <Link href="/dashboard/payroll">
+          <Button variant="outline" className={getButtonStyle(['/dashboard/payroll'], true)}>
+            <Coins className="w-4 h-4 mr-2" /> Payroll
           </Button>
         </Link>
         <Link href={`/dashboard/payroll/uraian?month=${currentMonth}&year=${currentYear}`}>

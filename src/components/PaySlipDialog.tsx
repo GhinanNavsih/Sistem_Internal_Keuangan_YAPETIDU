@@ -238,6 +238,15 @@ export function buildInitialEarnings(
       label: 'Tunjangan Beras', 
       amount: emp.salaryProfile?.tunjanganBeras ?? 0 
     });
+
+    // Vakasi Tambahan for Pekarya
+    if (vakasiTambahanList && vakasiTambahanList.length > 0) {
+      vakasiTambahanList.forEach((item) => {
+        earnings.push({ label: item.eventName, amount: item.payGiven });
+      });
+    } else if (vakasiTambahanSum && vakasiTambahanSum > 0) {
+      earnings.push({ label: 'Vakasi Tambahan', amount: vakasiTambahanSum });
+    }
   }
 
   return earnings;
@@ -326,32 +335,27 @@ export default function PaySlipDialog({
   useEffect(() => {
     if (!open || !employee) return;
 
-    if (mode === 'create') {
-      setEarnings(buildInitialEarnings(
-        employee,
-        gapok,
-        activeTab,
-        uraianEntry,
-        vakasiTambahanSum,
-        vakasiTambahanList,
-        tunjanganFungsional,
-        tunjanganKepangkatan,
-        customColumns,
-        presenceBonus,
-        presensiEarning
-      ));
-      setDeductions(buildInitialDeductions(
-        employee,
-        activeTab,
-        koperasiDeduction,
-        presenceDeduction,
-        presensiDeduction,
-        koperasiSaving
-      ));
-    } else if (mode === 'review' && slipState) {
-      setEarnings([...slipState.earnings]);
-      setDeductions([...slipState.deductions]);
-    }
+    setEarnings(buildInitialEarnings(
+      employee,
+      gapok,
+      activeTab,
+      uraianEntry,
+      vakasiTambahanSum,
+      vakasiTambahanList,
+      tunjanganFungsional,
+      tunjanganKepangkatan,
+      customColumns,
+      presenceBonus,
+      presensiEarning
+    ));
+    setDeductions(buildInitialDeductions(
+      employee,
+      activeTab,
+      koperasiDeduction,
+      presenceDeduction,
+      presensiDeduction,
+      koperasiSaving
+    ));
   }, [
     open,
     employee,
@@ -448,8 +452,8 @@ export default function PaySlipDialog({
     const newState: SlipState = {
       ...slipState,
       status: 'draft',
-      earnings: [...earnings],
-      deductions: [...deductions],
+      earnings: [...slipState.earnings],
+      deductions: [...slipState.deductions],
     };
 
     onSlipGenerated(employee.employeeId || employee.id, newState);

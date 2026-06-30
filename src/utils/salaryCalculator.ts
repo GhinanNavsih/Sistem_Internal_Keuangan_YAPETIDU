@@ -142,6 +142,10 @@ export function calculateTotalEarnings(
     total += emp.salaryProfile.tunjanganBeras;
   }
 
+  if (vakasiTambahanSum) {
+    total += vakasiTambahanSum;
+  }
+
   return total;
 }
 

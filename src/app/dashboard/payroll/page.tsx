@@ -51,8 +51,9 @@ import {
   RefreshCw,
   Pause,
   Play,
+  CheckCheck,
 } from 'lucide-react';
-import { collection, getDocs, doc, getDoc, setDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db, secondaryDb } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
 import { useDashboardData } from '@/lib/DashboardDataContext';
@@ -184,6 +185,7 @@ export default function PayrollValidationDashboard() {
   const [uploadingWa, setUploadingWa] = useState<Record<string, boolean>>({});
   const [salaryMatrix, setSalaryMatrix] = useState<SalaryMatrix>({});
   const [localLoading, setLocalLoading] = useState(false);
+  const [confirmingBulk, setConfirmingBulk] = useState(false);
   const loading = contextLoading || localLoading;
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' | null }>({ key: '', direction: null });
 
@@ -200,6 +202,9 @@ export default function PayrollValidationDashboard() {
   }, [payrollCollar]);
 
   // ─── Slip status state (keyed by employeeId) ───────────────────
+  // NOTE: slipStates is used ONLY for status tracking (confirmed/draft/printed,
+  // emailSent, etc). Earnings/deductions are always recalculated from current
+  // employee data to ensure they stay in sync with profile changes.
   const [slipStates, setSlipStates] = useState<Record<string, SlipState>>({});
 
   // ─── UraianGaji state (keyed by docId e.g. "2026_05_KEBERSIHAN") ──
@@ -251,43 +256,34 @@ export default function PayrollValidationDashboard() {
     const rowsData = filteredEmployees.map((emp, idx) => {
       const years = calculateYearsOfService(emp.joinDate, targetDate);
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
-      const slip = slipStates[emp.id];
 
-      let earningsList: { label: string; amount: number }[] = [];
-      let deductionsList: { label: string; amount: number }[] = [];
+      const roleKey = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
+      const periodKey = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+      const uraianDoc = uraianMap[`${periodKey}_${roleKey}`];
+      const uraianEntry = uraianDoc?.entries?.[emp.id];
 
-      if (slip && slip.status === 'confirmed' && slip.earnings && slip.deductions) {
-        earningsList = slip.earnings.map(e => ({ label: e.label, amount: e.amount }));
-        deductionsList = slip.deductions.map(d => ({ label: d.label, amount: d.amount }));
-      } else {
-        const roleKey = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
-        const periodKey = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-        const uraianDoc = uraianMap[`${periodKey}_${roleKey}`];
-        const uraianEntry = uraianDoc?.entries?.[emp.id];
+      const earningsList = buildInitialEarnings(
+        emp.raw,
+        gapok,
+        payrollCollar,
+        uraianEntry,
+        vakasiTambahanMap[emp.id] ?? 0,
+        vakasiTambahanListMap[emp.id] ?? [],
+        functionalAllowanceMap[emp.id] ?? 0,
+        kepangkatanAllowanceMap[emp.id] ?? 0,
+        [],
+        getLoyalisPresenceBonus(emp.id),
+        getLoyalisPresensiEarning(emp.id)
+      );
 
-        earningsList = buildInitialEarnings(
-          emp.raw,
-          gapok,
-          payrollCollar,
-          uraianEntry,
-          vakasiTambahanMap[emp.id] ?? 0,
-          vakasiTambahanListMap[emp.id] ?? [],
-          functionalAllowanceMap[emp.id] ?? 0,
-          kepangkatanAllowanceMap[emp.id] ?? 0,
-          [],
-          getLoyalisPresenceBonus(emp.id),
-          getLoyalisPresensiEarning(emp.id)
-        );
-
-        deductionsList = buildInitialDeductions(
-          emp.raw,
-          payrollCollar,
-          koperasiDeductions[emp.id] || 0,
-          getLoyalisPresenceDeduction(emp.id),
-          getLoyalisPresensiDeduction(emp.id),
-          koperasiSavings[emp.id] || 0
-        );
-      }
+      const deductionsList = buildInitialDeductions(
+        emp.raw,
+        payrollCollar,
+        koperasiDeductions[emp.id] || 0,
+        getLoyalisPresenceDeduction(emp.id),
+        getLoyalisPresensiDeduction(emp.id),
+        koperasiSavings[emp.id] || 0
+      );
 
       earningsList.forEach(e => allEarningLabelsSet.add(e.label));
       deductionsList.forEach(d => allDeductionLabelsSet.add(d.label));
@@ -536,7 +532,6 @@ export default function PayrollValidationDashboard() {
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
       const uraianEntry = uraianDoc?.entries?.[emp.id];
 
-      const slip = slipStates[emp.id];
       let earnings = 0;
       let totalDeductions = 0;
 
@@ -546,34 +541,19 @@ export default function PayrollValidationDashboard() {
         empDeductions[key] = 0;
       });
 
-      if (slip && slip.status === 'confirmed' && slip.earnings && slip.deductions) {
-        earnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
-        slip.deductions.forEach(d => {
-          const sanitized = sanitizeDeductionLabel(d.label);
-          const amount = d.amount || 0;
-          totalDeductions += amount;
+      earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id), kepangkatanAllowanceMap[emp.id] ?? 0);
 
-          if (empDeductions[sanitized] !== undefined) {
-            empDeductions[sanitized] += amount;
-          } else {
-            empDeductions[sanitized] = amount;
-          }
-        });
-      } else {
-        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id), kepangkatanAllowanceMap[emp.id] ?? 0);
-
-        const defaultDeductions = getEmployeeDeductions(emp, undefined, payrollCollar);
-        defaultDeductions.forEach(d => {
-          const sanitized = sanitizeDeductionLabel(d.label);
-          const amount = d.amount || 0;
-          totalDeductions += amount;
-          if (empDeductions[sanitized] !== undefined) {
-            empDeductions[sanitized] += amount;
-          } else {
-            empDeductions[sanitized] = amount;
-          }
-        });
-      }
+      const defaultDeductions = getEmployeeDeductions(emp, undefined, payrollCollar);
+      defaultDeductions.forEach(d => {
+        const sanitized = sanitizeDeductionLabel(d.label);
+        const amount = d.amount || 0;
+        totalDeductions += amount;
+        if (empDeductions[sanitized] !== undefined) {
+          empDeductions[sanitized] += amount;
+        } else {
+          empDeductions[sanitized] = amount;
+        }
+      });
 
       const netSalary = earnings - totalDeductions;
 
@@ -630,20 +610,9 @@ export default function PayrollValidationDashboard() {
       const gapok = calculateGapok(emp, salaryMatrix, targetDate);
       const uraianEntry = uraianDoc?.entries?.[emp.id];
 
-      const slip = slipStates[emp.id];
-      let earnings = 0;
-      let totalDeductions = 0;
-      let netSalary = 0;
-
-      if (slip && slip.status === 'confirmed' && slip.earnings && slip.deductions) {
-        earnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
-        totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
-        netSalary = earnings - totalDeductions;
-      } else {
-        earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id), kepangkatanAllowanceMap[emp.id] ?? 0);
-        totalDeductions = calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0, getLoyalisPresenceDeduction(emp.id), getLoyalisPresensiDeduction(emp.id), koperasiSavings[emp.id] || 0);
-        netSalary = calculateNetSalary(earnings, totalDeductions);
-      }
+      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id), kepangkatanAllowanceMap[emp.id] ?? 0);
+      const totalDeductions = calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0, getLoyalisPresenceDeduction(emp.id), getLoyalisPresensiDeduction(emp.id), koperasiSavings[emp.id] || 0);
+      const netSalary = calculateNetSalary(earnings, totalDeductions);
 
       totalNetSalary += netSalary;
 
@@ -761,42 +730,68 @@ export default function PayrollValidationDashboard() {
 
   const displayEmployees = getFilteredAndSortedEmployees();
 
+  // Helper: build fresh earnings/deductions from current employee data
+  // Used by PDF, WhatsApp, email, and multi-print flows to always
+  // reflect the latest profile data, salary matrix, and vakasi tambahan.
+  const buildFreshSlipData = (emp: EmployeeRow) => {
+    const gapok = calculateGapok(emp, salaryMatrix, targetDate);
+    const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
+    const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+    const uraianEntry = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
+
+    const earnings = buildInitialEarnings(
+      emp.raw,
+      gapok,
+      payrollCollar,
+      uraianEntry,
+      vakasiTambahanMap[emp.id] ?? 0,
+      vakasiTambahanListMap[emp.id] ?? [],
+      functionalAllowanceMap[emp.id] ?? 0,
+      kepangkatanAllowanceMap[emp.id] ?? 0,
+      [],
+      getLoyalisPresenceBonus(emp.id),
+      getLoyalisPresensiEarning(emp.id)
+    );
+
+    const deductions = buildInitialDeductions(
+      emp.raw,
+      payrollCollar,
+      koperasiDeductions[emp.id] || 0,
+      getLoyalisPresenceDeduction(emp.id),
+      getLoyalisPresensiDeduction(emp.id),
+      koperasiSavings[emp.id] || 0
+    );
+
+    return { earnings, deductions };
+  };
+
   const payrollTotals = useMemo(() => {
     let totalGross = 0;
     let totalDeductions = 0;
     let totalNet = 0;
 
     displayEmployees.forEach((emp) => {
-      const slip = slipStates[emp.id];
-      let earnings = 0;
-      let deductions = 0;
-
-      if (slip && slip.status === 'confirmed' && slip.earnings && slip.deductions) {
-        earnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
-        deductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
-      } else {
-        const gapok = calculateGapok(emp, salaryMatrix, targetDate);
-        const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
-        const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-        const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
-        earnings = calculateTotalEarnings(
-          emp.raw,
-          gapok,
-          uraian,
-          vakasiTambahanMap[emp.id] ?? 0,
-          functionalAllowanceMap[emp.id] ?? 0,
-          getLoyalisPresenceBonus(emp.id),
-          getLoyalisPresensiEarning(emp.id),
-          kepangkatanAllowanceMap[emp.id] ?? 0
-        );
-        deductions = calculateTotalDeductions(
-          emp.raw,
-          koperasiDeductions[emp.id] || 0,
-          getLoyalisPresenceDeduction(emp.id),
-          getLoyalisPresensiDeduction(emp.id),
-          koperasiSavings[emp.id] || 0
-        );
-      }
+      const gapok = calculateGapok(emp, salaryMatrix, targetDate);
+      const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
+      const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+      const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
+      const earnings = calculateTotalEarnings(
+        emp.raw,
+        gapok,
+        uraian,
+        vakasiTambahanMap[emp.id] ?? 0,
+        functionalAllowanceMap[emp.id] ?? 0,
+        getLoyalisPresenceBonus(emp.id),
+        getLoyalisPresensiEarning(emp.id),
+        kepangkatanAllowanceMap[emp.id] ?? 0
+      );
+      const deductions = calculateTotalDeductions(
+        emp.raw,
+        koperasiDeductions[emp.id] || 0,
+        getLoyalisPresenceDeduction(emp.id),
+        getLoyalisPresensiDeduction(emp.id),
+        koperasiSavings[emp.id] || 0
+      );
 
       totalGross += earnings;
       totalDeductions += deductions;
@@ -1008,6 +1003,7 @@ export default function PayrollValidationDashboard() {
 
     try {
       const isLoyalis = payrollCollar === 'loyalis';
+      const freshData = buildFreshSlipData(emp);
       const slipData = {
         employeeName: isLoyalis ? (emp.raw.personal_info?.name || '') : emp.name,
         employeeNo: emp.rowIndex,
@@ -1015,8 +1011,8 @@ export default function PayrollValidationDashboard() {
         jobCategory: isLoyalis
           ? `STAF ${emp.raw.employment_profile?.department_unit || 'STAF'}`
           : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
-        earnings: slip.earnings,
-        deductions: slip.deductions,
+        earnings: freshData.earnings,
+        deductions: freshData.deductions,
         isLoyalis: isLoyalis,
         niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
         npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
@@ -1062,16 +1058,16 @@ export default function PayrollValidationDashboard() {
       }
 
       // 2. Generate WhatsApp prefilled message with PDF URL included (or undefined if failed)
-      const totalEarnings = slip.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
-      const totalDeductions = slip.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
+      const totalEarnings = freshData.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
+      const totalDeductions = freshData.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
       const netSalary = totalEarnings - totalDeductions;
 
       const waUrl = generateWhatsAppPaySlipUrl(
         phone,
         emp.name,
         payrollPeriod,
-        slip.earnings,
-        slip.deductions,
+        freshData.earnings,
+        freshData.deductions,
         netSalary,
         pdfUrl
       );
@@ -1107,6 +1103,7 @@ export default function PayrollValidationDashboard() {
 
     try {
       const isLoyalis = payrollCollar === 'loyalis';
+      const freshData = buildFreshSlipData(emp);
       const slipData = {
         employeeName: isLoyalis ? (emp.raw.personal_info?.name || '') : emp.name,
         employeeNo: emp.rowIndex,
@@ -1114,8 +1111,8 @@ export default function PayrollValidationDashboard() {
         jobCategory: isLoyalis
           ? `STAF ${emp.raw.employment_profile?.department_unit || 'STAF'}`
           : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
-        earnings: slip.earnings,
-        deductions: slip.deductions,
+        earnings: freshData.earnings,
+        deductions: freshData.deductions,
         isLoyalis: isLoyalis,
         niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
         npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
@@ -1126,8 +1123,8 @@ export default function PayrollValidationDashboard() {
       const pdfBase64 = pdfDoc.output('datauristring').split(',')[1];
 
       // 2. Format a clean text breakdown
-      const totalEarnings = slip.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
-      const totalDeductions = slip.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
+      const totalEarnings = freshData.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
+      const totalDeductions = freshData.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
       const netSalary = totalEarnings - totalDeductions;
 
       const formatIDR = (amount: number): string => {
@@ -1140,14 +1137,14 @@ export default function PayrollValidationDashboard() {
       };
 
       let textBreakdown = `PENDAPATAN:\n`;
-      slip.earnings.forEach((e: any) => {
+      freshData.earnings.forEach((e: any) => {
         textBreakdown += `• ${e.label}: ${formatIDR(e.amount)}\n`;
       });
       textBreakdown += `Total Pendapatan: ${formatIDR(totalEarnings)}\n\n`;
 
       textBreakdown += `POTONGAN:\n`;
-      if (slip.deductions.length > 0) {
-        slip.deductions.forEach((d: any) => {
+      if (freshData.deductions.length > 0) {
+        freshData.deductions.forEach((d: any) => {
           textBreakdown += `• ${d.label}: ${formatIDR(d.amount)}\n`;
         });
         textBreakdown += `Total Potongan: ${formatIDR(totalDeductions)}\n\n`;
@@ -1243,7 +1240,7 @@ export default function PayrollValidationDashboard() {
     }
 
     const slipsToDraw: PaySlipData[] = confirmedEmployees.map(emp => {
-      const slip = slipStates[emp.id];
+      const freshData = buildFreshSlipData(emp);
       return {
         employeeName: isLoyalis ? (emp.raw.personal_info?.name || '') : emp.name,
         employeeNo: emp.rowIndex,
@@ -1251,8 +1248,8 @@ export default function PayrollValidationDashboard() {
         jobCategory: isLoyalis
           ? `STAF ${emp.raw.employment_profile?.department_unit || 'STAF'}`
           : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
-        earnings: slip.earnings,
-        deductions: slip.deductions,
+        earnings: freshData.earnings,
+        deductions: freshData.deductions,
         isLoyalis: isLoyalis,
         niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
         npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
@@ -1328,6 +1325,77 @@ export default function PayrollValidationDashboard() {
       confirmedAt: new Date().toISOString(),
     };
     await handleSlipGenerated(employeeId, updatedState);
+  };
+
+  const handleBulkConfirm = async () => {
+    const unconfirmedEmployees = displayEmployees.filter(emp => {
+      const slip = slipStates[emp.id];
+      return !slip || slip.status !== 'confirmed';
+    });
+
+    if (unconfirmedEmployees.length === 0) {
+      alert('Semua karyawan di daftar ini sudah dikonfirmasi.');
+      return;
+    }
+
+    const confirmMessage = `Apakah Anda yakin ingin mengonfirmasi sekaligus ${unconfirmedEmployees.length} slip gaji untuk karyawan yang terpilih?`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setConfirmingBulk(true);
+    
+    try {
+      const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+      const batch = writeBatch(db);
+      const updatedSlips: Record<string, SlipState> = {};
+      const nowStr = new Date().toISOString();
+
+      unconfirmedEmployees.forEach(emp => {
+        const realDocId = `${period}_${emp.id}`;
+        const slipRef = doc(db, 'PayrollSlipStates', realDocId);
+        const prevSlip = slipStates[emp.id];
+
+        const state: SlipState = {
+          status: 'confirmed',
+          earnings: prevSlip?.earnings || [],
+          deductions: prevSlip?.deductions || [],
+          confirmedAt: nowStr,
+          generatedAt: prevSlip?.generatedAt || nowStr,
+        };
+
+        batch.set(slipRef, {
+          employeeId: emp.id,
+          period,
+          status: 'confirmed',
+          earnings: state.earnings,
+          deductions: state.deductions,
+          generatedAt: state.generatedAt,
+          confirmedAt: state.confirmedAt,
+        });
+
+        updatedSlips[emp.id] = state;
+      });
+
+      await batch.commit();
+
+      setSlipStates(prev => ({ ...prev, ...updatedSlips }));
+
+      setNotification({
+        show: true,
+        type: 'success',
+        message: `${unconfirmedEmployees.length} slip gaji berhasil dikonfirmasi!`
+      });
+      setTimeout(() => {
+        setNotification(prev => ({ ...prev, show: false }));
+      }, 3000);
+
+    } catch (err: any) {
+      console.error('Error bulk confirming payslips:', err);
+      alert(`Gagal melakukan konfirmasi massal: ${err.message || 'Terjadi kesalahan sistem'}`);
+    } finally {
+      setConfirmingBulk(false);
+    }
   };
 
   // ─── Stats ─────────────────────────────────────────────────────
@@ -1502,6 +1570,24 @@ export default function PayrollValidationDashboard() {
               <div className="flex items-center gap-3">
                 <button
                   type="button"
+                  onClick={handleBulkConfirm}
+                  disabled={confirmingBulk}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${confirmingBulk ? 'opacity-70 cursor-not-allowed' : ''}`}
+                >
+                  {confirmingBulk ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                      Memproses...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCheck className="w-4 h-4 text-emerald-600" />
+                      Konfirmasi Semua ({displayEmployees.filter(emp => !slipStates[emp.id] || slipStates[emp.id].status !== 'confirmed').length})
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
                   onClick={handleBulkEmail}
                   disabled={sendingBulkEmail}
                   className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${sendingBulkEmail ? 'opacity-70 cursor-not-allowed' : ''}`}
@@ -1619,10 +1705,6 @@ export default function PayrollValidationDashboard() {
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
                           {(() => {
-                            if (slip && slip.status === 'confirmed' && slip.earnings) {
-                              const totalEarnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
-                              return formatIDR(totalEarnings);
-                            }
                             const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
                             const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
                             const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
@@ -1631,21 +1713,10 @@ export default function PayrollValidationDashboard() {
                           })()}
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
-                          {(() => {
-                            if (slip && slip.status === 'confirmed' && slip.deductions) {
-                              const totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
-                              return formatIDR(totalDeductions);
-                            }
-                            return formatIDR(calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0, getLoyalisPresenceDeduction(emp.id), getLoyalisPresensiDeduction(emp.id), koperasiSavings[emp.id] || 0));
-                          })()}
+                          {formatIDR(calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0, getLoyalisPresenceDeduction(emp.id), getLoyalisPresensiDeduction(emp.id), koperasiSavings[emp.id] || 0))}
                         </TableCell>
                         <TableCell className="py-4 font-bold text-indigo-700">
                           {(() => {
-                            if (slip && slip.status === 'confirmed' && slip.earnings && slip.deductions) {
-                              const totalEarnings = slip.earnings.reduce((sum, e) => sum + e.amount, 0);
-                              const totalDeductions = slip.deductions.reduce((sum, d) => sum + d.amount, 0);
-                              return formatIDR(totalEarnings - totalDeductions);
-                            }
                             const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
                             const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
                             const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
@@ -1661,7 +1732,7 @@ export default function PayrollValidationDashboard() {
                             {(!slip || slip.status !== 'confirmed') && (
                               <button
                                 id={`periksa-${emp.id}`}
-                                onClick={() => openCreateDialog(emp)}
+                                onClick={() => slip ? openReviewDialog(emp) : openCreateDialog(emp)}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
                                   bg-indigo-50 text-indigo-600 border border-indigo-200
                                   hover:bg-indigo-100 hover:border-indigo-300 hover:shadow-sm
@@ -2205,8 +2276,7 @@ export default function PayrollValidationDashboard() {
               disabled={sendingSingleEmail}
               onClick={() => {
                 if (!selectedEmployee) return;
-                const slip = slipStates[selectedEmployee.id];
-                if (!slip) return;
+                const freshData = buildFreshSlipData(selectedEmployee);
                 const isLoyalis = payrollCollar === 'loyalis';
                 const slipData = {
                   employeeName: isLoyalis ? (selectedEmployee.raw.personal_info?.name || '') : selectedEmployee.name,
@@ -2215,8 +2285,8 @@ export default function PayrollValidationDashboard() {
                   jobCategory: isLoyalis
                     ? `STAF ${selectedEmployee.raw.employment_profile?.department_unit || 'STAF'}`
                     : `VAKASI ${selectedEmployee.raw.employment?.jobCategory || ''}`,
-                  earnings: slip.earnings,
-                  deductions: slip.deductions,
+                  earnings: freshData.earnings,
+                  deductions: freshData.deductions,
                   isLoyalis: isLoyalis,
                   niy: isLoyalis ? selectedEmployee.raw.personal_info?.employee_id_niy || '' : '',
                   npwp: isLoyalis ? selectedEmployee.raw.personal_info?.tax_id_npwp || '' : '',
@@ -2293,8 +2363,8 @@ export default function PayrollValidationDashboard() {
                 });
 
                 const queueItems = confirmedEmployees.map(emp => {
-                  const slip = slipStates[emp.id];
                   const email = emp.email || emp.raw.personal_info?.email || emp.raw.email || '';
+                  const freshData = buildFreshSlipData(emp);
                   const slipData = {
                     employeeName: isLoyalis ? (emp.raw.personal_info?.name || '') : emp.name,
                     employeeNo: emp.rowIndex,
@@ -2302,8 +2372,8 @@ export default function PayrollValidationDashboard() {
                     jobCategory: isLoyalis
                       ? `STAF ${emp.raw.employment_profile?.department_unit || 'STAF'}`
                       : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
-                    earnings: slip.earnings,
-                    deductions: slip.deductions,
+                    earnings: freshData.earnings,
+                    deductions: freshData.deductions,
                     isLoyalis: isLoyalis,
                     niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
                     npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',

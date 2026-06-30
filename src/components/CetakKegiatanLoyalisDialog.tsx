@@ -46,20 +46,25 @@ export default function CetakKegiatanLoyalisDialog({
   }, [loyalisEmployees, departments]);
 
   React.useEffect(() => {
-    if (open && activeDepartments.length > 0) {
-      setSelectedDept(activeDepartments[0]);
+    if (open) {
+      setSelectedDept('Semua Departemen');
     }
-  }, [open, activeDepartments]);
+  }, [open]);
 
   const handlePrint = () => {
     if (!selectedDept) return;
 
-    // 1. Get all active Loyalis employee IDs in the selected department unit
-    const deptEmployees = loyalisEmployees.filter(emp => emp.department === selectedDept);
+    // 1. Get all active Loyalis employee IDs in the selected department unit (or all units)
+    const deptEmployees = selectedDept === 'Semua Departemen'
+      ? loyalisEmployees
+      : loyalisEmployees.filter(emp => emp.department === selectedDept);
     const deptEmployeeIds = new Set(deptEmployees.map(emp => emp.id));
 
     if (deptEmployees.length === 0) {
-      alert(`Tidak ada karyawan Loyalis ditemukan di unit "${selectedDept}".`);
+      alert(selectedDept === 'Semua Departemen'
+        ? 'Tidak ada karyawan Loyalis ditemukan.'
+        : `Tidak ada karyawan Loyalis ditemukan di unit "${selectedDept}".`
+      );
       return;
     }
 
@@ -88,7 +93,10 @@ export default function CetakKegiatanLoyalisDialog({
     });
 
     if (groups.length === 0) {
-      alert(`Tidak ada rincian kegiatan dengan payout ditemukan untuk unit "${selectedDept}" pada periode ${periodName}.`);
+      alert(selectedDept === 'Semua Departemen'
+        ? `Tidak ada rincian kegiatan dengan payout ditemukan untuk periode ${periodName}.`
+        : `Tidak ada rincian kegiatan dengan payout ditemukan untuk unit "${selectedDept}" pada periode ${periodName}.`
+      );
       return;
     }
 
@@ -139,6 +147,7 @@ export default function CetakKegiatanLoyalisDialog({
                 onChange={(e) => setSelectedDept(e.target.value)}
                 className="w-full bg-white border border-slate-200 text-slate-600 text-sm font-semibold rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm"
               >
+                <option value="Semua Departemen">Semua Departemen</option>
                 {activeDepartments.map(dept => (
                   <option key={dept} value={dept}>{dept}</option>
                 ))}

@@ -14,20 +14,16 @@ if (getApps().length === 0) {
 const db = getFirestore();
 
 async function main() {
-  const snap = await db.collection('Employees_Loyalis').get();
-  let found = false;
-  snap.docs.forEach(docSnap => {
-    const data = docSnap.data();
-    const name = data.personal_info?.name || '';
-    if (name.toLowerCase().includes('ghinan') || name.toLowerCase().includes('navsih')) {
-      found = true;
-      console.log(`\n=== Found in Firestore ===`);
-      console.log('ID:', docSnap.id);
-      console.log(JSON.stringify(data, null, 2));
-    }
-  });
-  if (!found) {
-    console.log('\n=== NOT FOUND IN FIRESTORE ===');
+  const period = '2026_06';
+  const employeeId = 'Loyalis_253';
+  const docId = `${period}_${employeeId}`;
+
+  const docSnap = await db.collection('PayrollSlipStates').doc(docId).get();
+  if (docSnap.exists) {
+    console.log(`\n=== Found saved slip in PayrollSlipStates (ID: ${docId}) ===`);
+    console.log(JSON.stringify(docSnap.data(), null, 2));
+  } else {
+    console.log(`\n=== No saved slip found in PayrollSlipStates for ID: ${docId} ===`);
   }
 }
 

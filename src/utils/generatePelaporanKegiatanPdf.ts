@@ -57,7 +57,11 @@ export interface PelaporanKegiatanPdfData {
   receiptEnabled: boolean;
   // Section 1
   realisasiTitle: string;
-  realisasiRows: RealisasiRow[];
+  realisasiRows?: RealisasiRow[];
+  pemasukanRows?: any[];
+  pengeluaranRows?: any[];
+  yayasanPercentage?: number;
+  unipduPercentage?: number;
   kepanitiaaanPercentage: number;
   // Section 2
   vakasiPengujiTitle: string;
@@ -84,8 +88,31 @@ const formatIDR = (amount: number): string => {
 const parseQty = (q: string): number => {
   if (!q) return 0;
   const trimmed = q.trim();
-  if (trimmed.endsWith('%')) return parseFloat(trimmed.replace('%', '')) / 100;
-  return parseFloat(trimmed) || 0;
+  
+  // Split by 'x', 'X', or '*'
+  const parts = trimmed.split(/[xX\*]/);
+  if (parts.length > 1) {
+    let product = 1;
+    for (const part of parts) {
+      const cleanPart = part.trim();
+      const match = cleanPart.match(/[\d\.]+/);
+      if (!match) continue;
+      let val = parseFloat(match[0]);
+      if (cleanPart.includes('%')) {
+        val = val / 100;
+      }
+      product *= val;
+    }
+    return product;
+  }
+
+  if (trimmed.endsWith('%')) {
+    const match = trimmed.match(/[\d\.]+/);
+    return match ? parseFloat(match[0]) / 100 : 0;
+  }
+
+  const match = trimmed.match(/[\d\.]+/);
+  return match ? parseFloat(match[0]) : 0;
 };
 
 // ── Shared Rendering Functions ──────────────────────────────────────────────
@@ -120,48 +147,69 @@ function renderTitle(doc: jsPDF, title: string, startY: number): number {
 function renderSignatures(doc: jsPDF, signatures: PelaporanKegiatanSignature[], startY: number) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const availableWidth = pageWidth - 2 * margin;
+  const leftColX = margin + availableWidth / 4;
+  const rightColX = pageWidth - margin - availableWidth / 4;
+  const centerColX = pageWidth / 2;
+
+  const sigCount = signatures.length;
+  if (sigCount === 0) return;
+
+  // Determine height needed and positions
+  let heightNeeded = 35;
+  if (sigCount === 3) {
+    heightNeeded = 70; // 2 rows
+  }
 
   let sigY = startY + 12;
-  if (sigY + 35 > pageHeight) {
+  if (sigY + heightNeeded > pageHeight - 15) { // leave 15mm margin at the bottom
     doc.addPage();
     renderLetterhead(doc);
     sigY = 45;
   }
 
-  const sigCount = signatures.length;
-  if (sigCount === 0) return;
-
-  const colWidth = (pageWidth - 30) / sigCount;
-
-  signatures.forEach((sig, idx) => {
-    const colX = 15 + idx * colWidth + colWidth / 2;
-
+  // Draw signature helper
+  const drawSig = (sig: PelaporanKegiatanSignature, x: number, y: number) => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9.5);
     if (sig.label) {
-      doc.text(sig.label, colX, sigY, { align: 'center' });
+      doc.text(sig.label, x, y, { align: 'center' });
     }
     if (sig.title && !sig.label) {
-      doc.text(sig.title, colX, sigY, { align: 'center' });
+      doc.text(sig.title, x, y, { align: 'center' });
     }
 
-    const nameY = sigY + 24;
+    const nameY = y + 24;
     doc.setFont('helvetica', 'bold');
-    doc.text(sig.name || '____________________', colX, nameY, { align: 'center' });
+    doc.text(sig.name || '____________________', x, nameY, { align: 'center' });
 
     if (sig.name) {
       const textWidth = doc.getTextWidth(sig.name);
       doc.setLineWidth(0.25);
-      doc.line(colX - textWidth / 2, nameY + 0.8, colX + textWidth / 2, nameY + 0.8);
+      doc.line(x - textWidth / 2, nameY + 0.8, x + textWidth / 2, nameY + 0.8);
     }
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     const titleBelow = sig.label ? sig.title : '';
     if (titleBelow) {
-      doc.text(titleBelow, colX, nameY + 5, { align: 'center' });
+      doc.text(titleBelow, x, nameY + 5, { align: 'center' });
     }
-  });
+  };
+
+  if (sigCount === 1) {
+    drawSig(signatures[0], centerColX, sigY);
+  } else if (sigCount === 2) {
+    drawSig(signatures[0], leftColX, sigY);
+    drawSig(signatures[1], rightColX, sigY);
+  } else if (sigCount === 3) {
+    // Row 1: 1st person (left) and 3rd person (right)
+    drawSig(signatures[0], leftColX, sigY);
+    drawSig(signatures[2], rightColX, sigY);
+    // Row 2: 2nd person (center)
+    drawSig(signatures[1], centerColX, sigY + 35);
+  }
 }
 
 // ── Main Generator ──────────────────────────────────────────────────────────
@@ -194,7 +242,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
   // ═══════════════════════════════════════════════════════════════════════════
   // PAGE: REALISASI KEUANGAN
   // ═══════════════════════════════════════════════════════════════════════════
-  if (data.realisasiEnabled && data.realisasiRows.length > 0) {
+  if (data.realisasiEnabled && ((data.pemasukanRows && data.pemasukanRows.length > 0) || (data.realisasiRows && data.realisasiRows.length > 0))) {
     if (!isFirstPage) doc.addPage();
     isFirstPage = false;
 
@@ -202,46 +250,145 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
     const tableStartY = renderTitle(doc, data.realisasiTitle || 'REALISASI', 45);
 
     const tableRows: any[] = [];
-    let itemNum = 0;
 
-    data.realisasiRows.forEach((row) => {
-      if (row.type === 'group_header') {
-        tableRows.push([
-          { content: '', styles: { fontStyle: 'bold' as const } },
-          { content: row.uraian, colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
-        ]);
-      } else {
-        itemNum++;
+    if (data.pemasukanRows && data.pengeluaranRows) {
+      // 1. Pemasukan Header
+      tableRows.push([
+        { content: '', styles: { fontStyle: 'bold' as const } },
+        { content: 'Pemasukan', colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
+      ]);
+      let pIdx = 0;
+      data.pemasukanRows.forEach(row => {
+        pIdx++;
         const anggaran = parseQty(row.rincianQty) * row.rincianRate;
-        const rincianStr = row.rincianQty && row.rincianRate > 0
-          ? `${row.rincianQty}  x  ${formatIDR(row.rincianRate)}`
-          : '';
+        const rincianStr = row.rincianQty && row.rincianRate > 0 ? `${row.rincianQty}  x  ${formatIDR(row.rincianRate)}` : '';
         tableRows.push([
-          itemNum.toString(),
+          pIdx.toString(),
           row.uraian,
           rincianStr,
           { content: formatIDR(anggaran), styles: { halign: 'right' as const } },
-          { content: formatIDR(row.realisasi), styles: { halign: 'right' as const } },
+          { content: formatIDR(row.realisasi), styles: { halign: 'right' as const } }
         ]);
-      }
-    });
+      });
 
-    // Summary rows
-    const items = data.realisasiRows.filter(r => r.type === 'item');
-    const jumlahAnggaran = items.reduce((sum, r) => sum + (parseQty(r.rincianQty) * r.rincianRate), 0);
-    const jumlahRealisasi = items.reduce((sum, r) => sum + r.realisasi, 0);
-    const kepPerc = data.kepanitiaaanPercentage / 100;
-    const kepAnggaran = jumlahAnggaran * kepPerc;
-    const kepRealisasi = jumlahRealisasi * kepPerc;
-    const totalAnggaran = jumlahAnggaran + kepAnggaran;
-    const totalRealisasi = jumlahRealisasi + kepRealisasi;
+      // Calculate totals for Pemasukan
+      const totalPemasukanAnggaran = data.pemasukanRows.reduce((sum, r) => sum + (parseQty(r.rincianQty) * r.rincianRate), 0);
+      const totalPemasukanRealisasi = data.pemasukanRows.reduce((sum, r) => sum + r.realisasi, 0);
 
-    const summaryFill = [240, 244, 255] as [number, number, number];
-    tableRows.push(
-      [{ content: 'Jumlah Pengeluaran', colSpan: 3, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
-      [{ content: `Kepanitiaan ${data.kepanitiaaanPercentage}% Pengeluaran`, colSpan: 3, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepRealisasi), styles: { halign: 'right' as const, fillColor: summaryFill } }],
-      [{ content: 'TOTAL PENGELUARAN', colSpan: 3, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
-    );
+      // 2. Dana Pengembangan Header
+      tableRows.push([
+        { content: '', styles: { fontStyle: 'bold' as const } },
+        { content: 'Dana Pengembangan', colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
+      ]);
+      const yayasanPct = data.yayasanPercentage ?? 20;
+      const unipduPct = data.unipduPercentage ?? 20;
+      const yayasanAnggaran = totalPemasukanAnggaran * (yayasanPct / 100);
+      const yayasanRealisasi = totalPemasukanRealisasi * (yayasanPct / 100);
+      const unipduAnggaran = totalPemasukanAnggaran * (unipduPct / 100);
+      const unipduRealisasi = totalPemasukanRealisasi * (unipduPct / 100);
+
+      tableRows.push([
+        '',
+        'Yayasan',
+        `${yayasanPct}%  x  ${formatIDR(totalPemasukanAnggaran)}`,
+        { content: formatIDR(yayasanAnggaran), styles: { halign: 'right' as const } },
+        { content: formatIDR(yayasanRealisasi), styles: { halign: 'right' as const } }
+      ]);
+      tableRows.push([
+        '',
+        'UNIPDU',
+        `${unipduPct}%  x  ${formatIDR(totalPemasukanAnggaran)}`,
+        { content: formatIDR(unipduAnggaran), styles: { halign: 'right' as const } },
+        { content: formatIDR(unipduRealisasi), styles: { halign: 'right' as const } }
+      ]);
+
+      // 3. Dana Operasional Header
+      tableRows.push([
+        { content: '', styles: { fontStyle: 'bold' as const } },
+        { content: 'Dana Operasional', colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
+      ]);
+
+      // 4. A. Pengeluaran Header
+      tableRows.push([
+        { content: '', styles: { fontStyle: 'bold' as const } },
+        { content: 'A. Pengeluaran', colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
+      ]);
+      let oIdx = 0;
+      data.pengeluaranRows.forEach(row => {
+        if (row.type === 'group_header') {
+          tableRows.push([
+            { content: '', styles: { fontStyle: 'bold' as const } },
+            { content: row.uraian, colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
+          ]);
+        } else {
+          oIdx++;
+          const anggaran = parseQty(row.rincianQty) * row.rincianRate;
+          const rincianStr = row.rincianQty && row.rincianRate > 0 ? `${row.rincianQty}  x  ${formatIDR(row.rincianRate)}` : '';
+          tableRows.push([
+            oIdx.toString(),
+            row.uraian,
+            rincianStr,
+            { content: formatIDR(anggaran), styles: { halign: 'right' as const } },
+            { content: formatIDR(row.realisasi), styles: { halign: 'right' as const } }
+          ]);
+        }
+      });
+
+      // Summary rows for Pengeluaran
+      const expItems = data.pengeluaranRows.filter(r => r.type === 'item');
+      const jumlahAnggaran = expItems.reduce((sum, r) => sum + (parseQty(r.rincianQty) * r.rincianRate), 0);
+      const jumlahRealisasi = expItems.reduce((sum, r) => sum + r.realisasi, 0);
+      const kepPerc = data.kepanitiaaanPercentage / 100;
+      const kepAnggaran = jumlahAnggaran * kepPerc;
+      const kepRealisasi = jumlahRealisasi * kepPerc;
+      const totalAnggaran = jumlahAnggaran + kepAnggaran;
+      const totalRealisasi = jumlahRealisasi + kepRealisasi;
+
+      const summaryFill = [240, 244, 255] as [number, number, number];
+      tableRows.push(
+        [{ content: 'Jumlah Pengeluaran', colSpan: 3, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
+        [{ content: `Kepanitiaan ${data.kepanitiaaanPercentage}% Pengeluaran`, colSpan: 3, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepRealisasi), styles: { halign: 'right' as const, fillColor: summaryFill } }],
+        [{ content: 'TOTAL PENGELUARAN', colSpan: 3, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
+      );
+    } else if (data.realisasiRows) {
+      // Old fallback logic
+      let itemNum = 0;
+      data.realisasiRows.forEach((row) => {
+        if (row.type === 'group_header') {
+          tableRows.push([
+            { content: '', styles: { fontStyle: 'bold' as const } },
+            { content: row.uraian, colSpan: 4, styles: { fontStyle: 'bold' as const, fillColor: [245, 245, 250] } },
+          ]);
+        } else {
+          itemNum++;
+          const anggaran = parseQty(row.rincianQty) * row.rincianRate;
+          const rincianStr = row.rincianQty && row.rincianRate > 0 ? `${row.rincianQty}  x  ${formatIDR(row.rincianRate)}` : '';
+          tableRows.push([
+            itemNum.toString(),
+            row.uraian,
+            rincianStr,
+            { content: formatIDR(anggaran), styles: { halign: 'right' as const } },
+            { content: formatIDR(row.realisasi), styles: { halign: 'right' as const } },
+          ]);
+        }
+      });
+
+      const items = data.realisasiRows.filter(r => r.type === 'item');
+      const jumlahAnggaran = items.reduce((sum, r) => sum + (parseQty(r.rincianQty) * r.rincianRate), 0);
+      const jumlahRealisasi = items.reduce((sum, r) => sum + r.realisasi, 0);
+      const kepPerc = data.kepanitiaaanPercentage / 100;
+      const kepAnggaran = jumlahAnggaran * kepPerc;
+      const kepRealisasi = jumlahRealisasi * kepPerc;
+      const totalAnggaran = jumlahAnggaran + kepAnggaran;
+      const totalRealisasi = jumlahRealisasi + kepRealisasi;
+
+      const summaryFill = [240, 244, 255] as [number, number, number];
+      tableRows.push(
+        [{ content: 'Jumlah Pengeluaran', colSpan: 3, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
+        [{ content: `Kepanitiaan ${data.kepanitiaaanPercentage}% Pengeluaran`, colSpan: 3, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepRealisasi), styles: { halign: 'right' as const, fillColor: summaryFill } }],
+        [{ content: 'TOTAL PENGELUARAN', colSpan: 3, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
+      );
+    }
 
     autoTable(doc, {
       startY: tableStartY,
