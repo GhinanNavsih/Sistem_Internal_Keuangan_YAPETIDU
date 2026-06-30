@@ -712,6 +712,7 @@ export default function EmployeesPage() {
             tunjanganBeras: Number(formData.salaryProfile?.tunjanganBeras) || 0,
           },
           kepangkatan: {
+            ...formData.kepangkatan,
             cummulativeCredit: Number(formData.kepangkatan?.cummulativeCredit) || 0,
           },
           t_instruksional: Number(formData.t_instruksional) || 0,
@@ -753,7 +754,42 @@ export default function EmployeesPage() {
             changes: diffs
           };
           setPendingEdits(prev => {
-            const updated = [...prev, pendingChange];
+            const existingIndex = prev.findIndex(item => item.employeeId === employeeId);
+            let updated: PendingEdit[];
+
+            if (existingIndex > -1) {
+              const existingEdit = prev[existingIndex];
+              const mergedChanges = [...existingEdit.changes];
+
+              pendingChange.changes.forEach(newChange => {
+                const existingChangeIndex = mergedChanges.findIndex(c => c.field === newChange.field);
+
+                if (existingChangeIndex > -1) {
+                  const existingChange = mergedChanges[existingChangeIndex];
+                  existingChange.newValue = newChange.newValue;
+
+                  if (existingChange.oldValue === existingChange.newValue) {
+                    mergedChanges.splice(existingChangeIndex, 1);
+                  }
+                } else {
+                  mergedChanges.push(newChange);
+                }
+              });
+
+              if (mergedChanges.length > 0) {
+                updated = [...prev];
+                updated[existingIndex] = {
+                  ...existingEdit,
+                  changes: mergedChanges,
+                  timestamp: pendingChange.timestamp
+                };
+              } else {
+                updated = prev.filter((_, idx) => idx !== existingIndex);
+              }
+            } else {
+              updated = [...prev, pendingChange];
+            }
+
             localStorage.setItem('pending_employee_edits', JSON.stringify(updated));
             return updated;
           });
@@ -838,13 +874,61 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleClearChanges = () => {
-    if (!confirm('Hapus seluruh daftar perubahan tanpa menyimpannya ke EmpEditLog?')) return;
-    setPendingEdits([]);
-    localStorage.removeItem('pending_employee_edits');
-    setIsLogOpen(false);
-    setMessage({ type: 'success', text: 'Daftar perubahan berhasil dibersihkan.' });
-    setTimeout(() => setMessage(null), 3000);
+  const handleClearChanges = async () => {
+    if (!confirm('Apakah Anda yakin ingin membatalkan dan mengembalikan (revert) seluruh perubahan data pegawai di sesi ini?')) return;
+    try {
+      setLocalLoading(true);
+
+      const reconstructNestedObject = (changes: FieldChange[]): any => {
+        const result: any = {};
+        changes.forEach(c => {
+          const parts = c.field.split('.');
+          let current = result;
+          for (let i = 0; i < parts.length - 1; i++) {
+            const part = parts[i];
+            if (!current[part] || typeof current[part] !== 'object') {
+              current[part] = {};
+            }
+            current = current[part];
+          }
+          const lastPart = parts[parts.length - 1];
+          
+          let val = c.oldValue;
+          // Convert ISO date strings back to Firestore Timestamps
+          if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+            const date = new Date(val);
+            if (!isNaN(date.getTime())) {
+              val = Timestamp.fromDate(date);
+            }
+          }
+          current[lastPart] = val;
+        });
+        return result;
+      };
+
+      // Revert each pending edit in Firestore
+      for (const edit of pendingEdits) {
+        const collectionName = edit.tab === 'loyalis' ? 'Employees_Loyalis' : 'Employees_Pekarya';
+        const docRef = doc(db, collectionName, edit.employeeId);
+        const revertPayload = reconstructNestedObject(edit.changes);
+        await setDoc(docRef, revertPayload, { merge: true });
+      }
+
+      setPendingEdits([]);
+      localStorage.removeItem('pending_employee_edits');
+      setIsLogOpen(false);
+      
+      await fetchEmployees();
+      
+      setMessage({ type: 'success', text: 'Seluruh perubahan berhasil dibatalkan dan dikembalikan (revert)!' });
+      setTimeout(() => setMessage(null), 4000);
+    } catch (err) {
+      console.error('Error reverting changes:', err);
+      setMessage({ type: 'error', text: 'Gagal membatalkan dan mengembalikan perubahan.' });
+      setTimeout(() => setMessage(null), 4000);
+    } finally {
+      setLocalLoading(false);
+    }
   };
 
   const getFilteredAndSortedEmployees = () => {
@@ -1106,10 +1190,13 @@ export default function EmployeesPage() {
 
           <div className="flex items-center gap-3">
             {message && (
-              <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                }`}>
-                {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                {message.text}
+              <div className={`fixed top-0 left-0 right-0 z-[9999] w-full flex items-center justify-center px-6 py-4 shadow-md text-sm font-semibold transition-all duration-300 animate-in slide-in-from-top ${
+                message.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+              }`}>
+                <div className="flex items-center gap-2.5">
+                  {message.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
+                  <span>{message.text}</span>
+                </div>
               </div>
             )}
             <Button onClick={handleExportExcel} variant="outline" className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
@@ -1188,8 +1275,8 @@ export default function EmployeesPage() {
             <button
               onClick={() => setTableViewMode('default')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'default'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-50'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-50'
                 }`}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
@@ -1198,8 +1285,8 @@ export default function EmployeesPage() {
             <button
               onClick={() => setTableViewMode('debug')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'debug'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-50'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-50'
                 }`}
             >
               <Building2 className="w-3.5 h-3.5" />
@@ -1208,8 +1295,8 @@ export default function EmployeesPage() {
             <button
               onClick={() => setTableViewMode('constant')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${tableViewMode === 'constant'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-50'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-50'
                 }`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -2210,7 +2297,7 @@ export default function EmployeesPage() {
               className="rounded-xl font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 flex items-center gap-1.5"
             >
               <Trash2 className="w-4 h-4" />
-              Bersihkan Daftar
+              Batal Simpan
             </Button>
 
             <div className="flex gap-2">
