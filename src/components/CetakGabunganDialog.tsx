@@ -103,44 +103,24 @@ export default function CetakGabunganDialog({
 
       // Helper to find customized earning in slipState
       const getEarningAmount = (labels: string[], fallbackVal: number): number => {
-        if (slip && slip.earnings) {
-          const match = slip.earnings.find((e: any) =>
-            labels.some(lbl => lbl.toLowerCase() === e.label?.toLowerCase())
-          );
-          if (match) return match.amount;
-        }
         return fallbackVal;
       };
 
       // Helper to find customized deduction in slipState
       const getDeductionAmount = (labels: string[], fallbackVal: number): number => {
-        if (slip && slip.deductions) {
-          const match = slip.deductions.find((d: any) =>
-            labels.some(lbl => lbl.toLowerCase() === d.label?.toLowerCase())
-          );
-          if (match) return match.amount;
-        }
         return fallbackVal;
       };
 
       // --- 1. TUNJANGAN JABATAN ---
       let tunjJabatan = 0;
-      if (slip && slip.earnings) {
-        slip.earnings.forEach((e: any) => {
-          if (e.label.toLowerCase().startsWith('struktural:')) {
-            tunjJabatan += e.amount;
-          }
+      const positions = raw.employment_profile?.structural_positions || [];
+      if (positions.length > 0) {
+        const sortedPositions = [...positions].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
+        sortedPositions.forEach((pos: any, posIdx: number) => {
+          const originalAllowance = Number(pos.allowance) || 0;
+          const allowanceAmount = posIdx === 0 ? originalAllowance : Math.round(originalAllowance / 2);
+          tunjJabatan += allowanceAmount;
         });
-      } else {
-        const positions = raw.employment_profile?.structural_positions || [];
-        if (positions.length > 0) {
-          const sortedPositions = [...positions].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
-          sortedPositions.forEach((pos: any, posIdx: number) => {
-            const originalAllowance = Number(pos.allowance) || 0;
-            const allowanceAmount = posIdx === 0 ? originalAllowance : Math.round(originalAllowance / 2);
-            tunjJabatan += allowanceAmount;
-          });
-        }
       }
 
       // --- 2. VAKASI PIMPINAN & STAF ---
@@ -197,16 +177,7 @@ export default function CetakGabunganDialog({
         presenceBonus;
 
       // --- 3. VAKASI LAIN-LAIN ---
-      let tStruktural = 0;
-      if (slip && slip.earnings) {
-        slip.earnings.forEach((e: any) => {
-          if (e.label.toLowerCase().startsWith('struktural:')) {
-            tStruktural += e.amount;
-          }
-        });
-      } else {
-        tStruktural = calculateStructuralAllowance(raw.employment_profile?.structural_positions || []);
-      }
+      const tStruktural = calculateStructuralAllowance(raw.employment_profile?.structural_positions || []);
 
       const tInstruksional = getEarningAmount(['Instruksional', 'Tunjangan Instruksional', 'T. Instruksional'], raw.t_instruksional || 0);
 
@@ -214,38 +185,13 @@ export default function CetakGabunganDialog({
       let vakasiTambahan = 0;
       let endOfMonthTotal = 0;
 
-      const standardEarningLabels = [
-        'gaji pokok', 'gapok', 't. keluarga', 'tunjangan keluarga',
-        't. fungsional', 'tunjangan fungsional', 'kepangkatan', 'tunjangan kepangkatan',
-        'instruksional', 't. instruksional', 'tunjangan instruksional',
-        't. hari tua', 'tabungan hari tua', 't. bpjs tk', 'bpjs tk', 't. bpjs kes', 'bpjs kes',
-        'beras', 'tunjangan beras', 'presensi', 'bonus presensi', 'piket', 'lembur'
-      ];
-
-      if (slip && slip.earnings) {
-        slip.earnings.forEach((e: any) => {
-          const labelLower = e.label.toLowerCase();
-          if (labelLower.startsWith('struktural:')) {
-            return;
-          }
-          if (standardEarningLabels.includes(labelLower)) {
-            return;
-          }
-          const matchedEvent = employeeEvents.find(evt => evt.eventName.toLowerCase() === labelLower);
-          if (matchedEvent && matchedEvent.isEndOfMonth) {
-            endOfMonthTotal += e.amount;
-          } else {
-            vakasiTambahan += e.amount;
-          }
-        });
-      } else {
-        vakasiTambahan = employeeEvents
-          .filter(evt => !evt.isEndOfMonth)
-          .reduce((sum, evt) => sum + evt.payGiven, 0);
-        endOfMonthTotal = employeeEvents
-          .filter(evt => evt.isEndOfMonth)
-          .reduce((sum, evt) => sum + evt.payGiven, 0);
-      }
+      employeeEvents.forEach(evt => {
+        if (evt.isEndOfMonth) {
+          endOfMonthTotal += evt.payGiven;
+        } else {
+          vakasiTambahan += evt.payGiven;
+        }
+      });
 
       const vakasiLainLain = tStruktural + tInstruksional + vakasiTambahan + endOfMonthTotal;
 

@@ -237,30 +237,18 @@ export default function LegalitasPimpinanDialog({
       let netSalary = 0;
       let gapokVal = gapok;
 
-      if (slip && slip.status === 'confirmed' && slip.earnings && slip.deductions) {
-        earnings = slip.earnings;
-        deductions = slip.deductions;
-        totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
-        totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
-        netSalary = totalEarnings - totalDeductions;
-        const gapokField = earnings.find(e => e.label === 'Gapok' || e.label === 'Gaji Pokok');
-        if (gapokField) {
-          gapokVal = gapokField.amount;
-        }
-      } else {
-        const kopUnipdu = koperasiDeductions?.[emp.id] ?? 0;
-        const kopSaving = koperasiSavings?.[emp.id] ?? 0;
-        const pBonus = getLoyalisPresenceBonus ? getLoyalisPresenceBonus(emp.id) : 0;
-        const pDeduction = getLoyalisPresenceDeduction ? getLoyalisPresenceDeduction(emp.id) : 0;
-        const presEarning = getLoyalisPresensiEarning ? getLoyalisPresensiEarning(emp.id) : 0;
-        const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
-        earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0);
-        deductions = buildInitialDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
-        totalDeductions = calculateTotalDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
-        totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
-        netSalary = totalEarnings - totalDeductions;
-        gapokVal = gapok;
-      }
+      const kopUnipdu = koperasiDeductions?.[emp.id] ?? 0;
+      const kopSaving = koperasiSavings?.[emp.id] ?? 0;
+      const pBonus = getLoyalisPresenceBonus ? getLoyalisPresenceBonus(emp.id) : 0;
+      const pDeduction = getLoyalisPresenceDeduction ? getLoyalisPresenceDeduction(emp.id) : 0;
+      const presEarning = getLoyalisPresensiEarning ? getLoyalisPresensiEarning(emp.id) : 0;
+      const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
+      earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0);
+      deductions = buildInitialDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
+      totalDeductions = calculateTotalDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
+      totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
+      netSalary = totalEarnings - totalDeductions;
+      gapokVal = gapok;
 
       return {
         employeeNo: idx + 1,

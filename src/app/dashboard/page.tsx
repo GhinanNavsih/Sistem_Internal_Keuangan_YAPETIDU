@@ -839,79 +839,72 @@ export default function TreasuryDashboard() {
         let deductionsList: { label: string; amount: number }[] = [];
         let earningsList: { label: string; amount: number }[] = [];
 
-        if (slip && slip.status !== 'draft' && slip.earnings && slip.deductions) {
-          if (slip.status === 'confirmed' || slip.status === 'printed') {
-            agg.confirmedSlipsCount++;
-            agg.confirmedLoyalisCount++;
-          }
-          gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-          deductions = slip.deductions.reduce((sum: number, de: any) => sum + (de.amount || 0), 0);
-          net = gross - deductions;
-          deductionsList = slip.deductions;
-          earningsList = slip.earnings;
-        } else {
-          // Dynamic draft fallback
-          const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
-                              (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
-          const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
-                                    (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
-          const gradeLevel = emp.academic_and_tier?.level_code || '';
-
-          const mappedEmp = {
-            joinDate: joinDateVal,
-            dateRecognized: dateRecognizedVal,
-            gradeLevel: gradeLevel
-          } as any;
-
-          const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
-
-          const getLoyalisPresenceBonus = (empId: string): number => {
-            if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-              const entry = selectedPeriodLoyalisPresence.entries[empId];
-              if (!entry || entry.isNotFoundInExcel) return 0;
-            }
-            return 250000;
-          };
-
-          const getLoyalisPresensiEarning = (empId: string): number => {
-            const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
-            const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
-            if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-              const entry = selectedPeriodLoyalisPresence.entries[empId];
-              if (!entry || entry.isNotFoundInExcel) return 0;
-            }
-            return Math.round(workingDays * expectedHours * 1650);
-          };
-
-          gross = calculateTotalEarnings(
-            emp,
-            gapokVal,
-            undefined,
-            selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
-            functionalAllowanceMap[emp.id] ?? 0,
-            getLoyalisPresenceBonus(emp.id),
-            getLoyalisPresensiEarning(emp.id),
-            kepangkatanAllowanceMap[emp.id] ?? 0
-          );
-
-          earningsList = buildInitialEarnings(
-            emp,
-            gapokVal,
-            'loyalis',
-            undefined,
-            selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
-            undefined,
-            functionalAllowanceMap[emp.id] ?? 0,
-            kepangkatanAllowanceMap[emp.id] ?? 0,
-            undefined,
-            getLoyalisPresenceBonus(emp.id),
-            getLoyalisPresensiEarning(emp.id)
-          );
-
-          deductionsList = getDraftDeductionsList(emp, true);
-          deductions = deductionsList.reduce((sum, d) => sum + d.amount, 0);
-          net = gross - deductions;
+        if (slip && (slip.status === 'confirmed' || slip.status === 'printed')) {
+          agg.confirmedSlipsCount++;
+          agg.confirmedLoyalisCount++;
         }
+        
+        // Dynamic calculation
+        const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
+                            (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
+        const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
+                                  (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
+        const gradeLevel = emp.academic_and_tier?.level_code || '';
+
+        const mappedEmp = {
+          joinDate: joinDateVal,
+          dateRecognized: dateRecognizedVal,
+          gradeLevel: gradeLevel
+        } as any;
+
+        const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
+
+        const getLoyalisPresenceBonus = (empId: string): number => {
+          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+            const entry = selectedPeriodLoyalisPresence.entries[empId];
+            if (!entry || entry.isNotFoundInExcel) return 0;
+          }
+          return 250000;
+        };
+
+        const getLoyalisPresensiEarning = (empId: string): number => {
+          const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
+          const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
+          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+            const entry = selectedPeriodLoyalisPresence.entries[empId];
+            if (!entry || entry.isNotFoundInExcel) return 0;
+          }
+          return Math.round(workingDays * expectedHours * 1650);
+        };
+
+        gross = calculateTotalEarnings(
+          emp,
+          gapokVal,
+          undefined,
+          selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
+          functionalAllowanceMap[emp.id] ?? 0,
+          getLoyalisPresenceBonus(emp.id),
+          getLoyalisPresensiEarning(emp.id),
+          kepangkatanAllowanceMap[emp.id] ?? 0
+        );
+
+        earningsList = buildInitialEarnings(
+          emp,
+          gapokVal,
+          'loyalis',
+          undefined,
+          selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
+          undefined,
+          functionalAllowanceMap[emp.id] ?? 0,
+          kepangkatanAllowanceMap[emp.id] ?? 0,
+          undefined,
+          getLoyalisPresenceBonus(emp.id),
+          getLoyalisPresensiEarning(emp.id)
+        );
+
+        deductionsList = getDraftDeductionsList(emp, true);
+        deductions = deductionsList.reduce((sum, d) => sum + d.amount, 0);
+        net = gross - deductions;
 
         agg.totalGross += gross;
         agg.totalDeductions += deductions;
@@ -946,46 +939,39 @@ export default function TreasuryDashboard() {
         let deductionsList: { label: string; amount: number }[] = [];
         let earningsList: { label: string; amount: number }[] = [];
 
-        if (slip && slip.status !== 'draft' && slip.earnings && slip.deductions) {
-          if (slip.status === 'confirmed' || slip.status === 'printed') {
-            agg.confirmedSlipsCount++;
-            agg.confirmedPekaryaCount++;
-          }
-          gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-          deductions = slip.deductions.reduce((sum: number, de: any) => sum + (de.amount || 0), 0);
-          net = gross - deductions;
-          deductionsList = slip.deductions;
-          earningsList = slip.earnings;
-        } else {
-          // Dynamic draft fallback
-          const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
-          const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
-
-          const mappedEmp = {
-            joinDate: joinDateVal,
-            gradeLevel: gradeLevel
-          } as any;
-
-          const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
-
-          const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
-          gross = calculateTotalEarnings(
-            emp,
-            gapokVal,
-            uraianEntry
-          );
-
-          earningsList = buildInitialEarnings(
-            emp,
-            gapokVal,
-            'pekarya',
-            uraianEntry
-          );
-
-          deductionsList = getDraftDeductionsList(emp, false);
-          deductions = deductionsList.reduce((sum, d) => sum + d.amount, 0);
-          net = gross - deductions;
+        if (slip && (slip.status === 'confirmed' || slip.status === 'printed')) {
+          agg.confirmedSlipsCount++;
+          agg.confirmedPekaryaCount++;
         }
+        
+        // Dynamic calculation
+        const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
+        const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
+
+        const mappedEmp = {
+          joinDate: joinDateVal,
+          gradeLevel: gradeLevel
+        } as any;
+
+        const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
+
+        const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
+        gross = calculateTotalEarnings(
+          emp,
+          gapokVal,
+          uraianEntry
+        );
+
+        earningsList = buildInitialEarnings(
+          emp,
+          gapokVal,
+          'pekarya',
+          uraianEntry
+        );
+
+        deductionsList = getDraftDeductionsList(emp, false);
+        deductions = deductionsList.reduce((sum, d) => sum + d.amount, 0);
+        net = gross - deductions;
 
         agg.totalGross += gross;
         agg.totalDeductions += deductions;
@@ -1147,45 +1133,41 @@ export default function TreasuryDashboard() {
       const slip = selectedPeriodSlipsMap[emp.id];
       let gross = 0;
 
-      if (slip && slip.status !== 'draft' && slip.earnings) {
-        gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-      } else {
-        const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
-                            (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
-        const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
-                                  (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
-        const gradeLevel = emp.academic_and_tier?.level_code || '';
-        const mappedEmp = { joinDate: joinDateVal, dateRecognized: dateRecognizedVal, gradeLevel } as any;
-        const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
+      const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
+                          (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
+      const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
+                                (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
+      const gradeLevel = emp.academic_and_tier?.level_code || '';
+      const mappedEmp = { joinDate: joinDateVal, dateRecognized: dateRecognizedVal, gradeLevel } as any;
+      const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
 
-        const getLoyalisPresenceBonus = (empId: string): number => {
-          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-            const entry = selectedPeriodLoyalisPresence.entries[empId];
-            if (!entry || entry.isNotFoundInExcel) return 0;
-          }
-          return 250000;
-        };
+      const getLoyalisPresenceBonus = (empId: string): number => {
+        if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+          const entry = selectedPeriodLoyalisPresence.entries[empId];
+          if (!entry || entry.isNotFoundInExcel) return 0;
+        }
+        return 250000;
+      };
 
-        const getLoyalisPresensiEarning = (empId: string): number => {
-          const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
-          const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
-          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-            const entry = selectedPeriodLoyalisPresence.entries[empId];
-            if (!entry || entry.isNotFoundInExcel) return 0;
-          }
-          return Math.round(workingDays * expectedHours * 1650);
-        };
+      const getLoyalisPresensiEarning = (empId: string): number => {
+        const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
+        const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
+        if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+          const entry = selectedPeriodLoyalisPresence.entries[empId];
+          if (!entry || entry.isNotFoundInExcel) return 0;
+        }
+        return Math.round(workingDays * expectedHours * 1650);
+      };
 
-        gross = calculateTotalEarnings(
-          emp,
-          gapokVal,
-          undefined,
-          selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
-          functionalAllowanceMap[emp.id] ?? 0,
-          getLoyalisPresenceBonus(emp.id),
-          getLoyalisPresensiEarning(emp.id)
-        );
-      }
+      gross = calculateTotalEarnings(
+        emp,
+        gapokVal,
+        undefined,
+        selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
+        functionalAllowanceMap[emp.id] ?? 0,
+        getLoyalisPresenceBonus(emp.id),
+        getLoyalisPresensiEarning(emp.id)
+      );
 
       const dept = emp.employment_profile?.department_unit || 'LAIN-LAIN';
       loyalisMap[dept] = (loyalisMap[dept] || 0) + gross;
@@ -1197,21 +1179,17 @@ export default function TreasuryDashboard() {
       const slip = selectedPeriodSlipsMap[emp.id];
       let gross = 0;
 
-      if (slip && slip.status !== 'draft' && slip.earnings) {
-        gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-      } else {
-        const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
-        const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
-        const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
-        const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
-        const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
+      const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
+      const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
+      const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
+      const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
+      const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
 
-        gross = calculateTotalEarnings(
-          emp,
-          gapokVal,
-          uraianEntry
-        );
-      }
+      gross = calculateTotalEarnings(
+        emp,
+        gapokVal,
+        uraianEntry
+      );
 
       const category = emp.employment?.jobCategory || 'LAIN-LAIN';
       pekaryaMap[category] = (pekaryaMap[category] || 0) + gross;
@@ -1344,64 +1322,58 @@ export default function TreasuryDashboard() {
         let deductionsList: { label: string; amount: number }[] = [];
         let earningsList: { label: string; amount: number }[] = [];
 
-        if (slip && slip.status !== 'draft' && slip.earnings && slip.deductions) {
-          gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-          deductionsList = slip.deductions;
-          earningsList = slip.earnings;
-        } else {
-          const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
-                              (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
-          const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
-                                    (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
-          const gradeLevel = emp.academic_and_tier?.level_code || '';
-          const mappedEmp = { joinDate: joinDateVal, dateRecognized: dateRecognizedVal, gradeLevel } as any;
-          const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
+        const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
+                            (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
+        const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
+                                  (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
+        const gradeLevel = emp.academic_and_tier?.level_code || '';
+        const mappedEmp = { joinDate: joinDateVal, dateRecognized: dateRecognizedVal, gradeLevel } as any;
+        const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
 
-          const getLoyalisPresenceBonus = (empId: string): number => {
-            if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-              const entry = selectedPeriodLoyalisPresence.entries[empId];
-              if (!entry || entry.isNotFoundInExcel) return 0;
-            }
-            return 250000;
-          };
+        const getLoyalisPresenceBonus = (empId: string): number => {
+          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+            const entry = selectedPeriodLoyalisPresence.entries[empId];
+            if (!entry || entry.isNotFoundInExcel) return 0;
+          }
+          return 250000;
+        };
 
-          const getLoyalisPresensiEarning = (empId: string): number => {
-            const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
-            const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
-            if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-              const entry = selectedPeriodLoyalisPresence.entries[empId];
-              if (!entry || entry.isNotFoundInExcel) return 0;
-            }
-            return Math.round(workingDays * expectedHours * 1650);
-          };
+        const getLoyalisPresensiEarning = (empId: string): number => {
+          const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
+          const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
+          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+            const entry = selectedPeriodLoyalisPresence.entries[empId];
+            if (!entry || entry.isNotFoundInExcel) return 0;
+          }
+          return Math.round(workingDays * expectedHours * 1650);
+        };
 
-          gross = calculateTotalEarnings(
-            emp,
-            gapokVal,
-            undefined,
-            selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
-            functionalAllowanceMap[emp.id] ?? 0,
-            getLoyalisPresenceBonus(emp.id),
-            getLoyalisPresensiEarning(emp.id),
-            kepangkatanAllowanceMap[emp.id] ?? 0
-          );
+        gross = calculateTotalEarnings(
+          emp,
+          gapokVal,
+          undefined,
+          selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
+          functionalAllowanceMap[emp.id] ?? 0,
+          getLoyalisPresenceBonus(emp.id),
+          getLoyalisPresensiEarning(emp.id),
+          kepangkatanAllowanceMap[emp.id] ?? 0
+        );
 
-          earningsList = buildInitialEarnings(
-            emp,
-            gapokVal,
-            'loyalis',
-            undefined,
-            selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
-            undefined,
-            functionalAllowanceMap[emp.id] ?? 0,
-            kepangkatanAllowanceMap[emp.id] ?? 0,
-            undefined,
-            getLoyalisPresenceBonus(emp.id),
-            getLoyalisPresensiEarning(emp.id)
-          );
+        earningsList = buildInitialEarnings(
+          emp,
+          gapokVal,
+          'loyalis',
+          undefined,
+          selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
+          undefined,
+          functionalAllowanceMap[emp.id] ?? 0,
+          kepangkatanAllowanceMap[emp.id] ?? 0,
+          undefined,
+          getLoyalisPresenceBonus(emp.id),
+          getLoyalisPresensiEarning(emp.id)
+        );
 
-          deductionsList = getDraftDeductionsList(emp, true);
-        }
+        deductionsList = getDraftDeductionsList(emp, true);
 
         totalGross += gross;
         earningsList.forEach((e: any) => {
@@ -1426,32 +1398,26 @@ export default function TreasuryDashboard() {
         let deductionsList: { label: string; amount: number }[] = [];
         let earningsList: { label: string; amount: number }[] = [];
 
-        if (slip && slip.status !== 'draft' && slip.earnings && slip.deductions) {
-          gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-          deductionsList = slip.deductions;
-          earningsList = slip.earnings;
-        } else {
-          const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
-          const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
-          const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
-          const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
-          const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
+        const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
+        const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
+        const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
+        const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
+        const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
 
-          gross = calculateTotalEarnings(
-            emp,
-            gapokVal,
-            uraianEntry
-          );
+        gross = calculateTotalEarnings(
+          emp,
+          gapokVal,
+          uraianEntry
+        );
 
-          earningsList = buildInitialEarnings(
-            emp,
-            gapokVal,
-            'pekarya',
-            uraianEntry
-          );
+        earningsList = buildInitialEarnings(
+          emp,
+          gapokVal,
+          'pekarya',
+          uraianEntry
+        );
 
-          deductionsList = getDraftDeductionsList(emp, false);
-        }
+        deductionsList = getDraftDeductionsList(emp, false);
 
         totalGross += gross;
         earningsList.forEach((e: any) => {
