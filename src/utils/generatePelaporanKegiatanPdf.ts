@@ -79,7 +79,7 @@ export interface PelaporanKegiatanPdfData {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 const formatIDR = (amount: number): string => {
-  return new Intl.NumberFormat('id-ID', {
+  return 'Rp' + new Intl.NumberFormat('id-ID', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
@@ -149,18 +149,15 @@ function renderSignatures(doc: jsPDF, signatures: PelaporanKegiatanSignature[], 
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
   const availableWidth = pageWidth - 2 * margin;
-  const leftColX = margin + availableWidth / 4;
-  const rightColX = pageWidth - margin - availableWidth / 4;
+  const leftColX = margin + 30;
+  const rightColX = pageWidth - margin - 25;
   const centerColX = pageWidth / 2;
 
   const sigCount = signatures.length;
   if (sigCount === 0) return;
 
   // Determine height needed and positions
-  let heightNeeded = 35;
-  if (sigCount === 3) {
-    heightNeeded = 70; // 2 rows
-  }
+  const heightNeeded = sigCount === 3 ? 50 : 35;
 
   let sigY = startY + 12;
   if (sigY + heightNeeded > pageHeight - 15) { // leave 15mm margin at the bottom
@@ -171,13 +168,23 @@ function renderSignatures(doc: jsPDF, signatures: PelaporanKegiatanSignature[], 
 
   // Draw signature helper
   const drawSig = (sig: PelaporanKegiatanSignature, x: number, y: number) => {
+    let label = sig.label;
+    let title = sig.title;
+
+    if (label === 'Menyetujui,') {
+      label = '';
+      if (!title) {
+        title = 'Wakil Rektor Bid. Keuangan, SDM dan Umum';
+      }
+    }
+
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9.5);
-    if (sig.label) {
-      doc.text(sig.label, x, y, { align: 'center' });
+    if (label) {
+      doc.text(label, x, y, { align: 'center' });
     }
-    if (sig.title && !sig.label) {
-      doc.text(sig.title, x, y, { align: 'center' });
+    if (title && !label) {
+      doc.text(title, x, y, { align: 'center' });
     }
 
     const nameY = y + 24;
@@ -192,13 +199,14 @@ function renderSignatures(doc: jsPDF, signatures: PelaporanKegiatanSignature[], 
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    const titleBelow = sig.label ? sig.title : '';
+    const titleBelow = label ? title : '';
     if (titleBelow) {
       doc.text(titleBelow, x, nameY + 5, { align: 'center' });
     }
   };
 
   if (sigCount === 1) {
+    doc.text('', 0, 0); // No-op to keep structure if needed, but not required
     drawSig(signatures[0], centerColX, sigY);
   } else if (sigCount === 2) {
     drawSig(signatures[0], leftColX, sigY);
@@ -207,15 +215,15 @@ function renderSignatures(doc: jsPDF, signatures: PelaporanKegiatanSignature[], 
     // Row 1: 1st person (left) and 3rd person (right)
     drawSig(signatures[0], leftColX, sigY);
     drawSig(signatures[2], rightColX, sigY);
-    // Row 2: 2nd person (center)
-    drawSig(signatures[1], centerColX, sigY + 35);
+    // Row 2: 2nd person (center) - aligned with top row names
+    drawSig(signatures[1], centerColX, sigY + 24);
   }
 }
 
 // ── Main Generator ──────────────────────────────────────────────────────────
 
 export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, saveToFile = true): jsPDF {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [210, 330] });
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginSide = 15;
   const tableWidth = pageWidth - 2 * marginSide;
@@ -255,7 +263,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       // 1. Pemasukan Header
       tableRows.push([
         { content: '', styles: { fontStyle: 'bold' as const } },
-        { content: 'Pemasukan', colSpan: 4, styles: { fontStyle: 'bold' as const } },
+        { content: 'PEMASUKAN', colSpan: 4, styles: { fontStyle: 'bold' as const } },
       ]);
       let pIdx = 0;
       data.pemasukanRows.forEach(row => {
@@ -316,10 +324,16 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
         { content: formatIDR(danaOperasionalRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const } }
       ]);
 
+      // 1 row gap
+      tableRows.push([
+        { content: '', styles: { minCellHeight: 5 } },
+        { content: '', colSpan: 4, styles: { minCellHeight: 5 } }
+      ]);
+
       // 4. Pengeluaran Header
       tableRows.push([
         { content: '', styles: { fontStyle: 'bold' as const } },
-        { content: 'Pengeluaran', colSpan: 4, styles: { fontStyle: 'bold' as const } },
+        { content: 'PENGELUARAN', colSpan: 4, styles: { fontStyle: 'bold' as const } },
       ]);
       let oIdx = 0;
       data.pengeluaranRows.forEach(row => {
@@ -354,9 +368,9 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
 
       const summaryFill = [240, 244, 255] as [number, number, number];
       tableRows.push(
-        [{ content: 'Jumlah Pengeluaran', colSpan: 3, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
-        [{ content: `Kepanitiaan ${data.kepanitiaaanPercentage}% Pengeluaran`, colSpan: 3, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepRealisasi), styles: { halign: 'right' as const, fillColor: summaryFill } }],
-        [{ content: 'TOTAL PENGELUARAN', colSpan: 3, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
+        [{ content: '', styles: { fillColor: summaryFill } }, { content: 'Jumlah Pengeluaran', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
+        [{ content: '', styles: { fillColor: summaryFill } }, { content: `Kepanitiaan ${data.kepanitiaaanPercentage}% Pengeluaran`, colSpan: 2, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepRealisasi), styles: { halign: 'right' as const, fillColor: summaryFill } }],
+        [{ content: '', styles: { fillColor: summaryFill } }, { content: 'TOTAL PENGELUARAN', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
       );
     } else if (data.realisasiRows) {
       // Old fallback logic
@@ -392,9 +406,9 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
 
       const summaryFill = [240, 244, 255] as [number, number, number];
       tableRows.push(
-        [{ content: 'Jumlah Pengeluaran', colSpan: 3, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
-        [{ content: `Kepanitiaan ${data.kepanitiaaanPercentage}% Pengeluaran`, colSpan: 3, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepRealisasi), styles: { halign: 'right' as const, fillColor: summaryFill } }],
-        [{ content: 'TOTAL PENGELUARAN', colSpan: 3, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
+        [{ content: '', styles: { fillColor: summaryFill } }, { content: 'Jumlah Pengeluaran', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
+        [{ content: '', styles: { fillColor: summaryFill } }, { content: `Kepanitiaan ${data.kepanitiaaanPercentage}% Pengeluaran`, colSpan: 2, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepRealisasi), styles: { halign: 'right' as const, fillColor: summaryFill } }],
+        [{ content: '', styles: { fillColor: summaryFill } }, { content: 'TOTAL PENGELUARAN', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalRealisasi), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
       );
     }
 
@@ -406,14 +420,14 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       theme: 'grid',
       headStyles: { ...headStyles, halign: 'center' as const },
       bodyStyles,
-      styles: { fontSize: 8, cellPadding: 1.5, lineColor: [0, 0, 0], lineWidth: 0.05 },
+      styles: { fontSize: 8, cellPadding: 1.2, lineColor: [0, 0, 0], lineWidth: 0.05 },
       tableWidth,
       columnStyles: {
         0: { cellWidth: 10, halign: 'center' as const },
-        1: { cellWidth: 55, halign: 'left' as const },
-        2: { cellWidth: 45, halign: 'center' as const },
-        3: { cellWidth: 35, halign: 'right' as const },
-        4: { cellWidth: 35, halign: 'right' as const },
+        1: { cellWidth: 50, halign: 'left' as const },
+        2: { cellWidth: 60, halign: 'right' as const },
+        3: { cellWidth: 30, halign: 'right' as const },
+        4: { cellWidth: 30, halign: 'right' as const },
       },
     });
 

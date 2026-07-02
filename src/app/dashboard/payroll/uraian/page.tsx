@@ -216,7 +216,7 @@ export default function UraianPage() {
     searchText?: string;
     showDropdown?: boolean;
   }[]>([
-    { label: 'Menyetujui,', name: '', title: '', searchText: '', showDropdown: false },
+    { label: '', name: '', title: 'Wakil Rektor Bid. Keuangan, SDM dan Umum', searchText: '', showDropdown: false },
     { label: '', name: '', title: '', searchText: '', showDropdown: false },
     { label: '', name: '', title: 'Direktur', searchText: '', showDropdown: false },
   ]);
@@ -637,7 +637,7 @@ export default function UraianPage() {
     setReceiptTitle('KWITANSI PEMBELIAN ');
     setReceiptRows([{ itemName: '', qty: 1, unitPrice: 0 }]);
     setPelaporanSignatures([
-      { label: 'Menyetujui,', name: '', title: '', searchText: '', showDropdown: false },
+      { label: '', name: '', title: 'Wakil Rektor Bid. Keuangan, SDM dan Umum', searchText: '', showDropdown: false },
       { label: '', name: '', title: '', searchText: '', showDropdown: false },
       { label: '', name: '', title: 'Direktur', searchText: '', showDropdown: false },
     ]);
@@ -728,7 +728,7 @@ export default function UraianPage() {
     setReceiptRows(rpt.receiptRows?.length > 0 ? rpt.receiptRows : [{ itemName: '', qty: 1, unitPrice: 0 }]);
     // Signatures
     setPelaporanSignatures(rpt.signatures?.length > 0 ? rpt.signatures.map((s: any) => ({ ...s, searchText: s.name || '', showDropdown: false })) : [
-      { label: 'Menyetujui,', name: '', title: '', searchText: '', showDropdown: false },
+      { label: '', name: '', title: 'Wakil Rektor Bid. Keuangan, SDM dan Umum', searchText: '', showDropdown: false },
       { label: '', name: '', title: '', searchText: '', showDropdown: false },
       { label: '', name: '', title: 'Direktur', searchText: '', showDropdown: false },
     ]);
