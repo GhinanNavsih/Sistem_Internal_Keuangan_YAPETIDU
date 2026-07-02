@@ -761,27 +761,9 @@ export default function PayrollValidationDashboard() {
     let totalNet = 0;
 
     displayEmployees.forEach((emp) => {
-      const gapok = calculateGapok(emp, salaryMatrix, targetDate);
-      const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
-      const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-      const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
-      const earnings = calculateTotalEarnings(
-        emp.raw,
-        gapok,
-        uraian,
-        vakasiTambahanMap[emp.id] ?? 0,
-        functionalAllowanceMap[emp.id] ?? 0,
-        getLoyalisPresenceBonus(emp.id),
-        getLoyalisPresensiEarning(emp.id),
-        kepangkatanAllowanceMap[emp.id] ?? 0
-      );
-      const deductions = calculateTotalDeductions(
-        emp.raw,
-        koperasiDeductions[emp.id] || 0,
-        getLoyalisPresenceDeduction(emp.id),
-        getLoyalisPresensiDeduction(emp.id),
-        koperasiSavings[emp.id] || 0
-      );
+      const freshData = buildFreshSlipData(emp);
+      const earnings = freshData.earnings.reduce((sum, e) => sum + e.amount, 0);
+      const deductions = freshData.deductions.reduce((sum, d) => sum + d.amount, 0);
 
       totalGross += earnings;
       totalDeductions += deductions;
@@ -1667,6 +1649,11 @@ export default function PayrollValidationDashboard() {
                     const emailSentInQueue = bulkEmailResults.find(r => r.employeeId === emp.id)?.status === 'success';
                     const isEmailSent = slip?.emailSent || emailSentInQueue;
 
+                    const freshData = buildFreshSlipData(emp);
+                    const totalEarnings = freshData.earnings.reduce((sum, e) => sum + e.amount, 0);
+                    const totalDeductions = freshData.deductions.reduce((sum, d) => sum + d.amount, 0);
+                    const netSalary = totalEarnings - totalDeductions;
+
                     return (
                       <TableRow key={emp.id} className="border-slate-100 hover:bg-slate-50/50 transition-colors">
                         <TableCell className="font-medium pl-8 py-4 w-[320px] max-w-[320px]">
@@ -1694,27 +1681,13 @@ export default function PayrollValidationDashboard() {
                           </div>
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
-                          {(() => {
-                            const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
-                            const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-                            const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
-                            const gapokVal = calculateGapok(emp, salaryMatrix, targetDate);
-                            return formatIDR(calculateTotalEarnings(emp.raw, gapokVal, uraian, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id), kepangkatanAllowanceMap[emp.id] ?? 0));
-                          })()}
+                          {formatIDR(totalEarnings)}
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
-                          {formatIDR(calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0, getLoyalisPresenceDeduction(emp.id), getLoyalisPresensiDeduction(emp.id), koperasiSavings[emp.id] || 0))}
+                          {formatIDR(totalDeductions)}
                         </TableCell>
                         <TableCell className="py-4 font-bold text-indigo-700">
-                          {(() => {
-                            const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
-                            const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-                            const uraian = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
-                            const gapokVal = calculateGapok(emp, salaryMatrix, targetDate);
-                            const earnings = calculateTotalEarnings(emp.raw, gapokVal, uraian, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id), kepangkatanAllowanceMap[emp.id] ?? 0);
-                            const deductions = calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0, getLoyalisPresenceDeduction(emp.id), getLoyalisPresensiDeduction(emp.id), koperasiSavings[emp.id] || 0);
-                            return formatIDR(calculateNetSalary(earnings, deductions));
-                          })()}
+                          {formatIDR(netSalary)}
                         </TableCell>
                         <TableCell className="text-right pr-8 py-4">
                           <div className="flex justify-end gap-2">
