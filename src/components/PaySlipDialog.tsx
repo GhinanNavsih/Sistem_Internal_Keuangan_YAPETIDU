@@ -335,27 +335,36 @@ export default function PaySlipDialog({
   useEffect(() => {
     if (!open || !employee) return;
 
-    setEarnings(buildInitialEarnings(
-      employee,
-      gapok,
-      activeTab,
-      uraianEntry,
-      vakasiTambahanSum,
-      vakasiTambahanList,
-      tunjanganFungsional,
-      tunjanganKepangkatan,
-      customColumns,
-      presenceBonus,
-      presensiEarning
-    ));
-    setDeductions(buildInitialDeductions(
-      employee,
-      activeTab,
-      koperasiDeduction,
-      presenceDeduction,
-      presensiDeduction,
-      koperasiSaving
-    ));
+    if (slipState && slipState.earnings && slipState.earnings.length > 0) {
+      setEarnings(slipState.earnings);
+    } else {
+      setEarnings(buildInitialEarnings(
+        employee,
+        gapok,
+        activeTab,
+        uraianEntry,
+        vakasiTambahanSum,
+        vakasiTambahanList,
+        tunjanganFungsional,
+        tunjanganKepangkatan,
+        customColumns,
+        presenceBonus,
+        presensiEarning
+      ));
+    }
+
+    if (slipState && slipState.deductions && slipState.deductions.length > 0) {
+      setDeductions(slipState.deductions);
+    } else {
+      setDeductions(buildInitialDeductions(
+        employee,
+        activeTab,
+        koperasiDeduction,
+        presenceDeduction,
+        presensiDeduction,
+        koperasiSaving
+      ));
+    }
   }, [
     open,
     employee,

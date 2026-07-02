@@ -262,28 +262,9 @@ export default function PayrollValidationDashboard() {
       const uraianDoc = uraianMap[`${periodKey}_${roleKey}`];
       const uraianEntry = uraianDoc?.entries?.[emp.id];
 
-      const earningsList = buildInitialEarnings(
-        emp.raw,
-        gapok,
-        payrollCollar,
-        uraianEntry,
-        vakasiTambahanMap[emp.id] ?? 0,
-        vakasiTambahanListMap[emp.id] ?? [],
-        functionalAllowanceMap[emp.id] ?? 0,
-        kepangkatanAllowanceMap[emp.id] ?? 0,
-        [],
-        getLoyalisPresenceBonus(emp.id),
-        getLoyalisPresensiEarning(emp.id)
-      );
-
-      const deductionsList = buildInitialDeductions(
-        emp.raw,
-        payrollCollar,
-        koperasiDeductions[emp.id] || 0,
-        getLoyalisPresenceDeduction(emp.id),
-        getLoyalisPresensiDeduction(emp.id),
-        koperasiSavings[emp.id] || 0
-      );
+      const freshData = buildFreshSlipData(emp);
+      const earningsList = freshData.earnings;
+      const deductionsList = freshData.deductions;
 
       earningsList.forEach(e => allEarningLabelsSet.add(e.label));
       deductionsList.forEach(d => allDeductionLabelsSet.add(d.label));
@@ -734,6 +715,15 @@ export default function PayrollValidationDashboard() {
   // Used by PDF, WhatsApp, email, and multi-print flows to always
   // reflect the latest profile data, salary matrix, and vakasi tambahan.
   const buildFreshSlipData = (emp: EmployeeRow) => {
+    // If there is already a saved slip state, return its saved earnings and deductions
+    const savedSlip = slipStates[emp.id];
+    if (savedSlip && savedSlip.earnings && savedSlip.earnings.length > 0) {
+      return {
+        earnings: savedSlip.earnings,
+        deductions: savedSlip.deductions || [],
+      };
+    }
+
     const gapok = calculateGapok(emp, salaryMatrix, targetDate);
     const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
     const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
