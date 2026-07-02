@@ -37,6 +37,12 @@ export default function Sidebar() {
 
   const menuItems = [
     {
+      name: 'Payroll Bulanan',
+      path: '/dashboard/payroll',
+      icon: Coins,
+      exact: true
+    },
+    {
       name: 'Dashboard',
       path: '/dashboard',
       icon: LayoutDashboard,
@@ -51,12 +57,6 @@ export default function Sidebar() {
       name: 'Data Pegawai',
       path: '/dashboard/employees',
       icon: Users
-    },
-    {
-      name: 'Payroll Bulanan',
-      path: '/dashboard/payroll',
-      icon: Coins,
-      exact: true
     },
     {
       name: 'Rekap & Vakasi',

@@ -41,6 +41,7 @@ import {
   Percent,
   SlidersHorizontal,
   PieChart as PieIcon,
+  Scissors,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -1852,7 +1853,7 @@ export default function TreasuryDashboard() {
                     <p className="text-slate-400 text-[11px]">BPJS, Koperasi, Zakat, dll</p>
                   </div>
                   <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600 group-hover:bg-rose-100 transition-colors">
-                    <PiggyBank className="w-5 h-5" />
+                    <Scissors className="w-5 h-5" />
                   </div>
                 </div>
                 <div className="space-y-3">
