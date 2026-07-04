@@ -127,6 +127,8 @@ interface BulkChange {
     oldValue: number | null;
     newValue: number | null;
   }[];
+  currentEarnings: PaySlipField[];
+  currentDeductions: PaySlipField[];
   freshEarnings: PaySlipField[];
   freshDeductions: PaySlipField[];
 }
@@ -261,6 +263,7 @@ export default function PayrollValidationDashboard() {
   const [bulkChanges, setBulkChanges] = useState<BulkChange[]>([]);
   const [refreshingBulk, setRefreshingBulk] = useState(false);
   const [selectedBulkRefreshEmployeeIds, setSelectedBulkRefreshEmployeeIds] = useState<Set<string>>(new Set());
+  const [selectedBulkRefreshFields, setSelectedBulkRefreshFields] = useState<Record<string, Set<string>>>({});
 
   const handleExportExcel = () => {
     const filteredEmployees = getFilteredAndSortedEmployees();
@@ -1695,6 +1698,8 @@ export default function PayrollValidationDashboard() {
             employeeName: empName,
             isLocked: currentSlip?.status === 'locked',
             diffs,
+            currentEarnings,
+            currentDeductions,
             freshEarnings,
             freshDeductions
           });
@@ -1706,6 +1711,14 @@ export default function PayrollValidationDashboard() {
       } else {
         setBulkChanges(changes);
         setSelectedBulkRefreshEmployeeIds(new Set(changes.map(c => c.employeeId)));
+        
+        // Initialize fields selection state
+        const initialFields: Record<string, Set<string>> = {};
+        changes.forEach(change => {
+          initialFields[change.employeeId] = new Set(change.diffs.map(d => `${d.type}::${d.label}`));
+        });
+        setSelectedBulkRefreshFields(initialFields);
+
         setBulkRefreshDialogOpen(true);
       }
     } catch (err) {
@@ -1721,8 +1734,18 @@ export default function PayrollValidationDashboard() {
       const next = new Set(prev);
       if (next.has(employeeId)) {
         next.delete(employeeId);
+        setSelectedBulkRefreshFields(prevFields => ({
+          ...prevFields,
+          [employeeId]: new Set()
+        }));
       } else {
         next.add(employeeId);
+        const change = bulkChanges.find(c => c.employeeId === employeeId);
+        const allFields = change ? new Set(change.diffs.map((d: any) => `${d.type}::${d.label}`)) : new Set<string>();
+        setSelectedBulkRefreshFields(prevFields => ({
+          ...prevFields,
+          [employeeId]: allFields
+        }));
       }
       return next;
     });
@@ -1731,10 +1754,43 @@ export default function PayrollValidationDashboard() {
   const handleToggleSelectAll = () => {
     setSelectedBulkRefreshEmployeeIds(prev => {
       if (prev.size === bulkChanges.length) {
+        setSelectedBulkRefreshFields({});
         return new Set();
       } else {
-        return new Set(bulkChanges.map(c => c.employeeId));
+        const allIds = new Set(bulkChanges.map(c => c.employeeId));
+        const allFields: Record<string, Set<string>> = {};
+        bulkChanges.forEach(change => {
+          allFields[change.employeeId] = new Set(change.diffs.map((d: any) => `${d.type}::${d.label}`));
+        });
+        setSelectedBulkRefreshFields(allFields);
+        return allIds;
       }
+    });
+  };
+
+  const handleToggleSelectField = (employeeId: string, fieldKey: string) => {
+    setSelectedBulkRefreshFields(prev => {
+      const currentFields = new Set(prev[employeeId] || []);
+      if (currentFields.has(fieldKey)) {
+        currentFields.delete(fieldKey);
+      } else {
+        currentFields.add(fieldKey);
+      }
+
+      setSelectedBulkRefreshEmployeeIds(prevIds => {
+        const nextIds = new Set(prevIds);
+        if (currentFields.size > 0) {
+          nextIds.add(employeeId);
+        } else {
+          nextIds.delete(employeeId);
+        }
+        return nextIds;
+      });
+
+      return {
+        ...prev,
+        [employeeId]: currentFields
+      };
     });
   };
 
@@ -1755,12 +1811,46 @@ export default function PayrollValidationDashboard() {
         const ref = doc(db, 'PayrollSlipStates', docId);
         const status = change.isLocked ? 'locked' : 'draft';
 
+        const checkedFields = selectedBulkRefreshFields[change.employeeId] || new Set();
+
+        const mergedEarnings = [...change.currentEarnings];
+        const mergedDeductions = [...change.currentDeductions];
+
+        change.diffs.forEach((diff: any) => {
+          const fieldKey = `${diff.type}::${diff.label}`;
+          if (!checkedFields.has(fieldKey)) return;
+
+          if (diff.type === 'earnings') {
+            const idx = mergedEarnings.findIndex(e => e.label === diff.label);
+            if (diff.newValue === null) {
+              if (idx > -1) mergedEarnings.splice(idx, 1);
+            } else {
+              if (idx > -1) {
+                mergedEarnings[idx] = { ...mergedEarnings[idx], amount: diff.newValue };
+              } else {
+                mergedEarnings.push({ label: diff.label, amount: diff.newValue });
+              }
+            }
+          } else {
+            const idx = mergedDeductions.findIndex(d => d.label === diff.label);
+            if (diff.newValue === null) {
+              if (idx > -1) mergedDeductions.splice(idx, 1);
+            } else {
+              if (idx > -1) {
+                mergedDeductions[idx] = { ...mergedDeductions[idx], amount: diff.newValue };
+              } else {
+                mergedDeductions.push({ label: diff.label, amount: diff.newValue });
+              }
+            }
+          }
+        });
+
         const payload: any = {
           employeeId: change.employeeId,
           period,
           status,
-          earnings: change.freshEarnings,
-          deductions: change.freshDeductions,
+          earnings: mergedEarnings,
+          deductions: mergedDeductions,
           generatedAt: new Date().toISOString(),
         };
         if (change.isLocked) {
@@ -1771,8 +1861,8 @@ export default function PayrollValidationDashboard() {
 
         newSlipStates[change.employeeId] = {
           status,
-          earnings: change.freshEarnings,
-          deductions: change.freshDeductions,
+          earnings: mergedEarnings,
+          deductions: mergedDeductions,
           generatedAt: payload.generatedAt,
           lockedAt: payload.lockedAt || undefined,
           emailSent: slipStates[change.employeeId]?.emailSent || false,
@@ -3248,13 +3338,21 @@ export default function PayrollValidationDashboard() {
                     const diffLabel = diff.label;
                     const oldVal = diff.oldValue;
                     const newVal = diff.newValue;
+                    const fieldKey = `${diff.type}::${diff.label}`;
+                    const isChecked = selectedBulkRefreshFields[change.employeeId]?.has(fieldKey) ?? false;
 
                     return (
-                      <div key={idx} className="flex justify-between items-center text-xs text-slate-600">
-                        <div className="flex items-center gap-1.5">
+                      <div key={idx} className="flex justify-between items-center text-xs text-slate-600 py-0.5 hover:bg-slate-100/50 rounded px-1 -mx-1 transition-colors">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleSelectField(change.employeeId, fieldKey)}
+                            className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
                           <span className={`w-1.5 h-1.5 rounded-full ${isEarning ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                          <span>{diffLabel}</span>
-                        </div>
+                          <span className="text-slate-700">{diffLabel}</span>
+                        </label>
                         <div className="flex items-center gap-2">
                           <span className="text-slate-400 line-through">
                             {oldVal === null ? '(baru)' : formatIDR(oldVal)}
