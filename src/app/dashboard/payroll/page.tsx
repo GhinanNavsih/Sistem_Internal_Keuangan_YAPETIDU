@@ -260,6 +260,7 @@ export default function PayrollValidationDashboard() {
   const [bulkRefreshDialogOpen, setBulkRefreshDialogOpen] = useState(false);
   const [bulkChanges, setBulkChanges] = useState<BulkChange[]>([]);
   const [refreshingBulk, setRefreshingBulk] = useState(false);
+  const [selectedBulkRefreshEmployeeIds, setSelectedBulkRefreshEmployeeIds] = useState<Set<string>>(new Set());
 
   const handleExportExcel = () => {
     const filteredEmployees = getFilteredAndSortedEmployees();
@@ -1704,6 +1705,7 @@ export default function PayrollValidationDashboard() {
         alert("Semua draf slip gaji sudah sesuai dengan data terbaru di database.");
       } else {
         setBulkChanges(changes);
+        setSelectedBulkRefreshEmployeeIds(new Set(changes.map(c => c.employeeId)));
         setBulkRefreshDialogOpen(true);
       }
     } catch (err) {
@@ -1714,14 +1716,41 @@ export default function PayrollValidationDashboard() {
     }
   };
 
+  const handleToggleSelectEmployee = (employeeId: string) => {
+    setSelectedBulkRefreshEmployeeIds(prev => {
+      const next = new Set(prev);
+      if (next.has(employeeId)) {
+        next.delete(employeeId);
+      } else {
+        next.add(employeeId);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelectAll = () => {
+    setSelectedBulkRefreshEmployeeIds(prev => {
+      if (prev.size === bulkChanges.length) {
+        return new Set();
+      } else {
+        return new Set(bulkChanges.map(c => c.employeeId));
+      }
+    });
+  };
+
   const handleApplyBulkRefresh = async () => {
+    const selectedChanges = bulkChanges.filter(c => selectedBulkRefreshEmployeeIds.has(c.employeeId));
+    if (selectedChanges.length === 0) {
+      alert("Tidak ada karyawan terpilih untuk diperbarui.");
+      return;
+    }
     setRefreshingBulk(true);
     try {
       const batch = writeBatch(db);
       const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
       const newSlipStates = { ...slipStates };
 
-      bulkChanges.forEach(change => {
+      selectedChanges.forEach(change => {
         const docId = `${period}_${change.employeeId}`;
         const ref = doc(db, 'PayrollSlipStates', docId);
         const status = change.isLocked ? 'locked' : 'draft';
@@ -1757,7 +1786,7 @@ export default function PayrollValidationDashboard() {
       setNotification({
         show: true,
         type: 'success',
-        message: `Berhasil memperbarui ${bulkChanges.length} slip gaji dari database.`
+        message: `Berhasil memperbarui ${selectedChanges.length} slip gaji dari database.`
       });
       setTimeout(() => {
         setNotification(prev => ({ ...prev, show: false }));
@@ -3177,11 +3206,31 @@ export default function PayrollValidationDashboard() {
           </DialogHeader>
 
           {/* Change list */}
+          <div className="flex justify-between items-center px-6 pb-3 border-b border-slate-100 mx-6 mb-2">
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors">
+              <input
+                type="checkbox"
+                checked={selectedBulkRefreshEmployeeIds.size === bulkChanges.length}
+                onChange={handleToggleSelectAll}
+                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              />
+              <span>Pilih Semua ({bulkChanges.length})</span>
+            </label>
+          </div>
+
           <div className="flex-1 overflow-y-auto px-6 py-2 space-y-4 max-h-[50vh]">
             {bulkChanges.map((change) => (
               <div key={change.employeeId} className="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
                 <div className="flex justify-between items-center mb-3">
-                  <span className="font-semibold text-sm text-slate-700">{change.employeeName}</span>
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedBulkRefreshEmployeeIds.has(change.employeeId)}
+                      onChange={() => handleToggleSelectEmployee(change.employeeId)}
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <span className="font-semibold text-sm text-slate-700">{change.employeeName}</span>
+                  </label>
                   {change.isLocked ? (
                     <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-2 py-0.5">
                       🔒 Terkunci
@@ -3233,9 +3282,9 @@ export default function PayrollValidationDashboard() {
               Batal
             </Button>
             <Button
-              disabled={refreshingBulk}
+              disabled={refreshingBulk || selectedBulkRefreshEmployeeIds.size === 0}
               onClick={handleApplyBulkRefresh}
-              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-2 shadow-md shadow-indigo-100"
+              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-2 shadow-md shadow-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {refreshingBulk ? (
                 <>
@@ -3245,7 +3294,7 @@ export default function PayrollValidationDashboard() {
               ) : (
                 <>
                   <CheckCheck className="w-4 h-4 text-white" />
-                  Terapkan Semua
+                  Terapkan Perubahan ({selectedBulkRefreshEmployeeIds.size})
                 </>
               )}
             </Button>
