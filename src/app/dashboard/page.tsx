@@ -750,10 +750,10 @@ export default function TreasuryDashboard() {
 
       agg.totalSlipsCount++;
 
-      // Include confirmed, printed, and draft slips in historical sums
-      const isEligible = d.status === 'confirmed' || d.status === 'printed' || d.status === 'draft';
+      // Include locked, confirmed, printed, and draft slips in historical sums
+      const isEligible = d.status === 'locked' || d.status === 'confirmed' || d.status === 'printed' || d.status === 'draft';
       if (isEligible) {
-        const isConfirmed = d.status === 'confirmed' || d.status === 'printed';
+        const isConfirmed = d.status === 'locked' || d.status === 'confirmed' || d.status === 'printed';
         if (isConfirmed) {
           agg.confirmedSlipsCount++;
         }
@@ -840,7 +840,7 @@ export default function TreasuryDashboard() {
         let deductionsList: { label: string; amount: number }[] = [];
         let earningsList: { label: string; amount: number }[] = [];
 
-        if (slip && (slip.status === 'confirmed' || slip.status === 'printed')) {
+        if (slip && (slip.status === 'locked' || slip.status === 'confirmed' || slip.status === 'printed')) {
           agg.confirmedSlipsCount++;
           agg.confirmedLoyalisCount++;
         }
@@ -948,7 +948,7 @@ export default function TreasuryDashboard() {
         let deductionsList: { label: string; amount: number }[] = [];
         let earningsList: { label: string; amount: number }[] = [];
 
-        if (slip && (slip.status === 'confirmed' || slip.status === 'printed')) {
+        if (slip && (slip.status === 'locked' || slip.status === 'confirmed' || slip.status === 'printed')) {
           agg.confirmedSlipsCount++;
           agg.confirmedPekaryaCount++;
         }
