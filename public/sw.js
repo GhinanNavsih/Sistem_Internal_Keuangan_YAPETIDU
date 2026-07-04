@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bak-payroll-cache-v1';
+const CACHE_NAME = 'bak-payroll-cache-v2';
 const ASSETS_TO_CACHE = [
   '/login',
   '/manifest.json',
@@ -34,6 +34,21 @@ self.addEventListener('fetch', (event) => {
   // Only cache GET requests
   if (event.request.method !== 'GET') return;
 
+  const url = new URL(event.request.url);
+  const path = url.pathname;
+
+  // Normalize path to check against ASSETS_TO_CACHE (remove trailing slash if any)
+  const normalizedPath = path.endsWith('/') ? path.slice(0, -1) : path;
+  
+  const isPrecached = ASSETS_TO_CACHE.includes(path) || 
+                      ASSETS_TO_CACHE.includes(normalizedPath) ||
+                      (normalizedPath === '' && ASSETS_TO_CACHE.includes('/'));
+
+  if (!isPrecached) {
+    // Let all other requests (Next.js chunks, dynamic routes, APIs) bypass the service worker and load via network
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -41,26 +56,14 @@ self.addEventListener('fetch', (event) => {
         fetch(event.request)
           .then((networkResponse) => {
             if (networkResponse.status === 200) {
-              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
+              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse.clone()));
             }
           })
           .catch(() => {/* Ignore network errors in background */});
         return cachedResponse;
       }
 
-      return fetch(event.request).then((networkResponse) => {
-        // Cache successful requests dynamically
-        if (networkResponse.status === 200 && networkResponse.type === 'basic') {
-          const responseClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
-        }
-        return networkResponse;
-      }).catch(async () => {
-        // Fallback to cache if offline
-        const cache = await caches.open(CACHE_NAME);
-        const cached = await cache.match(event.request);
-        if (cached) return cached;
-      });
+      return fetch(event.request);
     })
   );
 });

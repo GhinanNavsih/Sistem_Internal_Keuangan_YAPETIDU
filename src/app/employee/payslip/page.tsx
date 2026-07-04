@@ -229,27 +229,29 @@ export default function EmployeePayslipPage() {
         }
 
         const employee = { id: empSnap.id, ...empSnap.data() } as any;
-        // Parse joinDate if it is a string or Timestamp
-        if (employee.personal_info?.join_date) {
-          employee.joinDate = new Date(employee.personal_info.join_date);
-        } else {
-          employee.joinDate = new Date();
-        }
-        if (employee.employment_profile?.grade_level) {
-          employee.gradeLevel = employee.employment_profile.grade_level;
-        }
+        // Parse joinDate (date_of_hire) matching the admin page implementation
+        employee.joinDate = employee.employment_profile?.date_of_hire?.toDate?.() || 
+                            (employee.employment_profile?.date_of_hire ? new Date(employee.employment_profile.date_of_hire) : 
+                             (employee.personal_info?.join_date ? new Date(employee.personal_info.join_date) : new Date()));
+        
+        // Parse dateRecognized matching the admin page implementation
+        employee.dateRecognized = employee.employment_profile?.date_recognized?.toDate?.() || 
+                                  (employee.employment_profile?.date_recognized ? new Date(employee.employment_profile.date_recognized) : undefined);
+
+        // Parse gradeLevel matching the admin page implementation
+        employee.gradeLevel = employee.academic_and_tier?.level_code || employee.employment_profile?.grade_level || '';
 
         setEmployeeData(employee);
 
-        // 2. Check for confirmed slip in PayrollSlipStates (Format: {periodKey}_{linkedEmployeeId})
+        // 2. Check for saved slip in PayrollSlipStates (Format: {periodKey}_{linkedEmployeeId})
         const slipDocId = `${periodKey}_${empId}`;
         const slipRef = doc(db, 'PayrollSlipStates', slipDocId);
         const slipSnap = await getDoc(slipRef);
 
-        if (slipSnap.exists() && slipSnap.data()?.status === 'confirmed') {
+        if (slipSnap.exists()) {
           const slipData = slipSnap.data();
           setConfirmedSlip(slipData);
-          setIsConfirmed(true);
+          setIsConfirmed(slipData.status === 'locked');
           setLoading(false);
           return;
         }
@@ -391,6 +393,7 @@ export default function EmployeePayslipPage() {
         });
 
         // Koperasi loan deduction
+        const empName = employee.personal_info?.name || employee.name || '';
         let koperasiDeduction = 0;
         const activeLoans = loanSnapshot.docs
           .map(d => d.data() as any)
@@ -398,8 +401,8 @@ export default function EmployeePayslipPage() {
         activeLoans.forEach(loan => {
           const spName = loan.userData?.namaLengkap || '';
           const isUidMatch = employee.koperasiAuthUid && employee.koperasiAuthUid === loan.userId;
-          const isNameMatch = normalizeName(spName) === normalizeName(employee.personal_info?.name || '');
-          const isOverrideMatch = MANUAL_OVERRIDES[spName.trim()] === employee.personal_info?.name;
+          const isNameMatch = empName && normalizeName(spName) === normalizeName(empName);
+          const isOverrideMatch = empName && MANUAL_OVERRIDES[spName.trim()] === empName;
 
           if (isUidMatch || isNameMatch || isOverrideMatch) {
             const cicilan = Math.round(loan.jumlahPinjaman / loan.tenor);
@@ -415,10 +418,13 @@ export default function EmployeePayslipPage() {
           const uUid = uData.uid || userDoc.id;
 
           const isUidMatch = (employee.koperasiUserId && employee.koperasiUserId === userDoc.id) || (employee.koperasiAuthUid && employee.koperasiAuthUid === uUid);
-          const isNameMatch = normalizeName(uName) === normalizeName(employee.personal_info?.name || '');
-          const isOverrideMatch = MANUAL_OVERRIDES[uName.trim()] === employee.personal_info?.name;
+          const isNameMatch = empName && normalizeName(uName) === normalizeName(empName);
+          const isOverrideMatch = empName && MANUAL_OVERRIDES[uName.trim()] === empName;
 
           if (isUidMatch || isNameMatch || isOverrideMatch) {
+            const isApproved = uData.status === 'approved' || uData.membershipStatus === 'approved';
+            if (!isApproved) return;
+
             const isYayasanSubsidy = uData.paymentStatus === 'Yayasan Subsidy';
             koperasiSaving = isYayasanSubsidy ? 0 : 25000;
           }
@@ -531,12 +537,12 @@ export default function EmployeePayslipPage() {
 
   // Compiled earnings & deductions based on finalized status
   const earnings = useMemo(() => {
-    return isConfirmed && confirmedSlip ? confirmedSlip.earnings : calculatedEarnings;
-  }, [isConfirmed, confirmedSlip, calculatedEarnings]);
+    return confirmedSlip?.earnings && confirmedSlip.earnings.length > 0 ? confirmedSlip.earnings : calculatedEarnings;
+  }, [confirmedSlip, calculatedEarnings]);
 
   const deductions = useMemo(() => {
-    return isConfirmed && confirmedSlip ? confirmedSlip.deductions : calculatedDeductions;
-  }, [isConfirmed, confirmedSlip, calculatedDeductions]);
+    return confirmedSlip?.deductions && confirmedSlip.deductions.length > 0 ? confirmedSlip.deductions : calculatedDeductions;
+  }, [confirmedSlip, calculatedDeductions]);
 
   // Totals calculations
   const totalEarnings = useMemo(() => earnings.reduce((sum: number, e: PaySlipField) => sum + e.amount, 0), [earnings]);
@@ -737,12 +743,12 @@ export default function EmployeePayslipPage() {
                   {isConfirmed ? (
                     <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-xl px-3 py-1 shadow-none flex items-center gap-1.5 hover:bg-emerald-50">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      FINAL / TERKONFIRMASI
+                      TERKUNCI / FINAL
                     </Badge>
                   ) : (
                     <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold rounded-xl px-3 py-1 shadow-none flex items-center gap-1.5 hover:bg-amber-50 animate-pulse">
                       <AlertCircle className="w-3.5 h-3.5" />
-                      DRAFT (Belum Konfirmasi BAK)
+                      DRAFT (Belum Dikunci)
                     </Badge>
                   )}
                 </div>
@@ -896,7 +902,7 @@ export default function EmployeePayslipPage() {
                   Unduh Slip Gaji (PDF)
                 </Button>
                 <p className="text-[11px] font-semibold text-amber-600 bg-amber-50/60 border border-amber-100/50 px-3 py-1 rounded-full animate-pulse">
-                  Slip gaji masih berupa DRAFT. Hubungi BAK untuk melakukan konfirmasi final sebelum mengunduh.
+                  Slip gaji masih berupa DRAFT. Hubungi BAK untuk melakukan penguncian final sebelum mengunduh.
                 </p>
               </div>
             )}

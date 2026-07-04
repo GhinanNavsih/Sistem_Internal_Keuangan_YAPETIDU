@@ -242,32 +242,33 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       });
       setKoperasiDeductions(deductionMap);
 
-      const loyEmployees = allEmployees.filter(emp =>
-        loyList.some(loy => loy.id === emp.id)
-      );
-
       const savingMap: Record<string, number> = {};
       userSnapshot.docs.forEach(userDoc => {
         const uData = userDoc.data();
         const uName = uData.nama || '';
         if (!uName) return;
+
+        // Skip non-approved membership records
+        const isApproved = uData.status === 'approved' || uData.membershipStatus === 'approved';
+        if (!isApproved) return;
+
         const normalizedU = normalizeName(uName);
         const uUid = uData.uid || userDoc.id;
 
-        let match = loyEmployees.find(
+        let match = allEmployees.find(
           emp =>
             (emp.koperasiUserId && emp.koperasiUserId === userDoc.id) ||
             (emp.koperasiAuthUid && emp.koperasiAuthUid === uUid)
         );
 
         if (!match) {
-          match = loyEmployees.find(emp => emp.normalizedName === normalizedU);
+          match = allEmployees.find(emp => emp.normalizedName === normalizedU);
         }
 
         if (!match) {
           const overrideName = MANUAL_OVERRIDES[uName.trim()];
           if (overrideName) {
-            match = loyEmployees.find(emp => emp.originalName === overrideName);
+            match = allEmployees.find(emp => emp.originalName === overrideName);
           }
         }
 

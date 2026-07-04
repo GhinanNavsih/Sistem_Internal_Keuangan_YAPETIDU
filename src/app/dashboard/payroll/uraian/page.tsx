@@ -62,6 +62,58 @@ export default function UraianPage() {
   const router = useRouter();
   const { profile, logout } = useAuth();
 
+  const syncEmployeeVakasiPay = async (workerId: string, periodToken: string) => {
+    const dbPeriod = periodToken.replace('-', '_');
+    const slipDocId = `${dbPeriod}_${workerId}`;
+    const slipRef = doc(db, 'PayrollSlipStates', slipDocId);
+    const slipSnap = await getDoc(slipRef);
+    if (!slipSnap.exists()) return;
+
+    const slipData = slipSnap.data();
+    if (slipData.status !== 'draft') return; // Only update draft slips
+
+    // 1. Fetch all approved VakasiTambahan events for this worker and period
+    const vakasiSnap = await getDocs(
+      query(
+        collection(db, 'VakasiTambahan'),
+        where('period', '==', periodToken),
+        where('status', '==', 'approved')
+      )
+    );
+
+    const workerVakasiList: { eventName: string; payGiven: number }[] = [];
+    vakasiSnap.docs.forEach(d => {
+      const data = d.data();
+      const worker = data.eventWorkers?.[workerId];
+      if (worker && worker.payGiven) {
+        workerVakasiList.push({ eventName: data.eventName, payGiven: worker.payGiven });
+      }
+    });
+
+    // 2. Load all events in this period to know what labels to filter out
+    const allEventsSnap = await getDocs(
+      query(collection(db, 'VakasiTambahan'), where('period', '==', periodToken))
+    );
+    const allEventNames = new Set(allEventsSnap.docs.map(d => d.data().eventName).filter(Boolean));
+
+    // 3. Filter out old vakasi items from current earnings
+    const oldEarnings = slipData.earnings || [];
+    const cleanEarnings = oldEarnings.filter((e: any) => !allEventNames.has(e.label) && e.label !== 'Vakasi Tambahan');
+
+    // 4. Add updated vakasi items
+    const newEarnings = [...cleanEarnings];
+    workerVakasiList.forEach(item => {
+      newEarnings.push({ label: item.eventName, amount: item.payGiven });
+    });
+
+    // 5. Update draft doc
+    await setDoc(slipRef, {
+      ...slipData,
+      earnings: newEarnings,
+      generatedAt: new Date().toISOString(),
+    }, { merge: true });
+  };
+
   // ── Filters & UI State ────────────────────────────────────────────────────
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
@@ -1492,6 +1544,44 @@ export default function UraianPage() {
         totalPayout += w.payGiven;
       });
 
+      let previousWorkerIds: string[] = [];
+      if (selectedEventId) {
+        const prevSnap = await getDoc(doc(db, 'VakasiTambahan', selectedEventId));
+        if (prevSnap.exists()) {
+          const prevData = prevSnap.data() as any;
+          previousWorkerIds = Object.keys(prevData.eventWorkers || {});
+        }
+      }
+
+      const allAffectedIds = Array.from(new Set([
+        ...activeWorkers.map(w => w.employeeId),
+        ...previousWorkerIds
+      ]));
+
+      const dbPeriod = `${year}_${String(month).padStart(2, '0')}`;
+      const lockedNames: string[] = [];
+
+      await Promise.all(
+        allAffectedIds.map(async (empId) => {
+          const slipDocId = `${dbPeriod}_${empId}`;
+          const snap = await getDoc(doc(db, 'PayrollSlipStates', slipDocId));
+          if (snap.exists() && snap.data()?.status === 'locked') {
+            const wName = activeWorkers.find(w => w.employeeId === empId)?.employeeName || empId;
+            lockedNames.push(wName);
+          }
+        })
+      );
+
+      if (lockedNames.length > 0) {
+        isSavingRef.current = false;
+        setSaving(false);
+        setMessage({
+          type: 'error',
+          text: `Gagal mensubmit: Slip gaji untuk karyawan berikut telah terkunci. Harap hubungi admin BAK untuk membuka kunci slip mereka terlebih dahulu sebelum mengajukan kegiatan ini:\n- ${lockedNames.join('\n- ')}`
+        });
+        return;
+      }
+
       const payload = {
         eventName,
         period: periodToken,
@@ -1540,6 +1630,40 @@ export default function UraianPage() {
     isSavingRef.current = true;
     setSaving(true);
     try {
+      const eventSnap = await getDoc(doc(db, 'VakasiTambahan', eventId));
+      if (!eventSnap.exists()) {
+        throw new Error("Event tidak ditemukan.");
+      }
+      const eventData = eventSnap.data() as any;
+      const periodVal = eventData.period; // YYYY-MM
+      const workers = eventData.eventWorkers || {};
+
+      if (action === 'approved') {
+        const [yearStr, monthStr] = periodVal.split('-');
+        const dbPeriod = `${yearStr}_${monthStr}`;
+        const lockedNames: string[] = [];
+
+        await Promise.all(
+          Object.entries(workers).map(async ([empId, w]: [string, any]) => {
+            const slipDocId = `${dbPeriod}_${empId}`;
+            const snap = await getDoc(doc(db, 'PayrollSlipStates', slipDocId));
+            if (snap.exists() && snap.data()?.status === 'locked') {
+              lockedNames.push(w.employeeName || empId);
+            }
+          })
+        );
+
+        if (lockedNames.length > 0) {
+          isSavingRef.current = false;
+          setSaving(false);
+          setMessage({
+            type: 'error',
+            text: `Gagal memproses review: Slip gaji untuk karyawan berikut telah terkunci. Harap buka kunci slip mereka di dashboard terlebih dahulu:\n- ${lockedNames.join('\n- ')}`
+          });
+          return;
+        }
+      }
+
       const updatePayload: Record<string, any> = {
         status: action,
         reviewedBy: profile?.uid || null,
@@ -1551,6 +1675,12 @@ export default function UraianPage() {
       await setDoc(doc(db, 'VakasiTambahan', eventId), updatePayload, { merge: true });
       const actionLabel = action === 'approved' ? 'disetujui' : action === 'revision_needed' ? 'diminta revisi' : 'ditolak';
       setMessage({ type: 'success', text: `Kegiatan berhasil ${actionLabel}.` });
+
+      if (action === 'approved') {
+        await Promise.all(
+          Object.keys(workers).map(empId => syncEmployeeVakasiPay(empId, periodVal))
+        );
+      }
 
       setShowReviewDialog(false);
       setReviewNote('');
@@ -1629,6 +1759,44 @@ export default function UraianPage() {
         totalPayout += w.payGiven;
       });
 
+      let previousWorkerIds: string[] = [];
+      if (selectedEventId) {
+        const prevSnap = await getDoc(doc(db, 'VakasiTambahan', selectedEventId));
+        if (prevSnap.exists()) {
+          const prevData = prevSnap.data() as any;
+          previousWorkerIds = Object.keys(prevData.eventWorkers || {});
+        }
+      }
+
+      const allAffectedIds = Array.from(new Set([
+        ...activeWorkers.map(w => w.employeeId),
+        ...previousWorkerIds
+      ]));
+
+      const dbPeriod = `${year}_${String(month).padStart(2, '0')}`;
+      const lockedNames: string[] = [];
+
+      await Promise.all(
+        allAffectedIds.map(async (empId) => {
+          const slipDocId = `${dbPeriod}_${empId}`;
+          const snap = await getDoc(doc(db, 'PayrollSlipStates', slipDocId));
+          if (snap.exists() && snap.data()?.status === 'locked') {
+            const wName = activeWorkers.find(w => w.employeeId === empId)?.employeeName || empId;
+            lockedNames.push(wName);
+          }
+        })
+      );
+
+      if (lockedNames.length > 0) {
+        isSavingRef.current = false;
+        setSaving(false);
+        setMessage({
+          type: 'error',
+          text: `Gagal menyimpan: Slip gaji untuk karyawan berikut telah terkunci. Harap buka kunci slip mereka di dashboard terlebih dahulu sebelum menyimpan event ini:\n- ${lockedNames.join('\n- ')}`
+        });
+        return;
+      }
+
       const isSuperAdmin = profile?.role === 'super_admin';
       const finalSubmittedBy = selectedEventId
         ? currentEventSubmittedBy
@@ -1661,10 +1829,18 @@ export default function UraianPage() {
       }
 
       await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
+      
+      const newStatus = isSuperAdmin ? 'approved' : (currentEventStatus || 'draft');
+      if (newStatus === 'approved') {
+        await Promise.all(
+          allAffectedIds.map(empId => syncEmployeeVakasiPay(empId, periodToken))
+        );
+      }
+
       setMessage({ type: 'success', text: `Event "${eventName}" berhasil disimpan.` });
 
       setSelectedEventId(documentId);
-      setCurrentEventStatus(isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'));
+      setCurrentEventStatus(newStatus);
       setCurrentEventSubmittedBy(finalSubmittedBy);
       setCurrentEventSubmittedByName(finalSubmittedByName);
       setCurrentEventSubmittedByEmail(finalSubmittedByEmail);
@@ -1697,24 +1873,37 @@ export default function UraianPage() {
 
         if (eventPeriod && nameOfEvent) {
           const slipPeriod = eventPeriod.replace('-', '_');
-          for (const workerId of Object.keys(eventWorkers)) {
-            const slipDocId = `${slipPeriod}_${workerId}`;
-            const slipRef = doc(db, 'PayrollSlipStates', slipDocId);
-            const slipSnap = await getDoc(slipRef);
-            if (slipSnap.exists()) {
-              const slipData = slipSnap.data();
-              const oldEarnings = slipData.earnings || [];
-              const newEarnings = oldEarnings.filter((e: any) => e.label !== nameOfEvent);
-              await setDoc(slipRef, {
-                ...slipData,
-                earnings: newEarnings,
-              }, { merge: true });
-            }
+          const lockedNames: string[] = [];
+
+          await Promise.all(
+            Object.entries(eventWorkers).map(async ([workerId, w]: [string, any]) => {
+              const slipDocId = `${slipPeriod}_workerId`; // wait, let's use the actual workerId
+              const slipSnap = await getDoc(doc(db, 'PayrollSlipStates', `${slipPeriod}_${workerId}`));
+              if (slipSnap.exists() && slipSnap.data()?.status === 'locked') {
+                lockedNames.push(w.employeeName || workerId);
+              }
+            })
+          );
+
+          if (lockedNames.length > 0) {
+            isSavingRef.current = false;
+            setSaving(false);
+            setMessage({
+              type: 'error',
+              text: `Gagal menghapus: Slip gaji untuk karyawan berikut telah terkunci. Harap buka kunci slip mereka di dashboard terlebih dahulu:\n- ${lockedNames.join('\n- ')}`
+            });
+            return;
           }
+
+          // Delete event document first so that syncEmployeeVakasiPay will not fetch this event
+          await deleteDoc(eventRef);
+
+          // Now sync employee slips
+          await Promise.all(
+            Object.keys(eventWorkers).map(workerId => syncEmployeeVakasiPay(workerId, eventPeriod))
+          );
         }
       }
-
-      await deleteDoc(doc(db, 'VakasiTambahan', eventId));
       setMessage({ type: 'success', text: 'Event Vakasi Tambahan berhasil dihapus.' });
       setSelectedEventId(null);
       setEventName('');
