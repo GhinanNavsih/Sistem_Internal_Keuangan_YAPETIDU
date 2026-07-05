@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import GlobalHeader from '@/components/GlobalHeader';
@@ -87,21 +87,30 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     return '';
   }, [pathname]);
 
+  const getCleanParamsString = useCallback((tab: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === 'vakasi_loyalis' || tab === 'pelaporan_kegiatan' || tab === 'presensi_loyalis') {
+      params.delete('category');
+    }
+    const str = params.toString();
+    return str ? `?${str}` : '';
+  }, [searchParams]);
+
   // Auto-redirect unauthorized routes on load
   useEffect(() => {
     if (!profile || !activeTab) return;
 
     if (profile.role === 'satker_head_loyalis') {
       if (activeTab !== 'vakasi_loyalis' && activeTab !== 'pelaporan_kegiatan') {
-        router.replace(`/dashboard/payroll/uraian/vakasi-loyalis?${searchParams.toString()}`);
+        router.replace(`/dashboard/payroll/uraian/vakasi-loyalis${getCleanParamsString('vakasi_loyalis')}`);
       }
     } else if (profile.role !== 'super_admin') {
       // Satker Head Pekarya / other roles
       if (activeTab !== 'presensi' && activeTab !== 'kegiatan_spj') {
-        router.replace(`/dashboard/payroll/uraian/rekap-pekarya?${searchParams.toString()}`);
+        router.replace(`/dashboard/payroll/uraian/rekap-pekarya${getCleanParamsString('presensi')}`);
       }
     }
-  }, [profile, activeTab, router, searchParams]);
+  }, [profile, activeTab, router, getCleanParamsString]);
 
   // Set default category for Pekarya views
   useEffect(() => {
@@ -255,7 +264,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
             <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
               {profile.role === 'super_admin' && (
                 <button
-                  onClick={() => router.push(`/dashboard/payroll/uraian/rekap-pekarya?${searchParams.toString()}`)}
+                  onClick={() => router.push(`/dashboard/payroll/uraian/rekap-pekarya${getCleanParamsString('presensi')}`)}
                   className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                     activeTab === 'presensi'
                       ? 'bg-indigo-600 text-white shadow-sm'
@@ -270,7 +279,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               {(profile.role === 'super_admin' || profile.role === 'satker_head_loyalis') && (
                 <>
                   <button
-                    onClick={() => router.push(`/dashboard/payroll/uraian/vakasi-loyalis?${searchParams.toString()}`)}
+                    onClick={() => router.push(`/dashboard/payroll/uraian/vakasi-loyalis${getCleanParamsString('vakasi_loyalis')}`)}
                     className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                       activeTab === 'vakasi_loyalis'
                         ? 'bg-indigo-600 text-white shadow-sm'
@@ -281,7 +290,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                     Vakasi Tambahan (Loyalis)
                   </button>
                   <button
-                    onClick={() => router.push(`/dashboard/payroll/uraian/pelaporan-kegiatan?${searchParams.toString()}`)}
+                    onClick={() => router.push(`/dashboard/payroll/uraian/pelaporan-kegiatan${getCleanParamsString('pelaporan_kegiatan')}`)}
                     className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                       activeTab === 'pelaporan_kegiatan'
                         ? 'bg-indigo-600 text-white shadow-sm'
@@ -296,7 +305,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
               {profile.role === 'super_admin' && (
                 <button
-                  onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis?${searchParams.toString()}`)}
+                  onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis${getCleanParamsString('presensi_loyalis')}`)}
                   className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                     activeTab === 'presensi_loyalis'
                       ? 'bg-indigo-600 text-white shadow-sm'
@@ -312,7 +321,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               {/*
               {(profile.role === 'super_admin' || profile.role === 'satker_head') && (
                 <button
-                  onClick={() => router.push(`/dashboard/payroll/uraian/spj-pekarya?${searchParams.toString()}`)}
+                  onClick={() => router.push(`/dashboard/payroll/uraian/spj-pekarya${getCleanParamsString('kegiatan_spj')}`)}
                   className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                     activeTab === 'kegiatan_spj'
                       ? 'bg-indigo-600 text-white shadow-sm'
