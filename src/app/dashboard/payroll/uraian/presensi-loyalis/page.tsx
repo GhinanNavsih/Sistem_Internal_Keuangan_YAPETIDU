@@ -223,7 +223,7 @@ export default function PresensiLoyalisPage() {
       excelName: entry.excelName || '-',
       employeeId: entry.isNotFoundInExcel ? null : entry.employeeId,
       employeeName: entry.isNotFoundInExcel ? null : entry.employeeName,
-      minutes: entry.minutes || 0,
+      minutes: Math.ceil(entry.minutes || 0),
     }));
     setUploadedData(entriesList);
     setMessage({ type: 'success', text: 'Mode edit diaktifkan. Anda sekarang dapat mengubah data menit kerja dan menghubungkan pegawai.' });
@@ -281,7 +281,7 @@ export default function PresensiLoyalisPage() {
         excelName: entry.excelName,
         employeeId: entry.employeeId,
         employeeName: entry.employeeName,
-        minutes: entry.minutes,
+        minutes: Math.ceil(entry.minutes || 0),
         absenceMinutes: entry.absenceMinutes,
         stratum: entry.stratum,
         deduction: entry.deduction,
@@ -344,7 +344,7 @@ export default function PresensiLoyalisPage() {
             return;
           }
 
-          const minutes = Number(minVal) || 0;
+          const minutes = Math.ceil(Number(minVal) || 0);
           const match = matchExcelName(nameStr, loyalisEmployees);
 
           parsedData.push({
