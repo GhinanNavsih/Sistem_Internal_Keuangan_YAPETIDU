@@ -755,9 +755,8 @@ export default function PresensiLoyalisPage() {
                         <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-center font-mono">MENIT KERJA EXCEL</th>
                         <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-center font-mono">ABSEN (MENIT)</th>
                         <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-24 text-center">STRATA</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-right">POT. BONUS</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-36 text-right font-mono">NET PRESENSI</th>
                         <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-right">NET BONUS</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-36 text-right">POT. PRESENSI</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -793,14 +792,13 @@ export default function PresensiLoyalisPage() {
                                 </span>
                               ) : '-'}
                             </td>
-                            <td className="px-4 py-3 text-xs font-bold text-slate-600 text-right font-mono">
-                              {row.isMatched && !row.isNotFoundInExcel ? fmtRp(row.deduction) : fmtRp(0)}
+                            <td className="px-4 py-3 text-xs font-bold text-indigo-600 text-right font-mono">
+                              {row.isMatched && !row.isNotFoundInExcel
+                                ? fmtRp(Math.max(0, (workingDays * expectedHours * 60 - row.absenceMinutes) / 60 * 1650))
+                                : fmtRp(0)}
                             </td>
                             <td className="px-4 py-3 text-xs font-black text-indigo-600 text-right font-mono">
                               {row.isMatched && !row.isNotFoundInExcel ? fmtRp(row.netBonus) : fmtRp(0)}
-                            </td>
-                            <td className="px-4 py-3 text-xs font-bold text-red-500 text-right font-mono">
-                              {row.isMatched && !row.isNotFoundInExcel ? fmtRp((row.absenceMinutes / 60) * 1650) : fmtRp(0)}
                             </td>
                           </tr>
                         );
