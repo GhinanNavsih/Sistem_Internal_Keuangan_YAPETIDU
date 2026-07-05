@@ -55,6 +55,9 @@ export default function PresensiLoyalisPage() {
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const [activeSearchRowIdx, setActiveSearchRowIdx] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
   // Sync Categories from DB Blue Collar
   useEffect(() => {
     const fetchCats = async () => {
@@ -810,16 +813,80 @@ export default function PresensiLoyalisPage() {
                             <td className="px-4 py-3 text-xs font-bold text-slate-700">{row.excelName}</td>
                             <td className="px-4 py-3 text-xs">
                               {uploadedData && row.excelName !== '-' ? (
-                                <select
-                                  value={row.employeeId || ""}
-                                  onChange={(e) => handleLinkEmployee(row.excelName, e.target.value)}
-                                  className="bg-white border border-slate-200 rounded-lg text-xs font-semibold px-2.5 py-1 text-slate-700 hover:border-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[220px]"
-                                >
-                                  <option value="">-- Hubungkan Pegawai --</option>
-                                  {loyalisEmployees.map(emp => (
-                                    <option key={emp.id} value={emp.id}>{emp.name}</option>
-                                  ))}
-                                </select>
+                                activeSearchRowIdx === row.idx ? (
+                                  <div className="relative w-full max-w-[220px]">
+                                    <Input
+                                      type="text"
+                                      placeholder="Cari nama pegawai..."
+                                      value={searchQuery}
+                                      onChange={(e) => setSearchQuery(e.target.value)}
+                                      autoFocus
+                                      onBlur={() => {
+                                        setTimeout(() => {
+                                          setActiveSearchRowIdx(null);
+                                        }, 200);
+                                      }}
+                                      className="h-8 rounded-lg border-indigo-300 font-semibold text-slate-800 text-xs w-full bg-white pr-7"
+                                    />
+                                    <div className="absolute left-0 right-0 top-9 max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 divide-y divide-slate-50">
+                                      {(() => {
+                                        const search = searchQuery.toLowerCase();
+                                        const filtered = loyalisEmployees.filter(emp =>
+                                          emp.name.toLowerCase().includes(search)
+                                        );
+                                        return (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                handleLinkEmployee(row.excelName, "");
+                                                setActiveSearchRowIdx(null);
+                                              }}
+                                              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-[10px] font-bold text-rose-500"
+                                            >
+                                              -- Putuskan Hubungan --
+                                            </button>
+                                            {filtered.length === 0 ? (
+                                              <div className="p-2.5 text-[10px] text-slate-400">Pegawai tidak ditemukan</div>
+                                            ) : (
+                                              filtered.map(emp => (
+                                                <button
+                                                  key={emp.id}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    handleLinkEmployee(row.excelName, emp.id);
+                                                    setActiveSearchRowIdx(null);
+                                                  }}
+                                                  className="w-full text-left px-3 py-2 hover:bg-slate-50 text-[10px] font-semibold text-slate-700 block truncate"
+                                                >
+                                                  {emp.name}
+                                                </button>
+                                              ))
+                                            )}
+                                          </>
+                                        );
+                                      })()}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveSearchRowIdx(row.idx);
+                                      setSearchQuery(row.employeeName || "");
+                                    }}
+                                    className={`text-left w-full max-w-[220px] px-3 py-1.5 rounded-lg border transition-all text-xs font-semibold flex items-center justify-between cursor-pointer ${
+                                      row.isMatched
+                                        ? 'bg-indigo-50/40 text-indigo-700 border-indigo-100 hover:bg-indigo-50 hover:border-indigo-200'
+                                        : 'bg-rose-50 border-rose-100 text-rose-600 hover:bg-rose-100/50'
+                                    }`}
+                                  >
+                                    <span className="truncate max-w-[170px]">
+                                      {row.isMatched ? row.employeeName : "Klik untuk Hubungkan..."}
+                                    </span>
+                                    <Edit className="w-3.5 h-3.5 opacity-60 hover:opacity-100 shrink-0 ml-1" />
+                                  </button>
+                                )
                               ) : row.isMatched ? (
                                 <div>
                                   <p className="font-bold text-indigo-600">{row.employeeName}</p>
