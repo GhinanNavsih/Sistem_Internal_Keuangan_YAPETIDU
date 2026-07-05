@@ -873,7 +873,7 @@ export default function PayrollValidationDashboard() {
 
   // ─── Fetch UraianGaji & persisted SlipStates for current period ──
   useEffect(() => {
-    if (!profile || profile.role !== 'super_admin') return;
+    if (!profile || (profile.role !== 'super_admin' && profile.role !== 'employee_admin')) return;
     const fetchPeriodData = async () => {
       try {
         const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
@@ -930,7 +930,7 @@ export default function PayrollValidationDashboard() {
 
   // ─── Fetch VakasiTambahan for current period (Loyalis Only) ───
   useEffect(() => {
-    if (!profile || profile.role !== 'super_admin') return;
+    if (!profile || (profile.role !== 'super_admin' && profile.role !== 'employee_admin')) return;
     const fetchVakasiAndSpj = async () => {
       try {
         const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1425,7 +1425,8 @@ export default function PayrollValidationDashboard() {
         vakasiSnap,
         loanSnapshot,
         userSnapshot,
-        uraianSnap
+        uraianSnap,
+        slipStatesSnapshot
       ] = await Promise.all([
         getDoc(doc(db, matrixCollection, '_config')),
         getDoc(doc(db, 'SalaryMatrix_Functional', '_config')),
@@ -1434,7 +1435,8 @@ export default function PayrollValidationDashboard() {
         getDocs(collection(db, 'VakasiTambahan')),
         getDocs(collection(secondaryDb, 'simpanPinjam')),
         getDocs(collection(secondaryDb, 'users')),
-        getDocs(collection(db, 'UraianGaji'))
+        getDocs(collection(db, 'UraianGaji')),
+        getDocs(collection(db, 'PayrollSlipStates'))
       ]);
 
       const activeMatrixVersion = matrixConfigSnap.exists() ? (matrixConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
@@ -1482,6 +1484,25 @@ export default function PayrollValidationDashboard() {
       const freshUraianMap: Record<string, UraianGajiDocument> = {};
       uraianSnap.docs.forEach(d => {
         freshUraianMap[d.id] = d.data() as UraianGajiDocument;
+      });
+
+      // Map fresh slip states
+      const freshSlipStates: Record<string, SlipState> = {};
+      slipStatesSnapshot.docs.forEach(d => {
+        if (d.id.startsWith(period + '_')) {
+          const data = d.data();
+          const empId = d.id.substring(period.length + 1);
+          const status = data.status === 'confirmed' ? 'draft' : (data.status || 'draft');
+          freshSlipStates[empId] = {
+            status,
+            earnings: data.earnings || [],
+            deductions: data.deductions || [],
+            generatedAt: data.generatedAt,
+            lockedAt: data.lockedAt || data.confirmedAt,
+            emailSent: data.emailSent || false,
+            emailSentAt: data.emailSentAt || undefined,
+          };
+        }
       });
 
       const changes: BulkChange[] = [];
@@ -1683,7 +1704,7 @@ export default function PayrollValidationDashboard() {
         );
 
         // Get current slip state
-        const currentSlip = slipStates[emp.id];
+        const currentSlip = freshSlipStates[emp.id];
         let currentEarnings: PaySlipField[] = [];
         let currentDeductions: PaySlipField[] = [];
 
