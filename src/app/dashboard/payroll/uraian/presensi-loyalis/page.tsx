@@ -13,7 +13,7 @@ import {
   SelectValue
 } from '@/components/ui/select';
 import {
-  Loader2, CheckCircle2, FileText, AlertCircle, Trash2, Plus, Save,
+  Loader2, CheckCircle2, FileText, AlertCircle, Trash2, Plus, Save, Edit,
   Calendar, Check, ShieldCheck, FileSpreadsheet, Users, Info, Settings, Clock, Upload
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
@@ -197,6 +197,37 @@ export default function PresensiLoyalisPage() {
       netBonus,
     };
   }, []);
+
+  const handleUpdateMinutes = useCallback((excelName: string, minutes: number) => {
+    setUploadedData(prev => {
+      if (!prev) return null;
+      return prev.map(r => r.excelName === excelName ? { ...r, minutes } : r);
+    });
+  }, []);
+
+  const handleLinkEmployee = useCallback((excelName: string, employeeId: string) => {
+    const emp = loyalisEmployees.find(e => e.id === employeeId);
+    setUploadedData(prev => {
+      if (!prev) return null;
+      return prev.map(r => r.excelName === excelName ? {
+        ...r,
+        employeeId: employeeId || null,
+        employeeName: emp ? emp.name : "",
+      } : r);
+    });
+  }, [loyalisEmployees]);
+
+  const handleStartEdit = useCallback(() => {
+    if (!existingPresence?.entries) return;
+    const entriesList = Object.values(existingPresence.entries).map((entry: any) => ({
+      excelName: entry.excelName || '-',
+      employeeId: entry.isNotFoundInExcel ? null : entry.employeeId,
+      employeeName: entry.isNotFoundInExcel ? null : entry.employeeName,
+      minutes: entry.minutes || 0,
+    }));
+    setUploadedData(entriesList);
+    setMessage({ type: 'success', text: 'Mode edit diaktifkan. Anda sekarang dapat mengubah data menit kerja dan menghubungkan pegawai.' });
+  }, [existingPresence]);
 
   const displayRows = useMemo(() => {
     if (uploadedData) {
@@ -660,23 +691,35 @@ export default function PresensiLoyalisPage() {
             {existingPresence && Object.keys(existingPresence.entries || {}).length > 0 && !uploadedData && (
               <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-start gap-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-emerald-800 text-xs font-bold">Data Presensi Telah Disimpan</h4>
-                  <p className="text-emerald-600/90 text-[11px] mt-0.5 leading-relaxed">
-                    Periode ini ({MONTHS_ID[month - 1]} {year}) sudah memiliki data presensi dengan {Object.keys(existingPresence.entries || {}).length} pegawai terdaftar.
-                    Jika ingin memperbarui data, silakan hapus data saat ini terlebih dahulu.
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-4 text-[10px] text-emerald-700 font-bold bg-white/50 px-3 py-1.5 rounded-xl border border-emerald-100/50 w-fit">
-                    <span>Hari Kerja: {existingPresence.workingDays || 25} hari</span>
-                    <span>Target: 390 menit/hari</span>
-                    <span>Mode Input: {existingPresence.mode === 'worked' ? 'Menit Kerja' : 'Menit Absen'}</span>
+                <div className="space-y-3 w-full">
+                  <div>
+                    <h4 className="text-emerald-800 text-xs font-bold">Data Presensi Telah Disimpan</h4>
+                    <p className="text-emerald-600/90 text-[11px] mt-0.5 leading-relaxed">
+                      Periode ini ({MONTHS_ID[month - 1]} {year}) sudah memiliki data presensi dengan {Object.keys(existingPresence.entries || {}).length} pegawai terdaftar.
+                      Jika ingin memperbarui data, silakan klik tombol Ubah Data di bawah atau hapus data saat ini.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <div className="flex flex-wrap gap-4 text-[10px] text-emerald-700 font-bold bg-white/50 px-3 py-1.5 rounded-xl border border-emerald-100/50 w-fit">
+                      <span>Hari Kerja: {existingPresence.workingDays || 25} hari</span>
+                      <span>Target: 390 menit/hari</span>
+                      <span>Mode Input: {existingPresence.mode === 'worked' ? 'Menit Kerja' : 'Menit Absen'}</span>
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={handleStartEdit}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs h-9 px-4 flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
+                    >
+                      <Edit className="w-4 h-4" />
+                      Ubah Data
+                    </Button>
                   </div>
                 </div>
               </div>
             )}
 
             {/* Settings and File Upload Input */}
-            {(!existingPresence || Object.keys(existingPresence.entries || {}).length === 0) && (
+            {(!existingPresence || Object.keys(existingPresence.entries || {}).length === 0 || !!uploadedData) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
                 {/* 1. Working Days */}
                 <div className="space-y-2">
@@ -766,7 +809,18 @@ export default function PresensiLoyalisPage() {
                             <td className="px-4 py-3 text-xs text-slate-400 text-center font-mono">{idx + 1}</td>
                             <td className="px-4 py-3 text-xs font-bold text-slate-700">{row.excelName}</td>
                             <td className="px-4 py-3 text-xs">
-                              {row.isMatched ? (
+                              {uploadedData && row.excelName !== '-' ? (
+                                <select
+                                  value={row.employeeId || ""}
+                                  onChange={(e) => handleLinkEmployee(row.excelName, e.target.value)}
+                                  className="bg-white border border-slate-200 rounded-lg text-xs font-semibold px-2.5 py-1 text-slate-700 hover:border-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full max-w-[220px]"
+                                >
+                                  <option value="">-- Hubungkan Pegawai --</option>
+                                  {loyalisEmployees.map(emp => (
+                                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                                  ))}
+                                </select>
+                              ) : row.isMatched ? (
                                 <div>
                                   <p className="font-bold text-indigo-600">{row.employeeName}</p>
                                   <p className="text-[10px] text-slate-400 font-mono">ID: {row.employeeId}</p>
@@ -778,7 +832,19 @@ export default function PresensiLoyalisPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-xs font-bold text-slate-600 text-center font-mono">{row.minutes}</td>
+                            <td className="px-4 py-3 text-xs font-bold text-slate-600 text-center font-mono">
+                              {uploadedData && row.excelName !== '-' ? (
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  value={row.minutes}
+                                  onChange={(e) => handleUpdateMinutes(row.excelName, Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                  className="w-24 text-center font-bold font-mono h-8 rounded-lg border-slate-200 text-xs mx-auto"
+                                />
+                              ) : (
+                                row.minutes
+                              )}
+                            </td>
                             <td className="px-4 py-3 text-xs text-slate-600 text-center font-mono">{row.isMatched && !row.isNotFoundInExcel ? row.absenceMinutes : 0}</td>
                             <td className="px-4 py-3 text-center">
                               {row.isMatched && !row.isNotFoundInExcel ? (
