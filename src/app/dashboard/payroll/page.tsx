@@ -1615,7 +1615,8 @@ export default function PayrollValidationDashboard() {
               return tB - tA; // Latest first
             });
             const latestEntry = sortedHistory[0];
-            if (!latestEntry || latestEntry.status !== 'Disetujui dan Aktif') {
+            const isActiveStatus = loan.status === 'Disetujui dan Aktif' || (latestEntry && (latestEntry.status === 'Disetujui dan Aktif' || latestEntry.status === 'Pembayaran Cicilan'));
+            if (!isActiveStatus) {
               return false;
             }
 
@@ -2122,7 +2123,8 @@ export default function PayrollValidationDashboard() {
           return tB - tA; // Latest first
         });
         const latestEntry = sortedHistory[0];
-        if (!latestEntry || latestEntry.status !== 'Disetujui dan Aktif') {
+        const isActiveStatus = loan.status === 'Disetujui dan Aktif' || (latestEntry && (latestEntry.status === 'Disetujui dan Aktif' || latestEntry.status === 'Pembayaran Cicilan'));
+        if (!isActiveStatus) {
           return false;
         }
 

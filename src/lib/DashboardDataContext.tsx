@@ -196,7 +196,8 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
             return tB - tA; // Latest first
           });
           const latestEntry = sortedHistory[0];
-          if (!latestEntry || latestEntry.status !== 'Disetujui dan Aktif') {
+          const isActiveStatus = loan.status === 'Disetujui dan Aktif' || (latestEntry && (latestEntry.status === 'Disetujui dan Aktif' || latestEntry.status === 'Pembayaran Cicilan'));
+          if (!isActiveStatus) {
             return false;
           }
 
