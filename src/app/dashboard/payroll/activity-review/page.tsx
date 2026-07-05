@@ -268,13 +268,18 @@ export default function ActivityReviewPage() {
         ...d.data(),
       } as ActivityReport));
 
-      // Sort by employee name, then date, then time
+      // Sort descending by submittedAt (newest submission first)
       list.sort((a, b) => {
-        const nameCmp = a.employeeName.localeCompare(b.employeeName);
-        if (nameCmp !== 0) return nameCmp;
-        const dateCmp = a.activityDate.localeCompare(b.activityDate);
-        if (dateCmp !== 0) return dateCmp;
-        return a.timeStart.localeCompare(b.timeStart);
+        const getMs = (ts: any): number => {
+          if (!ts) return 0;
+          if (typeof ts.toMillis === 'function') return ts.toMillis();
+          if (typeof ts.seconds === 'number') return ts.seconds * 1000;
+          return 0;
+        };
+        const diff = getMs(b.submittedAt) - getMs(a.submittedAt);
+        if (diff !== 0) return diff;
+        // Fallback: newer activity date first
+        return b.activityDate.localeCompare(a.activityDate);
       });
 
       // Prefill pending activities with default calculated fees, merging with existing inputs
