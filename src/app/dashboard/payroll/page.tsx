@@ -1479,6 +1479,7 @@ export default function PayrollValidationDashboard() {
       });
 
       let freshPresenceData = presenceSnap.exists() ? presenceSnap.data() : null;
+      setLoyalisPresenceData(freshPresenceData);
 
       // Map UraianGaji documents
       const freshUraianMap: Record<string, UraianGajiDocument> = {};
@@ -2037,6 +2038,7 @@ export default function PayrollValidationDashboard() {
     // 4. Fetch Presence data
     const presenceSnap = await getDoc(doc(db, 'LoyalisPresence', period));
     let freshPresenceData = presenceSnap.exists() ? presenceSnap.data() : null;
+    setLoyalisPresenceData(freshPresenceData);
 
     // Presence calculations helpers
     const getFreshPresenceBonus = (empId: string): number => {
