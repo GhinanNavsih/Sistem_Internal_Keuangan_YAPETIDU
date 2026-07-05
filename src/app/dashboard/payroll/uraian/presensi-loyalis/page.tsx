@@ -508,25 +508,32 @@ export default function PresensiLoyalisPage() {
   const fmtRp = (n: number) => 'Rp\u00a0' + Math.round(n).toLocaleString('id-ID');
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      
-      {/* Target Selector */}
+    <div className="space-y-8 animate-in fade-in duration-500">
+      {/* Target Type Toggle */}
       <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
         <button
+          type="button"
           onClick={() => setPresensiTargetType('loyalis')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-            presensiTargetType === 'loyalis' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
+          className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            presensiTargetType === 'loyalis'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
-          Presensi Loyalis
+          <Users className="w-4 h-4" />
+          Loyalis
         </button>
         <button
+          type="button"
           onClick={() => setPresensiTargetType('pekarya')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-            presensiTargetType === 'pekarya' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
+          className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            presensiTargetType === 'pekarya'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
           }`}
         >
-          Quick Apply Pekarya
+          <Users className="w-4 h-4" />
+          Pekarya
         </button>
       </div>
 
@@ -536,159 +543,298 @@ export default function PresensiLoyalisPage() {
         </div>
       )}
 
-      {presensiTargetType === 'loyalis' ? (
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-          
-          {/* Config Card */}
-          <div className="xl:col-span-4 space-y-6">
-            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
-              <h3 className="font-bold text-slate-800 text-sm">Konfigurasi & Impor Excel</h3>
-              
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Mode Kalkulasi</label>
-                  <Select value={calcMode} onValueChange={(v: any) => setCalcMode(v)}>
-                    <SelectTrigger className="w-full bg-white border-slate-200 rounded-xl font-semibold text-xs h-10"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="worked">Akumulasi Menit Kerja</SelectItem>
-                      <SelectItem value="absent">Akumulasi Menit Absen</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Hari Kerja (Hari)</label>
-                    <Input type="number" value={workingDays} onChange={(e) => setWorkingDays(parseInt(e.target.value, 10) || 0)} className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm text-center" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jam Kerja (Jam/Hari)</label>
-                    <Input type="number" step="0.5" value={expectedHours} onChange={(e) => setExpectedHours(parseFloat(e.target.value) || 0)} className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm text-center" />
-                  </div>
-                </div>
-
-                <Button onClick={handleSaveWorkingDaysConfig} disabled={savingPresence} className="w-full rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold shadow-sm h-10 flex items-center justify-center gap-1.5">
-                  {savingPresence ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings className="w-4 h-4" />} Simpan Konfigurasi
-                </Button>
-              </div>
-
-              <div className="relative p-6 border-2 border-dashed border-slate-200 hover:border-indigo-300 rounded-[20px] text-center bg-white cursor-pointer transition-colors" onClick={() => document.getElementById('excel-upload-input')?.click()}>
-                <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                <h4 className="text-slate-900 font-bold text-xs mb-1">Unggah Excel Presensi</h4>
-                <p className="text-[10px] text-slate-400 mb-4 px-2">Unggah rekap absensi untuk auto-kalkulasi strata bonus</p>
-                <input id="excel-upload-input" type="file" className="hidden" accept=".xlsx,.xls" onChange={handleExcelUpload} />
-                <Button variant="outline" className="rounded-xl border-slate-200 text-[10px] font-semibold">Pilih Berkas</Button>
-              </div>
-            </Card>
+      {presensiTargetType === 'pekarya' ? (
+        <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
+          <div className="flex justify-between items-center border-b border-slate-50 pb-4">
+            <div>
+              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-indigo-500" />
+                Kalkulator Presensi Pekarya
+              </h3>
+              <p className="text-slate-400 text-xs mt-0.5">
+                Input jumlah hari kerja dan hari libur untuk mengisi kolom Harian serta Jumat & Libur secara otomatis.
+              </p>
+            </div>
           </div>
 
-          {/* Table Preview */}
-          <div className="xl:col-span-8">
-            <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none overflow-hidden min-h-[400px] flex flex-col">
-              <div className="p-5 flex items-center justify-between border-b border-slate-100 bg-white/50 backdrop-blur-sm z-10">
-                <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">Preview Bonus Presensi — {MONTHS_ID[month - 1]} {year}</h2>
-                <div className="flex gap-2">
-                  {displayRows && displayRows.length > 0 && (
-                    <Button onClick={handleSavePresence} disabled={savingPresence || !uploadedData} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-5 text-xs flex items-center gap-1.5 shadow-md h-9">
-                      {savingPresence ? <Loader2 className="w-4.5 h-4.5 animate-spin" /> : <Save className="w-4.5 h-4.5" />} Simpan Presensi
-                    </Button>
-                  )}
-                  {existingPresence && (
-                    <Button onClick={handleDeletePresence} disabled={savingPresence} variant="ghost" className="rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 font-bold px-4 text-xs h-9">
-                      Hapus
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {loadingPresence ? (
-                <div className="p-20 flex-1 flex flex-col items-center justify-center text-slate-400"><Loader2 className="w-8 h-8 animate-spin mb-3" /><p className="font-medium">Memuat data presensi...</p></div>
-              ) : !displayRows || displayRows.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-slate-400 space-y-3">
-                  <FileSpreadsheet className="w-12 h-12 opacity-30" />
-                  <div className="space-y-1">
-                    <p className="font-bold text-slate-700 text-sm">Belum Ada Data Presensi</p>
-                    <p className="text-xs text-slate-400">Silakan unggah rekap Excel di sebelah kiri untuk melihat preview data.</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="sticky top-0 z-20 bg-slate-50 border-b border-slate-200">
-                      <tr>
-                        <th className="px-6 py-4 text-[10px] font-bold uppercase text-slate-500 tracking-wider">Nama Pegawai (Excel)</th>
-                        <th className="px-4 py-4 text-[10px] font-bold uppercase text-slate-500 tracking-wider text-center">Menit {calcMode === 'worked' ? 'Kerja' : 'Absen'}</th>
-                        <th className="px-4 py-4 text-[10px] font-bold uppercase text-slate-500 tracking-wider text-center">Menit Absen</th>
-                        <th className="px-4 py-4 text-[10px] font-bold uppercase text-slate-500 tracking-wider text-center">Strata</th>
-                        <th className="px-4 py-4 text-[10px] font-bold uppercase text-slate-500 tracking-wider text-right">Potongan</th>
-                        <th className="px-6 py-4 text-[10px] font-bold uppercase text-slate-500 tracking-wider text-right">Bonus Bersih</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {displayRows.map((row) => (
-                        <tr key={row.idx} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-4">
-                            <div className="text-xs font-bold text-slate-800 leading-none">{row.employeeName || row.excelName}</div>
-                            {row.isNotFoundInExcel && <span className="text-[9px] font-bold text-rose-500 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded mt-1.5 inline-block">Tidak Terdaftar Absen</span>}
-                            {!row.isMatched && <span className="text-[9px] font-bold text-amber-500 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded mt-1.5 inline-block">Unmatched (Excel name)</span>}
-                          </td>
-                          <td className="px-4 py-4 text-xs font-bold text-slate-600 text-center">{row.minutes} m</td>
-                          <td className="px-4 py-4 text-xs font-bold text-slate-600 text-center">{row.absenceMinutes} m</td>
-                          <td className="px-4 py-4 text-center">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                              row.stratum === 1 ? 'bg-emerald-50 text-emerald-700' :
-                              row.stratum === 5 ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'
-                            }`}>Strata {row.stratum}</span>
-                          </td>
-                          <td className="px-4 py-4 text-xs font-bold text-rose-600 text-right">{fmtRp(row.deduction)}</td>
-                          <td className="px-6 py-4 text-xs font-bold text-slate-700 text-right">{fmtRp(row.netBonus)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Card>
-          </div>
-
-        </div>
-      ) : (
-        /* Quick Apply Pekarya Card */
-        <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 max-w-2xl">
-          <h3 className="font-bold text-slate-800 text-sm mb-2">Terapkan Presensi Pekarya Massal</h3>
-          <p className="text-xs text-slate-500 mb-6">Mengatur data hari kerja dan libur secara massal untuk seluruh pegawai di kategori satuan kerja terpilih.</p>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Kategori Satuan Kerja</label>
-                <Select value={selectedPekaryaCategory} onValueChange={(v) => setSelectedPekaryaCategory(v || '')}>
-                  <SelectTrigger className="w-full bg-white border-slate-200 rounded-xl font-semibold text-xs h-10"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {dynamicCategories.map(c => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Hari Kerja</label>
-                  <Input type="number" value={pekaryaWorkingDays} onChange={(e) => setPekaryaWorkingDays(parseInt(e.target.value, 10) || 0)} className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm text-center" />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Libur/Jumat</label>
-                  <Input type="number" value={pekaryaHolidays} onChange={(e) => setPekaryaHolidays(parseInt(e.target.value, 10) || 0)} className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm text-center" />
-                </div>
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+            {/* 1. Category Selector */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Satuan Kerja Pekarya</label>
+              <Select
+                value={selectedPekaryaCategory}
+                onValueChange={(val) => val && setSelectedPekaryaCategory(val)}
+              >
+                <SelectTrigger className="w-full bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+                  <SelectValue placeholder="Pilih Satker..." />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                  {dynamicCategories.map(c => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <Button onClick={handleApplyPekaryaPresence} disabled={savingPresence} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl h-11 flex items-center justify-center gap-1.5 shadow-md">
-              {savingPresence ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Terapkan & Simpan Presensi Pekarya
+            {/* 2. Jumlah Hari Kerja */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jumlah Hari Kerja</label>
+              <Input
+                type="number"
+                min={0}
+                max={31}
+                value={pekaryaWorkingDays}
+                onChange={(e) => setPekaryaWorkingDays(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
+              />
+            </div>
+
+            {/* 3. Jumlah Hari Libur */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jumlah Hari Libur</label>
+              <Input
+                type="number"
+                min={0}
+                max={31}
+                value={pekaryaHolidays}
+                onChange={(e) => setPekaryaHolidays(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-4 border-t border-slate-50">
+            <Button
+              type="button"
+              onClick={handleApplyPekaryaPresence}
+              disabled={savingPresence || !selectedPekaryaCategory}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
+            >
+              {savingPresence ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              Terapkan Presensi Pekarya Massal
             </Button>
           </div>
         </Card>
+      ) : (
+        profile?.role !== 'satker_head_loyalis' && (
+          <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
+            <div className="flex justify-between items-center border-b border-slate-50 pb-4">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+                  Kalkulator Bonus Presensi Loyalis via Excel
+                </h3>
+                <p className="text-slate-400 text-xs mt-0.5">Unggah data rekap kehadiran bulanan untuk menghitung strata dan bonus presensi.</p>
+              </div>
+              {existingPresence && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDeletePresence}
+                  disabled={savingPresence}
+                  className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Hapus Data
+                </Button>
+              )}
+            </div>
+
+            {/* Status Indicator for pre-configured working days */}
+            {existingPresence && Object.keys(existingPresence.entries || {}).length === 0 && !uploadedData && (
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
+                <Calendar className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-blue-800 text-xs font-bold">Hari Kerja Telah Dikonfigurasi</h4>
+                  <p className="text-blue-600/90 text-[11px] mt-0.5 leading-relaxed">
+                    Jumlah hari kerja periode ini ({MONTHS_ID[month - 1]} {year}) telah diatur sebanyak <strong>{existingPresence.workingDays || 25} hari</strong>.
+                    Silakan pilih dan unggah file Excel rekap kehadiran di bawah untuk melengkapi perhitungan bonus presensi pegawai.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Status Indicator for complete data */}
+            {existingPresence && Object.keys(existingPresence.entries || {}).length > 0 && !uploadedData && (
+              <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-emerald-800 text-xs font-bold">Data Presensi Telah Disimpan</h4>
+                  <p className="text-emerald-600/90 text-[11px] mt-0.5 leading-relaxed">
+                    Periode ini ({MONTHS_ID[month - 1]} {year}) sudah memiliki data presensi dengan {Object.keys(existingPresence.entries || {}).length} pegawai terdaftar.
+                    Jika ingin memperbarui data, silakan hapus data saat ini terlebih dahulu.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-4 text-[10px] text-emerald-700 font-bold bg-white/50 px-3 py-1.5 rounded-xl border border-emerald-100/50 w-fit">
+                    <span>Hari Kerja: {existingPresence.workingDays || 25} hari</span>
+                    <span>Target: 390 menit/hari</span>
+                    <span>Mode Input: {existingPresence.mode === 'worked' ? 'Menit Kerja' : 'Menit Absen'}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Settings and File Upload Input */}
+            {(!existingPresence || Object.keys(existingPresence.entries || {}).length === 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+                {/* 1. Working Days */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Jumlah Hari Kerja (n)</label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={workingDays}
+                      onChange={(e) => setWorkingDays(Math.max(1, parseInt(e.target.value) || 0))}
+                      className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleSaveWorkingDaysConfig}
+                      disabled={savingPresence}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 px-4 rounded-xl shadow-md transition-all flex items-center gap-1.5 shrink-0"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>Simpan</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* 2. File Upload */}
+                <div className="relative">
+                  <Input
+                    type="file"
+                    accept=".xlsx, .xls"
+                    id="presence-excel-file"
+                    onChange={handleExcelUpload}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => document.getElementById('presence-excel-file')?.click()}
+                    className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold h-10 flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Upload className="w-4 h-4 text-slate-400" />
+                    Pilih File Excel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Review Table */}
+            {displayRows && (
+              <div className="space-y-4 pt-4 border-t border-slate-100 animate-in fade-in">
+                <div className="flex flex-wrap justify-between items-center gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      {uploadedData ? 'Preview Hasil Perhitungan Strata' : 'Data Perhitungan Strata Tersimpan'}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <span className="text-[10px] bg-slate-50 text-slate-600 border border-slate-200/60 px-2 py-0.5 rounded-full font-semibold">
+                        Total Menit Kerja Kehadiran Penuh: {(workingDays * expectedHours * 60).toLocaleString('id-ID')} menit
+                      </span>
+                      <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-full font-semibold">
+                        Gaji Standar Presensi: {fmtRp(workingDays * expectedHours * 1650)}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-semibold">
+                    Total Data: {displayRows.length} baris ({displayRows.filter(r => r.employeeId).length} Terhubung)
+                  </span>
+                </div>
+
+                <div className="border border-slate-100 rounded-2xl overflow-auto shadow-sm max-h-[800px] bg-white">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="sticky top-0 bg-slate-50 z-10 shadow-[0_1px_0_0_rgba(241,245,249,1)]">
+                      <tr className="bg-slate-50 border-b border-slate-100">
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">NO</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase">NAMA EXCEL</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase">PEGAWAI TERHUBUNG</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-center font-mono">MENIT KERJA EXCEL</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-center font-mono">ABSEN (MENIT)</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-24 text-center">STRATA</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-right">POT. BONUS</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-32 text-right">NET BONUS</th>
+                        <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase w-36 text-right">POT. PRESENSI</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayRows.map((row, idx) => {
+                        return (
+                          <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                            <td className="px-4 py-3 text-xs text-slate-400 text-center font-mono">{idx + 1}</td>
+                            <td className="px-4 py-3 text-xs font-bold text-slate-700">{row.excelName}</td>
+                            <td className="px-4 py-3 text-xs">
+                              {row.isMatched ? (
+                                <div>
+                                  <p className="font-bold text-indigo-600">{row.employeeName}</p>
+                                  <p className="text-[10px] text-slate-400 font-mono">ID: {row.employeeId}</p>
+                                </div>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-rose-500 bg-rose-50 border border-rose-100 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                  <AlertCircle className="w-3 h-3" />
+                                  Tidak cocok
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-xs font-bold text-slate-600 text-center font-mono">{row.minutes}</td>
+                            <td className="px-4 py-3 text-xs text-slate-600 text-center font-mono">{row.isMatched && !row.isNotFoundInExcel ? row.absenceMinutes : 0}</td>
+                            <td className="px-4 py-3 text-center">
+                              {row.isMatched && !row.isNotFoundInExcel ? (
+                                <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full ${row.stratum === 1 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                    row.stratum === 2 ? 'bg-blue-50 text-blue-600 border border-blue-100' :
+                                      row.stratum === 3 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                                        row.stratum === 4 ? 'bg-orange-50 text-orange-600 border border-orange-100' :
+                                          'bg-rose-50 text-rose-600 border border-rose-100'
+                                  }`}>
+                                  Strata {row.stratum}
+                                </span>
+                              ) : '-'}
+                            </td>
+                            <td className="px-4 py-3 text-xs font-bold text-slate-600 text-right font-mono">
+                              {row.isMatched && !row.isNotFoundInExcel ? fmtRp(row.deduction) : fmtRp(0)}
+                            </td>
+                            <td className="px-4 py-3 text-xs font-black text-indigo-600 text-right font-mono">
+                              {row.isMatched && !row.isNotFoundInExcel ? fmtRp(row.netBonus) : fmtRp(0)}
+                            </td>
+                            <td className="px-4 py-3 text-xs font-bold text-red-500 text-right font-mono">
+                              {row.isMatched && !row.isNotFoundInExcel ? fmtRp((row.absenceMinutes / 60) * 1650) : fmtRp(0)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Actions Footer */}
+                {uploadedData && (
+                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-50">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setUploadedData(null)}
+                      className="rounded-xl border-slate-200 text-slate-600 text-xs font-bold"
+                    >
+                      Batal
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleSavePresence}
+                      disabled={savingPresence || uploadedData.filter(r => r.employeeId).length === 0}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
+                    >
+                      {savingPresence ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                      Simpan Data Presensi
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+        )
       )}
     </div>
   );
