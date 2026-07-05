@@ -160,7 +160,7 @@ function getStatusConfig(status: string) {
 }
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
-const CLEANING_CATEGORIES = ['KEBERSIHAN', 'KEBERSIHAN_IC'];
+const CLEANING_CATEGORIES = ['KEBERSIHAN', 'KEBERSIHAN_IC', 'TEKNISI', 'SOPIR', 'KEBERSIHAN_PONTI', 'SATPAM', 'PEKARYA', 'PONTI'];
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -224,7 +224,8 @@ export default function ActivityReviewPage() {
   const allowedCategories = useMemo(() => {
     if (!profile) return [];
     if (profile.role === 'super_admin') return CLEANING_CATEGORIES;
-    return CLEANING_CATEGORIES.filter(c => profile.permittedCategories?.includes(c));
+    // satker_head: show exactly the categories they have been granted access to
+    return (profile.permittedCategories ?? []).filter(c => CLEANING_CATEGORIES.includes(c));
   }, [profile]);
 
 
