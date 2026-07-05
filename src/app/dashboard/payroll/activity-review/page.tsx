@@ -178,7 +178,7 @@ export default function ActivityReviewPage() {
   const [loading, setLoading] = useState(true);
 
   // ── UI State ──
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'declined'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'declined'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -678,7 +678,7 @@ export default function ActivityReviewPage() {
 
         {/* ── Status Filter Tabs ──────────────────────────────────────── */}
         <div className="flex items-center gap-2">
-          {(['all', 'pending', 'approved', 'declined'] as const).map(st => {
+          {(['pending', 'approved', 'declined', 'all'] as const).map(st => {
             const labels: Record<string, string> = { all: 'Semua', pending: 'Menunggu', approved: 'Disetujui', declined: 'Ditolak' };
             const counts: Record<string, number> = { all: stats.total, pending: stats.pending, approved: stats.approved, declined: stats.declined };
             const colors: Record<string, string> = {
