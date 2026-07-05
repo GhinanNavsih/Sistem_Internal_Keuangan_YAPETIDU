@@ -76,6 +76,10 @@ export default function LoginPage() {
         router.replace('/employee/activities');
       } else if (profile.role === 'loyalis') {
         router.replace('/employee/payslip');
+      } else if (profile.role === 'satker_head') {
+        router.replace('/dashboard/payroll/activity-review');
+      } else if (profile.role === 'satker_head_loyalis') {
+        router.replace('/dashboard/payroll/uraian');
       } else {
         router.replace('/dashboard/payroll');
       }

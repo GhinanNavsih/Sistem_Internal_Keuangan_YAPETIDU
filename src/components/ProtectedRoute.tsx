@@ -37,7 +37,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
         if (profile.role === 'satker_head') {
           // SatKer Heads are allowed to access /dashboard/payroll/uraian (including sub-routes) and /dashboard/payroll/activity-review
           if (pathname !== '/dashboard/payroll/activity-review' && !pathname.startsWith('/dashboard/payroll/uraian')) {
-            router.replace('/dashboard/payroll/uraian');
+            router.replace('/dashboard/payroll/activity-review');
           }
         } else if (profile.role === 'satker_head_loyalis') {
           // SatKer Loyalis is ONLY allowed to access /dashboard/payroll/uraian (including sub-routes)
