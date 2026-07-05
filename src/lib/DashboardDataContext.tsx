@@ -64,7 +64,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         getDoc(doc(db, 'SalaryMatrix_WhiteCollar', '_config')),
         getDoc(doc(db, 'SalaryMatrix_Functional', '_config')),
         getDoc(doc(db, 'SalaryMatrix_Kepangkatan', '_config')),
-        getDocs(query(collection(secondaryDb, 'simpanPinjam'), where('status', '==', 'Disetujui dan Aktif'))),
+        getDocs(collection(secondaryDb, 'simpanPinjam')),
         getDocs(collection(secondaryDb, 'users'))
       ]);
 
@@ -177,9 +177,49 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       setKepangkatanAllowanceMap(kepAllowanceMap);
 
       // Process cooperative loan deductions & cooperative savings
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+
       const activeLoans = loanSnapshot.docs
         .map(docSnap => ({ id: docSnap.id, ...docSnap.data() as any }))
-        .filter(loan => (loan.sisaHutang || 0) > 0);
+        .filter(loan => {
+          if ((loan.sisaHutang || 0) <= 0) return false;
+
+          // 1. Verify that the latest history entry status is 'Disetujui dan Aktif'
+          if (!loan.history || !Array.isArray(loan.history) || loan.history.length === 0) {
+            return false;
+          }
+          const sortedHistory = [...loan.history].sort((a, b) => {
+            const tA = (a.timestamp as any)?.toMillis ? (a.timestamp as any).toMillis() : (a.timestamp?.seconds ? a.timestamp.seconds * 1000 : 0);
+            const tB = (b.timestamp as any)?.toMillis ? (b.timestamp as any).toMillis() : (b.timestamp?.seconds ? b.timestamp.seconds * 1000 : 0);
+            return tB - tA; // Latest first
+          });
+          const latestEntry = sortedHistory[0];
+          if (!latestEntry || latestEntry.status !== 'Disetujui dan Aktif') {
+            return false;
+          }
+
+          // 2. Determine activation date from tanggalDisetujui, falling back to history entry timestamp
+          let activationDate: Date | null = null;
+          if (loan.tanggalDisetujui) {
+            activationDate = (loan.tanggalDisetujui as any).toDate ? (loan.tanggalDisetujui as any).toDate() : (loan.tanggalDisetujui.seconds ? new Date(loan.tanggalDisetujui.seconds * 1000) : null);
+          }
+          if (!activationDate && latestEntry.timestamp) {
+            activationDate = (latestEntry.timestamp as any).toDate ? (latestEntry.timestamp as any).toDate() : (latestEntry.timestamp.seconds ? new Date(latestEntry.timestamp.seconds * 1000) : null);
+          }
+
+          if (!activationDate) return false;
+
+          const activationYear = activationDate.getFullYear();
+          const activationMonth = activationDate.getMonth() + 1;
+
+          // Deduction starts on or after the activation month and year
+          if (currentYear < activationYear) return false;
+          if (currentYear === activationYear && currentMonth < activationMonth) return false;
+
+          return true;
+        });
 
       const allEmployees: {
         id: string;

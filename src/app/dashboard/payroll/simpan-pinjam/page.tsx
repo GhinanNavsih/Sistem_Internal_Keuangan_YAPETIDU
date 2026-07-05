@@ -234,15 +234,28 @@ export default function SimpanPinjamReviewPage() {
         }
       }
 
+      // Resolve status based on the latest history status entry
+      let resolvedStatus = loan.status;
+      if (loan.history && Array.isArray(loan.history) && loan.history.length > 0) {
+        const sortedHistory = [...loan.history].sort((a, b) => {
+          const tA = (a.timestamp as any)?.toMillis ? (a.timestamp as any).toMillis() : (a.timestamp?.seconds ? a.timestamp.seconds * 1000 : 0);
+          const tB = (b.timestamp as any)?.toMillis ? (b.timestamp as any).toMillis() : (b.timestamp?.seconds ? b.timestamp.seconds * 1000 : 0);
+          return tB - tA; // Latest first
+        });
+        if (sortedHistory[0]?.status) {
+          resolvedStatus = sortedHistory[0].status;
+        }
+      }
+
       // Identify warnings / anomalies
       const warnings: string[] = [];
       if (matchType === 'none') {
         warnings.push('Unmatched: Borrower not linked to any internal employee record.');
       }
-      if (loan.status === 'Disetujui dan Aktif' && (loan.sisaHutang || 0) === 0) {
+      if (resolvedStatus === 'Disetujui dan Aktif' && (loan.sisaHutang || 0) === 0) {
         warnings.push('Anomaly: Status is active, but remaining debt is Rp 0.');
       }
-      if (loan.status === 'Lunas' && (loan.sisaHutang || 0) > 0) {
+      if (resolvedStatus === 'Lunas' && (loan.sisaHutang || 0) > 0) {
         warnings.push('Anomaly: Status is fully paid (Lunas), but sisaHutang is greater than 0.');
       }
 
@@ -250,6 +263,7 @@ export default function SimpanPinjamReviewPage() {
 
       return {
         ...loan,
+        status: resolvedStatus,
         borrowerName,
         borrowerEmail,
         borrowerNik,
