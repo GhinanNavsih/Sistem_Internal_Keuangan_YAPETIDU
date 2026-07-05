@@ -524,7 +524,7 @@ export default function UserManagementPage() {
                 Registrasi Akun Baru
               </CardTitle>
               <CardDescription>
-                Daftarkan akun resmi untuk Kepala SatKer atau Tim Administrasi BAK UNIPDU. Akun baru akan langsung terdaftar di Firebase Authentication dan Firestore.
+                Daftarkan akun resmi untuk Kepala SatKer Pekarya, Kepala SatKer Loyalis, atau Tim Administrasi BAK UNIPDU. Akun baru akan langsung terdaftar di Firebase Authentication dan Firestore.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-6">
@@ -637,7 +637,7 @@ export default function UserManagementPage() {
                             {newRole === 'satker_head' && <div className="w-2.5 h-2.5 rounded-full bg-indigo-600" />}
                           </div>
                           <div>
-                            <span className="text-sm font-bold text-slate-900 block">Kepala Satuan Kerja (SatKer)</span>
+                            <span className="text-sm font-bold text-slate-900 block">Kepala Satuan Kerja Pekarya (SatKer Pekarya)</span>
                             <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Dapat login dan melakukan scan presensi HANYA pada job category yang diberikan akses. Dilarang membuka menu dashboard lain.</span>
                           </div>
                         </div>
@@ -968,7 +968,7 @@ export default function UserManagementPage() {
                               </Badge>
                             ) : (
                               <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold px-2.5 py-0.5 rounded-full border-none">
-                                Kepala SatKer
+                                Kepala SatKer Pekarya
                               </Badge>
                             )}
                           </TableCell>
@@ -1107,7 +1107,7 @@ export default function UserManagementPage() {
                     onClick={() => setEditRole('satker_head')}
                     className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'satker_head' ? 'border-indigo-500 bg-indigo-50/10 text-indigo-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
                   >
-                    Kepala SatKer
+                    Kepala SatKer Pekarya
                   </button>
                   <button
                     type="button"
