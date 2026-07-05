@@ -1750,13 +1750,13 @@ export default function EmployeesPage() {
                         <Label>Beban Kerja</Label>
                         <Select
                           value={formData.academic_and_tier?.functional_tier !== undefined && formData.academic_and_tier?.functional_tier !== null && formData.academic_and_tier?.functional_tier !== '' ? String(formData.academic_and_tier.functional_tier) : ''}
-                          onValueChange={(val) => updateNestedField('academic_and_tier', 'functional_tier', val ? Number(val) : null)}
+                          onValueChange={(val) => updateNestedField('academic_and_tier', 'functional_tier', val !== undefined && val !== null && val !== '' ? Number(val) : null)}
                         >
                           <SelectTrigger className="rounded-xl border-slate-200 bg-white text-xs h-10 w-full">
                             <SelectValue placeholder="Pilih Beban Kerja" />
                           </SelectTrigger>
                           <SelectContent className="bg-white rounded-xl border-slate-100 shadow-xl max-h-48 overflow-y-auto z-[9999]">
-                            {Array.from({ length: 16 }, (_, idx) => String(idx + 1)).map((tierCode) => (
+                            {Array.from({ length: 17 }, (_, idx) => String(idx)).map((tierCode) => (
                               <SelectItem key={tierCode} value={tierCode} className="text-xs">
                                 Beban {tierCode}
                               </SelectItem>

@@ -131,10 +131,15 @@ export function matchFunctionalAllowance(
   if (!matchedKey) return 0;
   
   const row = functionalMatrix[matchedKey];
-  const tierStr = String(functionalTier || '').trim();
+  const tierStr = String(functionalTier !== undefined && functionalTier !== null ? functionalTier : '').trim();
   
-  // If functionalTier is empty/null/0, default to base_value
-  if (!tierStr || tierStr === '0' || tierStr === 'null' || tierStr === 'undefined') {
+  // If functionalTier is specifically '0', return 0
+  if (tierStr === '0') {
+    return 0;
+  }
+
+  // If functionalTier is empty/null, default to base_value
+  if (!tierStr || tierStr === 'null' || tierStr === 'undefined') {
     return row.base_value;
   }
   
