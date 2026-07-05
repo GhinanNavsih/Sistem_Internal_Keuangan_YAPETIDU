@@ -12,12 +12,11 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
-import {
-  ScanLine, Banknote, ClipboardCheck, FileSpreadsheet, LogOut, ArrowLeft
-} from 'lucide-react';
+import { ScanLine, Banknote, ClipboardCheck, FileSpreadsheet, LogOut, ArrowLeft } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { SUPPORTED_CATEGORIES, MONTHS_ID } from '@/utils/rekapConfig';
+import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 
@@ -169,7 +168,14 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
       <div className="max-w-[1600px] mx-auto space-y-8 relative z-10">
-        <GlobalHeader />
+        {/* Show full GlobalHeader only for super_admin; SatKer Pekarya gets its own nav bar */}
+        {profile.role === 'super_admin' ? (
+          <GlobalHeader />
+        ) : profile.role === 'satker_head' ? (
+          <Suspense fallback={null}>
+            <SatkerPekaryaNavBar />
+          </Suspense>
+        ) : null}
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
@@ -262,6 +268,16 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         {profile && (
           <div className="flex flex-wrap items-center justify-between gap-4 w-full">
             <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
+              {profile.role === 'satker_head' && (
+                <button
+                  onClick={() => router.push(`/dashboard/payroll/activity-review?month=${month}&year=${year}`)}
+                  className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer text-slate-500 hover:text-slate-800 hover:bg-slate-50`}
+                >
+                  <ClipboardCheck className="w-4.5 h-4.5" />
+                  Review Kegiatan
+                </button>
+              )}
+
               {profile.role === 'super_admin' && (
                 <button
                   onClick={() => router.push(`/dashboard/payroll/uraian/rekap-pekarya${getCleanParamsString('presensi')}`)}
