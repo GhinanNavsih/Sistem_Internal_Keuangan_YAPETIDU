@@ -643,61 +643,65 @@ export default function ActivityReviewPage() {
           </CardContent>
         </Card>
 
-        {/* ── Stats Cards ────────────────────────────────────────────── */}
+        {/* ── Stats Cards (clickable filters) ──────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-          <Card className="bg-white rounded-2xl shadow-sm border-none">
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-extrabold text-slate-700">{stats.total}</div>
-              <div className="text-[11px] font-semibold text-slate-400">Total Laporan</div>
-            </CardContent>
-          </Card>
-          <Card className="bg-white rounded-2xl shadow-sm border-none">
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-extrabold text-amber-500">{stats.pending}</div>
-              <div className="text-[11px] font-semibold text-slate-400">Menunggu</div>
-            </CardContent>
-          </Card>
-          <Card className="bg-white rounded-2xl shadow-sm border-none">
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-extrabold text-emerald-500">{stats.approved}</div>
-              <div className="text-[11px] font-semibold text-slate-400">Disetujui</div>
-            </CardContent>
-          </Card>
-          <Card className="bg-white rounded-2xl shadow-sm border-none">
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-extrabold text-rose-500">{stats.declined}</div>
-              <div className="text-[11px] font-semibold text-slate-400">Ditolak</div>
-            </CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl shadow-lg shadow-teal-200/30 border-none col-span-2 lg:col-span-1">
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-extrabold text-white">{fmtRp(stats.totalFee)}</div>
-              <div className="text-[11px] font-semibold text-teal-100">Total Fee Disetujui</div>
-            </CardContent>
-          </Card>
-        </div>
+          {/* Menunggu */}
+          <button
+            onClick={() => setStatusFilter(statusFilter === 'pending' ? 'all' : 'pending')}
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
+              statusFilter === 'pending'
+                ? 'bg-amber-50 ring-2 ring-amber-400 shadow-amber-100'
+                : 'bg-white hover:bg-amber-50/40 hover:ring-1 hover:ring-amber-200'
+            }`}
+          >
+            <div className="text-2xl font-extrabold text-amber-500">{stats.pending}</div>
+            <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'pending' ? 'text-amber-600' : 'text-slate-400'}`}>Menunggu</div>
+          </button>
 
-        {/* ── Status Filter Tabs ──────────────────────────────────────── */}
-        <div className="flex items-center gap-2">
-          {(['pending', 'approved', 'declined', 'all'] as const).map(st => {
-            const labels: Record<string, string> = { all: 'Semua', pending: 'Menunggu', approved: 'Disetujui', declined: 'Ditolak' };
-            const counts: Record<string, number> = { all: stats.total, pending: stats.pending, approved: stats.approved, declined: stats.declined };
-            const colors: Record<string, string> = {
-              all: statusFilter === 'all' ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200',
-              pending: statusFilter === 'pending' ? 'bg-amber-500 text-white shadow-md' : 'bg-white text-amber-600 border border-amber-200',
-              approved: statusFilter === 'approved' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-emerald-600 border border-emerald-200',
-              declined: statusFilter === 'declined' ? 'bg-rose-500 text-white shadow-md' : 'bg-white text-rose-600 border border-rose-200',
-            };
-            return (
-              <button
-                key={st}
-                onClick={() => setStatusFilter(st)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${colors[st]}`}
-              >
-                {labels[st]} ({counts[st]})
-              </button>
-            );
-          })}
+          {/* Disetujui */}
+          <button
+            onClick={() => setStatusFilter(statusFilter === 'approved' ? 'all' : 'approved')}
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
+              statusFilter === 'approved'
+                ? 'bg-emerald-50 ring-2 ring-emerald-400 shadow-emerald-100'
+                : 'bg-white hover:bg-emerald-50/40 hover:ring-1 hover:ring-emerald-200'
+            }`}
+          >
+            <div className="text-2xl font-extrabold text-emerald-500">{stats.approved}</div>
+            <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'approved' ? 'text-emerald-600' : 'text-slate-400'}`}>Disetujui</div>
+          </button>
+
+          {/* Ditolak */}
+          <button
+            onClick={() => setStatusFilter(statusFilter === 'declined' ? 'all' : 'declined')}
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
+              statusFilter === 'declined'
+                ? 'bg-rose-50 ring-2 ring-rose-400 shadow-rose-100'
+                : 'bg-white hover:bg-rose-50/40 hover:ring-1 hover:ring-rose-200'
+            }`}
+          >
+            <div className="text-2xl font-extrabold text-rose-500">{stats.declined}</div>
+            <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'declined' ? 'text-rose-600' : 'text-slate-400'}`}>Ditolak</div>
+          </button>
+
+          {/* Total (show all) */}
+          <button
+            onClick={() => setStatusFilter('all')}
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
+              statusFilter === 'all'
+                ? 'bg-slate-100 ring-2 ring-slate-400'
+                : 'bg-white hover:bg-slate-50 hover:ring-1 hover:ring-slate-200'
+            }`}
+          >
+            <div className="text-2xl font-extrabold text-slate-700">{stats.total}</div>
+            <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'all' ? 'text-slate-600' : 'text-slate-400'}`}>Total Laporan</div>
+          </button>
+
+          {/* Total Fee (non-clickable) */}
+          <div className="bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl shadow-lg shadow-teal-200/30 col-span-2 lg:col-span-1 p-4 text-center">
+            <div className="text-2xl font-extrabold text-white">{fmtRp(stats.totalFee)}</div>
+            <div className="text-[11px] font-semibold text-teal-100 mt-0.5">Total Fee Disetujui</div>
+          </div>
         </div>
 
         {/* ── Bulk Actions Bar ────────────────────────────────────────── */}
