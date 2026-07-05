@@ -194,7 +194,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v, 10))}>
               <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
                 <SelectValue>
-                  {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' ? (
+                  {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' || activeTab === 'pelaporan_kegiatan' ? (
                     `${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`
                   ) : (
                     `${MONTHS_ID[month - 1]} (26 ${MONTHS_ID[(month - 2 + 12) % 12].slice(0, 3)} – 25 ${MONTHS_ID[month - 1].slice(0, 3)})`
@@ -210,7 +210,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                     <SelectItem key={i + 1} value={String(i + 1)}>
                       <div className="flex flex-col py-0.5">
                         <span className="font-semibold">{m}</span>
-                        {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' ? (
+                        {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' || activeTab === 'pelaporan_kegiatan' ? (
                           <span className="text-[11px] text-slate-400">1 – {lastDay} {m}</span>
                         ) : (
                           <span className="text-[11px] text-slate-400">26 {prevMonth.slice(0, 3)} – 25 {m.slice(0, 3)} · Bayar 5 {nextMonth.slice(0, 3)}</span>
