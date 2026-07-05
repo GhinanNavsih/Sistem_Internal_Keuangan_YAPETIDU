@@ -358,18 +358,9 @@ export default function EmployeePayslipPage() {
           if (pData.entries && Object.keys(pData.entries).length > 0) {
             const empEntry = pData.entries[empId];
             if (empEntry) {
-              if (empEntry.isNotFoundInExcel) {
-                // Not found in uploaded excel rekap: 0 earnings and bonus
-                presenceBonus = 0;
-                presensiEarning = 0;
-                presenceDeduction = 0;
-                presensiDeduction = 0;
-              } else {
-                // Matched: apply deductions from Excel
-                presenceDeduction = empEntry.deduction || 0;
-                const absenceMinutes = empEntry.absenceMinutes || 0;
-                presensiDeduction = Math.round((absenceMinutes / 60) * 1650);
-              }
+              presenceDeduction = empEntry.deduction || 0;
+              const absenceMinutes = empEntry.absenceMinutes || 0;
+              presensiDeduction = Math.round((absenceMinutes / 60) * 1650);
             }
           }
         }

@@ -147,7 +147,7 @@ export default function CetakGabunganDialog({
 
       let fallbackPresensi = 0;
       const presenceEntry = loyalisPresenceData?.entries?.[emp.id];
-      if (presenceEntry && !presenceEntry.isNotFoundInExcel) {
+      if (presenceEntry) {
         fallbackPresensi = getLoyalisPresensiEarning(emp.id);
       }
 

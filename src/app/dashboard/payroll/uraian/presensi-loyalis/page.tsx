@@ -267,9 +267,9 @@ export default function PresensiLoyalisPage() {
           employeeId: emp.id,
           employeeName: emp.name,
           minutes: 0,
-          absenceMinutes: 0,
+          absenceMinutes: workingDays * expectedHours * 60,
           stratum: 5,
-          deduction: 0,
+          deduction: 250000,
           netBonus: 0,
           isMatched: true,
           isNotFoundInExcel: true,
@@ -427,9 +427,9 @@ export default function PresensiLoyalisPage() {
             employeeName: emp.name,
             excelName: '-',
             minutes: 0,
-            absenceMinutes: 0,
+            absenceMinutes: workingDays * expectedHours * 60,
             stratum: 5,
-            deduction: 0,
+            deduction: 250000,
             netBonus: 0,
             isNotFoundInExcel: true,
           };
@@ -446,6 +446,44 @@ export default function PresensiLoyalisPage() {
       };
 
       await setDoc(doc(db, 'LoyalisPresence', periodToken), payload);
+
+      // Automatically update any existing saved slip states in PayrollSlipStates
+      try {
+        const updatePromises = Object.keys(entriesMap).map(async (empId) => {
+          const slipRef = doc(db, 'PayrollSlipStates', `${periodToken}_${empId}`);
+          const slipSnap = await getDoc(slipRef);
+          if (slipSnap.exists()) {
+            const slipData = slipSnap.data();
+            const currentDeductions = slipData.deductions || [];
+            
+            const entry = entriesMap[empId];
+            const newPresensiDeduct = Math.round(((entry.absenceMinutes || 0) / 60) * 1650);
+            const newPresenceBonusDeduct = entry.deduction || 0;
+            
+            let updatedDeductions = [...currentDeductions];
+            
+            const presensiIdx = updatedDeductions.findIndex(d => d.label === 'Potongan Presensi');
+            if (presensiIdx > -1) {
+              updatedDeductions[presensiIdx] = { ...updatedDeductions[presensiIdx], amount: newPresensiDeduct };
+            } else {
+              updatedDeductions.push({ label: 'Potongan Presensi', amount: newPresensiDeduct });
+            }
+
+            const presenceIdx = updatedDeductions.findIndex(d => d.label === 'Potongan Bonus Presensi');
+            if (presenceIdx > -1) {
+              updatedDeductions[presenceIdx] = { ...updatedDeductions[presenceIdx], amount: newPresenceBonusDeduct };
+            } else {
+              updatedDeductions.push({ label: 'Potongan Bonus Presensi', amount: newPresenceBonusDeduct });
+            }
+
+            await setDoc(slipRef, { deductions: updatedDeductions }, { merge: true });
+          }
+        });
+        await Promise.all(updatePromises);
+      } catch (err) {
+        console.error("Gagal memperbarui slip gaji secara otomatis:", err);
+      }
+
       setMessage({ type: 'success', text: 'Data bonus presensi berhasil disimpan.' });
       setUploadedData(null);
       fetchExistingPresence();
@@ -462,6 +500,36 @@ export default function PresensiLoyalisPage() {
     setSavingPresence(true);
     try {
       await deleteDoc(doc(db, 'LoyalisPresence', periodToken));
+
+      // Reset deductions in PayrollSlipStates when presence is deleted
+      try {
+        const resetPromises = loyalisEmployees.map(async (emp) => {
+          const slipRef = doc(db, 'PayrollSlipStates', `${periodToken}_${emp.id}`);
+          const slipSnap = await getDoc(slipRef);
+          if (slipSnap.exists()) {
+            const slipData = slipSnap.data();
+            const currentDeductions = slipData.deductions || [];
+            
+            let updatedDeductions = [...currentDeductions];
+            
+            const presensiIdx = updatedDeductions.findIndex(d => d.label === 'Potongan Presensi');
+            if (presensiIdx > -1) {
+              updatedDeductions[presensiIdx] = { ...updatedDeductions[presensiIdx], amount: 0 };
+            }
+
+            const presenceIdx = updatedDeductions.findIndex(d => d.label === 'Potongan Bonus Presensi');
+            if (presenceIdx > -1) {
+              updatedDeductions[presenceIdx] = { ...updatedDeductions[presenceIdx], amount: 0 };
+            }
+
+            await setDoc(slipRef, { deductions: updatedDeductions }, { merge: true });
+          }
+        });
+        await Promise.all(resetPromises);
+      } catch (err) {
+        console.error("Gagal menyetel ulang slip gaji secara otomatis:", err);
+      }
+
       setMessage({ type: 'success', text: 'Data presensi berhasil dihapus.' });
       setExistingPresence(null);
     } catch (err) {
@@ -912,9 +980,9 @@ export default function PresensiLoyalisPage() {
                                 row.minutes
                               )}
                             </td>
-                            <td className="px-4 py-3 text-xs text-slate-600 text-center font-mono">{row.isMatched && !row.isNotFoundInExcel ? row.absenceMinutes : 0}</td>
+                            <td className="px-4 py-3 text-xs text-slate-600 text-center font-mono">{row.isMatched ? row.absenceMinutes : 0}</td>
                             <td className="px-4 py-3 text-center">
-                              {row.isMatched && !row.isNotFoundInExcel ? (
+                              {row.isMatched ? (
                                 <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full ${row.stratum === 1 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
                                     row.stratum === 2 ? 'bg-blue-50 text-blue-600 border border-blue-100' :
                                       row.stratum === 3 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
@@ -926,12 +994,12 @@ export default function PresensiLoyalisPage() {
                               ) : '-'}
                             </td>
                             <td className="px-4 py-3 text-xs font-bold text-indigo-600 text-right font-mono">
-                              {row.isMatched && !row.isNotFoundInExcel
+                              {row.isMatched
                                 ? fmtRp(Math.max(0, (workingDays * expectedHours * 60 - row.absenceMinutes) / 60 * 1650))
                                 : fmtRp(0)}
                             </td>
                             <td className="px-4 py-3 text-xs font-black text-indigo-600 text-right font-mono">
-                              {row.isMatched && !row.isNotFoundInExcel ? fmtRp(row.netBonus) : fmtRp(0)}
+                              {row.isMatched ? fmtRp(row.netBonus) : fmtRp(0)}
                             </td>
                           </tr>
                         );

@@ -151,7 +151,7 @@ export default function PayrollValidationDashboard() {
   const getLoyalisPresenceBonus = (empId: string): number => {
     if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
       const entry = loyalisPresenceData.entries[empId];
-      if (!entry || entry.isNotFoundInExcel) return 0;
+      if (!entry) return 0;
     }
     return 250000;
   };
@@ -159,7 +159,7 @@ export default function PayrollValidationDashboard() {
   const getLoyalisPresenceDeduction = (empId: string): number => {
     if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
       const entry = loyalisPresenceData.entries[empId];
-      if (entry && !entry.isNotFoundInExcel) {
+      if (entry) {
         return entry.deduction || 0;
       }
     }
@@ -171,7 +171,7 @@ export default function PayrollValidationDashboard() {
     const expectedHours = loyalisPresenceData?.expectedHours || 6.5;
     if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
       const entry = loyalisPresenceData.entries[empId];
-      if (!entry || entry.isNotFoundInExcel) return 0;
+      if (!entry) return 0;
     }
     return Math.round(workingDays * expectedHours * 1650);
   };
@@ -179,7 +179,7 @@ export default function PayrollValidationDashboard() {
   const getLoyalisPresensiDeduction = (empId: string): number => {
     if (loyalisPresenceData?.entries && Object.keys(loyalisPresenceData.entries).length > 0) {
       const entry = loyalisPresenceData.entries[empId];
-      if (entry && !entry.isNotFoundInExcel) {
+      if (entry) {
         const absenceMinutes = entry.absenceMinutes || 0;
         return Math.round((absenceMinutes / 60) * 1650);
       }
@@ -1543,7 +1543,7 @@ export default function PayrollValidationDashboard() {
         const getFreshPresenceBonus = (empId: string): number => {
           if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
             const entry = freshPresenceData.entries[empId];
-            if (!entry || entry.isNotFoundInExcel) return 0;
+            if (!entry) return 0;
           }
           return 250000;
         };
@@ -1551,7 +1551,7 @@ export default function PayrollValidationDashboard() {
         const getFreshPresenceDeduction = (empId: string): number => {
           if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
             const entry = freshPresenceData.entries[empId];
-            if (entry && !entry.isNotFoundInExcel) {
+            if (entry) {
               return entry.deduction || 0;
             }
           }
@@ -1563,7 +1563,7 @@ export default function PayrollValidationDashboard() {
           const expectedHours = freshPresenceData?.expectedHours || 6.5;
           if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
             const entry = freshPresenceData.entries[empId];
-            if (!entry || entry.isNotFoundInExcel) return 0;
+            if (!entry) return 0;
           }
           return Math.round(workingDays * expectedHours * 1650);
         };
@@ -1571,7 +1571,7 @@ export default function PayrollValidationDashboard() {
         const getFreshPresensiDeduction = (empId: string): number => {
           if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
             const entry = freshPresenceData.entries[empId];
-            if (entry && !entry.isNotFoundInExcel) {
+            if (entry) {
               const absenceMinutes = entry.absenceMinutes || 0;
               return Math.round((absenceMinutes / 60) * 1650);
             }
@@ -2045,7 +2045,7 @@ export default function PayrollValidationDashboard() {
     const getFreshPresenceBonus = (empId: string): number => {
       if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
         const entry = freshPresenceData.entries[empId];
-        if (!entry || entry.isNotFoundInExcel) return 0;
+        if (!entry) return 0;
       }
       return 250000;
     };
@@ -2053,7 +2053,7 @@ export default function PayrollValidationDashboard() {
     const getFreshPresenceDeduction = (empId: string): number => {
       if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
         const entry = freshPresenceData.entries[empId];
-        if (entry && !entry.isNotFoundInExcel) {
+        if (entry) {
           return entry.deduction || 0;
         }
       }
@@ -2065,7 +2065,7 @@ export default function PayrollValidationDashboard() {
       const expectedHours = freshPresenceData?.expectedHours || 6.5;
       if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
         const entry = freshPresenceData.entries[empId];
-        if (!entry || entry.isNotFoundInExcel) return 0;
+        if (!entry) return 0;
       }
       return Math.round(workingDays * expectedHours * 1650);
     };
@@ -2073,7 +2073,7 @@ export default function PayrollValidationDashboard() {
     const getFreshPresensiDeduction = (empId: string): number => {
       if (freshPresenceData?.entries && Object.keys(freshPresenceData.entries).length > 0) {
         const entry = freshPresenceData.entries[empId];
-        if (entry && !entry.isNotFoundInExcel) {
+        if (entry) {
           const absenceMinutes = entry.absenceMinutes || 0;
           return Math.round((absenceMinutes / 60) * 1650);
         }

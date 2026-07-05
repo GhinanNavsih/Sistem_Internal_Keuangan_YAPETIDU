@@ -130,7 +130,7 @@ export default function CetakVakasiPimpinanStafDialog({
       let presensiAmount = 0;
       let presensiHours = 0;
 
-      if (presenceEntry && !presenceEntry.isNotFoundInExcel) {
+      if (presenceEntry) {
         const workingDays = loyalisPresenceData?.workingDays || 25;
         const expectedHours = loyalisPresenceData?.expectedHours || 6.5;
         const expectedMinutes = workingDays * expectedHours * 60;

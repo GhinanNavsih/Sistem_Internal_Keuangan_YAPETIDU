@@ -690,7 +690,7 @@ export default function TreasuryDashboard() {
         const getLoyalisPresenceDeduction = (empId: string): number => {
           if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
             const entry = selectedPeriodLoyalisPresence.entries[empId];
-            if (entry && !entry.isNotFoundInExcel) {
+            if (entry) {
               return entry.deduction || 0;
             }
           }
@@ -700,7 +700,7 @@ export default function TreasuryDashboard() {
         const getLoyalisPresensiDeduction = (empId: string): number => {
           if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
             const entry = selectedPeriodLoyalisPresence.entries[empId];
-            if (entry && !entry.isNotFoundInExcel) {
+            if (entry) {
               const absenceMinutes = entry.absenceMinutes || 0;
               return Math.round((absenceMinutes / 60) * 1650);
             }
@@ -870,7 +870,7 @@ export default function TreasuryDashboard() {
           const getLoyalisPresenceBonus = (empId: string): number => {
             if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
               const entry = selectedPeriodLoyalisPresence.entries[empId];
-              if (!entry || entry.isNotFoundInExcel) return 0;
+              if (!entry) return 0;
             }
             return 250000;
           };
@@ -880,7 +880,7 @@ export default function TreasuryDashboard() {
             const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
             if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
               const entry = selectedPeriodLoyalisPresence.entries[empId];
-              if (!entry || entry.isNotFoundInExcel) return 0;
+              if (!entry) return 0;
             }
             return Math.round(workingDays * expectedHours * 1650);
           };
@@ -1161,7 +1161,7 @@ export default function TreasuryDashboard() {
       const getLoyalisPresenceBonus = (empId: string): number => {
         if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
           const entry = selectedPeriodLoyalisPresence.entries[empId];
-          if (!entry || entry.isNotFoundInExcel) return 0;
+          if (!entry) return 0;
         }
         return 250000;
       };
@@ -1171,7 +1171,7 @@ export default function TreasuryDashboard() {
         const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
         if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
           const entry = selectedPeriodLoyalisPresence.entries[empId];
-          if (!entry || entry.isNotFoundInExcel) return 0;
+          if (!entry) return 0;
         }
         return Math.round(workingDays * expectedHours * 1650);
       };
@@ -1281,7 +1281,7 @@ export default function TreasuryDashboard() {
         const getLoyalisPresenceDeduction = (empId: string): number => {
           if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
             const entry = selectedPeriodLoyalisPresence.entries[empId];
-            if (entry && !entry.isNotFoundInExcel) {
+            if (entry) {
               return entry.deduction || 0;
             }
           }
@@ -1291,7 +1291,7 @@ export default function TreasuryDashboard() {
         const getLoyalisPresensiDeduction = (empId: string): number => {
           if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
             const entry = selectedPeriodLoyalisPresence.entries[empId];
-            if (entry && !entry.isNotFoundInExcel) {
+            if (entry) {
               const absenceMinutes = entry.absenceMinutes || 0;
               return Math.round((absenceMinutes / 60) * 1650);
             }
@@ -1355,7 +1355,7 @@ export default function TreasuryDashboard() {
           const getLoyalisPresenceBonus = (empId: string): number => {
             if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
               const entry = selectedPeriodLoyalisPresence.entries[empId];
-              if (!entry || entry.isNotFoundInExcel) return 0;
+              if (!entry) return 0;
             }
             return 250000;
           };
@@ -1365,7 +1365,7 @@ export default function TreasuryDashboard() {
             const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
             if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
               const entry = selectedPeriodLoyalisPresence.entries[empId];
-              if (!entry || entry.isNotFoundInExcel) return 0;
+              if (!entry) return 0;
             }
             return Math.round(workingDays * expectedHours * 1650);
           };
