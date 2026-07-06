@@ -1046,6 +1046,35 @@ export default function VakasiLoyalisPage() {
               </div>
             </div>
 
+            {/* Total Summary Card */}
+            <div className="bg-gradient-to-r from-indigo-50/60 to-purple-50/40 rounded-[20px] border border-indigo-100/40 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500 text-white flex items-center justify-center shadow-md shadow-indigo-100">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Total Nominal Vakasi</span>
+                  <h3 className="text-xl font-black text-slate-800 tracking-tight mt-0.5">
+                    {fmtRp(workerRows.reduce((sum, r) => sum + (r.payGiven || 0), 0))}
+                  </h3>
+                </div>
+              </div>
+              
+              <div className="hidden sm:block h-8 w-px bg-slate-200/80" />
+
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-500 text-white flex items-center justify-center shadow-md shadow-purple-100">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Total Penerima</span>
+                  <h3 className="text-xl font-black text-slate-800 tracking-tight mt-0.5">
+                    {workerRows.filter(r => r.employeeId).length} <span className="text-xs font-semibold text-slate-500 font-sans tracking-normal">Pegawai</span>
+                  </h3>
+                </div>
+              </div>
+            </div>
+
             {/* List of Workers */}
             <div className="space-y-4 pt-2">
               <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">Daftar Penerima Vakasi</h4>
