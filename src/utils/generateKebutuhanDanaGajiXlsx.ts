@@ -279,9 +279,10 @@ export function generateKebutuhanDanaGajiXlsx(data: KebutuhanReportData): void {
 
   // Potongan Gaji summary row
   const totalPotonganVal = potonganTotals.reduce((sum, v) => sum + v, 0);
+  const totPotRowIdx = worksheetData.length;
   worksheetData.push([
     '',
-    'POTONGAN GAJI',
+    'TOTAL POTONGAN GAJI',
     ...potonganTotals,
     totalPotonganVal
   ]);
@@ -334,6 +335,14 @@ export function generateKebutuhanDanaGajiXlsx(data: KebutuhanReportData): void {
       }
     }
   });
+  // Yellow fill for TOTAL POTONGAN GAJI (same as JUMLAH GAJI TOTAL)
+  const TOT_POT_FILL = { patternType: 'solid', fgColor: { rgb: 'FCF3CF' } };
+  for (let c = 0; c < NUM_COLS; c++) {
+    const ref = `${ALPHA[c]}${totPotRowIdx + 1}`;
+    if (worksheet[ref]) {
+      worksheet[ref].s = { ...(worksheet[ref].s || {}), fill: TOT_POT_FILL };
+    }
+  }
 
   // Setup title merges: Columns A to J (index 0 to 9)
   const merges = [

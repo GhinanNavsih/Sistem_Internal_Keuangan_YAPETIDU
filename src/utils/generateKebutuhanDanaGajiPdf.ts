@@ -315,11 +315,12 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
 
   // Potongan Gaji summary row
   const totalPotonganVal = potonganTotals.reduce((sum, v) => sum + v, 0);
+  const TOT_POT_BG = [252, 243, 207] as [number, number, number]; // same yellow as Jumlah Gaji Total
   body.push([
-    { content: '', styles: { fillColor: [249, 231, 233], fontStyle: 'bold' } }, // light gray/red tint
-    { content: 'POTONGAN GAJI', styles: { fillColor: [249, 231, 233], fontStyle: 'bold' } },
-    ...potonganTotals.map(v => ({ content: formatIDR(v), styles: { fillColor: [249, 231, 233], halign: 'right' as const, fontStyle: 'bold' } })),
-    { content: formatIDR(totalPotonganVal), styles: { fillColor: [249, 231, 233], halign: 'right' as const, fontStyle: 'bold' } }
+    { content: '', styles: { fillColor: TOT_POT_BG, fontStyle: 'bold' } },
+    { content: 'TOTAL POTONGAN GAJI', styles: { fillColor: TOT_POT_BG, fontStyle: 'bold' } },
+    ...potonganTotals.map(v => ({ content: formatIDR(v), styles: { fillColor: TOT_POT_BG, halign: 'right' as const, fontStyle: 'bold' } })),
+    { content: formatIDR(totalPotonganVal), styles: { fillColor: TOT_POT_BG, halign: 'right' as const, fontStyle: 'bold' } }
   ]);
 
   // 6. JUMLAH GAJI BERSIH summary row
