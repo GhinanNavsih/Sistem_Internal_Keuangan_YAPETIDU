@@ -531,12 +531,8 @@ export default function PayrollValidationDashboard() {
 
     activeEmployees.forEach(emp => {
       const cat = emp.role;
-      const periodKey = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-      const uraianDoc = uraianMap[`${periodKey}_${cat}`];
-      const gapok = calculateGapok(emp, salaryMatrix, targetDate);
-      const uraianEntry = uraianDoc?.entries?.[emp.id];
-
-      let earnings = 0;
+      const freshData = buildFreshSlipData(emp);
+      const earnings = freshData.earnings.reduce((sum, e) => sum + e.amount, 0);
       let totalDeductions = 0;
 
       // Temporary local map for this employee's deductions
@@ -545,10 +541,7 @@ export default function PayrollValidationDashboard() {
         empDeductions[key] = 0;
       });
 
-      earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id), kepangkatanAllowanceMap[emp.id] ?? 0);
-
-      const slip = slipStates[emp.id];
-      const defaultDeductions = getEmployeeDeductions(emp, slip, payrollCollar);
+      const defaultDeductions = freshData.deductions;
       defaultDeductions.forEach(d => {
         const sanitized = sanitizeDeductionLabel(d.label);
         const amount = d.amount || 0;
@@ -611,14 +604,10 @@ export default function PayrollValidationDashboard() {
     let totalNetSalary = 0;
     const stmtEmployees: PayrollStatementEmployee[] = sortedEmployees.map((emp, idx) => {
       const cat = emp.role;
-      const periodKey = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-      const uraianDoc = uraianMap[`${periodKey}_${cat}`];
-      const gapok = calculateGapok(emp, salaryMatrix, targetDate);
-      const uraianEntry = uraianDoc?.entries?.[emp.id];
-
-      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id), kepangkatanAllowanceMap[emp.id] ?? 0);
-      const totalDeductions = calculateTotalDeductions(emp.raw, koperasiDeductions[emp.id] || 0, getLoyalisPresenceDeduction(emp.id), getLoyalisPresensiDeduction(emp.id), koperasiSavings[emp.id] || 0);
-      const netSalary = calculateNetSalary(earnings, totalDeductions);
+      const freshData = buildFreshSlipData(emp);
+      const totalEarnings = freshData.earnings.reduce((sum, e) => sum + e.amount, 0);
+      const totalDeductions = freshData.deductions.reduce((sum, d) => sum + d.amount, 0);
+      const netSalary = totalEarnings - totalDeductions;
 
       totalNetSalary += netSalary;
 
