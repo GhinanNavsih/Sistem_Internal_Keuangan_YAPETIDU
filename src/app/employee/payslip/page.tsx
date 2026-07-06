@@ -533,7 +533,7 @@ export default function EmployeePayslipPage() {
 
         // Build Deductions (Potongan) list
         const deductions: PaySlipField[] = [];
-        deductions.push({ label: 'KOPERASI ROCHMAD', amount: 0 });
+        deductions.push({ label: 'KOPERASI ROCHMAD', amount: employee.deductions?.koperasiRochmad || 0 });
 
         const bpjsDeduction = employee.bpjs?.deductionAmount || 0;
         deductions.push({ label: 'BPJS', amount: bpjsDeduction });

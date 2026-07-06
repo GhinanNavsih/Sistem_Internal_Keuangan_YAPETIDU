@@ -277,7 +277,7 @@ export function buildInitialDeductions(
 
   if (activeTab === 'loyalis') {
     // White Collar / Loyalis deductions
-    deductions.push({ label: 'Koperasi Rochmad', amount: 0 });
+    deductions.push({ label: 'Koperasi Rochmad', amount: emp.deductions?.koperasiRochmad || 0 });
     deductions.push({ label: 'BPJS', amount: emp.bpjs?.deductionAmount || 0 });
     deductions.push({ label: 'Tabungan Hari Tua BNI Simponi', amount: emp.tht?.deductionAmount || 0 });
     deductions.push({ label: 'Tabungan', amount: emp.savings?.deductionAmount || 0 });

@@ -160,7 +160,7 @@ function buildInitialDeductions(
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
     // White Collar / Loyalis deductions
     deductions.push({ label: 'BPJS', amount: emp.bpjs?.deductionAmount || 0 });
-    deductions.push({ label: 'Kop. Rochmad', amount: 0 });
+    deductions.push({ label: 'Kop. Rochmad', amount: emp.deductions?.koperasiRochmad || 0 });
     deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: koperasiDeduction });
     deductions.push({ label: 'Potongan Presensi', amount: presensiDeduction });
     deductions.push({ label: 'Potongan Bonus Presensi', amount: presenceDeduction });

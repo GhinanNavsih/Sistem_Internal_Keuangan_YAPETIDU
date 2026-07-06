@@ -470,7 +470,7 @@ export default function PayrollValidationDashboard() {
       const deductions: { label: string; amount: number }[] = [];
       const kopUnipduAmount = koperasiDeductions[emp.id] || 0;
       if (collar === 'loyalis') {
-        deductions.push({ label: 'Koperasi Rochmad', amount: 0 });
+        deductions.push({ label: 'Koperasi Rochmad', amount: emp.raw?.deductions?.koperasiRochmad || 0 });
         deductions.push({ label: 'BPJS', amount: emp.raw?.bpjs?.deductionAmount || 0 });
         deductions.push({ label: 'Tabungan Hari Tua BNI Simponi', amount: emp.raw?.tht?.deductionAmount || 0 });
         deductions.push({ label: 'Tabungan', amount: emp.raw?.savings?.deductionAmount || 0 });
@@ -2538,8 +2538,8 @@ export default function PayrollValidationDashboard() {
                 <button
                   type="button"
                   onClick={handleBulkLock}
-                  disabled={confirmingBulk}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${confirmingBulk ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  disabled={confirmingBulk || loading}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(confirmingBulk || loading) ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {confirmingBulk ? (
                     <>
@@ -2556,8 +2556,8 @@ export default function PayrollValidationDashboard() {
                 <button
                   type="button"
                   onClick={handleBulkUnlock}
-                  disabled={unlockingBulk}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${unlockingBulk ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  disabled={unlockingBulk || loading}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(unlockingBulk || loading) ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {unlockingBulk ? (
                     <>
@@ -2574,8 +2574,8 @@ export default function PayrollValidationDashboard() {
                 <button
                   type="button"
                   onClick={handleBulkRefresh}
-                  disabled={refreshingBulk}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${refreshingBulk ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  disabled={refreshingBulk || loading}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(refreshingBulk || loading) ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {refreshingBulk ? (
                     <>
@@ -2592,8 +2592,8 @@ export default function PayrollValidationDashboard() {
                 <button
                   type="button"
                   onClick={handleBulkEmail}
-                  disabled={sendingBulkEmail}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${sendingBulkEmail ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  disabled={sendingBulkEmail || loading}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(sendingBulkEmail || loading) ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {sendingBulkEmail ? (
                     <>
@@ -2610,7 +2610,8 @@ export default function PayrollValidationDashboard() {
                 <button
                   type="button"
                   onClick={() => setPrintSelectorOpen(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm"
+                  disabled={loading}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <Printer className="w-4 h-4 text-slate-500" />
                   Cetak Dokumen
@@ -2618,7 +2619,8 @@ export default function PayrollValidationDashboard() {
                 <button
                   type="button"
                   onClick={handleExportExcel}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm"
+                  disabled={loading}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
                   Ekspor Excel
