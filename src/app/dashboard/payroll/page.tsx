@@ -77,6 +77,7 @@ import { generateRekapGajiPekaryaXlsx } from '@/utils/generateRekapGajiPekaryaXl
 import { generateKebutuhanDanaGajiXlsx } from '@/utils/generateKebutuhanDanaGajiXlsx';
 import { generateKebutuhanDanaGajiPdf } from '@/utils/generateKebutuhanDanaGajiPdf';
 import CetakRekapDialog from '@/components/CetakRekapDialog';
+import CetakKebutuhanDanaGajiDialog from '@/components/CetakKebutuhanDanaGajiDialog';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
 
 import {
@@ -252,6 +253,7 @@ export default function PayrollValidationDashboard() {
   const [vakasiLainLainDialogOpen, setVakasiLainLainDialogOpen] = useState(false);
   const [potonganGajiDialogOpen, setPotonganGajiDialogOpen] = useState(false);
   const [gabunganDialogOpen, setGabunganDialogOpen] = useState(false);
+  const [cetakKebutuhanDanaGajiDialogOpen, setCetakKebutuhanDanaGajiDialogOpen] = useState(false);
   const [printSelectorOpen, setPrintSelectorOpen] = useState(false);
 
   // New States for Email & Cetak/Kirim Fallbacks
@@ -2976,6 +2978,14 @@ export default function PayrollValidationDashboard() {
         koperasiSavings={koperasiSavings}
       />
 
+      <CetakKebutuhanDanaGajiDialog
+        open={cetakKebutuhanDanaGajiDialogOpen}
+        onOpenChange={setCetakKebutuhanDanaGajiDialogOpen}
+        periodName={payrollPeriod}
+        onPrintPdf={handleExportKebutuhanDanaGajiPdf}
+        onExportXlsx={handleExportKebutuhanDanaGaji}
+      />
+
       {/* ─── Print Selection Dialog ─────────────────────────────────── */}
       <Dialog open={printSelectorOpen} onOpenChange={setPrintSelectorOpen}>
         <DialogContent className="sm:max-w-[760px] p-6 rounded-2xl bg-white border border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.1)]">
@@ -3223,12 +3233,12 @@ export default function PayrollValidationDashboard() {
               </button>
             )}
 
-            {/* Card 10: Kebutuhan Dana Gaji (Excel) (Loyalis Only) */}
+            {/* Card 10: Kebutuhan Dana Gaji (Loyalis Only) */}
             {payrollCollar === 'loyalis' && (
               <button
                 onClick={() => {
                   setPrintSelectorOpen(false);
-                  handleExportKebutuhanDanaGaji();
+                  setCetakKebutuhanDanaGajiDialogOpen(true);
                 }}
                 className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-emerald-50/30 hover:border-emerald-100 transition-all duration-200 text-left outline-none cursor-pointer"
               >
@@ -3237,40 +3247,14 @@ export default function PayrollValidationDashboard() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-emerald-900 transition-colors">
-                    Kebutuhan Dana Gaji (Excel)
+                    Kebutuhan Dana Gaji
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                    Unduh laporan rekapitulasi kebutuhan dana gaji per unit dalam format spreadsheet Excel.
+                    Cetak rekap kebutuhan dana gaji per unit dalam format Excel (XLSX) atau PDF.
                   </p>
                 </div>
                 <div className="flex-shrink-0 self-center pl-2">
                   <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all duration-200" />
-                </div>
-              </button>
-            )}
-
-            {/* Card 11: Kebutuhan Dana Gaji (PDF) (Loyalis Only) */}
-            {payrollCollar === 'loyalis' && (
-              <button
-                onClick={() => {
-                  setPrintSelectorOpen(false);
-                  handleExportKebutuhanDanaGajiPdf();
-                }}
-                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-rose-50/30 hover:border-rose-100 transition-all duration-200 text-left outline-none cursor-pointer"
-              >
-                <div className="flex-shrink-0 p-3 rounded-xl bg-rose-50 text-rose-600 group-hover:bg-rose-100/70 transition-colors">
-                  <FileText className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-rose-900 transition-colors">
-                    Kebutuhan Dana Gaji (PDF)
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                    Unduh laporan rekapitulasi kebutuhan dana gaji per unit dalam format dokumen PDF.
-                  </p>
-                </div>
-                <div className="flex-shrink-0 self-center pl-2">
-                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-rose-500 group-hover:translate-x-1 transition-all duration-200" />
                 </div>
               </button>
             )}
