@@ -207,7 +207,7 @@ export default function VakasiLoyalisPage() {
     return existingEvents.filter(evt => evt.departmentUnit === filterDept);
   }, [existingEvents, filterDept]);
 
-  const syncEmployeeVakasiPay = async (workerId: string, periodVal: string) => {
+  const syncEmployeeVakasiPay = async (workerId: string, periodVal: string, deletedEventName?: string) => {
     const dbPeriod = periodVal.replace('-', '_');
     const slipDocId = `${dbPeriod}_${workerId}`;
     const slipRef = doc(db, 'PayrollSlipStates', slipDocId);
@@ -217,35 +217,41 @@ export default function VakasiLoyalisPage() {
     const slipData = slipSnap.data();
     if (slipData.status !== 'draft') return; // Only update draft slips
 
-    const vakasiSnap = await getDocs(
-      query(
-        collection(db, 'VakasiTambahan'),
-        where('period', '==', periodVal),
-        where('status', '==', 'approved')
-      )
-    );
-
-    const workerVakasiList: { eventName: string; payGiven: number }[] = [];
-    vakasiSnap.docs.forEach(d => {
-      const data = d.data();
-      const worker = data.eventWorkers?.[workerId];
-      if (worker && worker.payGiven) {
-        workerVakasiList.push({ eventName: data.eventName, payGiven: worker.payGiven });
-      }
-    });
-
-    const allEventsSnap = await getDocs(
-      query(collection(db, 'VakasiTambahan'), where('period', '==', periodVal))
-    );
-    const allEventNames = new Set(allEventsSnap.docs.map(d => d.data().eventName).filter(Boolean));
-
     const oldEarnings = slipData.earnings || [];
-    const cleanEarnings = oldEarnings.filter((e: any) => !allEventNames.has(e.label) && e.label !== 'Vakasi Tambahan');
+    let newEarnings = [...oldEarnings];
 
-    const newEarnings = [...cleanEarnings];
-    workerVakasiList.forEach(item => {
-      newEarnings.push({ label: item.eventName, amount: item.payGiven });
-    });
+    if (deletedEventName) {
+      newEarnings = oldEarnings.filter((e: any) => e.label !== deletedEventName);
+    } else {
+      const vakasiSnap = await getDocs(
+        query(
+          collection(db, 'VakasiTambahan'),
+          where('period', '==', periodVal),
+          where('status', '==', 'approved')
+        )
+      );
+
+      const workerVakasiList: { eventName: string; payGiven: number }[] = [];
+      vakasiSnap.docs.forEach(d => {
+        const data = d.data();
+        const worker = data.eventWorkers?.[workerId];
+        if (worker && worker.payGiven) {
+          workerVakasiList.push({ eventName: data.eventName, payGiven: worker.payGiven });
+        }
+      });
+
+      const allEventsSnap = await getDocs(
+        query(collection(db, 'VakasiTambahan'), where('period', '==', periodVal))
+      );
+      const allEventNames = new Set(allEventsSnap.docs.map(d => d.data().eventName).filter(Boolean));
+
+      const cleanEarnings = oldEarnings.filter((e: any) => !allEventNames.has(e.label) && e.label !== 'Vakasi Tambahan');
+
+      newEarnings = [...cleanEarnings];
+      workerVakasiList.forEach(item => {
+        newEarnings.push({ label: item.eventName, amount: item.payGiven });
+      });
+    }
 
     await setDoc(slipRef, {
       ...slipData,
@@ -638,6 +644,7 @@ export default function VakasiLoyalisPage() {
         const eventData = eventSnap.data();
         const eventWorkers = eventData.eventWorkers || {};
         const eventPeriod = eventData.period;
+        const deletedEventName = eventData.eventName;
 
         if (eventPeriod) {
           const slipPeriod = eventPeriod.replace('-', '_');
@@ -664,7 +671,7 @@ export default function VakasiLoyalisPage() {
 
           await deleteDoc(eventRef);
           await Promise.all(
-            Object.keys(eventWorkers).map(workerId => syncEmployeeVakasiPay(workerId, eventPeriod))
+            Object.keys(eventWorkers).map(workerId => syncEmployeeVakasiPay(workerId, eventPeriod, deletedEventName))
           );
         }
       }
