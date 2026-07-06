@@ -108,9 +108,18 @@ export default function CetakPayrollDialog({
       const pDeduction = getLoyalisPresenceDeduction ? getLoyalisPresenceDeduction(emp.id) : 0;
       const presEarning = getLoyalisPresensiEarning ? getLoyalisPresensiEarning(emp.id) : 0;
       const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
-      const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0);
-      const totalDeductions = calculateTotalDeductions(emp.raw, kopDeduction, pDeduction, presDeduction, kopSaving);
-      const netSalary = calculateNetSalary(earnings, totalDeductions);
+
+      let netSalary = 0;
+      const savedSlip = slipStates?.[emp.id];
+      if (savedSlip && savedSlip.earnings && savedSlip.earnings.length > 0) {
+        const totalEarnings = savedSlip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+        const totalDeductions = (savedSlip.deductions || []).reduce((sum: number, d: any) => sum + (d.amount || 0), 0);
+        netSalary = totalEarnings - totalDeductions;
+      } else {
+        const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0);
+        const totalDeductions = calculateTotalDeductions(emp.raw, kopDeduction, pDeduction, presDeduction, kopSaving);
+        netSalary = calculateNetSalary(earnings, totalDeductions);
+      }
 
       let satker = cat;
       if (satker === 'KEBERSIHAN_IC') satker = 'KEBERSIHAN IC';
