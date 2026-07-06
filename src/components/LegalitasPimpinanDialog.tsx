@@ -237,16 +237,21 @@ export default function LegalitasPimpinanDialog({
       let netSalary = 0;
       let gapokVal = gapok;
 
-      const kopUnipdu = koperasiDeductions?.[emp.id] ?? 0;
-      const kopSaving = koperasiSavings?.[emp.id] ?? 0;
-      const pBonus = getLoyalisPresenceBonus ? getLoyalisPresenceBonus(emp.id) : 0;
-      const pDeduction = getLoyalisPresenceDeduction ? getLoyalisPresenceDeduction(emp.id) : 0;
-      const presEarning = getLoyalisPresensiEarning ? getLoyalisPresensiEarning(emp.id) : 0;
-      const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
-      earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0);
-      deductions = buildInitialDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
-      totalDeductions = calculateTotalDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
+      if (slip && slip.earnings && slip.earnings.length > 0) {
+        earnings = slip.earnings;
+        deductions = slip.deductions || [];
+      } else {
+        const kopUnipdu = koperasiDeductions?.[emp.id] ?? 0;
+        const kopSaving = koperasiSavings?.[emp.id] ?? 0;
+        const pBonus = getLoyalisPresenceBonus ? getLoyalisPresenceBonus(emp.id) : 0;
+        const pDeduction = getLoyalisPresenceDeduction ? getLoyalisPresenceDeduction(emp.id) : 0;
+        const presEarning = getLoyalisPresensiEarning ? getLoyalisPresensiEarning(emp.id) : 0;
+        const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
+        earnings = buildInitialEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0);
+        deductions = buildInitialDeductions(emp.raw, kopUnipdu, pDeduction, presDeduction, kopSaving);
+      }
       totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
+      totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
       netSalary = totalEarnings - totalDeductions;
       gapokVal = gapok;
 

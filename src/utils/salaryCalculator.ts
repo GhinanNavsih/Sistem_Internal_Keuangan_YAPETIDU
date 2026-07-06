@@ -162,12 +162,13 @@ export function calculateTotalDeductions(
 ): number {
   if (emp.employeeId?.startsWith('Loyalis_') || emp.id?.startsWith('Loyalis_') || emp.personal_info) {
     // White Collar / Loyalis deductions: include BPJS deduction, Savings deduction, ZIZ deduction, Pinlu/Tagihan deduction, presence deduction, presensi deduction, tht deduction, and koperasi saving
+    const koperasiRochmad = emp.deductions?.koperasiRochmad || 0;
     const bpjsDeduction = emp.bpjs?.deductionAmount || 0;
     const savingsDeduction = emp.savings?.deductionAmount || 0;
     const zizDeduction = emp.ziz?.deductionAmount || 0;
     const pinluDeduction = emp.pinlu?.deductionAmount || 0;
     const thtDeduction = emp.tht?.deductionAmount || 0;
-    return koperasiDeduction + bpjsDeduction + savingsDeduction + zizDeduction + pinluDeduction + thtDeduction + presenceDeduction + presensiDeduction + koperasiSaving;
+    return koperasiRochmad + koperasiDeduction + bpjsDeduction + savingsDeduction + zizDeduction + pinluDeduction + thtDeduction + presenceDeduction + presensiDeduction + koperasiSaving;
   }
 
   let total = 0;

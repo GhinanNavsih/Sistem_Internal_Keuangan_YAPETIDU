@@ -103,11 +103,23 @@ export default function CetakGabunganDialog({
 
       // Helper to find customized earning in slipState
       const getEarningAmount = (labels: string[], fallbackVal: number): number => {
+        if (slip && slip.earnings) {
+          const match = slip.earnings.find((e: any) =>
+            labels.some(lbl => lbl.toLowerCase() === e.label?.toLowerCase())
+          );
+          if (match) return match.amount;
+        }
         return fallbackVal;
       };
 
       // Helper to find customized deduction in slipState
       const getDeductionAmount = (labels: string[], fallbackVal: number): number => {
+        if (slip && slip.deductions) {
+          const match = slip.deductions.find((d: any) =>
+            labels.some(lbl => lbl.toLowerCase() === d.label?.toLowerCase())
+          );
+          if (match) return match.amount;
+        }
         return fallbackVal;
       };
 
