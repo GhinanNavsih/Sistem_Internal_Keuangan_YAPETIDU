@@ -385,21 +385,12 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
     body: earningBody as any,
   });
 
-  // Page 2 — Deductions always on a new page
+  // Page 2 — Deductions always on a new page (no header reprint)
   doc.addPage();
-  doc.addImage(LOGO_YAPETIDU_BASE64, 'PNG', 12, 10, 18, 18);
-  doc.addImage(LOGO_UNIPDU_BASE64, 'PNG', 32, 10, 18, 18);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('UNIVERSITAS PESANTREN TINGGI DARUL ULUM JOMBANG', 55, 14);
-  doc.setFontSize(12);
-  doc.text('REKAPITULASI KEBUTUHAN DANA GAJI PEGAWAI LOYALIS', 55, 19);
-  doc.setFontSize(10);
-  doc.text(`BULAN: ${data.period.toUpperCase()}`, 55, 24);
 
   autoTable(doc, {
     ...tableOptions,
-    startY: 32,
+    startY: 8,
     body: deductionBody as any,
   });
 
