@@ -55,7 +55,12 @@ export default function VakasiLoyalisPage() {
   const [cetakKegiatanDialogOpen, setCetakKegiatanDialogOpen] = useState(false);
 
   // Form States
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedEventId, _setSelectedEventId] = useState<string | null>(null);
+  const selectedEventIdRef = useRef<string | null>(null);
+  const setSelectedEventId = (id: string | null) => {
+    _setSelectedEventId(id);
+    selectedEventIdRef.current = id;
+  };
   const [eventName, setEventName] = useState('');
   const [isEndOfMonth, setIsEndOfMonth] = useState(false);
   const [selectedDept, setSelectedDept] = useState<string>('');
@@ -207,7 +212,12 @@ export default function VakasiLoyalisPage() {
     return existingEvents.filter(evt => evt.departmentUnit === filterDept);
   }, [existingEvents, filterDept]);
 
-  const syncEmployeeVakasiPay = async (workerId: string, periodVal: string, deletedEventName?: string) => {
+  const syncEmployeeVakasiPay = async (
+    workerId: string,
+    periodVal: string,
+    deletedEventName?: string,
+    updatedEvent?: { id: string; eventName: string; status: string; eventWorkers: Record<string, any> }
+  ) => {
     const dbPeriod = periodVal.replace('-', '_');
     const slipDocId = `${dbPeriod}_${workerId}`;
     const slipRef = doc(db, 'PayrollSlipStates', slipDocId);
@@ -231,19 +241,42 @@ export default function VakasiLoyalisPage() {
         )
       );
 
+      let approvedEvents = vakasiSnap.docs.map(d => ({
+        id: d.id,
+        eventName: d.data().eventName,
+        eventWorkers: d.data().eventWorkers || {},
+        status: d.data().status
+      }));
+
+      // Override or inject updatedEvent to handle Firestore indexing latency
+      if (updatedEvent) {
+        approvedEvents = approvedEvents.filter(evt => evt.id !== updatedEvent.id);
+        if (updatedEvent.status === 'approved') {
+          approvedEvents.push(updatedEvent);
+        }
+      }
+
       const workerVakasiList: { eventName: string; payGiven: number }[] = [];
-      vakasiSnap.docs.forEach(d => {
-        const data = d.data();
-        const worker = data.eventWorkers?.[workerId];
+      approvedEvents.forEach(evt => {
+        const worker = evt.eventWorkers?.[workerId];
         if (worker && worker.payGiven) {
-          workerVakasiList.push({ eventName: data.eventName, payGiven: worker.payGiven });
+          workerVakasiList.push({ eventName: evt.eventName, payGiven: worker.payGiven });
         }
       });
 
       const allEventsSnap = await getDocs(
         query(collection(db, 'VakasiTambahan'), where('period', '==', periodVal))
       );
-      const allEventNames = new Set(allEventsSnap.docs.map(d => d.data().eventName).filter(Boolean));
+
+      let allEvents = allEventsSnap.docs.map(d => ({
+        id: d.id,
+        eventName: d.data().eventName
+      }));
+      if (updatedEvent) {
+        allEvents = allEvents.filter(evt => evt.id !== updatedEvent.id);
+        allEvents.push({ id: updatedEvent.id, eventName: updatedEvent.eventName });
+      }
+      const allEventNames = new Set(allEvents.map(d => d.eventName).filter(Boolean));
 
       const cleanEarnings = oldEarnings.filter((e: any) => !allEventNames.has(e.label) && e.label !== 'Vakasi Tambahan');
 
@@ -469,8 +502,14 @@ export default function VakasiLoyalisPage() {
       setMessage({ type: 'success', text: `Kegiatan berhasil ${actionLabel}.` });
 
       if (action === 'approved') {
+        const updatedEventPayload = {
+          id: eventId,
+          eventName: eventData.eventName,
+          status: 'approved',
+          eventWorkers: workers
+        };
         await Promise.all(
-          Object.keys(workers).map(empId => syncEmployeeVakasiPay(empId, periodVal))
+          Object.keys(workers).map(empId => syncEmployeeVakasiPay(empId, periodVal, undefined, updatedEventPayload))
         );
       }
 
@@ -528,11 +567,16 @@ export default function VakasiLoyalisPage() {
       return;
     }
 
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+    }
+
     isSavingRef.current = true;
     setSaving(true);
     try {
       const eventSeg = sanitizeEventId(eventName);
-      const documentId = selectedEventId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
+      const activeId = selectedEventIdRef.current;
+      const documentId = activeId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
 
       let totalPayout = 0;
       const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
@@ -546,8 +590,8 @@ export default function VakasiLoyalisPage() {
       });
 
       let previousWorkerIds: string[] = [];
-      if (selectedEventId) {
-        const prevSnap = await getDoc(doc(db, 'VakasiTambahan', selectedEventId));
+      if (activeId) {
+        const prevSnap = await getDoc(doc(db, 'VakasiTambahan', activeId));
         if (prevSnap.exists()) {
           const prevData = prevSnap.data() as any;
           previousWorkerIds = Object.keys(prevData.eventWorkers || {});
@@ -584,9 +628,9 @@ export default function VakasiLoyalisPage() {
       }
 
       const isSuperAdmin = profile?.role === 'super_admin';
-      const finalSubmittedBy = selectedEventId ? currentEventSubmittedBy : (profile?.uid || null);
-      const finalSubmittedByName = selectedEventId ? currentEventSubmittedByName : (profile?.displayName || null);
-      const finalSubmittedByEmail = selectedEventId ? currentEventSubmittedByEmail : (profile?.email || null);
+      const finalSubmittedBy = activeId ? currentEventSubmittedBy : (profile?.uid || null);
+      const finalSubmittedByName = activeId ? currentEventSubmittedByName : (profile?.displayName || null);
+      const finalSubmittedByEmail = activeId ? currentEventSubmittedByEmail : (profile?.email || null);
 
       const payload: Record<string, any> = {
         eventName,
@@ -610,8 +654,14 @@ export default function VakasiLoyalisPage() {
       
       const newStatus = isSuperAdmin ? 'approved' : (currentEventStatus || 'draft');
       if (newStatus === 'approved') {
+        const updatedEventPayload = {
+          id: documentId,
+          eventName,
+          status: 'approved',
+          eventWorkers: workersMap
+        };
         await Promise.all(
-          allAffectedIds.map(empId => syncEmployeeVakasiPay(empId, periodToken))
+          allAffectedIds.map(empId => syncEmployeeVakasiPay(empId, periodToken, undefined, updatedEventPayload))
         );
       }
 
@@ -702,13 +752,32 @@ export default function VakasiLoyalisPage() {
     setWorkerRows(prev => [...prev, { employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
   };
 
-  const handleAutosave = async (
+  const autosaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerAutosave = (
     currentRows = workerRows,
     currentEventName = eventName,
-    activeId = selectedEventId,
+    activeId = selectedEventIdRef.current,
     currentIsEndOfMonth = isEndOfMonth,
     currentDept = selectedDept
   ) => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+    }
+    if (isSavingRef.current) return;
+    autosaveTimerRef.current = setTimeout(() => {
+      handleAutosave(currentRows, currentEventName, activeId, currentIsEndOfMonth, currentDept);
+    }, 1000);
+  };
+
+  const handleAutosave = async (
+    currentRows = workerRows,
+    currentEventName = eventName,
+    activeId = selectedEventIdRef.current,
+    currentIsEndOfMonth = isEndOfMonth,
+    currentDept = selectedDept
+  ) => {
+    if (isSavingRef.current) return;
     if (!currentEventName.trim()) return;
     const activeWorkers = currentRows.filter(w => w.employeeId);
     const ids = activeWorkers.map(w => w.employeeId);
@@ -1018,7 +1087,7 @@ export default function VakasiLoyalisPage() {
                   disabled={isReadOnly}
                   onChange={(e) => {
                     setEventName(e.target.value);
-                    handleAutosave(workerRows, e.target.value, selectedEventId, isEndOfMonth, selectedDept);
+                    triggerAutosave(workerRows, e.target.value, selectedEventIdRef.current, isEndOfMonth, selectedDept);
                   }}
                   className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10"
                 />
@@ -1031,7 +1100,7 @@ export default function VakasiLoyalisPage() {
                   disabled={isReadOnly || isEndOfMonth}
                   onValueChange={(v) => {
                     setSelectedDept(v || '');
-                    handleAutosave(workerRows, eventName, selectedEventId, isEndOfMonth, v || '');
+                    triggerAutosave(workerRows, eventName, selectedEventIdRef.current, isEndOfMonth, v || '');
                   }}
                 >
                   <SelectTrigger className="w-full bg-white border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all text-xs h-10">
@@ -1136,10 +1205,10 @@ export default function VakasiLoyalisPage() {
                                     updated[idx].showDropdown = false;
                                     return updated;
                                   });
-                                  handleAutosave(
+                                  triggerAutosave(
                                     workerRows.map((r, rIdx) => rIdx === idx ? { ...r, employeeId: emp.id, employeeName: emp.name } : r),
                                     eventName,
-                                    selectedEventId,
+                                    selectedEventIdRef.current,
                                     isEndOfMonth,
                                     selectedDept
                                   );
@@ -1169,10 +1238,10 @@ export default function VakasiLoyalisPage() {
                             updated[idx].payGiven = val;
                             return updated;
                           });
-                          handleAutosave(
+                          triggerAutosave(
                             workerRows.map((r, rIdx) => rIdx === idx ? { ...r, payGiven: val } : r),
                             eventName,
-                            selectedEventId,
+                            selectedEventIdRef.current,
                             isEndOfMonth,
                             selectedDept
                           );
@@ -1187,7 +1256,7 @@ export default function VakasiLoyalisPage() {
                         onClick={() => {
                           const nextRows = workerRows.filter((_, i) => i !== idx);
                           setWorkerRows(nextRows.length > 0 ? nextRows : [{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
-                          handleAutosave(nextRows, eventName, selectedEventId, isEndOfMonth, selectedDept);
+                          triggerAutosave(nextRows, eventName, selectedEventIdRef.current, isEndOfMonth, selectedDept);
                         }}
                         className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl h-9 w-9 shrink-0 flex items-center justify-center p-0"
                       >
