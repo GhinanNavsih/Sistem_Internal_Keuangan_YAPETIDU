@@ -74,6 +74,7 @@ import { generatePaySlipPdf, generateMultiPaySlipPdf, PaySlipData, PaySlipField 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { generateRekapGajiPdf, RekapGajiData, RekapCategoryData } from '@/utils/generateRekapGajiPdf';
 import { generateRekapGajiPekaryaXlsx } from '@/utils/generateRekapGajiPekaryaXlsx';
+import { generateKebutuhanDanaGajiXlsx } from '@/utils/generateKebutuhanDanaGajiXlsx';
 import CetakRekapDialog from '@/components/CetakRekapDialog';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
 
@@ -420,6 +421,35 @@ export default function PayrollValidationDashboard() {
 
     const filename = `Payroll_${sheetName.replace(/\s+/g, '_')}_${periodString.replace(/\s+/g, '_')}.xlsx`;
     XLSX.writeFile(workbook, filename);
+  };
+
+  const handleExportKebutuhanDanaGaji = () => {
+    if (payrollCollar !== 'loyalis') {
+      alert("Laporan Kebutuhan Dana Gaji hanya tersedia untuk Karyawan Loyalis.");
+      return;
+    }
+
+    const activeLoyalis = employees.filter(emp => emp.isActive);
+    if (activeLoyalis.length === 0) {
+      alert("Tidak ada data karyawan aktif.");
+      return;
+    }
+
+    const reportsEmployees = activeLoyalis.map(emp => {
+      const fresh = buildFreshSlipData(emp);
+      return {
+        id: emp.id,
+        name: emp.name,
+        departmentUnit: emp.role,
+        earnings: fresh.earnings,
+        deductions: fresh.deductions
+      };
+    });
+
+    generateKebutuhanDanaGajiXlsx({
+      period: payrollPeriod,
+      employees: reportsEmployees
+    });
   };
 
   const handlePrintRekap = async (format: 'pdf' | 'xlsx') => {
@@ -3159,6 +3189,32 @@ export default function PayrollValidationDashboard() {
                 </div>
                 <div className="flex-shrink-0 self-center pl-2">
                   <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all duration-200" />
+                </div>
+              </button>
+            )}
+
+            {/* Card 10: Kebutuhan Dana Gaji (Excel) (Loyalis Only) */}
+            {payrollCollar === 'loyalis' && (
+              <button
+                onClick={() => {
+                  setPrintSelectorOpen(false);
+                  handleExportKebutuhanDanaGaji();
+                }}
+                className="group flex items-start gap-4 p-4 rounded-2xl border border-slate-100 bg-slate-50/40 hover:bg-emerald-50/30 hover:border-emerald-100 transition-all duration-200 text-left outline-none cursor-pointer"
+              >
+                <div className="flex-shrink-0 p-3 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100/70 transition-colors">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-slate-800 text-[15px] group-hover:text-emerald-900 transition-colors">
+                    Kebutuhan Dana Gaji (Excel)
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    Unduh laporan rekapitulasi kebutuhan dana gaji per unit dalam format spreadsheet Excel.
+                  </p>
+                </div>
+                <div className="flex-shrink-0 self-center pl-2">
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all duration-200" />
                 </div>
               </button>
             )}
