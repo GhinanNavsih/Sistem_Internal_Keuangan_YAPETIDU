@@ -226,15 +226,19 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
     ]
   ];
 
-  const body: any[] = [];
+  const earningBody: any[] = [];
+  const deductionBody: any[] = [];
 
-  // Section helper
+  // Section helper (reusable for both tables)
+  const makeSectionHeader = (title: string) => ([
+    { content: '', styles: { fillColor: [245, 247, 250], fontStyle: 'bold' } },
+    { content: title, styles: { fillColor: [245, 247, 250], fontStyle: 'bold' } },
+    ...Array(8).fill({ content: '', styles: { fillColor: [245, 247, 250] } })
+  ]);
+
+  // unused local shim so call-sites still compile if any remain
   const addSectionHeader = (title: string) => {
-    body.push([
-      { content: '', styles: { fillColor: [245, 247, 250], fontStyle: 'bold' } },
-      { content: title, styles: { fillColor: [245, 247, 250], fontStyle: 'bold' } },
-      ...Array(8).fill({ content: '', styles: { fillColor: [245, 247, 250] } })
-    ]);
+    deductionBody.push(makeSectionHeader(title));
   };
 
   // 1. PENDAPATAN / GAJI Section
@@ -243,7 +247,7 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
   GAJI_UTAMA_ROWS.forEach((rowDef, idx) => {
     const rowValues = mainSalaryValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
-    body.push([
+    earningBody.push([
       { content: (earnNo++).toString(), styles: { halign: 'center' as const, fillColor: EARN_BG } },
       { content: rowDef.name, styles: { fillColor: EARN_BG } },
       ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const, fillColor: EARN_BG } })),
@@ -253,7 +257,7 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
 
   // Tunjangan Jabatan (listed immediately in the same sequence)
   const totalTunjanganJabatanVal = tunjanganJabatanValues.reduce((sum, v) => sum + v, 0);
-  body.push([
+  earningBody.push([
     { content: (earnNo++).toString(), styles: { halign: 'center' as const, fillColor: EARN_BG } },
     { content: 'TUNJANGAN JABATAN', styles: { fillColor: EARN_BG } },
     ...tunjanganJabatanValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const, fillColor: EARN_BG } })),
@@ -265,7 +269,7 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
     const idx = sortedOtherEarningLabels.indexOf(label);
     const rowValues = otherEarningValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
-    body.push([
+    earningBody.push([
       { content: (earnNo++).toString(), styles: { halign: 'center' as const, fillColor: EARN_BG } },
       { content: label.toUpperCase(), styles: { fillColor: EARN_BG } },
       ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const, fillColor: EARN_BG } })),
@@ -275,26 +279,20 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
 
   // JUMLAH GAJI TOTAL summary row
   const totalGajiTotalVal = gajiTotalValues.reduce((sum, v) => sum + v, 0);
-  body.push([
+  earningBody.push([
     { content: '', styles: { fillColor: [252, 243, 207], fontStyle: 'bold' } },
     { content: 'JUMLAH GAJI TOTAL', styles: { fillColor: [252, 243, 207], fontStyle: 'bold' } },
     ...gajiTotalValues.map(v => ({ content: formatIDR(v), styles: { fillColor: [252, 243, 207], halign: 'right' as const, fontStyle: 'bold' } })),
     { content: formatIDR(totalGajiTotalVal), styles: { fillColor: [252, 243, 207], halign: 'right' as const, fontStyle: 'bold' } }
   ]);
-
-  // Add an empty row spacer below Jumlah Gaji Total
-  body.push([
-    { content: '', colSpan: 10, styles: { fillColor: [255, 255, 255], minCellHeight: 4 } }
-  ]);
-
-  // 5. POTONGAN Section
+  // 5. POTONGAN Section — goes on its own page (deductionBody)
   const DED_BG = [255, 235, 235] as [number, number, number]; // faint red
-  addSectionHeader('POTONGAN');
+  deductionBody.push(makeSectionHeader('POTONGAN'));
   let potNo = 1;
   POTONGAN_ROWS.forEach((rowDef, idx) => {
     const rowValues = standardDeductionValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
-    body.push([
+    deductionBody.push([
       { content: (potNo++).toString(), styles: { halign: 'center' as const, fillColor: DED_BG } },
       { content: rowDef.name, styles: { fillColor: DED_BG } },
       ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const, fillColor: DED_BG } })),
@@ -305,7 +303,7 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
   sortedOtherDeductionLabels.forEach((label, idx) => {
     const rowValues = otherDeductionValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
-    body.push([
+    deductionBody.push([
       { content: (potNo++).toString(), styles: { halign: 'center' as const, fillColor: DED_BG } },
       { content: label.toUpperCase(), styles: { fillColor: DED_BG } },
       ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const, fillColor: DED_BG } })),
@@ -313,10 +311,10 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
     ]);
   });
 
-  // Potongan Gaji summary row
+  // Total Potongan Gaji summary row
   const totalPotonganVal = potonganTotals.reduce((sum, v) => sum + v, 0);
   const TOT_POT_BG = [252, 243, 207] as [number, number, number]; // same yellow as Jumlah Gaji Total
-  body.push([
+  deductionBody.push([
     { content: '', styles: { fillColor: TOT_POT_BG, fontStyle: 'bold' } },
     { content: 'TOTAL POTONGAN GAJI', styles: { fillColor: TOT_POT_BG, fontStyle: 'bold' } },
     ...potonganTotals.map(v => ({ content: formatIDR(v), styles: { fillColor: TOT_POT_BG, halign: 'right' as const, fontStyle: 'bold' } })),
@@ -325,7 +323,7 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
 
   // 6. JUMLAH GAJI BERSIH summary row
   const totalGajiBersihVal = gajiBersihValues.reduce((sum, v) => sum + v, 0);
-  body.push([
+  deductionBody.push([
     { content: '', styles: { fillColor: [214, 234, 248], fontStyle: 'bold' } },
     { content: 'JUMLAH GAJI BERSIH', styles: { fillColor: [214, 234, 248], fontStyle: 'bold' } },
     ...gajiBersihValues.map(v => ({ content: formatIDR(v), styles: { fillColor: [214, 234, 248], halign: 'right' as const, fontStyle: 'bold' } })),
@@ -333,31 +331,30 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
   ]);
 
   // 7. DITERIMAKAN BANK / TUNAI rows
-  body.push([
+  deductionBody.push([
     { content: '', styles: { fontStyle: 'bold' } },
     { content: 'DITERIMAKAN BANK', styles: { fontStyle: 'bold' } },
     ...gajiBersihValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const, fontStyle: 'bold' } })),
     { content: formatIDR(totalGajiBersihVal), styles: { halign: 'right' as const, fontStyle: 'bold' } }
   ]);
 
-  body.push([
+  deductionBody.push([
     { content: '', styles: { fontStyle: 'bold' } },
     { content: 'DITERIMAKAN TUNAI', styles: { fontStyle: 'bold' } },
     ...Array(8).fill({ content: '-', styles: { halign: 'right' as const, fontStyle: 'bold' } })
   ]);
 
-  autoTable(doc, {
-    startY: 32,
+  // Shared table config
+  const tableOptions = {
     margin: { left: 8, right: 8 },
     head: head as any,
-    body: body as any,
-    theme: 'grid',
+    theme: 'grid' as const,
     headStyles: {
       fillColor: [230, 235, 240],
       textColor: [0, 0, 0],
       lineWidth: 0.1,
       lineColor: [100, 100, 100],
-      fontStyle: 'bold',
+      fontStyle: 'bold' as const,
       fontSize: 7.5,
     },
     styles: {
@@ -368,7 +365,7 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
       textColor: [0, 0, 0],
     },
     columnStyles: {
-      0: { cellWidth: 8, halign: 'center' },
+      0: { cellWidth: 8, halign: 'center' as const },
       1: { cellWidth: 50 },
       2: { cellWidth: 28 },
       3: { cellWidth: 28 },
@@ -379,8 +376,34 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
       8: { cellWidth: 28 },
       9: { cellWidth: 32 },
     },
+  };
+
+  // Page 1 — Earnings table
+  autoTable(doc, {
+    ...tableOptions,
+    startY: 32,
+    body: earningBody as any,
+  });
+
+  // Page 2 — Deductions always on a new page
+  doc.addPage();
+  doc.addImage(LOGO_YAPETIDU_BASE64, 'PNG', 12, 10, 18, 18);
+  doc.addImage(LOGO_UNIPDU_BASE64, 'PNG', 32, 10, 18, 18);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('UNIVERSITAS PESANTREN TINGGI DARUL ULUM JOMBANG', 55, 14);
+  doc.setFontSize(12);
+  doc.text('REKAPITULASI KEBUTUHAN DANA GAJI PEGAWAI LOYALIS', 55, 19);
+  doc.setFontSize(10);
+  doc.text(`BULAN: ${data.period.toUpperCase()}`, 55, 24);
+
+  autoTable(doc, {
+    ...tableOptions,
+    startY: 32,
+    body: deductionBody as any,
   });
 
   const filename = `Kebutuhan_Dana_Gaji_${data.period.replace(/\s+/g, '_')}.pdf`;
   doc.save(filename);
 }
+
