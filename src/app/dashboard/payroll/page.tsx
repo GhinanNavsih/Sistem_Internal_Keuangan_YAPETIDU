@@ -645,86 +645,6 @@ export default function PayrollValidationDashboard() {
     setSortConfig({ key, direction });
   };
 
-  const getFilteredAndSortedEmployees = () => {
-    let filtered = [...employees];
-
-    // Only show active employees
-    filtered = filtered.filter(emp => emp.isActive);
-
-    // Category Filter
-    if (categoryFilter !== 'all') {
-      filtered = filtered.filter(emp => emp.role === categoryFilter);
-    }
-
-    // Search Query Filter
-    if (searchQuery.trim() !== '') {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(emp =>
-        emp.name.toLowerCase().includes(q) ||
-        emp.id.toLowerCase().includes(q)
-      );
-    }
-
-    // Sorting
-    if (!sortConfig.direction || !sortConfig.key) return filtered;
-
-    return filtered.sort((a, b) => {
-      let aValue: any;
-      let bValue: any;
-
-      switch (sortConfig.key) {
-        case 'name':
-          aValue = a.name.toLowerCase();
-          bValue = b.name.toLowerCase();
-          break;
-        case 'role':
-          aValue = a.role.toLowerCase();
-          bValue = b.role.toLowerCase();
-          break;
-        case 'earnings': {
-          const gapokA = calculateGapok(a, salaryMatrix, targetDate);
-          const roleKeyA = payrollCollar === 'loyalis' ? a.role : a.raw.employment?.jobCategory;
-          const uraianA = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyA}`]?.entries?.[a.id];
-          aValue = calculateTotalEarnings(a.raw, gapokA, uraianA, vakasiTambahanMap[a.id] ?? 0, functionalAllowanceMap[a.id] ?? 0, getLoyalisPresenceBonus(a.id), getLoyalisPresensiEarning(a.id), kepangkatanAllowanceMap[a.id] ?? 0);
-
-          const gapokB = calculateGapok(b, salaryMatrix, targetDate);
-          const roleKeyB = payrollCollar === 'loyalis' ? b.role : b.raw.employment?.jobCategory;
-          const uraianB = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyB}`]?.entries?.[b.id];
-          bValue = calculateTotalEarnings(b.raw, gapokB, uraianB, vakasiTambahanMap[b.id] ?? 0, functionalAllowanceMap[b.id] ?? 0, getLoyalisPresenceBonus(b.id), getLoyalisPresensiEarning(b.id), kepangkatanAllowanceMap[b.id] ?? 0);
-          break;
-        }
-        case 'deductions':
-          aValue = calculateTotalDeductions(a.raw, koperasiDeductions[a.id] || 0, getLoyalisPresenceDeduction(a.id), getLoyalisPresensiDeduction(a.id), koperasiSavings[a.id] || 0);
-          bValue = calculateTotalDeductions(b.raw, koperasiDeductions[b.id] || 0, getLoyalisPresenceDeduction(b.id), getLoyalisPresensiDeduction(b.id), koperasiSavings[b.id] || 0);
-          break;
-        case 'net': {
-          const gapokA = calculateGapok(a, salaryMatrix, targetDate);
-          const roleKeyA = payrollCollar === 'loyalis' ? a.role : a.raw.employment?.jobCategory;
-          const uraianA = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyA}`]?.entries?.[a.id];
-          const earningsA = calculateTotalEarnings(a.raw, gapokA, uraianA, vakasiTambahanMap[a.id] ?? 0, functionalAllowanceMap[a.id] ?? 0, getLoyalisPresenceBonus(a.id), getLoyalisPresensiEarning(a.id), kepangkatanAllowanceMap[a.id] ?? 0);
-          const deductionsA = calculateTotalDeductions(a.raw, koperasiDeductions[a.id] || 0, getLoyalisPresenceDeduction(a.id), getLoyalisPresensiDeduction(a.id), koperasiSavings[a.id] || 0);
-          aValue = calculateNetSalary(earningsA, deductionsA);
-
-          const gapokB = calculateGapok(b, salaryMatrix, targetDate);
-          const roleKeyB = payrollCollar === 'loyalis' ? b.role : b.raw.employment?.jobCategory;
-          const uraianB = uraianMap[`${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}_${roleKeyB}`]?.entries?.[b.id];
-          const earningsB = calculateTotalEarnings(b.raw, gapokB, uraianB, vakasiTambahanMap[b.id] ?? 0, functionalAllowanceMap[b.id] ?? 0, getLoyalisPresenceBonus(b.id), getLoyalisPresensiEarning(b.id), kepangkatanAllowanceMap[b.id] ?? 0);
-          const deductionsB = calculateTotalDeductions(b.raw, koperasiDeductions[b.id] || 0, getLoyalisPresenceDeduction(b.id), getLoyalisPresensiDeduction(b.id), koperasiSavings[b.id] || 0);
-          bValue = calculateNetSalary(earningsB, deductionsB);
-          break;
-        }
-        default:
-          return 0;
-      }
-
-      if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
-      return 0;
-    });
-  };
-
-  const displayEmployees = getFilteredAndSortedEmployees();
-
   // Helper: build fresh earnings/deductions from current employee data
   // Used by PDF, WhatsApp, email, and multi-print flows to always
   // reflect the latest profile data, salary matrix, and vakasi tambahan.
@@ -768,6 +688,82 @@ export default function PayrollValidationDashboard() {
 
     return { earnings, deductions };
   };
+
+  const getFilteredAndSortedEmployees = () => {
+    let filtered = [...employees];
+
+    // Only show active employees
+    filtered = filtered.filter(emp => emp.isActive);
+
+    // Category Filter
+    if (categoryFilter !== 'all') {
+      filtered = filtered.filter(emp => emp.role === categoryFilter);
+    }
+
+    // Search Query Filter
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(emp =>
+        emp.name.toLowerCase().includes(q) ||
+        emp.id.toLowerCase().includes(q)
+      );
+    }
+
+    // Sorting
+    if (!sortConfig.direction || !sortConfig.key) return filtered;
+
+    return filtered.sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortConfig.key) {
+        case 'name':
+          aValue = a.name.toLowerCase();
+          bValue = b.name.toLowerCase();
+          break;
+        case 'role':
+          aValue = a.role.toLowerCase();
+          bValue = b.role.toLowerCase();
+          break;
+        case 'earnings': {
+          const dataA = buildFreshSlipData(a);
+          const dataB = buildFreshSlipData(b);
+          aValue = dataA.earnings.reduce((sum, e) => sum + e.amount, 0);
+          bValue = dataB.earnings.reduce((sum, e) => sum + e.amount, 0);
+          break;
+        }
+        case 'deductions': {
+          const dataA = buildFreshSlipData(a);
+          const dataB = buildFreshSlipData(b);
+          aValue = dataA.deductions.reduce((sum, d) => sum + d.amount, 0);
+          bValue = dataB.deductions.reduce((sum, d) => sum + d.amount, 0);
+          break;
+        }
+        case 'net': {
+          const dataA = buildFreshSlipData(a);
+          const dataB = buildFreshSlipData(b);
+          const earningsA = dataA.earnings.reduce((sum, e) => sum + e.amount, 0);
+          const deductionsA = dataA.deductions.reduce((sum, d) => sum + d.amount, 0);
+          aValue = earningsA - deductionsA;
+
+          const earningsB = dataB.earnings.reduce((sum, e) => sum + e.amount, 0);
+          const deductionsB = dataB.deductions.reduce((sum, d) => sum + d.amount, 0);
+          bValue = earningsB - deductionsB;
+          break;
+        }
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  };
+
+  const displayEmployees = getFilteredAndSortedEmployees();
+
+
 
   const payrollTotals = useMemo(() => {
     let totalGross = 0;
