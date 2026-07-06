@@ -547,7 +547,8 @@ export default function PayrollValidationDashboard() {
 
       earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiTambahanMap[emp.id] ?? 0, functionalAllowanceMap[emp.id] ?? 0, getLoyalisPresenceBonus(emp.id), getLoyalisPresensiEarning(emp.id), kepangkatanAllowanceMap[emp.id] ?? 0);
 
-      const defaultDeductions = getEmployeeDeductions(emp, undefined, payrollCollar);
+      const slip = slipStates[emp.id];
+      const defaultDeductions = getEmployeeDeductions(emp, slip, payrollCollar);
       defaultDeductions.forEach(d => {
         const sanitized = sanitizeDeductionLabel(d.label);
         const amount = d.amount || 0;
