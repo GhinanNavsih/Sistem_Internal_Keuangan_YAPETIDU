@@ -72,7 +72,7 @@ import CetakGabunganDialog from '@/components/CetakGabunganDialog';
 import { generateWhatsAppPaySlipUrl, uploadPaySlipPdf } from '@/utils/whatsappHelper';
 import { generatePaySlipPdf, generateMultiPaySlipPdf, PaySlipData, PaySlipField } from '@/utils/generatePaySlipPdf';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { generateRekapGajiPekaryaPdf, RekapGajiPekaryaData, RekapCategoryData } from '@/utils/generateRekapGajiPekaryaPdf';
+import { generateRekapGajiPdf, RekapGajiData, RekapCategoryData } from '@/utils/generateRekapGajiPdf';
 import { generateRekapGajiPekaryaXlsx } from '@/utils/generateRekapGajiPekaryaXlsx';
 import CetakRekapDialog from '@/components/CetakRekapDialog';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
@@ -572,14 +572,15 @@ export default function PayrollValidationDashboard() {
       }
     });
 
-    const data: RekapGajiPekaryaData = {
+    const data: RekapGajiData = {
       period: getPayrollPeriod(targetDate),
       categories: Object.values(categoriesMap).filter(c => c.totalEarnings > 0),
       deductionKeys: allDeductionKeys,
+      isLoyalis: payrollCollar === 'loyalis',
     };
 
     if (format === 'pdf') {
-      await generateRekapGajiPekaryaPdf(data);
+      await generateRekapGajiPdf(data);
     } else {
       generateRekapGajiPekaryaXlsx(data);
     }

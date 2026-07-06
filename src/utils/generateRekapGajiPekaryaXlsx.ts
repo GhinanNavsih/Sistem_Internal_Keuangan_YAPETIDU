@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
-import { RekapGajiPekaryaData } from './generateRekapGajiPekaryaPdf';
+import { RekapGajiData } from './generateRekapGajiPdf';
 
-export function generateRekapGajiPekaryaXlsx(data: RekapGajiPekaryaData): void {
+export function generateRekapGajiPekaryaXlsx(data: RekapGajiData): void {
   // Calculate Grand Totals
   const grandTotal = data.categories.reduce(
     (acc, cat) => {
@@ -79,7 +79,7 @@ export function generateRekapGajiPekaryaXlsx(data: RekapGajiPekaryaData): void {
   grandTotalRow.push(grandTotal.netSalary);
 
   const worksheetData = [
-    ['REKAPITULASI GAJI PEKARYA'],
+    [data.isLoyalis ? 'REKAPITULASI GAJI LOYALIS' : 'REKAPITULASI GAJI PEKARYA'],
     [`BULAN ${data.period.toUpperCase()}`],
     [],
     header1,
@@ -119,6 +119,6 @@ export function generateRekapGajiPekaryaXlsx(data: RekapGajiPekaryaData): void {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Rekap Gaji');
 
-  const filename = `Rekap_Gaji_Pekarya_${data.period.replace(/\s+/g, '_')}.xlsx`;
+  const filename = `Rekap_Gaji_${data.isLoyalis ? 'Loyalis' : 'Pekarya'}_${data.period.replace(/\s+/g, '_')}.xlsx`;
   XLSX.writeFile(workbook, filename);
 }
