@@ -28,13 +28,14 @@ interface CetakPotonganGajiDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   employees: EmployeeRow[];
-  categories: string[]; // Unique department units for Loyalis
+  categories: string[]; // Unique department units for Loyalis, or job categories for Pekarya
   periodName: string; // e.g. "Mei 2026"
   slipStates?: Record<string, any>;
   koperasiDeductions?: Record<string, number>;
   koperasiSavings?: Record<string, number>;
   getLoyalisPresenceDeduction?: (empId: string) => number;
   getLoyalisPresensiDeduction?: (empId: string) => number;
+  isLoyalis?: boolean;
 }
 
 export default function CetakPotonganGajiDialog({
@@ -48,6 +49,7 @@ export default function CetakPotonganGajiDialog({
   koperasiSavings,
   getLoyalisPresenceDeduction,
   getLoyalisPresensiDeduction,
+  isLoyalis = true,
 }: CetakPotonganGajiDialogProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
 
@@ -60,23 +62,24 @@ export default function CetakPotonganGajiDialog({
   const handlePrint = () => {
     if (!selectedCategory) return;
 
-    // 1. Get all active Loyalis employees in the selected department unit
-    const activeLoyalis = employees.filter(emp => {
+    // 1. Get all active employees in the selected category
+    const activeList = employees.filter(emp => {
       const raw = emp.raw;
-      const isLoyalis = emp.id?.startsWith('Loyalis_') || raw.employeeId?.startsWith('Loyalis_') || !!raw.personal_info;
-      return isLoyalis && emp.isActive && (selectedCategory === 'Semua' || emp.role === selectedCategory);
+      const isEmpLoyalis = emp.id?.startsWith('Loyalis_') || raw.employeeId?.startsWith('Loyalis_') || !!raw.personal_info;
+      const matchesCollar = isLoyalis ? isEmpLoyalis : !isEmpLoyalis;
+      return matchesCollar && emp.isActive && (selectedCategory === 'Semua' || emp.role === selectedCategory);
     });
 
-    if (activeLoyalis.length === 0) {
+    if (activeList.length === 0) {
       alert(selectedCategory === 'Semua'
-        ? 'Tidak ada karyawan Loyalis aktif ditemukan.'
-        : `Tidak ada karyawan Loyalis aktif ditemukan di unit "${selectedCategory}".`
+        ? `Tidak ada karyawan ${isLoyalis ? 'Loyalis' : 'Pekarya'} aktif ditemukan.`
+        : `Tidak ada karyawan ${isLoyalis ? 'Loyalis' : 'Pekarya'} aktif ditemukan di unit "${selectedCategory}".`
       );
       return;
     }
 
     // 2. Sort by original database rowIndex to guarantee a deterministic sequence
-    const sortedEmployees = [...activeLoyalis].sort((a, b) => a.rowIndex - b.rowIndex);
+    const sortedEmployees = [...activeList].sort((a, b) => a.rowIndex - b.rowIndex);
 
     // 3. Map to row data objects
     const rows: PotonganGajiRow[] = sortedEmployees.map((emp, idx) => {
@@ -153,7 +156,7 @@ export default function CetakPotonganGajiDialog({
 
     // 4. Generate the PDF
     generatePotonganGajiPdf({
-      department: selectedCategory === 'Semua' ? 'Semua Unit' : selectedCategory,
+      department: selectedCategory === 'Semua' ? (isLoyalis ? 'Semua Unit' : 'Semua Satker') : selectedCategory,
       period: periodName,
       rows,
     });
@@ -174,7 +177,7 @@ export default function CetakPotonganGajiDialog({
                 Laporan Potongan Gaji
               </DialogTitle>
               <DialogDescription className="text-sm text-slate-500 mt-0.5">
-                Pilih unit departemen untuk mencetak rincian potongan gaji
+                Pilih {isLoyalis ? 'unit departemen' : 'satuan kerja'} untuk mencetak rincian potongan gaji
               </DialogDescription>
             </div>
           </div>
@@ -184,21 +187,21 @@ export default function CetakPotonganGajiDialog({
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Unit Departemen
+                {isLoyalis ? 'Unit Departemen' : 'Satuan Kerja'}
               </label>
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
                 className="w-full bg-white border border-slate-200 text-slate-600 text-sm font-semibold rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-sm"
               >
-                <option value="Semua">Semua (Semua Unit)</option>
+                <option value="Semua">Semua (Semua {isLoyalis ? 'Unit' : 'Satker'})</option>
                 {categories.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
             </div>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Laporan ini merangkum seluruh rincian potongan gaji (Koperasi, BPJS, Tabungan, ZIS, Pinlu, presensi, dll.) untuk karyawan Loyalis di unit departemen terpilih.
+              Laporan ini merangkum seluruh rincian potongan gaji (Koperasi, BPJS, Tabungan, ZIS, Pinlu, presensi, dll.) untuk karyawan {isLoyalis ? 'Loyalis' : 'Pekarya'} di {isLoyalis ? 'unit departemen' : 'satuan kerja'} terpilih.
             </p>
           </div>
         </div>
