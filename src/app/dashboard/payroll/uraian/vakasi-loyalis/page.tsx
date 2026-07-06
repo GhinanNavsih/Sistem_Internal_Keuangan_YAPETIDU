@@ -22,7 +22,7 @@ import {
   Upload, Loader2, CheckCircle2, FileText, AlertCircle, ImageIcon, Trash2, Eye,
   RotateCw, Sparkles, X, Building2, Code2, ShieldCheck, FileDown, Plus, Save,
   LogOut, Calendar, Clock, Send, CheckCircle, RotateCcw, AlertTriangle, Users,
-  XCircle, Lock, FileSpreadsheet
+  XCircle, Lock, FileSpreadsheet, Banknote
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -1050,7 +1050,7 @@ export default function VakasiLoyalisPage() {
             <div className="bg-gradient-to-r from-indigo-50/60 to-purple-50/40 rounded-[20px] border border-indigo-100/40 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-indigo-500 text-white flex items-center justify-center shadow-md shadow-indigo-100">
-                  <Sparkles className="w-5 h-5" />
+                  <Banknote className="w-5 h-5" />
                 </div>
                 <div>
                   <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Total Nominal Vakasi</span>
