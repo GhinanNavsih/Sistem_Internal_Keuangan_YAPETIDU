@@ -836,6 +836,12 @@ export default function VakasiLoyalisPage() {
   const fmtRp = (n: number) =>
     'Rp\u00a0' + Math.round(n).toLocaleString('id-ID');
 
+  const formatCurrencyInput = (num: number): string => {
+    if (num === 0) return '';
+    const formatted = Math.round(num).toLocaleString('id-ID');
+    return `Rp. ${formatted}`;
+  };
+
   return (
     <div className="space-y-6">
       {/* Action panel */}
@@ -1125,7 +1131,7 @@ export default function VakasiLoyalisPage() {
                         inputMode="numeric"
                         pattern="[0-9]*"
                         placeholder="Rupiah (Contoh: 100000)"
-                        value={row.payGiven === 0 ? '' : String(row.payGiven)}
+                        value={formatCurrencyInput(row.payGiven)}
                         disabled={isReadOnly}
                         onChange={(e) => {
                           const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0;
