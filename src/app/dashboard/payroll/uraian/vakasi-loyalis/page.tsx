@@ -341,6 +341,15 @@ export default function VakasiLoyalisPage() {
       setMessage({ type: 'error', text: 'Nama Kegiatan harus diisi.' });
       return;
     }
+    const invalidWorker = workerRows.find(w => w.searchText?.trim() && !w.employeeId);
+    if (invalidWorker) {
+      setMessage({
+        type: 'error',
+        text: `Pegawai "${invalidWorker.searchText}" belum dipilih secara valid dari daftar dropdown. Silakan cari dan klik nama pegawai dari dropdown.`
+      });
+      return;
+    }
+
     const activeWorkers = workerRows.filter(w => w.employeeId);
     if (activeWorkers.length === 0) {
       setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai.' });
@@ -556,6 +565,15 @@ export default function VakasiLoyalisPage() {
       setMessage({ type: 'error', text: 'Nama Kegiatan harus diisi.' });
       return;
     }
+    const invalidWorker = workerRows.find(w => w.searchText?.trim() && !w.employeeId);
+    if (invalidWorker) {
+      setMessage({
+        type: 'error',
+        text: `Pegawai "${invalidWorker.searchText}" belum dipilih secara valid dari daftar dropdown. Silakan cari dan klik nama pegawai dari dropdown.`
+      });
+      return;
+    }
+
     const activeWorkers = workerRows.filter(w => w.employeeId);
     if (activeWorkers.length === 0) {
       setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai.' });
@@ -1157,6 +1175,7 @@ export default function VakasiLoyalisPage() {
                         placeholder="Cari Pegawai..."
                         value={row.searchText}
                         disabled={isReadOnly}
+                        autoComplete="new-password"
                         onChange={(e) => {
                           const val = e.target.value;
                           setWorkerRows(prev => {
