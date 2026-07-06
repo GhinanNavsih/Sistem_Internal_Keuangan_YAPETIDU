@@ -1147,7 +1147,7 @@ export default function VakasiLoyalisPage() {
             {/* List of Workers */}
             <div className="space-y-4 pt-2">
               <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">Daftar Penerima Vakasi</h4>
-              <div className="border border-slate-100 rounded-[20px] overflow-hidden bg-slate-50/50 p-4 space-y-3">
+              <div className="border border-slate-100 rounded-[20px] bg-slate-50/50 p-4 space-y-3">
                 {workerRows.map((row, idx) => (
                   <div key={idx} className="flex flex-col md:flex-row md:items-center gap-3">
                     <div className="flex-1 relative">
