@@ -200,10 +200,12 @@ export function generateKebutuhanDanaGajiXlsx(data: KebutuhanReportData): void {
   ];
 
   // 1. PENDAPATAN / GAJI Section
+  const earnRowIndices: number[] = []; // track 0-based row indices
   let earnNo = 1;
   GAJI_UTAMA_ROWS.forEach((rowDef, idx) => {
     const rowValues = mainSalaryValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
+    earnRowIndices.push(worksheetData.length);
     worksheetData.push([
       earnNo++,
       rowDef.name,
@@ -214,6 +216,7 @@ export function generateKebutuhanDanaGajiXlsx(data: KebutuhanReportData): void {
   
   // Tunjangan Jabatan (listed immediately in the same sequence)
   const totalTunjanganJabatanVal = tunjanganJabatanValues.reduce((sum, v) => sum + v, 0);
+  earnRowIndices.push(worksheetData.length);
   worksheetData.push([
     earnNo++,
     'TUNJANGAN JABATAN',
@@ -226,6 +229,7 @@ export function generateKebutuhanDanaGajiXlsx(data: KebutuhanReportData): void {
     const idx = sortedOtherEarningLabels.indexOf(label);
     const rowValues = otherEarningValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
+    earnRowIndices.push(worksheetData.length);
     worksheetData.push([
       earnNo++,
       label.toUpperCase(),
@@ -246,11 +250,13 @@ export function generateKebutuhanDanaGajiXlsx(data: KebutuhanReportData): void {
   worksheetData.push([]); // spacer below Jumlah Gaji Total
 
   // 5. POTONGAN Section
+  const dedRowIndices: number[] = []; // track 0-based row indices
   worksheetData.push(['', 'POTONGAN']);
   let potNo = 1;
   POTONGAN_ROWS.forEach((rowDef, idx) => {
     const rowValues = standardDeductionValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
+    dedRowIndices.push(worksheetData.length);
     worksheetData.push([
       potNo++,
       rowDef.name,
@@ -262,6 +268,7 @@ export function generateKebutuhanDanaGajiXlsx(data: KebutuhanReportData): void {
   sortedOtherDeductionLabels.forEach((label, idx) => {
     const rowValues = otherDeductionValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
+    dedRowIndices.push(worksheetData.length);
     worksheetData.push([
       potNo++,
       label.toUpperCase(),
@@ -305,6 +312,28 @@ export function generateKebutuhanDanaGajiXlsx(data: KebutuhanReportData): void {
   ]);
 
   const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+
+  // Apply faint green fill to earning rows and faint red fill to deduction rows
+  const EARN_FILL = { patternType: 'solid', fgColor: { rgb: 'EBFAEB' } }; // faint green
+  const DED_FILL  = { patternType: 'solid', fgColor: { rgb: 'FFEBEB' } }; // faint red
+  const NUM_COLS = 10; // A-J
+  const ALPHA = 'ABCDEFGHIJ';
+  earnRowIndices.forEach(r => {
+    for (let c = 0; c < NUM_COLS; c++) {
+      const ref = `${ALPHA[c]}${r + 1}`;
+      if (worksheet[ref]) {
+        worksheet[ref].s = { ...(worksheet[ref].s || {}), fill: EARN_FILL };
+      }
+    }
+  });
+  dedRowIndices.forEach(r => {
+    for (let c = 0; c < NUM_COLS; c++) {
+      const ref = `${ALPHA[c]}${r + 1}`;
+      if (worksheet[ref]) {
+        worksheet[ref].s = { ...(worksheet[ref].s || {}), fill: DED_FILL };
+      }
+    }
+  });
 
   // Setup title merges: Columns A to J (index 0 to 9)
   const merges = [

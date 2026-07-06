@@ -238,25 +238,26 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
   };
 
   // 1. PENDAPATAN / GAJI Section
+  const EARN_BG = [235, 250, 235] as [number, number, number]; // faint green
   let earnNo = 1;
   GAJI_UTAMA_ROWS.forEach((rowDef, idx) => {
     const rowValues = mainSalaryValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
     body.push([
-      { content: (earnNo++).toString(), styles: { halign: 'center' as const } },
-      { content: rowDef.name },
-      ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const } })),
-      { content: formatIDR(rowTotal), styles: { halign: 'right' as const, fontStyle: 'bold' } }
+      { content: (earnNo++).toString(), styles: { halign: 'center' as const, fillColor: EARN_BG } },
+      { content: rowDef.name, styles: { fillColor: EARN_BG } },
+      ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const, fillColor: EARN_BG } })),
+      { content: formatIDR(rowTotal), styles: { halign: 'right' as const, fontStyle: 'bold', fillColor: EARN_BG } }
     ]);
   });
 
   // Tunjangan Jabatan (listed immediately in the same sequence)
   const totalTunjanganJabatanVal = tunjanganJabatanValues.reduce((sum, v) => sum + v, 0);
   body.push([
-    { content: (earnNo++).toString(), styles: { halign: 'center' as const } },
-    { content: 'TUNJANGAN JABATAN' },
-    ...tunjanganJabatanValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const } })),
-    { content: formatIDR(totalTunjanganJabatanVal), styles: { halign: 'right' as const, fontStyle: 'bold' } }
+    { content: (earnNo++).toString(), styles: { halign: 'center' as const, fillColor: EARN_BG } },
+    { content: 'TUNJANGAN JABATAN', styles: { fillColor: EARN_BG } },
+    ...tunjanganJabatanValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const, fillColor: EARN_BG } })),
+    { content: formatIDR(totalTunjanganJabatanVal), styles: { halign: 'right' as const, fontStyle: 'bold', fillColor: EARN_BG } }
   ]);
 
   // Dynamic Variable Earnings (Vakasi/Instruksional/etc.)
@@ -265,10 +266,10 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
     const rowValues = otherEarningValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
     body.push([
-      { content: (earnNo++).toString(), styles: { halign: 'center' as const } },
-      { content: label.toUpperCase() },
-      ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const } })),
-      { content: formatIDR(rowTotal), styles: { halign: 'right' as const, fontStyle: 'bold' } }
+      { content: (earnNo++).toString(), styles: { halign: 'center' as const, fillColor: EARN_BG } },
+      { content: label.toUpperCase(), styles: { fillColor: EARN_BG } },
+      ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const, fillColor: EARN_BG } })),
+      { content: formatIDR(rowTotal), styles: { halign: 'right' as const, fontStyle: 'bold', fillColor: EARN_BG } }
     ]);
   });
 
@@ -287,16 +288,17 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
   ]);
 
   // 5. POTONGAN Section
+  const DED_BG = [255, 235, 235] as [number, number, number]; // faint red
   addSectionHeader('POTONGAN');
   let potNo = 1;
   POTONGAN_ROWS.forEach((rowDef, idx) => {
     const rowValues = standardDeductionValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
     body.push([
-      { content: (potNo++).toString(), styles: { halign: 'center' as const } },
-      { content: rowDef.name },
-      ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const } })),
-      { content: formatIDR(rowTotal), styles: { halign: 'right' as const, fontStyle: 'bold' } }
+      { content: (potNo++).toString(), styles: { halign: 'center' as const, fillColor: DED_BG } },
+      { content: rowDef.name, styles: { fillColor: DED_BG } },
+      ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const, fillColor: DED_BG } })),
+      { content: formatIDR(rowTotal), styles: { halign: 'right' as const, fontStyle: 'bold', fillColor: DED_BG } }
     ]);
   });
 
@@ -304,10 +306,10 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
     const rowValues = otherDeductionValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
     body.push([
-      { content: (potNo++).toString(), styles: { halign: 'center' as const } },
-      { content: label.toUpperCase() },
-      ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const } })),
-      { content: formatIDR(rowTotal), styles: { halign: 'right' as const, fontStyle: 'bold' } }
+      { content: (potNo++).toString(), styles: { halign: 'center' as const, fillColor: DED_BG } },
+      { content: label.toUpperCase(), styles: { fillColor: DED_BG } },
+      ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const, fillColor: DED_BG } })),
+      { content: formatIDR(rowTotal), styles: { halign: 'right' as const, fontStyle: 'bold', fillColor: DED_BG } }
     ]);
   });
 
