@@ -237,66 +237,53 @@ export function generateKebutuhanDanaGajiPdf(data: KebutuhanReportData): void {
     ]);
   };
 
-  // 1. GAJI UTAMA Section
-  addSectionHeader('GAJI UTAMA');
+  // 1. PENDAPATAN / GAJI Section
+  let earnNo = 1;
   GAJI_UTAMA_ROWS.forEach((rowDef, idx) => {
     const rowValues = mainSalaryValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
     body.push([
-      { content: (idx + 1).toString(), styles: { halign: 'center' as const } },
+      { content: (earnNo++).toString(), styles: { halign: 'center' as const } },
       { content: rowDef.name },
       ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const } })),
       { content: formatIDR(rowTotal), styles: { halign: 'right' as const, fontStyle: 'bold' } }
     ]);
   });
 
-  // Jumlah Gaji Utama summary row
-  const totalGajiUtamaVal = gajiUtamaTotals.reduce((sum, v) => sum + v, 0);
-  body.push([
-    { content: '', styles: { fillColor: [226, 239, 218], fontStyle: 'bold' } },
-    { content: 'JUMLAH GAJI UTAMA', styles: { fillColor: [226, 239, 218], fontStyle: 'bold' } },
-    ...gajiUtamaTotals.map(v => ({ content: formatIDR(v), styles: { fillColor: [226, 239, 218], halign: 'right' as const, fontStyle: 'bold' } })),
-    { content: formatIDR(totalGajiUtamaVal), styles: { fillColor: [226, 239, 218], halign: 'right' as const, fontStyle: 'bold' } }
-  ]);
-
-  // 2. TUNJANGAN JABATAN
+  // Tunjangan Jabatan (listed immediately in the same sequence)
   const totalTunjanganJabatanVal = tunjanganJabatanValues.reduce((sum, v) => sum + v, 0);
   body.push([
-    { content: '', styles: { fontStyle: 'bold' } },
-    { content: 'TUNJANGAN JABATAN', styles: { fontStyle: 'bold' } },
-    ...tunjanganJabatanValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const, fontStyle: 'bold' } })),
+    { content: (earnNo++).toString(), styles: { halign: 'center' as const } },
+    { content: 'TUNJANGAN JABATAN' },
+    ...tunjanganJabatanValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const } })),
     { content: formatIDR(totalTunjanganJabatanVal), styles: { halign: 'right' as const, fontStyle: 'bold' } }
   ]);
 
-  // 3. VAKASI LAIN-LAIN Section
-  addSectionHeader('VAKASI LAIN-LAIN');
-  sortedOtherEarningLabels.forEach((label, idx) => {
+  // Dynamic Variable Earnings (Vakasi/Instruksional/etc.)
+  sortedOtherEarningLabels.forEach((label) => {
+    const idx = sortedOtherEarningLabels.indexOf(label);
     const rowValues = otherEarningValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
     body.push([
-      { content: (idx + 1).toString(), styles: { halign: 'center' as const } },
+      { content: (earnNo++).toString(), styles: { halign: 'center' as const } },
       { content: label.toUpperCase() },
       ...rowValues.map(v => ({ content: formatIDR(v), styles: { halign: 'right' as const } })),
       { content: formatIDR(rowTotal), styles: { halign: 'right' as const, fontStyle: 'bold' } }
     ]);
   });
 
-  // Jumlah Gaji Tambahan summary row
-  const totalGajiTambahanVal = gajiTambahanTotals.reduce((sum, v) => sum + v, 0);
-  body.push([
-    { content: '', styles: { fillColor: [226, 239, 218], fontStyle: 'bold' } },
-    { content: 'JUMLAH GAJI TAMBAHAN', styles: { fillColor: [226, 239, 218], fontStyle: 'bold' } },
-    ...gajiTambahanTotals.map(v => ({ content: formatIDR(v), styles: { fillColor: [226, 239, 218], halign: 'right' as const, fontStyle: 'bold' } })),
-    { content: formatIDR(totalGajiTambahanVal), styles: { fillColor: [226, 239, 218], halign: 'right' as const, fontStyle: 'bold' } }
-  ]);
-
-  // 4. JUMLAH GAJI TOTAL summary row
+  // JUMLAH GAJI TOTAL summary row
   const totalGajiTotalVal = gajiTotalValues.reduce((sum, v) => sum + v, 0);
   body.push([
     { content: '', styles: { fillColor: [252, 243, 207], fontStyle: 'bold' } },
     { content: 'JUMLAH GAJI TOTAL', styles: { fillColor: [252, 243, 207], fontStyle: 'bold' } },
     ...gajiTotalValues.map(v => ({ content: formatIDR(v), styles: { fillColor: [252, 243, 207], halign: 'right' as const, fontStyle: 'bold' } })),
     { content: formatIDR(totalGajiTotalVal), styles: { fillColor: [252, 243, 207], halign: 'right' as const, fontStyle: 'bold' } }
+  ]);
+
+  // Add an empty row spacer below Jumlah Gaji Total
+  body.push([
+    { content: '', colSpan: 10, styles: { fillColor: [255, 255, 255], minCellHeight: 4 } }
   ]);
 
   // 5. POTONGAN Section

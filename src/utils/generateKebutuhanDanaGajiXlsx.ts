@@ -199,66 +199,42 @@ export function generateKebutuhanDanaGajiXlsx(data: KebutuhanReportData): void {
     ]
   ];
 
-  // 1. GAJI UTAMA Section
-  worksheetData.push(['', 'GAJI UTAMA']);
+  // 1. PENDAPATAN / GAJI Section
+  let earnNo = 1;
   GAJI_UTAMA_ROWS.forEach((rowDef, idx) => {
     const rowValues = mainSalaryValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
     worksheetData.push([
-      idx + 1,
+      earnNo++,
       rowDef.name,
       ...rowValues,
       rowTotal
     ]);
   });
   
-  // Jumlah Gaji Utama summary row
-  const totalGajiUtamaVal = gajiUtamaTotals.reduce((sum, v) => sum + v, 0);
-  worksheetData.push([
-    '',
-    'JUMLAH GAJI UTAMA',
-    ...gajiUtamaTotals,
-    totalGajiUtamaVal
-  ]);
-
-  worksheetData.push([]); // spacer
-
-  // 2. TUNJANGAN JABATAN Row
+  // Tunjangan Jabatan (listed immediately in the same sequence)
   const totalTunjanganJabatanVal = tunjanganJabatanValues.reduce((sum, v) => sum + v, 0);
   worksheetData.push([
-    '',
+    earnNo++,
     'TUNJANGAN JABATAN',
     ...tunjanganJabatanValues,
     totalTunjanganJabatanVal
   ]);
 
-  worksheetData.push([]); // spacer
-
-  // 3. VAKASI LAIN-LAIN Section
-  worksheetData.push(['', 'VAKASI LAIN-LAIN']);
-  sortedOtherEarningLabels.forEach((label, idx) => {
+  // Dynamic Variable Earnings (Vakasi/Instruksional/etc.)
+  sortedOtherEarningLabels.forEach((label) => {
+    const idx = sortedOtherEarningLabels.indexOf(label);
     const rowValues = otherEarningValues[idx];
     const rowTotal = rowValues.reduce((sum, v) => sum + v, 0);
     worksheetData.push([
-      idx + 1,
+      earnNo++,
       label.toUpperCase(),
       ...rowValues,
       rowTotal
     ]);
   });
 
-  // Jumlah Gaji Tambahan summary row
-  const totalGajiTambahanVal = gajiTambahanTotals.reduce((sum, v) => sum + v, 0);
-  worksheetData.push([
-    '',
-    'JUMLAH GAJI TAMBAHAN',
-    ...gajiTambahanTotals,
-    totalGajiTambahanVal
-  ]);
-
-  worksheetData.push([]); // spacer
-
-  // 4. JUMLAH GAJI TOTAL summary row
+  // JUMLAH GAJI TOTAL summary row
   const totalGajiTotalVal = gajiTotalValues.reduce((sum, v) => sum + v, 0);
   worksheetData.push([
     '',
@@ -267,7 +243,7 @@ export function generateKebutuhanDanaGajiXlsx(data: KebutuhanReportData): void {
     totalGajiTotalVal
   ]);
 
-  worksheetData.push([]); // spacer
+  worksheetData.push([]); // spacer below Jumlah Gaji Total
 
   // 5. POTONGAN Section
   worksheetData.push(['', 'POTONGAN']);
