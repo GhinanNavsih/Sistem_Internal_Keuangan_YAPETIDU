@@ -1291,6 +1291,7 @@ export default function UserManagementPage() {
             <Button
               type="button"
               variant="ghost"
+              autoFocus
               onClick={() => setEditingUser(null)}
               className="rounded-xl font-bold text-slate-500 hover:bg-slate-50"
             >
