@@ -124,42 +124,58 @@ export async function PUT(req: NextRequest) {
     await verifySuperAdmin(req);
 
     const body = await req.json();
-    const { uid, displayName, role, permittedCategories, linkedEmployeeId } = body;
+    const { uid, email, displayName, role, permittedCategories, linkedEmployeeId } = body;
 
     if (!uid || !role || !permittedCategories) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 1. Update Auth profile displayName if provided
+    // 1. Update Auth profile (email & displayName) if provided
     try {
-      await adminAuth.updateUser(uid, {
+      const updatePayloadAuth: Record<string, any> = {
         displayName: displayName || undefined,
-      });
-    } catch (authErr) {
-      console.warn(`Could not update displayName in Auth for user ${uid}:`, authErr);
+      };
+      if (email) {
+        updatePayloadAuth.email = email;
+      }
+      await adminAuth.updateUser(uid, updatePayloadAuth);
+    } catch (authErr: any) {
+      console.warn(`Could not update Auth details for user ${uid}:`, authErr);
+      if (authErr.code === 'auth/email-already-exists') {
+        return NextResponse.json({ error: 'Email tersebut sudah terdaftar di sistem.' }, { status: 400 });
+      }
+      if (authErr.code === 'auth/invalid-email') {
+        return NextResponse.json({ error: 'Format email tidak valid.' }, { status: 400 });
+      }
+      throw authErr;
     }
 
     // 2. Update Firestore profile doc
-    const updatePayload: Record<string, any> = {
+    const updatePayloadDoc: Record<string, any> = {
       displayName: displayName || '',
       role,
       permittedCategories,
       updatedAt: new Date().toISOString(),
     };
 
-    // Attach or clear linked employee ID for honorer/loyalis accounts
-    if ((role === 'honorer' || role === 'loyalis') && linkedEmployeeId) {
-      updatePayload.linkedEmployeeId = linkedEmployeeId;
-    } else {
-      updatePayload.linkedEmployeeId = admin.firestore.FieldValue.delete();
+    if (email) {
+      updatePayloadDoc.email = email;
     }
 
-    await adminDb.collection('users').doc(uid).update(updatePayload);
+    // Attach or clear linked employee ID for honorer/loyalis accounts
+    if ((role === 'honorer' || role === 'loyalis') && linkedEmployeeId) {
+      updatePayloadDoc.linkedEmployeeId = linkedEmployeeId;
+    } else {
+      updatePayloadDoc.linkedEmployeeId = admin.firestore.FieldValue.delete();
+    }
+
+    await adminDb.collection('users').doc(uid).update(updatePayloadDoc);
 
     return NextResponse.json({
       message: 'User updated successfully',
       user: {
         uid,
+        email,
         displayName,
         role,
         permittedCategories,

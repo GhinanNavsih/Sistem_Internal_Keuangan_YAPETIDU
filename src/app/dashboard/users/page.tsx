@@ -130,6 +130,7 @@ export default function UserManagementPage() {
   // Edit User modal state
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [editDisplayName, setEditDisplayName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
   const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis'>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
   const [editLinkedEmployeeId, setEditLinkedEmployeeId] = useState('');
@@ -332,6 +333,7 @@ export default function UserManagementPage() {
   const openEditDialog = (u: ManagedUser) => {
     setEditingUser(u);
     setEditDisplayName(u.displayName || '');
+    setEditEmail(u.email || '');
     setEditRole(u.role);
     setEditPermitted(u.permittedCategories || []);
     setEditLinkedEmployeeId(u.linkedEmployeeId || '');
@@ -362,6 +364,7 @@ export default function UserManagementPage() {
         },
         body: JSON.stringify({
           uid: editingUser.uid,
+          email: editEmail,
           displayName: editDisplayName,
           role: editRole,
           permittedCategories: (editRole === 'honorer' || editRole === 'loyalis') ? (editLinkedEmployeeId ? [allEmployees.find(e => e.id === editLinkedEmployeeId)?.detail || ''] : []) : editPermitted,
@@ -385,6 +388,7 @@ export default function UserManagementPage() {
             ? {
                 ...u,
                 displayName: editDisplayName,
+                email: editEmail,
                 role: editRole,
                 permittedCategories: updatedCategories,
                 linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis') ? editLinkedEmployeeId : undefined,
@@ -1096,6 +1100,20 @@ export default function UserManagementPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Email Address */}
+              <div>
+                <Label htmlFor="editEmail" className="text-xs font-semibold text-slate-500 block mb-1.5">Alamat Email</Label>
+                <Input
+                  id="editEmail"
+                  type="email"
+                  placeholder="Ketik alamat email..."
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className="rounded-xl border-slate-200 mt-0 focus:border-indigo-500 focus:ring-indigo-500/20 h-[42px]"
+                  autoComplete="off"
+                />
               </div>
 
               {/* Role */}
