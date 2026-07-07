@@ -936,10 +936,10 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
     },
     {
       title: '6. Tunjangan Struktural',
-      formula: 'Formula: Jabatan Utama (100%) + Jabatan Tambahan (50% masing-masing)',
+      formula: 'Formula: Jabatan Utama (100%) + Jabatan Tambahan (50%)',
       bullets: [
-        'Jabatan dengan tunjangan tertinggi dibayarkan 100%.',
-        'Setiap jabatan tambahan dibayarkan sebesar 50%.'
+        'Dibayarkan penuh (100%) untuk jabatan dengan tunjangan tertinggi.',
+        'Masing-masing jabatan struktural tambahan dibayar sebesar 50%.'
       ],
       params: [
         { label: 'Jabatan Terdaftar', val: data.jobCategory || '-' },
@@ -950,8 +950,8 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
       title: '7. Tunjangan Hari Tua & Instruksional',
       formula: 'Formula: THT (10% x Gapok) + Nominal Tetap Instruksional',
       bullets: [
-        'Tunjangan Hari Tua = 10% dari Gaji Pokok subsidi penuh dari Yayasan.',
-        'Tunjangan Instruksional = nominal tetap sesuai tugas pengajaran.'
+        'Tunjangan Hari Tua = 10% dari Gaji Pokok (subsidi dari Yayasan).',
+        'Tunjangan Instruksional = nominal tetap sesuai beban instruksional.'
       ],
       params: [
         { label: 'Tunjangan Hari Tua', val: formatIDR(tunjHariTuaVal) },
@@ -973,7 +973,7 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
     },
     {
       title: '9. Vakasi Tambahan',
-      formula: 'Formula: Σ Honorarium Kegiatan Resmi Disetujui',
+      formula: 'Formula: Total Honorarium Kegiatan Resmi',
       bullets: [
         'Akumulasi honorarium dari kepanitiaan/kegiatan resmi disetujui periode ini.'
       ],

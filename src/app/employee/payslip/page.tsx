@@ -263,7 +263,7 @@ export default function EmployeePayslipPage() {
     {
       id: 'vakasi',
       title: 'Vakasi Tambahan',
-      formula: 'Σ Honorarium Kegiatan Disetujui',
+      formula: 'Total Honorarium Kegiatan Disetujui',
       bullets: [
         'Akumulasi honorarium kegiatan resmi pada bulan berjalan',
         'Hanya kegiatan yang telah disetujui yang dihitung',
