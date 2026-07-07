@@ -319,7 +319,7 @@ export default function EmployeePayslipPage() {
     if (!profile?.linkedEmployeeId) return;
     if (isDefaultPeriodSet) return;
 
-    const determineDefaultPeriod = async () => {
+    const determineDefaultPeriod = async (attempt = 1) => {
       try {
         const empId = profile.linkedEmployeeId as string;
         const q = query(
@@ -371,19 +371,24 @@ export default function EmployeePayslipPage() {
         setYear(targetYear);
         setMonth(targetMonth);
         setIsDefaultPeriodSet(true);
-      } catch (err) {
-        console.error("Error determining default period:", err);
-        const d = new Date();
-        d.setMonth(d.getMonth() - 1);
-        let fallbackYear = d.getFullYear();
-        let fallbackMonth = d.getMonth() + 1;
-        if (fallbackYear < 2026 || (fallbackYear === 2026 && fallbackMonth < 6)) {
-          fallbackYear = 2026;
-          fallbackMonth = 6;
+      } catch (err: any) {
+        console.error(`Error determining default period (attempt ${attempt}):`, err);
+        const isPermissionError = err?.code === 'permission-denied' || err?.message?.toLowerCase().includes('permission');
+        if (isPermissionError && attempt < 3) {
+          setTimeout(() => determineDefaultPeriod(attempt + 1), 600);
+        } else {
+          const d = new Date();
+          d.setMonth(d.getMonth() - 1);
+          let fallbackYear = d.getFullYear();
+          let fallbackMonth = d.getMonth() + 1;
+          if (fallbackYear < 2026 || (fallbackYear === 2026 && fallbackMonth < 6)) {
+            fallbackYear = 2026;
+            fallbackMonth = 6;
+          }
+          setYear(fallbackYear);
+          setMonth(fallbackMonth);
+          setIsDefaultPeriodSet(true);
         }
-        setYear(fallbackYear);
-        setMonth(fallbackMonth);
-        setIsDefaultPeriodSet(true);
       }
     };
 
@@ -426,7 +431,7 @@ export default function EmployeePayslipPage() {
     if (!profile?.linkedEmployeeId) return;
     if (!isDefaultPeriodSet) return;
 
-    const fetchPayslipData = async () => {
+    const fetchPayslipData = async (attempt = 1) => {
       try {
         setLoading(true);
         setConfirmedSlip(null);
@@ -862,9 +867,14 @@ export default function EmployeePayslipPage() {
         setCalculatedEarnings(earnings);
         setCalculatedDeductions(deductions);
         setLoading(false);
-      } catch (err) {
-        console.error("Error fetching/calculating payslip data:", err);
-        setLoading(false);
+      } catch (err: any) {
+        console.error(`Error fetching/calculating payslip data (attempt ${attempt}):`, err);
+        const isPermissionError = err?.code === 'permission-denied' || err?.message?.toLowerCase().includes('permission');
+        if (isPermissionError && attempt < 3) {
+          setTimeout(() => fetchPayslipData(attempt + 1), 600);
+        } else {
+          setLoading(false);
+        }
       }
     };
 
