@@ -41,6 +41,10 @@ import {
   Coins,
   KeyRound,
   Lock,
+  ChevronDown,
+  ChevronUp,
+  BookOpen,
+  MessageCircle,
 } from 'lucide-react';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
 import { MONTHS_ID } from '@/utils/rekapConfig';
@@ -138,19 +142,135 @@ export default function EmployeePayslipPage() {
     }
   };
 
-  // Period dropdown state (defaults to ongoing month or June 2026 minimum)
+  // Period dropdown state (defaults to last month or June 2026 minimum)
   const [month, setMonth] = useState(() => {
     const d = new Date();
-    const currentYear = d.getFullYear();
-    const currentMonth = d.getMonth() + 1;
-    if (currentYear === 2026) {
-      return Math.max(6, currentMonth);
+    d.setMonth(d.getMonth() - 1);
+    const m = d.getMonth() + 1;
+    const y = d.getFullYear();
+    if (y < 2026 || (y === 2026 && m < 6)) {
+      return 6;
     }
-    return currentMonth;
+    return m;
   });
   const [year, setYear] = useState(() => {
-    return Math.max(2026, new Date().getFullYear());
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    const y = d.getFullYear();
+    return Math.max(2026, y);
   });
+  const [isDefaultPeriodSet, setIsDefaultPeriodSet] = useState(false);
+  const [showDoc, setShowDoc] = useState(false);
+
+  const payrollDocumentation = useMemo(() => [
+    {
+      id: 'gapok',
+      title: 'Gaji Pokok',
+      formula: '(Pangkat/Golongan, Masa Kerja)',
+      bullets: [
+        'Ditentukan oleh Golongan dan Masa Kerja pegawai',
+        'Masa Kerja dihitung dari tanggal pengakuan masa kerja atau tanggal mulai bekerja',
+        'Dicocokkan secara otomatis dengan Matriks Gaji yang berlaku',
+      ],
+    },
+    {
+      id: 'keluarga',
+      title: 'Tunjangan Keluarga',
+      formula: 'Gaji Pokok × % Akumulasi',
+      bullets: [
+        'Dihitung dari jumlah tanggungan terdaftar, dikalikan dengan Gaji Pokok',
+      ],
+      table: {
+        headers: ['Tanggungan', 'Persentase'],
+        rows: [
+          ['Suami / Istri', '5%'],
+          ['Anak SD', '5%'],
+          ['Anak SLTP', '7,5%'],
+          ['Anak SLTA', '10%'],
+          ['Anak PT', '12,5%'],
+        ],
+      },
+    },
+    {
+      id: 'fungsional',
+      title: 'Tunjangan Fungsional',
+      formula: '(Pendidikan, Jabatan Akademik)',
+      bullets: [
+        'Ditentukan oleh tingkat pendidikan terakhir pegawai',
+        'Disesuaikan dengan jenjang jabatan fungsional akademik',
+        'Jika jenjang belum ditetapkan → menggunakan nilai dasar',
+        'Jika jenjang = 0 → Rp 0',
+      ],
+    },
+    {
+      id: 'kepangkatan',
+      title: 'Kepangkatan',
+      formula: '(Akumulasi Kredit / KUM)',
+      bullets: [
+        'Berdasarkan total akumulasi angka kredit kepangkatan (KUM)',
+        'Nominal dicocokkan dengan Matriks Kepangkatan yang berlaku',
+        'Jika angka kredit tidak ditemukan di matriks → Rp 0',
+      ],
+    },
+    {
+      id: 'presensi',
+      title: 'Presensi & Bonus Presensi',
+      formula: 'Jam Maks × Rp 1.650  |  Bonus: Rp 250.000',
+      bullets: [
+        'Penerimaan = Hari Kerja × Jam Wajib/hari × Rp 1.650 (dikreditkan penuh)',
+        'Jumlah Hari Kerja ditentukan berdasarkan jumlah hari kerja aktif riil pada bulan bersangkutan',
+        'Jika jam aktual < jam target, selisih (delta) dideduksi di Potongan',
+        'Potongan Presensi = (menit absensi ÷ 60) × Rp 1.650',
+        'Bonus Presensi Rp 250.000 dikreditkan penuh; dipotong jika ada pelanggaran',
+      ],
+      table: {
+        headers: ['Komponen', 'Penerimaan', 'Potongan'],
+        rows: [
+          ['Presensi (jam kerja)', 'Jam Maks × Rp 1.650', 'Delta jam × Rp 1.650'],
+          ['Bonus Presensi', 'Rp 250.000', 'Sesuai pelanggaran'],
+        ],
+      },
+    },
+    {
+      id: 'struktural',
+      title: 'Struktural',
+      formula: 'Jabatan #1 (100%) + Jabatan #2+ (50%)',
+      bullets: [
+        'Jabatan dengan tunjangan tertinggi dibayar 100%',
+        'Jabatan tambahan masing-masing dibayar 50%',
+        'Jika tidak memiliki jabatan struktural → Rp 0',
+      ],
+    },
+    {
+      id: 'hari_tua_instruksional',
+      title: 'T. Hari Tua & Instruksional',
+      formula: 'THT: 10% × Gapok  |  Instruksional: Nominal Tetap',
+      bullets: [
+        'T. Hari Tua = 10% dari Gaji Pokok (subsidi Yayasan)',
+        'T. Instruksional = nominal tetap sesuai beban tugas',
+      ],
+    },
+    {
+      id: 'bpjs_beras',
+      title: 'T. BPJS & Beras',
+      formula: 'Subsidi BPJS + Tunjangan Beras',
+      bullets: [
+        'T. BPJS TK = subsidi iuran Ketenagakerjaan',
+        'T. BPJS KES = subsidi iuran Kesehatan',
+        'Beras = tunjangan pangan tetap',
+      ],
+    },
+    {
+      id: 'vakasi',
+      title: 'Vakasi Tambahan',
+      formula: 'Σ Honorarium Kegiatan Disetujui',
+      bullets: [
+        'Akumulasi honorarium kegiatan resmi pada bulan berjalan',
+        'Hanya kegiatan yang telah disetujui yang dihitung',
+        'Ditampilkan per nama kegiatan beserta nominalnya',
+      ],
+    },
+  ], []);
 
   // Selectable years: from current year down to 2026
   const availableYears = useMemo(() => {
@@ -162,11 +282,17 @@ export default function EmployeePayslipPage() {
     return years;
   }, []);
 
-  // Selectable months: depends on selected year
+  // Selectable months: depends on selected year (limited from June 2026 to maximum current month)
   const availableMonths = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+
     const months = [];
     const startMonth = year === 2026 ? 6 : 1;
-    for (let m = startMonth; m <= 12; m++) {
+    const endMonth = year === currentYear ? currentMonth : 12;
+
+    for (let m = startMonth; m <= endMonth; m++) {
       months.push({
         value: m,
         label: MONTHS_ID[m - 1]
@@ -177,14 +303,96 @@ export default function EmployeePayslipPage() {
 
   // Adjust month if the current selection becomes invalid
   useEffect(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+
     if (year === 2026 && month < 6) {
       setMonth(6);
+    } else if (year === currentYear && month > currentMonth) {
+      setMonth(currentMonth);
     }
   }, [year, month]);
 
+  // Fetch default period: last locked payslip, or fallback to last month
+  useEffect(() => {
+    if (!profile?.linkedEmployeeId) return;
+    if (isDefaultPeriodSet) return;
+
+    const determineDefaultPeriod = async () => {
+      try {
+        const empId = profile.linkedEmployeeId as string;
+        const q = query(
+          collection(db, 'PayrollSlipStates'),
+          where('employeeId', '==', empId),
+          where('status', '==', 'locked')
+        );
+        const querySnapshot = await getDocs(q);
+
+        let targetYear = 2026;
+        let targetMonth = 6;
+        let foundLocked = false;
+
+        if (!querySnapshot.empty) {
+          let latestPeriodVal = 0;
+          querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const period = data.period; // e.g. "2026_06"
+            if (period && typeof period === 'string') {
+              const parts = period.split('_');
+              if (parts.length === 2) {
+                const y = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10);
+                const val = y * 12 + m;
+                if (val > latestPeriodVal) {
+                  latestPeriodVal = val;
+                  targetYear = y;
+                  targetMonth = m;
+                  foundLocked = true;
+                }
+              }
+            }
+          });
+        }
+
+        if (!foundLocked) {
+          const d = new Date();
+          d.setMonth(d.getMonth() - 1);
+          let fallbackYear = d.getFullYear();
+          let fallbackMonth = d.getMonth() + 1;
+          if (fallbackYear < 2026 || (fallbackYear === 2026 && fallbackMonth < 6)) {
+            fallbackYear = 2026;
+            fallbackMonth = 6;
+          }
+          targetYear = fallbackYear;
+          targetMonth = fallbackMonth;
+        }
+
+        setYear(targetYear);
+        setMonth(targetMonth);
+        setIsDefaultPeriodSet(true);
+      } catch (err) {
+        console.error("Error determining default period:", err);
+        const d = new Date();
+        d.setMonth(d.getMonth() - 1);
+        let fallbackYear = d.getFullYear();
+        let fallbackMonth = d.getMonth() + 1;
+        if (fallbackYear < 2026 || (fallbackYear === 2026 && fallbackMonth < 6)) {
+          fallbackYear = 2026;
+          fallbackMonth = 6;
+        }
+        setYear(fallbackYear);
+        setMonth(fallbackMonth);
+        setIsDefaultPeriodSet(true);
+      }
+    };
+
+    determineDefaultPeriod();
+  }, [profile?.linkedEmployeeId, isDefaultPeriodSet]);
+
   const targetDate = useMemo(() => new Date(year, month - 1, 1), [year, month]);
   const periodText = useMemo(() => `${MONTHS_ID[month - 1]} ${year}`, [month, year]);
-  
+
   // Format for PayrollSlipStates document ID: YYYY_MM
   const periodKey = useMemo(() => {
     return `${year}_${String(month).padStart(2, '0')}`;
@@ -200,6 +408,14 @@ export default function EmployeePayslipPage() {
   const [confirmedSlip, setConfirmedSlip] = useState<any | null>(null);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [presenceInfo, setPresenceInfo] = useState<{
+    workingDays: number;
+    expectedHours: number;
+    absenceMinutes: number;
+    bonusDeduction: number;
+  } | null>(null);
+  const [vakasiEvents, setVakasiEvents] = useState<{ eventName: string; payGiven: number }[]>([]);
+  const [kepangkatanDesignations, setKepangkatanDesignations] = useState<Record<number, string>>({});
 
   // Dynamic calculations states
   const [calculatedEarnings, setCalculatedEarnings] = useState<PaySlipField[]>([]);
@@ -208,6 +424,7 @@ export default function EmployeePayslipPage() {
   // Load employee data & payslip details
   useEffect(() => {
     if (!profile?.linkedEmployeeId) return;
+    if (!isDefaultPeriodSet) return;
 
     const fetchPayslipData = async () => {
       try {
@@ -230,13 +447,13 @@ export default function EmployeePayslipPage() {
 
         const employee = { id: empSnap.id, ...empSnap.data() } as any;
         // Parse joinDate (date_of_hire) matching the admin page implementation
-        employee.joinDate = employee.employment_profile?.date_of_hire?.toDate?.() || 
-                            (employee.employment_profile?.date_of_hire ? new Date(employee.employment_profile.date_of_hire) : 
-                             (employee.personal_info?.join_date ? new Date(employee.personal_info.join_date) : new Date()));
-        
+        employee.joinDate = employee.employment_profile?.date_of_hire?.toDate?.() ||
+          (employee.employment_profile?.date_of_hire ? new Date(employee.employment_profile.date_of_hire) :
+            (employee.personal_info?.join_date ? new Date(employee.personal_info.join_date) : new Date()));
+
         // Parse dateRecognized matching the admin page implementation
-        employee.dateRecognized = employee.employment_profile?.date_recognized?.toDate?.() || 
-                                  (employee.employment_profile?.date_recognized ? new Date(employee.employment_profile.date_recognized) : undefined);
+        employee.dateRecognized = employee.employment_profile?.date_recognized?.toDate?.() ||
+          (employee.employment_profile?.date_recognized ? new Date(employee.employment_profile.date_recognized) : undefined);
 
         // Parse gradeLevel matching the admin page implementation
         employee.gradeLevel = employee.academic_and_tier?.level_code || employee.employment_profile?.grade_level || '';
@@ -252,6 +469,74 @@ export default function EmployeePayslipPage() {
           const slipData = slipSnap.data();
           setConfirmedSlip(slipData);
           setIsConfirmed(slipData.status === 'locked');
+
+          // Fetch presence info in background/parallel to show in guide
+          try {
+            const presenceSnap = await getDoc(doc(db, 'LoyalisPresence', periodKey));
+            if (presenceSnap.exists()) {
+              const pData = presenceSnap.data();
+              const empEntry = pData.entries?.[empId];
+              setPresenceInfo({
+                workingDays: pData.workingDays || 25,
+                expectedHours: pData.expectedHours || 6.5,
+                absenceMinutes: empEntry?.absenceMinutes || 0,
+                bonusDeduction: empEntry?.deduction || 0
+              });
+            } else {
+              setPresenceInfo({
+                workingDays: 25,
+                expectedHours: 6.5,
+                absenceMinutes: 0,
+                bonusDeduction: 0
+              });
+            }
+          } catch (e) {
+            console.error("Error fetching presence info for guide:", e);
+            setPresenceInfo({
+              workingDays: 25,
+              expectedHours: 6.5,
+              absenceMinutes: 0,
+              bonusDeduction: 0
+            });
+          }
+
+          // Fetch vakasi events in background/parallel to show in guide
+          try {
+            const vSnap = await getDocs(collection(db, 'VakasiTambahan'));
+            const events: { eventName: string; payGiven: number }[] = [];
+            vSnap.docs.forEach(d => {
+              const data = d.data();
+              if (data.period === periodToken && (!data.status || data.status === 'approved')) {
+                const eventName = data.eventName || '';
+                const worker = data.eventWorkers?.[empId];
+                if (worker && worker.payGiven) {
+                  events.push({ eventName, payGiven: worker.payGiven });
+                }
+              }
+            });
+            setVakasiEvents(events);
+          } catch (e) {
+            console.error("Error fetching vakasi events for guide:", e);
+            setVakasiEvents([]);
+          }
+
+          // Fetch kepangkatan matrix in background
+          try {
+            const kepConfigSnap = await getDoc(doc(db, 'SalaryMatrix_Kepangkatan', '_config'));
+            const activeKepVersion = kepConfigSnap.exists() ? (kepConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
+            const kepSnap = await getDocs(collection(db, 'SalaryMatrix_Kepangkatan', activeKepVersion, 'rows'));
+            const designations: Record<number, string> = {};
+            kepSnap.docs.forEach(d => {
+              const data = d.data();
+              const credit = Number(data.credit_score) || 0;
+              designations[credit] = data.designation || '';
+            });
+            setKepangkatanDesignations(designations);
+          } catch (e) {
+            console.error("Error fetching kepangkatan designations for guide:", e);
+            setKepangkatanDesignations({});
+          }
+
           setLoading(false);
           return;
         }
@@ -319,6 +604,14 @@ export default function EmployeePayslipPage() {
           kepMatrix[credit] = allowance;
         });
 
+        const designations: Record<number, string> = {};
+        kepSnap.docs.forEach(d => {
+          const data = d.data();
+          const credit = Number(data.credit_score) || 0;
+          designations[credit] = data.designation || '';
+        });
+        setKepangkatanDesignations(designations);
+
         // Calculate Gaji Pokok (Gapok)
         const gapok = calculateGapok(employee, matrixWhite, targetDate);
 
@@ -365,6 +658,15 @@ export default function EmployeePayslipPage() {
           }
         }
 
+        const draftAbsenceMinutes = presenceSnap.exists() && presenceSnap.data()?.entries?.[empId] ? (presenceSnap.data().entries[empId].absenceMinutes || 0) : 0;
+        const draftBonusDeduction = presenceSnap.exists() && presenceSnap.data()?.entries?.[empId] ? (presenceSnap.data().entries[empId].deduction || 0) : 0;
+        setPresenceInfo({
+          workingDays,
+          expectedHours,
+          absenceMinutes: draftAbsenceMinutes,
+          bonusDeduction: draftBonusDeduction
+        });
+
         // Calculate Vakasi Tambahan
         let vakasiTambahanSum = 0;
         const vakasiEventsList: { eventName: string; payGiven: number }[] = [];
@@ -382,6 +684,8 @@ export default function EmployeePayslipPage() {
             }
           }
         });
+
+        setVakasiEvents(vakasiEventsList);
 
         // Koperasi loan deduction
         const empName = employee.personal_info?.name || employee.name || '';
@@ -565,7 +869,7 @@ export default function EmployeePayslipPage() {
     };
 
     fetchPayslipData();
-  }, [profile?.linkedEmployeeId, periodKey, periodToken]);
+  }, [profile?.linkedEmployeeId, periodKey, periodToken, isDefaultPeriodSet]);
 
   // Compiled earnings & deductions based on finalized status
   const earnings = useMemo(() => {
@@ -581,6 +885,86 @@ export default function EmployeePayslipPage() {
   const totalDeductions = useMemo(() => deductions.reduce((sum: number, d: PaySlipField) => sum + d.amount, 0), [deductions]);
   const netSalary = useMemo(() => totalEarnings - totalDeductions, [totalEarnings, totalDeductions]);
 
+  const userVariables = useMemo(() => {
+    if (!employeeData) return null;
+
+    const baseDate = employeeData.dateRecognized || employeeData.joinDate;
+    const years = baseDate ? calculateYearsOfService(baseDate, targetDate) : 0;
+
+    const famMetrics = employeeData.family_allowance_metrics;
+    const spouseCount = Number(famMetrics?.spouse_count) || 0;
+    const sd = Number(famMetrics?.children_sd) || 0;
+    const sltp = Number(famMetrics?.children_sltp) || 0;
+    const slta = Number(famMetrics?.children_slta) || 0;
+    const pt = Number(famMetrics?.children_pt) || 0;
+    const familyPct = (spouseCount * 0.05) + (sd * 0.05) + (sltp * 0.075) + (slta * 0.1) + (pt * 0.125);
+
+    const positions = employeeData.employment_profile?.structural_positions || [];
+
+    const gapokVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'GAJI POKOK')?.amount || 0;
+    const tunjKeluargaVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. KELUARGA' || e.label.toUpperCase() === 'TUNJANGAN KELUARGA')?.amount || 0;
+    const tunjFungsionalVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. FUNGSIONAL' || e.label.toUpperCase() === 'TUNJANGAN FUNGSIONAL')?.amount || 0;
+    const tunjKepangkatanVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'KEPANGKATAN')?.amount || 0;
+    const presensiEarningVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'PRESENSI')?.amount || 0;
+    const bonusPresensiVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'BONUS PRESENSI')?.amount || 0;
+    const tunjInstruksionalVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. INSTRUKSIONAL' || e.label.toUpperCase() === 'INSTRUKSIONAL')?.amount || 0;
+    const tunjHariTuaVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. HARI TUA' || e.label.toUpperCase() === 'TUNJANGAN HARI TUA')?.amount || 0;
+    const bpjsTkVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. BPJS TK' || e.label.toUpperCase() === 'BPJS TK')?.amount || 0;
+    const bpjsKesVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'T. BPJS KES' || e.label.toUpperCase() === 'BPJS KES')?.amount || 0;
+    const berasVal = earnings.find((e: PaySlipField) => e.label.toUpperCase() === 'BERAS')?.amount || 0;
+    const totalStrukturalVal = earnings
+      .filter((e: PaySlipField) => e.label.toUpperCase().startsWith('STRUKTURAL:'))
+      .reduce((sum: number, e: PaySlipField) => sum + e.amount, 0);
+
+    const potonganPresensiVal = deductions.find((d: PaySlipField) => d.label.toUpperCase() === 'POTONGAN PRESENSI')?.amount || 0;
+    const potonganBonusPresensiVal = deductions.find((d: PaySlipField) => d.label.toUpperCase() === 'POTONGAN BONUS PRESENSI')?.amount || 0;
+
+    const userCreditScore = Number(employeeData.kepangkatan?.cummulativeCredit) || 0;
+    const kepangkatanDesignation = kepangkatanDesignations[userCreditScore] || 'Tidak Ditemukan';
+
+    return {
+      years,
+      baseDate,
+      spouseCount,
+      sd,
+      sltp,
+      slta,
+      pt,
+      familyPct,
+      positions,
+      gapokVal,
+      tunjKeluargaVal,
+      tunjFungsionalVal,
+      tunjKepangkatanVal,
+      presensiEarningVal,
+      bonusPresensiVal,
+      tunjInstruksionalVal,
+      tunjHariTuaVal,
+      bpjsTkVal,
+      bpjsKesVal,
+      berasVal,
+      totalStrukturalVal,
+      potonganPresensiVal,
+      potonganBonusPresensiVal,
+      userCreditScore,
+      kepangkationDesignation: kepangkatanDesignation
+    };
+  }, [employeeData, targetDate, earnings, deductions, kepangkatanDesignations]);
+
+  const DocRow = ({ label, value, highlight }: { label: string; value: React.ReactNode; highlight?: boolean }) => {
+    return (
+      <div className="flex py-0.5 text-xs sm:text-sm font-medium">
+        <div className={`w-40 sm:w-56 shrink-0 ${highlight ? 'text-indigo-600 font-bold' : 'text-slate-500'}`}>
+          {label}
+        </div>
+        <div className="w-6 text-center text-indigo-600 font-bold shrink-0">:</div>
+        <div className={`flex-1 ${highlight ? 'text-emerald-600 font-extrabold' : 'text-slate-800 font-bold'}`}>
+          {value}
+        </div>
+      </div>
+    );
+  };
+
   // Client-side PDF trigger
   const handleDownloadPdf = () => {
     if (!employeeData || !isConfirmed) return;
@@ -594,11 +978,27 @@ export default function EmployeePayslipPage() {
       isLoyalis: true,
       niy: employeeData.personal_info?.employee_id_niy || '',
       npwp: employeeData.personal_info?.tax_id_npwp || '',
-      familyMetrics: employeeData.family_allowance_metrics
+      familyMetrics: employeeData.family_allowance_metrics,
+      gradeLevel: employeeData.gradeLevel,
+      yearsOfService: userVariables?.years,
+      baseDate: userVariables?.baseDate,
+      educationLevel: employeeData.academic_and_tier?.education_level,
+      functionalTier: employeeData.academic_and_tier?.functional_tier,
+      cummulativeCredit: employeeData.kepangkatan?.cummulativeCredit,
+      designation: userVariables?.kepangkationDesignation,
+      presenceInfo: presenceInfo,
+      vakasiEvents: vakasiEvents
     };
 
     generatePaySlipPdf(slipData, true);
   };
+
+  const whatsappUrl = useMemo(() => {
+    if (!employeeData) return '#';
+    const empName = employeeData.personal_info?.name || profile?.displayName || 'Karyawan';
+    const text = `Yth. Admin Badan Administrasi Keuangan\n\nAssalamualaikum wr. wb., saya ${empName}`;
+    return `https://wa.me/6281331862933?text=${encodeURIComponent(text)}`;
+  }, [employeeData, profile?.displayName]);
 
   // ── Rendering states ──
 
@@ -763,13 +1163,13 @@ export default function EmployeePayslipPage() {
           </Card>
         ) : (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            
+
             {/* ─── FLOATING PAYSLIP DESIGN ─────────────────────────────────── */}
             <Card className="bg-white rounded-[32px] shadow-[0_15px_50px_rgba(0,0,0,0.06)] border-none overflow-hidden relative">
-              
+
               {/* Kop Surat Header */}
               <div className="p-6 md:p-8 bg-gradient-to-r from-slate-50/80 via-indigo-50/20 to-slate-50/80 border-b border-slate-100 flex flex-col items-center text-center relative">
-                
+
                 {/* Floating Status Badge */}
                 <div className="md:absolute top-6 right-6 mb-4 md:mb-0">
                   {isConfirmed ? (
@@ -798,7 +1198,7 @@ export default function EmployeePayslipPage() {
                     className="h-14 w-auto object-contain shrink-0"
                   />
                 </div>
-                
+
                 <h3 className="text-xs font-bold text-slate-800 tracking-wider uppercase">YAYASAN PESANTREN TINGGI DARUL 'ULUM</h3>
                 <h2 className="text-sm font-extrabold text-slate-900 tracking-wide mt-1 uppercase">UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM</h2>
                 <p className="text-[10px] text-slate-400 font-medium mt-1">Pondok Pesantren Darul 'Ulum Peterongan Jombang 61481 Telp. (0321) 873655</p>
@@ -831,12 +1231,12 @@ export default function EmployeePayslipPage() {
 
               {/* Earnings & Deductions Tables */}
               <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-                
+
                 {/* Earnings List */}
                 <div className="p-6 md:p-8 space-y-4 bg-emerald-50/15">
                   <h4 className="text-xs font-bold text-emerald-700 uppercase tracking-widest flex items-center gap-1.5">
                     <TrendingUp className="w-4 h-4 text-emerald-500" />
-                    I. PENERIMAAN (EARNINGS)
+                    I. PENERIMAAN
                   </h4>
                   <div className="space-y-2.5 divide-y divide-slate-50">
                     {earnings.map((item: PaySlipField, idx: number) => (
@@ -856,7 +1256,7 @@ export default function EmployeePayslipPage() {
                 <div className="p-6 md:p-8 space-y-4 bg-rose-50/15">
                   <h4 className="text-xs font-bold text-rose-700 uppercase tracking-widest flex items-center gap-1.5">
                     <TrendingDown className="w-4 h-4 text-rose-500" />
-                    II. POTONGAN (DEDUCTIONS)
+                    II. POTONGAN
                   </h4>
                   <div className="space-y-2.5 divide-y divide-slate-50">
                     {deductions.map((item: PaySlipField, idx: number) => (
@@ -889,7 +1289,7 @@ export default function EmployeePayslipPage() {
               {/* NET SALARY CARD BOX */}
               <div className="p-6 md:p-8 bg-gradient-to-r from-indigo-50/30 via-indigo-50/80 to-purple-50/30 border-t border-b border-indigo-100 flex flex-col md:flex-row items-center justify-between gap-4">
                 <div>
-                  <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest block">PENERIMAAN BERSIH (NET SALARY)</span>
+                  <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest block">PENERIMAAN BERSIH</span>
                   <span className="text-3xl font-extrabold text-indigo-800 tracking-tight block mt-0.5 tabular-nums">
                     {formatIDR(netSalary)}
                   </span>
@@ -902,38 +1302,200 @@ export default function EmployeePayslipPage() {
                 </div>
               </div>
 
-              {/* Quote Block */}
-              <div className="p-6 md:p-8 bg-amber-50/15 flex justify-center text-center">
-                <div className="max-w-lg border border-amber-100/50 rounded-2xl p-4.5 bg-[#FFFDF9] shadow-inner">
-                  <p className="text-xs text-slate-500 font-medium font-serif italic leading-relaxed">
-                    "Berimanlah kamu kepada Allah dan RasulNya dan nafkahkanlah sebagian dari hartamu yang Allah telah menjadikan kamu menguasainya. Maka orang-orang yang beriman diantara kamu dan yang menafkahkankan sebagian dari hartanya memperoleh pahala yang besar." (QS. 57:7)
-                  </p>
+              {/* Documentation Section */}
+              <div className="border-t border-slate-100">
+                <div
+                  onClick={() => setShowDoc(!showDoc)}
+                  className="p-6 md:p-8 flex items-center justify-between cursor-pointer hover:bg-slate-50/80 transition-colors"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                      <BookOpen className="w-4.5 h-4.5 text-indigo-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Panduan Perhitungan Gaji</h3>
+                      <p className="text-xs text-slate-400 font-medium mt-1">Klik untuk {showDoc ? 'menyembunyikan' : 'melihat'} detail formula dan logika perhitungan</p>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-slate-400">
+                    {showDoc ? (
+                      <ChevronUp className="w-5 h-5 text-indigo-500" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5" />
+                    )}
+                  </div>
                 </div>
+
+                {showDoc && (
+                  <div className="px-6 md:px-8 pb-8 space-y-6 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="h-px bg-slate-100" />
+                    {payrollDocumentation.map((item, idx) => (
+                      <div key={item.id}>
+                        {/* Section Header */}
+                        <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 mb-2">
+                          <h4 className="text-sm font-bold text-slate-800 tracking-wide">
+                            {idx + 1}. {item.title.toUpperCase()}
+                          </h4>
+                          <span className="text-[11px] font-medium text-slate-400 italic">
+                            Formula: {item.formula}
+                          </span>
+                        </div>
+
+                        {/* Bullet Points */}
+                        <ul className="space-y-1 ml-4 pl-0">
+                          {item.bullets.map((bullet, bIdx) => (
+                            <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-slate-550 leading-relaxed">
+                              <span className="mt-2 w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
+                              <span>{bullet}</span>
+                            </li>
+                          ))}
+                        </ul>
+
+                        {/* Optional variables display */}
+                        {userVariables && (
+                          <div className="mt-3.5 ml-4 bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 max-w-2xl animate-in fade-in duration-200">
+                            {item.id === 'gapok' && (
+                              <div className="space-y-1">
+                                <DocRow label="Golongan" value={employeeData?.gradeLevel || '-'} />
+                                <DocRow label="Masa Kerja" value={`${userVariables.years} Tahun`} />
+                                <DocRow label="Tgl Pengakuan" value={userVariables.baseDate ? new Date(userVariables.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'} />
+                                <DocRow label="Gaji Pokok" value={formatIDR(userVariables.gapokVal)} highlight />
+                              </div>
+                            )}
+
+                            {item.id === 'keluarga' && (
+                              <div className="space-y-1">
+                                <DocRow label="Tanggungan Suami/Istri" value={`${userVariables.spouseCount} orang (${userVariables.spouseCount * 5}%)`} />
+                                <DocRow label="Tanggungan Anak (SD/SLTP/SLTA/PT)" value={`${userVariables.sd}/${userVariables.sltp}/${userVariables.slta}/${userVariables.pt} orang`} />
+                                <DocRow label="Persentase Total" value={`${(userVariables.familyPct * 100).toFixed(1)}%`} />
+                                <DocRow label="Tunjangan Keluarga" value={formatIDR(userVariables.tunjKeluargaVal)} highlight />
+                              </div>
+                            )}
+
+                            {item.id === 'fungsional' && (
+                              <div className="space-y-1">
+                                <DocRow label="Pendidikan Terakhir" value={employeeData?.academic_and_tier?.education_level || '-'} />
+                                <DocRow label="Jenjang Fungsional" value={employeeData?.academic_and_tier?.functional_tier || 'Belum Ditetapkan'} />
+                                <DocRow label="Tunjangan Fungsional" value={formatIDR(userVariables.tunjFungsionalVal)} highlight />
+                              </div>
+                            )}
+
+                            {item.id === 'kepangkatan' && (
+                              <div className="space-y-1">
+                                <DocRow label="Akumulasi Kredit (KUM)" value={String(userVariables.userCreditScore)} />
+                                <DocRow label="Jenjang Kepangkatan" value={userVariables.kepangkationDesignation} />
+                                <DocRow label="T. Kepangkatan" value={formatIDR(userVariables.tunjKepangkatanVal)} highlight />
+                              </div>
+                            )}
+
+                            {item.id === 'presensi' && (
+                              <div className="space-y-1">
+                                <DocRow label="Hari Kerja Aktif" value={`${presenceInfo?.workingDays || 25} hari`} />
+                                <DocRow label="Target / Hari" value={`${presenceInfo?.expectedHours || 6.5} jam`} />
+                                <DocRow label="Kekurangan Jam" value={`${presenceInfo ? ((presenceInfo.absenceMinutes || 0) / 60).toFixed(1) : 0} jam`} />
+                                <DocRow label="Bersih Presensi Jam" value={`${formatIDR(Math.max(0, userVariables.presensiEarningVal - userVariables.potonganPresensiVal))} (${formatIDR(userVariables.presensiEarningVal)} - ${formatIDR(userVariables.potonganPresensiVal)})`} highlight />
+                                <DocRow label="Bersih Bonus Presensi" value={`${formatIDR(Math.max(0, userVariables.bonusPresensiVal - userVariables.potonganBonusPresensiVal))} (${formatIDR(userVariables.bonusPresensiVal)} - ${formatIDR(userVariables.potonganBonusPresensiVal)})`} highlight />
+                              </div>
+                            )}
+
+                            {item.id === 'struktural' && (
+                              <div className="space-y-1">
+                                <DocRow label="Jabatan Terdaftar" value={userVariables.positions.length > 0 ? userVariables.positions.map((p: any) => p.name).join(', ') : 'Tidak Ada'} />
+                                <DocRow label="Total T. Struktural" value={formatIDR(userVariables.totalStrukturalVal)} highlight />
+                              </div>
+                            )}
+
+                            {item.id === 'hari_tua_instruksional' && (
+                              <div className="space-y-1">
+                                <DocRow label="Tunjangan Hari Tua (10% Gapok)" value={formatIDR(userVariables.tunjHariTuaVal)} highlight />
+                                <DocRow label="T. Instruksional" value={formatIDR(userVariables.tunjInstruksionalVal)} highlight />
+                              </div>
+                            )}
+
+                            {item.id === 'bpjs_beras' && (
+                              <div className="space-y-1">
+                                <DocRow label="T. BPJS TK" value={formatIDR(userVariables.bpjsTkVal)} highlight />
+                                <DocRow label="T. BPJS KES" value={formatIDR(userVariables.bpjsKesVal)} highlight />
+                                <DocRow label="Tunjangan Beras" value={formatIDR(userVariables.berasVal)} highlight />
+                              </div>
+                            )}
+
+                            {item.id === 'vakasi' && (
+                              <div className="space-y-1">
+                                {vakasiEvents && vakasiEvents.length > 0 ? (
+                                  <div className="space-y-1 mb-2">
+                                    {vakasiEvents.map((evt, eIdx) => (
+                                      <DocRow key={eIdx} label={evt.eventName} value={formatIDR(evt.payGiven)} />
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-slate-400 italic mb-2">Tidak ada kegiatan resmi terdaftar pada periode ini</div>
+                                )}
+                                <DocRow label="Total Vakasi Tambahan" value={formatIDR(
+                                  earnings
+                                    .filter((e: PaySlipField) => !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:'))
+                                    .reduce((sum: number, e: PaySlipField) => sum + e.amount, 0)
+                                )} highlight />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Separator between items */}
+                        {idx < payrollDocumentation.length - 1 && (
+                          <div className="h-px bg-slate-100 mt-5" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
             </Card>
 
             {/* ── Download Action Button ────────────────────────────────────── */}
             {isConfirmed ? (
-              <div className="flex justify-center">
+              <div className="flex flex-col sm:flex-row items-center gap-3.5 justify-center w-full max-w-xl mx-auto">
                 <Button
                   onClick={handleDownloadPdf}
-                  className="rounded-2xl px-8 py-6 text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-150 hover:shadow-2xl hover:shadow-indigo-250 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center gap-2 cursor-pointer"
+                  className="w-full sm:w-auto rounded-2xl px-8 py-6 text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-150 hover:shadow-2xl hover:shadow-indigo-250 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Download className="w-5 h-5" />
                   Unduh Slip Gaji (PDF)
                 </Button>
+
+                <a
+                  href={whatsappUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full sm:w-auto rounded-2xl px-8 py-4.5 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl shadow-emerald-100 hover:shadow-2xl transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer border border-emerald-500/20 text-center"
+                >
+                  <MessageCircle className="w-5 h-5 text-white" />
+                  Hubungi Admin BAK
+                </a>
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-2.5">
-                <Button
-                  disabled
-                  className="rounded-2xl px-8 py-6 text-sm font-bold bg-slate-100 text-slate-400 border border-slate-200/60 shadow-none cursor-not-allowed flex items-center gap-2"
-                >
-                  <Lock className="w-5 h-5 text-slate-400" />
-                  Unduh Slip Gaji (PDF)
-                </Button>
-                <p className="text-[11px] font-semibold text-amber-600 bg-amber-50/60 border border-amber-100/50 px-3 py-1 rounded-full animate-pulse">
+              <div className="flex flex-col items-center gap-3.5 w-full max-w-xl mx-auto">
+                <div className="flex flex-col sm:flex-row items-center gap-3.5 justify-center w-full">
+                  <Button
+                    disabled
+                    className="w-full sm:w-auto rounded-2xl px-8 py-6 text-sm font-bold bg-slate-100 text-slate-400 border border-slate-200/60 shadow-none cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <Lock className="w-5 h-5 text-slate-400" />
+                    Unduh Slip Gaji (PDF)
+                  </Button>
+
+                  <a
+                    href={whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full sm:w-auto rounded-2xl px-8 py-4.5 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl shadow-emerald-100 hover:shadow-2xl transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer border border-emerald-500/20 text-center"
+                  >
+                    <MessageCircle className="w-5 h-5 text-white" />
+                    Hubungi Admin BAK via WhatsApp
+                  </a>
+                </div>
+                <p className="text-[11px] font-semibold text-amber-600 bg-amber-50/60 border border-amber-100/50 px-3 py-1 rounded-full animate-pulse text-center">
                   Slip gaji masih berupa DRAFT. Hubungi BAK untuk melakukan penguncian final sebelum mengunduh.
                 </p>
               </div>

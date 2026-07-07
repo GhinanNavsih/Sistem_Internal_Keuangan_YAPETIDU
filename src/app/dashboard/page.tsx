@@ -57,6 +57,7 @@ import {
   Legend,
   BarChart,
   Bar,
+  Treemap,
 } from 'recharts';
 
 // Indonesian Month Labels
@@ -157,11 +158,11 @@ interface PeriodAggregate {
 interface EarningShareSectionProps {
   title: string;
   subtitle: string;
-  data: { name: string; value: number; percentage: number }[];
+  data: { name: string; value: number; percentage: number; type?: 'loyalis' | 'pekarya' }[];
   totalGross: number;
   animateList: boolean;
-  type: 'loyalis' | 'pekarya';
-  shareOfEarningView: 'list' | 'pie' | 'bar';
+  type: 'loyalis' | 'pekarya' | 'semua';
+  shareOfEarningView: 'treemap' | 'bar' | 'pie';
   selectedShareGroup: { type: 'loyalis' | 'pekarya'; name: string } | null;
   setSelectedShareGroup: React.Dispatch<React.SetStateAction<{ type: 'loyalis' | 'pekarya'; name: string } | null>>;
 }
@@ -179,10 +180,12 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
 }) => {
   const chartData = useMemo(() => {
     return data.map((item) => {
-      const isSelected = selectedShareGroup && selectedShareGroup.type === type && selectedShareGroup.name === item.name;
-      const isAnySelected = selectedShareGroup && selectedShareGroup.type === type;
+      const itemType = item.type || (type === 'semua' ? 'loyalis' : type);
+      const isSelected = selectedShareGroup && selectedShareGroup.type === itemType && selectedShareGroup.name === item.name;
+      const isAnySelected = type === 'semua' ? !!selectedShareGroup : (selectedShareGroup && selectedShareGroup.type === type);
       return {
         ...item,
+        itemType,
         isSelected,
         isAnySelected,
       };
@@ -197,14 +200,75 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
     );
   }
 
-  const handleChartClick = (name: string | undefined) => {
+  const handleChartClick = (name: string | undefined, itemType?: 'loyalis' | 'pekarya') => {
     if (!name) return;
+    const resolvedType = itemType || (type === 'semua' ? 'loyalis' : type);
     setSelectedShareGroup((prev) => {
-      if (prev && prev.type === type && prev.name === name) {
+      if (prev && prev.type === resolvedType && prev.name === name) {
         return null; // Toggle off
       }
-      return { type, name };
+      return { type: resolvedType, name };
     });
+  };
+
+  const CustomizedTreemapContent = (props: any) => {
+    const { x, y, width, height, index, name, value, percentage, isSelected, isAnySelected, itemType, depth } = props;
+    
+    // Ignore root node and nodes without name
+    if (depth === 0 || !name) return null;
+
+    const colorInfo = getGroupColorInfo(name, index);
+    const cellOpacity = isAnySelected ? (isSelected ? 1.0 : 0.18) : 0.85;
+
+    const maxNameChars = Math.max(8, Math.floor((width - 24) / 7));
+    const truncatedName = name.length > maxNameChars ? `${name.substring(0, maxNameChars)}…` : name;
+    const valueText = value !== undefined && percentage !== undefined
+      ? `${formatIDR(value)} (${percentage.toFixed(1)}%)`
+      : '';
+
+    const showName = width > 50 && height > 24;
+    const showValue = width > 70 && height > 44 && valueText;
+
+    return (
+      <g className="cursor-pointer" onClick={() => handleChartClick(name, itemType)}>
+        <rect
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          fill={colorInfo.hex}
+          stroke={isSelected ? '#4f46e5' : '#ffffff'}
+          strokeWidth={isSelected ? 3 : 1.5}
+          opacity={cellOpacity}
+          rx={4}
+          ry={4}
+        />
+        {showName && (
+          <text
+            x={x + 8}
+            y={y + 16}
+            fill="#1e293b"
+            fontSize={10}
+            fontWeight={600}
+            textAnchor="start"
+          >
+            {truncatedName}
+          </text>
+        )}
+        {showValue && (
+          <text
+            x={x + 8}
+            y={y + 29}
+            fill="#334155"
+            fontSize={9}
+            fontWeight={500}
+            textAnchor="start"
+          >
+            {valueText}
+          </text>
+        )}
+      </g>
+    );
   };
 
   return (
@@ -215,65 +279,43 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
           <p className="text-[11px] text-slate-400 mt-0.5">{subtitle}</p>
         </div>
 
-        {shareOfEarningView === 'list' ? (
-          <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
-            {chartData.map((item, idx) => {
-              const colorInfo = getGroupColorInfo(item.name, idx);
-              const colorClass = colorInfo.bg;
-              const isSelected = item.isSelected;
-              const isAnySelected = item.isAnySelected;
-              const rowClass = `group/row transition-all duration-200 cursor-pointer rounded-xl p-2 border border-transparent ${
-                isSelected 
-                  ? 'bg-indigo-50/90 border-indigo-200/80 shadow-md scale-[1.01]' 
-                  : isAnySelected 
-                    ? 'opacity-25 scale-[0.97] hover:opacity-100 hover:scale-100 hover:bg-indigo-50/20' 
-                    : 'hover:bg-indigo-50/30'
-              }`;
-
-              return (
-                <div key={item.name} className={rowClass} onClick={() => handleChartClick(item.name)}>
-                  <div className="flex items-center justify-between text-xs font-semibold">
-                    <span className="text-slate-700 truncate max-w-[200px]" title={item.name}>
-                      {item.name}
-                    </span>
-                    <span className="text-slate-900 font-bold shrink-0">
-                      {formatIDR(item.value)}{' '}
-                      <span className="text-slate-400 text-[10px] ml-1">({item.percentage.toFixed(1)}%)</span>
-                    </span>
-                  </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1.5">
-                    <div
-                      className={`${colorClass} h-full rounded-full transition-all duration-500`}
-                      style={{ width: `${animateList ? item.percentage : 0}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+        {shareOfEarningView === 'treemap' ? (
+          <div className="w-full" style={{ height: type === 'semua' ? 450 : 300, minWidth: 0 }}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <Treemap
+                width={100}
+                height={100}
+                data={chartData}
+                dataKey="value"
+                aspectRatio={4 / 3}
+                stroke="#fff"
+                content={<CustomizedTreemapContent />}
+              />
+            </ResponsiveContainer>
           </div>
         ) : shareOfEarningView === 'bar' ? (
-          <div className="w-full h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 65 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+          <div className="w-full" style={{ height: type === 'semua' ? 450 : 300, minWidth: 0 }}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <BarChart layout="vertical" width={100} height={100} data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                 <XAxis
-                  dataKey="name"
-                  tickFormatter={(val) => val.length > 15 ? `${val.substring(0, 15)}...` : val}
-                  tick={{ fill: '#64748b', fontSize: 9, fontWeight: 500 }}
-                  angle={-45}
-                  textAnchor="end"
-                  height={75}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
+                  type="number"
                   tickFormatter={(val) => `Rp ${val / 1000000}jt`}
                   tick={{ fill: '#64748b', fontSize: 10, fontWeight: 500 }}
                   tickLine={false}
                   axisLine={false}
                 />
+                <YAxis
+                  dataKey="name"
+                  type="category"
+                  tickFormatter={(val) => val.length > 20 ? `${val.substring(0, 20)}...` : val}
+                  tick={{ fill: '#64748b', fontSize: 9, fontWeight: 500 }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={120}
+                />
                 <Tooltip formatter={(value: any) => formatIDR(value)} />
-                <Bar dataKey="value" radius={[4, 4, 0, 0]} onClick={(entry) => handleChartClick(entry.name)}>
+                <Bar dataKey="value" radius={[0, 4, 4, 0]} onClick={(entry: any) => handleChartClick(entry.name, entry.itemType || entry.payload?.itemType)}>
                   {chartData.map((entry, idx) => {
                     const isSelected = entry.isSelected;
                     const isAnySelected = entry.isAnySelected;
@@ -295,9 +337,9 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
             </ResponsiveContainer>
           </div>
         ) : (
-          <div className="w-full h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
+          <div className="w-full h-[300px]" style={{ minWidth: 0 }}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <PieChart width={100} height={100}>
                 <Legend
                   verticalAlign="top"
                   align="left"
@@ -317,7 +359,7 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
                           return (
                             <div 
                               key={entry.value || idx} 
-                              onClick={() => handleChartClick(name)}
+                              onClick={() => handleChartClick(name, entry.payload?.itemType || entry.payload?.payload?.itemType)}
                               className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer"
                             >
                               <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
@@ -340,7 +382,7 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
                   nameKey="name"
                   startAngle={90}
                   endAngle={-270}
-                  onClick={(entry) => handleChartClick(entry.name)}
+                  onClick={(entry: any) => handleChartClick(entry.name, entry.itemType || entry.payload?.itemType)}
                 >
                   {chartData.map((entry, idx) => {
                     const isSelected = entry.isSelected;
@@ -397,7 +439,7 @@ export default function TreasuryDashboard() {
   const [animateBars, setAnimateBars] = useState(false);
   const [animateListBars, setAnimateListBars] = useState(false);
   const [animateEarningsListBars, setAnimateEarningsListBars] = useState(false);
-  const [shareOfEarningView, setShareOfEarningView] = useState<'list' | 'pie' | 'bar'>('list');
+  const [shareOfEarningView, setShareOfEarningView] = useState<'treemap' | 'bar' | 'pie'>('treemap');
   const [animateShareOfEarningListBars, setAnimateShareOfEarningListBars] = useState(false);
   const [selectedShareGroup, setSelectedShareGroup] = useState<{ type: 'loyalis' | 'pekarya'; name: string } | null>(null);
 
@@ -451,9 +493,9 @@ export default function TreasuryDashboard() {
     }
   }, [earningsView]);
 
-  // Trigger starting animation on the share of earning bars when toggling to 'Daftar' view
+  // Trigger starting animation on the share of earning bars when toggling to 'Treemap' view
   useEffect(() => {
-    if (shareOfEarningView === 'list') {
+    if (shareOfEarningView === 'treemap') {
       setAnimateShareOfEarningListBars(false);
       const timer = setTimeout(() => {
         setAnimateShareOfEarningListBars(true);
@@ -1122,7 +1164,7 @@ export default function TreasuryDashboard() {
 
   // Selected Period Share of Earning Data
   const shareOfEarningData = useMemo(() => {
-    if (!selectedPeriod) return { loyalis: [], pekarya: [], totalLoyalisGross: 0, totalPekaryaGross: 0 };
+    if (!selectedPeriod) return { loyalis: [], pekarya: [], combined: [], totalLoyalisGross: 0, totalPekaryaGross: 0, totalCombinedGross: 0 };
 
     const loyalisMap: Record<string, number> = {};
     const pekaryaMap: Record<string, number> = {};
@@ -1218,6 +1260,7 @@ export default function TreasuryDashboard() {
         name,
         value,
         percentage: totalLoyalisGross > 0 ? (value / totalLoyalisGross) * 100 : 0,
+        type: 'loyalis' as const,
       }))
       .sort((a, b) => b.value - a.value);
 
@@ -1226,14 +1269,33 @@ export default function TreasuryDashboard() {
         name,
         value,
         percentage: totalPekaryaGross > 0 ? (value / totalPekaryaGross) * 100 : 0,
+        type: 'pekarya' as const,
       }))
       .sort((a, b) => b.value - a.value);
+
+    const combinedTotal = totalLoyalisGross + totalPekaryaGross;
+    const combinedList = [
+      ...Object.entries(loyalisMap).map(([name, value]) => ({
+        name,
+        value,
+        percentage: combinedTotal > 0 ? (value / combinedTotal) * 100 : 0,
+        type: 'loyalis' as const,
+      })),
+      ...Object.entries(pekaryaMap).map(([name, value]) => ({
+        name,
+        value,
+        percentage: combinedTotal > 0 ? (value / combinedTotal) * 100 : 0,
+        type: 'pekarya' as const,
+      })),
+    ].sort((a, b) => b.value - a.value);
 
     return {
       loyalis: loyalisList,
       pekarya: pekaryaList,
+      combined: combinedList,
       totalLoyalisGross,
       totalPekaryaGross,
+      totalCombinedGross: combinedTotal,
     };
   }, [
     selectedPeriod,
@@ -1996,13 +2058,13 @@ export default function TreasuryDashboard() {
                 <div className="flex bg-slate-100/80 p-0.5 rounded-xl border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
                   <button
                     type="button"
-                    onClick={() => setShareOfEarningView('list')}
-                    className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${shareOfEarningView === 'list'
+                    onClick={() => setShareOfEarningView('treemap')}
+                    className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${shareOfEarningView === 'treemap'
                       ? 'bg-white text-indigo-600 shadow-sm'
                       : 'text-slate-500 hover:text-slate-700'
                       }`}
                   >
-                    Daftar
+                    Treemap
                   </button>
                   <button
                     type="button"
@@ -2029,25 +2091,14 @@ export default function TreasuryDashboard() {
 
               <div className="p-6">
                 {filterCollar === 'semua' ? (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div className="w-full">
                     <EarningShareSection
-                      title="Staf Loyalis (Per SatKer)"
-                      subtitle="Distribusi total pendapatan kotor Loyalis per Satuan Kerja"
-                      data={shareOfEarningData.loyalis}
-                      totalGross={shareOfEarningData.totalLoyalisGross}
+                      title="Semua Staf (Loyalis & Pekarya)"
+                      subtitle="Distribusi total pendapatan kotor berdasarkan Satuan Kerja (Loyalis) dan Kategori Kerja (Pekarya)"
+                      data={shareOfEarningData.combined}
+                      totalGross={shareOfEarningData.totalCombinedGross}
                       animateList={animateShareOfEarningListBars}
-                      type="loyalis"
-                      shareOfEarningView={shareOfEarningView}
-                      selectedShareGroup={selectedShareGroup}
-                      setSelectedShareGroup={setSelectedShareGroup}
-                    />
-                    <EarningShareSection
-                      title="Staf Pekarya (Per Kategori Kerja)"
-                      subtitle="Distribusi total pendapatan kotor Pekarya per Kategori Kerja"
-                      data={shareOfEarningData.pekarya}
-                      totalGross={shareOfEarningData.totalPekaryaGross}
-                      animateList={animateShareOfEarningListBars}
-                      type="pekarya"
+                      type="semua"
                       shareOfEarningView={shareOfEarningView}
                       selectedShareGroup={selectedShareGroup}
                       setSelectedShareGroup={setSelectedShareGroup}

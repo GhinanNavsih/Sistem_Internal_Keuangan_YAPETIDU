@@ -23,6 +23,20 @@ export interface PaySlipData {
     children_slta: number;
     children_pt: number;
   };
+  gradeLevel?: string;
+  yearsOfService?: number;
+  baseDate?: string;
+  educationLevel?: string;
+  functionalTier?: string;
+  cummulativeCredit?: number;
+  designation?: string;
+  presenceInfo?: {
+    workingDays: number;
+    expectedHours: number;
+    absenceMinutes: number;
+    bonusDeduction: number;
+  } | null;
+  vakasiEvents?: { eventName: string; payGiven: number }[];
 }
 
 function spell(n: number): string {
@@ -768,6 +782,320 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
   }
 }
 
+function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
+  const formatIDR = (amount: number): string => {
+    return 'Rp ' + new Intl.NumberFormat('id-ID', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const startX = 15;
+  const tableWidth = 180;
+  const pageHeight = 297;
+  const bottomMargin = 15;
+  let y = 15;
+
+  function drawPageHeader() {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(63, 81, 181); // Indigo color
+    doc.text('LAMPIRAN: PANDUAN & PERHITUNGAN DETAIL GAJI', startX, y);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(`Nama: ${data.employeeName.toUpperCase()}  |  NIY: ${data.niy || '-'}  |  Periode: ${data.period}`, startX, y + 4);
+    
+    doc.setDrawColor(200, 210, 230);
+    doc.setLineWidth(0.4);
+    doc.line(startX, y + 6, startX + tableWidth, y + 6);
+    y += 12;
+  }
+
+  drawPageHeader();
+
+  // Extract all amounts from data.earnings / data.deductions for calculations
+  const gapokVal = data.earnings.find((e) => e.label.toUpperCase() === 'GAJI POKOK')?.amount || 0;
+  const tunjKeluargaVal = data.earnings.find((e) => e.label.toUpperCase() === 'T. KELUARGA' || e.label.toUpperCase() === 'TUNJANGAN KELUARGA')?.amount || 0;
+  const tunjFungsionalVal = data.earnings.find((e) => e.label.toUpperCase() === 'T. FUNGSIONAL' || e.label.toUpperCase() === 'TUNJANGAN FUNGSIONAL')?.amount || 0;
+  const tunjKepangkatanVal = data.earnings.find((e) => e.label.toUpperCase() === 'KEPANGKATAN')?.amount || 0;
+  const presensiEarningVal = data.earnings.find((e) => e.label.toUpperCase() === 'PRESENSI')?.amount || 0;
+  const bonusPresensiVal = data.earnings.find((e) => e.label.toUpperCase() === 'BONUS PRESENSI')?.amount || 0;
+  const tunjInstruksionalVal = data.earnings.find((e) => e.label.toUpperCase() === 'T. INSTRUKSIONAL' || e.label.toUpperCase() === 'INSTRUKSIONAL')?.amount || 0;
+  const tunjHariTuaVal = data.earnings.find((e) => e.label.toUpperCase() === 'T. HARI TUA' || e.label.toUpperCase() === 'TUNJANGAN HARI TUA')?.amount || 0;
+  const bpjsTkVal = data.earnings.find((e) => e.label.toUpperCase() === 'T. BPJS TK' || e.label.toUpperCase() === 'BPJS TK')?.amount || 0;
+  const bpjsKesVal = data.earnings.find((e) => e.label.toUpperCase() === 'T. BPJS KES' || e.label.toUpperCase() === 'BPJS KES')?.amount || 0;
+  const berasVal = data.earnings.find((e) => e.label.toUpperCase() === 'BERAS')?.amount || 0;
+  const totalStrukturalVal = data.earnings
+    .filter((e) => e.label.toUpperCase().startsWith('STRUKTURAL:'))
+    .reduce((sum, e) => sum + e.amount, 0);
+
+  const potonganPresensiVal = data.deductions.find((d) => d.label.toUpperCase() === 'POTONGAN PRESENSI')?.amount || 0;
+  const potonganBonusPresensiVal = data.deductions.find((d) => d.label.toUpperCase() === 'POTONGAN BONUS PRESENSI')?.amount || 0;
+  const totalVakasiVal = data.earnings
+    .filter((e) => !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:'))
+    .reduce((sum, e) => sum + e.amount, 0);
+
+  const presenceInfo = data.presenceInfo || {
+    workingDays: 25,
+    expectedHours: 6.5,
+    absenceMinutes: 0,
+    bonusDeduction: 0
+  };
+
+  const vakasiEvents = data.vakasiEvents || [];
+  const famMetrics = data.familyMetrics || {
+    spouse_count: 0,
+    children_sd: 0,
+    children_sltp: 0,
+    children_slta: 0,
+    children_pt: 0
+  };
+
+  const ensureSpace = (height: number) => {
+    if (y + height > pageHeight - bottomMargin) {
+      doc.addPage();
+      y = 15;
+      drawPageHeader();
+    }
+  };
+
+  const sections = [
+    {
+      title: '1. Gaji Pokok',
+      formula: 'Formula: (Pangkat/Golongan, Masa Kerja)',
+      bullets: [
+        'Ditentukan oleh Golongan dan Masa Kerja pegawai.',
+        'Masa Kerja dihitung sejak Tanggal Pengakuan / Mulai Bekerja.',
+        'Dicocokkan dengan Matriks Gaji Pokok Yayasan yang berlaku.'
+      ],
+      params: [
+        { label: 'Golongan', val: data.gradeLevel || '-' },
+        { label: 'Masa Kerja', val: data.yearsOfService !== undefined ? `${data.yearsOfService} Tahun` : '-' },
+        { label: 'Tgl Pengakuan', val: data.baseDate ? new Date(data.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-' },
+        { label: 'Gaji Pokok', val: formatIDR(gapokVal), highlight: true }
+      ]
+    },
+    {
+      title: '2. Tunjangan Keluarga',
+      formula: 'Formula: Gaji Pokok x % Akumulasi Tanggungan',
+      bullets: [
+        'Dihitung dari persentase anggota keluarga terdaftar:',
+        'Suami/Istri: 5% (maks 1) | Anak SD: 5% | Anak SLTP: 7.5% | Anak SLTA: 10% | Anak PT: 12.5%.'
+      ],
+      params: [
+        { label: 'Tanggungan Suami/Istri', val: `${famMetrics.spouse_count} orang (5%)` },
+        { label: 'Tanggungan Anak (SD/SLTP/SLTA/PT)', val: `${famMetrics.children_sd}/${famMetrics.children_sltp}/${famMetrics.children_slta}/${famMetrics.children_pt} orang` },
+        { label: 'Persentase Total', val: `${(((famMetrics.spouse_count * 0.05) + (famMetrics.children_sd * 0.05) + (famMetrics.children_sltp * 0.075) + (famMetrics.children_slta * 0.1) + (famMetrics.children_pt * 0.125)) * 100).toFixed(1)}%` },
+        { label: 'Tunjangan Keluarga', val: formatIDR(tunjKeluargaVal), highlight: true }
+      ]
+    },
+    {
+      title: '3. Tunjangan Fungsional',
+      formula: 'Formula: (Pendidikan Terakhir, Jenjang Fungsional)',
+      bullets: [
+        'Ditentukan oleh tingkat pendidikan terakhir pegawai.',
+        'Disesuaikan dengan jenjang jabatan fungsional akademik yang diakui.',
+        'Menggunakan Nilai Dasar jika jenjang fungsional belum ditetapkan.'
+      ],
+      params: [
+        { label: 'Pendidikan Terakhir', val: data.educationLevel || '-' },
+        { label: 'Jenjang Fungsional', val: data.functionalTier || '-' },
+        { label: 'Tunjangan Fungsional', val: formatIDR(tunjFungsionalVal), highlight: true }
+      ]
+    },
+    {
+      title: '4. Kepangkatan',
+      formula: 'Formula: (Akumulasi Angka Kredit / KUM)',
+      bullets: [
+        'Berdasarkan total akumulasi angka kredit kepangkatan (KUM).',
+        'Nominal dicocokkan dengan Matriks Kepangkatan Yayasan.'
+      ],
+      params: [
+        { label: 'Akumulasi Kredit (KUM)', val: data.cummulativeCredit !== undefined ? String(data.cummulativeCredit) : '-' },
+        { label: 'Jenjang Kepangkatan', val: data.designation || '-' },
+        { label: 'T. Kepangkatan', val: formatIDR(tunjKepangkatanVal), highlight: true }
+      ]
+    },
+    {
+      title: '5. Presensi & Bonus Presensi',
+      formula: 'Formula: Penerimaan Penuh - Potongan Deviasi Jam Kerja',
+      bullets: [
+        'Penerimaan Presensi = Hari Kerja Aktif x Target Jam/hari x Rp 1.650.',
+        'Potongan Presensi = Kekurangan Jam (delta Target vs Kerja Riil) x Rp 1.650.',
+        'Bonus Presensi = Rp 250.000 (dikreditkan penuh; dipotong jika ada pelanggaran).'
+      ],
+      params: [
+        { label: 'Hari Kerja Aktif', val: `${presenceInfo.workingDays} hari` },
+        { label: 'Target / Hari', val: `${presenceInfo.expectedHours} jam` },
+        { label: 'Kekurangan Jam', val: `${((presenceInfo.absenceMinutes || 0)/60).toFixed(1)} jam` },
+        { label: 'Bersih Presensi Jam', val: `${formatIDR(Math.max(0, presensiEarningVal - potonganPresensiVal))} (${formatIDR(presensiEarningVal)} - ${formatIDR(potonganPresensiVal)})`, highlight: true },
+        { label: 'Bersih Bonus Presensi', val: `${formatIDR(Math.max(0, bonusPresensiVal - potonganBonusPresensiVal))} (${formatIDR(bonusPresensiVal)} - ${formatIDR(potonganBonusPresensiVal)})`, highlight: true }
+      ]
+    },
+    {
+      title: '6. Tunjangan Struktural',
+      formula: 'Formula: Jabatan Utama (100%) + Jabatan Tambahan (50% masing-masing)',
+      bullets: [
+        'Jabatan dengan tunjangan tertinggi dibayarkan 100%.',
+        'Setiap jabatan tambahan dibayarkan sebesar 50%.'
+      ],
+      params: [
+        { label: 'Jabatan Terdaftar', val: data.jobCategory || '-' },
+        { label: 'Total T. Struktural', val: formatIDR(totalStrukturalVal), highlight: true }
+      ]
+    },
+    {
+      title: '7. Tunjangan Hari Tua & Instruksional',
+      formula: 'Formula: THT (10% x Gapok) + Nominal Tetap Instruksional',
+      bullets: [
+        'Tunjangan Hari Tua = 10% dari Gaji Pokok subsidi penuh dari Yayasan.',
+        'Tunjangan Instruksional = nominal tetap sesuai tugas pengajaran.'
+      ],
+      params: [
+        { label: 'Tunjangan Hari Tua', val: formatIDR(tunjHariTuaVal) },
+        { label: 'T. Instruksional', val: formatIDR(tunjInstruksionalVal) }
+      ]
+    },
+    {
+      title: '8. Tunjangan BPJS & Beras',
+      formula: 'Formula: Subsidi BPJS TK + BPJS KES + Tunjangan Beras',
+      bullets: [
+        'Tunjangan BPJS TK dan BPJS KES = subsidi iuran resmi sesuai ketentuan.',
+        'Tunjangan Beras = tunjangan pangan pokok yang bersifat tetap.'
+      ],
+      params: [
+        { label: 'T. BPJS TK', val: formatIDR(bpjsTkVal) },
+        { label: 'T. BPJS KES', val: formatIDR(bpjsKesVal) },
+        { label: 'Tunjangan Beras', val: formatIDR(berasVal) }
+      ]
+    },
+    {
+      title: '9. Vakasi Tambahan',
+      formula: 'Formula: Σ Honorarium Kegiatan Resmi Disetujui',
+      bullets: [
+        'Akumulasi honorarium dari kepanitiaan/kegiatan resmi disetujui periode ini.'
+      ],
+      customDraw: (sectionY: number) => {
+        let currentY = sectionY;
+        if (vakasiEvents.length > 0) {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7.5);
+          doc.setTextColor(120);
+          doc.text('Daftar Kegiatan Resmi:', startX + 5, currentY);
+          currentY += 4;
+          
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(50);
+          vakasiEvents.forEach((evt) => {
+            ensureSpace(5);
+            doc.text(`• ${String(evt.eventName)}`, startX + 8, currentY);
+            doc.setFont('helvetica', 'bold');
+            doc.text(formatIDR(evt.payGiven), startX + 175, currentY, { align: 'right' });
+            doc.setFont('helvetica', 'normal');
+            currentY += 4.5;
+          });
+        } else {
+          doc.setFont('helvetica', 'italic');
+          doc.setFontSize(8);
+          doc.setTextColor(140);
+          doc.text('Tidak ada kegiatan resmi terdaftar pada periode ini.', startX + 5, currentY);
+          currentY += 5;
+        }
+        
+        ensureSpace(8);
+        doc.setFillColor(235, 240, 250);
+        doc.rect(startX + 3, currentY, tableWidth - 6, 7, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(63, 81, 181);
+        doc.text('Total Vakasi Tambahan', startX + 6, currentY + 4.8);
+        doc.text(formatIDR(totalVakasiVal), startX + 174, currentY + 4.8, { align: 'right' });
+        
+        return currentY + 11;
+      }
+    }
+  ];
+
+  // Draw sections
+  sections.forEach((sec) => {
+    // Estimate height needed
+    let estimateH = 6;
+    estimateH += sec.bullets.length * 4.5;
+    if (sec.params) {
+      estimateH += sec.params.length * 4.5 + 6;
+    } else {
+      estimateH += (vakasiEvents.length || 1) * 4.5 + 18;
+    }
+
+    ensureSpace(estimateH);
+
+    // Draw Title & Formula
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(40);
+    doc.text(sec.title.toUpperCase(), startX, y);
+    
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8);
+    doc.setTextColor(110);
+    doc.text(sec.formula, startX + 180, y, { align: 'right' });
+    y += 4.5;
+
+    // Draw Bullets
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(80);
+    sec.bullets.forEach((b) => {
+      const lines = doc.splitTextToSize(b, tableWidth - 8);
+      lines.forEach((ln: string) => {
+        doc.text(`• ${ln}`, startX + 4, y);
+        y += 4.2;
+      });
+    });
+    y += 1.5;
+
+    // Draw parameters/data box
+    if (sec.params) {
+      const boxHeight = sec.params.length * 4.5 + 3;
+      doc.setFillColor(248, 249, 252);
+      doc.setDrawColor(230, 235, 245);
+      doc.setLineWidth(0.2);
+      doc.rect(startX + 3, y, tableWidth - 6, boxHeight, 'FD');
+      
+      let paramY = y + 4.2;
+      sec.params.forEach((p) => {
+        if (p.highlight) {
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(63, 81, 181);
+        } else {
+          doc.setFont('helvetica', 'medium');
+          doc.setTextColor(100);
+        }
+        doc.setFontSize(8);
+        doc.text(String(p.label), startX + 7, paramY);
+        doc.text(':', startX + 65, paramY);
+        
+        if (p.highlight) {
+          doc.setFont('helvetica', 'extrabold');
+          doc.setTextColor(46, 125, 50); // Emerald-700 green
+        } else {
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(60);
+        }
+        doc.text(String(p.val), startX + 68, paramY);
+        paramY += 4.5;
+      });
+      
+      y += boxHeight + 6;
+    } else if (sec.customDraw) {
+      y = sec.customDraw(y);
+    }
+  });
+}
+
 export function generatePaySlipPdf(data: PaySlipData, saveToFile = true): jsPDF {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -776,6 +1104,11 @@ export function generatePaySlipPdf(data: PaySlipData, saveToFile = true): jsPDF 
   });
 
   drawPaySlip(doc, data);
+
+  if (data.isLoyalis) {
+    doc.addPage();
+    drawDocumentationPage(doc, data);
+  }
 
   if (saveToFile) {
     const filename = `Slip_Gaji_${data.employeeName.replace(/\s+/g, '_')}.pdf`;
@@ -796,6 +1129,10 @@ export function generateMultiPaySlipPdf(slips: PaySlipData[], filename = 'Multi_
       doc.addPage();
     }
     drawPaySlip(doc, data);
+    if (data.isLoyalis) {
+      doc.addPage();
+      drawDocumentationPage(doc, data);
+    }
   });
 
   if (saveToFile) {
