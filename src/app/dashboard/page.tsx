@@ -247,7 +247,8 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
           <text
             x={x + 8}
             y={y + 16}
-            fill="#1e293b"
+            className="treemap-label"
+            fill="#000000"
             fontSize={10}
             fontWeight={600}
             textAnchor="start"
@@ -259,7 +260,8 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
           <text
             x={x + 8}
             y={y + 29}
-            fill="#334155"
+            className="treemap-label-sub"
+            fill="#000000"
             fontSize={9}
             fontWeight={500}
             textAnchor="start"
