@@ -963,15 +963,15 @@ export default function EmployeePayslipPage() {
 
   const DocRow = ({ label, value, highlight }: { label: string; value: React.ReactNode; highlight?: boolean }) => {
     return (
-      <div className="flex py-0.5 text-xs sm:text-sm font-medium">
-        <div className={`w-40 sm:w-56 shrink-0 ${highlight ? 'text-indigo-600 font-bold' : 'text-slate-500'}`}>
+      <>
+        <div className={`pr-4 font-semibold text-xs sm:text-sm ${highlight ? 'text-indigo-600 font-bold' : 'text-slate-500'}`}>
           {label}
         </div>
-        <div className="w-6 text-center text-indigo-600 font-bold shrink-0">:</div>
-        <div className={`flex-1 ${highlight ? 'text-emerald-600 font-extrabold' : 'text-slate-800 font-bold'}`}>
+        <div className="text-center text-indigo-600 font-bold text-xs sm:text-sm">:</div>
+        <div className={`pl-2 text-xs sm:text-sm ${highlight ? 'text-emerald-600 font-extrabold' : 'text-slate-800 font-bold'}`}>
           {value}
         </div>
-      </div>
+      </>
     );
   };
 
@@ -1365,7 +1365,7 @@ export default function EmployeePayslipPage() {
                         {userVariables && (
                           <div className="mt-3.5 ml-4 bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 max-w-2xl animate-in fade-in duration-200">
                             {item.id === 'gapok' && (
-                              <div className="space-y-1">
+                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                 <DocRow label="Golongan" value={employeeData?.gradeLevel || '-'} />
                                 <DocRow label="Masa Kerja" value={`${userVariables.years} Tahun`} />
                                 <DocRow label="Tgl Pengakuan" value={userVariables.baseDate ? new Date(userVariables.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'} />
@@ -1374,7 +1374,7 @@ export default function EmployeePayslipPage() {
                             )}
 
                             {item.id === 'keluarga' && (
-                              <div className="space-y-1">
+                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                 <DocRow label="Tanggungan Suami/Istri" value={`${userVariables.spouseCount} orang (${userVariables.spouseCount * 5}%)`} />
                                 <DocRow label="Tanggungan Anak (SD/SLTP/SLTA/PT)" value={`${userVariables.sd}/${userVariables.sltp}/${userVariables.slta}/${userVariables.pt} orang`} />
                                 <DocRow label="Persentase Total" value={`${(userVariables.familyPct * 100).toFixed(1)}%`} />
@@ -1383,7 +1383,7 @@ export default function EmployeePayslipPage() {
                             )}
 
                             {item.id === 'fungsional' && (
-                              <div className="space-y-1">
+                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                 <DocRow label="Pendidikan Terakhir" value={employeeData?.academic_and_tier?.education_level || '-'} />
                                 <DocRow label="Jenjang Fungsional" value={employeeData?.academic_and_tier?.functional_tier || 'Belum Ditetapkan'} />
                                 <DocRow label="Tunjangan Fungsional" value={formatIDR(userVariables.tunjFungsionalVal)} highlight />
@@ -1391,7 +1391,7 @@ export default function EmployeePayslipPage() {
                             )}
 
                             {item.id === 'kepangkatan' && (
-                              <div className="space-y-1">
+                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                 <DocRow label="Akumulasi Kredit (KUM)" value={String(userVariables.userCreditScore)} />
                                 <DocRow label="Jenjang Kepangkatan" value={userVariables.kepangkationDesignation} />
                                 <DocRow label="T. Kepangkatan" value={formatIDR(userVariables.tunjKepangkatanVal)} highlight />
@@ -1399,7 +1399,7 @@ export default function EmployeePayslipPage() {
                             )}
 
                             {item.id === 'presensi' && (
-                              <div className="space-y-1">
+                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                 <DocRow label="Hari Kerja Aktif" value={`${presenceInfo?.workingDays || 25} hari`} />
                                 <DocRow label="Target / Hari" value={`${presenceInfo?.expectedHours || 6.5} jam`} />
                                 <DocRow label="Kekurangan Jam" value={`${presenceInfo ? ((presenceInfo.absenceMinutes || 0) / 60).toFixed(1) : 0} jam`} />
@@ -1409,21 +1409,21 @@ export default function EmployeePayslipPage() {
                             )}
 
                             {item.id === 'struktural' && (
-                              <div className="space-y-1">
+                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                 <DocRow label="Jabatan Terdaftar" value={userVariables.positions.length > 0 ? userVariables.positions.map((p: any) => p.name).join(', ') : 'Tidak Ada'} />
                                 <DocRow label="Total T. Struktural" value={formatIDR(userVariables.totalStrukturalVal)} highlight />
                               </div>
                             )}
 
                             {item.id === 'hari_tua_instruksional' && (
-                              <div className="space-y-1">
+                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                 <DocRow label="Tunjangan Hari Tua (10% Gapok)" value={formatIDR(userVariables.tunjHariTuaVal)} highlight />
                                 <DocRow label="T. Instruksional" value={formatIDR(userVariables.tunjInstruksionalVal)} highlight />
                               </div>
                             )}
 
                             {item.id === 'bpjs_beras' && (
-                              <div className="space-y-1">
+                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                 <DocRow label="T. BPJS TK" value={formatIDR(userVariables.bpjsTkVal)} highlight />
                                 <DocRow label="T. BPJS KES" value={formatIDR(userVariables.bpjsKesVal)} highlight />
                                 <DocRow label="Tunjangan Beras" value={formatIDR(userVariables.berasVal)} highlight />
@@ -1431,15 +1431,15 @@ export default function EmployeePayslipPage() {
                             )}
 
                             {item.id === 'vakasi' && (
-                              <div className="space-y-1">
+                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                 {vakasiEvents && vakasiEvents.length > 0 ? (
-                                  <div className="space-y-1 mb-2">
+                                  <>
                                     {vakasiEvents.map((evt, eIdx) => (
                                       <DocRow key={eIdx} label={evt.eventName} value={formatIDR(evt.payGiven)} />
                                     ))}
-                                  </div>
+                                  </>
                                 ) : (
-                                  <div className="text-xs text-slate-400 italic mb-2">Tidak ada kegiatan resmi terdaftar pada periode ini</div>
+                                  <div className="col-span-3 text-xs text-slate-400 italic mb-1">Tidak ada kegiatan resmi terdaftar pada periode ini</div>
                                 )}
                                 <DocRow label="Total Vakasi Tambahan" value={formatIDR(
                                   earnings
