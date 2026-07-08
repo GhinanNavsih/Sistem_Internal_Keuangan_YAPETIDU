@@ -45,7 +45,9 @@ import {
   ChevronUp,
   BookOpen,
   MessageCircle,
+  ClipboardList,
 } from 'lucide-react';
+import Link from 'next/link';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import {
@@ -438,30 +440,34 @@ export default function EmployeePayslipPage() {
         setIsConfirmed(false);
 
         const empId = profile.linkedEmployeeId as string;
+        const isLoyalis = profile?.role !== 'honorer';
 
-        // 1. Fetch main Loyalis Employee document
-        const empRef = doc(db, 'Employees_Loyalis', empId);
+        // 1. Fetch main Employee document
+        const empRef = doc(db, isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar', empId);
         const empSnap = await getDoc(empRef);
 
         if (!empSnap.exists()) {
-          console.error("Employee document not found in Employees_Loyalis");
+          console.error(`Employee document not found in ${isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar'}`);
           setEmployeeData(null);
           setLoading(false);
           return;
         }
 
         const employee = { id: empSnap.id, ...empSnap.data() } as any;
-        // Parse joinDate (date_of_hire) matching the admin page implementation
-        employee.joinDate = employee.employment_profile?.date_of_hire?.toDate?.() ||
-          (employee.employment_profile?.date_of_hire ? new Date(employee.employment_profile.date_of_hire) :
-            (employee.personal_info?.join_date ? new Date(employee.personal_info.join_date) : new Date()));
-
-        // Parse dateRecognized matching the admin page implementation
-        employee.dateRecognized = employee.employment_profile?.date_recognized?.toDate?.() ||
-          (employee.employment_profile?.date_recognized ? new Date(employee.employment_profile.date_recognized) : undefined);
-
-        // Parse gradeLevel matching the admin page implementation
-        employee.gradeLevel = employee.academic_and_tier?.level_code || employee.employment_profile?.grade_level || '';
+        // Parse metadata properties dynamically matching each collection structure
+        if (isLoyalis) {
+          employee.joinDate = employee.employment_profile?.date_of_hire?.toDate?.() ||
+            (employee.employment_profile?.date_of_hire ? new Date(employee.employment_profile.date_of_hire) :
+              (employee.personal_info?.join_date ? new Date(employee.personal_info.join_date) : new Date()));
+          employee.dateRecognized = employee.employment_profile?.date_recognized?.toDate?.() ||
+            (employee.employment_profile?.date_recognized ? new Date(employee.employment_profile.date_recognized) : undefined);
+          employee.gradeLevel = employee.academic_and_tier?.level_code || employee.employment_profile?.grade_level || '';
+        } else {
+          employee.joinDate = employee.employment?.startDate?.toDate?.() ||
+            (employee.employment?.startDate ? new Date(employee.employment.startDate) : new Date());
+          employee.dateRecognized = undefined;
+          employee.gradeLevel = employee.salaryProfile?.salaryGradeCode || '';
+        }
 
         setEmployeeData(employee);
 
@@ -474,20 +480,32 @@ export default function EmployeePayslipPage() {
           const slipData = slipSnap.data();
           setConfirmedSlip(slipData);
           setIsConfirmed(slipData.status === 'locked');
+          setCalculatedEarnings(slipData.earnings || []);
+          setCalculatedDeductions(slipData.deductions || []);
 
-          // Fetch presence info in background/parallel to show in guide
-          try {
-            const presenceSnap = await getDoc(doc(db, 'LoyalisPresence', periodKey));
-            if (presenceSnap.exists()) {
-              const pData = presenceSnap.data();
-              const empEntry = pData.entries?.[empId];
-              setPresenceInfo({
-                workingDays: pData.workingDays || 25,
-                expectedHours: pData.expectedHours || 6.5,
-                absenceMinutes: empEntry?.absenceMinutes || 0,
-                bonusDeduction: empEntry?.deduction || 0
-              });
-            } else {
+          if (isLoyalis) {
+            // Fetch presence info in background/parallel to show in guide
+            try {
+              const presenceSnap = await getDoc(doc(db, 'LoyalisPresence', periodKey));
+              if (presenceSnap.exists()) {
+                const pData = presenceSnap.data();
+                const empEntry = pData.entries?.[empId];
+                setPresenceInfo({
+                  workingDays: pData.workingDays || 25,
+                  expectedHours: pData.expectedHours || 6.5,
+                  absenceMinutes: empEntry?.absenceMinutes || 0,
+                  bonusDeduction: empEntry?.deduction || 0
+                });
+              } else {
+                setPresenceInfo({
+                  workingDays: 25,
+                  expectedHours: 6.5,
+                  absenceMinutes: 0,
+                  bonusDeduction: 0
+                });
+              }
+            } catch (e) {
+              console.error("Error fetching presence info for guide:", e);
               setPresenceInfo({
                 workingDays: 25,
                 expectedHours: 6.5,
@@ -495,58 +513,61 @@ export default function EmployeePayslipPage() {
                 bonusDeduction: 0
               });
             }
-          } catch (e) {
-            console.error("Error fetching presence info for guide:", e);
-            setPresenceInfo({
-              workingDays: 25,
-              expectedHours: 6.5,
-              absenceMinutes: 0,
-              bonusDeduction: 0
-            });
-          }
 
-          // Fetch vakasi events in background/parallel to show in guide
-          try {
-            const vSnap = await getDocs(collection(db, 'VakasiTambahan'));
-            const events: { eventName: string; payGiven: number }[] = [];
-            vSnap.docs.forEach(d => {
-              const data = d.data();
-              if (data.period === periodToken && (!data.status || data.status === 'approved')) {
-                const eventName = data.eventName || '';
-                const worker = data.eventWorkers?.[empId];
-                if (worker && worker.payGiven) {
-                  events.push({ eventName, payGiven: worker.payGiven });
+            // Fetch vakasi events in background/parallel to show in guide
+            try {
+              const vSnap = await getDocs(collection(db, 'VakasiTambahan'));
+              const events: { eventName: string; payGiven: number }[] = [];
+              vSnap.docs.forEach(d => {
+                const data = d.data();
+                if (data.period === periodToken && (!data.status || data.status === 'approved')) {
+                  const eventName = data.eventName || '';
+                  const worker = data.eventWorkers?.[empId];
+                  if (worker && worker.payGiven) {
+                    events.push({ eventName, payGiven: worker.payGiven });
+                  }
                 }
-              }
-            });
-            setVakasiEvents(events);
-          } catch (e) {
-            console.error("Error fetching vakasi events for guide:", e);
-            setVakasiEvents([]);
-          }
+              });
+              setVakasiEvents(events);
+            } catch (e) {
+              console.error("Error fetching vakasi events for guide:", e);
+              setVakasiEvents([]);
+            }
 
-          // Fetch kepangkatan matrix in background
-          try {
-            const kepConfigSnap = await getDoc(doc(db, 'SalaryMatrix_Kepangkatan', '_config'));
-            const activeKepVersion = kepConfigSnap.exists() ? (kepConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
-            const kepSnap = await getDocs(collection(db, 'SalaryMatrix_Kepangkatan', activeKepVersion, 'rows'));
-            const designations: Record<number, string> = {};
-            kepSnap.docs.forEach(d => {
-              const data = d.data();
-              const credit = Number(data.credit_score) || 0;
-              designations[credit] = data.designation || '';
-            });
-            setKepangkatanDesignations(designations);
-          } catch (e) {
-            console.error("Error fetching kepangkatan designations for guide:", e);
-            setKepangkatanDesignations({});
+            // Fetch kepangkatan matrix in background
+            try {
+              const kepConfigSnap = await getDoc(doc(db, 'SalaryMatrix_Kepangkatan', '_config'));
+              const activeKepVersion = kepConfigSnap.exists() ? (kepConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
+              const kepSnap = await getDocs(collection(db, 'SalaryMatrix_Kepangkatan', activeKepVersion, 'rows'));
+              const designations: Record<number, string> = {};
+              kepSnap.docs.forEach(d => {
+                const data = d.data();
+                const credit = Number(data.credit_score) || 0;
+                designations[credit] = data.designation || '';
+              });
+              setKepangkatanDesignations(designations);
+            } catch (e) {
+              console.error("Error fetching kepangkatan designations for guide:", e);
+              setKepangkatanDesignations({});
+            }
           }
 
           setLoading(false);
           return;
         }
 
-        // 3. Fallback: Dynamic calculation of draft payslip in real-time
+        if (!isLoyalis) {
+          // No locked slip for blue collar (honorer)
+          setConfirmedSlip(null);
+          setIsConfirmed(false);
+          setCalculatedEarnings([]);
+          setCalculatedDeductions([]);
+          setLoading(false);
+          return;
+        }
+
+        // 3. Fallback: Dynamic calculation of draft payslip in real-time (Only for Loyalis)
+        // Fetch active Salary Matrix configs in parallel
         // Fetch active Salary Matrix configs in parallel
         const [
           matrixWhiteConfigSnap,
@@ -978,14 +999,15 @@ export default function EmployeePayslipPage() {
   // Client-side PDF trigger
   const handleDownloadPdf = () => {
     if (!employeeData || !isConfirmed) return;
+    const isLoyalis = profile?.role !== 'honorer';
     const slipData: PaySlipData = {
       employeeName: employeeData.personal_info?.name || profile?.displayName || 'Karyawan',
       employeeNo: 1, // Placeholder
       period: periodText,
-      jobCategory: `STAF ${employeeData.employment_profile?.department_unit || 'STAF'}`,
+      jobCategory: isLoyalis ? `STAF ${employeeData.employment_profile?.department_unit || 'STAF'}` : (employeeData.employment?.jobCategory || 'PEKARYA'),
       earnings: earnings,
       deductions: deductions,
-      isLoyalis: true,
+      isLoyalis: isLoyalis,
       niy: employeeData.personal_info?.employee_id_niy || '',
       npwp: employeeData.personal_info?.tax_id_npwp || '',
       familyMetrics: employeeData.family_allowance_metrics,
@@ -1069,6 +1091,20 @@ export default function EmployeePayslipPage() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {profile.role === 'honorer' && (
+              <Link href="/employee/activities">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-8.5 sm:h-9 px-2.5 sm:px-3.5 flex items-center gap-1.5 font-semibold text-[10px] sm:text-xs shadow-sm cursor-pointer"
+                  title="Kembali ke Laporan Kegiatan"
+                >
+                  <ClipboardList className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-500" />
+                  <span className="hidden sm:inline">Laporan Kegiatan</span>
+                </Button>
+              </Link>
+            )}
+
             <Button
               onClick={handlePasswordReset}
               disabled={resetLoading}
@@ -1313,153 +1349,155 @@ export default function EmployeePayslipPage() {
               </div>
 
               {/* Documentation Section */}
-              <div className="border-t border-slate-100">
-                <div
-                  onClick={() => setShowDoc(!showDoc)}
-                  className="p-6 md:p-8 flex items-center justify-between cursor-pointer hover:bg-slate-50/80 transition-colors"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-                      <BookOpen className="w-4.5 h-4.5 text-indigo-500" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Panduan Perhitungan Gaji</h3>
-                      <p className="text-xs text-slate-400 font-medium mt-1">Klik untuk {showDoc ? 'menyembunyikan' : 'melihat'} detail formula dan logika perhitungan</p>
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-slate-400">
-                    {showDoc ? (
-                      <ChevronUp className="w-5 h-5 text-indigo-500" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5" />
-                    )}
-                  </div>
-                </div>
-
-                {showDoc && (
-                  <div className="px-6 md:px-8 pb-8 space-y-6 animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="h-px bg-slate-100" />
-                    {payrollDocumentation.map((item, idx) => (
-                      <div key={item.id}>
-                        {/* Section Header */}
-                        <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 mb-2">
-                          <h4 className="text-sm font-bold text-slate-800 tracking-wide">
-                            {idx + 1}. {item.title.toUpperCase()}
-                          </h4>
-                          <span className="text-[11px] font-medium text-slate-400 italic">
-                            Formula: {item.formula}
-                          </span>
-                        </div>
-
-                        {/* Bullet Points */}
-                        <ul className="space-y-1 ml-4 pl-0">
-                          {item.bullets.map((bullet, bIdx) => (
-                            <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-slate-550 leading-relaxed">
-                              <span className="mt-2 w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
-                              <span>{bullet}</span>
-                            </li>
-                          ))}
-                        </ul>
-
-                        {/* Optional variables display */}
-                        {userVariables && (
-                          <div className="mt-3.5 ml-4 bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 max-w-2xl animate-in fade-in duration-200">
-                            {item.id === 'gapok' && (
-                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                <DocRow label="Golongan" value={employeeData?.gradeLevel || '-'} />
-                                <DocRow label="Masa Kerja" value={`${userVariables.years} Tahun`} />
-                                <DocRow label="Tgl Pengakuan" value={userVariables.baseDate ? new Date(userVariables.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'} />
-                                <DocRow label="Gaji Pokok" value={formatIDR(userVariables.gapokVal)} highlight />
-                              </div>
-                            )}
-
-                            {item.id === 'keluarga' && (
-                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                <DocRow label="Tanggungan Suami/Istri" value={`${userVariables.spouseCount} orang (${userVariables.spouseCount * 5}%)`} />
-                                <DocRow label="Tanggungan Anak (SD/SLTP/SLTA/PT)" value={`${userVariables.sd}/${userVariables.sltp}/${userVariables.slta}/${userVariables.pt} orang`} />
-                                <DocRow label="Persentase Total" value={`${(userVariables.familyPct * 100).toFixed(1)}%`} />
-                                <DocRow label="Tunjangan Keluarga" value={formatIDR(userVariables.tunjKeluargaVal)} highlight />
-                              </div>
-                            )}
-
-                            {item.id === 'fungsional' && (
-                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                <DocRow label="Pendidikan Terakhir" value={employeeData?.academic_and_tier?.education_level || '-'} />
-                                <DocRow label="Jenjang Fungsional" value={employeeData?.academic_and_tier?.functional_tier || 'Belum Ditetapkan'} />
-                                <DocRow label="Tunjangan Fungsional" value={formatIDR(userVariables.tunjFungsionalVal)} highlight />
-                              </div>
-                            )}
-
-                            {item.id === 'kepangkatan' && (
-                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                <DocRow label="Akumulasi Kredit (KUM)" value={String(userVariables.userCreditScore)} />
-                                <DocRow label="Jenjang Kepangkatan" value={userVariables.kepangkationDesignation} />
-                                <DocRow label="T. Kepangkatan" value={formatIDR(userVariables.tunjKepangkatanVal)} highlight />
-                              </div>
-                            )}
-
-                            {item.id === 'presensi' && (
-                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                <DocRow label="Hari Kerja Aktif" value={`${presenceInfo?.workingDays || 25} hari`} />
-                                <DocRow label="Target / Hari" value={`${presenceInfo?.expectedHours || 6.5} jam`} />
-                                <DocRow label="Kekurangan Jam" value={`${presenceInfo ? ((presenceInfo.absenceMinutes || 0) / 60).toFixed(1) : 0} jam`} />
-                                <DocRow label="Bersih Presensi Jam" value={`${formatIDR(Math.max(0, userVariables.presensiEarningVal - userVariables.potonganPresensiVal))} (${formatIDR(userVariables.presensiEarningVal)} - ${formatIDR(userVariables.potonganPresensiVal)})`} highlight />
-                                <DocRow label="Bersih Bonus Presensi" value={`${formatIDR(Math.max(0, userVariables.bonusPresensiVal - userVariables.potonganBonusPresensiVal))} (${formatIDR(userVariables.bonusPresensiVal)} - ${formatIDR(userVariables.potonganBonusPresensiVal)})`} highlight />
-                              </div>
-                            )}
-
-                            {item.id === 'struktural' && (
-                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                <DocRow label="Jabatan Terdaftar" value={userVariables.positions.length > 0 ? userVariables.positions.map((p: any) => p.name).join(', ') : 'Tidak Ada'} />
-                                <DocRow label="Total T. Struktural" value={formatIDR(userVariables.totalStrukturalVal)} highlight />
-                              </div>
-                            )}
-
-                            {item.id === 'hari_tua_instruksional' && (
-                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                <DocRow label="Tunjangan Hari Tua (10% Gapok)" value={formatIDR(userVariables.tunjHariTuaVal)} highlight />
-                                <DocRow label="T. Instruksional" value={formatIDR(userVariables.tunjInstruksionalVal)} highlight />
-                              </div>
-                            )}
-
-                            {item.id === 'bpjs_beras' && (
-                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                <DocRow label="T. BPJS TK" value={formatIDR(userVariables.bpjsTkVal)} highlight />
-                                <DocRow label="T. BPJS KES" value={formatIDR(userVariables.bpjsKesVal)} highlight />
-                                <DocRow label="Tunjangan Beras" value={formatIDR(userVariables.berasVal)} highlight />
-                              </div>
-                            )}
-
-                            {item.id === 'vakasi' && (
-                              <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                {vakasiEvents && vakasiEvents.length > 0 ? (
-                                  <>
-                                    {vakasiEvents.map((evt, eIdx) => (
-                                      <DocRow key={eIdx} label={evt.eventName} value={formatIDR(evt.payGiven)} />
-                                    ))}
-                                  </>
-                                ) : (
-                                  <div className="col-span-3 text-xs text-slate-400 italic mb-1">Tidak ada kegiatan resmi terdaftar pada periode ini</div>
-                                )}
-                                <DocRow label="Total Vakasi Tambahan" value={formatIDR(
-                                  earnings
-                                    .filter((e: PaySlipField) => !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:'))
-                                    .reduce((sum: number, e: PaySlipField) => sum + e.amount, 0)
-                                )} highlight />
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Separator between items */}
-                        {idx < payrollDocumentation.length - 1 && (
-                          <div className="h-px bg-slate-100 mt-5" />
-                        )}
+              {profile?.role === 'loyalis' && (
+                <div className="border-t border-slate-100">
+                  <div
+                    onClick={() => setShowDoc(!showDoc)}
+                    className="p-6 md:p-8 flex items-center justify-between cursor-pointer hover:bg-slate-50/80 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                        <BookOpen className="w-4.5 h-4.5 text-indigo-500" />
                       </div>
-                    ))}
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Panduan Perhitungan Gaji</h3>
+                        <p className="text-xs text-slate-400 font-medium mt-1">Klik untuk {showDoc ? 'menyembunyikan' : 'melihat'} detail formula dan logika perhitungan</p>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-slate-400">
+                      {showDoc ? (
+                        <ChevronUp className="w-5 h-5 text-indigo-500" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5" />
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
+
+                  {showDoc && (
+                    <div className="px-6 md:px-8 pb-8 space-y-6 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="h-px bg-slate-100" />
+                      {payrollDocumentation.map((item, idx) => (
+                        <div key={item.id}>
+                          {/* Section Header */}
+                          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 mb-2">
+                            <h4 className="text-sm font-bold text-slate-800 tracking-wide">
+                              {idx + 1}. {item.title.toUpperCase()}
+                            </h4>
+                            <span className="text-[11px] font-medium text-slate-400 italic">
+                              Formula: {item.formula}
+                            </span>
+                          </div>
+
+                          {/* Bullet Points */}
+                          <ul className="space-y-1 ml-4 pl-0">
+                            {item.bullets.map((bullet, bIdx) => (
+                              <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-slate-550 leading-relaxed">
+                                <span className="mt-2 w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
+                                <span>{bullet}</span>
+                              </li>
+                            ))}
+                          </ul>
+
+                          {/* Optional variables display */}
+                          {userVariables && (
+                            <div className="mt-3.5 ml-4 bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 max-w-2xl animate-in fade-in duration-200">
+                              {item.id === 'gapok' && (
+                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                  <DocRow label="Golongan" value={employeeData?.gradeLevel || '-'} />
+                                  <DocRow label="Masa Kerja" value={`${userVariables.years} Tahun`} />
+                                  <DocRow label="Tgl Pengakuan" value={userVariables.baseDate ? new Date(userVariables.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'} />
+                                  <DocRow label="Gaji Pokok" value={formatIDR(userVariables.gapokVal)} highlight />
+                                </div>
+                              )}
+
+                              {item.id === 'keluarga' && (
+                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                  <DocRow label="Tanggungan Suami/Istri" value={`${userVariables.spouseCount} orang (${userVariables.spouseCount * 5}%)`} />
+                                  <DocRow label="Tanggungan Anak (SD/SLTP/SLTA/PT)" value={`${userVariables.sd}/${userVariables.sltp}/${userVariables.slta}/${userVariables.pt} orang`} />
+                                  <DocRow label="Persentase Total" value={`${(userVariables.familyPct * 100).toFixed(1)}%`} />
+                                  <DocRow label="Tunjangan Keluarga" value={formatIDR(userVariables.tunjKeluargaVal)} highlight />
+                                </div>
+                              )}
+
+                              {item.id === 'fungsional' && (
+                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                  <DocRow label="Pendidikan Terakhir" value={employeeData?.academic_and_tier?.education_level || '-'} />
+                                  <DocRow label="Jenjang Fungsional" value={employeeData?.academic_and_tier?.functional_tier || 'Belum Ditetapkan'} />
+                                  <DocRow label="Tunjangan Fungsional" value={formatIDR(userVariables.tunjFungsionalVal)} highlight />
+                                </div>
+                              )}
+
+                              {item.id === 'kepangkatan' && (
+                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                  <DocRow label="Akumulasi Kredit (KUM)" value={String(userVariables.userCreditScore)} />
+                                  <DocRow label="Jenjang Kepangkatan" value={userVariables.kepangkationDesignation} />
+                                  <DocRow label="T. Kepangkatan" value={formatIDR(userVariables.tunjKepangkatanVal)} highlight />
+                                </div>
+                              )}
+
+                              {item.id === 'presensi' && (
+                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                  <DocRow label="Hari Kerja Aktif" value={`${presenceInfo?.workingDays || 25} hari`} />
+                                  <DocRow label="Target / Hari" value={`${presenceInfo?.expectedHours || 6.5} jam`} />
+                                  <DocRow label="Kekurangan Jam" value={`${presenceInfo ? ((presenceInfo.absenceMinutes || 0) / 60).toFixed(1) : 0} jam`} />
+                                  <DocRow label="Bersih Presensi Jam" value={`${formatIDR(Math.max(0, userVariables.presensiEarningVal - userVariables.potonganPresensiVal))} (${formatIDR(userVariables.presensiEarningVal)} - ${formatIDR(userVariables.potonganPresensiVal)})`} highlight />
+                                  <DocRow label="Bersih Bonus Presensi" value={`${formatIDR(Math.max(0, userVariables.bonusPresensiVal - userVariables.potonganBonusPresensiVal))} (${formatIDR(userVariables.bonusPresensiVal)} - ${formatIDR(userVariables.potonganBonusPresensiVal)})`} highlight />
+                                </div>
+                              )}
+
+                              {item.id === 'struktural' && (
+                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                  <DocRow label="Jabatan Terdaftar" value={userVariables.positions.length > 0 ? userVariables.positions.map((p: any) => p.name).join(', ') : 'Tidak Ada'} />
+                                  <DocRow label="Total T. Struktural" value={formatIDR(userVariables.totalStrukturalVal)} highlight />
+                                </div>
+                              )}
+
+                              {item.id === 'hari_tua_instruksional' && (
+                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                  <DocRow label="Tunjangan Hari Tua (10% Gapok)" value={formatIDR(userVariables.tunjHariTuaVal)} highlight />
+                                  <DocRow label="T. Instruksional" value={formatIDR(userVariables.tunjInstruksionalVal)} highlight />
+                                </div>
+                              )}
+
+                              {item.id === 'bpjs_beras' && (
+                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                  <DocRow label="T. BPJS TK" value={formatIDR(userVariables.bpjsTkVal)} highlight />
+                                  <DocRow label="T. BPJS KES" value={formatIDR(userVariables.bpjsKesVal)} highlight />
+                                  <DocRow label="Tunjangan Beras" value={formatIDR(userVariables.berasVal)} highlight />
+                                </div>
+                              )}
+
+                              {item.id === 'vakasi' && (
+                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                  {vakasiEvents && vakasiEvents.length > 0 ? (
+                                    <>
+                                      {vakasiEvents.map((evt, eIdx) => (
+                                        <DocRow key={eIdx} label={evt.eventName} value={formatIDR(evt.payGiven)} />
+                                      ))}
+                                    </>
+                                  ) : (
+                                    <div className="col-span-3 text-xs text-slate-400 italic mb-1">Tidak ada kegiatan resmi terdaftar pada periode ini</div>
+                                  )}
+                                  <DocRow label="Total Vakasi Tambahan" value={formatIDR(
+                                    earnings
+                                      .filter((e: PaySlipField) => !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:'))
+                                      .reduce((sum: number, e: PaySlipField) => sum + e.amount, 0)
+                                  )} highlight />
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Separator between items */}
+                          {idx < payrollDocumentation.length - 1 && (
+                            <div className="h-px bg-slate-100 mt-5" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
             </Card>
 

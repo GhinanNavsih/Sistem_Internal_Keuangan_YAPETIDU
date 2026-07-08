@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import Link from 'next/link';
 import {
   Card,
   CardContent,
@@ -460,14 +461,28 @@ export default function EmployeeActivitiesPage() {
               <p className="text-[11px] text-slate-400 font-medium">{profile.displayName || 'Karyawan'}</p>
             </div>
           </div>
-          <Button
-            onClick={() => logout()}
-            variant="ghost"
-            size="sm"
-            className="text-slate-400 hover:text-rose-500 rounded-xl h-8 px-2.5"
-          >
-            <LogOut className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <Link href="/employee/payslip">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-xl h-8 px-2.5 flex items-center gap-1.5 font-bold text-xs cursor-pointer"
+                title="Lihat Slip Gaji"
+              >
+                <Banknote className="w-4 h-4 text-emerald-600" />
+                <span>Slip Gaji</span>
+              </Button>
+            </Link>
+
+            <Button
+              onClick={() => logout()}
+              variant="ghost"
+              size="sm"
+              className="text-slate-400 hover:text-rose-500 rounded-xl h-8 px-2.5"
+            >
+              <LogOut className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </div>
 
