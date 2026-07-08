@@ -78,6 +78,64 @@ const formatIDR = (amount: number) => {
 
 const PIE_COLORS = ['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#0ea5e9', '#a855f7'];
 
+const CustomizedCompositionTreemapContent = (props: any) => {
+  const { x, y, width, height, index, name, value, depth } = props;
+  
+  if (depth === 0 || !name) return null;
+
+  const color = PIE_COLORS[index % PIE_COLORS.length] || '#4f46e5';
+  const valueText = value !== undefined ? formatIDR(value) : '';
+
+  const maxNameChars = Math.max(8, Math.floor((width - 16) / 7));
+  const truncatedName = name.length > maxNameChars ? `${name.substring(0, maxNameChars)}…` : name;
+
+  const showName = width > 40 && height > 20;
+  const showValue = width > 60 && height > 38 && valueText;
+
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill={color}
+        stroke="#ffffff"
+        strokeWidth={1.5}
+        opacity={0.85}
+        rx={4}
+        ry={4}
+      />
+      {showName && (
+        <text
+          x={x + 6}
+          y={y + 15}
+          className="treemap-label"
+          fill="#000000"
+          fontSize={9.5}
+          fontWeight={600}
+          textAnchor="start"
+        >
+          {truncatedName}
+        </text>
+      )}
+      {showValue && (
+        <text
+          x={x + 6}
+          y={y + 27}
+          className="treemap-label-sub"
+          fill="#000000"
+          fontSize={8.5}
+          fontWeight={500}
+          textAnchor="start"
+        >
+          {valueText}
+        </text>
+      )}
+    </g>
+  );
+};
+
 const GROUP_COLOR_MAP: Record<string, { hex: string; bg: string }> = {
   // Loyalis Departments
   'REKTORAT': { hex: '#10b981', bg: 'bg-emerald-500' }, // Green
@@ -273,6 +331,7 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
     );
   };
 
+
   return (
     <div className="flex flex-col justify-between flex-1 w-full">
       <div>
@@ -436,8 +495,8 @@ export default function TreasuryDashboard() {
   const [slips, setSlips] = useState<any[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
   const [filterCollar, setFilterCollar] = useState<'semua' | 'pekarya' | 'loyalis'>('semua');
-  const [deductionsView, setDeductionsView] = useState<'list' | 'pie' | 'bar'>('list');
-  const [earningsView, setEarningsView] = useState<'list' | 'pie' | 'bar'>('list');
+  const [deductionsView, setDeductionsView] = useState<'treemap' | 'pie' | 'bar'>('treemap');
+  const [earningsView, setEarningsView] = useState<'treemap' | 'pie' | 'bar'>('treemap');
   const [animateBars, setAnimateBars] = useState(false);
   const [animateListBars, setAnimateListBars] = useState(false);
   const [animateEarningsListBars, setAnimateEarningsListBars] = useState(false);
@@ -473,9 +532,9 @@ export default function TreasuryDashboard() {
     };
   }, []);
 
-  // Trigger starting animation on the deduction bars when toggling to 'Daftar' view
+  // Trigger starting animation on the deduction bars when toggling to 'Treemap' view
   useEffect(() => {
-    if (deductionsView === 'list') {
+    if (deductionsView === 'treemap') {
       setAnimateListBars(false);
       const timer = setTimeout(() => {
         setAnimateListBars(true);
@@ -484,9 +543,9 @@ export default function TreasuryDashboard() {
     }
   }, [deductionsView]);
 
-  // Trigger starting animation on the earning bars when toggling to 'Daftar' view
+  // Trigger starting animation on the earning bars when toggling to 'Treemap' view
   useEffect(() => {
-    if (earningsView === 'list') {
+    if (earningsView === 'treemap') {
       setAnimateEarningsListBars(false);
       const timer = setTimeout(() => {
         setAnimateEarningsListBars(true);
@@ -2160,13 +2219,13 @@ export default function TreasuryDashboard() {
                     <div className="flex bg-slate-100/80 p-0.5 rounded-xl border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
                       <button
                         type="button"
-                        onClick={() => setEarningsView('list')}
-                        className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${earningsView === 'list'
+                        onClick={() => setEarningsView('treemap')}
+                        className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${earningsView === 'treemap'
                           ? 'bg-white text-indigo-600 shadow-sm'
                           : 'text-slate-500 hover:text-slate-700'
                           }`}
                       >
-                        Daftar
+                        Treemap
                       </button>
                       <button
                         type="button"
@@ -2194,37 +2253,19 @@ export default function TreasuryDashboard() {
                   <div className="p-6">
                     {sortedEarnings.length === 0 ? (
                       <p className="text-center text-slate-400 text-sm py-12">Tidak ada penerimaan pada periode ini</p>
-                    ) : earningsView === 'list' ? (
-                      <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
-                        {sortedEarnings.map((item, idx) => {
-                          const percentage = currentFilteredGross > 0
-                            ? (item.value / currentFilteredGross) * 100
-                            : 0;
-
-                          // Harmonic colors for bars
-                          const barColors = [
-                            'bg-indigo-500', 'bg-emerald-500', 'bg-sky-500',
-                            'bg-amber-500', 'bg-purple-500', 'bg-rose-500'
-                          ];
-                          const colorClass = barColors[idx % barColors.length];
-
-                          return (
-                            <div key={item.name} className="space-y-1.5">
-                              <div className="flex items-center justify-between text-xs font-semibold">
-                                <span className="text-slate-700">{item.name}</span>
-                                <span className="text-slate-900 font-bold">
-                                  {formatIDR(item.value)} <span className="text-slate-400 text-[10px] ml-1">({percentage.toFixed(1)}%)</span>
-                                </span>
-                              </div>
-                              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                                <div
-                                  className={`${colorClass} h-full rounded-full transition-all duration-500`}
-                                  style={{ width: `${animateEarningsListBars ? percentage : 0}%` }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
+                    ) : earningsView === 'treemap' ? (
+                      <div className="w-full h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <Treemap
+                            width={100}
+                            height={100}
+                            data={sortedEarnings}
+                            dataKey="value"
+                            aspectRatio={4 / 3}
+                            stroke="#fff"
+                            content={<CustomizedCompositionTreemapContent />}
+                          />
+                        </ResponsiveContainer>
                       </div>
                     ) : earningsView === 'bar' ? (
                       <div className="w-full h-[300px]">
@@ -2314,13 +2355,13 @@ export default function TreasuryDashboard() {
                     <div className="flex bg-slate-100/80 p-0.5 rounded-xl border border-slate-200/60 shadow-sm gap-0.5 shrink-0">
                       <button
                         type="button"
-                        onClick={() => setDeductionsView('list')}
-                        className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${deductionsView === 'list'
+                        onClick={() => setDeductionsView('treemap')}
+                        className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${deductionsView === 'treemap'
                           ? 'bg-white text-indigo-600 shadow-sm'
                           : 'text-slate-500 hover:text-slate-700'
                           }`}
                       >
-                        Daftar
+                        Treemap
                       </button>
                       <button
                         type="button"
@@ -2348,37 +2389,19 @@ export default function TreasuryDashboard() {
                   <div className="p-6">
                     {sortedDeductions.length === 0 ? (
                       <p className="text-center text-slate-400 text-sm py-12">Tidak ada potongan terpotong pada periode ini</p>
-                    ) : deductionsView === 'list' ? (
-                      <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
-                        {sortedDeductions.map((item, idx) => {
-                          const percentage = currentFilteredDeductions > 0
-                            ? (item.value / currentFilteredDeductions) * 100
-                            : 0;
-
-                          // Harmonic colors for bars
-                          const barColors = [
-                            'bg-indigo-500', 'bg-rose-500', 'bg-emerald-500',
-                            'bg-amber-500', 'bg-sky-500', 'bg-purple-500'
-                          ];
-                          const colorClass = barColors[idx % barColors.length];
-
-                          return (
-                            <div key={item.name} className="space-y-1.5">
-                              <div className="flex items-center justify-between text-xs font-semibold">
-                                <span className="text-slate-700">{item.name}</span>
-                                <span className="text-slate-900 font-bold">
-                                  {formatIDR(item.value)} <span className="text-slate-400 text-[10px] ml-1">({percentage.toFixed(1)}%)</span>
-                                </span>
-                              </div>
-                              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                                <div
-                                  className={`${colorClass} h-full rounded-full transition-all duration-500`}
-                                  style={{ width: `${animateListBars ? percentage : 0}%` }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
+                    ) : deductionsView === 'treemap' ? (
+                      <div className="w-full h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <Treemap
+                            width={100}
+                            height={100}
+                            data={sortedDeductions}
+                            dataKey="value"
+                            aspectRatio={4 / 3}
+                            stroke="#fff"
+                            content={<CustomizedCompositionTreemapContent />}
+                          />
+                        </ResponsiveContainer>
                       </div>
                     ) : deductionsView === 'bar' ? (
                       <div className="w-full h-[300px]">
