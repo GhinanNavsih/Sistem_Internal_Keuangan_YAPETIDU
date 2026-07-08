@@ -166,7 +166,7 @@ export default function LoginPage() {
           </div>
 
           <h2 className="text-4xl font-extrabold text-white leading-tight mb-4 tracking-tight">
-            Sistem Internal<br />Keuangan UNIPDU
+            Sistem Administrasi<br />Keuangan UNIPDU
           </h2>
           <p className="text-indigo-200 text-base leading-relaxed mb-12">
             Platform manajemen penggajian terpadu untuk<br />
