@@ -844,7 +844,24 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
     bonusDeduction: 0
   };
 
-  const vakasiEvents = data.vakasiEvents || [];
+  let vakasiEvents = data.vakasiEvents || [];
+  if (vakasiEvents.length === 0 && data.earnings) {
+    const standardLabels = [
+      'GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 
+      'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 
+      'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 
+      'PIKET', 'LEMBUR'
+    ];
+    const extracted = data.earnings.filter(e => 
+      !standardLabels.includes(e.label.toUpperCase()) && 
+      !e.label.toUpperCase().startsWith('STRUKTURAL:') &&
+      e.amount > 0
+    );
+    vakasiEvents = extracted.map(e => ({
+      eventName: e.label,
+      payGiven: e.amount
+    }));
+  }
   const famMetrics = data.familyMetrics || {
     spouse_count: 0,
     children_sd: 0,
