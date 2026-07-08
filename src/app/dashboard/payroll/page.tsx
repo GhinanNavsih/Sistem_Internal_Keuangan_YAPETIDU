@@ -204,6 +204,7 @@ export default function PayrollValidationDashboard() {
   const isSavingRef = useRef(false);
   const [uploadingWa, setUploadingWa] = useState<Record<string, boolean>>({});
   const [salaryMatrix, setSalaryMatrix] = useState<SalaryMatrix>({});
+  const [kepangkatanDesignations, setKepangkatanDesignations] = useState<Record<number, string>>({});
   const [localLoading, setLocalLoading] = useState(false);
   const [confirmingBulk, setConfirmingBulk] = useState(false);
   const loading = contextLoading || localLoading;
@@ -1045,6 +1046,7 @@ export default function PayrollValidationDashboard() {
     try {
       const isLoyalis = payrollCollar === 'loyalis';
       const freshData = buildFreshSlipData(emp);
+      const creditVal = Number(emp.raw.kepangkatan?.cummulativeCredit) || 0;
       const slipData = {
         employeeName: isLoyalis ? (emp.raw.personal_info?.name || '') : emp.name,
         employeeNo: emp.rowIndex,
@@ -1058,6 +1060,13 @@ export default function PayrollValidationDashboard() {
         niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
         npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
         familyMetrics: isLoyalis ? emp.raw.family_allowance_metrics : undefined,
+        gradeLevel: isLoyalis ? (emp.raw.academic_and_tier?.level_code || emp.gradeLevel || '') : '',
+        yearsOfService: isLoyalis ? calculateYearsOfService(emp.dateRecognized || emp.joinDate, targetDate) : 0,
+        baseDate: isLoyalis ? (emp.dateRecognized || emp.joinDate ? (emp.dateRecognized || emp.joinDate).toISOString() : '') : '',
+        educationLevel: isLoyalis ? (emp.raw.academic_and_tier?.education_level || '') : '',
+        functionalTier: isLoyalis ? (emp.raw.academic_and_tier?.functional_tier || '') : '',
+        cummulativeCredit: isLoyalis ? creditVal : 0,
+        designation: isLoyalis ? (kepangkatanDesignations[creditVal] || 'Tidak Ditemukan') : '',
       };
 
       let pdfUrl: string | undefined = undefined;
@@ -1145,6 +1154,7 @@ export default function PayrollValidationDashboard() {
     try {
       const isLoyalis = payrollCollar === 'loyalis';
       const freshData = buildFreshSlipData(emp);
+      const creditVal = Number(emp.raw.kepangkatan?.cummulativeCredit) || 0;
       const slipData = {
         employeeName: isLoyalis ? (emp.raw.personal_info?.name || '') : emp.name,
         employeeNo: emp.rowIndex,
@@ -1158,6 +1168,13 @@ export default function PayrollValidationDashboard() {
         niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
         npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
         familyMetrics: isLoyalis ? emp.raw.family_allowance_metrics : undefined,
+        gradeLevel: isLoyalis ? (emp.raw.academic_and_tier?.level_code || emp.gradeLevel || '') : '',
+        yearsOfService: isLoyalis ? calculateYearsOfService(emp.dateRecognized || emp.joinDate, targetDate) : 0,
+        baseDate: isLoyalis ? (emp.dateRecognized || emp.joinDate ? (emp.dateRecognized || emp.joinDate).toISOString() : '') : '',
+        educationLevel: isLoyalis ? (emp.raw.academic_and_tier?.education_level || '') : '',
+        functionalTier: isLoyalis ? (emp.raw.academic_and_tier?.functional_tier || '') : '',
+        cummulativeCredit: isLoyalis ? creditVal : 0,
+        designation: isLoyalis ? (kepangkatanDesignations[creditVal] || 'Tidak Ditemukan') : '',
       };
 
       const pdfDoc = generatePaySlipPdf(slipData, false);
@@ -1520,12 +1537,15 @@ export default function PayrollValidationDashboard() {
       });
 
       const freshKepMatrix: Record<number, number> = {};
+      const freshKepDesignations: Record<number, string> = {};
       kepSnap.docs.forEach(d => {
         const data = d.data();
         const credit = Number(data.credit_score) || 0;
         const allowance = Number(data.allowance) || 0;
         freshKepMatrix[credit] = allowance;
+        freshKepDesignations[credit] = data.designation || '';
       });
+      setKepangkatanDesignations(freshKepDesignations);
 
       let freshPresenceData = presenceSnap.exists() ? presenceSnap.data() : null;
       setLoyalisPresenceData(freshPresenceData);
@@ -2078,12 +2098,15 @@ export default function PayrollValidationDashboard() {
     });
 
     const freshKepMatrix: Record<number, number> = {};
+    const freshKepDesignations: Record<number, string> = {};
     kepSnap.docs.forEach(d => {
       const data = d.data();
       const credit = Number(data.credit_score) || 0;
       const allowance = Number(data.allowance) || 0;
       freshKepMatrix[credit] = allowance;
+      freshKepDesignations[credit] = data.designation || '';
     });
+    setKepangkatanDesignations(freshKepDesignations);
 
     // 4. Fetch Presence data
     const presenceSnap = await getDoc(doc(db, 'LoyalisPresence', period));
@@ -3346,6 +3369,7 @@ export default function PayrollValidationDashboard() {
                 if (!selectedEmployee) return;
                 const freshData = buildFreshSlipData(selectedEmployee);
                 const isLoyalis = payrollCollar === 'loyalis';
+                const creditVal = Number(selectedEmployee.raw.kepangkatan?.cummulativeCredit) || 0;
                 const slipData = {
                   employeeName: isLoyalis ? (selectedEmployee.raw.personal_info?.name || '') : selectedEmployee.name,
                   employeeNo: selectedEmployee.rowIndex,
@@ -3359,6 +3383,13 @@ export default function PayrollValidationDashboard() {
                   niy: isLoyalis ? selectedEmployee.raw.personal_info?.employee_id_niy || '' : '',
                   npwp: isLoyalis ? selectedEmployee.raw.personal_info?.tax_id_npwp || '' : '',
                   familyMetrics: isLoyalis ? selectedEmployee.raw.family_allowance_metrics : undefined,
+                  gradeLevel: isLoyalis ? (selectedEmployee.raw.academic_and_tier?.level_code || selectedEmployee.gradeLevel || '') : '',
+                  yearsOfService: isLoyalis ? calculateYearsOfService(selectedEmployee.dateRecognized || selectedEmployee.joinDate, targetDate) : 0,
+                  baseDate: isLoyalis ? (selectedEmployee.dateRecognized || selectedEmployee.joinDate ? (selectedEmployee.dateRecognized || selectedEmployee.joinDate).toISOString() : '') : '',
+                  educationLevel: isLoyalis ? (selectedEmployee.raw.academic_and_tier?.education_level || '') : '',
+                  functionalTier: isLoyalis ? (selectedEmployee.raw.academic_and_tier?.functional_tier || '') : '',
+                  cummulativeCredit: isLoyalis ? creditVal : 0,
+                  designation: isLoyalis ? (kepangkatanDesignations[creditVal] || 'Tidak Ditemukan') : '',
                 };
                 generatePaySlipPdf(slipData, true);
                 setCetakKirimOpen(false);
