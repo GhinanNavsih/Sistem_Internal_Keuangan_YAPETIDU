@@ -418,7 +418,7 @@ export default function PresensiLoyalisRawPage() {
 
         let deducedDays = 0;
         Object.entries(dateStats).forEach(([_, stats]) => {
-          const isAllTidakHadir = stats.tidakHadir === stats.total;
+          const isAllTidakHadir = stats.tidakHadir >= stats.total * 0.95;
           const isHalfLiburRutin = stats.liburRutin >= stats.total / 2;
           if (!isAllTidakHadir && !isHalfLiburRutin) {
             deducedDays += 1;
