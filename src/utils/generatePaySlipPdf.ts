@@ -965,10 +965,10 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
     },
     {
       title: '7. Tunjangan Hari Tua & Instruksional',
-      formula: 'Formula: THT (10% x Gapok) + Nominal Tetap Instruksional',
+      formula: 'Formula: THT (10% x Gapok) + T. Khusus Instruksional',
       bullets: [
         'Tunjangan Hari Tua = 10% dari Gaji Pokok (subsidi dari Yayasan).',
-        'Tunjangan Instruksional = nominal tetap sesuai beban instruksional.'
+        'Tunjangan Instruksional = tunjangan khusus berdasarkan kebijakan/kondisi tertentu.'
       ],
       params: [
         { label: 'Tunjangan Hari Tua', val: formatIDR(tunjHariTuaVal) },

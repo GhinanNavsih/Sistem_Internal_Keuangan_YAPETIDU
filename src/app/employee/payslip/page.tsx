@@ -246,10 +246,10 @@ export default function EmployeePayslipPage() {
     {
       id: 'hari_tua_instruksional',
       title: 'T. Hari Tua & Instruksional',
-      formula: 'THT: 10% × Gapok  |  Instruksional: Nominal Tetap',
+      formula: 'THT: 10% × Gapok  |  Instruksional: Kebijakan Yayasan',
       bullets: [
         'T. Hari Tua = 10% dari Gaji Pokok (subsidi Yayasan)',
-        'T. Instruksional = nominal tetap sesuai beban tugas',
+        'T. Instruksional = tunjangan khusus berdasarkan kebijakan/kondisi tertentu',
       ],
     },
     {
