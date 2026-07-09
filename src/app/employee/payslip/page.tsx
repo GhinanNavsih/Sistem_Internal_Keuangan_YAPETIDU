@@ -1457,13 +1457,13 @@ export default function EmployeePayslipPage() {
                                             <span>
                                               {formatIDR(netPresensi)}
                                               <span className="block text-[11px] text-slate-500 font-normal mt-1 leading-relaxed">
-                                                = ({targetMinutes.toLocaleString('id-ID')} x Rp 27,5) - (({targetMinutes.toLocaleString('id-ID')} - {actualMinutes.toLocaleString('id-ID')}) x Rp 27,5)
+                                                = ({targetMinutes.toLocaleString('id-ID')} x Rp27,5) - (({targetMinutes.toLocaleString('id-ID')} - {actualMinutes.toLocaleString('id-ID')}) x Rp27,5)
                                                 <br />
-                                                = {formatIDR(earning)} - ({absenceMinutes.toLocaleString('id-ID')} x Rp 27,5)
+                                                = {formatIDR(earning).replace(/\s+/g, '')} - ({absenceMinutes.toLocaleString('id-ID')} x Rp27,5)
                                                 <br />
-                                                = {formatIDR(earning)} - {formatIDR(deduction)}
+                                                = {formatIDR(earning).replace(/\s+/g, '')} - {formatIDR(deduction).replace(/\s+/g, '')}
                                                 <br />
-                                                = {formatIDR(netPresensi)}
+                                                = {formatIDR(netPresensi).replace(/\s+/g, '')}
                                               </span>
                                             </span>
                                           } 
