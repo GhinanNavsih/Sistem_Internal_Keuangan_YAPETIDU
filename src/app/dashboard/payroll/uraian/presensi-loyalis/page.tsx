@@ -40,7 +40,8 @@ export default function PresensiLoyalisPage() {
   const [loadingLoyalis, setLoadingLoyalis] = useState(false);
   const [uploadedData, setUploadedData] = useState<any[] | null>(null);
   const [calcMode, setCalcMode] = useState<'worked' | 'absent'>('worked');
-  const [workingDays, setWorkingDays] = useState<number>(25);
+  const [workingDays, setWorkingDays] = useState<number | ''>(25);
+  const activeWorkingDays = Number(workingDays) || 0;
   const [expectedHours, setExpectedHours] = useState<number>(6.5);
   const [savingPresence, setSavingPresence] = useState(false);
   const [existingPresence, setExistingPresence] = useState<any>(null);
@@ -239,7 +240,7 @@ export default function PresensiLoyalisPage() {
       const unmatchedExcelRows: any[] = [];
 
       uploadedData.forEach((row) => {
-        const calc = calculatePresenceStratum(row.minutes, calcMode, workingDays, expectedHours);
+        const calc = calculatePresenceStratum(row.minutes, calcMode, activeWorkingDays, expectedHours);
         const mappedRow = {
           excelName: row.excelName,
           employeeId: row.employeeId,
@@ -267,7 +268,7 @@ export default function PresensiLoyalisPage() {
           employeeId: emp.id,
           employeeName: emp.name,
           minutes: 0,
-          absenceMinutes: workingDays * expectedHours * 60,
+          absenceMinutes: activeWorkingDays * expectedHours * 60,
           stratum: 5,
           deduction: 250000,
           netBonus: 0,
@@ -379,7 +380,7 @@ export default function PresensiLoyalisPage() {
       const existingEntries = existingPresence?.entries || {};
       const payload = {
         period: periodToken,
-        workingDays,
+        workingDays: activeWorkingDays,
         expectedHours,
         mode: calcMode,
         entries: existingEntries,
@@ -387,7 +388,7 @@ export default function PresensiLoyalisPage() {
       };
 
       await setDoc(doc(db, 'LoyalisPresence', periodToken), payload, { merge: true });
-      setMessage({ type: 'success', text: `Konfigurasi hari kerja (${workingDays} hari) berhasil disimpan.` });
+      setMessage({ type: 'success', text: `Konfigurasi hari kerja (${activeWorkingDays} hari) berhasil disimpan.` });
       fetchExistingPresence();
     } catch (err) {
       console.error(err);
@@ -405,7 +406,7 @@ export default function PresensiLoyalisPage() {
 
       uploadedData.forEach(row => {
         if (!row.employeeId) return;
-        const calc = calculatePresenceStratum(row.minutes, calcMode, workingDays, expectedHours);
+        const calc = calculatePresenceStratum(row.minutes, calcMode, activeWorkingDays, expectedHours);
         entriesMap[row.employeeId] = {
           employeeId: row.employeeId,
           employeeName: row.employeeName,
@@ -427,7 +428,7 @@ export default function PresensiLoyalisPage() {
             employeeName: emp.name,
             excelName: '-',
             minutes: 0,
-            absenceMinutes: workingDays * expectedHours * 60,
+            absenceMinutes: activeWorkingDays * expectedHours * 60,
             stratum: 5,
             deduction: 250000,
             netBonus: 0,
@@ -438,7 +439,7 @@ export default function PresensiLoyalisPage() {
 
       const payload = {
         period: periodToken,
-        workingDays,
+        workingDays: activeWorkingDays,
         expectedHours,
         mode: calcMode,
         entries: entriesMap,
@@ -798,10 +799,18 @@ export default function PresensiLoyalisPage() {
                   <div className="flex gap-2">
                     <Input
                       type="number"
-                      min={1}
+                      min={0}
                       max={31}
                       value={workingDays}
-                      onChange={(e) => setWorkingDays(Math.max(1, parseInt(e.target.value) || 0))}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '') {
+                          setWorkingDays('');
+                        } else {
+                          const parsed = parseInt(val, 10);
+                          setWorkingDays(isNaN(parsed) ? 0 : Math.max(0, parsed));
+                        }
+                      }}
                       className="rounded-xl border-slate-200 font-bold text-slate-700 text-xs h-10 w-full"
                     />
                     <Button
@@ -847,10 +856,10 @@ export default function PresensiLoyalisPage() {
                     </span>
                     <div className="flex flex-wrap items-center gap-2 mt-1">
                       <span className="text-[10px] bg-slate-50 text-slate-600 border border-slate-200/60 px-2 py-0.5 rounded-full font-semibold">
-                        Total Menit Kerja Kehadiran Penuh: {(workingDays * expectedHours * 60).toLocaleString('id-ID')} menit
+                        Total Menit Kerja Kehadiran Penuh: {(activeWorkingDays * expectedHours * 60).toLocaleString('id-ID')} menit
                       </span>
                       <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-full font-semibold">
-                        Gaji Standar Presensi: {fmtRp(workingDays * expectedHours * 1650)}
+                        Gaji Standar Presensi: {fmtRp(activeWorkingDays * expectedHours * 1650)}
                       </span>
                     </div>
                   </div>
@@ -995,7 +1004,7 @@ export default function PresensiLoyalisPage() {
                             </td>
                             <td className="px-4 py-3 text-xs font-bold text-indigo-600 text-right font-mono">
                               {row.isMatched
-                                ? fmtRp(Math.max(0, (workingDays * expectedHours * 60 - row.absenceMinutes) / 60 * 1650))
+                                ? fmtRp(Math.max(0, (activeWorkingDays * expectedHours * 60 - row.absenceMinutes) / 60 * 1650))
                                 : fmtRp(0)}
                             </td>
                             <td className="px-4 py-3 text-xs font-black text-indigo-600 text-right font-mono">
