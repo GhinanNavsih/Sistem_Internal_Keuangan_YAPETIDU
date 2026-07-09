@@ -18,7 +18,7 @@ import { db } from '@/lib/firebase';
 import { SUPPORTED_CATEGORIES, MONTHS_ID } from '@/utils/rekapConfig';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 
-const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
+const YEARS = Array.from({ length: 9 }, (_, i) => new Date().getFullYear() + 3 - i);
 
 function UraianLayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
