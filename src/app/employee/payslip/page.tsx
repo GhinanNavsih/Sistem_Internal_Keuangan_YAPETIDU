@@ -1438,7 +1438,7 @@ export default function EmployeePayslipPage() {
                               {item.id === 'presensi' && (
                                 <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                   <DocRow label="Hari Kerja Aktif" value={`${presenceInfo?.workingDays || 25} hari`} />
-                                  <DocRow label="Target / Hari" value={`${presenceInfo ? Math.round(presenceInfo.expectedHours * 60) : 390} menit`} />
+                                  <DocRow label="Total Waktu Kerja" value={`${presenceInfo ? Math.round((presenceInfo.workingDays || 25) * (presenceInfo.expectedHours || 6.5) * 60) : 9750} menit`} />
                                   <DocRow label="Kekurangan Menit" value={`${presenceInfo ? (presenceInfo.absenceMinutes || 0) : 0} menit`} />
                                   <DocRow label="Bersih Presensi" value={`${formatIDR(Math.max(0, userVariables.presensiEarningVal - userVariables.potonganPresensiVal))} (${formatIDR(userVariables.presensiEarningVal)} - ${formatIDR(userVariables.potonganPresensiVal)})`} highlight />
                                   <DocRow label="Bersih Bonus Presensi" value={`${formatIDR(Math.max(0, userVariables.bonusPresensiVal - userVariables.potonganBonusPresensiVal))} (${formatIDR(userVariables.bonusPresensiVal)} - ${formatIDR(userVariables.potonganBonusPresensiVal)})`} highlight />

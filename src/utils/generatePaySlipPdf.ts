@@ -945,7 +945,7 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
       ],
       params: [
         { label: 'Hari Kerja Aktif', val: `${presenceInfo.workingDays} hari` },
-        { label: 'Target / Hari', val: `${Math.round(presenceInfo.expectedHours * 60)} menit` },
+        { label: 'Total Waktu Kerja', val: `${Math.round((presenceInfo.workingDays || 25) * (presenceInfo.expectedHours || 6.5) * 60)} menit` },
         { label: 'Kekurangan Menit', val: `${presenceInfo.absenceMinutes || 0} menit` },
         { label: 'Bersih Presensi', val: `${formatIDR(Math.max(0, presensiEarningVal - potonganPresensiVal))} (${formatIDR(presensiEarningVal)} - ${formatIDR(potonganPresensiVal)})`, highlight: true },
         { label: 'Bersih Bonus Presensi', val: `${formatIDR(Math.max(0, bonusPresensiVal - potonganBonusPresensiVal))} (${formatIDR(bonusPresensiVal)} - ${formatIDR(potonganBonusPresensiVal)})`, highlight: true }
