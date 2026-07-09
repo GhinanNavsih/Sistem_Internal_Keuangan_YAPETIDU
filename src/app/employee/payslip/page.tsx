@@ -217,18 +217,18 @@ export default function EmployeePayslipPage() {
     {
       id: 'presensi',
       title: 'Presensi & Bonus Presensi',
-      formula: 'Jam Maks × Rp 1.650  |  Bonus: Rp 250.000',
+      formula: 'Menit Maks × Rp 27,5  |  Bonus: Rp 250.000',
       bullets: [
-        'Penerimaan = Hari Kerja × Jam Wajib/hari × Rp 1.650 (dikreditkan penuh)',
+        'Penerimaan = Hari Kerja × Menit Wajib/hari × Rp 27,5 (dikreditkan penuh)',
         'Jumlah Hari Kerja ditentukan berdasarkan jumlah hari kerja aktif riil pada bulan bersangkutan',
-        'Jika jam aktual < jam target, selisih (delta) dideduksi di Potongan',
-        'Potongan Presensi = (menit absensi ÷ 60) × Rp 1.650',
+        'Jika waktu aktual < waktu target, selisih (delta) dideduksi di Potongan',
+        'Potongan Presensi = menit absensi × Rp 27,5',
         'Bonus Presensi Rp 250.000 dikreditkan penuh; dipotong jika ada pelanggaran',
       ],
       table: {
         headers: ['Komponen', 'Penerimaan', 'Potongan'],
         rows: [
-          ['Presensi (jam kerja)', 'Jam Maks × Rp 1.650', 'Delta jam × Rp 1.650'],
+          ['Presensi (menit kerja)', 'Menit Maks × Rp 27,5', 'Delta menit × Rp 27,5'],
           ['Bonus Presensi', 'Rp 250.000', 'Sesuai pelanggaran'],
         ],
       },
