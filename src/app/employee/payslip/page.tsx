@@ -1443,15 +1443,35 @@ export default function EmployeePayslipPage() {
                                     const targetMinutes = Math.round(wDays * expHours * 60);
                                     const absenceMinutes = presenceInfo?.absenceMinutes || 0;
                                     const actualMinutes = Math.max(0, targetMinutes - absenceMinutes);
+                                    const earning = userVariables.presensiEarningVal;
+                                    const deduction = userVariables.potonganPresensiVal;
+                                    const netPresensi = Math.max(0, earning - deduction);
                                     return (
                                       <>
                                         <DocRow label="Hari Kerja Aktif" value={`${wDays} hari`} />
                                         <DocRow label="Total Waktu Kerja" value={`${targetMinutes} menit`} />
                                         <DocRow label="Waktu Dikerjakan" value={`${actualMinutes} menit`} />
+                                        <DocRow 
+                                          label="Bersih Presensi" 
+                                          value={
+                                            <span>
+                                              {formatIDR(netPresensi)}
+                                              <span className="block text-[11px] text-slate-500 font-normal mt-1 leading-relaxed">
+                                                ({targetMinutes.toLocaleString('id-ID')} x Rp 27,5) - (({targetMinutes.toLocaleString('id-ID')} - {actualMinutes.toLocaleString('id-ID')}) x Rp 27,5)
+                                                <br />
+                                                = {formatIDR(earning)} - ({absenceMinutes.toLocaleString('id-ID')} x Rp 27,5)
+                                                <br />
+                                                = {formatIDR(earning)} - {formatIDR(deduction)}
+                                                <br />
+                                                = {formatIDR(netPresensi)}
+                                              </span>
+                                            </span>
+                                          } 
+                                          highlight 
+                                        />
                                       </>
                                     );
                                   })()}
-                                  <DocRow label="Bersih Presensi" value={`${formatIDR(Math.max(0, userVariables.presensiEarningVal - userVariables.potonganPresensiVal))} (${formatIDR(userVariables.presensiEarningVal)} - ${formatIDR(userVariables.potonganPresensiVal)})`} highlight />
                                   <DocRow label="Bersih Bonus Presensi" value={`${formatIDR(Math.max(0, userVariables.bonusPresensiVal - userVariables.potonganBonusPresensiVal))} (${formatIDR(userVariables.bonusPresensiVal)} - ${formatIDR(userVariables.potonganBonusPresensiVal)})`} highlight />
                                 </div>
                               )}
