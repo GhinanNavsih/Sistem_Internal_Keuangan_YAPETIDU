@@ -395,6 +395,24 @@ export default function PresensiLoyalisRawPage() {
           return;
         }
 
+        // Auto-detect working days count from the uploaded raw logs
+        const workdayDates = new Set<string>();
+        const allDates = new Set<string>();
+        rows.forEach(row => {
+          const tgl = String(row['Tanggal'] || '').trim();
+          const jk = String(row['Jam kerja'] || '').trim().toUpperCase();
+          if (tgl) {
+            allDates.add(tgl);
+            if (jk === 'MASUK' || jk === 'TIDAK HADIR') {
+              workdayDates.add(tgl);
+            }
+          }
+        });
+        const deducedDays = workdayDates.size > 0 ? workdayDates.size : allDates.size;
+        if (deducedDays > 0) {
+          setWorkingDays(deducedDays);
+        }
+
         // Group rows by Excel Name
         const grouped: Record<string, any[]> = {};
         rows.forEach(row => {
@@ -438,7 +456,10 @@ export default function PresensiLoyalisRawPage() {
         });
 
         setUploadedData(parsedData);
-        setMessage({ type: 'success', text: `Berhasil mengunggah ${parsedData.length} data pegawai dari logs presensi.` });
+        setMessage({ 
+          type: 'success', 
+          text: `Berhasil mengunggah ${parsedData.length} data pegawai dari logs presensi. Jumlah hari kerja otomatis diatur menjadi ${deducedDays} hari.` 
+        });
       } catch (err) {
         console.error(err);
         setMessage({ type: 'error', text: 'Gagal membaca file Excel. Pastikan format benar.' });
