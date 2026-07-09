@@ -630,119 +630,38 @@ export default function UserManagementPage() {
                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Shield className="w-3.5 h-3.5" /> Peran & Wewenang</h3>
                     <div>
                       <Label className="text-xs font-semibold text-slate-500 block mb-2">Tingkat Otoritas</Label>
-                      <div className="grid grid-cols-1 gap-2.5">
-                        <div
-                          onClick={() => {
-                            setNewRole('satker_head');
-                          }}
-                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${newRole === 'satker_head' ? 'border-indigo-500 bg-indigo-50/20 ring-2 ring-indigo-500/10' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
-                        >
-                          <div className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 ${newRole === 'satker_head' ? 'border-indigo-600' : 'border-slate-300'}`}>
-                            {newRole === 'satker_head' && <div className="w-2.5 h-2.5 rounded-full bg-indigo-600" />}
-                          </div>
-                          <div>
-                            <span className="text-sm font-bold text-slate-900 block">Kepala Satuan Kerja Pekarya (SatKer Pekarya)</span>
-                            <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Dapat login dan melakukan scan presensi HANYA pada job category yang diberikan akses. Dilarang membuka menu dashboard lain.</span>
-                          </div>
-                        </div>
-
-                        <div
-                          onClick={() => {
-                            setNewRole('satker_head_loyalis');
+                      <select
+                        value={newRole}
+                        onChange={(e) => {
+                          const role = e.target.value as any;
+                          setNewRole(role);
+                          if (role !== 'satker_head') {
                             setNewPermitted([]);
-                          }}
-                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${newRole === 'satker_head_loyalis' ? 'border-violet-500 bg-violet-50/20 ring-2 ring-violet-500/10' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
-                        >
-                          <div className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 ${newRole === 'satker_head_loyalis' ? 'border-violet-600' : 'border-slate-300'}`}>
-                            {newRole === 'satker_head_loyalis' && <div className="w-2.5 h-2.5 rounded-full bg-violet-600" />}
-                          </div>
-                          <div>
-                            <span className="text-sm font-bold text-slate-900 block">Kepala Satuan Kerja Loyalis (SatKer Loyalis)</span>
-                            <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Dapat login dan mengelola data vakasi/kehadiran Loyalis pada halaman Vakasi Tambahan. Dilarang membuka menu dashboard lain.</span>
-                          </div>
-                        </div>
-
-                        <div
-                          onClick={() => {
-                            setNewRole('employee_admin');
-                            setNewPermitted([]); // employee admin manages all, no unit restrictions needed
-                          }}
-                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${newRole === 'employee_admin' ? 'border-emerald-500 bg-emerald-50/20 ring-2 ring-emerald-500/10' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
-                        >
-                          <div className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 ${newRole === 'employee_admin' ? 'border-emerald-600' : 'border-slate-300'}`}>
-                            {newRole === 'employee_admin' && <div className="w-2.5 h-2.5 rounded-full bg-emerald-600" />}
-                          </div>
-                          <div>
-                            <span className="text-sm font-bold text-slate-900 block">Staf Master Data Pegawai (Employee Admin)</span>
-                            <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Hanya memiliki wewenang untuk mengelola data induk pegawai (Master Data Pegawai). Dilarang membuka menu payroll/uraian/lainnya.</span>
-                          </div>
-                        </div>
-
-                        <div
-                          onClick={() => {
-                            setNewRole('super_admin');
-                            setNewPermitted([]); // super admin inherits all, clear selections to avoid confusion
-                          }}
-                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${newRole === 'super_admin' ? 'border-amber-500 bg-amber-50/10 ring-2 ring-amber-500/10' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
-                        >
-                          <div className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 ${newRole === 'super_admin' ? 'border-amber-600' : 'border-slate-300'}`}>
-                            {newRole === 'super_admin' && <div className="w-2.5 h-2.5 rounded-full bg-amber-600" />}
-                          </div>
-                          <div>
-                            <span className="text-sm font-bold text-slate-900 block">Super Administrator (BAK)</span>
-                            <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Akses penuh dan bebas ke semua fitur sistem payroll, Legalitas, dan manajemen user.</span>
-                          </div>
-                        </div>
-
-                        <div
-                          onClick={() => {
-                            setNewRole('honorer');
-                            setNewPermitted([]);
-                          }}
-                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${newRole === 'honorer' ? 'border-teal-500 bg-teal-50/20 ring-2 ring-teal-500/10' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
-                        >
-                          <div className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 ${newRole === 'honorer' ? 'border-teal-600' : 'border-slate-300'}`}>
-                            {newRole === 'honorer' && <div className="w-2.5 h-2.5 rounded-full bg-teal-600" />}
-                          </div>
-                          <div>
-                            <span className="text-sm font-bold text-slate-900 block">Karyawan Honorer (Lapor Kegiatan)</span>
-                            <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Akun untuk karyawan kebersihan yang hanya dapat mengakses halaman lapor kegiatan harian. Harus dihubungkan ke data pegawai.</span>
-                          </div>
-                        </div>
-
-                        <div
-                          onClick={() => {
-                            setNewRole('loyalis');
-                            setNewPermitted([]);
+                          }
+                          if (role !== 'honorer' && role !== 'loyalis') {
                             setNewLinkedEmployeeId('');
-                          }}
-                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${newRole === 'loyalis' ? 'border-sky-500 bg-sky-50/20 ring-2 ring-sky-500/10' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
-                        >
-                          <div className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 ${newRole === 'loyalis' ? 'border-sky-600' : 'border-slate-300'}`}>
-                            {newRole === 'loyalis' && <div className="w-2.5 h-2.5 rounded-full bg-sky-600" />}
-                          </div>
-                          <div>
-                            <span className="text-sm font-bold text-slate-900 block">Karyawan Loyalis (Lihat Slip Gaji)</span>
-                            <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Akun untuk karyawan Loyalis (white collar) yang hanya dapat mengakses halaman slip gaji. Harus dihubungkan ke data pegawai.</span>
-                          </div>
-                        </div>
-
-                        <div
-                          onClick={() => {
-                            setNewRole('loyalis_presence_admin');
-                            setNewPermitted([]);
-                            setNewLinkedEmployeeId('');
-                          }}
-                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${newRole === 'loyalis_presence_admin' ? 'border-pink-500 bg-pink-50/20 ring-2 ring-pink-500/10' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
-                        >
-                          <div className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 ${newRole === 'loyalis_presence_admin' ? 'border-pink-600' : 'border-slate-300'}`}>
-                            {newRole === 'loyalis_presence_admin' && <div className="w-2.5 h-2.5 rounded-full bg-pink-600" />}
-                          </div>
-                          <div>
-                            <span className="text-sm font-bold text-slate-900 block">Penanggung Jawab Presensi Loyalis</span>
-                            <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Memiliki wewenang khusus HANYA untuk menghitung dan mengelola kehadiran Loyalis bulanan via raw daily logs. Dilarang membuka menu dashboard lain.</span>
-                          </div>
-                        </div>
+                          }
+                        }}
+                        className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                      >
+                        <option value="satker_head">Kepala Satuan Kerja Pekarya (SatKer Pekarya)</option>
+                        <option value="satker_head_loyalis">Kepala Satuan Kerja Loyalis (SatKer Loyalis)</option>
+                        <option value="employee_admin">Staf Master Data Pegawai (Employee Admin)</option>
+                        <option value="super_admin">Super Administrator (BAK)</option>
+                        <option value="honorer">Karyawan Honorer (Lapor Kegiatan)</option>
+                        <option value="loyalis">Karyawan Loyalis (Lihat Slip Gaji)</option>
+                        <option value="loyalis_presence_admin">Penanggung Jawab Presensi Loyalis</option>
+                      </select>
+                      
+                      {/* Description Helper based on selected role */}
+                      <div className="mt-3 p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
+                        {newRole === 'satker_head' && <span className="text-xs text-slate-600 leading-relaxed block">Dapat login dan melakukan scan presensi HANYA pada job category yang diberikan akses. Dilarang membuka menu dashboard lain.</span>}
+                        {newRole === 'satker_head_loyalis' && <span className="text-xs text-slate-600 leading-relaxed block">Dapat login dan mengelola data vakasi/kehadiran Loyalis pada halaman Vakasi Tambahan. Dilarang membuka menu dashboard lain.</span>}
+                        {newRole === 'employee_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Hanya memiliki wewenang untuk mengelola data induk pegawai (Master Data Pegawai). Dilarang membuka menu payroll/uraian/lainnya.</span>}
+                        {newRole === 'super_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Akses penuh dan bebas ke semua fitur sistem payroll, Legalitas, dan manajemen user.</span>}
+                        {newRole === 'honorer' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk karyawan kebersihan yang hanya dapat mengakses halaman lapor kegiatan harian. Harus dihubungkan ke data pegawai.</span>}
+                        {newRole === 'loyalis' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk karyawan Loyalis (white collar) yang hanya dapat mengakses halaman slip gaji. Harus dihubungkan ke data pegawai.</span>}
+                        {newRole === 'loyalis_presence_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Memiliki wewenang khusus HANYA untuk menghitung dan mengelola kehadiran Loyalis bulanan via raw daily logs. Dilarang membuka menu dashboard lain.</span>}
                       </div>
                     </div>
                   </div>
@@ -755,6 +674,7 @@ export default function UserManagementPage() {
                       newRole === 'super_admin' ? 'Hak Akses' :
                       newRole === 'employee_admin' ? 'Hak Akses' :
                       newRole === 'satker_head_loyalis' ? 'Hak Akses' :
+                      newRole === 'loyalis_presence_admin' ? 'Hak Akses' :
                       'Unit Kerja Diijinkan'
                     }</h3>
                     <div className="space-y-3">
@@ -764,6 +684,7 @@ export default function UserManagementPage() {
                         newRole === 'super_admin' ? 'Akses otomatis ke seluruh sistem' :
                         newRole === 'employee_admin' ? 'Akses otomatis ke data pegawai' :
                         newRole === 'satker_head_loyalis' ? 'Akses otomatis ke data Loyalis' :
+                        newRole === 'loyalis_presence_admin' ? 'Akses otomatis ke kalkulator presensi loyalis' :
                         'Pilih Satuan Kerja (Khusus Kepala SatKer)'
                       }</Label>
                       {newRole === 'super_admin' ? (
@@ -777,6 +698,10 @@ export default function UserManagementPage() {
                       ) : newRole === 'satker_head_loyalis' ? (
                         <div className="p-4 rounded-2xl bg-violet-50/50 border border-violet-100 text-violet-800 text-xs leading-relaxed font-medium">
                           Kepala Satuan Kerja Loyalis secara otomatis memiliki wewenang untuk <strong>seluruh</strong> data Loyalis. Checkbox dinonaktifkan.
+                        </div>
+                      ) : newRole === 'loyalis_presence_admin' ? (
+                        <div className="p-4 rounded-2xl bg-pink-50/50 border border-pink-100 text-pink-800 text-xs leading-relaxed font-medium">
+                          Penanggung Jawab Presensi Loyalis memiliki akses khusus ke halaman kalkulator presensi loyalis via raw daily logs. Checkbox dinonaktifkan.
                         </div>
                       ) : newRole === 'honorer' ? (
                         <div className="space-y-3">
@@ -1149,76 +1074,29 @@ export default function UserManagementPage() {
               {/* Role */}
               <div>
                 <Label className="text-xs font-semibold text-slate-500">Tingkat Otoritas</Label>
-                <div className="grid grid-cols-3 gap-2 mt-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setEditRole('satker_head')}
-                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'satker_head' ? 'border-indigo-500 bg-indigo-50/10 text-indigo-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
-                  >
-                    Kepala SatKer Pekarya
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditRole('satker_head_loyalis');
-                      setEditPermitted([]); // clear categories
+                <div className="mt-1.5">
+                  <select
+                    value={editRole}
+                    onChange={(e) => {
+                      const role = e.target.value as any;
+                      setEditRole(role);
+                      if (role !== 'satker_head') {
+                        setEditPermitted([]);
+                      }
+                      if (role !== 'honorer' && role !== 'loyalis') {
+                        setEditLinkedEmployeeId('');
+                      }
                     }}
-                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'satker_head_loyalis' ? 'border-violet-500 bg-violet-50/10 text-violet-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
+                    className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
                   >
-                    Kepala SatKer Loyalis
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditRole('employee_admin');
-                      setEditPermitted([]); // clear categories
-                    }}
-                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'employee_admin' ? 'border-emerald-500 bg-emerald-50/10 text-emerald-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
-                  >
-                    Employee Admin
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditRole('super_admin');
-                      setEditPermitted([]); // clear categories to avoid confusion
-                    }}
-                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'super_admin' ? 'border-amber-500 bg-amber-50/10 text-amber-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
-                  >
-                    Super Admin
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditRole('honorer');
-                      setEditPermitted([]);
-                    }}
-                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'honorer' ? 'border-teal-500 bg-teal-50/10 text-teal-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
-                  >
-                    Honorer
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditRole('loyalis');
-                      setEditPermitted([]);
-                      setEditLinkedEmployeeId('');
-                    }}
-                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'loyalis' ? 'border-sky-500 bg-sky-50/10 text-sky-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
-                  >
-                    Loyalis
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditRole('loyalis_presence_admin');
-                      setEditPermitted([]);
-                      setEditLinkedEmployeeId('');
-                    }}
-                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'loyalis_presence_admin' ? 'border-pink-500 bg-pink-50/10 text-pink-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
-                  >
-                    PJ Presensi Loyalis
-                  </button>
+                    <option value="satker_head">Kepala Satuan Kerja Pekarya (SatKer Pekarya)</option>
+                    <option value="satker_head_loyalis">Kepala Satuan Kerja Loyalis (SatKer Loyalis)</option>
+                    <option value="employee_admin">Staf Master Data Pegawai (Employee Admin)</option>
+                    <option value="super_admin">Super Administrator (BAK)</option>
+                    <option value="honorer">Karyawan Honorer (Lapor Kegiatan)</option>
+                    <option value="loyalis">Karyawan Loyalis (Lihat Slip Gaji)</option>
+                    <option value="loyalis_presence_admin">Penanggung Jawab Presensi Loyalis</option>
+                  </select>
                 </div>
               </div>
 
