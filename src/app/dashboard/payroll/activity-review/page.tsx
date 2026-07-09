@@ -88,6 +88,7 @@ interface ActivityReport {
   timeEnd: string;
   status: 'pending' | 'approved' | 'declined';
   fee: number;
+  hasUangMakan?: boolean;
   declineReason?: string;
   submittedAt?: any;
   reviewedAt?: any;
@@ -140,12 +141,7 @@ function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: 
   const isPiketOrStandby = type === 'Piket' || type === 'Standby';
   const rate = isPiketOrStandby ? 2000 : 2500;
   
-  let fee = halfHours * rate;
-  if (halfHours > 4) {
-    fee += 7500;
-  }
-  
-  return fee;
+  return halfHours * rate;
 }
 
 function getStatusConfig(status: string) {
@@ -184,6 +180,7 @@ export default function ActivityReviewPage() {
 
   // ── Row Fees (Inline input values) ──
   const [rowFees, setRowFees] = useState<Record<string, string>>({});
+  const [rowUangMakan, setRowUangMakan] = useState<Record<string, boolean>>({});
 
   // ── Decline Modal ──
   const [declineTarget, setDeclineTarget] = useState<ActivityReport | null>(null);
@@ -298,6 +295,16 @@ export default function ActivityReviewPage() {
         return newFees;
       });
 
+      setRowUangMakan(prev => {
+        const next = { ...prev };
+        list.forEach(a => {
+          if (a.status !== 'pending') {
+            delete next[a.id];
+          }
+        });
+        return next;
+      });
+
       setActivities(list);
       setLoading(false);
     }, (err) => {
@@ -373,6 +380,30 @@ export default function ActivityReviewPage() {
     }
   };
 
+  const handleToggleUangMakan = (
+    activityId: string,
+    timeStart: string,
+    timeEnd: string,
+    activityType?: string,
+    activityName?: string
+  ) => {
+    const isCurrentlyAdded = !!rowUangMakan[activityId];
+    const nextAdded = !isCurrentlyAdded;
+
+    // Calculate default base fee (without the 7500)
+    const baseFee = calculateDefaultFee(timeStart, timeEnd, activityType, activityName);
+
+    // Update state
+    setRowUangMakan(prev => ({ ...prev, [activityId]: nextAdded }));
+
+    // Update fee input
+    setRowFees(prev => {
+      const currentVal = parseInt((prev[activityId] || '').replace(/\D/g, ''), 10) || baseFee;
+      const newVal = nextAdded ? currentVal + 7500 : Math.max(0, currentVal - 7500);
+      return { ...prev, [activityId]: String(newVal) };
+    });
+  };
+
   // ── Approve Row Handler (Inline Approval) ──
   const handleApproveRow = async (activity: ActivityReport, feeStr: string) => {
     if (isActionLoadingRef.current || !user) return;
@@ -388,6 +419,7 @@ export default function ActivityReviewPage() {
       await updateDoc(doc(db, 'ActivityReports', activity.id), {
         status: 'approved',
         fee: feeVal,
+        hasUangMakan: !!rowUangMakan[activity.id],
         reviewedAt: serverTimestamp(),
         reviewedBy: user.uid,
       });
@@ -395,6 +427,11 @@ export default function ActivityReviewPage() {
 
       // Clear local state for this row
       setRowFees(prev => {
+        const next = { ...prev };
+        delete next[activity.id];
+        return next;
+      });
+      setRowUangMakan(prev => {
         const next = { ...prev };
         delete next[activity.id];
         return next;
@@ -474,6 +511,7 @@ export default function ActivityReviewPage() {
         batch.update(ref, {
           status: 'approved',
           fee: upd.fee,
+          hasUangMakan: !!rowUangMakan[upd.id],
           reviewedAt: serverTimestamp(),
           reviewedBy: user.uid,
         });
@@ -483,6 +521,11 @@ export default function ActivityReviewPage() {
       
       // Clear row fees for approved activities
       setRowFees(prev => {
+        const next = { ...prev };
+        selectedIds.forEach(id => delete next[id]);
+        return next;
+      });
+      setRowUangMakan(prev => {
         const next = { ...prev };
         selectedIds.forEach(id => delete next[id]);
         return next;
@@ -721,10 +764,10 @@ export default function ActivityReviewPage() {
                   onClick={handleBulkApproveIndividual}
                   size="sm"
                   disabled={actionLoading}
-                  className="rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 shadow-sm"
+                  className="rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 shadow-sm animate-pulse"
                 >
                   <ThumbsUp className="w-3.5 h-3.5 mr-1.5" />
-                  Setujui Semua
+                  Setujui Terpilih
                 </Button>
                 <Button
                   onClick={handleBulkDecline}
@@ -734,7 +777,7 @@ export default function ActivityReviewPage() {
                   className="rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 font-bold"
                 >
                   <ThumbsDown className="w-3.5 h-3.5 mr-1.5" />
-                  Tolak Semua
+                  Tolak Terpilih
                 </Button>
               </div>
             </CardContent>
@@ -775,6 +818,7 @@ export default function ActivityReviewPage() {
                       <TableHead className="font-bold text-slate-500">Waktu</TableHead>
                       <TableHead className="font-bold text-slate-500">Status</TableHead>
                       <TableHead className="font-bold text-slate-500">Fee</TableHead>
+                      <TableHead className="font-bold text-slate-500">Uang Makan</TableHead>
                       <TableHead className="font-bold text-slate-500 text-right pr-6">Aksi</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -847,6 +891,42 @@ export default function ActivityReviewPage() {
                                 <span className="text-slate-300">—</span>
                               )
                             }
+                          </TableCell>
+                          <TableCell>
+                            {activity.status === 'pending' ? (
+                              (() => {
+                                const [sh, sm] = activity.timeStart.split(':').map(Number);
+                                const [eh, em] = activity.timeEnd.split(':').map(Number);
+                                const minutes = (eh * 60 + em) - (sh * 60 + sm);
+                                const halfHours = Math.round(minutes / 30);
+                                const qualifies = halfHours > 4 && activity.activityType !== 'Buang Sampah' && activity.activityName !== 'Buang Sampah';
+                                
+                                if (!qualifies) return <span className="text-slate-300">—</span>;
+                                
+                                const isAdded = !!rowUangMakan[activity.id];
+                                return (
+                                  <Button
+                                    size="sm"
+                                    type="button"
+                                    disabled={actionLoading}
+                                    onClick={() => handleToggleUangMakan(activity.id, activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName)}
+                                    className={`h-7 px-2.5 rounded-lg font-bold text-[10px] cursor-pointer transition-colors ${
+                                      isAdded 
+                                        ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' 
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
+                                    }`}
+                                  >
+                                    {isAdded ? '✓ Uang Makan' : '+ Uang Makan'}
+                                  </Button>
+                                );
+                              })()
+                            ) : activity.status === 'approved' && activity.hasUangMakan ? (
+                              <Badge className="bg-amber-50 text-amber-800 hover:bg-amber-50 border border-amber-200 text-[10px] font-bold rounded-lg px-2 py-0.5 whitespace-nowrap">
+                                +Rp7.500
+                              </Badge>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right pr-6">
                             {activity.status === 'pending' && (

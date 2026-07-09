@@ -79,6 +79,7 @@ interface ActivityReport {
   timeEnd: string;
   status: 'pending' | 'approved' | 'declined';
   fee: number;
+  hasUangMakan?: boolean;
   declineReason?: string;
   submittedAt?: any;
   reviewedAt?: any;
@@ -95,20 +96,20 @@ function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: 
   if (activityType === 'Buang Sampah' || activityName === 'Buang Sampah') {
     return 5000;
   }
-  
+
   if (!timeStart || !timeEnd) return 0;
-  
+
   // Parse HH:MM format
   const [sh, sm] = timeStart.split(':').map(Number);
   const [eh, em] = timeEnd.split(':').map(Number);
-  
+
   if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return 0;
-  
+
   const minutes = (eh * 60 + em) - (sh * 60 + sm);
   if (minutes < 0) return 0;
-  
+
   const halfHours = Math.round(minutes / 30);
-  
+
   // Determine activity type
   let type = activityType;
   if (!type && activityName) {
@@ -123,20 +124,56 @@ function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: 
       type = 'Lainnya';
     }
   }
-  
+
   if (!type) {
     type = 'Lainnya';
   }
-  
+
   const isPiketOrStandby = type === 'Piket' || type === 'Standby';
   const rate = isPiketOrStandby ? 2000 : 2500;
-  
-  let fee = halfHours * rate;
-  if (halfHours > 4) {
-    fee += 7500;
+
+  return halfHours * rate;
+}
+
+function getActivityFeeBreakdown(timeStart: string, timeEnd: string, activityType?: string, activityName?: string): string {
+  if (activityType === 'Buang Sampah' || activityName === 'Buang Sampah') {
+    return 'Tarif Flat';
   }
-  
-  return fee;
+
+  if (!timeStart || !timeEnd) return '';
+
+  const [sh, sm] = timeStart.split(':').map(Number);
+  const [eh, em] = timeEnd.split(':').map(Number);
+
+  if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return '';
+
+  const minutes = (eh * 60 + em) - (sh * 60 + sm);
+  if (minutes < 0) return '';
+
+  const halfHours = Math.round(minutes / 30);
+
+  let type = activityType;
+  if (!type && activityName) {
+    const nameLower = activityName.toLowerCase();
+    if (nameLower === 'piket' || nameLower.startsWith('piket ')) {
+      type = 'Piket';
+    } else if (nameLower === 'standby' || nameLower.startsWith('standby ')) {
+      type = 'Standby';
+    } else if (nameLower === 'ro\'an' || nameLower === 'roan' || nameLower.startsWith('ro\'an ') || nameLower.startsWith('roan ')) {
+      type = 'Ro\'an';
+    } else {
+      type = 'Lainnya';
+    }
+  }
+
+  if (!type) {
+    type = 'Lainnya';
+  }
+
+  const isPiketOrStandby = type === 'Piket' || type === 'Standby';
+  const rate = isPiketOrStandby ? 2000 : 2500;
+
+  return `${halfHours} × Rp${rate.toLocaleString('id-ID')}/30m`;
 }
 
 function getStatusConfig(status: string) {
@@ -682,19 +719,71 @@ export default function EmployeeActivitiesPage() {
                         </div>
 
                         {activity.status === 'approved' && activity.fee > 0 && (
-                          <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
-                            <Banknote className="w-4 h-4 text-emerald-600" />
-                            <span className="text-sm font-bold text-emerald-700">{fmtRp(activity.fee)}</span>
+                          <div className="flex flex-col gap-1 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <Banknote className="w-4 h-4 text-emerald-600" />
+                                <span className="text-sm font-bold text-emerald-700">{fmtRp(activity.fee)}</span>
+                              </div>
+                              {(() => {
+                                const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName);
+                                return breakdown && (
+                                  <span className="text-xs text-emerald-600/70 font-medium">
+                                    ({breakdown}{activity.hasUangMakan ? ' + Rp7.500 Uang Makan' : ''})
+                                  </span>
+                                );
+                              })()}
+                              {activity.hasUangMakan && (
+                                <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-none text-[10px] font-bold rounded-lg px-2 py-0.5">
+                                  + Uang Makan
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         )}
 
                         {activity.status === 'pending' && (
-                          <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
-                            <Banknote className="w-4 h-4 text-amber-600" />
-                            <span className="text-sm font-bold text-amber-700">
-                              Estimasi Upah: {fmtRp(calculateDefaultFee(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName))}
-                            </span>
-                          </div>
+                          (() => {
+                            const baseFee = calculateDefaultFee(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName);
+
+                            // Calculate if it qualifies for Uang Makan
+                            const [sh, sm] = activity.timeStart.split(':').map(Number);
+                            const [eh, em] = activity.timeEnd.split(':').map(Number);
+                            const minutes = (eh * 60 + em) - (sh * 60 + sm);
+                            const halfHours = Math.round(minutes / 30);
+                            const qualifies = halfHours > 4 && activity.activityType !== 'Buang Sampah' && activity.activityName !== 'Buang Sampah';
+
+                            const totalEstimated = qualifies ? baseFee + 7500 : baseFee;
+                            const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName);
+
+                            // Format breakdown with asterisk if qualifies
+                            const breakdownStr = breakdown
+                              ? (qualifies ? `(${breakdown} + *Rp7.500*)` : `(${breakdown})`)
+                              : '';
+
+                            return (
+                              <div className="flex flex-col gap-1 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <Banknote className="w-4 h-4 text-amber-600" />
+                                    <span className="text-sm font-bold text-amber-700">
+                                      Estimasi Upah: {fmtRp(totalEstimated)}
+                                    </span>
+                                  </div>
+                                  {breakdownStr && (
+                                    <span className="text-xs text-amber-600/70 font-medium">
+                                      {breakdownStr}
+                                    </span>
+                                  )}
+                                </div>
+                                {qualifies && (
+                                  <span className="text-xs text-amber-600 font-medium ml-6">
+                                    * Uang Makan jika disetujui oleh Kepala SatKer
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()
                         )}
 
                         {activity.status === 'declined' && activity.declineReason && (

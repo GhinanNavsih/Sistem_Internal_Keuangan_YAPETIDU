@@ -25,6 +25,56 @@ import { MONTHS_ID, REKAP_COLUMNS, SUPPORTED_CATEGORIES } from '@/utils/rekapCon
 import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import * as XLSX from 'xlsx';
 
+const recalculateSummary = (dailyLogs: any[], expHours: number) => {
+  let totalWorkedMinutes = 0;
+  let activeDaysCount = 0;
+  let incompleteDaysCount = 0;
+  let absentDaysCount = 0;
+
+  const updatedLogs = dailyLogs.map(dayRow => {
+    const status = String(dayRow['Jam kerja'] || '').trim();
+    const statusUpper = status.toUpperCase();
+    const inStr = dayRow['Scan masuk'] ? String(dayRow['Scan masuk']).trim() : '';
+    const outStr = dayRow['Scan pulang'] ? String(dayRow['Scan pulang']).trim() : '';
+
+    let dailyDuration = 0;
+    if (statusUpper === 'MASUK') {
+      if (inStr && outStr) {
+        const [hIn, mIn] = inStr.split(':').map(Number);
+        const [hOut, mOut] = outStr.split(':').map(Number);
+
+        if (!isNaN(hIn) && !isNaN(hOut)) {
+          const minutesIn = hIn * 60 + mIn;
+          const minutesOut = hOut * 60 + mOut;
+          const duration = Math.max(0, minutesOut - minutesIn);
+          dailyDuration = Math.min(expHours * 60, duration);
+          totalWorkedMinutes += dailyDuration;
+          activeDaysCount += 1;
+        } else {
+          incompleteDaysCount += 1;
+        }
+      } else {
+        incompleteDaysCount += 1;
+      }
+    } else if (statusUpper === 'TIDAK HADIR') {
+      absentDaysCount += 1;
+    }
+
+    return {
+      ...dayRow,
+      duration: dailyDuration
+    };
+  });
+
+  return {
+    minutes: totalWorkedMinutes,
+    activeDaysCount,
+    incompleteDaysCount,
+    absentDaysCount,
+    dailyLogs: updatedLogs,
+  };
+};
+
 export default function PresensiLoyalisRawPage() {
   const { profile } = useAuth();
   const searchParams = useSearchParams();
@@ -45,6 +95,7 @@ export default function PresensiLoyalisRawPage() {
   const [savingPresence, setSavingPresence] = useState(false);
   const [existingPresence, setExistingPresence] = useState<any>(null);
   const [loadingPresence, setLoadingPresence] = useState(false);
+  const [expandedRowIdx, setExpandedRowIdx] = useState<number | null>(null);
 
   // ── Pekarya Presence Utility States ──
   const [presensiTargetType, setPresensiTargetType] = useState<'loyalis' | 'pekarya'>('loyalis');
@@ -230,9 +281,10 @@ export default function PresensiLoyalisRawPage() {
       activeDaysCount: entry.activeDaysCount || 0,
       incompleteDaysCount: entry.incompleteDaysCount || 0,
       absentDaysCount: entry.absentDaysCount || 0,
+      dailyLogs: entry.dailyLogs || [],
     }));
     setUploadedData(entriesList);
-    setMessage({ type: 'success', text: 'Mode edit diaktifkan. Anda sekarang dapat mengubah data menit kerja dan menghubungkan pegawai.' });
+    setMessage({ type: 'success', text: 'Mode edit diaktifkan. Anda sekarang dapat mengubah data logs presensi dan menghubungkan pegawai.' });
   }, [existingPresence]);
 
   const displayRows = useMemo(() => {
@@ -257,6 +309,7 @@ export default function PresensiLoyalisRawPage() {
           activeDaysCount: row.activeDaysCount || 0,
           incompleteDaysCount: row.incompleteDaysCount || 0,
           absentDaysCount: row.absentDaysCount || 0,
+          dailyLogs: row.dailyLogs || [],
         };
 
         if (row.employeeId) matchedRows.push(mappedRow);
@@ -282,6 +335,7 @@ export default function PresensiLoyalisRawPage() {
           activeDaysCount: 0,
           incompleteDaysCount: 0,
           absentDaysCount: 0,
+          dailyLogs: [],
         }))
         .sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
 
@@ -303,6 +357,7 @@ export default function PresensiLoyalisRawPage() {
         activeDaysCount: entry.activeDaysCount || 0,
         incompleteDaysCount: entry.incompleteDaysCount || 0,
         absentDaysCount: entry.absentDaysCount || 0,
+        dailyLogs: entry.dailyLogs || [],
       }));
 
       const matched = entriesList.filter(e => !e.isNotFoundInExcel).sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
@@ -351,50 +406,32 @@ export default function PresensiLoyalisRawPage() {
 
         const parsedData: any[] = [];
         Object.entries(grouped).forEach(([excelName, empRows]) => {
-          let totalWorkedMinutes = 0;
-          let activeDaysCount = 0;
-          let incompleteDaysCount = 0;
-          let absentDaysCount = 0;
-
+          const dailyLogs: any[] = [];
           empRows.forEach(dayRow => {
-            const status = String(dayRow['Jam kerja'] || '').trim().toUpperCase();
-            if (status === 'MASUK') {
-              const inStr = dayRow['Scan masuk'] ? String(dayRow['Scan masuk']).trim() : '';
-              const outStr = dayRow['Scan pulang'] ? String(dayRow['Scan pulang']).trim() : '';
-
-              if (inStr && outStr) {
-                const [hIn, mIn, sIn] = inStr.split(':').map(Number);
-                const [hOut, mOut, sOut] = outStr.split(':').map(Number);
-
-                if (!isNaN(hIn) && !isNaN(hOut)) {
-                  const minutesIn = hIn * 60 + mIn;
-                  const minutesOut = hOut * 60 + mOut;
-                  const duration = Math.max(0, minutesOut - minutesIn);
-                  // Cap daily presence at expected hours
-                  const cappedDuration = Math.min(expectedHours * 60, duration);
-                  totalWorkedMinutes += cappedDuration;
-                  activeDaysCount += 1;
-                } else {
-                  incompleteDaysCount += 1;
-                }
-              } else {
-                incompleteDaysCount += 1;
-              }
-            } else if (status === 'TIDAK HADIR') {
-              absentDaysCount += 1;
-            }
+            dailyLogs.push({
+              Tanggal: String(dayRow['Tanggal'] || ''),
+              'Jam kerja': String(dayRow['Jam kerja'] || ''),
+              'Scan masuk': dayRow['Scan masuk'] ? String(dayRow['Scan masuk']).trim() : '',
+              'Scan pulang': dayRow['Scan pulang'] ? String(dayRow['Scan pulang']).trim() : '',
+            });
           });
 
+          // Sort logs by date DD-MM-YYYY
+          dailyLogs.sort((a, b) => {
+            const [d1, m1, y1] = a.Tanggal.split('-').map(Number);
+            const [d2, m2, y2] = b.Tanggal.split('-').map(Number);
+            return (y1 * 365 + m1 * 31 + d1) - (y2 * 365 + m2 * 31 + d2);
+          });
+
+          // Run recalculation to get total worked minutes, active days, etc.
+          const summary = recalculateSummary(dailyLogs, expectedHours);
           const match = matchExcelName(excelName, loyalisEmployees);
 
           parsedData.push({
             excelName,
             employeeId: match?.id || null,
             employeeName: match?.name || null,
-            minutes: totalWorkedMinutes,
-            activeDaysCount,
-            incompleteDaysCount,
-            absentDaysCount,
+            ...summary,
           });
         });
 
@@ -407,6 +444,29 @@ export default function PresensiLoyalisRawPage() {
     };
     reader.readAsBinaryString(file);
   }, [loyalisEmployees, expectedHours, matchExcelName]);
+
+  const handleUpdateDailyLog = useCallback((excelName: string, dateStr: string, field: string, value: any) => {
+    setUploadedData(prev => {
+      if (!prev) return null;
+      return prev.map(emp => {
+        if (emp.excelName !== excelName) return emp;
+
+        const updatedLogs = (emp.dailyLogs || []).map((log: any) => {
+          if (log.Tanggal !== dateStr) return log;
+          return {
+            ...log,
+            [field]: value
+          };
+        });
+
+        const summary = recalculateSummary(updatedLogs, expectedHours);
+        return {
+          ...emp,
+          ...summary
+        };
+      });
+    });
+  }, [expectedHours]);
 
   const handleSaveWorkingDaysConfig = async () => {
     setSavingPresence(true);
@@ -454,6 +514,7 @@ export default function PresensiLoyalisRawPage() {
           activeDaysCount: row.activeDaysCount || 0,
           incompleteDaysCount: row.incompleteDaysCount || 0,
           absentDaysCount: row.absentDaysCount || 0,
+          dailyLogs: row.dailyLogs || [],
         };
       });
 
@@ -473,6 +534,7 @@ export default function PresensiLoyalisRawPage() {
             activeDaysCount: 0,
             incompleteDaysCount: 0,
             absentDaysCount: 0,
+            dailyLogs: [],
           };
         }
       });
@@ -763,7 +825,7 @@ export default function PresensiLoyalisRawPage() {
                   <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
                   Kalkulator Bonus Presensi Loyalis via Raw Excel Log
                 </h3>
-                <p className="text-slate-400 text-xs mt-0.5">Unggah data daily raw logs kehadiran bulanan untuk menghitung strata dan bonus presensi.</p>
+                <p className="text-slate-400 text-xs mt-0.5">Unggah data daily raw logs kehadiran bulanan untuk menghitung strata dan bonus presensi. Klik baris pegawai untuk mengedit logs harian.</p>
               </div>
               {existingPresence && (
                 <Button
@@ -877,9 +939,6 @@ export default function PresensiLoyalisRawPage() {
                       <span className="text-[10px] bg-slate-50 text-slate-600 border border-slate-200/60 px-2 py-0.5 rounded-full font-semibold">
                         Target Menit Kerja Kehadiran Penuh: {(workingDays * expectedHours * 60).toLocaleString('id-ID')} menit
                       </span>
-                      <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-full font-semibold">
-                        Gaji Standar Presensi: {fmtRp(workingDays * expectedHours * 1650)}
-                      </span>
                     </div>
                   </div>
                   <span className="text-[10px] text-slate-400 font-semibold">
@@ -896,167 +955,259 @@ export default function PresensiLoyalisRawPage() {
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase">PEGAWAI TERHUBUNG</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase text-center font-mono">HARI AKTIF</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase text-center font-mono">PUNCH TIDAK LENGKAP</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase text-center font-mono">TOTAL JAM KERJA</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase text-center font-mono">KEKURANGAN (JAM)</th>
+                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase text-center font-mono">TOTAL MENIT KERJA</th>
+                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase text-center font-mono">KEKURANGAN (MENIT)</th>
                         <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-20 text-center">STRATA</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-28 text-right font-mono">NET PRESENSI</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-28 text-right">NET BONUS</th>
+
                       </tr>
                     </thead>
                     <tbody>
                       {displayRows.map((row, idx) => {
+                        const isExpanded = expandedRowIdx === idx;
                         return (
-                          <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                            <td className="px-3 py-3 text-xs text-slate-400 text-center font-mono">{idx + 1}</td>
-                            <td className="px-3 py-3 text-xs font-bold text-slate-700">{row.excelName}</td>
-                            <td className="px-3 py-3 text-xs">
-                              {uploadedData && row.excelName !== '-' ? (
-                                activeSearchRowIdx === row.idx ? (
-                                  <div className="relative w-full max-w-[220px]">
-                                    <Input
-                                      type="text"
-                                      placeholder="Cari nama pegawai..."
-                                      value={searchQuery}
-                                      onChange={(e) => setSearchQuery(e.target.value)}
-                                      autoFocus
-                                      onBlur={() => {
-                                        setTimeout(() => {
-                                          setActiveSearchRowIdx(null);
-                                        }, 200);
-                                      }}
-                                      className="h-8 rounded-lg border-indigo-300 font-semibold text-slate-800 text-xs w-full bg-white pr-7"
-                                    />
-                                    <div className="absolute left-0 right-0 top-9 max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 divide-y divide-slate-50">
-                                      {(() => {
-                                        const search = searchQuery.toLowerCase();
-                                        const filtered = loyalisEmployees.filter(emp =>
-                                          emp.name.toLowerCase().includes(search)
-                                        );
-                                        return (
-                                          <>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                handleLinkEmployee(row.excelName, "");
-                                                setActiveSearchRowIdx(null);
-                                              }}
-                                              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-[10px] font-bold text-rose-500"
-                                            >
-                                              -- Putuskan Hubungan --
-                                            </button>
-                                            {filtered.length === 0 ? (
-                                              <div className="p-2.5 text-[10px] text-slate-400">Pegawai tidak ditemukan</div>
-                                            ) : (
-                                              filtered.map(emp => (
-                                                <button
-                                                  key={emp.id}
-                                                  type="button"
-                                                  onClick={() => {
-                                                    handleLinkEmployee(row.excelName, emp.id);
-                                                    setActiveSearchRowIdx(null);
-                                                  }}
-                                                  className="w-full text-left px-3 py-2 hover:bg-slate-50 text-[10px] font-semibold text-slate-700 block truncate"
-                                                >
-                                                  {emp.name}
-                                                </button>
-                                              ))
-                                            )}
-                                          </>
-                                        );
-                                      })()}
+                          <React.Fragment key={idx}>
+                            <tr
+                              onClick={() => setExpandedRowIdx(isExpanded ? null : idx)}
+                              className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors cursor-pointer ${
+                                isExpanded ? 'bg-slate-50/30' : ''
+                              }`}
+                            >
+                              <td className="px-3 py-3 text-xs text-slate-400 text-center font-mono">{idx + 1}</td>
+                              <td className="px-3 py-3 text-xs font-bold text-slate-700">{row.excelName}</td>
+                              <td className="px-3 py-3 text-xs" onClick={(e) => e.stopPropagation()}>
+                                {uploadedData && row.excelName !== '-' ? (
+                                  activeSearchRowIdx === row.idx ? (
+                                    <div className="relative w-full max-w-[220px]">
+                                      <Input
+                                        type="text"
+                                        placeholder="Cari nama pegawai..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        autoFocus
+                                        onBlur={() => {
+                                          setTimeout(() => {
+                                            setActiveSearchRowIdx(null);
+                                          }, 200);
+                                        }}
+                                        className="h-8 rounded-lg border-indigo-300 font-semibold text-slate-800 text-xs w-full bg-white pr-7"
+                                      />
+                                      <div className="absolute left-0 right-0 top-9 max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 divide-y divide-slate-50">
+                                        {(() => {
+                                          const search = searchQuery.toLowerCase();
+                                          const filtered = loyalisEmployees.filter(emp =>
+                                            emp.name.toLowerCase().includes(search)
+                                          );
+                                          return (
+                                            <>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  handleLinkEmployee(row.excelName, "");
+                                                  setActiveSearchRowIdx(null);
+                                                }}
+                                                className="w-full text-left px-3 py-2 hover:bg-slate-50 text-[10px] font-bold text-rose-500"
+                                              >
+                                                -- Putuskan Hubungan --
+                                              </button>
+                                              {filtered.length === 0 ? (
+                                                <div className="p-2.5 text-[10px] text-slate-400">Pegawai tidak ditemukan</div>
+                                              ) : (
+                                                filtered.map(emp => (
+                                                  <button
+                                                    key={emp.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                      handleLinkEmployee(row.excelName, emp.id);
+                                                      setActiveSearchRowIdx(null);
+                                                    }}
+                                                    className="w-full text-left px-3 py-2 hover:bg-slate-50 text-[10px] font-semibold text-slate-700 block truncate"
+                                                  >
+                                                    {emp.name}
+                                                  </button>
+                                                ))
+                                              )}
+                                            </>
+                                          );
+                                        })()}
+                                      </div>
                                     </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActiveSearchRowIdx(row.idx);
+                                        setSearchQuery(row.employeeName || "");
+                                      }}
+                                      className={`text-left w-full max-w-[220px] px-3 py-1.5 rounded-lg border transition-all text-xs font-semibold flex items-center justify-between cursor-pointer ${
+                                        row.isMatched
+                                          ? 'bg-indigo-50/40 text-indigo-700 border-indigo-100 hover:bg-indigo-50 hover:border-indigo-200'
+                                          : 'bg-rose-50 border-rose-100 text-rose-600 hover:bg-rose-100/50'
+                                      }`}
+                                    >
+                                      <span className="truncate max-w-[170px]">
+                                        {row.isMatched ? row.employeeName : "Klik untuk Hubungkan..."}
+                                      </span>
+                                      <Edit className="w-3.5 h-3.5 opacity-60 hover:opacity-100 shrink-0 ml-1" />
+                                    </button>
+                                  )
+                                ) : row.isMatched ? (
+                                  <div>
+                                    <p className="font-bold text-indigo-600">{row.employeeName}</p>
+                                    <p className="text-[10px] text-slate-400 font-mono">ID: {row.employeeId}</p>
                                   </div>
                                 ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setActiveSearchRowIdx(row.idx);
-                                      setSearchQuery(row.employeeName || "");
-                                    }}
-                                    className={`text-left w-full max-w-[220px] px-3 py-1.5 rounded-lg border transition-all text-xs font-semibold flex items-center justify-between cursor-pointer ${
-                                      row.isMatched
-                                        ? 'bg-indigo-50/40 text-indigo-700 border-indigo-100 hover:bg-indigo-50 hover:border-indigo-200'
-                                        : 'bg-rose-50 border-rose-100 text-rose-600 hover:bg-rose-100/50'
-                                    }`}
-                                  >
-                                    <span className="truncate max-w-[170px]">
-                                      {row.isMatched ? row.employeeName : "Klik untuk Hubungkan..."}
-                                    </span>
-                                    <Edit className="w-3.5 h-3.5 opacity-60 hover:opacity-100 shrink-0 ml-1" />
-                                  </button>
-                                )
-                              ) : row.isMatched ? (
-                                <div>
-                                  <p className="font-bold text-indigo-600">{row.employeeName}</p>
-                                  <p className="text-[10px] text-slate-400 font-mono">ID: {row.employeeId}</p>
-                                </div>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-rose-500 bg-rose-50 border border-rose-100 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                  <AlertCircle className="w-3.5 h-3.5" />
-                                  Tidak cocok
-                                </span>
-                              )}
-                            </td>
-                            {/* Hari Aktif */}
-                            <td className="px-3 py-3 text-xs font-bold text-slate-600 text-center font-mono">
-                              {row.activeDaysCount} hari
-                            </td>
-                            {/* Punch Tidak Lengkap */}
-                            <td className="px-3 py-3 text-xs text-center font-mono">
-                              {row.incompleteDaysCount > 0 ? (
-                                <span className="inline-flex items-center gap-1 text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full font-bold">
-                                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                                  {row.incompleteDaysCount} hari
-                                </span>
-                              ) : (
-                                <span className="text-slate-400">-</span>
-                              )}
-                            </td>
-                            {/* Total Jam Kerja */}
-                            <td className="px-3 py-3 text-xs font-bold text-slate-600 text-center font-mono">
-                              {uploadedData && row.excelName !== '-' ? (
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    value={Math.round(row.minutes / 60)}
-                                    onChange={(e) => handleUpdateMinutes(row.excelName, Math.max(0, parseInt(e.target.value, 10) || 0) * 60)}
-                                    className="w-16 text-center font-bold font-mono h-8 rounded-lg border-slate-200 text-xs"
-                                  />
-                                  <span className="text-slate-400 text-[10px]">jam</span>
-                                </div>
-                              ) : (
-                                `${(row.minutes / 60).toFixed(1)} jam`
-                              )}
-                            </td>
-                            {/* Kekurangan (Jam) */}
-                            <td className="px-3 py-3 text-xs text-slate-600 text-center font-mono">
-                              {row.isMatched ? `${(row.absenceMinutes / 60).toFixed(1)} jam` : '-'}
-                            </td>
-                            {/* Strata */}
-                            <td className="px-3 py-3 text-center">
-                              {row.isMatched ? (
-                                <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full ${row.stratum === 1 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                                    row.stratum === 2 ? 'bg-blue-50 text-blue-600 border border-blue-100' :
-                                      row.stratum === 3 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                                        row.stratum === 4 ? 'bg-orange-50 text-orange-600 border border-orange-100' :
-                                          'bg-rose-50 text-rose-600 border border-rose-100'
-                                  }`}>
-                                  Strata {row.stratum}
-                                </span>
-                              ) : '-'}
-                            </td>
-                            {/* Net Presensi */}
-                            <td className="px-3 py-3 text-xs font-bold text-indigo-600 text-right font-mono">
-                              {row.isMatched
-                                ? fmtRp(Math.max(0, (workingDays * expectedHours * 60 - row.absenceMinutes) / 60 * 1650))
-                                : fmtRp(0)}
-                            </td>
-                            {/* Net Bonus */}
-                            <td className="px-3 py-3 text-xs font-black text-indigo-600 text-right font-mono">
-                              {row.isMatched ? fmtRp(row.netBonus) : fmtRp(0)}
-                            </td>
-                          </tr>
+                                  <span className="inline-flex items-center gap-1 text-rose-500 bg-rose-50 border border-rose-100 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                    <AlertCircle className="w-3.5 h-3.5" />
+                                    Tidak cocok
+                                  </span>
+                                )}
+                              </td>
+                              {/* Hari Aktif */}
+                              <td className="px-3 py-3 text-xs font-bold text-slate-600 text-center font-mono">
+                                {row.activeDaysCount} hari
+                              </td>
+                              {/* Punch Tidak Lengkap */}
+                              <td className="px-3 py-3 text-xs text-center font-mono">
+                                {row.incompleteDaysCount > 0 ? (
+                                  <span className="inline-flex items-center gap-1 text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full font-bold">
+                                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                    {row.incompleteDaysCount} hari
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </td>
+                              {/* Total Menit Kerja */}
+                              <td className="px-3 py-3 text-xs font-bold text-slate-600 text-center font-mono" onClick={(e) => e.stopPropagation()}>
+                                {uploadedData && row.excelName !== '-' ? (
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      value={row.minutes}
+                                      onChange={(e) => handleUpdateMinutes(row.excelName, Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                      className="w-20 text-center font-bold font-mono h-8 rounded-lg border-slate-200 text-xs"
+                                    />
+                                    <span className="text-slate-400 text-[10px]">menit</span>
+                                  </div>
+                                ) : (
+                                  `${row.minutes} menit`
+                                )}
+                              </td>
+                              {/* Kekurangan (Menit) */}
+                              <td className="px-3 py-3 text-xs text-slate-600 text-center font-mono">
+                                {row.isMatched ? `${row.absenceMinutes} menit` : '-'}
+                              </td>
+                              {/* Strata */}
+                              <td className="px-3 py-3 text-center">
+                                {row.isMatched ? (
+                                  <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full ${row.stratum === 1 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                      row.stratum === 2 ? 'bg-blue-50 text-blue-600 border border-blue-100' :
+                                        row.stratum === 3 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                                          row.stratum === 4 ? 'bg-orange-50 text-orange-600 border border-orange-100' :
+                                            'bg-rose-50 text-rose-600 border border-rose-100'
+                                    }`}>
+                                    Strata {row.stratum}
+                                  </span>
+                                ) : '-'}
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr className="bg-slate-50/20">
+                                <td colSpan={8} className="px-4 py-3">
+                                  <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm space-y-3">
+                                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                      <Clock className="w-4 h-4 text-slate-400" />
+                                      Logs Presensi Harian: {row.employeeName || row.excelName}
+                                    </h4>
+                                    {row.dailyLogs && row.dailyLogs.length > 0 ? (
+                                      <div className="max-h-80 overflow-y-auto border border-slate-100 rounded-xl">
+                                        <table className="w-full text-left border-collapse text-[11px]">
+                                          <thead className="bg-slate-50 sticky top-0 shadow-[0_1px_0_0_rgba(241,245,249,1)]">
+                                            <tr className="border-b border-slate-100">
+                                              <th className="px-3 py-2 font-bold text-slate-500 w-12 text-center">NO</th>
+                                              <th className="px-3 py-2 font-bold text-slate-500">TANGGAL</th>
+                                              <th className="px-3 py-2 font-bold text-slate-500 w-44">STATUS</th>
+                                              <th className="px-3 py-2 font-bold text-slate-500 w-40 text-center">SCAN MASUK</th>
+                                              <th className="px-3 py-2 font-bold text-slate-500 w-40 text-center">SCAN PULANG</th>
+                                              <th className="px-3 py-2 font-bold text-slate-500 w-32 text-center">DURASI</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {row.dailyLogs.map((log: any, logIdx: number) => {
+                                              const isEditable = !!uploadedData && row.excelName !== '-';
+                                              return (
+                                                <tr key={logIdx} className="border-b border-slate-50 hover:bg-slate-50/40">
+                                                  <td className="px-3 py-2 text-slate-400 text-center font-mono">{logIdx + 1}</td>
+                                                  <td className="px-3 py-2 font-bold text-slate-600 font-mono">{log.Tanggal}</td>
+                                                  <td className="px-3 py-2">
+                                                    {isEditable ? (
+                                                      <Select
+                                                        value={log['Jam kerja'] || 'MASUK'}
+                                                        onValueChange={(val) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Jam kerja', val)}
+                                                      >
+                                                        <SelectTrigger className="h-8 text-[11px] rounded-lg border-slate-200 bg-white">
+                                                          <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent className="bg-white rounded-lg border border-slate-100 shadow-lg">
+                                                          <SelectItem value="MASUK">MASUK</SelectItem>
+                                                          <SelectItem value="Tidak Hadir">Tidak Hadir</SelectItem>
+                                                          <SelectItem value="Libur Rutin">Libur Rutin</SelectItem>
+                                                        </SelectContent>
+                                                      </Select>
+                                                    ) : (
+                                                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                        log['Jam kerja'] === 'MASUK' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                                        log['Jam kerja'] === 'Tidak Hadir' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
+                                                        'bg-slate-50 text-slate-600 border border-slate-100'
+                                                      }`}>
+                                                        {log['Jam kerja']}
+                                                      </span>
+                                                    )}
+                                                  </td>
+                                                  <td className="px-3 py-2 text-center">
+                                                    {isEditable && (log['Jam kerja'] === 'MASUK') ? (
+                                                      <Input
+                                                        type="time"
+                                                        step="1"
+                                                        value={log['Scan masuk'] || ''}
+                                                        onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan masuk', e.target.value)}
+                                                        className="h-8 rounded-lg border-slate-200 text-center font-mono text-[11px] w-32 mx-auto bg-white"
+                                                      />
+                                                    ) : (
+                                                      <span className="font-mono text-slate-600">{log['Scan masuk'] || '-'}</span>
+                                                    )}
+                                                  </td>
+                                                  <td className="px-3 py-2 text-center">
+                                                    {isEditable && (log['Jam kerja'] === 'MASUK') ? (
+                                                      <Input
+                                                        type="time"
+                                                        step="1"
+                                                        value={log['Scan pulang'] || ''}
+                                                        onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan pulang', e.target.value)}
+                                                        className="h-8 rounded-lg border-slate-200 text-center font-mono text-[11px] w-32 mx-auto bg-white"
+                                                      />
+                                                    ) : (
+                                                      <span className="font-mono text-slate-600">{log['Scan pulang'] || '-'}</span>
+                                                    )}
+                                                  </td>
+                                                  <td className="px-3 py-2 text-center font-mono font-bold text-slate-600">
+                                                    {log['Jam kerja'] === 'MASUK' && log.duration !== undefined ? `${log.duration} menit` : '-'}
+                                                  </td>
+                                                </tr>
+                                              );
+                                            })}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    ) : (
+                                      <p className="text-xs text-slate-400 text-center py-4 bg-slate-50/50 rounded-xl">Tidak ada log kehadiran harian untuk pegawai ini.</p>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
                         );
                       })}
                     </tbody>
