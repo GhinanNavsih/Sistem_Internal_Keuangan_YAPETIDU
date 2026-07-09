@@ -1480,7 +1480,10 @@ export default function EmployeePayslipPage() {
                                           value={formatIDR(netPresensi)} 
                                           highlight 
                                         />
-                                        <div className="col-span-3 text-[11px] text-slate-500 font-mono font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50">
+                                        <div 
+                                          style={{ gridColumn: '1 / -1' }} 
+                                          className="text-[11px] text-slate-500 font-mono font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50"
+                                        >
                                           = ({targetMinutes.toLocaleString('id-ID')} x Rp27,5) - (({targetMinutes.toLocaleString('id-ID')} - {actualMinutes.toLocaleString('id-ID')}) x Rp27,5)
                                           <br />
                                           = {formatIDR(earning).replace(/\s+/g, '')} - ({absenceMinutes.toLocaleString('id-ID')} x Rp27,5)
@@ -1494,7 +1497,10 @@ export default function EmployeePayslipPage() {
                                           value={formatIDR(netBonus)} 
                                           highlight 
                                         />
-                                        <div className="col-span-3 text-[11px] text-slate-500 font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50">
+                                        <div 
+                                          style={{ gridColumn: '1 / -1' }} 
+                                          className="text-[11px] text-slate-500 font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50"
+                                        >
                                           Stratum {stratum} ({statusText})
                                           <br />
                                           = {formatIDR(bonusEarning).replace(/\s+/g, '')} - {formatIDR(bonusDeduction).replace(/\s+/g, '')}

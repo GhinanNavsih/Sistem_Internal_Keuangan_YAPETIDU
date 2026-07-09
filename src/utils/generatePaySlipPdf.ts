@@ -1094,7 +1094,12 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
 
     // Draw parameters/data box
     if (sec.params) {
-      const boxHeight = sec.params.length * 4.5 + 3;
+      let boxHeight = 3;
+      sec.params.forEach((p) => {
+        const valLines = String(p.val).split('\n');
+        boxHeight += 4.5 + (valLines.length - 1) * 3.8;
+      });
+      
       doc.setFillColor(248, 249, 252);
       doc.setDrawColor(230, 235, 245);
       doc.setLineWidth(0.2);
@@ -1120,7 +1125,20 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
           doc.setFont('helvetica', 'bold');
           doc.setTextColor(60);
         }
-        doc.text(String(p.val), startX + 68, paramY);
+        
+        const valLines = String(p.val).split('\n');
+        valLines.forEach((line, lineIdx) => {
+          if (lineIdx > 0) {
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(120);
+            doc.setFontSize(7.5);
+          }
+          doc.text(line, startX + 68, paramY);
+          if (lineIdx < valLines.length - 1) {
+            paramY += 3.8;
+          }
+        });
+        
         paramY += 4.5;
       });
       
