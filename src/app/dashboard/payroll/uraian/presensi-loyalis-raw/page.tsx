@@ -14,7 +14,8 @@ import {
 } from '@/components/ui/select';
 import {
   Loader2, CheckCircle2, FileText, AlertCircle, Trash2, Plus, Save, Edit,
-  Calendar, Check, ShieldCheck, FileSpreadsheet, Users, Info, Settings, Clock, Upload
+  Calendar, Check, ShieldCheck, FileSpreadsheet, Users, Info, Settings, Clock, Upload,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -825,7 +826,7 @@ export default function PresensiLoyalisRawPage() {
                   <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
                   Kalkulator Bonus Presensi Loyalis via Raw Excel Log
                 </h3>
-                <p className="text-slate-400 text-xs mt-0.5">Unggah data daily raw logs kehadiran bulanan untuk menghitung strata dan bonus presensi. Klik baris pegawai untuk mengedit logs harian.</p>
+                <p className="text-slate-400 text-xs mt-0.5">Unggah data daily raw logs kehadiran bulanan untuk menghitung presensi. Klik baris pegawai untuk mengedit logs harian.</p>
               </div>
               {existingPresence && (
                 <Button
@@ -933,7 +934,7 @@ export default function PresensiLoyalisRawPage() {
                 <div className="flex flex-wrap justify-between items-center gap-4">
                   <div className="flex flex-col gap-1.5">
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      {uploadedData ? 'Preview Hasil Perhitungan Strata (Raw Daily Logs)' : 'Data Perhitungan Strata Tersimpan'}
+                      {uploadedData ? 'Preview Hasil Perhitungan Presensi (Raw Daily Logs)' : 'Data Perhitungan Presensi Tersimpan'}
                     </span>
                     <div className="flex flex-wrap items-center gap-2 mt-1">
                       <span className="text-[10px] bg-slate-50 text-slate-600 border border-slate-200/60 px-2 py-0.5 rounded-full font-semibold">
@@ -946,38 +947,31 @@ export default function PresensiLoyalisRawPage() {
                   </span>
                 </div>
 
-                <div className="border border-slate-100 rounded-2xl overflow-auto shadow-sm max-h-[800px] bg-white">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="sticky top-0 bg-slate-50 z-10 shadow-[0_1px_0_0_rgba(241,245,249,1)]">
-                      <tr className="bg-slate-50 border-b border-slate-100">
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-10 text-center">NO</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase">NAMA EXCEL</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase">PEGAWAI TERHUBUNG</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase text-center font-mono">HARI AKTIF</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase text-center font-mono">PUNCH TIDAK LENGKAP</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase text-center font-mono">TOTAL MENIT KERJA</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase text-center font-mono">KEKURANGAN (MENIT)</th>
-                        <th className="px-3 py-3 text-[10px] font-bold text-slate-500 uppercase w-20 text-center">STRATA</th>
-
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayRows.map((row, idx) => {
-                        const isExpanded = expandedRowIdx === idx;
-                        return (
-                          <React.Fragment key={idx}>
-                            <tr
-                              onClick={() => setExpandedRowIdx(isExpanded ? null : idx)}
-                              className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors cursor-pointer ${
-                                isExpanded ? 'bg-slate-50/30' : ''
-                              }`}
-                            >
-                              <td className="px-3 py-3 text-xs text-slate-400 text-center font-mono">{idx + 1}</td>
-                              <td className="px-3 py-3 text-xs font-bold text-slate-700">{row.excelName}</td>
-                              <td className="px-3 py-3 text-xs" onClick={(e) => e.stopPropagation()}>
+                <div className="space-y-3.5 max-h-[800px] overflow-y-auto pr-1">
+                  {displayRows.map((row, idx) => {
+                    const isExpanded = expandedRowIdx === idx;
+                    return (
+                      <Card
+                        key={idx}
+                        className={`border border-slate-100 rounded-2xl overflow-hidden shadow-sm transition-all bg-white hover:border-indigo-100/80 ${
+                          isExpanded ? 'ring-2 ring-indigo-50 border-indigo-200' : ''
+                        }`}
+                      >
+                        <div
+                          onClick={() => setExpandedRowIdx(isExpanded ? null : idx)}
+                          className="p-4 flex flex-wrap items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/20 transition-colors"
+                        >
+                          {/* Left: Index & Name */}
+                          <div className="flex items-center gap-3 min-w-[240px]">
+                            <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 font-mono shrink-0">
+                              {idx + 1}
+                            </div>
+                            <div className="space-y-0.5">
+                              <h4 className="font-bold text-slate-800 text-xs tracking-wide">{row.excelName}</h4>
+                              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                                 {uploadedData && row.excelName !== '-' ? (
                                   activeSearchRowIdx === row.idx ? (
-                                    <div className="relative w-full max-w-[220px]">
+                                    <div className="relative w-full max-w-[200px] z-20">
                                       <Input
                                         type="text"
                                         placeholder="Cari nama pegawai..."
@@ -989,9 +983,9 @@ export default function PresensiLoyalisRawPage() {
                                             setActiveSearchRowIdx(null);
                                           }, 200);
                                         }}
-                                        className="h-8 rounded-lg border-indigo-300 font-semibold text-slate-800 text-xs w-full bg-white pr-7"
+                                        className="h-7 rounded-lg border-indigo-300 font-semibold text-slate-800 text-[10px] w-full bg-white pr-7"
                                       />
-                                      <div className="absolute left-0 right-0 top-9 max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 divide-y divide-slate-50">
+                                      <div className="absolute left-0 right-0 top-8 max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 divide-y divide-slate-50">
                                         {(() => {
                                           const search = searchQuery.toLowerCase();
                                           const filtered = loyalisEmployees.filter(emp =>
@@ -1005,12 +999,12 @@ export default function PresensiLoyalisRawPage() {
                                                   handleLinkEmployee(row.excelName, "");
                                                   setActiveSearchRowIdx(null);
                                                 }}
-                                                className="w-full text-left px-3 py-2 hover:bg-slate-50 text-[10px] font-bold text-rose-500"
+                                                className="w-full text-left px-2.5 py-1.5 hover:bg-slate-50 text-[9px] font-bold text-rose-500 block"
                                               >
                                                 -- Putuskan Hubungan --
                                               </button>
                                               {filtered.length === 0 ? (
-                                                <div className="p-2.5 text-[10px] text-slate-400">Pegawai tidak ditemukan</div>
+                                                <div className="p-2 text-[9px] text-slate-400">Pegawai tidak ditemukan</div>
                                               ) : (
                                                 filtered.map(emp => (
                                                   <button
@@ -1020,7 +1014,7 @@ export default function PresensiLoyalisRawPage() {
                                                       handleLinkEmployee(row.excelName, emp.id);
                                                       setActiveSearchRowIdx(null);
                                                     }}
-                                                    className="w-full text-left px-3 py-2 hover:bg-slate-50 text-[10px] font-semibold text-slate-700 block truncate"
+                                                    className="w-full text-left px-2.5 py-1.5 hover:bg-slate-50 text-[9px] font-semibold text-slate-700 block truncate"
                                                   >
                                                     {emp.name}
                                                   </button>
@@ -1038,180 +1032,193 @@ export default function PresensiLoyalisRawPage() {
                                         setActiveSearchRowIdx(row.idx);
                                         setSearchQuery(row.employeeName || "");
                                       }}
-                                      className={`text-left w-full max-w-[220px] px-3 py-1.5 rounded-lg border transition-all text-xs font-semibold flex items-center justify-between cursor-pointer ${
+                                      className={`text-left px-2 py-1 rounded-lg border transition-all text-[9px] font-bold flex items-center gap-1 cursor-pointer ${
                                         row.isMatched
-                                          ? 'bg-indigo-50/40 text-indigo-700 border-indigo-100 hover:bg-indigo-50 hover:border-indigo-200'
+                                          ? 'bg-indigo-50/40 text-indigo-700 border-indigo-100/50 hover:bg-indigo-50 hover:border-indigo-200'
                                           : 'bg-rose-50 border-rose-100 text-rose-600 hover:bg-rose-100/50'
                                       }`}
                                     >
-                                      <span className="truncate max-w-[170px]">
-                                        {row.isMatched ? row.employeeName : "Klik untuk Hubungkan..."}
+                                      <span className="truncate max-w-[150px]">
+                                        {row.isMatched ? row.employeeName : "Hubungkan Pegawai..."}
                                       </span>
-                                      <Edit className="w-3.5 h-3.5 opacity-60 hover:opacity-100 shrink-0 ml-1" />
+                                      <Edit className="w-2.5 h-2.5 opacity-60 shrink-0" />
                                     </button>
                                   )
                                 ) : row.isMatched ? (
-                                  <div>
-                                    <p className="font-bold text-indigo-600">{row.employeeName}</p>
-                                    <p className="text-[10px] text-slate-400 font-mono">ID: {row.employeeId}</p>
+                                  <div className="flex items-center gap-1">
+                                    <span className="font-bold text-indigo-600 text-[10px]">{row.employeeName}</span>
+                                    <span className="text-[9px] text-slate-400 font-mono">(ID: {row.employeeId})</span>
                                   </div>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 text-rose-500 bg-rose-50 border border-rose-100 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                    <AlertCircle className="w-3.5 h-3.5" />
+                                  <span className="inline-flex items-center gap-0.5 text-rose-500 bg-rose-50 border border-rose-100 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                                    <AlertCircle className="w-2.5 h-2.5" />
                                     Tidak cocok
                                   </span>
                                 )}
-                              </td>
-                              {/* Hari Aktif */}
-                              <td className="px-3 py-3 text-xs font-bold text-slate-600 text-center font-mono">
-                                {row.activeDaysCount} hari
-                              </td>
-                              {/* Punch Tidak Lengkap */}
-                              <td className="px-3 py-3 text-xs text-center font-mono">
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Middle: Metrics */}
+                          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                            {/* Hari Aktif */}
+                            <div className="flex flex-col text-center min-w-[70px]">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Hari Aktif</span>
+                              <span className="text-xs font-bold text-slate-700 mt-0.5 font-mono">{row.activeDaysCount} hari</span>
+                            </div>
+
+                            {/* Punch Tidak Lengkap */}
+                            <div className="flex flex-col text-center min-w-[120px]">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Punch Tidak Lengkap</span>
+                              <div className="mt-0.5 font-mono">
                                 {row.incompleteDaysCount > 0 ? (
-                                  <span className="inline-flex items-center gap-1 text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full font-bold">
-                                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                  <span className="inline-flex items-center gap-1 text-[9px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full font-bold">
+                                    <AlertCircle className="w-3 h-3 shrink-0" />
                                     {row.incompleteDaysCount} hari
                                   </span>
                                 ) : (
-                                  <span className="text-slate-400">-</span>
+                                  <span className="text-xs text-slate-400 font-semibold">-</span>
                                 )}
-                              </td>
-                              {/* Total Menit Kerja */}
-                              <td className="px-3 py-3 text-xs font-bold text-slate-600 text-center font-mono" onClick={(e) => e.stopPropagation()}>
+                              </div>
+                            </div>
+
+                            {/* Total Menit Kerja */}
+                            <div className="flex flex-col text-center min-w-[120px]" onClick={(e) => e.stopPropagation()}>
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total Menit Kerja</span>
+                              <div className="mt-0.5">
                                 {uploadedData && row.excelName !== '-' ? (
-                                  <div className="flex items-center justify-center gap-1.5">
+                                  <div className="flex items-center justify-center gap-1">
                                     <Input
                                       type="number"
                                       min={0}
                                       value={row.minutes}
                                       onChange={(e) => handleUpdateMinutes(row.excelName, Math.max(0, parseInt(e.target.value, 10) || 0))}
-                                      className="w-20 text-center font-bold font-mono h-8 rounded-lg border-slate-200 text-xs"
+                                      className="w-16 text-center font-bold font-mono h-7 rounded-lg border-slate-200 text-[10px] p-1 bg-white"
                                     />
-                                    <span className="text-slate-400 text-[10px]">menit</span>
+                                    <span className="text-slate-400 text-[9px]">min</span>
                                   </div>
                                 ) : (
-                                  `${row.minutes} menit`
+                                  <span className="text-xs font-bold text-slate-700 font-mono">{row.minutes} menit</span>
                                 )}
-                              </td>
-                              {/* Kekurangan (Menit) */}
-                              <td className="px-3 py-3 text-xs text-slate-600 text-center font-mono">
+                              </div>
+                            </div>
+
+                            {/* Kekurangan */}
+                            <div className="flex flex-col text-center min-w-[110px]">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Kekurangan (Menit)</span>
+                              <span className="text-xs font-bold text-slate-700 mt-0.5 font-mono">
                                 {row.isMatched ? `${row.absenceMinutes} menit` : '-'}
-                              </td>
-                              {/* Strata */}
-                              <td className="px-3 py-3 text-center">
-                                {row.isMatched ? (
-                                  <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full ${row.stratum === 1 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                                      row.stratum === 2 ? 'bg-blue-50 text-blue-600 border border-blue-100' :
-                                        row.stratum === 3 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                                          row.stratum === 4 ? 'bg-orange-50 text-orange-600 border border-orange-100' :
-                                            'bg-rose-50 text-rose-600 border border-rose-100'
-                                    }`}>
-                                    Strata {row.stratum}
-                                  </span>
-                                ) : '-'}
-                              </td>
-                            </tr>
-                            {isExpanded && (
-                              <tr className="bg-slate-50/20">
-                                <td colSpan={8} className="px-4 py-3">
-                                  <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm space-y-3">
-                                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                                      <Clock className="w-4 h-4 text-slate-400" />
-                                      Logs Presensi Harian: {row.employeeName || row.excelName}
-                                    </h4>
-                                    {row.dailyLogs && row.dailyLogs.length > 0 ? (
-                                      <div className="max-h-80 overflow-y-auto border border-slate-100 rounded-xl">
-                                        <table className="w-full text-left border-collapse text-[11px]">
-                                          <thead className="bg-slate-50 sticky top-0 shadow-[0_1px_0_0_rgba(241,245,249,1)]">
-                                            <tr className="border-b border-slate-100">
-                                              <th className="px-3 py-2 font-bold text-slate-500 w-12 text-center">NO</th>
-                                              <th className="px-3 py-2 font-bold text-slate-500">TANGGAL</th>
-                                              <th className="px-3 py-2 font-bold text-slate-500 w-44">STATUS</th>
-                                              <th className="px-3 py-2 font-bold text-slate-500 w-40 text-center">SCAN MASUK</th>
-                                              <th className="px-3 py-2 font-bold text-slate-500 w-40 text-center">SCAN PULANG</th>
-                                              <th className="px-3 py-2 font-bold text-slate-500 w-32 text-center">DURASI</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {row.dailyLogs.map((log: any, logIdx: number) => {
-                                              const isEditable = !!uploadedData && row.excelName !== '-';
-                                              return (
-                                                <tr key={logIdx} className="border-b border-slate-50 hover:bg-slate-50/40">
-                                                  <td className="px-3 py-2 text-slate-400 text-center font-mono">{logIdx + 1}</td>
-                                                  <td className="px-3 py-2 font-bold text-slate-600 font-mono">{log.Tanggal}</td>
-                                                  <td className="px-3 py-2">
-                                                    {isEditable ? (
-                                                      <Select
-                                                        value={log['Jam kerja'] || 'MASUK'}
-                                                        onValueChange={(val) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Jam kerja', val)}
-                                                      >
-                                                        <SelectTrigger className="h-8 text-[11px] rounded-lg border-slate-200 bg-white">
-                                                          <SelectValue />
-                                                        </SelectTrigger>
-                                                        <SelectContent className="bg-white rounded-lg border border-slate-100 shadow-lg">
-                                                          <SelectItem value="MASUK">MASUK</SelectItem>
-                                                          <SelectItem value="Tidak Hadir">Tidak Hadir</SelectItem>
-                                                          <SelectItem value="Libur Rutin">Libur Rutin</SelectItem>
-                                                        </SelectContent>
-                                                      </Select>
-                                                    ) : (
-                                                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                                        log['Jam kerja'] === 'MASUK' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                                                        log['Jam kerja'] === 'Tidak Hadir' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
-                                                        'bg-slate-50 text-slate-600 border border-slate-100'
-                                                      }`}>
-                                                        {log['Jam kerja']}
-                                                      </span>
-                                                    )}
-                                                  </td>
-                                                  <td className="px-3 py-2 text-center">
-                                                    {isEditable && (log['Jam kerja'] === 'MASUK') ? (
-                                                      <Input
-                                                        type="time"
-                                                        step="1"
-                                                        value={log['Scan masuk'] || ''}
-                                                        onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan masuk', e.target.value)}
-                                                        className="h-8 rounded-lg border-slate-200 text-center font-mono text-[11px] w-32 mx-auto bg-white"
-                                                      />
-                                                    ) : (
-                                                      <span className="font-mono text-slate-600">{log['Scan masuk'] || '-'}</span>
-                                                    )}
-                                                  </td>
-                                                  <td className="px-3 py-2 text-center">
-                                                    {isEditable && (log['Jam kerja'] === 'MASUK') ? (
-                                                      <Input
-                                                        type="time"
-                                                        step="1"
-                                                        value={log['Scan pulang'] || ''}
-                                                        onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan pulang', e.target.value)}
-                                                        className="h-8 rounded-lg border-slate-200 text-center font-mono text-[11px] w-32 mx-auto bg-white"
-                                                      />
-                                                    ) : (
-                                                      <span className="font-mono text-slate-600">{log['Scan pulang'] || '-'}</span>
-                                                    )}
-                                                  </td>
-                                                  <td className="px-3 py-2 text-center font-mono font-bold text-slate-600">
-                                                    {log['Jam kerja'] === 'MASUK' && log.duration !== undefined ? `${log.duration} menit` : '-'}
-                                                  </td>
-                                                </tr>
-                                              );
-                                            })}
-                                          </tbody>
-                                        </table>
-                                      </div>
-                                    ) : (
-                                      <p className="text-xs text-slate-400 text-center py-4 bg-slate-50/50 rounded-xl">Tidak ada log kehadiran harian untuk pegawai ini.</p>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Right: Expand Icon */}
+                          <div className="flex items-center gap-2">
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4 text-slate-400 hover:text-slate-600" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-slate-400 hover:text-slate-600" />
                             )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                          </div>
+                        </div>
+
+                        {/* Expanded Daily Logs */}
+                        {isExpanded && (
+                          <div className="border-t border-slate-100 p-4 bg-slate-50/20">
+                            <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm space-y-3">
+                              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                <Clock className="w-4 h-4 text-slate-400" />
+                                Logs Presensi Harian: {row.employeeName || row.excelName}
+                              </h4>
+                              {row.dailyLogs && row.dailyLogs.length > 0 ? (
+                                <div className="border border-slate-100 rounded-xl">
+                                  <table className="w-full text-left border-collapse text-[11px]">
+                                    <thead className="bg-slate-50 sticky top-0 shadow-[0_1px_0_0_rgba(241,245,249,1)]">
+                                      <tr className="border-b border-slate-100">
+                                        <th className="px-3 py-2 font-bold text-slate-500 w-12 text-center">NO</th>
+                                        <th className="px-3 py-2 font-bold text-slate-500">TANGGAL</th>
+                                        <th className="px-3 py-2 font-bold text-slate-500 w-44">STATUS</th>
+                                        <th className="px-3 py-2 font-bold text-slate-500 w-40 text-center">SCAN MASUK</th>
+                                        <th className="px-3 py-2 font-bold text-slate-500 w-40 text-center">SCAN PULANG</th>
+                                        <th className="px-3 py-2 font-bold text-slate-500 w-32 text-center">DURASI</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {row.dailyLogs.map((log: any, logIdx: number) => {
+                                        const isEditable = !!uploadedData && row.excelName !== '-';
+                                        return (
+                                          <tr key={logIdx} className="border-b border-slate-50 hover:bg-slate-50/40">
+                                            <td className="px-3 py-2 text-slate-400 text-center font-mono">{logIdx + 1}</td>
+                                            <td className="px-3 py-2 font-bold text-slate-600 font-mono">{log.Tanggal}</td>
+                                            <td className="px-3 py-2">
+                                              {isEditable ? (
+                                                <Select
+                                                  value={log['Jam kerja'] || 'MASUK'}
+                                                  onValueChange={(val) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Jam kerja', val)}
+                                                >
+                                                  <SelectTrigger className="h-8 text-[11px] rounded-lg border-slate-200 bg-white">
+                                                    <SelectValue />
+                                                  </SelectTrigger>
+                                                  <SelectContent className="bg-white rounded-lg border border-slate-100 shadow-lg">
+                                                    <SelectItem value="MASUK">MASUK</SelectItem>
+                                                    <SelectItem value="Tidak Hadir">Tidak Hadir</SelectItem>
+                                                    <SelectItem value="Libur Rutin">Libur Rutin</SelectItem>
+                                                  </SelectContent>
+                                                </Select>
+                                              ) : (
+                                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                  log['Jam kerja'] === 'MASUK' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                                  log['Jam kerja'] === 'Tidak Hadir' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
+                                                  'bg-slate-50 text-slate-600 border border-slate-100'
+                                                }`}>
+                                                  {log['Jam kerja']}
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="px-3 py-2 text-center">
+                                              {isEditable && (log['Jam kerja'] === 'MASUK') ? (
+                                                <Input
+                                                  type="time"
+                                                  step="1"
+                                                  value={log['Scan masuk'] || ''}
+                                                  onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan masuk', e.target.value)}
+                                                  className="h-8 rounded-lg border-slate-200 text-center font-mono text-[11px] w-32 mx-auto bg-white"
+                                                />
+                                              ) : (
+                                                <span className="font-mono text-slate-600">{log['Scan masuk'] || '-'}</span>
+                                              )}
+                                            </td>
+                                            <td className="px-3 py-2 text-center">
+                                              {isEditable && (log['Jam kerja'] === 'MASUK') ? (
+                                                <Input
+                                                  type="time"
+                                                  step="1"
+                                                  value={log['Scan pulang'] || ''}
+                                                  onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan pulang', e.target.value)}
+                                                  className="h-8 rounded-lg border-slate-200 text-center font-mono text-[11px] w-32 mx-auto bg-white"
+                                                />
+                                              ) : (
+                                                <span className="font-mono text-slate-600">{log['Scan pulang'] || '-'}</span>
+                                              )}
+                                            </td>
+                                            <td className="px-3 py-2 text-center font-mono font-bold text-slate-600">
+                                              {log['Jam kerja'] === 'MASUK' && log.duration !== undefined ? `${log.duration} menit` : '-'}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-slate-400 text-center py-4 bg-slate-50/50 rounded-xl">Tidak ada log kehadiran harian untuk pegawai ini.</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </Card>
+                    );
+                  })}
                 </div>
 
                 {/* Actions Footer */}
