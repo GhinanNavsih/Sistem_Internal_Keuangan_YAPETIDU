@@ -395,20 +395,36 @@ export default function PresensiLoyalisRawPage() {
           return;
         }
 
-        // Auto-detect working days count from the uploaded raw logs
-        const workdayDates = new Set<string>();
-        const allDates = new Set<string>();
+        // Auto-detect working days count from the uploaded raw logs using robust algorithm:
+        // - A date is NOT a working day if:
+        //   1) All employees recorded on that date have "Tidak Hadir" status.
+        //   2) At least half of the employees recorded on that date have "Libur Rutin" status.
+        // - Otherwise, it is a working day.
+        const dateStats: Record<string, { total: number; tidakHadir: number; liburRutin: number }> = {};
         rows.forEach(row => {
           const tgl = String(row['Tanggal'] || '').trim();
           const jk = String(row['Jam kerja'] || '').trim().toUpperCase();
-          if (tgl) {
-            allDates.add(tgl);
-            if (jk === 'MASUK' || jk === 'TIDAK HADIR') {
-              workdayDates.add(tgl);
-            }
+          if (!tgl) return;
+          if (!dateStats[tgl]) {
+            dateStats[tgl] = { total: 0, tidakHadir: 0, liburRutin: 0 };
+          }
+          dateStats[tgl].total += 1;
+          if (jk === 'TIDAK HADIR') {
+            dateStats[tgl].tidakHadir += 1;
+          } else if (jk === 'LIBUR RUTIN') {
+            dateStats[tgl].liburRutin += 1;
           }
         });
-        const deducedDays = workdayDates.size > 0 ? workdayDates.size : allDates.size;
+
+        let deducedDays = 0;
+        Object.entries(dateStats).forEach(([_, stats]) => {
+          const isAllTidakHadir = stats.tidakHadir === stats.total;
+          const isHalfLiburRutin = stats.liburRutin >= stats.total / 2;
+          if (!isAllTidakHadir && !isHalfLiburRutin) {
+            deducedDays += 1;
+          }
+        });
+
         if (deducedDays > 0) {
           setWorkingDays(deducedDays);
         }
