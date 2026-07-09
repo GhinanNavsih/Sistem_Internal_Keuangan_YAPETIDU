@@ -1141,6 +1141,7 @@ export default function PresensiLoyalisRawPage() {
                                         <th className="px-3 py-2 font-bold text-slate-500 w-40 text-center">SCAN MASUK</th>
                                         <th className="px-3 py-2 font-bold text-slate-500 w-40 text-center">SCAN PULANG</th>
                                         <th className="px-3 py-2 font-bold text-slate-500 w-32 text-center">DURASI</th>
+                                        <th className="px-3 py-2 font-bold text-slate-500 w-36 text-center">PENDAPATAN</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -1203,6 +1204,9 @@ export default function PresensiLoyalisRawPage() {
                                             </td>
                                             <td className="px-3 py-2 text-center font-mono font-bold text-slate-600">
                                               {log['Jam kerja'] === 'MASUK' && log.duration !== undefined ? `${log.duration} menit` : '-'}
+                                            </td>
+                                            <td className="px-3 py-2 text-center font-mono font-bold text-indigo-600">
+                                              {log['Jam kerja'] === 'MASUK' && log.duration !== undefined ? fmtRp(log.duration * 27.5) : '-'}
                                             </td>
                                           </tr>
                                         );
