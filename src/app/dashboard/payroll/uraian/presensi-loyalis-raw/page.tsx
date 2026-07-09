@@ -953,8 +953,8 @@ export default function PresensiLoyalisRawPage() {
                     return (
                       <Card
                         key={idx}
-                        className={`border-2 rounded-2xl overflow-hidden shadow-sm transition-all bg-white hover:border-indigo-300 ${
-                          isExpanded ? 'ring-4 ring-indigo-50 border-indigo-400' : 'border-indigo-200/80'
+                        className={`border-2 rounded-2xl overflow-hidden shadow-sm transition-all hover:border-indigo-300 ${
+                          isExpanded ? 'ring-4 ring-indigo-50 border-indigo-400 bg-indigo-50/40' : 'border-indigo-200/80 bg-indigo-50/20'
                         }`}
                       >
                         <div
