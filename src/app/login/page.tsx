@@ -80,6 +80,8 @@ export default function LoginPage() {
         router.replace('/dashboard/payroll/activity-review');
       } else if (profile.role === 'satker_head_loyalis') {
         router.replace('/dashboard/payroll/uraian');
+      } else if (profile.role === 'loyalis_presence_admin') {
+        router.replace('/dashboard/payroll/uraian/presensi-loyalis-raw');
       } else {
         router.replace('/dashboard/payroll');
       }

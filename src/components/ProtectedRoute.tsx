@@ -59,6 +59,11 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
           if (pathname !== '/employee/payslip') {
             router.replace('/employee/payslip');
           }
+        } else if (profile.role === 'loyalis_presence_admin') {
+          // PJ Presensi Loyalis is ONLY allowed to access /dashboard/payroll/uraian/presensi-loyalis-raw
+          if (pathname !== '/dashboard/payroll/uraian/presensi-loyalis-raw') {
+            router.replace('/dashboard/payroll/uraian/presensi-loyalis-raw');
+          }
         }
       }
     }
@@ -101,6 +106,9 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     return null;
   }
   if (profile.role === 'loyalis' && pathname !== '/employee/payslip') {
+    return null;
+  }
+  if (profile.role === 'loyalis_presence_admin' && pathname !== '/dashboard/payroll/uraian/presensi-loyalis-raw') {
     return null;
   }
 

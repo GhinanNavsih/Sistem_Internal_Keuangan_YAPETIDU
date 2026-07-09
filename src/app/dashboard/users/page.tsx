@@ -62,7 +62,7 @@ interface ManagedUser {
   uid: string;
   email: string;
   displayName?: string;
-  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis';
+  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin';
   permittedCategories: string[];
   linkedEmployeeId?: string;
   createdAt?: string;
@@ -118,7 +118,7 @@ export default function UserManagementPage() {
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
-  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis'>('satker_head');
+  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin'>('satker_head');
   const [newPermitted, setNewPermitted] = useState<string[]>([]);
   const [newLinkedEmployeeId, setNewLinkedEmployeeId] = useState('');
   const [newEmployeeSearchText, setNewEmployeeSearchText] = useState('');
@@ -131,7 +131,7 @@ export default function UserManagementPage() {
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [editDisplayName, setEditDisplayName] = useState('');
   const [editEmail, setEditEmail] = useState('');
-  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis'>('satker_head');
+  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin'>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
   const [editLinkedEmployeeId, setEditLinkedEmployeeId] = useState('');
   const [editEmployeeSearchText, setEditEmployeeSearchText] = useState('');
@@ -726,6 +726,23 @@ export default function UserManagementPage() {
                             <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Akun untuk karyawan Loyalis (white collar) yang hanya dapat mengakses halaman slip gaji. Harus dihubungkan ke data pegawai.</span>
                           </div>
                         </div>
+
+                        <div
+                          onClick={() => {
+                            setNewRole('loyalis_presence_admin');
+                            setNewPermitted([]);
+                            setNewLinkedEmployeeId('');
+                          }}
+                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${newRole === 'loyalis_presence_admin' ? 'border-pink-500 bg-pink-50/20 ring-2 ring-pink-500/10' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
+                        >
+                          <div className={`mt-0.5 w-4.5 h-4.5 rounded-full border-2 flex items-center justify-center shrink-0 ${newRole === 'loyalis_presence_admin' ? 'border-pink-600' : 'border-slate-300'}`}>
+                            {newRole === 'loyalis_presence_admin' && <div className="w-2.5 h-2.5 rounded-full bg-pink-600" />}
+                          </div>
+                          <div>
+                            <span className="text-sm font-bold text-slate-900 block">Penanggung Jawab Presensi Loyalis</span>
+                            <span className="text-[11px] text-slate-500 leading-normal block mt-0.5">Memiliki wewenang khusus HANYA untuk menghitung dan mengelola kehadiran Loyalis bulanan via raw daily logs. Dilarang membuka menu dashboard lain.</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -939,7 +956,14 @@ export default function UserManagementPage() {
                         <TableRow key={u.uid} className="border-slate-50 hover:bg-slate-50/40 transition-colors">
                           <TableCell className="font-bold pl-8 py-4.5">
                             <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${u.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : u.role === 'employee_admin' ? 'bg-emerald-100 text-emerald-700' : u.role === 'honorer' ? 'bg-teal-100 text-teal-700' : u.role === 'loyalis' ? 'bg-sky-100 text-sky-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${
+                                u.role === 'super_admin' ? 'bg-amber-100 text-amber-700' : 
+                                u.role === 'employee_admin' ? 'bg-emerald-100 text-emerald-700' : 
+                                u.role === 'honorer' ? 'bg-teal-100 text-teal-700' : 
+                                u.role === 'loyalis' ? 'bg-sky-100 text-sky-700' : 
+                                u.role === 'loyalis_presence_admin' ? 'bg-pink-100 text-pink-700' :
+                                'bg-indigo-100 text-indigo-700'
+                              }`}>
                                 {(u.displayName || u.email).substring(0, 2).toUpperCase()}
                               </div>
                               <div>
@@ -970,6 +994,10 @@ export default function UserManagementPage() {
                               <Badge variant="secondary" className="bg-sky-50 text-sky-700 hover:bg-sky-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Karyawan Loyalis
                               </Badge>
+                            ) : u.role === 'loyalis_presence_admin' ? (
+                              <Badge variant="secondary" className="bg-pink-50 text-pink-700 hover:bg-pink-100 font-bold px-2.5 py-0.5 rounded-full border-none">
+                                PJ Presensi Loyalis
+                              </Badge>
                             ) : (
                               <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Kepala SatKer Pekarya
@@ -983,6 +1011,8 @@ export default function UserManagementPage() {
                               <span className="text-xs text-emerald-600 font-bold italic">Pegawai (Akses Penuh)</span>
                             ) : u.role === 'satker_head_loyalis' ? (
                               <span className="text-xs text-violet-600 font-bold italic">Loyalis (Akses Penuh)</span>
+                            ) : u.role === 'loyalis_presence_admin' ? (
+                              <span className="text-xs text-pink-600 font-bold italic">Presensi Loyalis Raw (Akses Khusus)</span>
                             ) : u.role === 'honorer' ? (
                               <span className="text-xs text-teal-600 font-bold">
                                 {u.linkedEmployeeId
@@ -1178,6 +1208,17 @@ export default function UserManagementPage() {
                   >
                     Loyalis
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditRole('loyalis_presence_admin');
+                      setEditPermitted([]);
+                      setEditLinkedEmployeeId('');
+                    }}
+                    className={`py-2 px-1 text-[11px] font-bold rounded-xl border transition-all ${editRole === 'loyalis_presence_admin' ? 'border-pink-500 bg-pink-50/10 text-pink-700' : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'}`}
+                  >
+                    PJ Presensi Loyalis
+                  </button>
                 </div>
               </div>
 
@@ -1195,6 +1236,10 @@ export default function UserManagementPage() {
                 ) : editRole === 'satker_head_loyalis' ? (
                   <div className="p-3 rounded-xl bg-violet-50 border border-violet-100 text-violet-800 text-[11px] font-medium leading-relaxed mt-1.5">
                     Kepala Satuan Kerja Loyalis secara otomatis memiliki hak akses penuh ke seluruh data Loyalis. Pilihan dinonaktifkan.
+                  </div>
+                ) : editRole === 'loyalis_presence_admin' ? (
+                  <div className="p-3 rounded-xl bg-pink-50 border border-pink-100 text-pink-800 text-[11px] font-medium leading-relaxed mt-1.5">
+                    Penanggung Jawab Presensi Loyalis memiliki akses khusus ke halaman kalkulator presensi loyalis via raw daily logs. Pilihan dinonaktifkan.
                   </div>
                 ) : editRole === 'honorer' ? (
                   <div className="space-y-3 mt-1.5">

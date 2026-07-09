@@ -15,7 +15,7 @@ import { doc, getDoc, getDocFromCache } from 'firebase/firestore';
 export interface UserProfile {
   uid: string;
   email: string;
-  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis';
+  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin';
   permittedCategories: string[];
   displayName?: string;
   linkedEmployeeId?: string;

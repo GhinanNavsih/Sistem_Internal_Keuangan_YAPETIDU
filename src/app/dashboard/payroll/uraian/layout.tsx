@@ -100,7 +100,11 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!profile || !activeTab) return;
 
-    if (profile.role === 'satker_head_loyalis') {
+    if (profile.role === 'loyalis_presence_admin') {
+      if (activeTab !== 'presensi_loyalis_raw') {
+        router.replace(`/dashboard/payroll/uraian/presensi-loyalis-raw${getCleanParamsString('presensi_loyalis_raw')}`);
+      }
+    } else if (profile.role === 'satker_head_loyalis') {
       if (activeTab !== 'vakasi_loyalis' && activeTab !== 'pelaporan_kegiatan') {
         router.replace(`/dashboard/payroll/uraian/vakasi-loyalis${getCleanParamsString('vakasi_loyalis')}`);
       }
@@ -252,7 +256,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               </Select>
             )}
 
-            {(profile?.role === 'satker_head' || profile?.role === 'satker_head_loyalis') && (
+            {(profile?.role === 'satker_head' || profile?.role === 'satker_head_loyalis' || profile?.role === 'loyalis_presence_admin') && (
               <Button
                 variant="outline"
                 onClick={logout}
@@ -321,30 +325,31 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               )}
 
               {profile.role === 'super_admin' && (
-                <>
-                  <button
-                    onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis${getCleanParamsString('presensi_loyalis')}`)}
-                    className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                      activeTab === 'presensi_loyalis'
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                    }`}
-                  >
-                    <FileSpreadsheet className="w-4.5 h-4.5" />
-                    Presensi Loyalis
-                  </button>
-                  <button
-                    onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis-raw${getCleanParamsString('presensi_loyalis_raw')}`)}
-                    className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                      activeTab === 'presensi_loyalis_raw'
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Clock className="w-4.5 h-4.5" />
-                    Presensi Loyalis (Raw)
-                  </button>
-                </>
+                <button
+                  onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis${getCleanParamsString('presensi_loyalis')}`)}
+                  className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                    activeTab === 'presensi_loyalis'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                  }`}
+                >
+                  <FileSpreadsheet className="w-4.5 h-4.5" />
+                  Presensi Loyalis
+                </button>
+              )}
+
+              {(profile.role === 'super_admin' || profile.role === 'loyalis_presence_admin') && (
+                <button
+                  onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis-raw${getCleanParamsString('presensi_loyalis_raw')}`)}
+                  className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                    activeTab === 'presensi_loyalis_raw'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                  }`}
+                >
+                  <Clock className="w-4.5 h-4.5" />
+                  Presensi Loyalis (Raw)
+                </button>
               )}
 
               {/* Show Kegiatan SPJ for Super Admin & Pekarya heads (Commented out for now) */}
