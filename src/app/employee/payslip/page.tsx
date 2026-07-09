@@ -1446,6 +1446,30 @@ export default function EmployeePayslipPage() {
                                     const earning = userVariables.presensiEarningVal;
                                     const deduction = userVariables.potonganPresensiVal;
                                     const netPresensi = Math.max(0, earning - deduction);
+                                    
+                                    const bonusEarning = userVariables.bonusPresensiVal;
+                                    const bonusDeduction = userVariables.potonganBonusPresensiVal;
+                                    const netBonus = Math.max(0, bonusEarning - bonusDeduction);
+
+                                    let stratum = 5;
+                                    let statusText = '';
+                                    if (bonusDeduction === 0) {
+                                      stratum = 1;
+                                      statusText = 'Kekurangan = 0 menit';
+                                    } else if (bonusDeduction <= 100000) {
+                                      stratum = 2;
+                                      statusText = `Kekurangan ≤ ${(wDays * 30).toLocaleString('id-ID')} menit`;
+                                    } else if (bonusDeduction <= 150000) {
+                                      stratum = 3;
+                                      statusText = `Kekurangan ≤ ${(wDays * 35).toLocaleString('id-ID')} menit`;
+                                    } else if (bonusDeduction <= 200000) {
+                                      stratum = 4;
+                                      statusText = `Kekurangan ≤ ${(wDays * 40).toLocaleString('id-ID')} menit`;
+                                    } else {
+                                      stratum = 5;
+                                      statusText = `Kekurangan > ${(wDays * 40).toLocaleString('id-ID')} menit`;
+                                    }
+
                                     return (
                                       <>
                                         <DocRow label="Hari Kerja Aktif" value={`${wDays} hari`} />
@@ -1469,10 +1493,36 @@ export default function EmployeePayslipPage() {
                                           } 
                                           highlight 
                                         />
+                                        <DocRow 
+                                          label="Bersih Bonus Presensi" 
+                                          value={
+                                            <span>
+                                              {formatIDR(netBonus)}
+                                              <span className="block text-[11px] text-slate-500 font-normal mt-1 leading-relaxed border-t border-slate-100 pt-1.5">
+                                                <strong>Status:</strong> Stratum {stratum} ({statusText})
+                                                <br />
+                                                = {formatIDR(bonusEarning).replace(/\s+/g, '')} - {formatIDR(bonusDeduction).replace(/\s+/g, '')}
+                                                <span className="block text-[10px] text-slate-400 mt-1 leading-normal font-light">
+                                                  <strong>Ketentuan Bonus Presensi:</strong>
+                                                  <br />
+                                                  • Stratum 1 (0 mnt): Potongan Rp0 (Sisa Rp250rb)
+                                                  <br />
+                                                  • Stratum 2 (≤ {(wDays * 30).toLocaleString('id-ID')} mnt): Potongan Rp100rb (Sisa Rp150rb)
+                                                  <br />
+                                                  • Stratum 3 (≤ {(wDays * 35).toLocaleString('id-ID')} mnt): Potongan Rp150rb (Sisa Rp100rb)
+                                                  <br />
+                                                  • Stratum 4 (≤ {(wDays * 40).toLocaleString('id-ID')} mnt): Potongan Rp200rb (Sisa Rp50rb)
+                                                  <br />
+                                                  • Stratum 5 (&gt; {(wDays * 40).toLocaleString('id-ID')} mnt): Potongan Rp250rb (Sisa Rp0)
+                                                </span>
+                                              </span>
+                                            </span>
+                                          } 
+                                          highlight 
+                                        />
                                       </>
                                     );
                                   })()}
-                                  <DocRow label="Bersih Bonus Presensi" value={`${formatIDR(Math.max(0, userVariables.bonusPresensiVal - userVariables.potonganBonusPresensiVal))} (${formatIDR(userVariables.bonusPresensiVal)} - ${formatIDR(userVariables.potonganBonusPresensiVal)})`} highlight />
                                 </div>
                               )}
 
