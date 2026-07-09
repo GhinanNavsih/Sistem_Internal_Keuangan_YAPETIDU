@@ -947,8 +947,16 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
         { label: 'Hari Kerja Aktif', val: `${presenceInfo.workingDays} hari` },
         { label: 'Total Waktu Kerja', val: `${Math.round((presenceInfo.workingDays || 25) * (presenceInfo.expectedHours || 6.5) * 60)} menit` },
         { label: 'Waktu Dikerjakan', val: `${Math.max(0, Math.round((presenceInfo.workingDays || 25) * (presenceInfo.expectedHours || 6.5) * 60) - (presenceInfo.absenceMinutes || 0))} menit` },
-        { label: 'Bersih Presensi', val: `${formatIDR(Math.max(0, presensiEarningVal - potonganPresensiVal))} (${formatIDR(presensiEarningVal)} - ${formatIDR(potonganPresensiVal)})`, highlight: true },
-        { label: 'Bersih Bonus Presensi', val: `${formatIDR(Math.max(0, bonusPresensiVal - potonganBonusPresensiVal))} (${formatIDR(bonusPresensiVal)} - ${formatIDR(potonganBonusPresensiVal)})`, highlight: true }
+        { 
+          label: 'Bersih Presensi', 
+          val: `${formatIDR(Math.max(0, presensiEarningVal - potonganPresensiVal)).replace(/\s+/g, '')} (${Math.round((presenceInfo.workingDays || 25) * (presenceInfo.expectedHours || 6.5) * 60).toLocaleString('id-ID')} x Rp27,5 - (${Math.round((presenceInfo.workingDays || 25) * (presenceInfo.expectedHours || 6.5) * 60).toLocaleString('id-ID')} - ${Math.max(0, Math.round((presenceInfo.workingDays || 25) * (presenceInfo.expectedHours || 6.5) * 60) - (presenceInfo.absenceMinutes || 0)).toLocaleString('id-ID')}) x Rp27,5)`, 
+          highlight: true 
+        },
+        { 
+          label: 'Bersih Bonus Presensi', 
+          val: `${formatIDR(Math.max(0, bonusPresensiVal - potonganBonusPresensiVal)).replace(/\s+/g, '')} (Rp250.000 - ${formatIDR(potonganBonusPresensiVal).replace(/\s+/g, '')}) - Stratum ${potonganBonusPresensiVal === 0 ? 1 : potonganBonusPresensiVal <= 100000 ? 2 : potonganBonusPresensiVal <= 150000 ? 3 : potonganBonusPresensiVal <= 200000 ? 4 : 5}`, 
+          highlight: true 
+        }
       ]
     },
     {
