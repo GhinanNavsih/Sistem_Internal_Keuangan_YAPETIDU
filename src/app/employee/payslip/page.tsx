@@ -1495,7 +1495,7 @@ export default function EmployeePayslipPage() {
                                           highlight 
                                         />
                                         <div className="col-span-3 text-[11px] text-slate-500 font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50">
-                                          <strong>Status:</strong> Stratum {stratum} ({statusText})
+                                          Stratum {stratum} ({statusText})
                                           <br />
                                           = {formatIDR(bonusEarning).replace(/\s+/g, '')} - {formatIDR(bonusDeduction).replace(/\s+/g, '')}
                                           <div className="block text-[10px] text-slate-400 mt-2 leading-normal font-light border-t border-slate-200/60 pt-2">
