@@ -123,6 +123,17 @@ const getEmpStartDate = (emp: any) => {
   return emp.employment?.startDate || '';
 };
 
+const getEmpRecognizedDate = (emp: any) => {
+  if (emp.employment_profile?.date_recognized) {
+    const d = emp.employment_profile.date_recognized;
+    if (d && typeof d.toDate === 'function') {
+      return d.toDate().toISOString().split('T')[0];
+    }
+    return d;
+  }
+  return '';
+};
+
 const getEmpMasaKerja = (emp: any): string => {
   const tmtVal = emp.employment_profile?.date_recognized;
   if (!tmtVal) return '-';
@@ -1109,7 +1120,7 @@ export default function EmployeesPage() {
           'Departemen/Unit': emp.employment_profile?.department_unit || '',
           'Golongan / Level': getEmpGrade(emp),
           'Mulai Kerja': getEmpStartDate(emp),
-          'Tgl Diakui': emp.employment_profile?.date_recognized || '',
+          'Tgl Diakui': getEmpRecognizedDate(emp),
           'Nama Bank': emp.banking_info?.bank_name || '',
           'Nomor Rekening': emp.banking_info?.account_number || '',
           'Pendidikan': emp.academic_and_tier?.education_level || '',
@@ -1687,7 +1698,7 @@ export default function EmployeesPage() {
                       )}
                     </div>
                     <div className="space-y-2"><Label>Tanggal Mulai Kerja</Label><Input type="date" value={formData.employment_profile?.date_of_hire || ''} onChange={e => updateNestedField('employment_profile', 'date_of_hire', e.target.value)} /></div>
-                    <div className="space-y-2"><Label>TMT Golongan (SK)</Label><Input type="date" value={formData.employment_profile?.date_recognized || ''} onChange={e => updateNestedField('employment_profile', 'date_recognized', e.target.value)} /></div>
+                    <div className="space-y-2"><Label>Tanggal Diakui</Label><Input type="date" value={formData.employment_profile?.date_recognized || ''} onChange={e => updateNestedField('employment_profile', 'date_recognized', e.target.value)} /></div>
                   </div>
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Akademik &amp; Finansial</h3>
