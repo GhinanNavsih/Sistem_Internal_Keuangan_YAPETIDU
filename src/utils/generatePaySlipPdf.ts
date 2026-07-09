@@ -937,17 +937,17 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
     },
     {
       title: '5. Presensi & Bonus Presensi',
-      formula: 'Formula: Penerimaan Penuh - Potongan Deviasi Jam Kerja',
+      formula: 'Formula: Penerimaan Penuh - Potongan Deviasi Menit Kerja',
       bullets: [
-        'Penerimaan Presensi = Hari Kerja Aktif x Target Jam/hari x Rp 1.650.',
-        'Potongan Presensi = Kekurangan Jam (delta Target vs Kerja Riil) x Rp 1.650.',
+        'Penerimaan Presensi = Hari Kerja Aktif x Target Menit/hari x Rp 27,5.',
+        'Potongan Presensi = Kekurangan Menit (delta Target vs Kerja Riil) x Rp 27,5.',
         'Bonus Presensi = Rp 250.000 (dikreditkan penuh; dipotong jika ada pelanggaran).'
       ],
       params: [
         { label: 'Hari Kerja Aktif', val: `${presenceInfo.workingDays} hari` },
-        { label: 'Target / Hari', val: `${presenceInfo.expectedHours} jam` },
-        { label: 'Kekurangan Jam', val: `${((presenceInfo.absenceMinutes || 0)/60).toFixed(1)} jam` },
-        { label: 'Bersih Presensi Jam', val: `${formatIDR(Math.max(0, presensiEarningVal - potonganPresensiVal))} (${formatIDR(presensiEarningVal)} - ${formatIDR(potonganPresensiVal)})`, highlight: true },
+        { label: 'Target / Hari', val: `${Math.round(presenceInfo.expectedHours * 60)} menit` },
+        { label: 'Kekurangan Menit', val: `${presenceInfo.absenceMinutes || 0} menit` },
+        { label: 'Bersih Presensi', val: `${formatIDR(Math.max(0, presensiEarningVal - potonganPresensiVal))} (${formatIDR(presensiEarningVal)} - ${formatIDR(potonganPresensiVal)})`, highlight: true },
         { label: 'Bersih Bonus Presensi', val: `${formatIDR(Math.max(0, bonusPresensiVal - potonganBonusPresensiVal))} (${formatIDR(bonusPresensiVal)} - ${formatIDR(potonganBonusPresensiVal)})`, highlight: true }
       ]
     },
