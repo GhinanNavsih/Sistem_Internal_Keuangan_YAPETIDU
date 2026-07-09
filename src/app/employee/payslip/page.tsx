@@ -1477,49 +1477,41 @@ export default function EmployeePayslipPage() {
                                         <DocRow label="Waktu Dikerjakan" value={`${actualMinutes} menit`} />
                                         <DocRow 
                                           label="Bersih Presensi" 
-                                          value={
-                                            <span>
-                                              {formatIDR(netPresensi)}
-                                              <span className="block text-[11px] text-slate-500 font-normal mt-1 leading-relaxed">
-                                                = ({targetMinutes.toLocaleString('id-ID')} x Rp27,5) - (({targetMinutes.toLocaleString('id-ID')} - {actualMinutes.toLocaleString('id-ID')}) x Rp27,5)
-                                                <br />
-                                                = {formatIDR(earning).replace(/\s+/g, '')} - ({absenceMinutes.toLocaleString('id-ID')} x Rp27,5)
-                                                <br />
-                                                = {formatIDR(earning).replace(/\s+/g, '')} - {formatIDR(deduction).replace(/\s+/g, '')}
-                                                <br />
-                                                = {formatIDR(netPresensi).replace(/\s+/g, '')}
-                                              </span>
-                                            </span>
-                                          } 
+                                          value={formatIDR(netPresensi)} 
                                           highlight 
                                         />
+                                        <div className="col-span-3 text-[11px] text-slate-500 font-mono font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50">
+                                          = ({targetMinutes.toLocaleString('id-ID')} x Rp27,5) - (({targetMinutes.toLocaleString('id-ID')} - {actualMinutes.toLocaleString('id-ID')}) x Rp27,5)
+                                          <br />
+                                          = {formatIDR(earning).replace(/\s+/g, '')} - ({absenceMinutes.toLocaleString('id-ID')} x Rp27,5)
+                                          <br />
+                                          = {formatIDR(earning).replace(/\s+/g, '')} - {formatIDR(deduction).replace(/\s+/g, '')}
+                                          <br />
+                                          = {formatIDR(netPresensi).replace(/\s+/g, '')}
+                                        </div>
                                         <DocRow 
                                           label="Bersih Bonus Presensi" 
-                                          value={
-                                            <span>
-                                              {formatIDR(netBonus)}
-                                              <span className="block text-[11px] text-slate-500 font-normal mt-1 leading-relaxed border-t border-slate-100 pt-1.5">
-                                                <strong>Status:</strong> Stratum {stratum} ({statusText})
-                                                <br />
-                                                = {formatIDR(bonusEarning).replace(/\s+/g, '')} - {formatIDR(bonusDeduction).replace(/\s+/g, '')}
-                                                <span className="block text-[10px] text-slate-400 mt-1 leading-normal font-light">
-                                                  <strong>Ketentuan Bonus Presensi:</strong>
-                                                  <br />
-                                                  • Stratum 1 (0 mnt): Potongan Rp0 (Sisa Rp250rb)
-                                                  <br />
-                                                  • Stratum 2 (≤ {(wDays * 30).toLocaleString('id-ID')} mnt): Potongan Rp100rb (Sisa Rp150rb)
-                                                  <br />
-                                                  • Stratum 3 (≤ {(wDays * 35).toLocaleString('id-ID')} mnt): Potongan Rp150rb (Sisa Rp100rb)
-                                                  <br />
-                                                  • Stratum 4 (≤ {(wDays * 40).toLocaleString('id-ID')} mnt): Potongan Rp200rb (Sisa Rp50rb)
-                                                  <br />
-                                                  • Stratum 5 (&gt; {(wDays * 40).toLocaleString('id-ID')} mnt): Potongan Rp250rb (Sisa Rp0)
-                                                </span>
-                                              </span>
-                                            </span>
-                                          } 
+                                          value={formatIDR(netBonus)} 
                                           highlight 
                                         />
+                                        <div className="col-span-3 text-[11px] text-slate-500 font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50">
+                                          <strong>Status:</strong> Stratum {stratum} ({statusText})
+                                          <br />
+                                          = {formatIDR(bonusEarning).replace(/\s+/g, '')} - {formatIDR(bonusDeduction).replace(/\s+/g, '')}
+                                          <div className="block text-[10px] text-slate-400 mt-2 leading-normal font-light border-t border-slate-200/60 pt-2">
+                                            <strong>Ketentuan Bonus Presensi:</strong>
+                                            <br />
+                                            • Stratum 1 (0 mnt): Potongan Rp0 (Sisa Rp250rb)
+                                            <br />
+                                            • Stratum 2 (≤ {(wDays * 30).toLocaleString('id-ID')} mnt): Potongan Rp100rb (Sisa Rp150rb)
+                                            <br />
+                                            • Stratum 3 (≤ {(wDays * 35).toLocaleString('id-ID')} mnt): Potongan Rp150rb (Sisa Rp100rb)
+                                            <br />
+                                            • Stratum 4 (≤ {(wDays * 40).toLocaleString('id-ID')} mnt): Potongan Rp200rb (Sisa Rp50rb)
+                                            <br />
+                                            • Stratum 5 (&gt; {(wDays * 40).toLocaleString('id-ID')} mnt): Potongan Rp250rb (Sisa Rp0)
+                                          </div>
+                                        </div>
                                       </>
                                     );
                                   })()}
