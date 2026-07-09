@@ -101,8 +101,15 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     if (!profile || !activeTab) return;
 
     if (profile.role === 'loyalis_presence_admin') {
-      if (activeTab !== 'presensi_loyalis_raw') {
-        router.replace(`/dashboard/payroll/uraian/presensi-loyalis-raw${getCleanParamsString('presensi_loyalis_raw')}`);
+      const isBeforeJuly2026 = year < 2026 || (year === 2026 && month < 7);
+      if (activeTab !== 'presensi_loyalis_raw' || isBeforeJuly2026) {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete('category');
+        if (isBeforeJuly2026) {
+          params.set('month', '7');
+          params.set('year', '2026');
+        }
+        router.replace(`/dashboard/payroll/uraian/presensi-loyalis-raw?${params.toString()}`);
       }
     } else if (profile.role === 'satker_head_loyalis') {
       if (activeTab !== 'vakasi_loyalis' && activeTab !== 'pelaporan_kegiatan') {
@@ -114,7 +121,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         router.replace(`/dashboard/payroll/uraian/rekap-pekarya${getCleanParamsString('presensi')}`);
       }
     }
-  }, [profile, activeTab, router, getCleanParamsString]);
+  }, [profile, activeTab, router, getCleanParamsString, month, year, searchParams]);
 
   // Set default category for Pekarya views
   useEffect(() => {
@@ -213,23 +220,31 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                 </SelectValue>
               </SelectTrigger>
               <SelectContent className="w-72">
-                {MONTHS_ID.map((m, i) => {
-                  const prevMonth = MONTHS_ID[(i - 1 + 12) % 12];
-                  const nextMonth = MONTHS_ID[(i + 1) % 12];
-                  const lastDay = new Date(year, i + 1, 0).getDate();
-                  return (
-                    <SelectItem key={i + 1} value={String(i + 1)}>
-                      <div className="flex flex-col py-0.5">
-                        <span className="font-semibold">{m}</span>
-                        {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' ? (
-                          <span className="text-[11px] text-slate-400">1 – {lastDay} {m}</span>
-                        ) : (
-                          <span className="text-[11px] text-slate-400">26 {prevMonth.slice(0, 3)} – 25 {m.slice(0, 3)} · Bayar 5 {nextMonth.slice(0, 3)}</span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
+                {MONTHS_ID.map((m, i) => ({ name: m, index: i + 1 }))
+                  .filter(item => {
+                    if (profile?.role === 'loyalis_presence_admin' && year === 2026) {
+                      return item.index >= 7; // July onwards
+                    }
+                    return true;
+                  })
+                  .map(({ name: m, index: val }) => {
+                    const i = val - 1;
+                    const prevMonth = MONTHS_ID[(i - 1 + 12) % 12];
+                    const nextMonth = MONTHS_ID[(i + 1) % 12];
+                    const lastDay = new Date(year, val, 0).getDate();
+                    return (
+                      <SelectItem key={val} value={String(val)}>
+                        <div className="flex flex-col py-0.5">
+                          <span className="font-semibold">{m}</span>
+                          {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' ? (
+                            <span className="text-[11px] text-slate-400">1 – {lastDay} {m}</span>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">26 {prevMonth.slice(0, 3)} – 25 {m.slice(0, 3)} · Bayar 5 {nextMonth.slice(0, 3)}</span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
               </SelectContent>
             </Select>
             <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v, 10))}>
@@ -237,7 +252,12 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {YEARS.map(y => (
+                {YEARS.filter(y => {
+                  if (profile?.role === 'loyalis_presence_admin') {
+                    return y >= 2026;
+                  }
+                  return true;
+                }).map(y => (
                   <SelectItem key={y} value={String(y)}>{y}</SelectItem>
                 ))}
               </SelectContent>
