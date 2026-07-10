@@ -494,7 +494,7 @@ export default function PresenceCorrectionsAdminPage() {
                     >
                       <div className="flex-1 flex items-center justify-between md:justify-start gap-4">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-extrabold text-slate-800 uppercase tracking-tight">{req.employeeName}</span>
                             <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
                               req.status === 'approved' 
@@ -504,6 +504,16 @@ export default function PresenceCorrectionsAdminPage() {
                                 : 'bg-amber-50 text-amber-700 border border-amber-100'
                             }`}>
                               {req.status}
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-full">
+                              <Clock className="w-3 h-3 text-indigo-500 shrink-0" />
+                              {req.type === 'both' ? (
+                                `${req.checkInTime} - ${req.checkOutTime}`
+                              ) : req.type === 'tap_in' ? (
+                                `Masuk: ${req.checkInTime}`
+                              ) : (
+                                `Pulang: ${req.checkOutTime}`
+                              )}
                             </span>
                           </div>
                           <p className="text-[10px] text-slate-450 font-semibold mt-0.5">
