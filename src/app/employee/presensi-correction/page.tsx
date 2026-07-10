@@ -80,6 +80,15 @@ export default function PresensiCorrectionPage() {
     return { minDate: minStr, maxDate: maxStr };
   }, []);
 
+  // Check if check-out time is earlier than check-in time when type is 'both'
+  const isTimeRangeInvalid = useMemo(() => {
+    if (type !== 'both' || !checkInTime || !checkOutTime) return false;
+    const [hIn, mIn] = checkInTime.split(':').map(Number);
+    const [hOut, mOut] = checkOutTime.split(':').map(Number);
+    if (isNaN(hIn) || isNaN(hOut)) return false;
+    return (hOut * 60 + mOut) <= (hIn * 60 + mIn);
+  }, [type, checkInTime, checkOutTime]);
+
   // Fetch employee's submitted requests for the current month
   const fetchRequests = useCallback(async () => {
     if (!profile?.uid) return;
@@ -157,6 +166,16 @@ export default function PresensiCorrectionPage() {
 
       let checkIn = checkInTime.trim() || '08:00';
       let checkOut = checkOutTime.trim() || '14:00';
+
+      if (type === 'both') {
+        const [hIn, mIn] = checkIn.split(':').map(Number);
+        const [hOut, mOut] = checkOut.split(':').map(Number);
+        if ((hOut * 60 + mOut) <= (hIn * 60 + mIn)) {
+          setMessage({ type: 'error', text: 'Jam Pulang harus lebih lambat dari Jam Masuk.' });
+          setSubmitLoading(false);
+          return;
+        }
+      }
 
       // 1. Optional File Upload to Firebase Storage
       if (file) {
@@ -331,6 +350,12 @@ export default function PresensiCorrectionPage() {
                         placeholder="14:00"
                         className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold font-mono text-center focus:ring-2 focus:ring-indigo-500/20"
                       />
+                    </div>
+                  )}
+                  {isTimeRangeInvalid && (
+                    <div className="col-span-2 flex items-center gap-2 p-3.5 rounded-2xl text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 animate-in fade-in duration-200">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Peringatan: Jam Pulang harus lebih lambat dari Jam Masuk.</span>
                     </div>
                   )}
                 </div>
