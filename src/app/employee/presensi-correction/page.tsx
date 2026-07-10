@@ -47,7 +47,13 @@ export default function PresensiCorrectionPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Form states
-  const [date, setDate] = useState('');
+  const [date, setDate] = useState(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  });
   const [type, setType] = useState<'tap_in' | 'tap_out' | 'both'>('both');
   const [checkInTime, setCheckInTime] = useState('08:00');
   const [checkOutTime, setCheckOutTime] = useState('16:00');
@@ -154,7 +160,11 @@ export default function PresensiCorrectionPage() {
       setMessage({ type: 'success', text: 'Koreksi presensi berhasil diajukan!' });
       
       // Reset form
-      setDate('');
+      const today = new Date();
+      const y = today.getFullYear();
+      const m = String(today.getMonth() + 1).padStart(2, '0');
+      const d = String(today.getDate()).padStart(2, '0');
+      setDate(`${y}-${m}-${d}`);
       setReason('');
       setFile(null);
       setUploadProgress(null);
