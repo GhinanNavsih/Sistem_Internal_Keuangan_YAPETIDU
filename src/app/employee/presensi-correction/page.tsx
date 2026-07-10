@@ -94,11 +94,15 @@ export default function PresensiCorrectionPage() {
 
       if (!allowedTypes.includes(selectedFile.type) && !allowedExtensions.includes(fileExtension || '')) {
         setMessage({ type: 'error', text: 'Format file tidak didukung. Unggah file JPEG, JPG, PNG, atau PDF.' });
+        setFile(null);
+        e.target.value = '';
         return;
       }
 
       if (selectedFile.size > 5 * 1024 * 1024) {
         setMessage({ type: 'error', text: 'Ukuran file tidak boleh melebihi 5MB.' });
+        setFile(null);
+        e.target.value = '';
         return;
       }
       setFile(selectedFile);
