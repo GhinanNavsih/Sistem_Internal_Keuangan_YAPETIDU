@@ -241,8 +241,34 @@ export default function PresensiCorrectionPage() {
     setMessage(null);
 
     try {
-      let proofUrl = existingProofUrl || '';
       const empId = profile?.linkedEmployeeId || profile?.uid || 'unknown';
+      let proofUrl = existingProofUrl || '';
+      let overwriteDocId: string | null = null;
+
+      // Check for duplicate submission for the same date (only if not currently editing)
+      if (!editingRequestId) {
+        const q = query(
+          collection(db, 'LoyalisPresenceCorrections'),
+          where('employeeId', '==', empId),
+          where('date', '==', date)
+        );
+        const querySnap = await getDocs(q);
+        if (!querySnap.empty) {
+          const existingDoc = querySnap.docs[0];
+          const confirmDate = new Date(date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+          const confirmOverwrite = window.confirm(
+            `Anda sudah mengajukan koreksi presensi untuk tanggal ${confirmDate}. Apakah Anda yakin ingin menimpa pengajuan tersebut dengan data baru?`
+          );
+          if (!confirmOverwrite) {
+            setSubmitLoading(false);
+            return;
+          }
+          overwriteDocId = existingDoc.id;
+          if (!file) {
+            proofUrl = existingDoc.data().proofUrl || '';
+          }
+        }
+      }
 
       let checkIn = checkInTime.trim() || '08:00';
       let checkOut = checkOutTime.trim() || '14:00';
@@ -282,7 +308,7 @@ export default function PresensiCorrectionPage() {
       }
 
       // 2. Save document to Firestore
-      const requestData = {
+      const requestData: any = {
         date,
         type,
         checkInTime: type === 'tap_out' ? null : checkIn,
@@ -292,9 +318,18 @@ export default function PresensiCorrectionPage() {
         updatedAt: serverTimestamp(),
       };
 
-      if (editingRequestId) {
-        await updateDoc(doc(db, 'LoyalisPresenceCorrections', editingRequestId), requestData);
-        setMessage({ type: 'success', text: 'Pengajuan koreksi berhasil diperbarui!' });
+      const targetId = editingRequestId || overwriteDocId;
+
+      if (targetId) {
+        // Reset status to pending and clear rejection reason when updating/overwriting
+        requestData.status = 'pending';
+        requestData.rejectionReason = null;
+
+        await updateDoc(doc(db, 'LoyalisPresenceCorrections', targetId), requestData);
+        setMessage({ 
+          type: 'success', 
+          text: editingRequestId ? 'Pengajuan koreksi berhasil diperbarui!' : 'Pengajuan koreksi sebelumnya berhasil ditimpa!' 
+        });
       } else {
         const newRequest = {
           ...requestData,
