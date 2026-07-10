@@ -200,6 +200,14 @@ export default function PresensiCorrectionPage() {
 
   return (
     <div className="min-h-screen bg-slate-50/50 py-8 px-4 sm:px-6">
+      <style>{`
+        input[type="time"]::-webkit-datetime-edit {
+          display: inline-flex;
+          justify-content: center;
+          width: 100%;
+          text-align: center;
+        }
+      `}</style>
       <div className="max-w-6xl mx-auto space-y-6">
 
         {/* Back header */}
