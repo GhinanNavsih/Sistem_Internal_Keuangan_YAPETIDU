@@ -36,7 +36,9 @@ import {
   XCircle,
   Check,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import Link from 'next/link';
 import { MONTHS_ID } from '@/utils/rekapConfig';
@@ -63,9 +65,9 @@ export default function PresenceCorrectionsAdminPage() {
   const [rejectionReason, setRejectionReason] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  const [selectedReq, setSelectedReq] = useState<any>(null);
-  const [rawPresenceLog, setRawPresenceLog] = useState<any>(null);
-  const [loadingRaw, setLoadingRaw] = useState(false);
+  const [expandedReqIds, setExpandedReqIds] = useState<Record<string, boolean>>({});
+  const [rawLogsMap, setRawLogsMap] = useState<Record<string, any>>({});
+  const [loadingRawMap, setLoadingRawMap] = useState<Record<string, boolean>>({});
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
@@ -95,15 +97,6 @@ export default function PresenceCorrectionsAdminPage() {
       });
 
       setRequests(filtered);
-      if (filtered.length > 0) {
-        setSelectedReq((prev: any) => {
-          if (!prev) return filtered[0];
-          const exists = filtered.find((r: any) => r.id === prev.id);
-          return exists ? exists : filtered[0];
-        });
-      } else {
-        setSelectedReq(null);
-      }
     } catch (err) {
       console.error('Error fetching requests:', err);
       setMessage({ type: 'error', text: 'Gagal memuat daftar pengajuan koreksi.' });
@@ -116,35 +109,33 @@ export default function PresenceCorrectionsAdminPage() {
     fetchRequests();
   }, [fetchRequests]);
 
-  useEffect(() => {
-    if (!selectedReq) {
-      setRawPresenceLog(null);
-      return;
-    }
-    const fetchRaw = async () => {
-      setLoadingRaw(true);
+  const handleExpandToggle = async (req: any) => {
+    const isExpanding = !expandedReqIds[req.id];
+    setExpandedReqIds(prev => ({ ...prev, [req.id]: isExpanding }));
+
+    if (isExpanding && !rawLogsMap[req.id]) {
+      setLoadingRawMap(prev => ({ ...prev, [req.id]: true }));
       try {
-        const periodToken = selectedReq.date.substring(0, 7); // e.g. "2026-07"
+        const periodToken = req.date.substring(0, 7); // e.g. "2026-07"
         const presenceRef = doc(db, 'LoyalisPresence', periodToken);
         const presenceSnap = await getDoc(presenceRef);
         if (presenceSnap.exists()) {
           const data = presenceSnap.data();
-          const empEntry = data.entries?.[selectedReq.employeeId];
-          const dateKey = parseDateToDDMMYYYY(selectedReq.date);
+          const empEntry = data.entries?.[req.employeeId];
+          const dateKey = parseDateToDDMMYYYY(req.date);
           const matchedLog = empEntry?.dailyLogs?.find((log: any) => log.Tanggal === dateKey);
-          setRawPresenceLog(matchedLog || null);
+          setRawLogsMap(prev => ({ ...prev, [req.id]: matchedLog || null }));
         } else {
-          setRawPresenceLog(null);
+          setRawLogsMap(prev => ({ ...prev, [req.id]: null }));
         }
       } catch (err) {
         console.error('Error fetching raw presence log:', err);
-        setRawPresenceLog(null);
+        setRawLogsMap(prev => ({ ...prev, [req.id]: null }));
       } finally {
-        setLoadingRaw(false);
+        setLoadingRawMap(prev => ({ ...prev, [req.id]: false }));
       }
-    };
-    fetchRaw();
-  }, [selectedReq]);
+    }
+  };
 
   // Recalculate helper functions copied directly from presensi-loyalis-raw
   const recalculateSummary = (dailyLogs: any[], expHours: number) => {
@@ -445,13 +436,13 @@ export default function PresenceCorrectionsAdminPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          {/* Master List Column (Filters + List) */}
-          <div className="lg:col-span-5 flex flex-col gap-4">
-            
-            {/* Filters panel */}
-            <Card className="bg-white rounded-3xl border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] p-4 flex flex-row gap-4 items-center">
-              <div className="flex-1 space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Status</label>
+          {/* Filters Card */}
+          <div className="lg:col-span-3">
+            <Card className="bg-white rounded-3xl border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] p-5 space-y-4">
+              <div className="font-bold text-slate-800 text-xs uppercase tracking-wider">Filter Pengajuan</div>
+              
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 tracking-wider block">Status</label>
                 <Select value={selectedStatus} onValueChange={(val: any) => setSelectedStatus(val)}>
                   <SelectTrigger className="rounded-xl border-slate-200 bg-white h-10 text-xs font-semibold text-slate-700">
                     <SelectValue />
@@ -465,8 +456,8 @@ export default function PresenceCorrectionsAdminPage() {
                 </Select>
               </div>
 
-              <div className="flex-1 space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Periode Bulan</label>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 tracking-wider block">Periode Bulan</label>
                 <Input
                   type="month"
                   value={selectedPeriod}
@@ -475,281 +466,249 @@ export default function PresenceCorrectionsAdminPage() {
                 />
               </div>
             </Card>
-
-            {/* List panel */}
-            <Card className="bg-white rounded-3xl border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] p-4 flex-1 flex flex-col min-h-[500px]">
-              <div className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-3 px-1">
-                Daftar Pengajuan ({requests.length})
-              </div>
-
-              {loading ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-450 py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-2" />
-                  <p className="text-xs font-semibold animate-pulse">Memuat daftar...</p>
-                </div>
-              ) : requests.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-405 py-16 text-center">
-                  <Clock className="w-8 h-8 mx-auto mb-2 text-slate-250 animate-pulse" />
-                  <p className="text-xs font-bold text-slate-400">Tidak ada pengajuan cocok.</p>
-                </div>
-              ) : (
-                <div className="space-y-2.5 overflow-y-auto max-h-[520px] pr-1">
-                  {requests.map((req) => {
-                    const isActive = selectedReq?.id === req.id;
-                    return (
-                      <div
-                        key={req.id}
-                        onClick={() => setSelectedReq(req)}
-                        className={`p-3.5 rounded-2xl border transition-all cursor-pointer text-left relative flex flex-col gap-2 ${
-                          isActive
-                            ? 'border-indigo-600 bg-indigo-50/15 shadow-sm'
-                            : 'border-slate-100 bg-white hover:bg-slate-50/50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-extrabold text-slate-800 uppercase truncate max-w-[180px]">
-                            {req.employeeName}
-                          </span>
-                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[8px] font-bold uppercase ${
-                            req.status === 'approved'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                              : req.status === 'rejected'
-                              ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                              : 'bg-amber-50 text-amber-700 border border-amber-100'
-                          }`}>
-                            {req.status}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-[10px] text-slate-450 font-medium">
-                          <span className="font-mono font-semibold">
-                            {new Date(req.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </span>
-                          <span>{req.type === 'both' ? 'Masuk & Pulang' : req.type === 'tap_in' ? 'Masuk Saja' : 'Pulang Saja'}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Card>
           </div>
 
-          {/* Details Pane Column */}
-          <div className="lg:col-span-7">
-            {!selectedReq ? (
-              <Card className="bg-white rounded-3xl border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] p-12 flex flex-col items-center justify-center text-slate-400 min-h-[580px] text-center">
-                <Clock className="w-12 h-12 mx-auto mb-3 text-slate-200" />
-                <h3 className="font-bold text-slate-800 text-sm">Pilih Pengajuan Koreksi</h3>
-                <p className="text-slate-400 text-xs mt-1 max-w-sm">
-                  Silakan klik salah satu nama pegawai di sebelah kiri untuk meninjau detail pengajuan koreksi presensi.
-                </p>
+          {/* Expandable List Card */}
+          <div className="lg:col-span-9 space-y-4">
+            {loading ? (
+              <Card className="bg-white rounded-3xl border-none p-12 flex flex-col items-center justify-center text-slate-450 shadow-[0_4px_25px_rgba(0,0,0,0.02)]">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-2" />
+                <p className="text-xs font-semibold animate-pulse">Memuat daftar pengajuan...</p>
+              </Card>
+            ) : requests.length === 0 ? (
+              <Card className="bg-white rounded-3xl border-none p-16 text-center text-slate-400 shadow-[0_4px_25px_rgba(0,0,0,0.02)]">
+                <Clock className="w-10 h-10 mx-auto mb-2 text-slate-250 animate-pulse" />
+                <p className="text-xs font-bold">Tidak ditemukan pengajuan koreksi presensi yang cocok.</p>
               </Card>
             ) : (
-              <Card className="bg-white rounded-3xl border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] overflow-hidden min-h-[580px] flex flex-col">
-                <div className="p-5 border-b border-slate-50 flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-base font-extrabold text-slate-800 uppercase tracking-tight">{selectedReq.employeeName}</h2>
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                        selectedReq.status === 'approved'
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                          : selectedReq.status === 'rejected'
-                          ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                          : 'bg-amber-50 text-amber-700 border border-amber-100'
-                      }`}>
-                        {selectedReq.status}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-405 font-semibold mt-0.5">
-                      Diajukan pada: {selectedReq.createdAt ? new Date(selectedReq.createdAt.seconds * 1000).toLocaleString('id-ID') : '-'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-indigo-500" />
-                    <span className="text-xs font-bold text-slate-700 font-mono">
-                      {new Date(selectedReq.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-6 flex-1 space-y-6">
-                  {/* Side-by-Side Comparison */}
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Bandingkan Data Presensi:</span>
-                    <div className="grid grid-cols-2 gap-4 text-left">
-                      
-                      {/* Original Raw data */}
-                      <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-2">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Data Log Asli (Excel)</span>
-                        {loadingRaw ? (
-                          <div className="py-3 flex items-center gap-2 text-slate-400 text-xs">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Memuat data...
-                          </div>
-                        ) : rawPresenceLog ? (
-                          <div className="space-y-1.5 text-xs font-semibold text-slate-650">
-                            <div className="flex items-center justify-between border-b border-slate-100/50 pb-1">
-                              <span>Status Log:</span>
-                              <span className="text-indigo-600 uppercase text-[10px] font-bold">{rawPresenceLog['Jam kerja'] || 'MASUK'}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span>Scan Masuk:</span>
-                              <span className="font-mono text-slate-500">{rawPresenceLog['Scan masuk'] || '--:--'}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span>Scan Pulang:</span>
-                              <span className="font-mono text-slate-500">{rawPresenceLog['Scan pulang'] || '--:--'}</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-xs font-medium text-slate-400 py-3">
-                            Tidak ada scan logs asli di sistem untuk tanggal ini.
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Requested correction */}
-                      <div className="bg-indigo-50/20 rounded-2xl border border-indigo-100/50 p-4 space-y-2">
-                        <span className="text-[10px] font-bold text-indigo-650 uppercase tracking-wider block">Koreksi yang Diajukan</span>
-                        <div className="space-y-1.5 text-xs font-semibold text-slate-700">
-                          <div className="flex items-center justify-between border-b border-indigo-100/30 pb-1">
-                            <span>Tipe Koreksi:</span>
-                            <span className="text-indigo-600 text-[10px] font-bold">
-                              {selectedReq.type === 'both' ? 'Masuk & Pulang' : selectedReq.type === 'tap_in' ? 'Masuk Saja' : 'Pulang Saja'}
+              requests.map((req) => {
+                const isExpanded = expandedReqIds[req.id];
+                const rawLog = rawLogsMap[req.id];
+                const loadingRaw = loadingRawMap[req.id];
+                return (
+                  <Card key={req.id} className="bg-white rounded-3xl border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] overflow-hidden transition-all duration-300">
+                    {/* Header Row (Always Visible) */}
+                    <div 
+                      onClick={() => handleExpandToggle(req)}
+                      className="p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-50 cursor-pointer hover:bg-slate-50/30 transition-colors select-none"
+                    >
+                      <div className="flex-1 flex items-center justify-between md:justify-start gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-extrabold text-slate-800 uppercase tracking-tight">{req.employeeName}</span>
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                              req.status === 'approved' 
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                                : req.status === 'rejected' 
+                                ? 'bg-rose-50 text-rose-700 border border-rose-100' 
+                                : 'bg-amber-50 text-amber-700 border border-amber-100'
+                            }`}>
+                              {req.status}
                             </span>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span>Koreksi Masuk:</span>
-                            <span className="font-mono text-slate-900">{selectedReq.checkInTime || '--:--'}</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span>Koreksi Pulang:</span>
-                            <span className="font-mono text-slate-900">{selectedReq.checkOutTime || '--:--'}</span>
-                          </div>
+                          <p className="text-[10px] text-slate-450 font-semibold mt-0.5">
+                            Diajukan pada: {req.createdAt ? new Date(req.createdAt.seconds * 1000).toLocaleString('id-ID') : '-'}
+                          </p>
                         </div>
                       </div>
 
-                    </div>
-                  </div>
-
-                  {/* Reason block */}
-                  <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 text-left">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Alasan Pengajuan:</span>
-                    <p className="text-xs text-slate-650 font-semibold leading-relaxed mt-1 italic">
-                      "{selectedReq.reason}"
-                    </p>
-                  </div>
-
-                  {/* Attachment Document preview */}
-                  {selectedReq.proofUrl && (
-                    <div className="space-y-2 text-left">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Dokumen Pendukung:</span>
-                      
-                      {/* Inline Image Preview */}
-                      {(selectedReq.proofUrl.includes('.jpg') || selectedReq.proofUrl.includes('.jpeg') || selectedReq.proofUrl.includes('.png') || selectedReq.proofUrl.includes('image%2F') || selectedReq.proofUrl.includes('image/')) ? (
-                        <div className="border border-slate-100 rounded-2xl overflow-hidden bg-slate-50 p-2 max-w-sm">
-                          <a href={selectedReq.proofUrl} target="_blank" rel="noreferrer" className="group block relative cursor-zoom-in">
-                            <img
-                              src={selectedReq.proofUrl}
-                              alt="Bukti Pendukung"
-                              className="max-h-[180px] object-contain rounded-xl w-full hover:opacity-90 transition-opacity"
-                            />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold gap-1 rounded-xl">
-                              <FileText className="w-3.5 h-3.5" /> Buka Ukuran Penuh
-                            </div>
-                          </a>
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-slate-400" />
+                          <span className="text-xs font-bold text-slate-700 font-mono">
+                            {new Date(req.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
+                          </span>
                         </div>
-                      ) : (
-                        <a
-                          href={selectedReq.proofUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 text-xs text-indigo-500 font-bold hover:underline cursor-pointer"
-                        >
-                          <FileText className="w-4 h-4" />
-                          Buka Lampiran Bukti (PDF/Dokumen)
-                        </a>
-                      )}
+                        {isExpanded ? (
+                          <ChevronUp className="w-5 h-5 text-slate-400" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-slate-400" />
+                        )}
+                      </div>
                     </div>
-                  )}
 
-                  {/* Resolution Notes */}
-                  {selectedReq.status === 'rejected' && selectedReq.rejectionReason && (
-                    <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 text-xs text-rose-800 font-medium text-left">
-                      <strong>Catatan Penolakan Admin:</strong> {selectedReq.rejectionReason}
-                    </div>
-                  )}
+                    {/* Collapsible Body Content */}
+                    {isExpanded && (
+                      <CardContent className="p-6 space-y-6 animate-in fade-in slide-in-from-top-1 duration-200">
+                        {/* Comparison Grid */}
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Bandingkan Data Presensi:</span>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                            
+                            {/* Original raw log */}
+                            <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-2">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Data Log Asli (Excel)</span>
+                              {loadingRaw ? (
+                                <div className="py-3 flex items-center gap-2 text-slate-400 text-xs">
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" /> Memuat data...
+                                </div>
+                              ) : rawLog ? (
+                                <div className="space-y-1.5 text-xs font-semibold text-slate-650">
+                                  <div className="flex items-center justify-between border-b border-slate-100/50 pb-1">
+                                    <span>Status Log:</span>
+                                    <span className="text-indigo-600 uppercase text-[10px] font-bold">{rawLog['Jam kerja'] || 'MASUK'}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span>Scan Masuk:</span>
+                                    <span className="font-mono text-slate-500">{rawLog['Scan masuk'] || '--:--'}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span>Scan Pulang:</span>
+                                    <span className="font-mono text-slate-500">{rawLog['Scan pulang'] || '--:--'}</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-xs font-medium text-slate-400 py-3">
+                                  Tidak ada scan logs asli di sistem untuk tanggal ini.
+                                </div>
+                              )}
+                            </div>
 
-                  {selectedReq.status === 'approved' && selectedReq.resolvedBy && (
-                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 text-xs text-emerald-800 font-medium text-left">
-                      <strong>Disetujui dan Diterapkan oleh:</strong> {selectedReq.resolvedBy}
-                    </div>
-                  )}
-                </div>
+                            {/* Requested correction */}
+                            <div className="bg-indigo-50/20 rounded-2xl border border-indigo-100/50 p-4 space-y-2">
+                              <span className="text-[10px] font-bold text-indigo-650 uppercase tracking-wider block">Koreksi yang Diajukan</span>
+                              <div className="space-y-1.5 text-xs font-semibold text-slate-700">
+                                <div className="flex items-center justify-between border-b border-indigo-100/30 pb-1">
+                                  <span>Tipe Koreksi:</span>
+                                  <span className="text-indigo-600 text-[10px] font-bold">
+                                    {req.type === 'both' ? 'Masuk & Pulang' : req.type === 'tap_in' ? 'Masuk Saja' : 'Pulang Saja'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span>Koreksi Masuk:</span>
+                                  <span className="font-mono text-slate-900">{req.checkInTime || '--:--'}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span>Koreksi Pulang:</span>
+                                  <span className="font-mono text-slate-900">{req.checkOutTime || '--:--'}</span>
+                                </div>
+                              </div>
+                            </div>
 
-                {/* Footer Action Bar */}
-                {selectedReq.status === 'pending' && (
-                  <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3 rounded-b-3xl">
-                    {rejectingReqId === selectedReq.id ? (
-                      <form onSubmit={handleReject} className="flex gap-2 w-full max-w-md items-center">
-                        <Input
-                          type="text"
-                          value={rejectionReason}
-                          onChange={(e) => setRejectionReason(e.target.value)}
-                          placeholder="Masukkan alasan penolakan..."
-                          required
-                          className="rounded-xl border-slate-200 text-xs h-9 bg-white w-full"
-                        />
-                        <Button
-                          type="submit"
-                          disabled={actionLoading === selectedReq.id}
-                          className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs h-9 px-3 shrink-0 flex items-center gap-1 cursor-pointer"
-                        >
-                          {actionLoading === selectedReq.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
-                          Kirim
-                        </Button>
-                        <Button
-                          type="button"
-                          onClick={() => {
-                            setRejectingReqId(null);
-                            setRejectionReason('');
-                          }}
-                          variant="ghost"
-                          className="rounded-xl text-slate-450 hover:bg-slate-200/50 text-xs h-9 px-3 shrink-0 cursor-pointer"
-                        >
-                          Batal
-                        </Button>
-                      </form>
-                    ) : (
-                      <>
-                        <Button
-                          onClick={() => setRejectingReqId(selectedReq.id)}
-                          disabled={actionLoading !== null}
-                          variant="outline"
-                          className="text-rose-600 border-rose-200 hover:bg-rose-50 rounded-xl text-xs h-9 px-4 font-bold flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          Tolak
-                        </Button>
-                        <Button
-                          onClick={() => handleApprove(selectedReq)}
-                          disabled={actionLoading !== null}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs h-9 px-5 font-bold flex items-center gap-1.5 cursor-pointer shadow-md active:scale-95 transition-all"
-                        >
-                          {actionLoading === selectedReq.id ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Check className="w-3.5 h-3.5" />
-                          )}
-                          Setujui & Terapkan
-                        </Button>
-                      </>
+                          </div>
+                        </div>
+
+                        {/* Reason */}
+                        <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 text-left">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Alasan Pengajuan:</span>
+                          <p className="text-xs text-slate-650 font-semibold leading-relaxed mt-1 italic">
+                            "{req.reason}"
+                          </p>
+                        </div>
+
+                        {/* Attachment Document preview */}
+                        {req.proofUrl && (
+                          <div className="space-y-2 text-left">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Dokumen Pendukung:</span>
+                            
+                            {/* Inline Image Preview */}
+                            {(req.proofUrl.includes('.jpg') || req.proofUrl.includes('.jpeg') || req.proofUrl.includes('.png') || req.proofUrl.includes('image%2F') || req.proofUrl.includes('image/')) ? (
+                              <div className="border border-slate-100 rounded-2xl overflow-hidden bg-slate-50 p-2 max-w-sm">
+                                <a href={req.proofUrl} target="_blank" rel="noreferrer" className="group block relative cursor-zoom-in">
+                                  <img
+                                    src={req.proofUrl}
+                                    alt="Bukti Pendukung"
+                                    className="max-h-[160px] object-contain rounded-xl w-full hover:opacity-90 transition-opacity"
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold gap-1 rounded-xl">
+                                    <FileText className="w-3.5 h-3.5" /> Buka Ukuran Penuh
+                                  </div>
+                                </a>
+                              </div>
+                            ) : (
+                              <a
+                                href={req.proofUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs text-indigo-500 font-bold hover:underline cursor-pointer"
+                              >
+                                <FileText className="w-4 h-4" />
+                                Buka Lampiran Bukti (PDF/Dokumen)
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Resolution Banner */}
+                        {req.status === 'rejected' && req.rejectionReason && (
+                          <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 text-xs text-rose-800 font-medium text-left">
+                            <strong>Catatan Penolakan Admin:</strong> {req.rejectionReason}
+                          </div>
+                        )}
+
+                        {req.status === 'approved' && req.resolvedBy && (
+                          <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 text-xs text-emerald-800 font-medium text-left">
+                            <strong>Disetujui dan Diterapkan oleh:</strong> {req.resolvedBy}
+                          </div>
+                        )}
+
+                        {/* Actions block */}
+                        {req.status === 'pending' && (
+                          <div className="flex justify-end gap-3 pt-4 border-t border-slate-50">
+                            {rejectingReqId === req.id ? (
+                              <form onSubmit={handleReject} className="flex gap-2 w-full max-w-md items-center">
+                                <Input
+                                  type="text"
+                                  value={rejectionReason}
+                                  onChange={(e) => setRejectionReason(e.target.value)}
+                                  placeholder="Masukkan alasan penolakan..."
+                                  required
+                                  className="rounded-xl border-slate-200 text-xs h-9 bg-white w-full"
+                                />
+                                <Button
+                                  type="submit"
+                                  disabled={actionLoading === req.id}
+                                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs h-9 px-3 shrink-0 flex items-center gap-1 cursor-pointer"
+                                >
+                                  {actionLoading === req.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                                  Kirim
+                                </Button>
+                                <Button
+                                  type="button"
+                                  onClick={() => {
+                                    setRejectingReqId(null);
+                                    setRejectionReason('');
+                                  }}
+                                  variant="ghost"
+                                  className="rounded-xl text-slate-450 hover:bg-slate-200/50 text-xs h-9 px-3 shrink-0 cursor-pointer"
+                                >
+                                  Batal
+                                </Button>
+                              </form>
+                            ) : (
+                              <>
+                                <Button
+                                  onClick={() => setRejectingReqId(req.id)}
+                                  disabled={actionLoading !== null}
+                                  variant="outline"
+                                  className="text-rose-600 border-rose-200 hover:bg-rose-50 rounded-xl text-xs h-9 px-4 font-bold flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  Tolak
+                                </Button>
+                                <Button
+                                  onClick={() => handleApprove(req)}
+                                  disabled={actionLoading !== null}
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs h-9 px-5 font-bold flex items-center gap-1.5 cursor-pointer shadow-md active:scale-95 transition-all"
+                                >
+                                  {actionLoading === req.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Check className="w-3.5 h-3.5" />
+                                  )}
+                                  Setujui & Terapkan
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </CardContent>
                     )}
-                  </div>
-                )}
-              </Card>
+                  </Card>
+                );
+              })
             )}
           </div>
-
         </div>
       </div>
     </div>
