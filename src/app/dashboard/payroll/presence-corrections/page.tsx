@@ -445,7 +445,10 @@ export default function PresenceCorrectionsAdminPage() {
                 <label className="text-[10px] font-bold text-slate-400 tracking-wider block">Status</label>
                 <Select value={selectedStatus} onValueChange={(val: any) => setSelectedStatus(val)}>
                   <SelectTrigger className="rounded-xl border-slate-200 bg-white h-10 text-xs font-semibold text-slate-700">
-                    <SelectValue />
+                    {selectedStatus === 'pending' && 'Tertunda (Pending)'}
+                    {selectedStatus === 'approved' && 'Disetujui (Approved)'}
+                    {selectedStatus === 'rejected' && 'Ditolak (Rejected)'}
+                    {selectedStatus === 'all' && 'Semua Status'}
                   </SelectTrigger>
                   <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl">
                     <SelectItem value="pending">Tertunda (Pending)</SelectItem>
