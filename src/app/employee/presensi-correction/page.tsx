@@ -542,13 +542,13 @@ export default function PresensiCorrectionPage() {
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                               : req.status === 'rejected'
                                 ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                                : 'bg-amber-50 text-amber-700 border border-amber-100 animate-pulse'
+                                : 'bg-amber-50 text-amber-700 border border-amber-100'
                               }`}>
                               {req.status === 'approved' ? (
                                 <>
                                   <CheckCircle2 className="w-3 h-3" />
                                   Disetujui
-                                </>
+                                  </>
                               ) : req.status === 'rejected' ? (
                                 <>
                                   <XCircle className="w-3 h-3" />
@@ -556,7 +556,7 @@ export default function PresensiCorrectionPage() {
                                 </>
                               ) : (
                                 <>
-                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  <Clock className="w-3 h-3" />
                                   Pending
                                 </>
                               )}
