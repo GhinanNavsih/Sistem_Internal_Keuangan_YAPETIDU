@@ -10,7 +10,10 @@ import {
   query,
   where,
   orderBy,
-  serverTimestamp
+  serverTimestamp,
+  doc,
+  updateDoc,
+  deleteDoc
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import {
@@ -36,7 +39,10 @@ import {
   XCircle,
   HelpCircle,
   MessageCircle,
-  X
+  X,
+  MoreVertical,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -64,6 +70,16 @@ export default function PresensiCorrectionPage() {
   const [checkInFocused, setCheckInFocused] = useState(false);
   const [checkOutFocused, setCheckOutFocused] = useState(false);
   const [filePreview, setFilePreview] = useState<string | null>(null);
+  
+  // Actions states
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  const [existingProofUrl, setExistingProofUrl] = useState<string | null>(null);
+
+  // Check if existing file is a PDF
+  const isExistingProofPdf = useMemo(() => {
+    return existingProofUrl?.toLowerCase().includes('.pdf') || false;
+  }, [existingProofUrl]);
 
   // Cleanup object URL to prevent memory leaks
   useEffect(() => {
@@ -124,6 +140,52 @@ export default function PresensiCorrectionPage() {
     fetchRequests();
   }, [fetchRequests]);
 
+  const handleStartEdit = (req: any) => {
+    setActiveMenuId(null);
+    setEditingRequestId(req.id);
+    setDate(req.date);
+    setType(req.type);
+    setCheckInTime(req.checkInTime || '');
+    setCheckOutTime(req.checkOutTime || '');
+    setReason(req.reason || '');
+    setFile(null);
+    setFilePreview(null);
+    setExistingProofUrl(req.proofUrl || null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingRequestId(null);
+    setExistingProofUrl(null);
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    setDate(`${y}-${m}-${d}`);
+    setType('both');
+    setReason('');
+    setCheckInTime('');
+    setCheckOutTime('');
+    setFile(null);
+    setFilePreview(null);
+  };
+
+  const handleDeleteRequest = async (id: string) => {
+    setActiveMenuId(null);
+    if (!window.confirm('Apakah Anda yakin ingin menghapus pengajuan koreksi ini?')) return;
+    try {
+      setLoading(true);
+      await deleteDoc(doc(db, 'LoyalisPresenceCorrections', id));
+      setMessage({ type: 'success', text: 'Pengajuan koreksi berhasil dihapus.' });
+      fetchRequests();
+    } catch (err: any) {
+      console.error(err);
+      setMessage({ type: 'error', text: err.message || 'Gagal menghapus pengajuan.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
@@ -179,7 +241,7 @@ export default function PresensiCorrectionPage() {
     setMessage(null);
 
     try {
-      let proofUrl = '';
+      let proofUrl = existingProofUrl || '';
       const empId = profile?.linkedEmployeeId || profile?.uid || 'unknown';
 
       let checkIn = checkInTime.trim() || '08:00';
@@ -220,36 +282,33 @@ export default function PresensiCorrectionPage() {
       }
 
       // 2. Save document to Firestore
-      const newRequest = {
-        employeeId: empId,
-        employeeName: profile?.displayName || 'Karyawan',
+      const requestData = {
         date,
         type,
         checkInTime: type === 'tap_out' ? null : checkIn,
         checkOutTime: type === 'tap_in' ? null : checkOut,
         reason: reason.trim(),
         proofUrl,
-        status: 'pending',
-        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
 
-      await addDoc(collection(db, 'LoyalisPresenceCorrections'), newRequest);
-
-      setMessage({ type: 'success', text: 'Koreksi presensi berhasil diajukan!' });
+      if (editingRequestId) {
+        await updateDoc(doc(db, 'LoyalisPresenceCorrections', editingRequestId), requestData);
+        setMessage({ type: 'success', text: 'Pengajuan koreksi berhasil diperbarui!' });
+      } else {
+        const newRequest = {
+          ...requestData,
+          employeeId: empId,
+          employeeName: profile?.displayName || 'Karyawan',
+          status: 'pending',
+          createdAt: serverTimestamp(),
+        };
+        await addDoc(collection(db, 'LoyalisPresenceCorrections'), newRequest);
+        setMessage({ type: 'success', text: 'Koreksi presensi berhasil diajukan!' });
+      }
 
       // Reset form
-      const today = new Date();
-      const y = today.getFullYear();
-      const m = String(today.getMonth() + 1).padStart(2, '0');
-      const d = String(today.getDate()).padStart(2, '0');
-      setDate(`${y}-${m}-${d}`);
-      setReason('');
-      setCheckInTime('');
-      setCheckOutTime('');
-      setFile(null);
-      setFilePreview(null);
-      setUploadProgress(null);
+      handleCancelEdit();
 
       fetchRequests();
     } catch (err: any) {
@@ -304,7 +363,7 @@ export default function PresensiCorrectionPage() {
               <div>
                 <CardTitle className="text-base font-extrabold text-slate-850 tracking-wide uppercase flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-indigo-500" />
-                  Ajukan Koreksi
+                  {editingRequestId ? 'Ubah Koreksi' : 'Ajukan Koreksi'}
                 </CardTitle>
                 <CardDescription className="text-xs text-slate-450 mt-1">
                   Koreksi hanya diizinkan untuk periode bulan berjalan.
@@ -392,7 +451,7 @@ export default function PresensiCorrectionPage() {
 
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Bukti Kehadiran (Opsional)</label>
-                  {!file ? (
+                  {!file && !existingProofUrl ? (
                     <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center hover:bg-slate-50/50 transition-colors">
                       <input
                         type="file"
@@ -413,14 +472,23 @@ export default function PresensiCorrectionPage() {
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={filePreview} alt="Preview" className="w-full h-full object-cover" />
                         </div>
+                      ) : existingProofUrl && !isExistingProofPdf ? (
+                        <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0 bg-white">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={existingProofUrl} alt="Preview" className="w-full h-full object-cover" />
+                        </div>
                       ) : (
                         <div className="w-12 h-12 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
                           <FileText className="w-6 h-6 text-indigo-550" />
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold text-slate-750 truncate">{file.name}</p>
-                        <p className="text-[10px] text-slate-400 font-semibold mt-0.5">{(file.size / 1024).toFixed(0)} KB</p>
+                        <p className="text-xs font-bold text-slate-750 truncate">
+                          {file ? file.name : 'Bukti Terlampir (Sebelumnya)'}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                          {file ? `${(file.size / 1024).toFixed(0)} KB` : 'Lampiran Terunggah'}
+                        </p>
                       </div>
                       <Button
                         type="button"
@@ -428,6 +496,7 @@ export default function PresensiCorrectionPage() {
                         onClick={() => {
                           setFile(null);
                           setFilePreview(null);
+                          setExistingProofUrl(null);
                         }}
                         className="h-8 w-8 p-0 rounded-full hover:bg-slate-200/60 text-slate-450 hover:text-slate-750 shrink-0 flex items-center justify-center cursor-pointer"
                       >
@@ -442,20 +511,32 @@ export default function PresensiCorrectionPage() {
                   )}
                 </div>
 
-                <Button
-                  type="submit"
-                  disabled={submitLoading}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-11 rounded-2xl flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-[0.98] transition-all"
-                >
-                  {submitLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      {uploadProgress !== null ? `Mengunggah (${uploadProgress}%)...` : 'Mengirim...'}
-                    </>
-                  ) : (
-                    'Kirim Pengajuan'
+                 <div className="flex gap-2.5">
+                  {editingRequestId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleCancelEdit}
+                      className="flex-1 border-slate-200 text-slate-600 font-bold h-11 rounded-2xl active:scale-[0.98] transition-all cursor-pointer"
+                    >
+                      Batal
+                    </Button>
                   )}
-                </Button>
+                  <Button
+                    type="submit"
+                    disabled={submitLoading}
+                    className={`bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-11 rounded-2xl flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-[0.98] transition-all ${editingRequestId ? 'flex-1' : 'w-full'}`}
+                  >
+                    {submitLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {uploadProgress !== null ? `Mengunggah (${uploadProgress}%)...` : 'Menyimpan...'}
+                      </>
+                    ) : (
+                      editingRequestId ? 'Simpan Perubahan' : 'Kirim Pengajuan'
+                    )}
+                  </Button>
+                </div>
               </form>
             </Card>
           </div>
@@ -487,11 +568,12 @@ export default function PresensiCorrectionPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider">
+                       <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider">
                         <th className="pb-3 pr-2 w-28">Tanggal</th>
                         <th className="pb-3 px-2 w-32">Koreksi</th>
                         <th className="pb-3 px-2">Alasan</th>
-                        <th className="pb-3 px-2 w-28 text-center">Status</th>
+                        <th className="pb-3 px-2 w-24 text-center">Status</th>
+                        <th className="pb-3 pl-2 w-10 text-center">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
@@ -537,7 +619,7 @@ export default function PresensiCorrectionPage() {
                               </div>
                             )}
                           </td>
-                          <td className="py-3 px-2 text-center">
+                           <td className="py-3 px-2 text-center">
                             <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${req.status === 'approved'
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                               : req.status === 'rejected'
@@ -561,6 +643,47 @@ export default function PresensiCorrectionPage() {
                                 </>
                               )}
                             </span>
+                          </td>
+                          <td className="py-3 pl-2 text-center relative">
+                            {req.status === 'pending' && (
+                              <div className="relative inline-block text-left">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  onClick={() => setActiveMenuId(activeMenuId === req.id ? null : req.id)}
+                                  className="h-8 w-8 p-0 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-700 shrink-0 flex items-center justify-center cursor-pointer"
+                                >
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                                
+                                {activeMenuId === req.id && (
+                                  <>
+                                    <div 
+                                      className="fixed inset-0 z-40" 
+                                      onClick={() => setActiveMenuId(null)}
+                                    />
+                                    <div className="absolute right-0 mt-1 w-24 bg-white rounded-xl border border-slate-100 shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEdit(req)}
+                                        className="w-full px-3 py-1.5 text-left text-xs font-semibold text-slate-650 hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5 text-indigo-500" />
+                                        Ubah
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteRequest(req.id)}
+                                        className="w-full px-3 py-1.5 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-1.5 cursor-pointer border-t border-slate-50"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                                        Hapus
+                                      </button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ))}
