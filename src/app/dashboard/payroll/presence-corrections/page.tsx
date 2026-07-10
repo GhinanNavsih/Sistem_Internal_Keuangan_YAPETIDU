@@ -50,6 +50,7 @@ export default function PresenceCorrectionsAdminPage() {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [requests, setRequests] = useState<any[]>([]);
+  const [allList, setAllList] = useState<any[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [selectedPeriod, setSelectedPeriod] = useState(() => {
     const now = new Date();
@@ -73,6 +74,7 @@ export default function PresenceCorrectionsAdminPage() {
       
       const snap = await getDocs(q);
       const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAllList(list);
 
       // Apply client-side filters
       const filtered = list.filter((req: any) => {
@@ -102,6 +104,33 @@ export default function PresenceCorrectionsAdminPage() {
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
+
+  // Compute live statistics for the selected period
+  const stats = React.useMemo(() => {
+    const periodList = allList.filter((req: any) => {
+      if (selectedPeriod) {
+        return req.date.substring(0, 7) === selectedPeriod;
+      }
+      return true;
+    });
+    return {
+      total: periodList.length,
+      pending: periodList.filter(r => r.status === 'pending').length,
+      approved: periodList.filter(r => r.status === 'approved').length,
+      rejected: periodList.filter(r => r.status === 'rejected').length,
+    };
+  }, [allList, selectedPeriod]);
+
+  // Helper to generate dynamic premium avatar colors
+  const getAvatarGradient = (name: string) => {
+    const code = name.charCodeAt(0) % 4;
+    switch (code) {
+      case 0: return 'from-indigo-500 to-purple-600';
+      case 1: return 'from-emerald-400 to-teal-600';
+      case 2: return 'from-amber-400 to-orange-500';
+      default: return 'from-pink-500 to-rose-600';
+    }
+  };
 
   // Recalculate helper functions copied directly from presensi-loyalis-raw
   const recalculateSummary = (dailyLogs: any[], expHours: number) => {
@@ -372,226 +401,367 @@ export default function PresenceCorrectionsAdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 py-8 px-4 sm:px-6">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-indigo-50/50 py-8 px-8 font-sans selection:bg-indigo-100">
+      <div className="max-w-[1600px] mx-auto space-y-8">
         
-        {/* Back header */}
-        <div className="flex items-center justify-between">
-          <Link href="/dashboard/payroll/uraian/presensi-loyalis-raw">
-            <Button variant="ghost" className="rounded-xl flex items-center gap-1.5 text-slate-500 hover:text-slate-800 font-semibold cursor-pointer">
-              <ChevronLeft className="w-4 h-4" />
-              Kembali ke Presensi Raw
-            </Button>
-          </Link>
-          <div className="text-right">
-            <h1 className="text-lg font-extrabold text-slate-950 uppercase tracking-tight">Koreksi Presensi Loyalis</h1>
-            <p className="text-xs text-slate-450 font-medium">Persetujuan & Manajemen Koreksi Absen Pegawai</p>
+        {/* Modern Header Section */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/70 backdrop-blur-md rounded-3xl p-6 border border-slate-200/50 shadow-sm">
+          <div className="space-y-1.5">
+            <Link href="/dashboard/payroll/uraian/presensi-loyalis-raw">
+              <Button variant="ghost" className="group -ml-2 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50/80 rounded-xl transition-all font-bold text-xs flex items-center gap-2 cursor-pointer">
+                <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+                Kembali ke Presensi Raw
+              </Button>
+            </Link>
+            <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight flex items-center gap-2.5 mt-1">
+              <span className="w-2.5 h-6 bg-indigo-600 rounded-full inline-block" />
+              Koreksi Presensi Loyalis
+            </h1>
+            <p className="text-xs text-slate-450 font-semibold tracking-wide ml-4">
+              Persetujuan &amp; Manajemen Koreksi Absen Pegawai YAPETIDU
+            </p>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <div className="text-right hidden lg:block mr-2">
+              <div className="text-[10px] font-bold text-slate-400 uppercase">Status Akses</div>
+              <div className="text-xs font-extrabold text-slate-700">{profile?.email || 'Administrator'}</div>
+            </div>
+            <div className="h-10 w-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md shadow-indigo-200">
+              {profile?.email ? profile.email.charAt(0).toUpperCase() : 'A'}
+            </div>
           </div>
         </div>
 
         {message && (
-          <div className={`flex items-start gap-2.5 px-4 py-3 rounded-2xl text-sm font-medium border ${
+          <div className={`flex items-start gap-3 px-5 py-4 rounded-2xl text-sm font-semibold border shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 ${
             message.type === 'success' 
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-              : 'bg-rose-50 text-rose-700 border-rose-200'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+              : 'bg-rose-50 text-rose-800 border-rose-200'
           }`}>
-            {message.type === 'success' ? <CheckCircle2 className="w-4.5 h-4.5 shrink-0 mt-0.5" /> : <AlertCircle className="w-4.5 h-4.5 shrink-0 mt-0.5" />}
+            {message.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5" />
+            ) : (
+              <AlertCircle className="w-5 h-5 shrink-0 text-rose-600 mt-0.5" />
+            )}
             <span>{message.text}</span>
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Dashboard Grid (Desktop Optimized) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
-          {/* Filters Card */}
-          <div className="lg:col-span-3">
-            <Card className="bg-white rounded-3xl border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] p-5 space-y-4">
-              <div className="font-bold text-slate-800 text-xs uppercase tracking-wider">Filter Pengajuan</div>
-              
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Status</label>
-                <Select value={selectedStatus} onValueChange={(val: any) => setSelectedStatus(val)}>
-                  <SelectTrigger className="rounded-xl border-slate-200 bg-white h-10 text-xs font-semibold text-slate-700">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl">
-                    <SelectItem value="pending">Tertunda (Pending)</SelectItem>
-                    <SelectItem value="approved">Disetujui (Approved)</SelectItem>
-                    <SelectItem value="rejected">Ditolak (Rejected)</SelectItem>
-                    <SelectItem value="all">Semua Status</SelectItem>
-                  </SelectContent>
-                </Select>
+          {/* LEFT PANEL: Filters, Quick Actions, and Statistics */}
+          <div className="lg:col-span-4 space-y-6">
+            
+            {/* Filter Card */}
+            <Card className="bg-white rounded-3xl border-none shadow-[0_4px_30px_rgba(0,0,0,0.03)] p-6 space-y-6 border border-slate-100">
+              <div>
+                <h2 className="font-extrabold text-slate-800 text-sm uppercase tracking-wider">Filter Pengajuan</h2>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Saring data berdasarkan status &amp; periode bulan</p>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Periode Bulan</label>
-                <Input
-                  type="month"
-                  value={selectedPeriod}
-                  onChange={(e) => setSelectedPeriod(e.target.value)}
-                  className="rounded-xl border-slate-200 bg-white h-10 text-xs font-semibold text-slate-700"
-                />
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Status Koreksi</label>
+                  <Select value={selectedStatus} onValueChange={(val: any) => setSelectedStatus(val)}>
+                    <SelectTrigger className="rounded-xl border-slate-200 bg-white h-11 text-xs font-semibold text-slate-700 hover:border-indigo-300 focus:ring-2 focus:ring-indigo-500/20 transition-all">
+                      <SelectValue placeholder="Pilih status..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl font-sans">
+                      <SelectItem value="pending">Tertunda (Pending)</SelectItem>
+                      <SelectItem value="approved">Disetujui (Approved)</SelectItem>
+                      <SelectItem value="rejected">Ditolak (Rejected)</SelectItem>
+                      <SelectItem value="all">Semua Status</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Periode Bulan</label>
+                  <div className="relative">
+                    <Input
+                      type="month"
+                      value={selectedPeriod}
+                      onChange={(e) => setSelectedPeriod(e.target.value)}
+                      className="rounded-xl border-slate-200 bg-white h-11 text-xs font-semibold text-slate-700 hover:border-indigo-300 focus:ring-2 focus:ring-indigo-500/20 transition-all font-mono text-center"
+                    />
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Interactive Statistics / Status Counters */}
+            <Card className="bg-white rounded-3xl border-none shadow-[0_4px_30px_rgba(0,0,0,0.03)] p-6 space-y-4 border border-slate-100">
+              <div>
+                <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-wider">Statistik Bulan Ini</h3>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Klik kotak di bawah untuk memfilter cepat</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setSelectedStatus('pending')}
+                  className={`p-4 rounded-2xl text-left transition-all border cursor-pointer ${
+                    selectedStatus === 'pending'
+                      ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-300/20'
+                      : 'bg-slate-50/50 border-slate-100 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Pending</div>
+                  <div className="text-2xl font-black text-amber-700 mt-1 font-mono">{stats.pending}</div>
+                </button>
+
+                <button
+                  onClick={() => setSelectedStatus('approved')}
+                  className={`p-4 rounded-2xl text-left transition-all border cursor-pointer ${
+                    selectedStatus === 'approved'
+                      ? 'bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-300/20'
+                      : 'bg-slate-50/50 border-slate-100 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Approved</div>
+                  <div className="text-2xl font-black text-emerald-700 mt-1 font-mono">{stats.approved}</div>
+                </button>
+
+                <button
+                  onClick={() => setSelectedStatus('rejected')}
+                  className={`p-4 rounded-2xl text-left transition-all border cursor-pointer ${
+                    selectedStatus === 'rejected'
+                      ? 'bg-rose-50/70 border-rose-300 ring-2 ring-rose-300/20'
+                      : 'bg-slate-50/50 border-slate-100 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="text-[10px] font-bold text-rose-600 uppercase tracking-wider">Rejected</div>
+                  <div className="text-2xl font-black text-rose-700 mt-1 font-mono">{stats.rejected}</div>
+                </button>
+
+                <button
+                  onClick={() => setSelectedStatus('all')}
+                  className={`p-4 rounded-2xl text-left transition-all border cursor-pointer ${
+                    selectedStatus === 'all'
+                      ? 'bg-indigo-50/70 border-indigo-300 ring-2 ring-indigo-300/20'
+                      : 'bg-slate-50/50 border-slate-100 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Total</div>
+                  <div className="text-2xl font-black text-indigo-700 mt-1 font-mono">{stats.total}</div>
+                </button>
               </div>
             </Card>
           </div>
 
-          {/* List Card */}
-          <div className="lg:col-span-9 space-y-4">
+          {/* RIGHT PANEL: Correction Submissions List */}
+          <div className="lg:col-span-8 space-y-6">
+            
             {loading ? (
-              <Card className="bg-white rounded-3xl border-none p-12 flex flex-col items-center justify-center text-slate-450 shadow-[0_4px_25px_rgba(0,0,0,0.02)]">
-                <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-2" />
-                <p className="text-xs font-semibold animate-pulse">Memuat daftar pengajuan...</p>
+              <Card className="bg-white rounded-[32px] border-none p-16 flex flex-col items-center justify-center text-slate-400 shadow-[0_4px_30px_rgba(0,0,0,0.03)] min-h-[400px]">
+                <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-3" />
+                <p className="text-xs font-bold tracking-wider uppercase animate-pulse">Memuat daftar pengajuan...</p>
               </Card>
             ) : requests.length === 0 ? (
-              <Card className="bg-white rounded-3xl border-none p-16 text-center text-slate-400 shadow-[0_4px_25px_rgba(0,0,0,0.02)]">
-                <Clock className="w-10 h-10 mx-auto mb-2 text-slate-250 animate-pulse" />
-                <p className="text-xs font-bold">Tidak ditemukan pengajuan koreksi presensi yang cocok.</p>
+              <Card className="bg-white rounded-[32px] border-none p-16 text-center text-slate-400 shadow-[0_4px_30px_rgba(0,0,0,0.03)] border border-slate-100/50 min-h-[400px] flex flex-col items-center justify-center">
+                <div className="w-16 h-16 rounded-3xl bg-slate-50 flex items-center justify-center mb-4 border border-slate-100">
+                  <Clock className="w-7 h-7 text-slate-300" />
+                </div>
+                <h3 className="text-sm font-extrabold text-slate-700 uppercase tracking-wider">Tidak Ada Pengajuan</h3>
+                <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto leading-relaxed">
+                  Tidak ditemukan pengajuan koreksi presensi yang cocok dengan filter aktif Anda.
+                </p>
               </Card>
             ) : (
-              requests.map((req) => (
-                <Card key={req.id} className="bg-white rounded-3xl border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] overflow-hidden">
-                  <div className="p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-50">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-extrabold text-slate-800 uppercase tracking-tight">{req.employeeName}</span>
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                          req.status === 'approved' 
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
-                            : req.status === 'rejected' 
-                            ? 'bg-rose-50 text-rose-700 border border-rose-100' 
-                            : 'bg-amber-50 text-amber-700 border border-amber-100'
-                        }`}>
-                          {req.status}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                        Diajukan pada: {req.createdAt ? new Date(req.createdAt.seconds * 1000).toLocaleString('id-ID') : '-'}
-                      </p>
-                    </div>
+              <div className="space-y-4">
+                {requests.map((req) => {
+                  const isPdf = req.proofUrl && req.proofUrl.toLowerCase().split('?')[0].endsWith('.pdf');
+                  
+                  return (
+                    <Card 
+                      key={req.id} 
+                      className={`bg-white rounded-3xl border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] overflow-hidden transition-all duration-300 hover:shadow-[0_10px_35px_rgba(99,102,241,0.06)] border border-slate-100 hover:border-indigo-100 ${
+                        rejectingReqId === req.id ? 'ring-2 ring-rose-200' : ''
+                      }`}
+                    >
+                      {/* Top Bar / Header of Request */}
+                      <div className="p-6 flex items-center justify-between border-b border-slate-50 bg-slate-50/20">
+                        <div className="flex items-center gap-4">
+                          {/* Premium Avatar */}
+                          <div className={`w-11 h-11 rounded-2xl bg-gradient-to-tr ${getAvatarGradient(req.employeeName)} flex items-center justify-center text-white font-extrabold text-sm shadow-sm`}>
+                            {req.employeeName ? req.employeeName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() : 'KY'}
+                          </div>
 
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-slate-400" />
-                      <span className="text-xs font-bold text-slate-700 font-mono">
-                        {new Date(req.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
-                      </span>
-                    </div>
-                  </div>
-
-                  <CardContent className="p-5 space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      
-                      {/* Left: times and files */}
-                      <div className="space-y-3">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Permintaan Koreksi:</span>
-                          {req.type === 'both' ? (
-                            <div className="text-xs font-bold text-slate-750 flex items-center gap-1.5">
-                              <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-bold">Masuk & Pulang</span>
-                              <span className="font-mono text-slate-600">{req.checkInTime} - {req.checkOutTime}</span>
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-extrabold text-slate-800 uppercase tracking-tight">{req.employeeName}</span>
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${
+                                req.status === 'approved' 
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
+                                  : req.status === 'rejected' 
+                                  ? 'bg-rose-50 text-rose-700 border-rose-100' 
+                                  : 'bg-amber-50 text-amber-750 border-amber-100'
+                              }`}>
+                                {req.status === 'approved' && <Check className="w-2.5 h-2.5" />}
+                                {req.status === 'rejected' && <X className="w-2.5 h-2.5" />}
+                                {req.status === 'pending' && <Clock className="w-2.5 h-2.5 animate-pulse" />}
+                                {req.status}
+                              </span>
                             </div>
-                          ) : req.type === 'tap_in' ? (
-                            <div className="text-xs font-bold text-slate-750 flex items-center gap-1.5">
-                              <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[10px] font-bold">Masuk Saja</span>
-                              <span className="font-mono text-slate-600">{req.checkInTime}</span>
+                            <div className="text-[10px] text-slate-400 font-semibold">
+                              Diajukan pada: <span className="font-mono text-slate-500">{req.createdAt ? new Date(req.createdAt.seconds * 1000).toLocaleString('id-ID') : '-'}</span>
                             </div>
-                          ) : (
-                            <div className="text-xs font-bold text-slate-750 flex items-center gap-1.5">
-                              <span className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-bold">Pulang Saja</span>
-                              <span className="font-mono text-slate-600">{req.checkOutTime}</span>
-                            </div>
-                          )}
+                          </div>
                         </div>
 
-                        {req.proofUrl && (
-                          <div className="space-y-1">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block font-medium">Lampiran Bukti:</span>
-                            <a
-                              href={req.proofUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 text-xs text-indigo-500 font-bold hover:underline cursor-pointer"
-                            >
-                              <FileText className="w-4 h-4" />
-                              Buka Dokumen Pendukung
-                            </a>
+                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-2xl border border-slate-100 shadow-2xs">
+                          <Calendar className="w-4 h-4 text-indigo-500" />
+                          <span className="text-xs font-black text-slate-700 font-mono">
+                            {new Date(req.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' })}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Content Panel */}
+                      <CardContent className="p-6 space-y-5">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                          
+                          {/* Left Half: Submission Data Details */}
+                          <div className="space-y-4">
+                            <div className="space-y-1.5">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Permintaan Koreksi:</span>
+                              {req.type === 'both' ? (
+                                <div className="inline-flex items-center gap-2.5">
+                                  <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-lg text-[10px] font-extrabold uppercase tracking-wide">Masuk &amp; Pulang</span>
+                                  <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50/50 px-2.5 py-0.5 rounded-lg border border-indigo-100/50">{req.checkInTime} — {req.checkOutTime}</span>
+                                </div>
+                              ) : req.type === 'tap_in' ? (
+                                <div className="inline-flex items-center gap-2.5">
+                                  <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-lg text-[10px] font-extrabold uppercase tracking-wide border border-indigo-100/30">Masuk Saja</span>
+                                  <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50/50 px-2.5 py-0.5 rounded-lg border border-indigo-100/50">{req.checkInTime}</span>
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center gap-2.5">
+                                  <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-lg text-[10px] font-extrabold uppercase tracking-wide border border-amber-100/30">Pulang Saja</span>
+                                  <span className="font-mono text-xs font-bold text-amber-700 bg-amber-50/50 px-2.5 py-0.5 rounded-lg border border-amber-100/50">{req.checkOutTime}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {req.proofUrl && (
+                              <div className="space-y-2">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Lampiran Bukti:</span>
+                                {isPdf ? (
+                                  <a
+                                    href={req.proofUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-2 text-xs text-indigo-600 font-extrabold hover:text-indigo-800 transition-colors bg-indigo-50/50 hover:bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100/60 shadow-2xs cursor-pointer"
+                                  >
+                                    <FileText className="w-4 h-4 text-indigo-500" />
+                                    Buka Dokumen PDF
+                                  </a>
+                                ) : (
+                                  <div className="relative group max-w-xs overflow-hidden rounded-xl border border-slate-200 bg-slate-50 hover:border-indigo-300 transition-all shadow-2xs">
+                                    <img
+                                      src={req.proofUrl}
+                                      alt="Bukti Lampiran"
+                                      className="max-h-32 w-auto object-cover hover:scale-102 transition-transform duration-300"
+                                    />
+                                    <a
+                                      href={req.proofUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="absolute inset-0 bg-slate-950/45 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-extrabold tracking-wider uppercase transition-opacity duration-200 gap-1.5 cursor-pointer"
+                                    >
+                                      <FileText className="w-4 h-4" />
+                                      Lihat Penuh
+                                    </a>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Right Half: Reason Box */}
+                          <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-2xl border border-slate-100/70 h-full">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Alasan Pengajuan:</span>
+                            <p className="text-xs text-slate-650 font-semibold leading-relaxed mt-1 break-words">
+                              "{req.reason}"
+                            </p>
+                          </div>
+                        </div>
+
+                        {req.status === 'rejected' && req.rejectionReason && (
+                          <div className="bg-rose-50/60 border border-rose-100/80 rounded-2xl p-4 text-xs text-rose-800 font-semibold leading-relaxed flex items-start gap-2 animate-in fade-in duration-200">
+                            <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                            <div>
+                              <strong className="uppercase text-[9px] tracking-wide text-rose-900 block mb-0.5">Catatan Penolakan Admin:</strong> 
+                              <span>{req.rejectionReason}</span>
+                            </div>
                           </div>
                         )}
-                      </div>
 
-                      {/* Right: reason */}
-                      <div className="space-y-1 bg-slate-50/50 p-3 rounded-2xl border border-slate-100">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Alasan Pengajuan:</span>
-                        <p className="text-xs text-slate-650 font-medium leading-relaxed mt-0.5">{req.reason}</p>
-                      </div>
-                    </div>
-
-                    {req.status === 'rejected' && req.rejectionReason && (
-                      <div className="bg-rose-50/55 border border-rose-100/50 rounded-2xl p-3.5 text-xs text-rose-800 font-medium leading-normal">
-                        <strong>Catatan Penolakan Admin:</strong> {req.rejectionReason}
-                      </div>
-                    )}
-
-                    {req.status === 'pending' && (
-                      <div className="flex justify-end gap-3 pt-3 border-t border-slate-50">
-                        {rejectingReqId === req.id ? (
-                          <form onSubmit={handleReject} className="flex gap-2 w-full max-w-lg items-center">
-                            <Input
-                              type="text"
-                              value={rejectionReason}
-                              onChange={(e) => setRejectionReason(e.target.value)}
-                              placeholder="Masukkan alasan penolakan..."
-                              required
-                              className="rounded-xl border-slate-200 text-xs h-9 bg-white w-full"
-                            />
-                            <Button
-                              type="submit"
-                              disabled={actionLoading === req.id}
-                              className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs h-9 px-3 shrink-0 flex items-center gap-1 cursor-pointer"
-                            >
-                              {actionLoading === req.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
-                              Kirim
-                            </Button>
-                            <Button
-                              type="button"
-                              onClick={() => {
-                                setRejectingReqId(null);
-                                setRejectionReason('');
-                              }}
-                              variant="ghost"
-                              className="rounded-xl text-slate-450 hover:bg-slate-50 text-xs h-9 px-3 shrink-0 cursor-pointer"
-                            >
-                              Batal
-                            </Button>
-                          </form>
-                        ) : (
-                          <>
-                            <Button
-                              onClick={() => setRejectingReqId(req.id)}
-                              disabled={actionLoading !== null}
-                              variant="outline"
-                              className="text-rose-600 border-rose-200 hover:bg-rose-50 rounded-xl text-xs h-9 px-4 font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              Tolak
-                            </Button>
-                            <Button
-                              onClick={() => handleApprove(req)}
-                              disabled={actionLoading !== null}
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs h-9 px-5 font-bold flex items-center gap-1.5 cursor-pointer shadow-md active:scale-95 transition-all"
-                            >
-                              {actionLoading === req.id ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Check className="w-3.5 h-3.5" />
-                              )}
-                              Setujui & Terapkan
-                            </Button>
-                          </>
+                        {req.status === 'pending' && (
+                          <div className="flex justify-end gap-3 pt-4 border-t border-slate-50">
+                            {rejectingReqId === req.id ? (
+                              <form onSubmit={handleReject} className="flex gap-2 w-full max-w-lg items-center animate-in slide-in-from-right-2 duration-200">
+                                <Input
+                                  type="text"
+                                  value={rejectionReason}
+                                  onChange={(e) => setRejectionReason(e.target.value)}
+                                  placeholder="Masukkan alasan penolakan..."
+                                  required
+                                  className="rounded-xl border-slate-200 text-xs h-10 bg-white w-full focus:border-rose-400 focus:ring-rose-500/10"
+                                />
+                                <Button
+                                  type="submit"
+                                  disabled={actionLoading === req.id}
+                                  className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-xl text-xs h-10 px-4 shrink-0 flex items-center gap-1.5 cursor-pointer shadow-sm shadow-rose-100 transition-all hover:scale-[1.02] active:scale-95"
+                                >
+                                  {actionLoading === req.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                                  Kirim
+                                </Button>
+                                <Button
+                                  type="button"
+                                  onClick={() => {
+                                    setRejectingReqId(null);
+                                    setRejectionReason('');
+                                  }}
+                                  variant="ghost"
+                                  className="rounded-xl text-slate-450 hover:bg-slate-100 hover:text-slate-700 text-xs h-10 px-3.5 shrink-0 cursor-pointer transition-colors"
+                                >
+                                  Batal
+                                </Button>
+                              </form>
+                            ) : (
+                              <>
+                                <Button
+                                  onClick={() => setRejectingReqId(req.id)}
+                                  disabled={actionLoading !== null}
+                                  variant="outline"
+                                  className="text-rose-600 border-rose-200 hover:bg-rose-50/80 rounded-xl text-xs h-10 px-4.5 font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all hover:scale-[1.01] active:scale-95 hover:border-rose-300"
+                                >
+                                  <X className="w-3.5 h-3.5 text-rose-500" />
+                                  Tolak
+                                </Button>
+                                <Button
+                                  onClick={() => handleApprove(req)}
+                                  disabled={actionLoading !== null}
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs h-10 px-5.5 font-extrabold flex items-center gap-1.5 cursor-pointer shadow-md shadow-indigo-100 transition-all hover:scale-[1.01] active:scale-95 hover:shadow-indigo-200"
+                                >
+                                  {actionLoading === req.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Check className="w-3.5 h-3.5" />
+                                  )}
+                                  Setujui &amp; Terapkan
+                                </Button>
+                              </>
+                            )}
+                          </div>
                         )}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
             )}
           </div>
 
