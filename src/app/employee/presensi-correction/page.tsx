@@ -60,6 +60,8 @@ export default function PresensiCorrectionPage() {
   const [reason, setReason] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [checkInFocused, setCheckInFocused] = useState(false);
+  const [checkOutFocused, setCheckOutFocused] = useState(false);
 
   // Fetch employee's submitted requests for the current month
   const fetchRequests = useCallback(async () => {
@@ -84,14 +86,6 @@ export default function PresensiCorrectionPage() {
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
-
-  const formatTimeInput = (val: string) => {
-    const digits = val.replace(/\D/g, '').slice(0, 4);
-    if (digits.length <= 2) {
-      return digits;
-    }
-    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
-  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -137,29 +131,8 @@ export default function PresensiCorrectionPage() {
       let proofUrl = '';
       const empId = profile?.linkedEmployeeId || profile?.uid || 'unknown';
 
-      // Validate time format (HH:MM)
-      const timeRegex = /^[0-2][0-9]:[0-5][0-9]$/;
-      let checkIn = checkInTime.trim();
-      if (type !== 'tap_out') {
-        if (!checkIn) {
-          checkIn = '08:00';
-        } else if (!timeRegex.test(checkIn)) {
-          setMessage({ type: 'error', text: 'Format Jam Masuk harus berupa HH:MM (contoh: 08:00).' });
-          setSubmitLoading(false);
-          return;
-        }
-      }
-
-      let checkOut = checkOutTime.trim();
-      if (type !== 'tap_in') {
-        if (!checkOut) {
-          checkOut = '14:00';
-        } else if (!timeRegex.test(checkOut)) {
-          setMessage({ type: 'error', text: 'Format Jam Pulang harus berupa HH:MM (contoh: 14:00).' });
-          setSubmitLoading(false);
-          return;
-        }
-      }
+      let checkIn = checkInTime.trim() || '08:00';
+      let checkOut = checkOutTime.trim() || '14:00';
 
       // 1. Optional File Upload to Firebase Storage
       if (file) {
@@ -302,9 +275,11 @@ export default function PresensiCorrectionPage() {
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Jam Masuk</label>
                       <Input
-                        type="text"
+                        type={checkInFocused || checkInTime ? "time" : "text"}
                         value={checkInTime}
-                        onChange={(e) => setCheckInTime(formatTimeInput(e.target.value))}
+                        onChange={(e) => setCheckInTime(e.target.value)}
+                        onFocus={() => setCheckInFocused(true)}
+                        onBlur={() => setCheckInFocused(false)}
                         placeholder="08:00"
                         className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold font-mono text-center focus:ring-2 focus:ring-indigo-500/20"
                       />
@@ -314,9 +289,11 @@ export default function PresensiCorrectionPage() {
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Jam Pulang</label>
                       <Input
-                        type="text"
+                        type={checkOutFocused || checkOutTime ? "time" : "text"}
                         value={checkOutTime}
-                        onChange={(e) => setCheckOutTime(formatTimeInput(e.target.value))}
+                        onChange={(e) => setCheckOutTime(e.target.value)}
+                        onFocus={() => setCheckOutFocused(true)}
+                        onBlur={() => setCheckOutFocused(false)}
                         placeholder="14:00"
                         className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold font-mono text-center focus:ring-2 focus:ring-indigo-500/20"
                       />
