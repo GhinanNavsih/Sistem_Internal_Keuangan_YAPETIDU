@@ -5,5 +5,8 @@
   },
   "storage": {
     "rules": "storage.rules"
+  },
+  "firestore": {
+    "rules": "Current_Firestore_Rules.md"
   }
 }

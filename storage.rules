@@ -12,5 +12,10 @@ service firebase.storage {
       // Allow any authenticated user (admins, satker heads, employees) to read and write reports
       allow read, write: if isAuthenticated();
     }
+
+    // Rules for presence corrections folder
+    match /presence_corrections/{employeeId}/{filename} {
+      allow read, write: if isAuthenticated();
+    }
   }
 }

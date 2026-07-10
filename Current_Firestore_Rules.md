@@ -226,6 +226,35 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
+    // 7b. Loyalis Presence Corrections
+    match /LoyalisPresenceCorrections/{reqId} {
+      // Super Admins, PJ Presensi, or the specific Employee can read requests
+      allow read: if isSuperAdmin() || (
+        hasProfile() && (
+          getUserData().role == 'loyalis_presence_admin' ||
+          (getUserData().role == 'loyalis' && resource.data.employeeId == getUserData().linkedEmployeeId)
+        )
+      );
+
+      // Employees can create a new request for themselves in pending status
+      allow create: if isSuperAdmin() || (
+        hasProfile() &&
+        getUserData().role == 'loyalis' &&
+        request.resource.data.employeeId == getUserData().linkedEmployeeId &&
+        request.resource.data.status == 'pending'
+      );
+
+      // Super Admins or PJ Presensi can update requests (approve/reject)
+      allow update: if isSuperAdmin() || (
+        hasProfile() &&
+        getUserData().role == 'loyalis_presence_admin' &&
+        resource.data.status == 'pending'
+      );
+
+      // Only Super Admins can delete
+      allow delete: if isSuperAdmin();
+    }
+
     // 8. Predefined Structural Positions configuration
     match /JabatanStruktural/{docId} {
       // Any authenticated user with a profile can read the structural positions list
