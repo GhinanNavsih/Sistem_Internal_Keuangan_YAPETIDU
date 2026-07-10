@@ -129,6 +129,30 @@ export default function PresensiCorrectionPage() {
       let proofUrl = '';
       const empId = profile?.linkedEmployeeId || profile?.uid || 'unknown';
 
+      // Validate time format (HH:MM)
+      const timeRegex = /^[0-2][0-9]:[0-5][0-9]$/;
+      let checkIn = checkInTime.trim();
+      if (type !== 'tap_out') {
+        if (!checkIn) {
+          checkIn = '08:00';
+        } else if (!timeRegex.test(checkIn)) {
+          setMessage({ type: 'error', text: 'Format Jam Masuk harus berupa HH:MM (contoh: 08:00).' });
+          setSubmitLoading(false);
+          return;
+        }
+      }
+
+      let checkOut = checkOutTime.trim();
+      if (type !== 'tap_in') {
+        if (!checkOut) {
+          checkOut = '14:00';
+        } else if (!timeRegex.test(checkOut)) {
+          setMessage({ type: 'error', text: 'Format Jam Pulang harus berupa HH:MM (contoh: 14:00).' });
+          setSubmitLoading(false);
+          return;
+        }
+      }
+
       // 1. Optional File Upload to Firebase Storage
       if (file) {
         const storageRef = ref(storage, `presence_corrections/${empId}/${Date.now()}_${file.name}`);
@@ -159,8 +183,8 @@ export default function PresensiCorrectionPage() {
         employeeName: profile?.displayName || 'Karyawan',
         date,
         type,
-        checkInTime: type === 'tap_out' ? null : (checkInTime || '08:00'),
-        checkOutTime: type === 'tap_in' ? null : (checkOutTime || '14:00'),
+        checkInTime: type === 'tap_out' ? null : checkIn,
+        checkOutTime: type === 'tap_in' ? null : checkOut,
         reason: reason.trim(),
         proofUrl,
         status: 'pending',
@@ -169,9 +193,9 @@ export default function PresensiCorrectionPage() {
       };
 
       await addDoc(collection(db, 'LoyalisPresenceCorrections'), newRequest);
-      
+
       setMessage({ type: 'success', text: 'Koreksi presensi berhasil diajukan!' });
-      
+
       // Reset form
       const today = new Date();
       const y = today.getFullYear();
@@ -183,7 +207,7 @@ export default function PresensiCorrectionPage() {
       setCheckOutTime('');
       setFile(null);
       setUploadProgress(null);
-      
+
       fetchRequests();
     } catch (err: any) {
       console.error(err);
@@ -196,7 +220,7 @@ export default function PresensiCorrectionPage() {
   return (
     <div className="min-h-screen bg-slate-50/50 py-8 px-4 sm:px-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        
+
         {/* Back header */}
         <div className="flex items-center justify-between">
           <Link href="/employee/payslip">
@@ -212,18 +236,17 @@ export default function PresensiCorrectionPage() {
         </div>
 
         {message && (
-          <div className={`flex items-start gap-2.5 px-4 py-3 rounded-2xl text-sm font-medium border ${
-            message.type === 'success' 
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+          <div className={`flex items-start gap-2.5 px-4 py-3 rounded-2xl text-sm font-medium border ${message.type === 'success'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
               : 'bg-rose-50 text-rose-700 border-rose-200'
-          }`}>
+            }`}>
             {message.type === 'success' ? <CheckCircle2 className="w-4.5 h-4.5 shrink-0 mt-0.5" /> : <AlertCircle className="w-4.5 h-4.5 shrink-0 mt-0.5" />}
             <span>{message.text}</span>
           </div>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
+
           {/* Form Card */}
           <div className="lg:col-span-5">
             <Card className="bg-white rounded-3xl border-none shadow-[0_4px_25px_rgba(0,0,0,0.02)] p-6 space-y-6">
@@ -269,9 +292,9 @@ export default function PresensiCorrectionPage() {
                 <div className="grid grid-cols-2 gap-4">
                   {type !== 'tap_out' && (
                     <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Jam Masuk (Rencana)</label>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Jam Masuk</label>
                       <Input
-                        type="time"
+                        type="text"
                         value={checkInTime}
                         onChange={(e) => setCheckInTime(e.target.value)}
                         placeholder="08:00"
@@ -283,7 +306,7 @@ export default function PresensiCorrectionPage() {
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Jam Pulang (Rencana)</label>
                       <Input
-                        type="time"
+                        type="text"
                         value={checkOutTime}
                         onChange={(e) => setCheckOutTime(e.target.value)}
                         placeholder="14:00"
@@ -422,13 +445,12 @@ export default function PresensiCorrectionPage() {
                             )}
                           </td>
                           <td className="py-3 px-2 text-center">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                              req.status === 'approved' 
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
-                                : req.status === 'rejected' 
-                                ? 'bg-rose-50 text-rose-700 border border-rose-100' 
-                                : 'bg-amber-50 text-amber-700 border border-amber-100 animate-pulse'
-                            }`}>
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${req.status === 'approved'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                : req.status === 'rejected'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-100 animate-pulse'
+                              }`}>
                               {req.status === 'approved' ? (
                                 <>
                                   <CheckCircle2 className="w-3 h-3" />
