@@ -26,6 +26,8 @@ import { MONTHS_ID, REKAP_COLUMNS, SUPPORTED_CATEGORIES } from '@/utils/rekapCon
 import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import * as XLSX from 'xlsx';
 
+import Link from 'next/link';
+
 const recalculateSummary = (dailyLogs: any[], expHours: number) => {
   let totalWorkedMinutes = 0;
   let activeDaysCount = 0;
@@ -866,18 +868,30 @@ export default function PresensiLoyalisRawPage() {
                 </h3>
                 <p className="text-slate-400 text-xs mt-0.5">Unggah data daily raw logs kehadiran bulanan untuk menghitung presensi. Klik baris pegawai untuk mengedit logs harian.</p>
               </div>
-              {existingPresence && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleDeletePresence}
-                  disabled={savingPresence}
-                  className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Hapus Data
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                <Link href="/dashboard/payroll/presence-corrections">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-indigo-650 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 bg-white rounded-xl shadow-sm text-xs font-bold h-9 px-4 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Clock className="w-4 h-4 text-indigo-500" />
+                    Review Koreksi Presensi
+                  </Button>
+                </Link>
+                {existingPresence && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleDeletePresence}
+                    disabled={savingPresence}
+                    className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl h-9 px-3"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Hapus Data
+                  </Button>
+                )}
+              </div>
             </div>
 
             {existingPresence && Object.keys(existingPresence.entries || {}).length === 0 && !uploadedData && (

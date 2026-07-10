@@ -1105,6 +1105,20 @@ export default function EmployeePayslipPage() {
               </Link>
             )}
 
+            {profile.role === 'loyalis' && (
+              <Link href="/employee/presensi-correction">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-8.5 sm:h-9 px-2.5 sm:px-3.5 flex items-center gap-1.5 font-semibold text-[10px] sm:text-xs shadow-sm cursor-pointer"
+                  title="Ajukan Koreksi Presensi"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-500" />
+                  <span className="hidden sm:inline">Koreksi Presensi</span>
+                </Button>
+              </Link>
+            )}
+
             <Button
               onClick={handlePasswordReset}
               disabled={resetLoading}
