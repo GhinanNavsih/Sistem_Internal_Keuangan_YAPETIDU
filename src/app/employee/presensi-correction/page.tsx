@@ -88,6 +88,15 @@ export default function PresensiCorrectionPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+      const fileExtension = selectedFile.name.split('.').pop()?.toLowerCase();
+      const allowedExtensions = ['jpeg', 'jpg', 'png', 'pdf'];
+
+      if (!allowedTypes.includes(selectedFile.type) && !allowedExtensions.includes(fileExtension || '')) {
+        setMessage({ type: 'error', text: 'Format file tidak didukung. Unggah file JPEG, JPG, PNG, atau PDF.' });
+        return;
+      }
+
       if (selectedFile.size > 5 * 1024 * 1024) {
         setMessage({ type: 'error', text: 'Ukuran file tidak boleh melebihi 5MB.' });
         return;
@@ -292,7 +301,7 @@ export default function PresensiCorrectionPage() {
                   <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center hover:bg-slate-50/50 transition-colors">
                     <input
                       type="file"
-                      accept="image/*,application/pdf"
+                      accept=".jpeg,.jpg,.png,.pdf,image/jpeg,image/png,application/pdf"
                       onChange={handleFileChange}
                       className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                     />
