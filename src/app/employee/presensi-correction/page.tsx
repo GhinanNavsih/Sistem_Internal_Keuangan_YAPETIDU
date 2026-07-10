@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { db, storage } from '@/lib/firebase';
 import {
@@ -63,6 +63,23 @@ export default function PresensiCorrectionPage() {
   const [checkInFocused, setCheckInFocused] = useState(false);
   const [checkOutFocused, setCheckOutFocused] = useState(false);
 
+  // Calculate current month boundaries
+  const { minDate, maxDate } = useMemo(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = today.getMonth(); // 0-indexed
+    
+    // First day of current month
+    const firstDay = new Date(y, m, 1);
+    const minStr = `${firstDay.getFullYear()}-${String(firstDay.getMonth() + 1).padStart(2, '0')}-01`;
+    
+    // Last day of current month
+    const lastDay = new Date(y, m + 1, 0);
+    const maxStr = `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+    
+    return { minDate: minStr, maxDate: maxStr };
+  }, []);
+
   // Fetch employee's submitted requests for the current month
   const fetchRequests = useCallback(async () => {
     if (!profile?.uid) return;
@@ -116,6 +133,13 @@ export default function PresensiCorrectionPage() {
     e.preventDefault();
     if (!date) {
       setMessage({ type: 'error', text: 'Pilih tanggal terlebih dahulu.' });
+      return;
+    }
+
+    const today = new Date();
+    const currentMonthToken = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    if (!date.startsWith(currentMonthToken)) {
+      setMessage({ type: 'error', text: 'Pengajuan koreksi hanya diizinkan untuk periode bulan berjalan.' });
       return;
     }
     if (!reason.trim()) {
@@ -255,6 +279,8 @@ export default function PresensiCorrectionPage() {
                   <Input
                     type="date"
                     value={date}
+                    min={minDate}
+                    max={maxDate}
                     onChange={(e) => setDate(e.target.value)}
                     className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold focus:ring-2 focus:ring-indigo-500/20"
                   />
@@ -288,7 +314,7 @@ export default function PresensiCorrectionPage() {
                         onChange={(e) => setCheckInTime(e.target.value)}
                         onFocus={() => setCheckInFocused(true)}
                         onBlur={() => setCheckInFocused(false)}
-                        placeholder="08:00"
+                        placeholder="07:30"
                         className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold font-mono text-center focus:ring-2 focus:ring-indigo-500/20"
                       />
                     </div>
