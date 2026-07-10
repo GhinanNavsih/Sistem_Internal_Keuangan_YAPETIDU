@@ -753,32 +753,34 @@ export default function PresensiLoyalisRawPage() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {/* Target Type Toggle */}
-      <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
-        <button
-          type="button"
-          onClick={() => setPresensiTargetType('loyalis')}
-          className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-            presensiTargetType === 'loyalis'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          Loyalis
-        </button>
-        <button
-          type="button"
-          onClick={() => setPresensiTargetType('pekarya')}
-          className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-            presensiTargetType === 'pekarya'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          Pekarya
-        </button>
-      </div>
+      {profile?.role !== 'loyalis_presence_admin' && (
+        <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
+          <button
+            type="button"
+            onClick={() => setPresensiTargetType('loyalis')}
+            className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              presensiTargetType === 'loyalis'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            Loyalis
+          </button>
+          <button
+            type="button"
+            onClick={() => setPresensiTargetType('pekarya')}
+            className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              presensiTargetType === 'pekarya'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            Pekarya
+          </button>
+        </div>
+      )}
 
       {message && (
         <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
@@ -786,7 +788,7 @@ export default function PresensiLoyalisRawPage() {
         </div>
       )}
 
-      {presensiTargetType === 'pekarya' ? (
+      {presensiTargetType === 'pekarya' && profile?.role !== 'loyalis_presence_admin' ? (
         <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
           <div className="flex justify-between items-center border-b border-slate-50 pb-4">
             <div>
