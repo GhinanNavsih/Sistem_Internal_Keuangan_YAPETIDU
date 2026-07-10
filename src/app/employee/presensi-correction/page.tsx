@@ -227,7 +227,11 @@ export default function PresensiCorrectionPage() {
                   <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Tipe Koreksi</label>
                   <Select value={type} onValueChange={(val: any) => setType(val)}>
                     <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white h-11 text-sm font-semibold focus:ring-2 focus:ring-indigo-500/20">
-                      <SelectValue />
+                      <SelectValue>
+                        {type === 'both' && 'Keduanya (Masuk & Pulang)'}
+                        {type === 'tap_in' && 'Hanya Scan Masuk'}
+                        {type === 'tap_out' && 'Hanya Scan Pulang'}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl">
                       <SelectItem value="both">Keduanya (Masuk & Pulang)</SelectItem>
