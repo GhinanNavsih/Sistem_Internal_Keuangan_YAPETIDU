@@ -640,7 +640,7 @@ export default function PresensiCorrectionPage() {
                               <><Clock className="w-3 h-3" /> Pending</>
                             )}
                           </span>
-                          {req.status === 'pending' && (
+                          {(req.status === 'pending' || req.status === 'rejected') && (
                             <div className="relative">
                               <Button
                                 type="button"

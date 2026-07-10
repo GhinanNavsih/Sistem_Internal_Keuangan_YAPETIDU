@@ -244,15 +244,30 @@ service cloud.firestore {
         request.resource.data.status == 'pending'
       );
 
-      // Super Admins or PJ Presensi can update requests (approve/reject)
+      // Updates can be made by Super Admins, PJ Presensi (approving/rejecting pending),
+      // or the Employee themselves if the request is still pending or rejected
       allow update: if isSuperAdmin() || (
-        hasProfile() &&
-        getUserData().role == 'loyalis_presence_admin' &&
-        resource.data.status == 'pending'
+        hasProfile() && (
+          // Admin approving/rejecting a pending request
+          (getUserData().role == 'loyalis_presence_admin' && resource.data.status == 'pending') ||
+          // Employee editing their own pending/rejected request and resetting status to pending
+          (
+            getUserData().role == 'loyalis' &&
+            resource.data.employeeId == getUserData().linkedEmployeeId &&
+            (resource.data.status == 'pending' || resource.data.status == 'rejected') &&
+            request.resource.data.employeeId == getUserData().linkedEmployeeId &&
+            request.resource.data.status == 'pending'
+          )
+        )
       );
 
-      // Only Super Admins can delete
-      allow delete: if isSuperAdmin();
+      // Employees can delete their own pending or rejected requests, and Super Admins can delete any
+      allow delete: if isSuperAdmin() || (
+        hasProfile() &&
+        getUserData().role == 'loyalis' &&
+        resource.data.employeeId == getUserData().linkedEmployeeId &&
+        (resource.data.status == 'pending' || resource.data.status == 'rejected')
+      );
     }
 
     // 8. Predefined Structural Positions configuration
