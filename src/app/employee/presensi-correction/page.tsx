@@ -226,7 +226,7 @@ export default function PresensiCorrectionPage() {
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Tipe Koreksi</label>
                   <Select value={type} onValueChange={(val: any) => setType(val)}>
-                    <SelectTrigger className="rounded-xl border-slate-200 bg-white h-11 text-sm font-semibold focus:ring-2 focus:ring-indigo-500/20">
+                    <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white h-11 text-sm font-semibold focus:ring-2 focus:ring-indigo-500/20">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl">
