@@ -55,8 +55,8 @@ export default function PresensiCorrectionPage() {
     return `${y}-${m}-${d}`;
   });
   const [type, setType] = useState<'tap_in' | 'tap_out' | 'both'>('both');
-  const [checkInTime, setCheckInTime] = useState('08:00');
-  const [checkOutTime, setCheckOutTime] = useState('16:00');
+  const [checkInTime, setCheckInTime] = useState('');
+  const [checkOutTime, setCheckOutTime] = useState('');
   const [reason, setReason] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -159,8 +159,8 @@ export default function PresensiCorrectionPage() {
         employeeName: profile?.displayName || 'Karyawan',
         date,
         type,
-        checkInTime: type === 'tap_out' ? null : checkInTime,
-        checkOutTime: type === 'tap_in' ? null : checkOutTime,
+        checkInTime: type === 'tap_out' ? null : (checkInTime || '08:00'),
+        checkOutTime: type === 'tap_in' ? null : (checkOutTime || '14:00'),
         reason: reason.trim(),
         proofUrl,
         status: 'pending',
@@ -179,6 +179,8 @@ export default function PresensiCorrectionPage() {
       const d = String(today.getDate()).padStart(2, '0');
       setDate(`${y}-${m}-${d}`);
       setReason('');
+      setCheckInTime('');
+      setCheckOutTime('');
       setFile(null);
       setUploadProgress(null);
       
@@ -272,6 +274,7 @@ export default function PresensiCorrectionPage() {
                         type="time"
                         value={checkInTime}
                         onChange={(e) => setCheckInTime(e.target.value)}
+                        placeholder="08:00"
                         className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold font-mono text-center focus:ring-2 focus:ring-indigo-500/20"
                       />
                     </div>
@@ -283,6 +286,7 @@ export default function PresensiCorrectionPage() {
                         type="time"
                         value={checkOutTime}
                         onChange={(e) => setCheckOutTime(e.target.value)}
+                        placeholder="14:00"
                         className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold font-mono text-center focus:ring-2 focus:ring-indigo-500/20"
                       />
                     </div>
