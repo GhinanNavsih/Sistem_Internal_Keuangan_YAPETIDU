@@ -85,6 +85,14 @@ export default function PresensiCorrectionPage() {
     fetchRequests();
   }, [fetchRequests]);
 
+  const formatTimeInput = (val: string) => {
+    const digits = val.replace(/\D/g, '').slice(0, 4);
+    if (digits.length <= 2) {
+      return digits;
+    }
+    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
@@ -237,8 +245,8 @@ export default function PresensiCorrectionPage() {
 
         {message && (
           <div className={`flex items-start gap-2.5 px-4 py-3 rounded-2xl text-sm font-medium border ${message.type === 'success'
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-              : 'bg-rose-50 text-rose-700 border-rose-200'
+            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            : 'bg-rose-50 text-rose-700 border-rose-200'
             }`}>
             {message.type === 'success' ? <CheckCircle2 className="w-4.5 h-4.5 shrink-0 mt-0.5" /> : <AlertCircle className="w-4.5 h-4.5 shrink-0 mt-0.5" />}
             <span>{message.text}</span>
@@ -296,7 +304,7 @@ export default function PresensiCorrectionPage() {
                       <Input
                         type="text"
                         value={checkInTime}
-                        onChange={(e) => setCheckInTime(e.target.value)}
+                        onChange={(e) => setCheckInTime(formatTimeInput(e.target.value))}
                         placeholder="08:00"
                         className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold font-mono text-center focus:ring-2 focus:ring-indigo-500/20"
                       />
@@ -304,11 +312,11 @@ export default function PresensiCorrectionPage() {
                   )}
                   {type !== 'tap_in' && (
                     <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Jam Pulang (Rencana)</label>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Jam Pulang</label>
                       <Input
                         type="text"
                         value={checkOutTime}
-                        onChange={(e) => setCheckOutTime(e.target.value)}
+                        onChange={(e) => setCheckOutTime(formatTimeInput(e.target.value))}
                         placeholder="14:00"
                         className="rounded-xl border-slate-200 bg-white shadow-none h-11 text-sm font-semibold font-mono text-center focus:ring-2 focus:ring-indigo-500/20"
                       />
@@ -317,7 +325,7 @@ export default function PresensiCorrectionPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Alasan / Keterangan</label>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Alasan / Keterangan (Wajib)</label>
                   <textarea
                     rows={3}
                     value={reason}
@@ -446,10 +454,10 @@ export default function PresensiCorrectionPage() {
                           </td>
                           <td className="py-3 px-2 text-center">
                             <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${req.status === 'approved'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                                : req.status === 'rejected'
-                                  ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                                  : 'bg-amber-50 text-amber-700 border border-amber-100 animate-pulse'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                              : req.status === 'rejected'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                                : 'bg-amber-50 text-amber-700 border border-amber-100 animate-pulse'
                               }`}>
                               {req.status === 'approved' ? (
                                 <>
