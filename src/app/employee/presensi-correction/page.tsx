@@ -35,7 +35,8 @@ import {
   FileSpreadsheet,
   XCircle,
   HelpCircle,
-  MessageCircle
+  MessageCircle,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -62,6 +63,16 @@ export default function PresensiCorrectionPage() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [checkInFocused, setCheckInFocused] = useState(false);
   const [checkOutFocused, setCheckOutFocused] = useState(false);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
+
+  // Cleanup object URL to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (filePreview) {
+        URL.revokeObjectURL(filePreview);
+      }
+    };
+  }, [filePreview]);
 
   // Calculate current month boundaries
   const { minDate, maxDate } = useMemo(() => {
@@ -123,6 +134,7 @@ export default function PresensiCorrectionPage() {
       if (!allowedTypes.includes(selectedFile.type) && !allowedExtensions.includes(fileExtension || '')) {
         setMessage({ type: 'error', text: 'Format file tidak didukung. Unggah file JPEG, JPG, PNG, atau PDF.' });
         setFile(null);
+        setFilePreview(null);
         e.target.value = '';
         return;
       }
@@ -130,10 +142,16 @@ export default function PresensiCorrectionPage() {
       if (selectedFile.size > 5 * 1024 * 1024) {
         setMessage({ type: 'error', text: 'Ukuran file tidak boleh melebihi 5MB.' });
         setFile(null);
+        setFilePreview(null);
         e.target.value = '';
         return;
       }
       setFile(selectedFile);
+      if (selectedFile.type.startsWith('image/')) {
+        setFilePreview(URL.createObjectURL(selectedFile));
+      } else {
+        setFilePreview(null);
+      }
       setMessage(null);
     }
   };
@@ -230,6 +248,7 @@ export default function PresensiCorrectionPage() {
       setCheckInTime('');
       setCheckOutTime('');
       setFile(null);
+      setFilePreview(null);
       setUploadProgress(null);
 
       fetchRequests();
@@ -373,19 +392,49 @@ export default function PresensiCorrectionPage() {
 
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Bukti Kehadiran (Opsional)</label>
-                  <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center hover:bg-slate-50/50 transition-colors">
-                    <input
-                      type="file"
-                      accept=".jpeg,.jpg,.png,.pdf,image/jpeg,image/png,application/pdf"
-                      onChange={handleFileChange}
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                    />
-                    <Upload className="w-6 h-6 text-slate-400 mb-2" />
-                    <span className="text-xs font-bold text-slate-650 text-center">
-                      {file ? file.name : 'Klik atau seret file PDF / Foto di sini'}
-                    </span>
-                    <span className="text-[10px] text-slate-400 mt-1">Maks. 5MB (PDF, JPG, PNG)</span>
-                  </div>
+                  {!file ? (
+                    <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center hover:bg-slate-50/50 transition-colors">
+                      <input
+                        type="file"
+                        accept=".jpeg,.jpg,.png,.pdf,image/jpeg,image/png,application/pdf"
+                        onChange={handleFileChange}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      />
+                      <Upload className="w-6 h-6 text-slate-400 mb-2" />
+                      <span className="text-xs font-bold text-slate-650 text-center">
+                        Klik atau seret file PDF / Foto di sini
+                      </span>
+                      <span className="text-[10px] text-slate-400 mt-1">Maks. 5MB (PDF, JPG, PNG)</span>
+                    </div>
+                  ) : (
+                    <div className="relative border border-slate-150 rounded-2xl p-3 bg-slate-50 flex items-center gap-3 animate-in zoom-in-95 duration-150">
+                      {filePreview ? (
+                        <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0 bg-white">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={filePreview} alt="Preview" className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
+                          <FileText className="w-6 h-6 text-indigo-550" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-750 truncate">{file.name}</p>
+                        <p className="text-[10px] text-slate-400 font-semibold mt-0.5">{(file.size / 1024).toFixed(0)} KB</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          setFile(null);
+                          setFilePreview(null);
+                        }}
+                        className="h-8 w-8 p-0 rounded-full hover:bg-slate-200/60 text-slate-450 hover:text-slate-750 shrink-0 flex items-center justify-center cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  )}
                   {uploadProgress !== null && (
                     <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
                       <div className="bg-indigo-500 h-full transition-all duration-150" style={{ width: `${uploadProgress}%` }} />
