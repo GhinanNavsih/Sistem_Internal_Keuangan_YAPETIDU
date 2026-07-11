@@ -284,16 +284,16 @@ export default function PresenceCorrectionsAdminPage() {
         dailyLogs[dayLogIdx] = {
           ...dailyLogs[dayLogIdx],
           'Jam kerja': 'MASUK',
-          'Scan masuk': req.type !== 'tap_out' ? req.checkInTime : (dailyLogs[dayLogIdx]['Scan masuk'] || ''),
-          'Scan pulang': req.type !== 'tap_in' ? req.checkOutTime : (dailyLogs[dayLogIdx]['Scan pulang'] || ''),
+          'Scan masuk': req.type === 'izin_resmi' ? '07:30' : (req.type !== 'tap_out' ? req.checkInTime : (dailyLogs[dayLogIdx]['Scan masuk'] || '')),
+          'Scan pulang': req.type === 'izin_resmi' ? '14:00' : (req.type !== 'tap_in' ? req.checkOutTime : (dailyLogs[dayLogIdx]['Scan pulang'] || '')),
         };
       } else {
         // Add new log row if date does not exist
         dailyLogs.push({
           Tanggal: dateKey,
           'Jam kerja': 'MASUK',
-          'Scan masuk': req.type !== 'tap_out' ? req.checkInTime : '',
-          'Scan pulang': req.type !== 'tap_in' ? req.checkOutTime : '',
+          'Scan masuk': req.type === 'izin_resmi' ? '07:30' : (req.type !== 'tap_out' ? req.checkInTime : ''),
+          'Scan pulang': req.type === 'izin_resmi' ? '14:00' : (req.type !== 'tap_in' ? req.checkOutTime : ''),
         });
       }
 
@@ -494,7 +494,9 @@ export default function PresenceCorrectionsAdminPage() {
                           </span>
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-full">
                             <Clock className="w-3 h-3 text-indigo-500 shrink-0" />
-                            {req.type === 'both' ? (
+                            {req.type === 'izin_resmi' ? (
+                              '07:30 - 14:00 (Izin Resmi)'
+                            ) : req.type === 'both' ? (
                               `${req.checkInTime} - ${req.checkOutTime}`
                             ) : req.type === 'tap_in' ? (
                               `Masuk: ${req.checkInTime}`
@@ -568,7 +570,7 @@ export default function PresenceCorrectionsAdminPage() {
                               <div className="flex items-center justify-between border-b border-indigo-100/30 pb-1">
                                 <span>Tipe Koreksi:</span>
                                   <span className="text-indigo-600 text-[10px] font-bold">
-                                    {req.type === 'both' ? 'Masuk & Pulang' : req.type === 'tap_in' ? 'Masuk Saja' : 'Pulang Saja'}
+                                    {req.type === 'izin_resmi' ? 'Izin Resmi (Hari Penuh)' : req.type === 'both' ? 'Masuk & Pulang' : req.type === 'tap_in' ? 'Masuk Saja' : 'Pulang Saja'}
                                   </span>
                               </div>
                               <div className="flex items-center justify-between">

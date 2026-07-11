@@ -62,7 +62,7 @@ export default function PresensiCorrectionPage() {
     const d = String(today.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   });
-  const [type, setType] = useState<'tap_in' | 'tap_out' | 'both'>('both');
+  const [type, setType] = useState<'tap_in' | 'tap_out' | 'both' | 'izin_resmi'>('both');
   const [checkInTime, setCheckInTime] = useState('');
   const [checkOutTime, setCheckOutTime] = useState('');
   const [reason, setReason] = useState('');
@@ -110,6 +110,7 @@ export default function PresensiCorrectionPage() {
 
   // Check if check-out time is earlier than check-in time when type is 'both'
   const isTimeRangeInvalid = useMemo(() => {
+    if (type === 'izin_resmi') return false;
     if (type !== 'both' || !checkInTime || !checkOutTime) return false;
     const [hIn, mIn] = checkInTime.split(':').map(Number);
     const [hOut, mOut] = checkOutTime.split(':').map(Number);
@@ -271,8 +272,8 @@ export default function PresensiCorrectionPage() {
         }
       }
 
-      let checkIn = checkInTime.trim() || '08:00';
-      let checkOut = checkOutTime.trim() || '14:00';
+      let checkIn = type === 'izin_resmi' ? '07:30' : (checkInTime.trim() || '08:00');
+      let checkOut = type === 'izin_resmi' ? '14:00' : (checkOutTime.trim() || '14:00');
 
       if (type === 'both') {
         const [hIn, mIn] = checkIn.split(':').map(Number);
@@ -442,18 +443,25 @@ export default function PresensiCorrectionPage() {
                         {type === 'both' && 'Keduanya (Masuk & Pulang)'}
                         {type === 'tap_in' && 'Hanya Scan Masuk'}
                         {type === 'tap_out' && 'Hanya Scan Pulang'}
+                        {type === 'izin_resmi' && 'Izin Resmi (Hari Penuh)'}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl">
                       <SelectItem value="both">Keduanya (Masuk & Pulang)</SelectItem>
                       <SelectItem value="tap_in">Hanya Scan Masuk</SelectItem>
                       <SelectItem value="tap_out">Hanya Scan Pulang</SelectItem>
+                      <SelectItem value="izin_resmi">Izin Resmi (Hari Penuh)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  {type !== 'tap_out' && (
+                  {type === 'izin_resmi' ? (
+                    <div className="col-span-2 flex items-center gap-2 p-3.5 rounded-2xl text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Izin Resmi akan otomatis dihitung sebagai hari penuh: <strong className="font-mono">07:30 — 14:00</strong></span>
+                    </div>
+                  ) : type !== 'tap_out' && (
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Jam Masuk</label>
                       <Input
@@ -467,7 +475,7 @@ export default function PresensiCorrectionPage() {
                       />
                     </div>
                   )}
-                  {type !== 'tap_in' && (
+                  {type !== 'tap_in' && type !== 'izin_resmi' && (
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Jam Pulang</label>
                       <Input
@@ -632,7 +640,9 @@ export default function PresensiCorrectionPage() {
                           <span className="text-xs font-bold text-slate-700 font-mono">
                             {new Date(req.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                           </span>
-                          {req.type === 'both' ? (
+                          {req.type === 'izin_resmi' ? (
+                            <span className="text-[10px] bg-emerald-100/60 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Izin Resmi</span>
+                          ) : req.type === 'both' ? (
                             <span className="text-[10px] bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded font-bold">Masuk & Pulang</span>
                           ) : req.type === 'tap_in' ? (
                             <span className="text-[10px] bg-indigo-100/60 text-indigo-700 px-1.5 py-0.5 rounded font-bold">Masuk Saja</span>
@@ -702,7 +712,7 @@ export default function PresensiCorrectionPage() {
                       <div className="flex items-center gap-2 mb-2">
                         <Clock className="w-3.5 h-3.5 text-slate-350 shrink-0" />
                         <span className="text-[11px] font-semibold font-mono text-slate-500">
-                          {req.type === 'tap_out' ? req.checkOutTime : req.type === 'tap_in' ? req.checkInTime : `${req.checkInTime} — ${req.checkOutTime}`}
+                          {req.type === 'izin_resmi' ? '07:30 — 14:00 (Hari Penuh)' : req.type === 'tap_out' ? req.checkOutTime : req.type === 'tap_in' ? req.checkInTime : `${req.checkInTime} — ${req.checkOutTime}`}
                         </span>
                       </div>
 

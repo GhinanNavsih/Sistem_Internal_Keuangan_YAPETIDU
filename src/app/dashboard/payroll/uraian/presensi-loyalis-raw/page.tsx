@@ -450,17 +450,17 @@ export default function PresensiLoyalisRawPage() {
           dailyLogs[dayIdx] = {
             ...dailyLogs[dayIdx],
             'Jam kerja': 'MASUK',
-            'Scan masuk': req.type !== 'tap_out' ? req.checkInTime : (dailyLogs[dayIdx]['Scan masuk'] || ''),
-            'Scan pulang': req.type !== 'tap_in' ? req.checkOutTime : (dailyLogs[dayIdx]['Scan pulang'] || ''),
-            scanMasukAuto: req.type !== 'tap_out' ? false : (dailyLogs[dayIdx].scanMasukAuto || false),
-            scanPulangAuto: req.type !== 'tap_in' ? false : (dailyLogs[dayIdx].scanPulangAuto || false),
+            'Scan masuk': req.type === 'izin_resmi' ? '07:30' : (req.type !== 'tap_out' ? req.checkInTime : (dailyLogs[dayIdx]['Scan masuk'] || '')),
+            'Scan pulang': req.type === 'izin_resmi' ? '14:00' : (req.type !== 'tap_in' ? req.checkOutTime : (dailyLogs[dayIdx]['Scan pulang'] || '')),
+            scanMasukAuto: (req.type === 'izin_resmi' || req.type !== 'tap_out') ? false : (dailyLogs[dayIdx].scanMasukAuto || false),
+            scanPulangAuto: (req.type === 'izin_resmi' || req.type !== 'tap_in') ? false : (dailyLogs[dayIdx].scanPulangAuto || false),
           };
         } else {
           dailyLogs.push({
             Tanggal: dateKey,
             'Jam kerja': 'MASUK',
-            'Scan masuk': req.type !== 'tap_out' ? req.checkInTime : '',
-            'Scan pulang': req.type !== 'tap_in' ? req.checkOutTime : '',
+            'Scan masuk': req.type === 'izin_resmi' ? '07:30' : (req.type !== 'tap_out' ? req.checkInTime : ''),
+            'Scan pulang': req.type === 'izin_resmi' ? '14:00' : (req.type !== 'tap_in' ? req.checkOutTime : ''),
             scanMasukAuto: false,
             scanPulangAuto: false,
           });
@@ -1462,12 +1462,18 @@ export default function PresensiLoyalisRawPage() {
                                               {currentStatus === 'approved' ? 'Disetujui' : currentStatus === 'rejected' ? 'Ditolak' : 'Tertunda'} {resolution && '(Belum Disimpan)'}
                                             </span>
                                             <span className="text-[10px] font-bold text-indigo-750 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-full">
-                                              {c.type === 'both' ? 'Masuk & Pulang' : c.type === 'tap_in' ? 'Masuk Saja' : 'Pulang Saja'}
+                                              {c.type === 'izin_resmi' ? 'Izin Resmi (Hari Penuh)' : c.type === 'both' ? 'Masuk & Pulang' : c.type === 'tap_in' ? 'Masuk Saja' : 'Pulang Saja'}
                                             </span>
                                           </div>
                                           <div className="text-[11px] text-slate-650 font-semibold space-y-0.5 mt-1">
-                                            {c.type !== 'tap_out' && <div>Koreksi Masuk: <span className="font-mono font-bold text-indigo-600 bg-indigo-50/50 px-1.5 py-0.5 rounded">{c.checkInTime || '--:--'}</span></div>}
-                                            {c.type !== 'tap_in' && <div>Koreksi Pulang: <span className="font-mono font-bold text-indigo-600 bg-indigo-50/50 px-1.5 py-0.5 rounded">{c.checkOutTime || '--:--'}</span></div>}
+                                            {c.type === 'izin_resmi' ? (
+                                              <div>Izin Resmi: <span className="font-mono font-bold text-emerald-600 bg-emerald-50/50 px-1.5 py-0.5 rounded">07:30 — 14:00 (Hari Penuh)</span></div>
+                                            ) : (
+                                              <>
+                                                {c.type !== 'tap_out' && <div>Koreksi Masuk: <span className="font-mono font-bold text-indigo-600 bg-indigo-50/50 px-1.5 py-0.5 rounded">{c.checkInTime || '--:--'}</span></div>}
+                                                {c.type !== 'tap_in' && <div>Koreksi Pulang: <span className="font-mono font-bold text-indigo-600 bg-indigo-50/50 px-1.5 py-0.5 rounded">{c.checkOutTime || '--:--'}</span></div>}
+                                              </>
+                                            )}
                                             <div className="italic text-slate-500 mt-1 font-medium">"Alasan: {c.reason}"</div>
                                             {c.proofUrl && (
                                               <div className="mt-1">
