@@ -26,7 +26,7 @@ import { MONTHS_ID, REKAP_COLUMNS, SUPPORTED_CATEGORIES } from '@/utils/rekapCon
 import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import * as XLSX from 'xlsx';
 
-import Link from 'next/link';const normalizeExcelDate = (val: any): string => {
+import Link from 'next/link'; const normalizeExcelDate = (val: any): string => {
   if (val === undefined || val === null) return '';
   const str = String(val).trim();
   if (!str) return '';
@@ -118,10 +118,13 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
   const updatedLogs = dailyLogs.map(dayRow => {
     const status = String(dayRow['Jam kerja'] || '').trim();
     const statusUpper = status.toUpperCase();
-    const inStr = dayRow['Scan masuk'] ? String(dayRow['Scan masuk']).trim() : '';
-    const outStr = dayRow['Scan pulang'] ? String(dayRow['Scan pulang']).trim() : '';
+    let inStr = dayRow['Scan masuk'] ? String(dayRow['Scan masuk']).trim() : '';
+    let outStr = dayRow['Scan pulang'] ? String(dayRow['Scan pulang']).trim() : '';
 
     let dailyDuration = 0;
+    let scanMasukAuto = dayRow.scanMasukAuto || false;
+    let scanPulangAuto = dayRow.scanPulangAuto || false;
+
     if (statusUpper === 'MASUK') {
       if (inStr && outStr) {
         const [hIn, mIn] = inStr.split(':').map(Number);
@@ -137,6 +140,45 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
         } else {
           incompleteDaysCount += 1;
         }
+      } else if (inStr && !outStr) {
+        if (dayRow.scanPulangAuto !== false) {
+          const [hIn, mIn] = inStr.split(':').map(Number);
+          if (!isNaN(hIn)) {
+            const minutesIn = hIn * 60 + mIn;
+            const minutesOut = minutesIn + 150;
+            const hOut = Math.floor(minutesOut / 60) % 24;
+            const mOut = minutesOut % 60;
+            outStr = `${String(hOut).padStart(2, '0')}:${String(mOut).padStart(2, '0')}:00`;
+            scanPulangAuto = true;
+            dailyDuration = Math.min(expHours * 60, 150);
+            totalWorkedMinutes += dailyDuration;
+            activeDaysCount += 1;
+          } else {
+            incompleteDaysCount += 1;
+          }
+        } else {
+          incompleteDaysCount += 1;
+        }
+      } else if (!inStr && outStr) {
+        if (dayRow.scanMasukAuto !== false) {
+          const [hOut, mOut] = outStr.split(':').map(Number);
+          if (!isNaN(hOut)) {
+            const minutesOut = hOut * 60 + mOut;
+            let minutesIn = minutesOut - 150;
+            if (minutesIn < 0) minutesIn = 0;
+            const hIn = Math.floor(minutesIn / 60) % 24;
+            const mIn = minutesIn % 60;
+            inStr = `${String(hIn).padStart(2, '0')}:${String(mIn).padStart(2, '0')}:00`;
+            scanMasukAuto = true;
+            dailyDuration = Math.min(expHours * 60, 150);
+            totalWorkedMinutes += dailyDuration;
+            activeDaysCount += 1;
+          } else {
+            incompleteDaysCount += 1;
+          }
+        } else {
+          incompleteDaysCount += 1;
+        }
       } else {
         incompleteDaysCount += 1;
       }
@@ -146,6 +188,10 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
 
     return {
       ...dayRow,
+      'Scan masuk': inStr,
+      'Scan pulang': outStr,
+      scanMasukAuto,
+      scanPulangAuto,
       duration: dailyDuration
     };
   });
@@ -155,7 +201,7 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
     activeDaysCount,
     incompleteDaysCount,
     absentDaysCount,
-    dailyLogs: updatedLogs,
+    dailyLogs: updatedLogs
   };
 };
 
@@ -283,10 +329,10 @@ export default function PresensiLoyalisRawPage() {
       );
       const snap = await getDocs(q);
       const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
+
       const periodPrefix = `${year}-${String(month).padStart(2, '0')}`;
       const filtered = list.filter((req: any) => req.date && req.date.startsWith(periodPrefix));
-      
+
       setCorrections(filtered);
     } catch (err) {
       console.error('Error fetching corrections:', err);
@@ -404,6 +450,8 @@ export default function PresensiLoyalisRawPage() {
             'Jam kerja': 'MASUK',
             'Scan masuk': req.type !== 'tap_out' ? req.checkInTime : (dailyLogs[dayIdx]['Scan masuk'] || ''),
             'Scan pulang': req.type !== 'tap_in' ? req.checkOutTime : (dailyLogs[dayIdx]['Scan pulang'] || ''),
+            scanMasukAuto: req.type !== 'tap_out' ? false : (dailyLogs[dayIdx].scanMasukAuto || false),
+            scanPulangAuto: req.type !== 'tap_in' ? false : (dailyLogs[dayIdx].scanPulangAuto || false),
           };
         } else {
           dailyLogs.push({
@@ -411,6 +459,8 @@ export default function PresensiLoyalisRawPage() {
             'Jam kerja': 'MASUK',
             'Scan masuk': req.type !== 'tap_out' ? req.checkInTime : '',
             'Scan pulang': req.type !== 'tap_in' ? req.checkOutTime : '',
+            scanMasukAuto: false,
+            scanPulangAuto: false,
           });
         }
 
@@ -435,9 +485,9 @@ export default function PresensiLoyalisRawPage() {
       [req.id]: { status: 'approved' }
     }));
 
-    setMessage({ 
-      type: 'success', 
-      text: `Koreksi presensi ${req.employeeName} tanggal ${parseDateToDDMMYYYY(req.date)} berhasil diterapkan ke logs sementara. Silakan simpan untuk memperbarui database.` 
+    setMessage({
+      type: 'success',
+      text: `Koreksi presensi ${req.employeeName} tanggal ${parseDateToDDMMYYYY(req.date)} berhasil diterapkan ke logs sementara. Silakan simpan untuk memperbarui database.`
     });
   }, [expectedHours]);
 
@@ -447,9 +497,9 @@ export default function PresensiLoyalisRawPage() {
       [reqId]: { status: 'rejected', rejectionReason: reason }
     }));
 
-    setMessage({ 
-      type: 'success', 
-      text: `Koreksi presensi berhasil ditolak sementara. Silakan simpan untuk memperbarui database.` 
+    setMessage({
+      type: 'success',
+      text: `Koreksi presensi berhasil ditolak sementara. Silakan simpan untuk memperbarui database.`
     });
   }, []);
 
@@ -655,9 +705,9 @@ export default function PresensiLoyalisRawPage() {
         });
 
         setUploadedData(parsedData);
-        setMessage({ 
-          type: 'success', 
-          text: `Berhasil mengunggah ${parsedData.length} data pegawai dari logs presensi. Jumlah hari kerja otomatis diatur menjadi ${deducedDays} hari.` 
+        setMessage({
+          type: 'success',
+          text: `Berhasil mengunggah ${parsedData.length} data pegawai dari logs presensi. Jumlah hari kerja otomatis diatur menjadi ${deducedDays} hari.`
         });
       } catch (err) {
         console.error(err);
@@ -675,10 +725,21 @@ export default function PresensiLoyalisRawPage() {
 
         const updatedLogs = (emp.dailyLogs || []).map((log: any) => {
           if (log.Tanggal !== dateStr) return log;
-          return {
+          const updatedItem = {
             ...log,
             [field]: value
           };
+          if (field === 'Scan masuk') {
+            updatedItem.scanMasukAuto = false;
+          }
+          if (field === 'Scan pulang') {
+            updatedItem.scanPulangAuto = false;
+          }
+          if (field === 'Jam kerja' && value !== 'MASUK') {
+            updatedItem.scanMasukAuto = false;
+            updatedItem.scanPulangAuto = false;
+          }
+          return updatedItem;
         });
 
         const summary = recalculateSummary(updatedLogs, expectedHours);
@@ -780,13 +841,13 @@ export default function PresensiLoyalisRawPage() {
           if (slipSnap.exists()) {
             const slipData = slipSnap.data();
             const currentDeductions = slipData.deductions || [];
-            
+
             const entry = entriesMap[empId];
             const newPresensiDeduct = Math.round(((entry.absenceMinutes || 0) / 60) * 1650);
             const newPresenceBonusDeduct = entry.deduction || 0;
-            
+
             let updatedDeductions = [...currentDeductions];
-            
+
             const presensiIdx = updatedDeductions.findIndex(d => d.label === 'Potongan Presensi');
             if (presensiIdx > -1) {
               updatedDeductions[presensiIdx] = { ...updatedDeductions[presensiIdx], amount: newPresensiDeduct };
@@ -852,9 +913,9 @@ export default function PresensiLoyalisRawPage() {
           if (slipSnap.exists()) {
             const slipData = slipSnap.data();
             const currentDeductions = slipData.deductions || [];
-            
+
             let updatedDeductions = [...currentDeductions];
-            
+
             const presensiIdx = updatedDeductions.findIndex(d => d.label === 'Potongan Presensi');
             if (presensiIdx > -1) {
               updatedDeductions[presensiIdx] = { ...updatedDeductions[presensiIdx], amount: 0 };
@@ -957,11 +1018,10 @@ export default function PresensiLoyalisRawPage() {
           <button
             type="button"
             onClick={() => setPresensiTargetType('loyalis')}
-            className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              presensiTargetType === 'loyalis'
+            className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${presensiTargetType === 'loyalis'
                 ? 'bg-indigo-600 text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-            }`}
+              }`}
           >
             <Users className="w-4 h-4" />
             Loyalis
@@ -969,11 +1029,10 @@ export default function PresensiLoyalisRawPage() {
           <button
             type="button"
             onClick={() => setPresensiTargetType('pekarya')}
-            className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              presensiTargetType === 'pekarya'
+            className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${presensiTargetType === 'pekarya'
                 ? 'bg-indigo-600 text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-            }`}
+              }`}
           >
             <Users className="w-4 h-4" />
             Pekarya
@@ -1212,11 +1271,10 @@ export default function PresensiLoyalisRawPage() {
                   {displayRows.map((row, idx) => {
                     const isExpanded = expandedRowIdx === idx;
                     return (
-                       <Card
+                      <Card
                         key={idx}
-                        className={`border-2 rounded-2xl shadow-sm transition-all hover:border-indigo-300 ${
-                          isExpanded ? 'ring-4 ring-indigo-50 border-indigo-400 bg-indigo-50/40' : 'border-indigo-200/80 bg-indigo-50/20'
-                        } ${activeSearchRowIdx === row.idx ? 'overflow-visible z-30 relative' : 'overflow-hidden'}`}
+                        className={`border-2 rounded-2xl shadow-sm transition-all hover:border-indigo-300 ${isExpanded ? 'ring-4 ring-indigo-50 border-indigo-400 bg-indigo-50/40' : 'border-indigo-200/80 bg-indigo-50/20'
+                          } ${activeSearchRowIdx === row.idx ? 'overflow-visible z-30 relative' : 'overflow-hidden'}`}
                       >
                         <div
                           onClick={() => setExpandedRowIdx(isExpanded ? null : idx)}
@@ -1293,11 +1351,10 @@ export default function PresensiLoyalisRawPage() {
                                         setActiveSearchRowIdx(row.idx);
                                         setSearchQuery(row.employeeName || "");
                                       }}
-                                      className={`text-left px-2 py-1 rounded-lg border transition-all text-[9px] font-bold flex items-center gap-1 cursor-pointer ${
-                                        row.isMatched
+                                      className={`text-left px-2 py-1 rounded-lg border transition-all text-[9px] font-bold flex items-center gap-1 cursor-pointer ${row.isMatched
                                           ? 'bg-indigo-50/40 text-indigo-700 border-indigo-100/50 hover:bg-indigo-50 hover:border-indigo-200'
                                           : 'bg-rose-50 border-rose-100 text-rose-600 hover:bg-rose-100/50'
-                                      }`}
+                                        }`}
                                     >
                                       <span className="truncate max-w-[150px]">
                                         {row.isMatched ? row.employeeName : "Hubungkan Pegawai..."}
@@ -1330,7 +1387,7 @@ export default function PresensiLoyalisRawPage() {
 
                             {/* Punch Tidak Lengkap */}
                             <div className="flex flex-col text-center min-w-[120px]">
-                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Punch Tidak Lengkap</span>
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Hari Tidak Lengkap</span>
                               <div className="mt-0.5 font-mono">
                                 {row.incompleteDaysCount > 0 ? (
                                   <span className="inline-flex items-center gap-1 text-[9px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full font-bold">
@@ -1406,11 +1463,10 @@ export default function PresensiLoyalisRawPage() {
                                             <span className="font-extrabold text-slate-700">
                                               {new Date(c.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
                                             </span>
-                                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                                              currentStatus === 'approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                                              currentStatus === 'rejected' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
-                                              'bg-amber-50 text-amber-700 border border-amber-100'
-                                            }`}>
+                                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${currentStatus === 'approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                                                currentStatus === 'rejected' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
+                                                  'bg-amber-50 text-amber-700 border border-amber-100'
+                                              }`}>
                                               {currentStatus === 'approved' ? 'Disetujui' : currentStatus === 'rejected' ? 'Ditolak' : 'Tertunda'} {resolution && '(Belum Disimpan)'}
                                             </span>
                                             <span className="text-[10px] font-bold text-indigo-750 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-full">
@@ -1541,39 +1597,74 @@ export default function PresensiLoyalisRawPage() {
                                                   </SelectContent>
                                                 </Select>
                                               ) : (
-                                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                                  log['Jam kerja'] === 'MASUK' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                                                  log['Jam kerja'] === 'Tidak Hadir' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
-                                                  'bg-slate-50 text-slate-600 border border-slate-100'
-                                                }`}>
+                                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${log['Jam kerja'] === 'MASUK' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                                    log['Jam kerja'] === 'Tidak Hadir' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
+                                                      'bg-slate-50 text-slate-600 border border-slate-100'
+                                                  }`}>
                                                   {log['Jam kerja']}
                                                 </span>
                                               )}
                                             </td>
                                             <td className="px-3 py-2 text-center">
                                               {isEditable && (log['Jam kerja'] === 'MASUK') ? (
-                                                <Input
-                                                  type="time"
-                                                  step="1"
-                                                  value={log['Scan masuk'] || ''}
-                                                  onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan masuk', e.target.value)}
-                                                  className="h-8 rounded-lg border-slate-200 text-center font-mono text-[11px] w-32 mx-auto bg-white"
-                                                />
+                                                <div className="flex items-center gap-1.5 justify-center">
+                                                  <Input
+                                                    type="time"
+                                                    step="1"
+                                                    value={log['Scan masuk'] || ''}
+                                                    onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan masuk', e.target.value)}
+                                                    className={`h-8 rounded-lg text-center font-mono text-[11px] w-28 bg-white ${
+                                                      log.scanMasukAuto ? 'border-amber-300 ring-2 ring-amber-100/50 text-amber-750 font-bold bg-amber-50/10' : 'border-slate-200'
+                                                    }`}
+                                                  />
+                                                  {log.scanMasukAuto && (
+                                                    <span className="inline-flex px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help" title="Diisi otomatis (150 menit sebelum scan pulang)">
+                                                      Auto
+                                                    </span>
+                                                  )}
+                                                </div>
                                               ) : (
-                                                <span className="font-mono text-slate-600">{log['Scan masuk'] || '-'}</span>
+                                                <div className="flex items-center gap-1 justify-center">
+                                                  <span className={`font-mono ${log.scanMasukAuto ? 'text-amber-700 font-extrabold bg-amber-50/40 px-1.5 py-0.5 rounded border border-amber-100' : 'text-slate-600'}`}>
+                                                    {log['Scan masuk'] || '-'}
+                                                  </span>
+                                                  {log.scanMasukAuto && (
+                                                    <span className="inline-flex px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help" title="Diisi otomatis (150 menit sebelum scan pulang)">
+                                                      Auto
+                                                    </span>
+                                                  )}
+                                                </div>
                                               )}
                                             </td>
                                             <td className="px-3 py-2 text-center">
                                               {isEditable && (log['Jam kerja'] === 'MASUK') ? (
-                                                <Input
-                                                  type="time"
-                                                  step="1"
-                                                  value={log['Scan pulang'] || ''}
-                                                  onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan pulang', e.target.value)}
-                                                  className="h-8 rounded-lg border-slate-200 text-center font-mono text-[11px] w-32 mx-auto bg-white"
-                                                />
+                                                <div className="flex items-center gap-1.5 justify-center">
+                                                  <Input
+                                                    type="time"
+                                                    step="1"
+                                                    value={log['Scan pulang'] || ''}
+                                                    onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan pulang', e.target.value)}
+                                                    className={`h-8 rounded-lg text-center font-mono text-[11px] w-28 bg-white ${
+                                                      log.scanPulangAuto ? 'border-amber-300 ring-2 ring-amber-100/50 text-amber-750 font-bold bg-amber-50/10' : 'border-slate-200'
+                                                    }`}
+                                                  />
+                                                  {log.scanPulangAuto && (
+                                                    <span className="inline-flex px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help" title="Diisi otomatis (150 menit setelah scan masuk)">
+                                                      Auto
+                                                    </span>
+                                                  )}
+                                                </div>
                                               ) : (
-                                                <span className="font-mono text-slate-600">{log['Scan pulang'] || '-'}</span>
+                                                <div className="flex items-center gap-1 justify-center">
+                                                  <span className={`font-mono ${log.scanPulangAuto ? 'text-amber-700 font-extrabold bg-amber-50/40 px-1.5 py-0.5 rounded border border-amber-100' : 'text-slate-600'}`}>
+                                                    {log['Scan pulang'] || '-'}
+                                                  </span>
+                                                  {log.scanPulangAuto && (
+                                                    <span className="inline-flex px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help" title="Diisi otomatis (150 menit setelah scan masuk)">
+                                                      Auto
+                                                    </span>
+                                                  )}
+                                                </div>
                                               )}
                                             </td>
                                             <td className="px-3 py-2 text-center font-mono font-bold text-slate-600">
