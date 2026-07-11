@@ -1013,11 +1013,11 @@ export default function PresensiLoyalisRawPage() {
                   {displayRows.map((row, idx) => {
                     const isExpanded = expandedRowIdx === idx;
                     return (
-                      <Card
+                       <Card
                         key={idx}
-                        className={`border-2 rounded-2xl overflow-hidden shadow-sm transition-all hover:border-indigo-300 ${
+                        className={`border-2 rounded-2xl shadow-sm transition-all hover:border-indigo-300 ${
                           isExpanded ? 'ring-4 ring-indigo-50 border-indigo-400 bg-indigo-50/40' : 'border-indigo-200/80 bg-indigo-50/20'
-                        }`}
+                        } ${activeSearchRowIdx === row.idx ? 'overflow-visible z-30 relative' : 'overflow-hidden'}`}
                       >
                         <div
                           onClick={() => setExpandedRowIdx(isExpanded ? null : idx)}

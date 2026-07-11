@@ -887,7 +887,7 @@ export default function PresensiLoyalisPage() {
                     <tbody>
                       {displayRows.map((row, idx) => {
                         return (
-                          <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                          <tr key={idx} className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors ${activeSearchRowIdx === row.idx ? 'relative z-30' : ''}`}>
                             <td className="px-4 py-3 text-xs text-slate-400 text-center font-mono">{idx + 1}</td>
                             <td className="px-4 py-3 text-xs font-bold text-slate-700">{row.excelName}</td>
                             <td className="px-4 py-3 text-xs">
