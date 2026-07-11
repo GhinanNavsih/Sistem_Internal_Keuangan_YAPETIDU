@@ -26,7 +26,82 @@ import { MONTHS_ID, REKAP_COLUMNS, SUPPORTED_CATEGORIES } from '@/utils/rekapCon
 import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import * as XLSX from 'xlsx';
 
-import Link from 'next/link';
+import Link from 'next/link';const normalizeExcelDate = (val: any): string => {
+  if (val === undefined || val === null) return '';
+  const str = String(val).trim();
+  if (!str) return '';
+
+  // 1. If it's a numeric string or number (Excel serialized date)
+  if (/^\d+(\.\d+)?$/.test(str)) {
+    const num = Math.floor(parseFloat(str));
+    const base = Date.UTC(1899, 11, 30);
+    const target = new Date(base + num * 24 * 60 * 60 * 1000);
+    if (!isNaN(target.getTime())) {
+      const day = String(target.getUTCDate()).padStart(2, '0');
+      const month = String(target.getUTCMonth() + 1).padStart(2, '0');
+      const year = target.getUTCFullYear();
+      return `${day}-${month}-${year}`;
+    }
+  }
+
+  // 2. Try to parse ISO date string (YYYY-MM-DD or YYYY/MM/DD)
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(str)) {
+    const parts = str.split(/[-/]/);
+    if (parts.length >= 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const d = parseInt(parts[2], 10);
+      const day = String(d).padStart(2, '0');
+      const month = String(m).padStart(2, '0');
+      const year = y < 100 ? (y < 50 ? 2000 + y : 1900 + y) : y;
+      return `${day}-${month}-${year}`;
+    }
+  }
+
+  // 3. Try to parse DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY or DD-MM-YY
+  if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/.test(str)) {
+    const parts = str.split(/[-/.]/);
+    if (parts.length >= 3) {
+      const d = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const y = parseInt(parts[2], 10);
+      const day = String(d).padStart(2, '0');
+      const month = String(m).padStart(2, '0');
+      const year = y < 100 ? (y < 50 ? 2000 + y : 1900 + y) : y;
+      return `${day}-${month}-${year}`;
+    }
+  }
+
+  // 4. Try parsing solid numeric patterns ddmmyy or ddmmyyyy
+  if (/^\d{6}$/.test(str)) {
+    const d = parseInt(str.substring(0, 2), 10);
+    const m = parseInt(str.substring(2, 4), 10);
+    const y = parseInt(str.substring(4, 6), 10);
+    const day = String(d).padStart(2, '0');
+    const month = String(m).padStart(2, '0');
+    const year = 2000 + y;
+    return `${day}-${month}-${year}`;
+  }
+  if (/^\d{8}$/.test(str)) {
+    const d = parseInt(str.substring(0, 2), 10);
+    const m = parseInt(str.substring(2, 4), 10);
+    const y = parseInt(str.substring(4, 8), 10);
+    const day = String(d).padStart(2, '0');
+    const month = String(m).padStart(2, '0');
+    return `${day}-${month}-${y}`;
+  }
+
+  // Fallback: try JS Native Date parsing
+  const parsedMs = Date.parse(str);
+  if (!isNaN(parsedMs)) {
+    const d = new Date(parsedMs);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    return `${day}-${month}-${d.getFullYear()}`;
+  }
+
+  return str;
+};
 
 const recalculateSummary = (dailyLogs: any[], expHours: number) => {
   let totalWorkedMinutes = 0;
@@ -404,7 +479,7 @@ export default function PresensiLoyalisRawPage() {
         // - Otherwise, it is a working day.
         const dateStats: Record<string, { total: number; tidakHadir: number; liburRutin: number }> = {};
         rows.forEach(row => {
-          const tgl = String(row['Tanggal'] || '').trim();
+          const tgl = normalizeExcelDate(row['Tanggal']);
           const jk = String(row['Jam kerja'] || '').trim().toUpperCase();
           if (!tgl) return;
           if (!dateStats[tgl]) {
@@ -447,7 +522,7 @@ export default function PresensiLoyalisRawPage() {
           const dailyLogs: any[] = [];
           empRows.forEach(dayRow => {
             dailyLogs.push({
-              Tanggal: String(dayRow['Tanggal'] || ''),
+              Tanggal: normalizeExcelDate(dayRow['Tanggal']),
               'Jam kerja': String(dayRow['Jam kerja'] || ''),
               'Scan masuk': dayRow['Scan masuk'] ? String(dayRow['Scan masuk']).trim() : '',
               'Scan pulang': dayRow['Scan pulang'] ? String(dayRow['Scan pulang']).trim() : '',
