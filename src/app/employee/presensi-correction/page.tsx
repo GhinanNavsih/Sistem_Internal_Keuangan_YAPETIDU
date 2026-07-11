@@ -13,7 +13,8 @@ import {
   serverTimestamp,
   doc,
   updateDoc,
-  deleteDoc
+  deleteDoc,
+  setDoc
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import {
@@ -307,6 +308,13 @@ export default function PresensiCorrectionPage() {
         });
       }
 
+      // Convert date "2026-07-11" to "260711" (yymmdd)
+      const dateParts = date.split('-');
+      const yy = dateParts[0].slice(-2);
+      const mm = dateParts[1];
+      const dd = dateParts[2];
+      const customDocId = `${empId}_${yy}${mm}${dd}`;
+
       // 2. Save document to Firestore
       const requestData: any = {
         date,
@@ -324,8 +332,16 @@ export default function PresensiCorrectionPage() {
         // Reset status to pending and clear rejection reason when updating/overwriting
         requestData.status = 'pending';
         requestData.rejectionReason = null;
+        requestData.employeeId = empId;
+        requestData.employeeName = profile?.displayName || 'Karyawan';
 
-        await updateDoc(doc(db, 'LoyalisPresenceCorrections', targetId), requestData);
+        await setDoc(doc(db, 'LoyalisPresenceCorrections', customDocId), requestData, { merge: true });
+
+        // If the old document had a different ID (edited date or old auto-generated ID), delete the old one
+        if (targetId !== customDocId) {
+          await deleteDoc(doc(db, 'LoyalisPresenceCorrections', targetId));
+        }
+
         setMessage({ 
           type: 'success', 
           text: editingRequestId ? 'Pengajuan koreksi berhasil diperbarui!' : 'Pengajuan koreksi sebelumnya berhasil ditimpa!' 
@@ -338,7 +354,7 @@ export default function PresensiCorrectionPage() {
           status: 'pending',
           createdAt: serverTimestamp(),
         };
-        await addDoc(collection(db, 'LoyalisPresenceCorrections'), newRequest);
+        await setDoc(doc(db, 'LoyalisPresenceCorrections', customDocId), newRequest);
         setMessage({ type: 'success', text: 'Koreksi presensi berhasil diajukan!' });
       }
 
