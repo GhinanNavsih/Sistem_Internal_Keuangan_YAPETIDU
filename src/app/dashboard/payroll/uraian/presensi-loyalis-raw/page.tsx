@@ -1269,7 +1269,7 @@ export default function PresensiLoyalisRawPage() {
                   </span>
                 </div>
 
-                <div className="space-y-3.5 max-h-[800px] overflow-y-auto pr-1">
+                <div className="space-y-3.5 pr-1">
                   {displayRows.map((row, idx) => {
                     const isExpanded = expandedRowIdx === idx;
                     return (
