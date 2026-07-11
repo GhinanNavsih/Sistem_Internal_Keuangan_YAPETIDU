@@ -134,7 +134,7 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
           const minutesIn = hIn * 60 + mIn + sIn / 60;
           const minutesOut = hOut * 60 + mOut + sOut / 60;
           const duration = Math.max(0, minutesOut - minutesIn);
-          dailyDuration = Math.min(expHours * 60, duration);
+          dailyDuration = Math.ceil(Math.min(expHours * 60, duration));
           totalWorkedMinutes += dailyDuration;
           activeDaysCount += 1;
         } else {
