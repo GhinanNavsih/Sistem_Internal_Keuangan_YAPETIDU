@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  collection, getDocs, doc, setDoc, deleteDoc, getDoc, serverTimestamp, query, where
+  collection, getDocs, doc, setDoc, deleteDoc, getDoc, serverTimestamp, query, where, orderBy
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { MONTHS_ID, REKAP_COLUMNS, SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
@@ -101,6 +101,12 @@ import Link from 'next/link';const normalizeExcelDate = (val: any): string => {
   }
 
   return str;
+};
+
+const parseDateToDDMMYYYY = (dateStr: string) => {
+  if (!dateStr || !dateStr.includes('-')) return dateStr;
+  const [y, m, d] = dateStr.split('-');
+  return `${d}-${m}-${y}`;
 };
 
 const recalculateSummary = (dailyLogs: any[], expHours: number) => {
@@ -261,6 +267,38 @@ export default function PresensiLoyalisRawPage() {
     fetchExistingPresence();
   }, [fetchExistingPresence]);
 
+  // ── Fetch Correction Requests for Active Month ──
+  const [corrections, setCorrections] = useState<any[]>([]);
+  const [loadingCorrections, setLoadingCorrections] = useState(false);
+  const [pendingResolutionUpdates, setPendingResolutionUpdates] = useState<Record<string, { status: 'approved' | 'rejected'; rejectionReason?: string }>>({});
+  const [activeDeclineId, setActiveDeclineId] = useState<string | null>(null);
+  const [declineReasonInput, setDeclineReasonInput] = useState<Record<string, string>>({});
+
+  const fetchCorrections = useCallback(async () => {
+    setLoadingCorrections(true);
+    try {
+      const q = query(
+        collection(db, 'LoyalisPresenceCorrections'),
+        orderBy('createdAt', 'desc')
+      );
+      const snap = await getDocs(q);
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      const periodPrefix = `${year}-${String(month).padStart(2, '0')}`;
+      const filtered = list.filter((req: any) => req.date && req.date.startsWith(periodPrefix));
+      
+      setCorrections(filtered);
+    } catch (err) {
+      console.error('Error fetching corrections:', err);
+    } finally {
+      setLoadingCorrections(false);
+    }
+  }, [month, year]);
+
+  useEffect(() => {
+    fetchCorrections();
+  }, [fetchCorrections]);
+
   const matchExcelName = useCallback((excelName: string, employees: any[]) => {
     if (!excelName) return null;
     const cleanExcel = normalizeName(excelName);
@@ -350,6 +388,71 @@ export default function PresensiLoyalisRawPage() {
     });
   }, [loyalisEmployees]);
 
+  const handleAcceptCorrection = useCallback((employeeId: string, req: any) => {
+    setUploadedData(prev => {
+      if (!prev) return null;
+      return prev.map(emp => {
+        if (emp.employeeId !== employeeId) return emp;
+
+        const dateKey = parseDateToDDMMYYYY(req.date);
+        const dailyLogs = [...(emp.dailyLogs || [])];
+        const dayIdx = dailyLogs.findIndex(log => log.Tanggal === dateKey);
+
+        if (dayIdx > -1) {
+          dailyLogs[dayIdx] = {
+            ...dailyLogs[dayIdx],
+            'Jam kerja': 'MASUK',
+            'Scan masuk': req.type !== 'tap_out' ? req.checkInTime : (dailyLogs[dayIdx]['Scan masuk'] || ''),
+            'Scan pulang': req.type !== 'tap_in' ? req.checkOutTime : (dailyLogs[dayIdx]['Scan pulang'] || ''),
+          };
+        } else {
+          dailyLogs.push({
+            Tanggal: dateKey,
+            'Jam kerja': 'MASUK',
+            'Scan masuk': req.type !== 'tap_out' ? req.checkInTime : '',
+            'Scan pulang': req.type !== 'tap_in' ? req.checkOutTime : '',
+          });
+        }
+
+        dailyLogs.sort((a, b) => {
+          const [d1, m1, y1] = a.Tanggal.split('-').map(Number);
+          const [d2, m2, y2] = b.Tanggal.split('-').map(Number);
+          return (y1 * 365 + m1 * 31 + d1) - (y2 * 365 + m2 * 31 + d2);
+        });
+
+        const summary = recalculateSummary(dailyLogs, expectedHours);
+
+        return {
+          ...emp,
+          ...summary,
+          dailyLogs
+        };
+      });
+    });
+
+    setPendingResolutionUpdates(prev => ({
+      ...prev,
+      [req.id]: { status: 'approved' }
+    }));
+
+    setMessage({ 
+      type: 'success', 
+      text: `Koreksi presensi ${req.employeeName} tanggal ${parseDateToDDMMYYYY(req.date)} berhasil diterapkan ke logs sementara. Silakan simpan untuk memperbarui database.` 
+    });
+  }, [expectedHours]);
+
+  const handleDeclineCorrection = useCallback((reqId: string, reason: string) => {
+    setPendingResolutionUpdates(prev => ({
+      ...prev,
+      [reqId]: { status: 'rejected', rejectionReason: reason }
+    }));
+
+    setMessage({ 
+      type: 'success', 
+      text: `Koreksi presensi berhasil ditolak sementara. Silakan simpan untuk memperbarui database.` 
+    });
+  }, []);
+
   const handleStartEdit = useCallback(() => {
     if (!existingPresence?.entries) return;
     const entriesList = Object.values(existingPresence.entries).map((entry: any) => ({
@@ -389,6 +492,7 @@ export default function PresensiLoyalisRawPage() {
           incompleteDaysCount: row.incompleteDaysCount || 0,
           absentDaysCount: row.absentDaysCount || 0,
           dailyLogs: row.dailyLogs || [],
+          corrections: row.employeeId ? corrections.filter((c: any) => c.employeeId === row.employeeId) : [],
         };
 
         if (row.employeeId) matchedRows.push(mappedRow);
@@ -415,6 +519,7 @@ export default function PresensiLoyalisRawPage() {
           incompleteDaysCount: 0,
           absentDaysCount: 0,
           dailyLogs: [],
+          corrections: corrections.filter((c: any) => c.employeeId === emp.id),
         }))
         .sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
 
@@ -437,6 +542,7 @@ export default function PresensiLoyalisRawPage() {
         incompleteDaysCount: entry.incompleteDaysCount || 0,
         absentDaysCount: entry.absentDaysCount || 0,
         dailyLogs: entry.dailyLogs || [],
+        corrections: entry.employeeId ? corrections.filter((c: any) => c.employeeId === entry.employeeId) : [],
       }));
 
       const matched = entriesList.filter(e => !e.isNotFoundInExcel).sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
@@ -445,7 +551,7 @@ export default function PresensiLoyalisRawPage() {
       return [...matched, ...unmatched].map((row, idx) => ({ ...row, idx }));
     }
     return null;
-  }, [uploadedData, loyalisEmployees, existingPresence, calcMode, workingDays, expectedHours, calculatePresenceStratum]);
+  }, [uploadedData, loyalisEmployees, existingPresence, calcMode, workingDays, expectedHours, calculatePresenceStratum, corrections]);
 
   const handleExcelUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -701,6 +807,24 @@ export default function PresensiLoyalisRawPage() {
         await Promise.all(updatePromises);
       } catch (err) {
         console.error("Gagal memperbarui slip gaji secara otomatis:", err);
+      }
+
+      // Update correction requests
+      try {
+        const updateCorrectionPromises = Object.entries(pendingResolutionUpdates).map(async ([reqId, update]) => {
+          const reqRef = doc(db, 'LoyalisPresenceCorrections', reqId);
+          await setDoc(reqRef, {
+            status: update.status,
+            rejectionReason: update.rejectionReason || null,
+            resolvedBy: profile?.email || 'Admin',
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        });
+        await Promise.all(updateCorrectionPromises);
+        setPendingResolutionUpdates({});
+        fetchCorrections();
+      } catch (err) {
+        console.error("Gagal memperbarui status pengajuan koreksi presensi:", err);
       }
 
       setMessage({ type: 'success', text: 'Data bonus presensi berhasil disimpan.' });
@@ -1261,7 +1385,120 @@ export default function PresensiLoyalisRawPage() {
 
                         {/* Expanded Daily Logs */}
                         {isExpanded && (
-                          <div className="border-t border-slate-100 p-4 bg-slate-50/20">
+                          <div className="border-t border-slate-100 p-4 bg-slate-50/20 space-y-4">
+                            {row.corrections && row.corrections.length > 0 && (
+                              <div className="space-y-3 p-4 bg-indigo-50/30 border border-indigo-150/60 rounded-2xl">
+                                <h5 className="text-[11px] font-bold text-indigo-750 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0 animate-pulse" />
+                                  Pengajuan Koreksi Presensi Pegawai ({row.corrections.filter((c: any) => !pendingResolutionUpdates[c.id] && c.status === 'pending').length} Tertunda)
+                                </h5>
+                                <div className="space-y-2">
+                                  {row.corrections.map((c: any) => {
+                                    const resolution = pendingResolutionUpdates[c.id];
+                                    const isApproved = resolution?.status === 'approved' || c.status === 'approved';
+                                    const isRejected = resolution?.status === 'rejected' || c.status === 'rejected';
+                                    const currentStatus = resolution ? resolution.status : c.status;
+
+                                    return (
+                                      <div key={c.id} className="bg-white border border-slate-100 rounded-xl p-3.5 text-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                        <div className="space-y-1 text-left">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="font-extrabold text-slate-700">
+                                              {new Date(c.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                            </span>
+                                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                                              currentStatus === 'approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                                              currentStatus === 'rejected' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
+                                              'bg-amber-50 text-amber-700 border border-amber-100'
+                                            }`}>
+                                              {currentStatus === 'approved' ? 'Disetujui' : currentStatus === 'rejected' ? 'Ditolak' : 'Tertunda'} {resolution && '(Belum Disimpan)'}
+                                            </span>
+                                            <span className="text-[10px] font-bold text-indigo-750 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-full">
+                                              {c.type === 'both' ? 'Masuk & Pulang' : c.type === 'tap_in' ? 'Masuk Saja' : 'Pulang Saja'}
+                                            </span>
+                                          </div>
+                                          <div className="text-[11px] text-slate-650 font-semibold space-y-0.5 mt-1">
+                                            {c.type !== 'tap_out' && <div>Koreksi Masuk: <span className="font-mono font-bold text-indigo-600 bg-indigo-50/50 px-1.5 py-0.5 rounded">{c.checkInTime || '--:--'}</span></div>}
+                                            {c.type !== 'tap_in' && <div>Koreksi Pulang: <span className="font-mono font-bold text-indigo-600 bg-indigo-50/50 px-1.5 py-0.5 rounded">{c.checkOutTime || '--:--'}</span></div>}
+                                            <div className="italic text-slate-500 mt-1 font-medium">"Alasan: {c.reason}"</div>
+                                            {c.proofUrl && (
+                                              <div className="mt-1">
+                                                <a href={c.proofUrl} target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline font-bold inline-flex items-center gap-1 cursor-pointer">
+                                                  <FileText className="w-3.5 h-3.5" /> Lihat Bukti Lampiran
+                                                </a>
+                                              </div>
+                                            )}
+                                            {isRejected && (c.rejectionReason || resolution?.rejectionReason) && (
+                                              <div className="text-rose-600 font-bold mt-1">Alasan Penolakan: {resolution?.rejectionReason || c.rejectionReason}</div>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Actions */}
+                                        {currentStatus === 'pending' && (
+                                          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 shrink-0">
+                                            {!uploadedData ? (
+                                              <span className="text-[10px] text-slate-400 font-semibold italic">Aktifkan edit untuk memproses</span>
+                                            ) : activeDeclineId === c.id ? (
+                                              <div className="flex items-center gap-2">
+                                                <Input
+                                                  placeholder="Alasan penolakan..."
+                                                  value={declineReasonInput[c.id] || ''}
+                                                  onChange={(e) => setDeclineReasonInput(prev => ({ ...prev, [c.id]: e.target.value }))}
+                                                  className="h-8 text-xs rounded-lg w-48 bg-white border-slate-200"
+                                                />
+                                                <Button
+                                                  size="sm"
+                                                  onClick={() => {
+                                                    const reason = declineReasonInput[c.id] || '';
+                                                    if (!reason.trim()) {
+                                                      alert('Alasan penolakan wajib diisi!');
+                                                      return;
+                                                    }
+                                                    handleDeclineCorrection(c.id, reason);
+                                                    setActiveDeclineId(null);
+                                                  }}
+                                                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold h-8 rounded-lg text-xs"
+                                                >
+                                                  Kirim
+                                                </Button>
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={() => setActiveDeclineId(null)}
+                                                  className="h-8 rounded-lg text-xs text-slate-500"
+                                                >
+                                                  Batal
+                                                </Button>
+                                              </div>
+                                            ) : (
+                                              <>
+                                                <Button
+                                                  size="sm"
+                                                  variant="outline"
+                                                  onClick={() => setActiveDeclineId(c.id)}
+                                                  className="text-rose-600 border-rose-200 hover:bg-rose-50 rounded-lg text-xs font-extrabold h-8 px-3"
+                                                >
+                                                  Tolak
+                                                </Button>
+                                                <Button
+                                                  size="sm"
+                                                  onClick={() => handleAcceptCorrection(row.employeeId, c)}
+                                                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-lg text-xs h-8 px-4"
+                                                >
+                                                  Setujui & Terapkan
+                                                </Button>
+                                              </>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
                             <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm space-y-3">
                               <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                                 <Clock className="w-4 h-4 text-slate-400" />

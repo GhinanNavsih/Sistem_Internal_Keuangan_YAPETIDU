@@ -116,7 +116,7 @@ export default function PresenceCorrectionsAdminPage() {
     if (isExpanding && !rawLogsMap[req.id]) {
       setLoadingRawMap(prev => ({ ...prev, [req.id]: true }));
       try {
-        const periodToken = req.date.substring(0, 7); // e.g. "2026-07"
+        const periodToken = req.date.substring(0, 7).replace('-', '_'); // e.g. "2026_07"
         const presenceRef = doc(db, 'LoyalisPresence', periodToken);
         const presenceSnap = await getDoc(presenceRef);
         if (presenceSnap.exists()) {
@@ -236,7 +236,7 @@ export default function PresenceCorrectionsAdminPage() {
     setActionLoading(req.id);
     setMessage(null);
     try {
-      const periodToken = req.date.substring(0, 7); // e.g. "2026-06"
+      const periodToken = req.date.substring(0, 7).replace('-', '_'); // e.g. "2026_06"
       const dateKey = parseDateToDDMMYYYY(req.date); // e.g. "01-06-2026"
 
       // 1. Retrieve the existing monthly raw presence log document
