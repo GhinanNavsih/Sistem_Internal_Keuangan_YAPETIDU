@@ -153,6 +153,12 @@ service cloud.firestore {
       allow read, write: if isSuperAdmin() || hasProfile();
     }
 
+    // 5d2. Driver Journeys (Pre-Authorized voyages for Drivers)
+    match /DriverJourneys/{journeyId} {
+      // Authenticated users with a registered profile can read and write driver journeys
+      allow read, write: if isSuperAdmin() || hasProfile();
+    }
+
     // 5e. Loyalis Presence (Calculated stratum presence inputs for Loyalis)
     match /LoyalisPresence/{docId} {
       // Authenticated users with a registered profile (Super Admin and SatKer Loyalis) can read and write presence calculations
@@ -186,13 +192,13 @@ service cloud.firestore {
       );
 
       // Honorer employees can create a report for themselves.
-      // Must start with 'pending' status and 0 fee.
+      // Must start with 'pending' status. Standard honorer must have 0 fee, drivers (SOPIR) can submit with calculated fee.
       allow create: if isSuperAdmin() || (
         hasProfile() && 
         getUserData().role == 'honorer' && 
         request.resource.data.employeeId == getUserData().linkedEmployeeId &&
         request.resource.data.status == 'pending' &&
-        request.resource.data.fee == 0
+        (request.resource.data.fee == 0 || request.resource.data.jobCategory == 'SOPIR')
       );
 
       // Super Admins can update all.
@@ -217,7 +223,7 @@ service cloud.firestore {
             (resource.data.status == 'pending' || resource.data.status == 'declined') &&
             request.resource.data.employeeId == getUserData().linkedEmployeeId &&
             request.resource.data.status == 'pending' &&
-            request.resource.data.fee == 0
+            (request.resource.data.fee == 0 || request.resource.data.jobCategory == 'SOPIR')
           )
         )
       );

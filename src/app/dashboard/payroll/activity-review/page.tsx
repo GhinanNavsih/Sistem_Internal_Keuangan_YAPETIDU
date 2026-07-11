@@ -93,15 +93,116 @@ interface ActivityReport {
   submittedAt?: any;
   reviewedAt?: any;
   reviewedBy?: string;
+  // SOPIR specific fields
+  tripType?: 'Dalam Kota' | 'Luar Kota';
+  vehicleType?: 'Mobil Kecil' | 'Bus/Truk';
+  isOvernight?: boolean;
+  fuelFee?: number;
+  tollParkingFee?: number;
+  points?: string[];
+  distanceKm?: number;
+  durationHours?: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function isWeekend(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const day = d.getDay(); // 0 = Sunday, 6 = Saturday
+  return day === 0 || day === 6;
+}
+
+function calculateSopirDefaultFee(
+  tripType?: string,
+  vehicleType?: string,
+  isOvernight?: boolean,
+  activityDate?: string,
+  fuelFee?: number,
+  tollParkingFee?: number,
+  distanceKm?: number,
+  durationHours?: number
+): number {
+  const VEHICLE_RATES: Record<string, number> = {
+    'Bis': 850,
+    'Elf': 680,
+    'Kijang LGX': 567,
+    'Innova Hitam': 1000,
+    'Innova Matic': 1250,
+    'Suzuki': 741,
+    'Suzuki XL7': 741,
+  };
+
+  let fee = 0;
+  
+  if (distanceKm && distanceKm > 0) {
+    // New Google Maps route journey calculation:
+    // PP distance * rate + 20% meal allowance
+    const rate = VEHICLE_RATES[vehicleType || 'Suzuki'] || 741;
+    const baseCost = distanceKm * 2 * rate;
+    fee = baseCost * 1.20; // Includes 20% meal allowance
+  } else {
+    // Legacy fallback (no distance recorded)
+    if (vehicleType === 'Bus/Truk' || vehicleType === 'Bis') {
+      fee = 50000;
+    } else {
+      fee = 30000;
+    }
+  }
+
+  // Overnight allowance (+Rp50.000)
+  if (isOvernight) {
+    fee += 50000;
+  }
+
+  // Weekend premium (+Rp20.000)
+  if (activityDate && isWeekend(activityDate)) {
+    fee += 20000;
+  }
+
+  // Actual reimbursements
+  if (fuelFee && fuelFee > 0) {
+    fee += fuelFee;
+  }
+  if (tollParkingFee && tollParkingFee > 0) {
+    fee += tollParkingFee;
+  }
+
+  return Math.round(fee);
+}
 
 function fmtRp(val: number): string {
   return 'Rp' + val.toLocaleString('id-ID');
 }
 
-function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: string, activityName?: string): number {
+function calculateDefaultFee(
+  timeStart: string,
+  timeEnd: string,
+  activityType?: string,
+  activityName?: string,
+  jobCategory?: string,
+  tripType?: 'Dalam Kota' | 'Luar Kota',
+  vehicleType?: 'Mobil Kecil' | 'Bus/Truk',
+  isOvernight?: boolean,
+  activityDate?: string,
+  fuelFee?: number,
+  tollParkingFee?: number,
+  distanceKm?: number,
+  durationHours?: number
+): number {
+  if (jobCategory === 'SOPIR') {
+    return calculateSopirDefaultFee(
+      tripType,
+      vehicleType,
+      isOvernight,
+      activityDate,
+      fuelFee,
+      tollParkingFee,
+      distanceKm,
+      durationHours
+    );
+  }
+
   if (activityType === 'Buang Sampah' || activityName === 'Buang Sampah') {
     return 5000;
   }
@@ -285,7 +386,21 @@ export default function ActivityReviewPage() {
         list.forEach(a => {
           if (a.status === 'pending') {
             if (newFees[a.id] === undefined) {
-              const defaultFee = calculateDefaultFee(a.timeStart, a.timeEnd, a.activityType, a.activityName);
+              const defaultFee = calculateDefaultFee(
+                a.timeStart,
+                a.timeEnd,
+                a.activityType,
+                a.activityName,
+                a.jobCategory,
+                a.tripType,
+                a.vehicleType,
+                a.isOvernight,
+                a.activityDate,
+                a.fuelFee,
+                a.tollParkingFee,
+                a.distanceKm,
+                a.durationHours
+              );
               newFees[a.id] = String(defaultFee);
             }
           } else {
@@ -844,8 +959,45 @@ export default function ActivityReviewPage() {
                           <TableCell className="font-bold text-slate-800 text-sm py-3.5">
                             {activity.employeeName}
                           </TableCell>
-                          <TableCell className="text-sm text-slate-700 font-medium max-w-[200px]">
-                            <span className="truncate block">{activity.activityName}</span>
+                           <TableCell className="text-sm text-slate-700 font-medium max-w-[200px]">
+                            <span className="truncate block font-semibold">{activity.activityName}</span>
+                            {activity.jobCategory === 'SOPIR' && (
+                              <div className="flex flex-col gap-1 mt-1.5">
+                                {activity.points && activity.points.length > 0 && (
+                                  <div className="text-[10px] text-slate-500 font-semibold bg-slate-50 border border-slate-200/50 p-1 px-1.5 rounded-lg leading-relaxed max-w-[240px] whitespace-normal">
+                                    📍 {activity.points.join(' → ')}
+                                  </div>
+                                )}
+                                <div className="flex flex-wrap gap-1">
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-slate-200 text-slate-500 font-medium">
+                                    {activity.vehicleType || 'Mobil Kecil'}
+                                  </Badge>
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-slate-200 text-slate-500 font-medium">
+                                    {activity.tripType || 'Dalam Kota'}
+                                  </Badge>
+                                  {activity.distanceKm && activity.distanceKm > 0 ? (
+                                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-emerald-200 bg-emerald-50 text-emerald-700 font-bold">
+                                      {activity.distanceKm} km ({activity.durationHours || 0} jam)
+                                    </Badge>
+                                  ) : null}
+                                  {activity.isOvernight && (
+                                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-amber-200 bg-amber-50 text-amber-700 font-bold">
+                                      Menginap
+                                    </Badge>
+                                  )}
+                                  {activity.fuelFee && activity.fuelFee > 0 ? (
+                                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-teal-200 bg-teal-50 text-teal-700 font-bold">
+                                      BBM: {fmtRp(activity.fuelFee)}
+                                    </Badge>
+                                  ) : null}
+                                  {activity.tollParkingFee && activity.tollParkingFee > 0 ? (
+                                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-cyan-200 bg-cyan-50 text-cyan-700 font-bold">
+                                      Tol: {fmtRp(activity.tollParkingFee)}
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell className="text-sm text-slate-600 font-medium whitespace-nowrap">
                             {activity.activityDate}
@@ -893,7 +1045,9 @@ export default function ActivityReviewPage() {
                             }
                           </TableCell>
                           <TableCell>
-                            {activity.status === 'pending' ? (
+                            {activity.jobCategory === 'SOPIR' ? (
+                              <span className="text-[10px] font-bold text-slate-400">SOPIR SPJ</span>
+                            ) : activity.status === 'pending' ? (
                               (() => {
                                 const [sh, sm] = activity.timeStart.split(':').map(Number);
                                 const [eh, em] = activity.timeEnd.split(':').map(Number);
