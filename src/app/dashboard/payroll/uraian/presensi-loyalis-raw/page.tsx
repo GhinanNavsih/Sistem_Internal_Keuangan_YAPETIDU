@@ -1615,7 +1615,7 @@ export default function PresensiLoyalisRawPage() {
                                                     step="1"
                                                     value={log['Scan masuk'] || ''}
                                                     onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan masuk', e.target.value)}
-                                                    className={`h-8 rounded-lg text-center font-mono text-[11px] w-28 bg-white ${
+                                                    className={`h-8 rounded-lg text-center font-mono text-[11px] w-32 bg-white ${
                                                       log.scanMasukAuto ? 'border-amber-300 ring-2 ring-amber-100/50 text-amber-750 font-bold bg-amber-50/10' : 'border-slate-200'
                                                     }`}
                                                   />
@@ -1646,7 +1646,7 @@ export default function PresensiLoyalisRawPage() {
                                                     step="1"
                                                     value={log['Scan pulang'] || ''}
                                                     onChange={(e) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Scan pulang', e.target.value)}
-                                                    className={`h-8 rounded-lg text-center font-mono text-[11px] w-28 bg-white ${
+                                                    className={`h-8 rounded-lg text-center font-mono text-[11px] w-32 bg-white ${
                                                       log.scanPulangAuto ? 'border-amber-300 ring-2 ring-amber-100/50 text-amber-750 font-bold bg-amber-50/10' : 'border-slate-200'
                                                     }`}
                                                   />
