@@ -1131,16 +1131,6 @@ export default function PresensiLoyalisRawPage() {
                 <p className="text-slate-400 text-xs mt-0.5">Unggah data daily raw logs kehadiran bulanan untuk menghitung presensi. Klik baris pegawai untuk mengedit logs harian.</p>
               </div>
               <div className="flex items-center gap-2">
-                <Link href="/dashboard/payroll/uraian/presence-corrections">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-indigo-655 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 bg-white rounded-xl shadow-sm text-xs font-bold h-9 px-4 flex items-center gap-2 cursor-pointer"
-                  >
-                    <Clock className="w-4 h-4 text-indigo-505" />
-                    Review Koreksi Presensi
-                  </Button>
-                </Link>
                 {existingPresence && (
                   <Button
                     variant="ghost"
