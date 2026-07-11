@@ -127,12 +127,12 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
 
     if (statusUpper === 'MASUK') {
       if (inStr && outStr) {
-        const [hIn, mIn] = inStr.split(':').map(Number);
-        const [hOut, mOut] = outStr.split(':').map(Number);
+        const [hIn, mIn, sIn = 0] = inStr.split(':').map(Number);
+        const [hOut, mOut, sOut = 0] = outStr.split(':').map(Number);
 
         if (!isNaN(hIn) && !isNaN(hOut)) {
-          const minutesIn = hIn * 60 + mIn;
-          const minutesOut = hOut * 60 + mOut;
+          const minutesIn = hIn * 60 + mIn + sIn / 60;
+          const minutesOut = hOut * 60 + mOut + sOut / 60;
           const duration = Math.max(0, minutesOut - minutesIn);
           dailyDuration = Math.min(expHours * 60, duration);
           totalWorkedMinutes += dailyDuration;
@@ -142,13 +142,14 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
         }
       } else if (inStr && !outStr) {
         if (dayRow.scanPulangAuto !== false) {
-          const [hIn, mIn] = inStr.split(':').map(Number);
+          const [hIn, mIn, sIn = 0] = inStr.split(':').map(Number);
           if (!isNaN(hIn)) {
-            const minutesIn = hIn * 60 + mIn;
-            const minutesOut = minutesIn + 150;
-            const hOut = Math.floor(minutesOut / 60) % 24;
-            const mOut = minutesOut % 60;
-            outStr = `${String(hOut).padStart(2, '0')}:${String(mOut).padStart(2, '0')}:00`;
+            const totalSecondsIn = hIn * 3600 + mIn * 60 + sIn;
+            const totalSecondsOut = totalSecondsIn + 9000;
+            const hOut = Math.floor(totalSecondsOut / 3600) % 24;
+            const mOut = Math.floor((totalSecondsOut % 3600) / 60);
+            const sOut = totalSecondsOut % 60;
+            outStr = `${String(hOut).padStart(2, '0')}:${String(mOut).padStart(2, '0')}:${String(sOut).padStart(2, '0')}`;
             scanPulangAuto = true;
             dailyDuration = Math.min(expHours * 60, 150);
             totalWorkedMinutes += dailyDuration;
@@ -161,14 +162,15 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
         }
       } else if (!inStr && outStr) {
         if (dayRow.scanMasukAuto !== false) {
-          const [hOut, mOut] = outStr.split(':').map(Number);
+          const [hOut, mOut, sOut = 0] = outStr.split(':').map(Number);
           if (!isNaN(hOut)) {
-            const minutesOut = hOut * 60 + mOut;
-            let minutesIn = minutesOut - 150;
-            if (minutesIn < 0) minutesIn = 0;
-            const hIn = Math.floor(minutesIn / 60) % 24;
-            const mIn = minutesIn % 60;
-            inStr = `${String(hIn).padStart(2, '0')}:${String(mIn).padStart(2, '0')}:00`;
+            const totalSecondsOut = hOut * 3600 + mOut * 60 + sOut;
+            let totalSecondsIn = totalSecondsOut - 9000;
+            if (totalSecondsIn < 0) totalSecondsIn = 0;
+            const hIn = Math.floor(totalSecondsIn / 3600) % 24;
+            const mIn = Math.floor((totalSecondsIn % 3600) / 60);
+            const sIn = totalSecondsIn % 60;
+            inStr = `${String(hIn).padStart(2, '0')}:${String(mIn).padStart(2, '0')}:${String(sIn).padStart(2, '0')}`;
             scanMasukAuto = true;
             dailyDuration = Math.min(expHours * 60, 150);
             totalWorkedMinutes += dailyDuration;
