@@ -65,7 +65,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
           }
         } else if (profile.role === 'loyalis_presence_admin') {
           // PJ Presensi Loyalis can access raw presence and presence-corrections
-          if (pathname !== '/dashboard/payroll/uraian/presensi-loyalis-raw' && pathname !== '/dashboard/payroll/presence-corrections') {
+          if (pathname !== '/dashboard/payroll/uraian/presensi-loyalis-raw' && pathname !== '/dashboard/payroll/uraian/presence-corrections') {
             router.replace('/dashboard/payroll/uraian/presensi-loyalis-raw');
           }
         }
@@ -117,7 +117,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   if (profile.role === 'loyalis' && pathname !== '/employee/payslip' && pathname !== '/employee/presensi-correction') {
     return null;
   }
-  if (profile.role === 'loyalis_presence_admin' && pathname !== '/dashboard/payroll/uraian/presensi-loyalis-raw' && pathname !== '/dashboard/payroll/presence-corrections') {
+  if (profile.role === 'loyalis_presence_admin' && pathname !== '/dashboard/payroll/uraian/presensi-loyalis-raw' && pathname !== '/dashboard/payroll/uraian/presence-corrections') {
     return null;
   }
 

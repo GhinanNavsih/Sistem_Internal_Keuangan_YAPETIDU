@@ -83,13 +83,14 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     if (pathname.includes('/pelaporan-kegiatan')) return 'pelaporan_kegiatan';
     if (pathname.includes('/presensi-loyalis-raw')) return 'presensi_loyalis_raw';
     if (pathname.includes('/presensi-loyalis')) return 'presensi_loyalis';
+    if (pathname.includes('/presence-corrections')) return 'presence_corrections';
     if (pathname.includes('/spj-pekarya')) return 'kegiatan_spj';
     return '';
   }, [pathname]);
 
   const getCleanParamsString = useCallback((tab: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (tab === 'vakasi_loyalis' || tab === 'pelaporan_kegiatan' || tab === 'presensi_loyalis' || tab === 'presensi_loyalis_raw') {
+    if (tab === 'vakasi_loyalis' || tab === 'pelaporan_kegiatan' || tab === 'presensi_loyalis' || tab === 'presensi_loyalis_raw' || tab === 'presence_corrections') {
       params.delete('category');
     }
     const str = params.toString();
@@ -102,7 +103,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
     if (profile.role === 'loyalis_presence_admin') {
       const isBeforeJuly2026 = year < 2026 || (year === 2026 && month < 7);
-      if (activeTab !== 'presensi_loyalis_raw' || isBeforeJuly2026) {
+      if ((activeTab !== 'presensi_loyalis_raw' && activeTab !== 'presence_corrections') || isBeforeJuly2026) {
         const params = new URLSearchParams(searchParams.toString());
         params.delete('category');
         if (isBeforeJuly2026) {
@@ -140,6 +141,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         return 'Kalkulator Presensi Loyalis';
       case 'pelaporan_kegiatan':
         return 'Pelaporan Kegiatan';
+      case 'presence_corrections':
+        return 'Review Koreksi Presensi';
       case 'kegiatan_spj':
         return 'Kegiatan SPJ (Pekarya)';
       default:
@@ -157,6 +160,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         return 'Hitung strata dan bonus presensi loyalis';
       case 'pelaporan_kegiatan':
         return 'Buat dan cetak laporan pertanggungjawaban kegiatan loyalis';
+      case 'presence_corrections':
+        return 'Persetujuan & Manajemen Koreksi Absen Pegawai';
       case 'kegiatan_spj':
         return 'Kelola pembayaran kegiatan variabel pekarya bulanan';
       default:
@@ -359,17 +364,30 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               )}
 
               {(profile.role === 'super_admin' || profile.role === 'loyalis_presence_admin') && (
-                <button
-                  onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis-raw${getCleanParamsString('presensi_loyalis_raw')}`)}
-                  className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                    activeTab === 'presensi_loyalis_raw'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                  }`}
-                >
-                  <Clock className="w-4.5 h-4.5" />
-                  Presensi Loyalis (Raw)
-                </button>
+                <>
+                  <button
+                    onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis-raw${getCleanParamsString('presensi_loyalis_raw')}`)}
+                    className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                      activeTab === 'presensi_loyalis_raw'
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Clock className="w-4.5 h-4.5" />
+                    Presensi Loyalis (Raw)
+                  </button>
+                  <button
+                    onClick={() => router.push(`/dashboard/payroll/uraian/presence-corrections${getCleanParamsString('presence_corrections')}`)}
+                    className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                      activeTab === 'presence_corrections'
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                    }`}
+                  >
+                    <ClipboardCheck className="w-4.5 h-4.5" />
+                    Review Koreksi Presensi
+                  </button>
+                </>
               )}
 
               {/* Show Kegiatan SPJ for Super Admin & Pekarya heads (Commented out for now) */}
