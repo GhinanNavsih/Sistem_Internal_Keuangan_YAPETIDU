@@ -1023,7 +1023,7 @@ export default function EmployeeActivitiesPage() {
                           <Button
                             disabled={myClaimedJourneys.length > 0}
                             onClick={() => handleClaimJourney(j.id)}
-                            className="rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs h-8 px-3.5 gap-1 cursor-pointer disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                            className="rounded-xl bg-indigo-50 hover:bg-indigo-600 border border-indigo-100 hover:border-indigo-600 text-indigo-700 hover:text-white font-bold text-xs h-8 px-3.5 transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100 disabled:cursor-not-allowed"
                           >
                             Ambil Perjalanan
                           </Button>
