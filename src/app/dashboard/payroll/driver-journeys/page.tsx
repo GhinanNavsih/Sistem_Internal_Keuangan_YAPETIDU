@@ -461,6 +461,7 @@ function DriverJourneysContent() {
                     <TableHead className="text-xs font-bold text-slate-500">Kendaraan</TableHead>
                     <TableHead className="text-xs font-bold text-slate-500">Jarak PP</TableHead>
                     <TableHead className="text-xs font-bold text-slate-500">Uang Jalan (Prior)</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-500">Estimasi Upah Sopir</TableHead>
                     <TableHead className="text-xs font-bold text-slate-500">Status / Driver</TableHead>
                     <TableHead className="text-xs font-bold text-slate-500 text-right pr-6">Aksi</TableHead>
                   </TableRow>
@@ -491,6 +492,14 @@ function DriverJourneysContent() {
                         <div className="font-black text-indigo-600 text-xs sm:text-sm">{fmtRp(j.totalOperationalCost)}</div>
                         <div className="text-[9px] text-slate-400 font-bold leading-tight">
                           Makan: {fmtRp(j.mealAllowance)}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-extrabold text-slate-700 text-xs sm:text-sm">
+                          {fmtRp((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000))} - {fmtRp(((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000)) * 1.9)}
+                        </div>
+                        <div className="text-[9px] text-amber-600 font-bold leading-tight">
+                          Aktivitas: ± {fmtRp(((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000)) * 0.5)}
                         </div>
                       </TableCell>
                       <TableCell>
