@@ -130,6 +130,7 @@ function DriverJourneysContent() {
   const mapRef = React.useRef<any>(null);
   const markerRef = React.useRef<any>(null);
   const mapElementRef = React.useRef<HTMLDivElement | null>(null);
+  const lastCalculatedRef = React.useRef<{ start: string; end: string }>({ start: '', end: '' });
 
   // Dynamic preview calculations for meal allowance (Option 2: Flat Rate based on Duration)
   const totalDurationPP = calcDuration || 0;
@@ -283,38 +284,54 @@ function DriverJourneysContent() {
     return () => unsubscribe();
   }, [periodToken]);
 
-  // ── Calculate Route on the fly ──
-  const handleCalculate = async () => {
+  // ── Automatic debounced route calculation ──
+  useEffect(() => {
     if (!startPoint.trim() || !endPoint.trim()) {
-      setCalcError('Titik Awal dan Tujuan Akhir harus diisi.');
+      setCalcDistance(null);
+      setCalcDuration(null);
       return;
     }
-    setCalculating(true);
-    setCalcError('');
-    setCalcDistance(null);
-    setCalcDuration(null);
 
-    try {
-      const response = await fetch('/api/calculate-route', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ points: [startPoint, endPoint] }),
-      });
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Gagal menghitung rute.');
-      }
-
-      setCalcDistance(data.distanceKm);
-      setCalcDuration(data.durationHours * 2);
-    } catch (err: any) {
-      console.error(err);
-      setCalcError(err.message || 'Terjadi kesalahan jaringan.');
-    } finally {
-      setCalculating(false);
+    // Skip if we already calculated for these points
+    if (
+      lastCalculatedRef.current.start === startPoint &&
+      lastCalculatedRef.current.end === endPoint
+    ) {
+      return;
     }
-  };
+
+    const timer = setTimeout(() => {
+      const calculateRoute = async () => {
+        setCalculating(true);
+        setCalcError('');
+        try {
+          const response = await fetch('/api/calculate-route', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ points: [startPoint, endPoint] }),
+          });
+          const data = await response.json();
+
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Gagal menghitung rute.');
+          }
+
+          setCalcDistance(data.distanceKm);
+          setCalcDuration(data.durationHours * 2);
+          lastCalculatedRef.current = { start: startPoint, end: endPoint };
+        } catch (err: any) {
+          console.error(err);
+          setCalcError(err.message || 'Terjadi kesalahan jaringan.');
+        } finally {
+          setCalculating(false);
+        }
+      };
+
+      calculateRoute();
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [startPoint, endPoint]);
 
   // ── Submit Journey Creation ──
   const handleCreateJourney = async (e: React.FormEvent) => {
@@ -557,7 +574,8 @@ function DriverJourneysContent() {
                                 setEndPoint(j.endPoint);
                                 setSelectedVehicle(j.vehicleName);
                                 setCalcDistance(j.distanceKm);
-                                setCalcDuration(j.durationHours);
+                                setCalcDuration(j.durationHours * 2);
+                                lastCalculatedRef.current = { start: j.startPoint, end: j.endPoint };
                                 setShowAddForm(true);
                               }}
                               className="h-8 w-8 p-0 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl cursor-pointer"
@@ -758,24 +776,13 @@ function DriverJourneysContent() {
               </div>
             </div>
 
-            {/* Check Route Button */}
-            <div className="pt-1.5">
-              <Button
-                type="button"
-                disabled={calculating || !startPoint.trim() || !endPoint.trim()}
-                onClick={handleCalculate}
-                className="w-full text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white rounded-xl h-9"
-              >
-                {calculating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
-                    Menghitung Rute Google Maps...
-                  </>
-                ) : (
-                  '✓ Cek Rute & Hitung Biaya Perjalanan'
-                )}
-              </Button>
-            </div>
+            {/* Calculation Loader */}
+            {calculating && (
+              <div className="flex items-center justify-center p-3 text-xs text-indigo-600 font-bold bg-indigo-50/50 rounded-xl border border-indigo-100/50 animate-in fade-in duration-200">
+                <Loader2 className="w-4 h-4 animate-spin mr-2 text-indigo-600" />
+                Mengevaluasi rute & durasi Google Maps...
+              </div>
+            )}
 
             {/* Calculation Errors */}
             {calcError && (
