@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
-import { ScanLine, Banknote, ClipboardCheck, FileSpreadsheet, LogOut, ArrowLeft, Clock } from 'lucide-react';
+import { ScanLine, Banknote, ClipboardCheck, FileSpreadsheet, LogOut, ArrowLeft, Clock, Car } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { SUPPORTED_CATEGORIES, MONTHS_ID } from '@/utils/rekapConfig';
@@ -90,7 +90,14 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
   const getCleanParamsString = useCallback((tab: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (tab === 'vakasi_loyalis' || tab === 'pelaporan_kegiatan' || tab === 'presensi_loyalis' || tab === 'presensi_loyalis_raw' || tab === 'presence_corrections') {
+    if (
+      tab === 'vakasi_loyalis' ||
+      tab === 'pelaporan_kegiatan' ||
+      tab === 'presensi_loyalis' ||
+      tab === 'presensi_loyalis_raw' ||
+      tab === 'presence_corrections' ||
+      tab === 'driver-journeys'
+    ) {
       params.delete('category');
     }
     const str = params.toString();
@@ -388,6 +395,16 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                     Review Koreksi Presensi
                   </button>
                 </>
+              )}
+
+              {profile.role === 'super_admin' && (
+                <button
+                  onClick={() => router.push(`/dashboard/payroll/driver-journeys${getCleanParamsString('driver-journeys')}`)}
+                  className="px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                >
+                  <Car className="w-4.5 h-4.5" />
+                  Perjalanan Driver
+                </button>
               )}
 
               {/* Show Kegiatan SPJ for Super Admin & Pekarya heads (Commented out for now) */}
