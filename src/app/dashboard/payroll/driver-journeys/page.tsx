@@ -498,9 +498,6 @@ function DriverJourneysContent() {
                         <div className="font-extrabold text-slate-700 text-xs sm:text-sm">
                           {fmtRp((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000))} - {fmtRp(((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000)) * 1.9)}
                         </div>
-                        <div className="text-[9px] text-amber-600 font-bold leading-tight">
-                          Aktivitas: ± {fmtRp(((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000)) * 0.5)}
-                        </div>
                       </TableCell>
                       <TableCell>
                         {j.status === 'unassigned' && (
