@@ -43,6 +43,7 @@ import {
   ArrowRight,
   Search,
   CheckCircle2,
+  Pencil,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import {
@@ -105,6 +106,7 @@ function DriverJourneysContent() {
 
   // Dialog & Form states
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingJourneyId, setEditingJourneyId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -320,10 +322,13 @@ function DriverJourneysContent() {
       const mealAllowance = baseCost * 0.2;
       const totalCost = baseCost * 1.2;
 
-      // Unique Journey ID: JRN-[Date]-[RandomSuffix]
-      const dateSanitized = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-      const journeyId = `JRN-${dateSanitized}-${randomSuffix}`;
+      let journeyId = editingJourneyId;
+      if (!journeyId) {
+        // Unique Journey ID: JRN-[Date]-[RandomSuffix]
+        const dateSanitized = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+        journeyId = `JRN-${dateSanitized}-${randomSuffix}`;
+      }
 
       await setDoc(doc(db, 'DriverJourneys', journeyId), {
         activityName: activityName.trim(),
@@ -336,18 +341,26 @@ function DriverJourneysContent() {
         baseOperationalCost: baseCost,
         mealAllowance: mealAllowance,
         totalOperationalCost: totalCost,
-        status: 'unassigned',
-        createdAt: serverTimestamp(),
-        createdBy: profile?.uid || 'system',
-        period: periodToken,
-      });
+        ...(!editingJourneyId ? {
+          status: 'unassigned',
+          createdAt: serverTimestamp(),
+          createdBy: profile?.uid || 'system',
+          period: periodToken,
+        } : {
+          updatedAt: serverTimestamp(),
+        })
+      }, { merge: true });
 
-      setMessage({ type: 'success', text: 'Perjalanan berhasil dibuat.' });
+      setMessage({
+        type: 'success',
+        text: editingJourneyId ? 'Perjalanan berhasil diperbarui.' : 'Perjalanan berhasil dibuat.',
+      });
       // Reset form
       setActivityName('');
       setEndPoint('');
       setCalcDistance(null);
       setCalcDuration(null);
+      setEditingJourneyId(null);
       setShowAddForm(false);
     } catch (err: any) {
       console.error(err);
@@ -460,7 +473,7 @@ function DriverJourneysContent() {
                     <TableHead className="text-xs font-bold text-slate-500 pl-6">Kegiatan & Rute</TableHead>
                     <TableHead className="text-xs font-bold text-slate-500">Kendaraan</TableHead>
                     <TableHead className="text-xs font-bold text-slate-500">Jarak PP</TableHead>
-                    <TableHead className="text-xs font-bold text-slate-500">Uang Jalan (Prior)</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-500">Biaya Operasional</TableHead>
                     <TableHead className="text-xs font-bold text-slate-500">Estimasi Upah Sopir</TableHead>
                     <TableHead className="text-xs font-bold text-slate-500">Status / Driver</TableHead>
                     <TableHead className="text-xs font-bold text-slate-500 text-right pr-6">Aksi</TableHead>
@@ -486,7 +499,7 @@ function DriverJourneysContent() {
                         <div className="text-[10px] text-slate-400 font-semibold">{fmtRp(j.vehicleRate)}/km</div>
                       </TableCell>
                       <TableCell className="font-bold text-slate-700 text-xs">
-                        {j.distanceKm * 2} km <span className="text-[10px] text-slate-400 font-normal">(PP)</span>
+                        {j.distanceKm * 2} km
                       </TableCell>
                       <TableCell>
                         <div className="font-black text-indigo-600 text-xs sm:text-sm">{fmtRp(j.totalOperationalCost)}</div>
@@ -524,14 +537,35 @@ function DriverJourneysContent() {
                       </TableCell>
                       <TableCell className="text-right pr-6">
                         {j.status === 'unassigned' ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteJourney(j.id)}
-                            className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setEditingJourneyId(j.id);
+                                setActivityName(j.activityName);
+                                setStartPoint(j.startPoint);
+                                setEndPoint(j.endPoint);
+                                setSelectedVehicle(j.vehicleName);
+                                setCalcDistance(j.distanceKm);
+                                setCalcDuration(j.durationHours);
+                                setShowAddForm(true);
+                              }}
+                              className="h-8 w-8 p-0 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl cursor-pointer"
+                              title="Edit Perjalanan"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteJourney(j.id)}
+                              className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl cursor-pointer"
+                              title="Hapus Perjalanan"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         ) : (
                           <span className="text-[10px] font-semibold text-slate-300 select-none">—</span>
                         )}
@@ -553,6 +587,7 @@ function DriverJourneysContent() {
           setCalcDistance(null);
           setCalcDuration(null);
           setCalcError('');
+          setEditingJourneyId(null);
         }
         setShowAddForm(open);
       }}>
