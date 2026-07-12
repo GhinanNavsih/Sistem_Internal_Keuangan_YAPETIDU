@@ -542,6 +542,13 @@ export default function EmployeeActivitiesPage() {
 
   const handleClaimJourney = async (journeyId: string) => {
     if (!profile?.linkedEmployeeId) return;
+    if (myClaimedJourneys.length > 0) {
+      setMessage({
+        type: 'error',
+        text: 'Anda memiliki perjalanan aktif yang sedang berjalan. Selesaikan perjalanan tersebut terlebih dahulu.',
+      });
+      return;
+    }
     try {
       await updateDoc(doc(db, 'DriverJourneys', journeyId), {
         status: 'claimed',
@@ -638,7 +645,7 @@ export default function EmployeeActivitiesPage() {
       });
 
       setMessage({ type: 'success', text: 'Perjalanan dinas berhasil dilaporkan.' });
-      
+
       setActiveReportingJourney(null);
       resetForm();
       fetchActivities();
@@ -934,7 +941,7 @@ export default function EmployeeActivitiesPage() {
                         </div>
                         <div className="flex justify-between pt-1 border-t border-white/10 text-[10px] text-indigo-100">
                           <span>Estimasi Jarak (PP): <strong>{j.distanceKm * 2} km</strong></span>
-                          <span>Uang Jalan (Prior): <strong>{fmtRp(j.totalOperationalCost)}</strong></span>
+                          <span>Biaya Operasional: <strong>{fmtRp(j.totalOperationalCost)}</strong></span>
                         </div>
                       </div>
 
@@ -976,6 +983,12 @@ export default function EmployeeActivitiesPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-2.5">
+                  {myClaimedJourneys.length > 0 && (
+                    <div className="p-3.5 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl font-bold flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Anda memiliki perjalanan aktif. Selesaikan atau laporkan terlebih dahulu sebelum mengambil perjalanan baru.</span>
+                    </div>
+                  )}
                   {unassignedJourneys.map((j) => (
                     <Card key={j.id} className="bg-white hover:border-slate-300 transition-all rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
                       <CardContent className="p-4 space-y-3">
@@ -1008,8 +1021,9 @@ export default function EmployeeActivitiesPage() {
                           </div>
 
                           <Button
+                            disabled={myClaimedJourneys.length > 0}
                             onClick={() => handleClaimJourney(j.id)}
-                            className="rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs h-8 px-3.5 gap-1 cursor-pointer"
+                            className="rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs h-8 px-3.5 gap-1 cursor-pointer disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                           >
                             Ambil Perjalanan
                           </Button>
@@ -1538,7 +1552,7 @@ export default function EmployeeActivitiesPage() {
                       </div>
                     ))}
                   </div>
-                  
+
                   <div className="flex gap-2 pt-1.5">
                     <Button
                       type="button"
