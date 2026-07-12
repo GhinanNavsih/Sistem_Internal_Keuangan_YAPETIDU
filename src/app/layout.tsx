@@ -1,13 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/AuthContext";
 import Script from "next/script";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
+const inter = {
+  variable: "font-sans",
+};
 
 export const viewport: Viewport = {
   themeColor: "#4f46e5",

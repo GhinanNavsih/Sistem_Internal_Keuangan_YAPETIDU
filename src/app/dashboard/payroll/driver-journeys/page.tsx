@@ -127,11 +127,15 @@ function DriverJourneysContent() {
 
   const mapRef = React.useRef<any>(null);
   const markerRef = React.useRef<any>(null);
+  const mapElementRef = React.useRef<HTMLDivElement | null>(null);
 
   const initMap = (element: HTMLDivElement) => {
     loadGoogleMapsScript(() => {
       const google = (window as any).google;
-      if (!google || mapRef.current) return;
+      if (!google) return;
+      if (mapRef.current && mapElementRef.current === element) return;
+
+      mapElementRef.current = element;
 
       const unipduCoords = { lat: -7.5458, lng: 112.2858 };
       
@@ -163,7 +167,22 @@ function DriverJourneysContent() {
         });
       };
 
-      updateAddress(unipduCoords);
+      const existingAddress = mapTarget === 'start' ? startPoint : endPoint;
+      if (existingAddress && existingAddress !== 'UNIPDU Jombang, Jawa Timur' && existingAddress !== 'UNIPDU Jombang') {
+        geocoder.geocode({ address: existingAddress }, (results: any, status: any) => {
+          if (status === 'OK' && results[0] && results[0].geometry && results[0].geometry.location) {
+            const loc = results[0].geometry.location;
+            map.setCenter(loc);
+            map.setZoom(15);
+            marker.setPosition(loc);
+            setMapAddress(results[0].formatted_address);
+          } else {
+            updateAddress(unipduCoords);
+          }
+        });
+      } else {
+        updateAddress(unipduCoords);
+      }
 
       marker.addListener('dragend', () => {
         const pos = marker.getPosition();
@@ -179,32 +198,43 @@ function DriverJourneysContent() {
         }
       });
 
-      // Autocomplete search bar binding with safety try-catch
-      const inputEl = document.getElementById('mapSearchInput') as HTMLInputElement;
-      if (inputEl) {
-        try {
-          const autocomplete = new google.maps.places.Autocomplete(inputEl, {
-            fields: ['formatted_address', 'geometry', 'name'],
-          });
+    });
+  };
 
-          autocomplete.addListener('place_changed', () => {
-            const place = autocomplete.getPlace();
-            if (!place.geometry || !place.geometry.location) return;
+  const initAutocomplete = (inputEl: HTMLInputElement) => {
+    loadGoogleMapsScript(() => {
+      const google = (window as any).google;
+      if (!google || !mapRef.current) return;
 
-            map.setCenter(place.geometry.location);
-            map.setZoom(16);
-            marker.setPosition(place.geometry.location);
-            
-            if (place.formatted_address) {
-              setMapAddress(place.formatted_address);
-              setMapSearchText(place.name || place.formatted_address);
-            } else {
-              updateAddress(place.geometry.location);
-            }
-          });
-        } catch (autoErr) {
-          console.warn('Google Places Autocomplete initialization failed:', autoErr);
-        }
+      try {
+        const autocomplete = new google.maps.places.Autocomplete(inputEl, {
+          fields: ['formatted_address', 'geometry', 'name'],
+        });
+
+        autocomplete.addListener('place_changed', () => {
+          const place = autocomplete.getPlace();
+          if (!place.geometry || !place.geometry.location) return;
+
+          mapRef.current.setCenter(place.geometry.location);
+          mapRef.current.setZoom(16);
+          if (markerRef.current) {
+            markerRef.current.setPosition(place.geometry.location);
+          }
+          
+          if (place.formatted_address) {
+            setMapAddress(place.formatted_address);
+            setMapSearchText(place.name || place.formatted_address);
+          } else {
+            const geocoder = new google.maps.Geocoder();
+            geocoder.geocode({ location: place.geometry.location }, (results: any, status: any) => {
+              if (status === 'OK' && results[0]) {
+                setMapAddress(results[0].formatted_address);
+              }
+            });
+          }
+        });
+      } catch (autoErr) {
+        console.warn('Google Places Autocomplete initialization failed:', autoErr);
       }
     });
   };
@@ -759,7 +789,11 @@ function DriverJourneysContent() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
-                id="mapSearchInput"
+                ref={(el) => {
+                  if (el) {
+                    initAutocomplete(el);
+                  }
+                }}
                 placeholder="Cari alamat, gedung, kota..."
                 value={mapSearchText}
                 onChange={(e) => setMapSearchText(e.target.value)}
