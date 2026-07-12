@@ -117,7 +117,8 @@ function DriverJourneysContent() {
 
   // Calculated preview states
   const [calcDistance, setCalcDistance] = useState<number | null>(null);
-  const [calcDuration, setCalcDuration] = useState<number | null>(null);
+  const [calcDuration, setCalcDuration] = useState<number | null>(null); // Google Maps one-way duration
+  const [inputDuration, setInputDuration] = useState<number | null>(null); // User editable PP duration
   const [calculating, setCalculating] = useState(false);
   const [calcError, setCalcError] = useState('');
 
@@ -133,7 +134,7 @@ function DriverJourneysContent() {
   const lastCalculatedRef = React.useRef<{ start: string; end: string }>({ start: '', end: '' });
 
   // Dynamic preview calculations for meal allowance (Option 2: Flat Rate based on Duration)
-  const totalDurationPP = calcDuration || 0;
+  const totalDurationPP = inputDuration || 0;
   let dynamicMealAllowance = 0;
   if (totalDurationPP >= 2 && totalDurationPP <= 6) {
     dynamicMealAllowance = 30000;
@@ -317,7 +318,8 @@ function DriverJourneysContent() {
           }
 
           setCalcDistance(data.distanceKm);
-          setCalcDuration(data.durationHours * 2);
+          setCalcDuration(data.durationHours);
+          setInputDuration(data.durationHours * 2);
           lastCalculatedRef.current = { start: startPoint, end: endPoint };
         } catch (err: any) {
           console.error(err);
@@ -363,7 +365,8 @@ function DriverJourneysContent() {
         vehicleName: selectedVehicle,
         vehicleRate: rate,
         distanceKm: calcDistance,
-        durationHours: calcDuration ? calcDuration / 2 : 0,
+        durationHours: calcDuration || 0,
+        customDurationPP: inputDuration || 0,
         baseOperationalCost: baseCost,
         mealAllowance: mealAllowance,
         totalOperationalCost: totalCost,
@@ -386,6 +389,7 @@ function DriverJourneysContent() {
       setEndPoint('');
       setCalcDistance(null);
       setCalcDuration(null);
+      setInputDuration(null);
       setEditingJourneyId(null);
       setShowAddForm(false);
     } catch (err: any) {
@@ -574,7 +578,8 @@ function DriverJourneysContent() {
                                 setEndPoint(j.endPoint);
                                 setSelectedVehicle(j.vehicleName);
                                 setCalcDistance(j.distanceKm);
-                                setCalcDuration(j.durationHours * 2);
+                                setCalcDuration(j.durationHours);
+                                setInputDuration(j.customDurationPP || (j.durationHours ? j.durationHours * 2 : 0));
                                 lastCalculatedRef.current = { start: j.startPoint, end: j.endPoint };
                                 setShowAddForm(true);
                               }}
@@ -613,6 +618,7 @@ function DriverJourneysContent() {
           setEndPoint('');
           setCalcDistance(null);
           setCalcDuration(null);
+          setInputDuration(null);
           setCalcError('');
           setEditingJourneyId(null);
         }
@@ -766,10 +772,10 @@ function DriverJourneysContent() {
                   step="0.1"
                   min="0"
                   placeholder="Contoh: 3.0"
-                  value={calcDuration !== null ? calcDuration : ''}
+                  value={inputDuration !== null ? inputDuration : ''}
                   onChange={(e) => {
                     const val = e.target.value;
-                    setCalcDuration(val === '' ? null : parseFloat(val));
+                    setInputDuration(val === '' ? null : parseFloat(val));
                   }}
                   className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3"
                 />
@@ -841,7 +847,7 @@ function DriverJourneysContent() {
                     </div>
                     <div className="bg-white p-2 rounded-lg border border-slate-100">
                       <span className="block text-[8px] text-slate-400 font-bold uppercase">Estimasi Waktu PP</span>
-                      <span className="text-xs font-extrabold text-slate-700">{(calcDuration || 0).toFixed(1)} jam</span>
+                      <span className="text-xs font-extrabold text-slate-700">{(calcDuration ? calcDuration * 2 : 0).toFixed(1)} jam</span>
                     </div>
                   </div>
 
@@ -852,16 +858,16 @@ function DriverJourneysContent() {
                     </div>
                     <div className="flex justify-between text-slate-500 font-medium">
                       <span>Komponen Waktu (Rp5.000/jam)</span>
-                      <span className="font-bold text-slate-700">{fmtRp((calcDuration || 0) * 5000)}</span>
+                      <span className="font-bold text-slate-700">{fmtRp((calcDuration ? calcDuration * 2 : 0) * 5000)}</span>
                     </div>
                     <div className="flex justify-between text-amber-600 font-medium">
                       <span>Aktivitas di Perjalanan</span>
-                      <span className="font-bold text-amber-700">± {fmtRp(((calcDistance * 2 * 200) + ((calcDuration || 0) * 5000)) * 0.5)}</span>
+                      <span className="font-bold text-amber-700">± {fmtRp(((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 0.5)}</span>
                     </div>
                     <div className="flex justify-between text-slate-800 font-black border-t border-emerald-200/60 pt-1.5 mt-1 text-sm">
                       <span>Kisaran Upah Bersih</span>
                       <span className="text-emerald-700">
-                        {fmtRp((calcDistance * 2 * 200) + ((calcDuration || 0) * 5000))} - {fmtRp(((calcDistance * 2 * 200) + ((calcDuration || 0) * 5000)) * 1.9)}
+                        {fmtRp((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000))} - {fmtRp(((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 1.9)}
                       </span>
                     </div>
                   </div>
