@@ -131,6 +131,15 @@ function DriverJourneysContent() {
   const markerRef = React.useRef<any>(null);
   const mapElementRef = React.useRef<HTMLDivElement | null>(null);
 
+  // Dynamic preview calculations for meal allowance (Option 2: Flat Rate based on Duration)
+  const totalDurationPP = (calcDuration || 0) * 2;
+  let dynamicMealAllowance = 0;
+  if (totalDurationPP >= 2 && totalDurationPP <= 6) {
+    dynamicMealAllowance = 30000;
+  } else if (totalDurationPP > 6) {
+    dynamicMealAllowance = 60000;
+  }
+
   const initMap = (element: HTMLDivElement) => {
     loadGoogleMapsScript(() => {
       const google = (window as any).google;
@@ -319,8 +328,8 @@ function DriverJourneysContent() {
     try {
       const rate = VEHICLE_RATES[selectedVehicle];
       const baseCost = calcDistance * 2 * rate; // PP
-      const mealAllowance = baseCost * 0.2;
-      const totalCost = baseCost * 1.2;
+      const mealAllowance = dynamicMealAllowance;
+      const totalCost = baseCost + mealAllowance;
 
       let journeyId = editingJourneyId;
       if (!journeyId) {
@@ -777,16 +786,16 @@ function DriverJourneysContent() {
 
                   <div className="space-y-1 text-xs pt-1">
                     <div className="flex justify-between text-slate-500 font-medium">
-                      <span>Biaya Jalan Dasar (PP)</span>
+                      <span>Biaya BBM & Tol Dasar (PP)</span>
                       <span className="font-bold text-slate-700">{fmtRp(calcDistance * 2 * VEHICLE_RATES[selectedVehicle])}</span>
                     </div>
                     <div className="flex justify-between text-slate-500 font-medium">
-                      <span>Uang Makan Sopir (20%)</span>
-                      <span className="font-bold text-slate-700">{fmtRp((calcDistance * 2 * VEHICLE_RATES[selectedVehicle]) * 0.2)}</span>
+                      <span>Uang Makan Sopir (Flat Durasi)</span>
+                      <span className="font-bold text-slate-700">{fmtRp(dynamicMealAllowance)}</span>
                     </div>
                     <div className="flex justify-between text-slate-800 font-black border-t border-indigo-200/60 pt-1.5 mt-1 text-sm">
                       <span>Total Uang Jalan (Operasional)</span>
-                      <span className="text-indigo-700">{fmtRp((calcDistance * 2 * VEHICLE_RATES[selectedVehicle]) * 1.2)}</span>
+                      <span className="text-indigo-700">{fmtRp((calcDistance * 2 * VEHICLE_RATES[selectedVehicle]) + dynamicMealAllowance)}</span>
                     </div>
                   </div>
                 </div>
