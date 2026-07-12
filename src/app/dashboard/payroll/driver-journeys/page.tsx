@@ -778,7 +778,7 @@ function DriverJourneysContent() {
                     </div>
                     <div className="flex justify-between text-amber-600 font-medium">
                       <span>Aktivitas di Perjalanan</span>
-                      <span className="font-bold text-amber-700">± {fmtRp((calcDistance * 2 * 200 * 0.5) + ((calcDuration ? calcDuration * 2 : 0) * 5000))}</span>
+                      <span className="font-bold text-amber-700">± {fmtRp(((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 0.5)}</span>
                     </div>
                     <div className="flex justify-between text-slate-800 font-black border-t border-emerald-200/60 pt-1.5 mt-1 text-sm">
                       <span>Kisaran Upah Bersih</span>
