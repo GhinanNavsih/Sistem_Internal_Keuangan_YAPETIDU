@@ -138,7 +138,7 @@ function DriverJourneysContent() {
       mapElementRef.current = element;
 
       const unipduCoords = { lat: -7.5458, lng: 112.2858 };
-      
+
       const map = new google.maps.Map(element, {
         center: unipduCoords,
         zoom: 13,
@@ -220,7 +220,7 @@ function DriverJourneysContent() {
           if (markerRef.current) {
             markerRef.current.setPosition(place.geometry.location);
           }
-          
+
           if (place.formatted_address) {
             setMapAddress(place.formatted_address);
             setMapSearchText(place.name || place.formatted_address);
@@ -550,7 +550,7 @@ function DriverJourneysContent() {
         }
         setShowAddForm(open);
       }}>
-        <DialogContent className="sm:max-w-[480px] rounded-2xl bg-white border-slate-100 shadow-2xl p-6">
+        <DialogContent className="md:max-w-[760px] rounded-2xl bg-white border-slate-100 shadow-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-base font-extrabold text-slate-800 flex items-center gap-2">
               <Compass className="w-5 h-5 text-indigo-600" />
@@ -716,34 +716,72 @@ function DriverJourneysContent() {
 
             {/* Calculation Summary Preview */}
             {calcDistance !== null && (
-              <div className="p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-xl space-y-1.5 animate-in fade-in duration-200">
-                <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider block">
-                  Rincian Estimasi Biaya Otorisasi
-                </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* Rincian Estimasi Biaya Otorisasi */}
+                <div className="p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-xl space-y-1.5 animate-in fade-in duration-200">
+                  <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider block">
+                    Rincian Estimasi Biaya Otorisasi
+                  </span>
 
-                <div className="grid grid-cols-2 gap-2 text-slate-600 text-xs font-semibold">
-                  <div className="bg-white p-2 rounded-lg border border-slate-100">
-                    <span className="block text-[8px] text-slate-400 font-bold uppercase">Jarak PP</span>
-                    <span className="text-xs font-extrabold text-slate-700">{(calcDistance * 2).toFixed(1)} km</span>
+                  <div className="grid grid-cols-2 gap-2 text-slate-600 text-xs font-semibold">
+                    <div className="bg-white p-2 rounded-lg border border-slate-100">
+                      <span className="block text-[8px] text-slate-400 font-bold uppercase">Jarak Pulang-Pergi</span>
+                      <span className="text-xs font-extrabold text-slate-700">{(calcDistance * 2).toFixed(1)} km</span>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-slate-100">
+                      <span className="block text-[8px] text-slate-400 font-bold uppercase">Tarif Mobil</span>
+                      <span className="text-xs font-extrabold text-slate-700">{fmtRp(VEHICLE_RATES[selectedVehicle])}/km</span>
+                    </div>
                   </div>
-                  <div className="bg-white p-2 rounded-lg border border-slate-100">
-                    <span className="block text-[8px] text-slate-400 font-bold uppercase">Tarif Mobil</span>
-                    <span className="text-xs font-extrabold text-slate-700">{fmtRp(VEHICLE_RATES[selectedVehicle])}/km</span>
+
+                  <div className="space-y-1 text-xs pt-1">
+                    <div className="flex justify-between text-slate-500 font-medium">
+                      <span>Biaya Jalan Dasar (PP)</span>
+                      <span className="font-bold text-slate-700">{fmtRp(calcDistance * 2 * VEHICLE_RATES[selectedVehicle])}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-500 font-medium">
+                      <span>Uang Makan Sopir (20%)</span>
+                      <span className="font-bold text-slate-700">{fmtRp((calcDistance * 2 * VEHICLE_RATES[selectedVehicle]) * 0.2)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-800 font-black border-t border-indigo-200/60 pt-1.5 mt-1 text-sm">
+                      <span>Total Uang Jalan (Prior)</span>
+                      <span className="text-indigo-700">{fmtRp((calcDistance * 2 * VEHICLE_RATES[selectedVehicle]) * 1.2)}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-1 text-xs pt-1">
-                  <div className="flex justify-between text-slate-500 font-medium">
-                    <span>Biaya Jalan Dasar (PP)</span>
-                    <span className="font-bold text-slate-700">{fmtRp(calcDistance * 2 * VEHICLE_RATES[selectedVehicle])}</span>
+                {/* Kisaran Pendapatan Bersih Driver */}
+                <div className="p-3.5 bg-emerald-50/70 border border-emerald-100 rounded-xl space-y-1.5 animate-in fade-in duration-200">
+                  <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
+                    Kisaran Pendapatan Bersih Driver
+                  </span>
+
+                  <div className="grid grid-cols-2 gap-2 text-slate-600 text-xs font-semibold">
+                    <div className="bg-white p-2 rounded-lg border border-slate-100">
+                      <span className="block text-[8px] text-slate-400 font-bold uppercase">Jarak Pulang-Pergi</span>
+                      <span className="text-xs font-extrabold text-slate-700">{(calcDistance * 2).toFixed(1)} km</span>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-slate-100">
+                      <span className="block text-[8px] text-slate-400 font-bold uppercase">Estimasi Waktu PP</span>
+                      <span className="text-xs font-extrabold text-slate-700">{(calcDuration ? calcDuration * 2 : 0).toFixed(1)} jam</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-slate-500 font-medium">
-                    <span>Uang Makan Sopir (20%)</span>
-                    <span className="font-bold text-slate-700">{fmtRp((calcDistance * 2 * VEHICLE_RATES[selectedVehicle]) * 0.2)}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-800 font-black border-t border-indigo-200/60 pt-1.5 mt-1 text-sm">
-                    <span>Total Uang Jalan (Prior)</span>
-                    <span className="text-indigo-700">{fmtRp((calcDistance * 2 * VEHICLE_RATES[selectedVehicle]) * 1.2)}</span>
+
+                  <div className="space-y-1 text-xs pt-1">
+                    <div className="flex justify-between text-slate-500 font-medium">
+                      <span>Komponen Jarak (Rp1.000/km)</span>
+                      <span className="font-bold text-slate-700">{fmtRp(calcDistance * 2 * 1000)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-500 font-medium">
+                      <span>Komponen Waktu (Rp5.000/jam)</span>
+                      <span className="font-bold text-slate-700">{fmtRp((calcDuration ? calcDuration * 2 : 0) * 5000)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-800 font-black border-t border-emerald-200/60 pt-1.5 mt-1 text-sm">
+                      <span>Kisaran Payout (Base - Max)</span>
+                      <span className="text-emerald-700">
+                        {fmtRp((calcDistance * 2 * 1000) + ((calcDuration || 0) * 2 * 5000))} - {fmtRp(((calcDistance * 2 * 1000) + ((calcDuration || 0) * 2 * 5000)) * 1.20)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -802,12 +840,12 @@ function DriverJourneysContent() {
             </div>
 
             {/* Map Container */}
-            <div 
+            <div
               ref={(el) => {
                 if (el) {
                   initMap(el);
                 }
-              }} 
+              }}
               className="w-full h-[280px] rounded-xl border border-slate-100 overflow-hidden bg-slate-50 relative flex items-center justify-center"
             >
               <div className="flex flex-col items-center gap-2 text-slate-400">
