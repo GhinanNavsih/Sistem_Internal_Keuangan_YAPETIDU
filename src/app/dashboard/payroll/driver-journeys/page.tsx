@@ -744,7 +744,7 @@ function DriverJourneysContent() {
                       <span className="font-bold text-slate-700">{fmtRp((calcDistance * 2 * VEHICLE_RATES[selectedVehicle]) * 0.2)}</span>
                     </div>
                     <div className="flex justify-between text-slate-800 font-black border-t border-indigo-200/60 pt-1.5 mt-1 text-sm">
-                      <span>Total Uang Jalan (Prior)</span>
+                      <span>Total Uang Jalan (Operasional)</span>
                       <span className="text-indigo-700">{fmtRp((calcDistance * 2 * VEHICLE_RATES[selectedVehicle]) * 1.2)}</span>
                     </div>
                   </div>
@@ -779,7 +779,7 @@ function DriverJourneysContent() {
                     <div className="flex justify-between text-slate-800 font-black border-t border-emerald-200/60 pt-1.5 mt-1 text-sm">
                       <span>Kisaran Payout (Base - Max)</span>
                       <span className="text-emerald-700">
-                        {fmtRp((calcDistance * 2 * 200) + ((calcDuration || 0) * 2 * 5000))} - {fmtRp(((calcDistance * 2 * 200) + ((calcDuration || 0) * 2 * 5000)) * 1.20)}
+                        {fmtRp((calcDistance * 2 * 200) + ((calcDuration || 0) * 2 * 5000))} - {fmtRp(((calcDistance * 2 * 200) + ((calcDuration || 0) * 2 * 5000)) * 2.0)}
                       </span>
                     </div>
                   </div>
