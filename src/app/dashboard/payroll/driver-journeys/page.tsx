@@ -132,7 +132,7 @@ function DriverJourneysContent() {
   const mapElementRef = React.useRef<HTMLDivElement | null>(null);
 
   // Dynamic preview calculations for meal allowance (Option 2: Flat Rate based on Duration)
-  const totalDurationPP = (calcDuration || 0) * 2;
+  const totalDurationPP = calcDuration || 0;
   let dynamicMealAllowance = 0;
   if (totalDurationPP >= 2 && totalDurationPP <= 6) {
     dynamicMealAllowance = 30000;
@@ -307,7 +307,7 @@ function DriverJourneysContent() {
       }
 
       setCalcDistance(data.distanceKm);
-      setCalcDuration(data.durationHours);
+      setCalcDuration(data.durationHours * 2);
     } catch (err: any) {
       console.error(err);
       setCalcError(err.message || 'Terjadi kesalahan jaringan.');
@@ -346,7 +346,7 @@ function DriverJourneysContent() {
         vehicleName: selectedVehicle,
         vehicleRate: rate,
         distanceKm: calcDistance,
-        durationHours: calcDuration || 0,
+        durationHours: calcDuration ? calcDuration / 2 : 0,
         baseOperationalCost: baseCost,
         mealAllowance: mealAllowance,
         totalOperationalCost: totalCost,
@@ -713,28 +713,49 @@ function DriverJourneysContent() {
               </div>
             </div>
 
-            {/* Kendaraan */}
-            <div className="space-y-1.5">
-              <Label htmlFor="vehicleSelect" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Jenis Kendaraan
-              </Label>
-              <Select
-                value={selectedVehicle}
-                onValueChange={(val: any) => {
-                  setSelectedVehicle(val);
-                }}
-              >
-                <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
-                  {Object.keys(VEHICLE_RATES).map((name) => (
-                    <SelectItem key={name} value={name}>
-                      {name} — {fmtRp(VEHICLE_RATES[name as keyof typeof VEHICLE_RATES])}/km
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Kendaraan & Durasi */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="vehicleSelect" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Jenis Kendaraan
+                </Label>
+                <Select
+                  value={selectedVehicle}
+                  onValueChange={(val: any) => {
+                    setSelectedVehicle(val);
+                  }}
+                >
+                  <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                    {Object.keys(VEHICLE_RATES).map((name) => (
+                      <SelectItem key={name} value={name}>
+                        {name} — {fmtRp(VEHICLE_RATES[name as keyof typeof VEHICLE_RATES])}/km
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="durationInput" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Durasi Perjalanan PP (Jam)
+                </Label>
+                <Input
+                  id="durationInput"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  placeholder="Contoh: 3.0"
+                  value={calcDuration !== null ? calcDuration : ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCalcDuration(val === '' ? null : parseFloat(val));
+                  }}
+                  className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3"
+                />
+              </div>
             </div>
 
             {/* Check Route Button */}
@@ -813,7 +834,7 @@ function DriverJourneysContent() {
                     </div>
                     <div className="bg-white p-2 rounded-lg border border-slate-100">
                       <span className="block text-[8px] text-slate-400 font-bold uppercase">Estimasi Waktu PP</span>
-                      <span className="text-xs font-extrabold text-slate-700">{(calcDuration ? calcDuration * 2 : 0).toFixed(1)} jam</span>
+                      <span className="text-xs font-extrabold text-slate-700">{(calcDuration || 0).toFixed(1)} jam</span>
                     </div>
                   </div>
 
@@ -824,16 +845,16 @@ function DriverJourneysContent() {
                     </div>
                     <div className="flex justify-between text-slate-500 font-medium">
                       <span>Komponen Waktu (Rp5.000/jam)</span>
-                      <span className="font-bold text-slate-700">{fmtRp((calcDuration ? calcDuration * 2 : 0) * 5000)}</span>
+                      <span className="font-bold text-slate-700">{fmtRp((calcDuration || 0) * 5000)}</span>
                     </div>
                     <div className="flex justify-between text-amber-600 font-medium">
                       <span>Aktivitas di Perjalanan</span>
-                      <span className="font-bold text-amber-700">± {fmtRp(((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 0.5)}</span>
+                      <span className="font-bold text-amber-700">± {fmtRp(((calcDistance * 2 * 200) + ((calcDuration || 0) * 5000)) * 0.5)}</span>
                     </div>
                     <div className="flex justify-between text-slate-800 font-black border-t border-emerald-200/60 pt-1.5 mt-1 text-sm">
                       <span>Kisaran Upah Bersih</span>
                       <span className="text-emerald-700">
-                        {fmtRp((calcDistance * 2 * 200) + ((calcDuration || 0) * 2 * 5000))} - {fmtRp(((calcDistance * 2 * 200) + ((calcDuration || 0) * 2 * 5000)) * 1.9)}
+                        {fmtRp((calcDistance * 2 * 200) + ((calcDuration || 0) * 5000))} - {fmtRp(((calcDistance * 2 * 200) + ((calcDuration || 0) * 5000)) * 1.9)}
                       </span>
                     </div>
                   </div>
