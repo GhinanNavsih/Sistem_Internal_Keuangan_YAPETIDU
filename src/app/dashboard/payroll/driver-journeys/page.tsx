@@ -776,9 +776,9 @@ function DriverJourneysContent() {
                       <span>Komponen Waktu (Rp5.000/jam)</span>
                       <span className="font-bold text-slate-700">{fmtRp((calcDuration ? calcDuration * 2 : 0) * 5000)}</span>
                     </div>
-                    <div className="flex justify-between text-slate-500/80 font-medium border-t border-emerald-100/50 pt-1">
+                    <div className="flex justify-between text-slate-500 font-medium border-t border-emerald-100/50 pt-1">
                       <span>Aktivitas di Perjalanan</span>
-                      <span className="font-bold text-slate-600">{fmtRp((calcDistance * 2 * 200 * 0.5) + ((calcDuration ? calcDuration * 2 : 0) * 5000))}</span>
+                      <span className="font-bold text-slate-700">{fmtRp((calcDistance * 2 * 200 * 0.5) + ((calcDuration ? calcDuration * 2 : 0) * 5000))}</span>
                     </div>
                     <div className="flex justify-between text-slate-800 font-black border-t border-emerald-200/60 pt-1.5 mt-1 text-sm">
                       <span>Kisaran Upah Bersih</span>
