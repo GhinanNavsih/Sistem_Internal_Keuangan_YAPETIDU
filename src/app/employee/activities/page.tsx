@@ -46,7 +46,8 @@ import {
   Compass,
   Car,
 } from 'lucide-react';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
   collection,
   getDocs,
@@ -290,6 +291,8 @@ const YEARS = Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i);
 
 export default function EmployeeActivitiesPage() {
   const { profile, logout, user } = useAuth();
+  const fuelFileInputRef = React.useRef<HTMLInputElement>(null);
+  const tollFileInputRef = React.useRef<HTMLInputElement>(null);
 
   const userJobCategory = profile?.permittedCategories?.[0] || '';
   const isKebersihan = userJobCategory === 'KEBERSIHAN' || userJobCategory === 'KEBERSIHAN_IC';
@@ -322,6 +325,10 @@ export default function EmployeeActivitiesPage() {
   const [formIsOvernight, setFormIsOvernight] = useState<boolean>(false);
   const [formFuelFee, setFormFuelFee] = useState<string>('');
   const [formTollParkingFee, setFormTollParkingFee] = useState<string>('');
+  const [formFuelReceiptUrl, setFormFuelReceiptUrl] = useState<string>('');
+  const [formTollReceiptUrl, setFormTollReceiptUrl] = useState<string>('');
+  const [uploadingFuelReceipt, setUploadingFuelReceipt] = useState<boolean>(false);
+  const [uploadingTollReceipt, setUploadingTollReceipt] = useState<boolean>(false);
   const [formPoints, setFormPoints] = useState<string[]>(['Pool Unipdu', '']);
   const [calculatedDistanceKm, setCalculatedDistanceKm] = useState<number>(0);
   const [calculatedDurationHours, setCalculatedDurationHours] = useState<number>(0);
@@ -463,6 +470,10 @@ export default function EmployeeActivitiesPage() {
     setFormIsOvernight(false);
     setFormFuelFee('');
     setFormTollParkingFee('');
+    setFormFuelReceiptUrl('');
+    setFormTollReceiptUrl('');
+    setUploadingFuelReceipt(false);
+    setUploadingTollReceipt(false);
     setFormPoints(['Pool Unipdu', '']);
     setCalculatedDistanceKm(0);
     setCalculatedDurationHours(0);
@@ -563,6 +574,38 @@ export default function EmployeeActivitiesPage() {
     }
   };
 
+  const handleUploadReceipt = async (file: File, type: 'bbm' | 'toll') => {
+    if (!activeReportingJourney) return;
+    const isBbm = type === 'bbm';
+    if (isBbm) {
+      setUploadingFuelReceipt(true);
+    } else {
+      setUploadingTollReceipt(true);
+    }
+
+    try {
+      const extension = file.name.split('.').pop() || 'jpg';
+      const fileRef = ref(storage, `receipts/${activeReportingJourney.id}/${type}_${Date.now()}.${extension}`);
+      await uploadBytes(fileRef, file);
+      const downloadUrl = await getDownloadURL(fileRef);
+      if (isBbm) {
+        setFormFuelReceiptUrl(downloadUrl);
+      } else {
+        setFormTollReceiptUrl(downloadUrl);
+      }
+      setMessage({ type: 'success', text: `Bukti ${isBbm ? 'BBM' : 'Tol & Parkir'} berhasil diunggah.` });
+    } catch (err: any) {
+      console.error(`Error uploading ${type} receipt:`, err);
+      setMessage({ type: 'error', text: `Gagal mengunggah bukti ${isBbm ? 'BBM' : 'Tol & Parkir'}. Coba lagi.` });
+    } finally {
+      if (isBbm) {
+        setUploadingFuelReceipt(false);
+      } else {
+        setUploadingTollReceipt(false);
+      }
+    }
+  };
+
   const handleCompleteJourneySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeReportingJourney || !profile?.linkedEmployeeId || isSubmittingRef.current) return;
@@ -587,12 +630,27 @@ export default function EmployeeActivitiesPage() {
       const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
       const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
 
+      if (fuelVal > 0 && !formFuelReceiptUrl) {
+        setMessage({ type: 'error', text: 'Mohon unggah bukti reimburse BBM terlebih dahulu.' });
+        isSubmittingRef.current = false;
+        setSubmitting(false);
+        return;
+      }
+      if (tollVal > 0 && !formTollReceiptUrl) {
+        setMessage({ type: 'error', text: 'Mohon unggah bukti tol & parkir terlebih dahulu.' });
+        isSubmittingRef.current = false;
+        setSubmitting(false);
+        return;
+      }
+
       // 1. Update the Journey document
       const journeyRef = doc(db, 'DriverJourneys', activeReportingJourney.id);
       await updateDoc(journeyRef, {
         status: 'completed',
         fuelFee: fuelVal,
         tollParkingFee: tollVal,
+        fuelReceiptUrl: formFuelReceiptUrl || '',
+        tollReceiptUrl: formTollReceiptUrl || '',
         isOvernight: formIsOvernight,
         activityDate: formDate,
         timeStart: formTimeStart,
@@ -638,6 +696,8 @@ export default function EmployeeActivitiesPage() {
         isOvernight: formIsOvernight,
         fuelFee: fuelVal,
         tollParkingFee: tollVal,
+        fuelReceiptUrl: formFuelReceiptUrl || '',
+        tollReceiptUrl: formTollReceiptUrl || '',
         points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint],
         distanceKm: activeReportingJourney.distanceKm,
         durationHours: activeReportingJourney.durationHours,
@@ -1870,27 +1930,13 @@ export default function EmployeeActivitiesPage() {
                 <div>Keperluan: <strong className="text-slate-800">{activeReportingJourney.activityName}</strong></div>
                 <div>Rute Jalan: <strong className="text-slate-800">{activeReportingJourney.startPoint.split(',')[0]} → {activeReportingJourney.endPoint}</strong></div>
                 <div>Kendaraan: <strong className="text-slate-800">{activeReportingJourney.vehicleName}</strong></div>
+                <div>Tanggal: <strong className="text-slate-800">{activeReportingJourney.activityDate ? new Date(activeReportingJourney.activityDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</strong></div>
                 <div className="pt-1.5 border-t border-slate-200/60 mt-1.5 flex justify-between font-bold text-indigo-600">
                   <span>Biaya Operasional</span>
                   <span>{fmtRp(activeReportingJourney.totalOperationalCost)}</span>
                 </div>
               </div>
             )}
-
-            {/* Tanggal */}
-            <div className="space-y-1.5">
-              <Label htmlFor="journeyDate" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Tanggal Perjalanan
-              </Label>
-              <Input
-                id="journeyDate"
-                type="date"
-                value={formDate}
-                onChange={(e) => setFormDate(e.target.value)}
-                className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
-                required
-              />
-            </div>
 
             {/* Jam Berangkat / Tiba */}
             <div className="grid grid-cols-2 gap-3">
@@ -1923,13 +1969,13 @@ export default function EmployeeActivitiesPage() {
               </div>
             </div>
 
-            {/* Reimburse BBM & Tol/Parkir */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="journeyFuel" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Reimburse BBM (SPJ)
-                </Label>
-                <div className="relative">
+            {/* Reimburse BBM Row */}
+            <div className="space-y-1.5">
+              <Label htmlFor="journeyFuel" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Reimburse BBM
+              </Label>
+              <div className="grid grid-cols-4 gap-2 items-end">
+                <div className="col-span-3 relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
                   <Input
                     id="journeyFuel"
@@ -1939,16 +1985,49 @@ export default function EmployeeActivitiesPage() {
                       const val = e.target.value.replace(/\D/g, '');
                       setFormFuelFee(val ? Number(val).toLocaleString('id-ID') : '');
                     }}
-                    className="pl-8 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs h-10"
+                    className="pl-8 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs h-10 w-full"
                   />
                 </div>
+                <div className="col-span-1">
+                  <input
+                    type="file"
+                    ref={fuelFileInputRef}
+                    accept="image/*,application/pdf"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUploadReceipt(f, 'bbm');
+                    }}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => fuelFileInputRef.current?.click()}
+                    disabled={uploadingFuelReceipt}
+                    className={`w-full rounded-xl text-xs font-bold h-10 border transition-all ${
+                      formFuelReceiptUrl
+                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    {uploadingFuelReceipt ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto text-slate-500" />
+                    ) : formFuelReceiptUrl ? (
+                      '✓ Bukti'
+                    ) : (
+                      'Bukti'
+                    )}
+                  </Button>
+                </div>
               </div>
+            </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="journeyToll" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Tol & Parkir
-                </Label>
-                <div className="relative">
+            {/* Tol & Parkir Row */}
+            <div className="space-y-1.5">
+              <Label htmlFor="journeyToll" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Tol & Parkir
+              </Label>
+              <div className="grid grid-cols-4 gap-2 items-end">
+                <div className="col-span-3 relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
                   <Input
                     id="journeyToll"
@@ -1958,8 +2037,38 @@ export default function EmployeeActivitiesPage() {
                       const val = e.target.value.replace(/\D/g, '');
                       setFormTollParkingFee(val ? Number(val).toLocaleString('id-ID') : '');
                     }}
-                    className="pl-8 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs h-10"
+                    className="pl-8 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs h-10 w-full"
                   />
+                </div>
+                <div className="col-span-1">
+                  <input
+                    type="file"
+                    ref={tollFileInputRef}
+                    accept="image/*,application/pdf"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUploadReceipt(f, 'toll');
+                    }}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => tollFileInputRef.current?.click()}
+                    disabled={uploadingTollReceipt}
+                    className={`w-full rounded-xl text-xs font-bold h-10 border transition-all ${
+                      formTollReceiptUrl
+                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    {uploadingTollReceipt ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto text-slate-500" />
+                    ) : formTollReceiptUrl ? (
+                      '✓ Bukti'
+                    ) : (
+                      'Bukti'
+                    )}
+                  </Button>
                 </div>
               </div>
             </div>
