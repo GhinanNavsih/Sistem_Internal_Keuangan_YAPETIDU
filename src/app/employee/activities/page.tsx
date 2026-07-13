@@ -574,6 +574,24 @@ export default function EmployeeActivitiesPage() {
     }
   };
 
+  const handleCancelJourney = async (journeyId: string) => {
+    if (!confirm('Apakah Anda yakin ingin membatalkan klaim perjalanan ini? Perjalanan akan tersedia kembali untuk sopir lain.')) {
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'DriverJourneys', journeyId), {
+        status: 'unassigned',
+        employeeId: null,
+        employeeName: null,
+        claimedAt: null,
+      });
+      setMessage({ type: 'success', text: 'Klaim perjalanan berhasil dibatalkan.' });
+    } catch (err) {
+      console.error('Error cancelling journey claim:', err);
+      setMessage({ type: 'error', text: 'Gagal membatalkan klaim perjalanan.' });
+    }
+  };
+
   const handleUploadReceipt = async (file: File, type: 'bbm' | 'toll') => {
     if (!activeReportingJourney) return;
     const isBbm = type === 'bbm';
@@ -1014,21 +1032,31 @@ export default function EmployeeActivitiesPage() {
                         })()}
                       </div>
 
-                      <Button
-                        onClick={() => {
-                          setActiveReportingJourney(j);
-                          setFormDate(new Date().toISOString().slice(0, 10));
-                          setFormTimeStart('08:00');
-                          setFormTimeEnd('17:00');
-                          setFormIsOvernight(false);
-                          setFormFuelFee('');
-                          setFormTollParkingFee('');
-                        }}
-                        className="w-full rounded-xl bg-white text-indigo-700 hover:bg-slate-100 hover:text-indigo-800 transition-all font-extrabold text-xs h-9.5 gap-1.5 cursor-pointer shadow-sm border-none"
-                      >
-                        <CheckCircle2 className="w-4.5 h-4.5" />
-                        Laporkan Perjalanan Selesai
-                      </Button>
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          onClick={() => {
+                            setActiveReportingJourney(j);
+                            setFormDate(new Date().toISOString().slice(0, 10));
+                            setFormTimeStart('08:00');
+                            setFormTimeEnd('17:00');
+                            setFormIsOvernight(false);
+                            setFormFuelFee('');
+                            setFormTollParkingFee('');
+                          }}
+                          className="w-full rounded-xl bg-white text-indigo-700 hover:bg-slate-100 hover:text-indigo-800 transition-all font-extrabold text-xs h-9.5 gap-1.5 cursor-pointer shadow-sm border-none"
+                        >
+                          <CheckCircle2 className="w-4.5 h-4.5" />
+                          Laporkan Perjalanan Selesai
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => handleCancelJourney(j.id)}
+                          className="w-full rounded-xl text-white/90 hover:text-white hover:bg-white/10 transition-all font-bold text-xs h-8.5 gap-1.5 cursor-pointer border border-white/20"
+                        >
+                          <XCircle className="w-4 h-4 text-white/90 shrink-0" />
+                          Batalkan Klaim Perjalanan
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
