@@ -943,6 +943,16 @@ export default function EmployeeActivitiesPage() {
                           <span>Estimasi Jarak (PP): <strong>{j.distanceKm * 2} km</strong></span>
                           <span>Biaya Operasional: <strong>{fmtRp(j.totalOperationalCost)}</strong></span>
                         </div>
+                        {(() => {
+                          const baseWage = (j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000);
+                          const maxWage = baseWage * 1.9;
+                          return (
+                            <div className="pt-1.5 border-t border-white/10 text-[10px] text-indigo-100 flex justify-between items-center">
+                              <span>Estimasi Upah Sopir:</span>
+                              <span className="font-black text-amber-300">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <Button
@@ -1015,9 +1025,21 @@ export default function EmployeeActivitiesPage() {
                         </div>
 
                         <div className="flex justify-between items-center pt-2.5 border-t border-slate-100">
-                          <div>
-                            <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Uang Jalan (Prior)</span>
-                            <span className="text-xs font-black text-indigo-600">{fmtRp(j.totalOperationalCost)}</span>
+                          <div className="flex gap-4">
+                            <div>
+                              <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Uang Jalan (Prior)</span>
+                              <span className="text-xs font-black text-indigo-600">{fmtRp(j.totalOperationalCost)}</span>
+                            </div>
+                            {(() => {
+                              const baseWage = (j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000);
+                              const maxWage = baseWage * 1.9;
+                              return (
+                                <div>
+                                  <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Estimasi Upah</span>
+                                  <span className="text-xs font-black text-emerald-600">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
+                                </div>
+                              );
+                            })()}
                           </div>
 
                           <Button
