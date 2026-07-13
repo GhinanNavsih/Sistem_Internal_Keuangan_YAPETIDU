@@ -111,6 +111,7 @@ function DriverJourneysContent() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [activityName, setActivityName] = useState('');
+  const [activityDate, setActivityDate] = useState(new Date().toISOString().slice(0, 10));
   const [startPoint, setStartPoint] = useState('UNIPDU Jombang, Jawa Timur');
   const [endPoint, setEndPoint] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState<keyof typeof VEHICLE_RATES>('Suzuki XL7');
@@ -360,6 +361,7 @@ function DriverJourneysContent() {
 
       await setDoc(doc(db, 'DriverJourneys', journeyId), {
         activityName: activityName.trim(),
+        activityDate: activityDate,
         startPoint: startPoint.trim(),
         endPoint: endPoint.trim(),
         vehicleName: selectedVehicle,
@@ -386,6 +388,7 @@ function DriverJourneysContent() {
       });
       // Reset form
       setActivityName('');
+      setActivityDate(new Date().toISOString().slice(0, 10));
       setEndPoint('');
       setCalcDistance(null);
       setCalcDuration(null);
@@ -574,6 +577,7 @@ function DriverJourneysContent() {
                               onClick={() => {
                                 setEditingJourneyId(j.id);
                                 setActivityName(j.activityName);
+                                setActivityDate(j.activityDate || new Date().toISOString().slice(0, 10));
                                 setStartPoint(j.startPoint);
                                 setEndPoint(j.endPoint);
                                 setSelectedVehicle(j.vehicleName);
@@ -615,6 +619,7 @@ function DriverJourneysContent() {
       <Dialog open={showAddForm} onOpenChange={(open) => {
         if (!open) {
           setActivityName('');
+          setActivityDate(new Date().toISOString().slice(0, 10));
           setEndPoint('');
           setCalcDistance(null);
           setCalcDuration(null);
@@ -636,20 +641,35 @@ function DriverJourneysContent() {
           </DialogHeader>
 
           <form onSubmit={handleCreateJourney} className="space-y-4 pt-2.5">
-            {/* Nama Kegiatan */}
-            <div className="space-y-1.5">
-              <Label htmlFor="journeyName" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Keperluan / Nama Kegiatan
-              </Label>
-              <Input
-                id="journeyName"
-                placeholder="Contoh: Mengantar Dekan FIK Rapat di UINSA"
-                value={activityName}
-                onChange={(e) => setActivityName(e.target.value)}
-                className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
-                required
-                autoComplete="off"
-              />
+            {/* Nama Kegiatan & Tanggal */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="md:col-span-2 space-y-1.5">
+                <Label htmlFor="journeyName" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Keperluan / Nama Kegiatan
+                </Label>
+                <Input
+                  id="journeyName"
+                  placeholder="Contoh: Mengantar Dekan FIK Rapat di UINSA"
+                  value={activityName}
+                  onChange={(e) => setActivityName(e.target.value)}
+                  className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
+                  required
+                  autoComplete="off"
+                />
+              </div>
+              <div className="md:col-span-1 space-y-1.5">
+                <Label htmlFor="journeyDate" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Tanggal Perjalanan
+                </Label>
+                <Input
+                  id="journeyDate"
+                  type="date"
+                  value={activityDate}
+                  onChange={(e) => setActivityDate(e.target.value)}
+                  className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
+                  required
+                />
+              </div>
             </div>
 
             {/* Titik Mulai & Tujuan */}
