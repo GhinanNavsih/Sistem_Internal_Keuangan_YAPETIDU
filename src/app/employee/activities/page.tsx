@@ -342,6 +342,7 @@ export default function EmployeeActivitiesPage() {
   const [loadingJourneys, setLoadingJourneys] = useState(false);
   const [activeReportingJourney, setActiveReportingJourney] = useState<any | null>(null);
   const [isClaiming, setIsClaiming] = useState<boolean>(false);
+  const [isCancelling, setIsCancelling] = useState<boolean>(false);
 
   // ── Notifications ──
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -586,6 +587,11 @@ export default function EmployeeActivitiesPage() {
     if (!confirm('Apakah Anda yakin ingin membatalkan klaim perjalanan ini? Perjalanan akan tersedia kembali untuk sopir lain.')) {
       return;
     }
+    
+    setIsCancelling(true);
+    // Purposeful delay to show the loading animation clearly to the user
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
     try {
       await updateDoc(doc(db, 'DriverJourneys', journeyId), {
         status: 'unassigned',
@@ -597,6 +603,8 @@ export default function EmployeeActivitiesPage() {
     } catch (err) {
       console.error('Error cancelling journey claim:', err);
       setMessage({ type: 'error', text: 'Gagal membatalkan klaim perjalanan.' });
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -2160,6 +2168,19 @@ export default function EmployeeActivitiesPage() {
             <div className="space-y-1.5">
               <h4 className="font-extrabold text-sm text-slate-100">Memproses...</h4>
               <p className="text-xs font-semibold text-slate-400">Mengkonfirmasi Penerimaan Perjalanan</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Journey Cancellation Loading Overlay ────────────────────────── */}
+      {isCancelling && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center gap-4 text-white animate-in fade-in duration-300">
+          <div className="bg-slate-950/80 border border-slate-800 rounded-3xl p-8 flex flex-col items-center gap-4 max-w-sm mx-4 text-center shadow-2xl">
+            <Loader2 className="w-10 h-10 animate-spin text-rose-500" />
+            <div className="space-y-1.5">
+              <h4 className="font-extrabold text-sm text-slate-100">Memproses...</h4>
+              <p className="text-xs font-semibold text-slate-400">Membatalkan Klaim Perjalanan</p>
             </div>
           </div>
         </div>
