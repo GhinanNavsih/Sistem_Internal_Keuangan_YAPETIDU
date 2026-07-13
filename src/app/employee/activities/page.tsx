@@ -1137,9 +1137,9 @@ export default function EmployeeActivitiesPage() {
                           <Button
                             disabled={myClaimedJourneys.length > 0}
                             onClick={() => handleClaimJourney(j.id)}
-                            className="rounded-xl bg-indigo-50 hover:bg-indigo-600 border border-indigo-100 hover:border-indigo-600 text-indigo-700 hover:text-white font-bold text-[10px] h-7 px-3 transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100 disabled:cursor-not-allowed"
+                            className="rounded-xl bg-indigo-50 hover:bg-indigo-600 border border-indigo-100 hover:border-indigo-600 text-indigo-700 hover:text-white font-bold text-[9px] leading-tight h-10 px-3 transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100 disabled:cursor-not-allowed whitespace-normal text-center"
                           >
-                            Ambil Perjalanan
+                            Ambil<br />Perjalanan
                           </Button>
                         </div>
                       </CardContent>
