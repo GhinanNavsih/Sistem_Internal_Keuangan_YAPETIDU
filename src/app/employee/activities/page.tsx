@@ -937,7 +937,7 @@ export default function EmployeeActivitiesPage() {
                           <MapPin className="w-4 h-4 text-indigo-200 shrink-0" />
                           <span className="truncate max-w-[170px]" title={j.startPoint}>{j.startPoint.split(',')[0]}</span>
                           <ArrowRight className="w-3.5 h-3.5 text-indigo-200/60 shrink-0" />
-                          <span className="truncate max-w-[170px] font-extrabold" title={j.endPoint}>{j.endPoint}</span>
+                          <span className="truncate max-w-[320px] font-extrabold" title={j.endPoint}>{j.endPoint}</span>
                         </div>
                         <div className="flex justify-between pt-1 border-t border-white/10 text-[10px] text-indigo-100">
                           <span>Estimasi Jarak (PP): <strong>{j.distanceKm * 2} km</strong></span>
@@ -1020,14 +1020,14 @@ export default function EmployeeActivitiesPage() {
                             <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                             <span className="truncate max-w-[130px]">{j.startPoint.split(',')[0]}</span>
                             <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span className="truncate max-w-[130px] font-extrabold text-slate-700">{j.endPoint}</span>
+                            <span className="truncate max-w-[320px] font-extrabold text-slate-700" title={j.endPoint}>{j.endPoint}</span>
                           </div>
                         </div>
 
                         <div className="flex justify-between items-center pt-2.5 border-t border-slate-100">
                           <div className="flex gap-4">
                             <div>
-                              <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Uang Jalan (Prior)</span>
+                              <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Biaya Operasional</span>
                               <span className="text-xs font-black text-indigo-600">{fmtRp(j.totalOperationalCost)}</span>
                             </div>
                             {(() => {
@@ -1035,7 +1035,7 @@ export default function EmployeeActivitiesPage() {
                               const maxWage = baseWage * 1.9;
                               return (
                                 <div>
-                                  <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Estimasi Upah</span>
+                                  <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Estimasi Upah Bersih</span>
                                   <span className="text-xs font-black text-emerald-600">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
                                 </div>
                               );
