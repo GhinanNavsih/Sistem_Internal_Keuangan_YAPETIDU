@@ -1068,9 +1068,16 @@ export default function EmployeeActivitiesPage() {
                               Tersedia
                             </span>
                           </div>
-                          <span className="text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md">
-                            {j.vehicleName} ({fmtRp(j.vehicleRate)}/km)
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {j.activityDate && (
+                              <span className="text-[10px] font-extrabold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md">
+                                {new Date(j.activityDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </span>
+                            )}
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md">
+                              {j.vehicleName} ({fmtRp(j.vehicleRate)}/km)
+                            </span>
+                          </div>
                         </div>
 
                         <div>
