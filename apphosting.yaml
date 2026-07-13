@@ -22,6 +22,8 @@ env:
     value: "1:12358920235:web:7e181c72ad3f45f051a26e"
   - variable: SMTP_USER
     value: "admin.bak@unipdu.ac.id"
+  - variable: NEXT_PUBLIC_APP_URL
+    value: "https://saku.unipdu.ac.id"
   - variable: GEMINI_API_KEY
     secret: gemini-api-key
   - variable: SMTP_PASS
