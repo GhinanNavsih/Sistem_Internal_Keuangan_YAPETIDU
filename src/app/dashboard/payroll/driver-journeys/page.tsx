@@ -538,7 +538,7 @@ function DriverJourneysContent() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="font-extrabold text-slate-700 text-xs sm:text-sm">
+                        <div className="font-black text-emerald-600 text-xs sm:text-sm">
                           {fmtRp((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000))} - {fmtRp(((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000)) * 1.9)}
                         </div>
                       </TableCell>

@@ -1017,7 +1017,6 @@ export default function EmployeeActivitiesPage() {
                           <h4 className="text-xs sm:text-sm font-extrabold text-slate-800 leading-snug">{j.activityName}</h4>
                           <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500 font-semibold">
                             <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                            <span className="font-medium text-slate-400">Tujuan utama:</span>
                             <span className="truncate flex-1 font-extrabold text-slate-700" title={j.endPoint}>{j.endPoint}</span>
                           </div>
                         </div>
@@ -1033,7 +1032,7 @@ export default function EmployeeActivitiesPage() {
                               const maxWage = baseWage * 1.9;
                               return (
                                 <div>
-                                  <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Estimasi Upah Bersih</span>
+                                  <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Upah Bersih</span>
                                   <span className="text-xs font-black text-emerald-600">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
                                 </div>
                               );
