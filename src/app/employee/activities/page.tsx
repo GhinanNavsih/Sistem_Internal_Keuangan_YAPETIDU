@@ -1137,8 +1137,7 @@ export default function EmployeeActivitiesPage() {
                           <Button
                             disabled={myClaimedJourneys.length > 0}
                             onClick={() => handleClaimJourney(j.id)}
-                            style={{ fontSize: '6px', lineHeight: '1.2' }}
-                            className="rounded-lg bg-indigo-50 hover:bg-indigo-600 border border-indigo-100 hover:border-indigo-600 text-indigo-700 hover:text-white font-extrabold py-1 px-2 transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100 disabled:cursor-not-allowed whitespace-normal text-center h-auto"
+                            className="rounded-lg bg-indigo-50 hover:bg-indigo-600 border border-indigo-100 hover:border-indigo-600 text-indigo-700 hover:text-white font-extrabold !text-[9px] sm:!text-[12px] !leading-tight !h-auto py-1 px-2 sm:py-1.5 sm:px-3 transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100 disabled:cursor-not-allowed whitespace-normal text-center"
                           >
                             Ambil<br />Perjalanan
                           </Button>
