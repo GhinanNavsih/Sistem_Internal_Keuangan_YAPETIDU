@@ -933,11 +933,10 @@ export default function EmployeeActivitiesPage() {
                       </div>
 
                       <div className="p-2.5 rounded-xl bg-white/10 text-white text-xs font-medium space-y-1">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 text-indigo-100">
                           <MapPin className="w-4 h-4 text-indigo-200 shrink-0" />
-                          <span className="truncate max-w-[170px]" title={j.startPoint}>{j.startPoint.split(',')[0]}</span>
-                          <ArrowRight className="w-3.5 h-3.5 text-indigo-200/60 shrink-0" />
-                          <span className="truncate max-w-[320px] font-extrabold" title={j.endPoint}>{j.endPoint}</span>
+                          <span className="font-semibold text-white/95">Tujuan utama:</span>
+                          <span className="truncate flex-1 font-extrabold text-white" title={j.endPoint}>{j.endPoint}</span>
                         </div>
                         <div className="flex justify-between pt-1 border-t border-white/10 text-[10px] text-indigo-100">
                           <span>Estimasi Jarak (PP): <strong>{j.distanceKm * 2} km</strong></span>
@@ -1018,9 +1017,8 @@ export default function EmployeeActivitiesPage() {
                           <h4 className="text-xs sm:text-sm font-extrabold text-slate-800 leading-snug">{j.activityName}</h4>
                           <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500 font-semibold">
                             <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                            <span className="truncate max-w-[130px]">{j.startPoint.split(',')[0]}</span>
-                            <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span className="truncate max-w-[320px] font-extrabold text-slate-700" title={j.endPoint}>{j.endPoint}</span>
+                            <span className="font-medium text-slate-400">Tujuan utama:</span>
+                            <span className="truncate flex-1 font-extrabold text-slate-700" title={j.endPoint}>{j.endPoint}</span>
                           </div>
                         </div>
 
