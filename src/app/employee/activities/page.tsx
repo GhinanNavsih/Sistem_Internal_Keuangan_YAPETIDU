@@ -1852,7 +1852,7 @@ export default function EmployeeActivitiesPage() {
                 <div>Rute Jalan: <strong className="text-slate-800">{activeReportingJourney.startPoint.split(',')[0]} → {activeReportingJourney.endPoint}</strong></div>
                 <div>Kendaraan: <strong className="text-slate-800">{activeReportingJourney.vehicleName}</strong></div>
                 <div className="pt-1.5 border-t border-slate-200/60 mt-1.5 flex justify-between font-bold text-indigo-600">
-                  <span>Pre-paid Uang Jalan:</span>
+                  <span>Biaya Operasional</span>
                   <span>{fmtRp(activeReportingJourney.totalOperationalCost)}</span>
                 </div>
               </div>

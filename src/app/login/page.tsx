@@ -51,6 +51,7 @@ const FIREBASE_ERROR_MESSAGES: Record<string, string> = {
   'auth/invalid-credential': 'Email atau password salah.',
   'auth/popup-closed-by-user': 'Login Google dibatalkan.',
   'auth/cancelled-popup-request': 'Login Google dibatalkan.',
+  'auth/user-disabled': 'Akun Anda ditangguhkan sementara. Silakan buka kotak masuk email Anda dan klik tautan reaktivasi untuk mengaktifkan kembali akun Anda.',
   'auth/network-request-failed': 'Gagal terhubung ke jaringan. Periksa koneksi internet Anda.',
 };
 
@@ -227,7 +228,24 @@ export default function LoginPage() {
           {error && (
             <div className="mb-6 flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-2xl animate-in fade-in slide-in-from-top-2 duration-300">
               <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
-              <span className="text-sm text-red-700 font-medium leading-relaxed">{error}</span>
+              <span className="text-sm text-red-700 font-medium leading-relaxed">
+                {error.includes('buka kotak masuk email Anda') ? (
+                  <>
+                    Akun Anda ditangguhkan sementara. Silakan{' '}
+                    <a
+                      href="https://mail.google.com/mail/u/0/#all"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline font-bold text-red-800 hover:text-red-950 transition-colors"
+                    >
+                      buka kotak masuk email Anda
+                    </a>{' '}
+                    dan klik tautan reaktivasi untuk mengaktifkan kembali akun Anda.
+                  </>
+                ) : (
+                  error
+                )}
+              </span>
             </div>
           )}
 
