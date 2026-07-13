@@ -3,8 +3,9 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
-  Loader2, CheckCircle2, XCircle, ShieldAlert, ArrowRight, Home
+  Loader2, CheckCircle2, XCircle, ShieldAlert, ArrowRight, Home, Lock, Eye, EyeOff
 } from 'lucide-react';
 
 function ReactivateContent() {
@@ -12,9 +13,18 @@ function ReactivateContent() {
   const router = useRouter();
   const token = searchParams.get('token');
 
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  // Page States: 'loading' (initial check), 'input_password', 'submitting', 'success', 'error'
+  const [status, setStatus] = useState<'loading' | 'input_password' | 'submitting' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState<string>('');
+  const [displayName, setDisplayName] = useState<string>('');
+  
+  // Form States
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
+  // 1. Validate token on mount
   useEffect(() => {
     if (!token) {
       setStatus('error');
@@ -22,35 +32,68 @@ function ReactivateContent() {
       return;
     }
 
-    const performReactivation = async () => {
-      setStatus('loading');
+    const verifyToken = async () => {
       try {
-        const response = await fetch('/api/auth/reactivate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ token }),
-        });
-
+        const response = await fetch(`/api/auth/reactivate?token=${token}`);
         const data = await response.json();
 
-        if (response.ok && data.success) {
-          setStatus('success');
-          setMessage(data.message || 'Akun Anda telah berhasil diaktifkan kembali.');
+        if (response.ok && data.valid) {
+          setDisplayName(data.displayName || 'Karyawan Loyalis');
+          setStatus('input_password');
         } else {
           setStatus('error');
-          setMessage(data.error || 'Gagal mengaktifkan kembali akun Anda.');
+          setMessage(data.error || 'Tautan reaktivasi tidak valid atau telah kedaluwarsa.');
         }
       } catch (err) {
-        console.error('Reactivation error:', err);
+        console.error('Token verification error:', err);
         setStatus('error');
-        setMessage('Terjadi kesalahan jaringan atau server saat mencoba mengaktifkan kembali akun Anda.');
+        setMessage('Terjadi kesalahan koneksi saat memverifikasi tautan Anda.');
       }
     };
 
-    performReactivation();
+    verifyToken();
   }, [token]);
+
+  // 2. Handle form submission
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (password.length < 6) {
+      setFormError('Kata sandi harus minimal 6 karakter.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setFormError('Konfirmasi kata sandi tidak cocok.');
+      return;
+    }
+
+    setStatus('submitting');
+    try {
+      const response = await fetch('/api/auth/reactivate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token, password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setStatus('success');
+        setMessage(data.message || 'Akun Anda telah berhasil diaktifkan kembali.');
+      } else {
+        setStatus('input_password');
+        setFormError(data.error || 'Gagal mengaktifkan kembali akun Anda.');
+      }
+    } catch (err) {
+      console.error('Reactivation error:', err);
+      setStatus('input_password');
+      setFormError('Terjadi kesalahan jaringan atau server saat mencoba memproses.');
+    }
+  };
 
   return (
     <div className="relative w-full max-w-md">
@@ -81,7 +124,7 @@ function ReactivateContent() {
         </div>
 
         {/* Dynamic Status Content */}
-        <div className="space-y-6 flex flex-col items-center">
+        <div className="space-y-6">
           {status === 'loading' && (
             <div className="flex flex-col items-center text-center py-6 space-y-4">
               <div className="relative flex items-center justify-center">
@@ -89,9 +132,102 @@ function ReactivateContent() {
                 <Loader2 className="w-10 h-10 text-indigo-600 dark:text-indigo-400 animate-spin relative" />
               </div>
               <div className="space-y-1">
-                <p className="font-semibold text-slate-800 dark:text-slate-200">Sedang Memproses...</p>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Harap tunggu, kami sedang mengaktifkan akun Anda.</p>
+                <p className="font-semibold text-slate-800 dark:text-slate-200">Memverifikasi Tautan...</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Harap tunggu, kami sedang memeriksa keamanan tautan Anda.</p>
               </div>
+            </div>
+          )}
+
+          {(status === 'input_password' || status === 'submitting') && (
+            <div>
+              <div className="mb-6 bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100/50 dark:border-indigo-900/30 rounded-2xl p-4 text-center">
+                <p className="text-xs text-indigo-500 dark:text-indigo-400 uppercase tracking-wider font-bold mb-1">
+                  Halo, Selamat Datang Kembali
+                </p>
+                <p className="font-bold text-slate-800 dark:text-slate-100">
+                  {displayName}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                  Silakan buat kata sandi baru untuk mengaktifkan kembali akun Anda.
+                </p>
+              </div>
+
+              {formError && (
+                <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 dark:bg-red-950/20 border border-red-200/50 dark:border-red-900/30 rounded-xl animate-in fade-in slide-in-from-top-1">
+                  <XCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                  <span className="text-xs text-red-700 dark:text-red-400 font-medium leading-relaxed">
+                    {formError}
+                  </span>
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Password input */}
+                <div className="space-y-1.5">
+                  <label htmlFor="new-password" className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                    Kata Sandi Baru
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    <Input
+                      id="new-password"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="Minimal 6 karakter"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-11 pr-10 h-11 rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20 bg-white dark:bg-slate-950"
+                      disabled={status === 'submitting'}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirm Password input */}
+                <div className="space-y-1.5">
+                  <label htmlFor="confirm-password" className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                    Konfirmasi Kata Sandi Baru
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    <Input
+                      id="confirm-password"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="Ketik ulang kata sandi baru"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="pl-11 pr-10 h-11 rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20 bg-white dark:bg-slate-950"
+                      disabled={status === 'submitting'}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  id="btn-submit-reactivation"
+                  type="submit"
+                  disabled={status === 'submitting'}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 h-11 flex items-center justify-center gap-2 shadow-md hover:shadow-indigo-500/20 active:scale-[0.98] transition-all mt-6"
+                >
+                  {status === 'submitting' ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Memproses...
+                    </>
+                  ) : (
+                    <>
+                      Simpan & Aktifkan Akun
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </Button>
+              </form>
             </div>
           )}
 
