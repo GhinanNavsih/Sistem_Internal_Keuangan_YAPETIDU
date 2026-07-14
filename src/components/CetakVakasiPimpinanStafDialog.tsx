@@ -40,6 +40,7 @@ interface CetakVakasiPimpinanStafDialogProps {
   getLoyalisPresensiEarning: (empId: string) => number;
   getLoyalisPresensiDeduction: (empId: string) => number;
   loyalisPresenceData: any;
+  slipStates?: Record<string, any>;
 }
 
 export default function CetakVakasiPimpinanStafDialog({
@@ -57,6 +58,7 @@ export default function CetakVakasiPimpinanStafDialog({
   getLoyalisPresensiEarning,
   getLoyalisPresensiDeduction,
   loyalisPresenceData,
+  slipStates,
 }: CetakVakasiPimpinanStafDialogProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
 
@@ -73,7 +75,7 @@ export default function CetakVakasiPimpinanStafDialog({
     const activeLoyalis = employees.filter(emp => {
       const raw = emp.raw;
       const isLoyalis = emp.id?.startsWith('Loyalis_') || raw.employeeId?.startsWith('Loyalis_') || !!raw.personal_info;
-      return isLoyalis && emp.isActive && (selectedCategory === 'Semua' || emp.role === selectedCategory);
+      return isLoyalis && (emp.isActive || slipStates?.[emp.id]?.status === 'locked') && (selectedCategory === 'Semua' || emp.role === selectedCategory);
     });
 
     if (activeLoyalis.length === 0) {

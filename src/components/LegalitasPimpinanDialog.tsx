@@ -214,7 +214,7 @@ export default function LegalitasPimpinanDialog({
   const handlePrint = async (format: 'pdf' | 'xlsx') => {
     if (!selectedCategory) return;
 
-    const filteredEmployees = employees.filter(emp => emp.role === selectedCategory && emp.isActive);
+    const filteredEmployees = employees.filter(emp => emp.role === selectedCategory && (emp.isActive || slipStates?.[emp.id]?.status === 'locked'));
     if (filteredEmployees.length === 0) {
       alert(`Tidak ada karyawan aktif untuk kategori "${selectedCategory}"`);
       return;

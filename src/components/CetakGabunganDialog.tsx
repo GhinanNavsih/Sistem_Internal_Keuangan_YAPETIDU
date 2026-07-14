@@ -82,7 +82,7 @@ export default function CetakGabunganDialog({
     const activeLoyalis = employees.filter(emp => {
       const raw = emp.raw;
       const isLoyalis = emp.id?.startsWith('Loyalis_') || raw.employeeId?.startsWith('Loyalis_') || !!raw.personal_info;
-      return isLoyalis && emp.isActive && (selectedCategory === 'Semua' || emp.role === selectedCategory);
+      return isLoyalis && (emp.isActive || slipStates?.[emp.id]?.status === 'locked') && (selectedCategory === 'Semua' || emp.role === selectedCategory);
     });
 
     if (activeLoyalis.length === 0) {

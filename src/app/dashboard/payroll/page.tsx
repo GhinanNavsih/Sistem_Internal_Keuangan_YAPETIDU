@@ -433,7 +433,7 @@ export default function PayrollValidationDashboard() {
       return;
     }
 
-    const activeLoyalis = employees.filter(emp => emp.isActive);
+    const activeLoyalis = employees.filter(emp => emp.isActive || slipStates[emp.id]?.status === 'locked');
     if (activeLoyalis.length === 0) {
       alert("Tidak ada data karyawan aktif.");
       return;
@@ -462,7 +462,7 @@ export default function PayrollValidationDashboard() {
       return;
     }
 
-    const activeLoyalis = employees.filter(emp => emp.isActive);
+    const activeLoyalis = employees.filter(emp => emp.isActive || slipStates[emp.id]?.status === 'locked');
     if (activeLoyalis.length === 0) {
       alert("Tidak ada data karyawan aktif.");
       return;
@@ -554,7 +554,7 @@ export default function PayrollValidationDashboard() {
       return deductions;
     };
 
-    const activeEmployees = employees.filter(e => e.isActive);
+    const activeEmployees = employees.filter(e => e.isActive || slipStates[e.id]?.status === 'locked');
 
     // Collect all unique deduction keys across all active employees
     const customKeysSet = new Set<string>();
@@ -644,7 +644,7 @@ export default function PayrollValidationDashboard() {
   };
 
   const handlePrintPayrollStatement = () => {
-    const activeEmployees = employees.filter(e => e.isActive);
+    const activeEmployees = employees.filter(e => e.isActive || slipStates[e.id]?.status === 'locked');
 
     const roleOrder = payrollCollar === 'loyalis'
       ? [
@@ -756,7 +756,7 @@ export default function PayrollValidationDashboard() {
     let filtered = [...employees];
 
     // Only show active employees
-    filtered = filtered.filter(emp => emp.isActive);
+    filtered = filtered.filter(emp => emp.isActive || slipStates[emp.id]?.status === 'locked');
 
     // Category Filter
     if (categoryFilter !== 'all') {
@@ -2938,6 +2938,7 @@ export default function PayrollValidationDashboard() {
         employees={employees}
         categories={categories}
         periodName={payrollPeriod}
+        slipStates={slipStates}
       />
 
       <CetakVakasiPimpinanStafDialog
@@ -2955,6 +2956,7 @@ export default function PayrollValidationDashboard() {
         getLoyalisPresensiEarning={getLoyalisPresensiEarning}
         getLoyalisPresensiDeduction={getLoyalisPresensiDeduction}
         loyalisPresenceData={loyalisPresenceData}
+        slipStates={slipStates}
       />
 
       <CetakVakasiLainLainDialog
@@ -2964,6 +2966,7 @@ export default function PayrollValidationDashboard() {
         categories={categories}
         periodName={payrollPeriod}
         vakasiTambahanListMap={vakasiTambahanListMap}
+        slipStates={slipStates}
       />
 
       <CetakPotonganGajiDialog

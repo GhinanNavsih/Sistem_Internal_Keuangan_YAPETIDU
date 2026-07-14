@@ -68,7 +68,7 @@ export default function CetakPayrollDialog({
 }: CetakPayrollDialogProps) {
 
   const handleExportXlsx = () => {
-    const activeEmployees = employees.filter(e => e.isActive);
+    const activeEmployees = employees.filter(e => e.isActive || slipStates?.[e.id]?.status === 'locked');
     
     const roleOrder = [
       'REKTORAT',

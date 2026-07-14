@@ -30,6 +30,7 @@ interface CetakTunjanganJabatanDialogProps {
   employees: EmployeeRow[];
   categories: string[]; // Unique department units for Loyalis
   periodName: string; // e.g. "Mei 2026"
+  slipStates?: Record<string, any>;
 }
 
 export default function CetakTunjanganJabatanDialog({
@@ -38,6 +39,7 @@ export default function CetakTunjanganJabatanDialog({
   employees,
   categories,
   periodName,
+  slipStates,
 }: CetakTunjanganJabatanDialogProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
 
@@ -54,7 +56,7 @@ export default function CetakTunjanganJabatanDialog({
     const activeLoyalis = employees.filter(emp => {
       const raw = emp.raw;
       const isLoyalis = emp.id?.startsWith('Loyalis_') || raw.employeeId?.startsWith('Loyalis_') || !!raw.personal_info;
-      return isLoyalis && emp.isActive;
+      return isLoyalis && (emp.isActive || slipStates?.[emp.id]?.status === 'locked');
     });
 
     if (activeLoyalis.length === 0) {

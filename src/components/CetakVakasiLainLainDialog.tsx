@@ -32,6 +32,7 @@ interface CetakVakasiLainLainDialogProps {
   categories: string[]; // Unique department units for Loyalis
   periodName: string; // e.g. "Mei 2026"
   vakasiTambahanListMap: Record<string, { eventName: string; payGiven: number; isEndOfMonth?: boolean }[]>;
+  slipStates?: Record<string, any>;
 }
 
 export default function CetakVakasiLainLainDialog({
@@ -41,6 +42,7 @@ export default function CetakVakasiLainLainDialog({
   categories,
   periodName,
   vakasiTambahanListMap,
+  slipStates,
 }: CetakVakasiLainLainDialogProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
 
@@ -57,7 +59,7 @@ export default function CetakVakasiLainLainDialog({
     const activeLoyalis = employees.filter(emp => {
       const raw = emp.raw;
       const isLoyalis = emp.id?.startsWith('Loyalis_') || raw.employeeId?.startsWith('Loyalis_') || !!raw.personal_info;
-      return isLoyalis && emp.isActive && (selectedCategory === 'Semua' || emp.role === selectedCategory);
+      return isLoyalis && (emp.isActive || slipStates?.[emp.id]?.status === 'locked') && (selectedCategory === 'Semua' || emp.role === selectedCategory);
     });
 
     if (activeLoyalis.length === 0) {

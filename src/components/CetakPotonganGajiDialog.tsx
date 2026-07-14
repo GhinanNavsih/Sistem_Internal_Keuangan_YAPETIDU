@@ -67,7 +67,7 @@ export default function CetakPotonganGajiDialog({
       const raw = emp.raw;
       const isEmpLoyalis = emp.id?.startsWith('Loyalis_') || raw.employeeId?.startsWith('Loyalis_') || !!raw.personal_info;
       const matchesCollar = isLoyalis ? isEmpLoyalis : !isEmpLoyalis;
-      return matchesCollar && emp.isActive && (selectedCategory === 'Semua' || emp.role === selectedCategory);
+      return matchesCollar && (emp.isActive || slipStates?.[emp.id]?.status === 'locked') && (selectedCategory === 'Semua' || emp.role === selectedCategory);
     });
 
     if (activeList.length === 0) {
