@@ -789,9 +789,9 @@ export default function UserManagementPage() {
                               onChange={(e) => setNewTeamNumber(e.target.value)}
                               className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-purple-500"
                             >
-                              <option value="1">Regu 1 (Slot: {(shiftTeams.find(t => t.id === 'team_1')?.ketuaShiftName || 'BASTOMI').toUpperCase()})</option>
-                              <option value="2">Regu 2 (Slot: {(shiftTeams.find(t => t.id === 'team_2')?.ketuaShiftName || 'MUJIONO').toUpperCase()})</option>
-                              <option value="3">Regu 3 (Slot: {(shiftTeams.find(t => t.id === 'team_3')?.ketuaShiftName || 'SUHARIONO').toUpperCase()})</option>
+                              <option value="1">Regu 1 (Slot: {shiftTeams.find(t => t.id === 'team_1')?.ketuaShiftName?.toUpperCase() || 'BELUM DITENTUKAN'})</option>
+                              <option value="2">Regu 2 (Slot: {shiftTeams.find(t => t.id === 'team_2')?.ketuaShiftName?.toUpperCase() || 'BELUM DITENTUKAN'})</option>
+                              <option value="3">Regu 3 (Slot: {shiftTeams.find(t => t.id === 'team_3')?.ketuaShiftName?.toUpperCase() || 'BELUM DITENTUKAN'})</option>
                             </select>
                           </div>
 
@@ -1298,9 +1298,9 @@ export default function UserManagementPage() {
                         onChange={(e) => setEditTeamNumber(e.target.value)}
                         className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-purple-500"
                       >
-                        <option value="1">Regu 1 (Slot: {(shiftTeams.find(t => t.id === 'team_1')?.ketuaShiftName || 'BASTOMI').toUpperCase()})</option>
-                        <option value="2">Regu 2 (Slot: {(shiftTeams.find(t => t.id === 'team_2')?.ketuaShiftName || 'MUJIONO').toUpperCase()})</option>
-                        <option value="3">Regu 3 (Slot: {(shiftTeams.find(t => t.id === 'team_3')?.ketuaShiftName || 'SUHARIONO').toUpperCase()})</option>
+                        <option value="1">Regu 1 (Slot: {shiftTeams.find(t => t.id === 'team_1')?.ketuaShiftName?.toUpperCase() || 'BELUM DITENTUKAN'})</option>
+                        <option value="2">Regu 2 (Slot: {shiftTeams.find(t => t.id === 'team_2')?.ketuaShiftName?.toUpperCase() || 'BELUM DITENTUKAN'})</option>
+                        <option value="3">Regu 3 (Slot: {shiftTeams.find(t => t.id === 'team_3')?.ketuaShiftName?.toUpperCase() || 'BELUM DITENTUKAN'})</option>
                       </select>
                     </div>
 
