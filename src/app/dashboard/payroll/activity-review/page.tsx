@@ -268,6 +268,19 @@ export default function ActivityReviewPage() {
   // ── Period ──
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
+
+  // Enforce no future periods
+  useEffect(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    if (year > currentYear) {
+      setYear(currentYear);
+      setMonth(currentMonth);
+    } else if (year === currentYear && month > currentMonth) {
+      setMonth(currentMonth);
+    }
+  }, [year, month]);
   const periodToken = useMemo(() => `${year}-${String(month).padStart(2, '0')}`, [year, month]);
 
   // ── Data ──
@@ -768,11 +781,21 @@ export default function ActivityReviewPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
-                    {MONTHS_ID.map((m, i) => (
-                      <SelectItem key={i + 1} value={String(i + 1)}>
-                        {m}
-                      </SelectItem>
-                    ))}
+                    {MONTHS_ID.map((m, i) => {
+                      const now = new Date();
+                      const currentYear = now.getFullYear();
+                      const currentMonth = now.getMonth() + 1;
+                      const monthVal = i + 1;
+                      // Hide future months for the current year
+                      if (year === currentYear && monthVal > currentMonth) return null;
+                      // Hide months before July for 2026 (except super_admin)
+                      if (profile?.role !== 'super_admin' && year === 2026 && monthVal < 7) return null;
+                      return (
+                        <SelectItem key={i + 1} value={String(i + 1)}>
+                          {m}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
@@ -780,11 +803,18 @@ export default function ActivityReviewPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
-                    {YEARS.map(y => (
-                      <SelectItem key={y} value={String(y)}>
-                        {y}
-                      </SelectItem>
-                    ))}
+                    {YEARS.map(y => {
+                      const now = new Date();
+                      const currentYear = now.getFullYear();
+                      // Hide future years and years before 2026 (except super_admin)
+                      if (y > currentYear) return null;
+                      if (profile?.role !== 'super_admin' && y < 2026) return null;
+                      return (
+                        <SelectItem key={y} value={String(y)}>
+                          {y}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>

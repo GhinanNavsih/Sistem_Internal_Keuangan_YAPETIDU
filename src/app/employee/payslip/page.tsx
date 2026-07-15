@@ -440,7 +440,8 @@ export default function EmployeePayslipPage() {
         setIsConfirmed(false);
 
         const empId = profile.linkedEmployeeId as string;
-        const isLoyalis = profile?.role !== 'honorer';
+        const roleStr = profile?.role as string;
+        const isLoyalis = roleStr !== 'honorer' && roleStr !== 'ketua_shift_satpam';
 
         // 1. Fetch main Employee document
         const empRef = doc(db, isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar', empId);
@@ -1091,7 +1092,7 @@ export default function EmployeePayslipPage() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {profile.role === 'honorer' && (
+            {(profile.role === 'honorer' || (profile.role as string) === 'ketua_shift_satpam') && (
               <Link href="/employee/activities">
                 <Button
                   variant="outline"

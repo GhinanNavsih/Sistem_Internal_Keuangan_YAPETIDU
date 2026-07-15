@@ -116,8 +116,23 @@ export default function SpjPekaryaPage() {
           return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         };
 
-        const startDateStr = formatDate(prevMonthDate);
-        const endDateStr = formatDate(currentMonthDate);
+        let startDateStr = "";
+        let endDateStr = "";
+
+        if (year > 2026 || (year === 2026 && month > 7)) {
+          // Future: 1st to end of the month
+          startDateStr = `${year}-${String(month).padStart(2, '0')}-01`;
+          const lastDay = new Date(year, month, 0).getDate();
+          endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        } else if (year === 2026 && month === 7) {
+          // Transition: 26 June to 30 July
+          startDateStr = "2026-06-26";
+          endDateStr = "2026-07-31";
+        } else {
+          // Past: 26th of prev month to 25th of current month
+          startDateStr = formatDate(prevMonthDate);
+          endDateStr = formatDate(currentMonthDate);
+        }
         const prevMonthToken = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
         const [arSnap1, arSnap2] = await Promise.all([

@@ -183,22 +183,34 @@ service cloud.firestore {
     match /ActivityReports/{reportId} {
       // Super Admins can read all.
       // SatKer Heads can read if the report is in their permitted job categories.
-      // Honorer employees can read their own reported activities.
+      // Honorer employees and Ketua Shifts can read their own reported activities.
+      // Ketua Shifts can also read reports they submitted for their regu.
       allow read: if isSuperAdmin() || (
         hasProfile() && (
           (getUserData().role == 'satker_head' && resource.data.jobCategory in getPermittedCategories()) ||
-          (getUserData().role == 'honorer' && resource.data.employeeId == getUserData().linkedEmployeeId)
+          ((getUserData().role == 'honorer' || getUserData().role == 'ketua_shift_satpam') && resource.data.employeeId == getUserData().linkedEmployeeId) ||
+          (getUserData().role == 'ketua_shift_satpam' && resource.data.ketuaShiftId == getUserData().linkedEmployeeId)
         )
       );
 
       // Honorer employees can create a report for themselves.
-      // Must start with 'pending' status. Standard honorer must have 0 fee, drivers (SOPIR) can submit with calculated fee.
+      // Ketua Shifts can create reports for guards in their regu (jobCategory 'SATPAM' with valid shift rates).
       allow create: if isSuperAdmin() || (
-        hasProfile() && 
-        getUserData().role == 'honorer' && 
-        request.resource.data.employeeId == getUserData().linkedEmployeeId &&
-        request.resource.data.status == 'pending' &&
-        (request.resource.data.fee == 0 || request.resource.data.jobCategory == 'SOPIR')
+        hasProfile() && (
+          (
+            getUserData().role == 'honorer' && 
+            request.resource.data.employeeId == getUserData().linkedEmployeeId &&
+            request.resource.data.status == 'pending' &&
+            (request.resource.data.fee == 0 || request.resource.data.jobCategory == 'SOPIR')
+          ) || (
+            getUserData().role == 'ketua_shift_satpam' &&
+            request.resource.data.jobCategory == 'SATPAM' &&
+            request.resource.data.ketuaShiftId == getUserData().linkedEmployeeId &&
+            (
+              (request.resource.data.status in ['pending', 'approved'] && request.resource.data.fee in [0, 12500, 25000, 30000, 50000])
+            )
+          )
+        )
       );
 
       // Super Admins can update all.
@@ -297,6 +309,12 @@ service cloud.firestore {
                             ));
       // Only Super Admins can delete settings documents
       allow delete: if isSuperAdmin();
+    }
+
+    // 10. Satpam Shift Teams configuration
+    match /SatpamShiftTeams/{teamId} {
+      allow read: if isSuperAdmin() || hasProfile();
+      allow write: if isSuperAdmin();
     }
   }
 }

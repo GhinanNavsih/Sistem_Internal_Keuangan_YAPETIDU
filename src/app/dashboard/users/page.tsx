@@ -55,14 +55,14 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 import { SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 
 interface ManagedUser {
   uid: string;
   email: string;
   displayName?: string;
-  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin';
+  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin' | 'ketua_shift_satpam';
   permittedCategories: string[];
   linkedEmployeeId?: string;
   createdAt?: string;
@@ -118,7 +118,7 @@ export default function UserManagementPage() {
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
-  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin'>('satker_head');
+  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin' | 'ketua_shift_satpam'>('satker_head');
   const [newPermitted, setNewPermitted] = useState<string[]>([]);
   const [newLinkedEmployeeId, setNewLinkedEmployeeId] = useState('');
   const [newEmployeeSearchText, setNewEmployeeSearchText] = useState('');
@@ -131,11 +131,18 @@ export default function UserManagementPage() {
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [editDisplayName, setEditDisplayName] = useState('');
   const [editEmail, setEditEmail] = useState('');
-  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin'>('satker_head');
+  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin' | 'ketua_shift_satpam'>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
   const [editLinkedEmployeeId, setEditLinkedEmployeeId] = useState('');
   const [editEmployeeSearchText, setEditEmployeeSearchText] = useState('');
   const [showEditEmployeeSuggestions, setShowEditEmployeeSuggestions] = useState(false);
+
+  // Satpam Shift Teams dynamic configuration states
+  const [shiftTeams, setShiftTeams] = useState<any[]>([]);
+  const [newTeamNumber, setNewTeamNumber] = useState<string>('1');
+  const [newTeamMembers, setNewTeamMembers] = useState<string[]>([]);
+  const [editTeamNumber, setEditTeamNumber] = useState<string>('1');
+  const [editTeamMembers, setEditTeamMembers] = useState<string[]>([]);
 
   // Delete User modal state
   const [deletingUser, setDeletingUser] = useState<ManagedUser | null>(null);
@@ -215,6 +222,14 @@ export default function UserManagementPage() {
 
       const data = await res.json();
       setUsers(data.users || []);
+
+      // 3. Fetch Satpam shift teams
+      const shiftTeamsSnap = await getDocs(collection(db, 'SatpamShiftTeams'));
+      const teamsList = shiftTeamsSnap.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      }));
+      setShiftTeams(teamsList);
     } catch (err: any) {
       console.error('Error fetching data:', err);
       setErrorMsg(err.message || 'Terjadi kesalahan saat memuat data.');
@@ -297,14 +312,24 @@ export default function UserManagementPage() {
           password: newPassword,
           displayName: newDisplayName,
           role: newRole,
-          permittedCategories: (newRole === 'honorer' || newRole === 'loyalis') ? (newLinkedEmployeeId ? [allEmployees.find(e => e.id === newLinkedEmployeeId)?.detail || ''] : []) : newPermitted,
-          linkedEmployeeId: (newRole === 'honorer' || newRole === 'loyalis') ? newLinkedEmployeeId : undefined,
+          permittedCategories: (newRole === 'honorer' || newRole === 'loyalis' || newRole === 'ketua_shift_satpam') ? (newLinkedEmployeeId ? [allEmployees.find(e => e.id === newLinkedEmployeeId)?.detail || ''] : []) : newPermitted,
+          linkedEmployeeId: (newRole === 'honorer' || newRole === 'loyalis' || newRole === 'ketua_shift_satpam') ? newLinkedEmployeeId : undefined,
         }),
       });
 
       if (!res.ok) {
         const errData = await res.json();
         throw new Error(errData.error || 'Gagal membuat pengguna baru.');
+      }
+
+      if (newRole === 'ketua_shift_satpam') {
+        const selectedEmp = allEmployees.find(e => e.id === newLinkedEmployeeId);
+        await setDoc(doc(db, 'SatpamShiftTeams', `team_${newTeamNumber}`), {
+          ketuaShiftId: newLinkedEmployeeId,
+          ketuaShiftName: selectedEmp ? selectedEmp.name : '',
+          memberEmployeeIds: newTeamMembers,
+          updatedAt: new Date().toISOString(),
+        });
       }
 
       setSuccessMsg(`Akun ${newEmail} berhasil dibuat!`);
@@ -316,6 +341,8 @@ export default function UserManagementPage() {
       setNewPermitted([]);
       setNewLinkedEmployeeId('');
       setNewEmployeeSearchText('');
+      setNewTeamNumber('1');
+      setNewTeamMembers([]);
       setShowAddForm(false);
 
       // Refresh list
@@ -345,6 +372,17 @@ export default function UserManagementPage() {
     } else {
       setEditEmployeeSearchText('');
     }
+
+    // Set Satpam shift team details if applicable
+    const matchedTeam = shiftTeams.find(team => team.ketuaShiftId === u.linkedEmployeeId);
+    if (matchedTeam) {
+      const num = matchedTeam.id.split('_')[1] || '1';
+      setEditTeamNumber(num);
+      setEditTeamMembers(matchedTeam.memberEmployeeIds || []);
+    } else {
+      setEditTeamNumber('1');
+      setEditTeamMembers([]);
+    }
   };
 
   // Submit Edit changes
@@ -367,8 +405,8 @@ export default function UserManagementPage() {
           email: editEmail,
           displayName: editDisplayName,
           role: editRole,
-          permittedCategories: (editRole === 'honorer' || editRole === 'loyalis') ? (editLinkedEmployeeId ? [allEmployees.find(e => e.id === editLinkedEmployeeId)?.detail || ''] : []) : editPermitted,
-          linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis') ? editLinkedEmployeeId : undefined,
+          permittedCategories: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? (editLinkedEmployeeId ? [allEmployees.find(e => e.id === editLinkedEmployeeId)?.detail || ''] : []) : editPermitted,
+          linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? editLinkedEmployeeId : undefined,
         }),
       });
 
@@ -377,7 +415,17 @@ export default function UserManagementPage() {
         throw new Error(errData.error || 'Gagal memperbarui pengguna.');
       }
 
-      const updatedCategories = (editRole === 'honorer' || editRole === 'loyalis')
+      if (editRole === 'ketua_shift_satpam') {
+        const selectedEmp = allEmployees.find(e => e.id === editLinkedEmployeeId);
+        await setDoc(doc(db, 'SatpamShiftTeams', `team_${editTeamNumber}`), {
+          ketuaShiftId: editLinkedEmployeeId,
+          ketuaShiftName: selectedEmp ? selectedEmp.name : '',
+          memberEmployeeIds: editTeamMembers,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      const updatedCategories = (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam')
         ? (editLinkedEmployeeId ? [allEmployees.find(e => e.id === editLinkedEmployeeId)?.detail || ''] : [])
         : editPermitted;
 
@@ -391,7 +439,7 @@ export default function UserManagementPage() {
                 email: editEmail,
                 role: editRole,
                 permittedCategories: updatedCategories,
-                linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis') ? editLinkedEmployeeId : undefined,
+                linkedEmployeeId: (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam') ? editLinkedEmployeeId : undefined,
               }
             : u
         )
@@ -651,6 +699,7 @@ export default function UserManagementPage() {
                         <option value="honorer">Karyawan Honorer (Lapor Kegiatan)</option>
                         <option value="loyalis">Karyawan Loyalis (Lihat Slip Gaji)</option>
                         <option value="loyalis_presence_admin">Penanggung Jawab Presensi Loyalis</option>
+                        <option value="ketua_shift_satpam">Ketua Shift SATPAM (Lapor Shift Regu)</option>
                       </select>
                       
                       {/* Description Helper based on selected role */}
@@ -662,6 +711,7 @@ export default function UserManagementPage() {
                         {newRole === 'honorer' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk karyawan kebersihan yang hanya dapat mengakses halaman lapor kegiatan harian. Harus dihubungkan ke data pegawai.</span>}
                         {newRole === 'loyalis' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk karyawan Loyalis (white collar) yang hanya dapat mengakses halaman slip gaji. Harus dihubungkan ke data pegawai.</span>}
                         {newRole === 'loyalis_presence_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Memiliki wewenang khusus HANYA untuk menghitung dan mengelola kehadiran Loyalis bulanan via raw daily logs. Dilarang membuka menu dashboard lain.</span>}
+                        {newRole === 'ketua_shift_satpam' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk Ketua Shift SATPAM. Memiliki wewenang untuk melaporkan kegiatan harian seluruh anggota shift regunya.</span>}
                       </div>
                     </div>
                   </div>
@@ -702,6 +752,83 @@ export default function UserManagementPage() {
                       ) : newRole === 'loyalis_presence_admin' ? (
                         <div className="p-4 rounded-2xl bg-pink-50/50 border border-pink-100 text-pink-800 text-xs leading-relaxed font-medium">
                           Penanggung Jawab Presensi Loyalis memiliki akses khusus ke halaman kalkulator presensi loyalis via raw daily logs. Checkbox dinonaktifkan.
+                        </div>
+                      ) : newRole === 'ketua_shift_satpam' ? (
+                        <div className="space-y-4">
+                          <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-100 text-purple-800 text-xs leading-relaxed font-medium">
+                            Pilih Ketua Shift dan atur regu anggotanya (maksimal 9 anggota).
+                          </div>
+                          
+                          {/* 1. Pilih Ketua Shift */}
+                          <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-slate-500">Pilih Ketua Shift</Label>
+                            <select
+                              value={newLinkedEmployeeId}
+                              onChange={(e) => {
+                                setNewLinkedEmployeeId(e.target.value);
+                                setNewTeamMembers(prev => prev.filter(id => id !== e.target.value));
+                              }}
+                              className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                            >
+                              <option value="">-- Pilih Ketua Shift --</option>
+                              {allEmployees
+                                .filter(emp => emp.type === 'Pekarya' && emp.detail === 'SATPAM')
+                                .map(emp => (
+                                  <option key={emp.id} value={emp.id}>
+                                    {emp.name}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+
+                          {/* 2. Pilih Nomor Regu */}
+                          <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-slate-500">Nomor Regu (Roster Team Slot)</Label>
+                            <select
+                              value={newTeamNumber}
+                              onChange={(e) => setNewTeamNumber(e.target.value)}
+                              className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-purple-500"
+                            >
+                              <option value="1">Regu 1 (Slot: BASTOMI)</option>
+                              <option value="2">Regu 2 (Slot: MUJIONO)</option>
+                              <option value="3">Regu 3 (Slot: SUHARIONO)</option>
+                            </select>
+                          </div>
+
+                          {/* 3. Pilih Anggota Regu */}
+                          <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-slate-500 flex justify-between">
+                              <span>Pilih Anggota Regu</span>
+                              <span className="text-purple-600 font-bold">Terpilih: {newTeamMembers.length}</span>
+                            </Label>
+                            
+                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 max-h-[220px] overflow-y-auto space-y-2.5">
+                              {allEmployees
+                                .filter(emp => emp.type === 'Pekarya' && emp.detail === 'SATPAM' && emp.id !== newLinkedEmployeeId)
+                                .map(emp => {
+                                  const isChecked = newTeamMembers.includes(emp.id);
+                                  return (
+                                    <div key={emp.id} className="flex items-center space-x-2.5">
+                                      <Checkbox
+                                        id={`new-member-${emp.id}`}
+                                        checked={isChecked}
+                                        onCheckedChange={() => {
+                                          setNewTeamMembers(prev => 
+                                            prev.includes(emp.id)
+                                              ? prev.filter(id => id !== emp.id)
+                                              : [...prev, emp.id]
+                                          );
+                                        }}
+                                        className="rounded border-slate-300 data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
+                                      />
+                                      <Label htmlFor={`new-member-${emp.id}`} className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                                        {emp.name}
+                                      </Label>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          </div>
                         </div>
                       ) : newRole === 'honorer' ? (
                         <div className="space-y-3">
@@ -923,6 +1050,10 @@ export default function UserManagementPage() {
                               <Badge variant="secondary" className="bg-pink-50 text-pink-700 hover:bg-pink-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 PJ Presensi Loyalis
                               </Badge>
+                            ) : u.role === 'ketua_shift_satpam' ? (
+                              <Badge variant="secondary" className="bg-purple-50 text-purple-700 hover:bg-purple-100 font-bold px-2.5 py-0.5 rounded-full border-none">
+                                Ketua Shift SATPAM
+                              </Badge>
                             ) : (
                               <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold px-2.5 py-0.5 rounded-full border-none">
                                 Kepala SatKer Pekarya
@@ -951,6 +1082,17 @@ export default function UserManagementPage() {
                                   ? allEmployees.find(e => e.id === u.linkedEmployeeId)?.name || u.linkedEmployeeId
                                   : <span className="text-rose-500 italic">Belum Terhubung</span>
                                 }
+                              </span>
+                            ) : u.role === 'ketua_shift_satpam' ? (
+                              <span className="text-xs text-purple-600 font-bold">
+                                {u.linkedEmployeeId
+                                  ? allEmployees.find(e => e.id === u.linkedEmployeeId)?.name || u.linkedEmployeeId
+                                  : <span className="text-rose-500 italic">Belum Terhubung</span>
+                                }
+                                {(() => {
+                                  const t = shiftTeams.find(team => team.ketuaShiftId === u.linkedEmployeeId);
+                                  return t ? ` (Regu ${t.id.split('_')[1]})` : '';
+                                })()}
                               </span>
                             ) : (
                               <div className="flex flex-wrap gap-1 max-w-[320px]">
@@ -1096,6 +1238,7 @@ export default function UserManagementPage() {
                     <option value="honorer">Karyawan Honorer (Lapor Kegiatan)</option>
                     <option value="loyalis">Karyawan Loyalis (Lihat Slip Gaji)</option>
                     <option value="loyalis_presence_admin">Penanggung Jawab Presensi Loyalis</option>
+                    <option value="ketua_shift_satpam">Ketua Shift SATPAM (Lapor Shift Regu)</option>
                   </select>
                 </div>
               </div>
@@ -1118,6 +1261,83 @@ export default function UserManagementPage() {
                 ) : editRole === 'loyalis_presence_admin' ? (
                   <div className="p-3 rounded-xl bg-pink-50 border border-pink-100 text-pink-800 text-[11px] font-medium leading-relaxed mt-1.5">
                     Penanggung Jawab Presensi Loyalis memiliki akses khusus ke halaman kalkulator presensi loyalis via raw daily logs. Pilihan dinonaktifkan.
+                  </div>
+                ) : editRole === 'ketua_shift_satpam' ? (
+                  <div className="space-y-4 mt-1.5">
+                    <div className="p-3 rounded-xl bg-purple-50 border border-purple-100 text-purple-800 text-[11px] font-medium leading-relaxed">
+                      Pilih Ketua Shift dan atur regu anggotanya (maksimal 9 anggota).
+                    </div>
+                    
+                    {/* 1. Pilih Ketua Shift */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-slate-500">Pilih Ketua Shift</Label>
+                      <select
+                        value={editLinkedEmployeeId}
+                        onChange={(e) => {
+                          setEditLinkedEmployeeId(e.target.value);
+                          setEditTeamMembers(prev => prev.filter(id => id !== e.target.value));
+                        }}
+                        className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                      >
+                        <option value="">-- Pilih Ketua Shift --</option>
+                        {allEmployees
+                          .filter(emp => emp.type === 'Pekarya' && emp.detail === 'SATPAM')
+                          .map(emp => (
+                            <option key={emp.id} value={emp.id}>
+                              {emp.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    {/* 2. Pilih Nomor Regu */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-slate-500">Nomor Regu (Roster Team Slot)</Label>
+                      <select
+                        value={editTeamNumber}
+                        onChange={(e) => setEditTeamNumber(e.target.value)}
+                        className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-purple-500"
+                      >
+                        <option value="1">Regu 1 (Slot: BASTOMI)</option>
+                        <option value="2">Regu 2 (Slot: MUJIONO)</option>
+                        <option value="3">Regu 3 (Slot: SUHARIONO)</option>
+                      </select>
+                    </div>
+
+                    {/* 3. Pilih Anggota Regu */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-slate-500 flex justify-between">
+                        <span>Pilih Anggota Regu</span>
+                        <span className="text-purple-600 font-bold">Terpilih: {editTeamMembers.length}</span>
+                      </Label>
+                      
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 max-h-[180px] overflow-y-auto space-y-2">
+                        {allEmployees
+                          .filter(emp => emp.type === 'Pekarya' && emp.detail === 'SATPAM' && emp.id !== editLinkedEmployeeId)
+                          .map(emp => {
+                            const isChecked = editTeamMembers.includes(emp.id);
+                            return (
+                              <div key={emp.id} className="flex items-center space-x-2.5">
+                                <Checkbox
+                                  id={`edit-member-${emp.id}`}
+                                  checked={isChecked}
+                                  onCheckedChange={() => {
+                                    setEditTeamMembers(prev => 
+                                      prev.includes(emp.id)
+                                        ? prev.filter(id => id !== emp.id)
+                                        : [...prev, emp.id]
+                                    );
+                                  }}
+                                  className="rounded border-slate-300 data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
+                                />
+                                <Label htmlFor={`edit-member-${emp.id}`} className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                                  {emp.name}
+                                </Label>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
                   </div>
                 ) : editRole === 'honorer' ? (
                   <div className="space-y-3 mt-1.5">

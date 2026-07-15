@@ -61,7 +61,9 @@ import {
   serverTimestamp,
   Timestamp,
   onSnapshot,
+  writeBatch,
 } from 'firebase/firestore';
+import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import {
   Select,
@@ -69,6 +71,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectGroup,
+  SelectLabel,
+  SelectSeparator,
 } from '@/components/ui/select';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -100,6 +105,12 @@ interface ActivityReport {
   points?: string[];
   distanceKm?: number;
   durationHours?: number;
+  // SATPAM specific fields
+  shiftName?: 'Pagi' | 'Sore' | 'Malam' | string;
+  shiftType?: 'Harian' | 'Jumat & Libur' | 'Lembur Sendiri' | 'Lembur Cover' | 'Off-Duty' | string;
+  postName?: string;
+  ketuaShiftId?: string;
+  ketuaShiftName?: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -289,6 +300,18 @@ function getTodayISO(): string {
 
 const YEARS = Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i);
 
+const POSTS_CONFIG = [
+  { id: 'Pos 1', name: 'Pos Graha' },
+  { id: 'Pos 2', name: 'Pos FIK' },
+  { id: 'Pos 3', name: 'Pos Stasiun' },
+  { id: 'Pos 4', name: 'Pos IC' },
+  { id: 'Pos 5', name: 'Pos Plaza' },
+  { id: 'Pos 6', name: 'Pos Gor' },
+  { id: 'Pos 7', name: 'Pos Saintek' },
+  { id: 'Pos 8', name: 'Pos Masjid Induk' },
+  { id: 'Pos 9', name: 'Pos Hurun-inn' },
+];
+
 export default function EmployeeActivitiesPage() {
   const { profile, logout, user } = useAuth();
   const fuelFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -297,6 +320,42 @@ export default function EmployeeActivitiesPage() {
   const userJobCategory = profile?.permittedCategories?.[0] || '';
   const isKebersihan = userJobCategory === 'KEBERSIHAN' || userJobCategory === 'KEBERSIHAN_IC';
   const isSopir = userJobCategory === 'SOPIR';
+  const isKetuaShiftSatpam = (profile?.role as string) === 'ketua_shift_satpam';
+  const isRegularSatpam = profile?.permittedCategories?.includes('SATPAM') && !isKetuaShiftSatpam;
+
+  // ── Satpam Shift Teams States ──
+  const [myShiftTeam, setMyShiftTeam] = useState<any | null>(null);
+  const [allSatpamEmployees, setAllSatpamEmployees] = useState<any[]>([]);
+  const [loadingSatpamConfig, setLoadingSatpamConfig] = useState(false);
+  const [satpamReportDate, setSatpamReportDate] = useState<string>(getTodayISO());
+  const [satpamSubmitting, setSatpamSubmitting] = useState(false);
+  const [postAssignments, setPostAssignments] = useState<Record<string, { employeeId: string; shiftType: string }>>({
+    'Pos 1': { employeeId: '', shiftType: 'Harian' },
+    'Pos 2': { employeeId: '', shiftType: 'Harian' },
+    'Pos 3': { employeeId: '', shiftType: 'Harian' },
+    'Pos 4': { employeeId: '', shiftType: 'Harian' },
+    'Pos 5': { employeeId: '', shiftType: 'Harian' },
+    'Pos 6': { employeeId: '', shiftType: 'Harian' },
+    'Pos 7': { employeeId: '', shiftType: 'Harian' },
+    'Pos 8': { employeeId: '', shiftType: 'Harian' },
+    'Pos 9': { employeeId: '', shiftType: 'Harian' },
+  });
+  const [extraPostName, setExtraPostName] = useState('');
+  const [extraEmployeeId, setExtraEmployeeId] = useState('');
+  const [extraShiftType, setExtraShiftType] = useState('Lembur Sendiri');
+
+  const allMainPostsAssigned = useMemo(() => {
+    return Object.values(postAssignments).every(a => a.employeeId !== '');
+  }, [postAssignments]);
+
+  useEffect(() => {
+    if (!allMainPostsAssigned) {
+      setExtraEmployeeId('');
+      setExtraPostName('');
+      setExtraShiftType('Lembur Sendiri');
+    }
+  }, [allMainPostsAssigned]);
+
 
   // ── Period ──
   const [month, setMonth] = useState(new Date().getMonth() + 1);
@@ -352,6 +411,70 @@ export default function EmployeeActivitiesPage() {
 
   // ── Expandable activity cards ──
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Enforce July 2026 to current month/year limit for Ketua Shift Satpam
+  useEffect(() => {
+    if (isKetuaShiftSatpam) {
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+
+      if (year < 2026) {
+        setYear(2026);
+        setMonth(7);
+      } else if (year > currentYear) {
+        setYear(currentYear);
+        setMonth(currentMonth);
+      } else if (year === 2026 && month < 7) {
+        setMonth(7);
+      } else if (year === currentYear && month > currentMonth) {
+        setMonth(currentMonth);
+      }
+    }
+  }, [isKetuaShiftSatpam, year, month]);
+
+  // ── Load Satpam configuration (my shift team and all active Satpam) ──
+  useEffect(() => {
+    if (!isKetuaShiftSatpam || !profile?.linkedEmployeeId) return;
+
+    const loadSatpamConfig = async () => {
+      setLoadingSatpamConfig(true);
+      try {
+        // 1. Fetch shift team where I am the Ketua Shift
+        const teamQuery = query(
+          collection(db, 'SatpamShiftTeams'),
+          where('ketuaShiftId', '==', profile.linkedEmployeeId)
+        );
+        const teamSnap = await getDocs(teamQuery);
+        if (!teamSnap.empty) {
+          const teamDoc = teamSnap.docs[0];
+          setMyShiftTeam({
+            id: teamDoc.id,
+            ...teamDoc.data()
+          });
+        }
+
+        // 2. Fetch all active Satpam employees
+        const satpamQuery = query(
+          collection(db, 'Employees_BlueCollar'),
+          where('employment.status', '==', 'active'),
+          where('employment.jobCategory', '==', 'SATPAM')
+        );
+        const satpamSnap = await getDocs(satpamQuery);
+        const list = satpamSnap.docs.map(d => ({
+          id: d.id,
+          name: d.data().name || '',
+        })).sort((a, b) => a.name.localeCompare(b.name));
+        setAllSatpamEmployees(list);
+      } catch (err) {
+        console.error('Error loading Satpam shift configuration:', err);
+      } finally {
+        setLoadingSatpamConfig(false);
+      }
+    };
+
+    loadSatpamConfig();
+  }, [isKetuaShiftSatpam, profile?.linkedEmployeeId]);
 
   useEffect(() => {
     if (message) {
@@ -562,7 +685,7 @@ export default function EmployeeActivitiesPage() {
       });
       return;
     }
-    
+
     setIsClaiming(true);
     // Purposeful delay to show the loading animation clearly to the user
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -587,7 +710,7 @@ export default function EmployeeActivitiesPage() {
     if (!confirm('Apakah Anda yakin ingin membatalkan klaim perjalanan ini? Perjalanan akan tersedia kembali untuk sopir lain.')) {
       return;
     }
-    
+
     setIsCancelling(true);
     // Purposeful delay to show the loading animation clearly to the user
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -752,6 +875,243 @@ export default function EmployeeActivitiesPage() {
     }
   };
 
+  // ── Satpam Shift Team Logging Computations & Handlers ──
+  const groupEmployeeIds = useMemo(() => {
+    if (!myShiftTeam) return [];
+    return [myShiftTeam.ketuaShiftId, ...(myShiftTeam.memberEmployeeIds || [])];
+  }, [myShiftTeam]);
+
+  const groupEmployees = useMemo(() => {
+    return allSatpamEmployees.filter(emp => groupEmployeeIds.includes(emp.id));
+  }, [allSatpamEmployees, groupEmployeeIds]);
+
+  const externalEmployees = useMemo(() => {
+    return allSatpamEmployees.filter(emp => !groupEmployeeIds.includes(emp.id));
+  }, [allSatpamEmployees, groupEmployeeIds]);
+
+  const teamNumber = useMemo(() => {
+    if (!myShiftTeam) return 1;
+    return parseInt(myShiftTeam.id.split('_')[1], 10) || 1;
+  }, [myShiftTeam]);
+
+  const activeShift = useMemo(() => {
+    if (!isKetuaShiftSatpam) return 'Pagi';
+    return getSatpamShiftForTeam(teamNumber, satpamReportDate);
+  }, [isKetuaShiftSatpam, teamNumber, satpamReportDate]);
+
+  const assignedEmployeeIds = useMemo(() => {
+    const list = Object.values(postAssignments).map(a => a.employeeId).filter(Boolean);
+    if (extraEmployeeId) {
+      list.push(extraEmployeeId);
+    }
+    return list;
+  }, [postAssignments, extraEmployeeId]);
+
+  const offDutyMembers = useMemo(() => {
+    return groupEmployees.filter(emp => !assignedEmployeeIds.includes(emp.id));
+  }, [groupEmployees, assignedEmployeeIds]);
+
+  const isFriday = (dateStr: string) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    return d.getDay() === 5; // Friday is 5
+  };
+
+  const handleSelectGuard = (postId: string, employeeId: string) => {
+    setPostAssignments(prev => {
+      const isExternal = !groupEmployeeIds.includes(employeeId) && employeeId !== '';
+      const defaultType = isExternal
+        ? 'Lembur Cover'
+        : (isFriday(satpamReportDate) ? 'Jumat & Libur' : 'Harian');
+
+      return {
+        ...prev,
+        [postId]: {
+          employeeId,
+          shiftType: defaultType
+        }
+      };
+    });
+  };
+
+  const handleSelectShiftType = (postId: string, type: string) => {
+    setPostAssignments(prev => ({
+      ...prev,
+      [postId]: {
+        ...prev[postId],
+        shiftType: type
+      }
+    }));
+  };
+
+  const handleSubmitSatpamShift = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile?.linkedEmployeeId || satpamSubmitting) return;
+
+    // Validate that all 9 posts are assigned
+    const emptyPostEntry = Object.entries(postAssignments).find(([, assignment]) => !assignment.employeeId);
+    if (emptyPostEntry) {
+      const [postId] = emptyPostEntry;
+      const postName = POSTS_CONFIG.find(p => p.id === postId)?.name || '';
+      setMessage({
+        type: 'error',
+        text: `${postId}${postName ? ` (${postName})` : ''} masih kosong. Silakan pilih petugas.`
+      });
+      return;
+    }
+
+    if (extraEmployeeId && !extraPostName.trim()) {
+      setMessage({ type: 'error', text: 'Nama pos tambahan harus diisi jika petugas tambahan dipilih.' });
+      return;
+    }
+
+    setSatpamSubmitting(true);
+    try {
+      const batch = writeBatch(db);
+      const activityPeriod = satpamReportDate.substring(0, 7); // "YYYY-MM"
+      const dateSanitized = satpamReportDate.replace(/-/g, '');
+
+      // Shift Times Config based on active shift
+      let timeStart = '08:00';
+      let timeEnd = '14:00';
+      if (activeShift === 'Sore') {
+        timeStart = '14:00';
+        timeEnd = '22:00';
+      } else if (activeShift === 'Malam') {
+        timeStart = '22:00';
+        timeEnd = '08:00';
+      }
+
+      // Rates Map
+      const RATES_MAP: Record<string, number> = {
+        'Harian': 12500,
+        'Jumat & Libur': 25000,
+        'Lembur Sendiri': 30000,
+        'Lembur Cover': 50000,
+        'Off-Duty': 0,
+      };
+
+      // 1. Submit reports for the 9 assigned posts
+      for (const [postId, assignment] of Object.entries(postAssignments)) {
+        const emp = allSatpamEmployees.find(e => e.id === assignment.employeeId);
+        const empName = emp ? emp.name : 'Unknown';
+
+        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const docId = `ACT-${assignment.employeeId}-${dateSanitized}-${randomSuffix}`;
+
+        const postName = `${postId}: ${POSTS_CONFIG.find(p => p.id === postId)?.name || ''}`;
+        const fee = RATES_MAP[assignment.shiftType] || 0;
+
+        const docRef = doc(db, 'ActivityReports', docId);
+        batch.set(docRef, {
+          employeeId: assignment.employeeId,
+          employeeName: empName,
+          jobCategory: 'SATPAM',
+          period: activityPeriod,
+          activityName: `Pengamanan di ${postName}`,
+          activityType: 'Lainnya',
+          activityDate: satpamReportDate,
+          timeStart,
+          timeEnd,
+          status: 'approved', // Automatically approved
+          fee,
+          shiftType: assignment.shiftType,
+          postName,
+          shiftName: activeShift,
+          ketuaShiftId: profile.linkedEmployeeId,
+          ketuaShiftName: profile.displayName || '',
+          submittedAt: serverTimestamp(),
+        });
+      }
+
+      // Add extra post if selected
+      if (extraEmployeeId && extraPostName) {
+        const emp = allSatpamEmployees.find(e => e.id === extraEmployeeId);
+        const empName = emp ? emp.name : 'Unknown';
+
+        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const docId = `ACT-${extraEmployeeId}-${dateSanitized}-${randomSuffix}`;
+
+        const targetPost = POSTS_CONFIG.find(p => p.id === extraPostName || p.name === extraPostName);
+        const postName = `Tambahan: ${targetPost ? targetPost.name : extraPostName}`;
+        const fee = RATES_MAP[extraShiftType] || 0;
+
+        const docRef = doc(db, 'ActivityReports', docId);
+        batch.set(docRef, {
+          employeeId: extraEmployeeId,
+          employeeName: empName,
+          jobCategory: 'SATPAM',
+          period: activityPeriod,
+          activityName: `Pengamanan di ${postName}`,
+          activityType: 'Lainnya',
+          activityDate: satpamReportDate,
+          timeStart,
+          timeEnd,
+          status: 'approved',
+          fee,
+          shiftType: extraShiftType,
+          postName,
+          shiftName: activeShift,
+          ketuaShiftId: profile.linkedEmployeeId,
+          ketuaShiftName: profile.displayName || '',
+          submittedAt: serverTimestamp(),
+        });
+      }
+
+      // 2. Submit reports for the off-duty members
+      for (const offDutyEmp of offDutyMembers) {
+        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const docId = `ACT-${offDutyEmp.id}-${dateSanitized}-${randomSuffix}`;
+
+        const docRef = doc(db, 'ActivityReports', docId);
+        batch.set(docRef, {
+          employeeId: offDutyEmp.id,
+          employeeName: offDutyEmp.name,
+          jobCategory: 'SATPAM',
+          period: activityPeriod,
+          activityName: 'Off-Duty (Rest Day)',
+          activityType: 'Lainnya',
+          activityDate: satpamReportDate,
+          timeStart: '',
+          timeEnd: '',
+          status: 'approved', // Off-duty reports with 0 fee auto-approve
+          fee: 0,
+          shiftType: 'Off-Duty',
+          postName: 'Off-Duty',
+          shiftName: activeShift,
+          ketuaShiftId: profile.linkedEmployeeId,
+          ketuaShiftName: profile.displayName || '',
+          submittedAt: serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+      setMessage({ type: 'success', text: `Berhasil mengirim laporan shift ${activeShift} tanggal ${satpamReportDate}.` });
+
+      // Reset post selection
+      setPostAssignments({
+        'Pos 1': { employeeId: '', shiftType: 'Harian' },
+        'Pos 2': { employeeId: '', shiftType: 'Harian' },
+        'Pos 3': { employeeId: '', shiftType: 'Harian' },
+        'Pos 4': { employeeId: '', shiftType: 'Harian' },
+        'Pos 5': { employeeId: '', shiftType: 'Harian' },
+        'Pos 6': { employeeId: '', shiftType: 'Harian' },
+        'Pos 7': { employeeId: '', shiftType: 'Harian' },
+        'Pos 8': { employeeId: '', shiftType: 'Harian' },
+        'Pos 9': { employeeId: '', shiftType: 'Harian' },
+      });
+      setExtraEmployeeId('');
+      setExtraPostName('');
+      setExtraShiftType('Lembur Sendiri');
+      fetchActivities();
+    } catch (err) {
+      console.error('Error submitting Satpam shift reports:', err);
+      setMessage({ type: 'error', text: 'Gagal mengirim laporan shift. Silakan coba lagi.' });
+    } finally {
+      setSatpamSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.linkedEmployeeId || isSubmittingRef.current) return;
@@ -907,6 +1267,26 @@ export default function EmployeeActivitiesPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800">
+      {/* ── Notifications ────────────────────────────────────────────── */}
+      {message && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-xs sm:text-sm font-semibold shadow-xl border max-w-[90%] w-[420px] animate-in fade-in slide-in-from-top-4 duration-300 ${message.type === 'success'
+          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+          : 'bg-rose-50 text-rose-800 border-rose-200'
+          }`}>
+          {message.type === 'success'
+            ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          }
+          <span className="flex-1 leading-snug">{message.text}</span>
+          <button
+            type="button"
+            onClick={() => setMessage(null)}
+            className="text-slate-400 hover:text-slate-600 font-black ml-2 text-xs cursor-pointer focus:outline-none"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {/* Subtle decorative blobs */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
@@ -950,19 +1330,7 @@ export default function EmployeeActivitiesPage() {
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 relative z-10">
 
-        {/* ── Notifications ────────────────────────────────────────────── */}
-        {message && (
-          <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl text-sm font-semibold shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 ${message.type === 'success'
-            ? 'bg-emerald-50 text-emerald-800 border border-emerald-100'
-            : 'bg-rose-50 text-rose-800 border border-rose-100'
-            }`}>
-            {message.type === 'success'
-              ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            }
-            <span>{message.text}</span>
-          </div>
-        )}
+
 
         {/* ── Period Selector ──────────────────────────────────────────── */}
         <Card className="bg-white rounded-2xl shadow-sm border-none">
@@ -975,11 +1343,25 @@ export default function EmployeeActivitiesPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
-                    {MONTHS_ID.map((m, i) => (
-                      <SelectItem key={i + 1} value={String(i + 1)}>
-                        {m}
-                      </SelectItem>
-                    ))}
+                    {MONTHS_ID.map((m, i) => {
+                      const now = new Date();
+                      const currentYear = now.getFullYear();
+                      const currentMonth = now.getMonth() + 1;
+                      const isHidden = isKetuaShiftSatpam && (
+                        (year === 2026 && (i + 1) < 7) ||
+                        (year === currentYear && (i + 1) > currentMonth) ||
+                        (year > currentYear)
+                      );
+                      if (isHidden) return null;
+                      return (
+                        <SelectItem
+                          key={i + 1}
+                          value={String(i + 1)}
+                        >
+                          {m}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
@@ -987,17 +1369,302 @@ export default function EmployeeActivitiesPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
-                    {YEARS.map(y => (
-                      <SelectItem key={y} value={String(y)}>
-                        {y}
-                      </SelectItem>
-                    ))}
+                    {YEARS.map(y => {
+                      const now = new Date();
+                      const currentYear = now.getFullYear();
+                      const isHidden = isKetuaShiftSatpam && (
+                        y < 2026 || y > currentYear
+                      );
+                      if (isHidden) return null;
+                      return (
+                        <SelectItem
+                          key={y}
+                          value={String(y)}
+                        >
+                          {y}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* ── Satpam Shift Team Daily Logging Form (Ketua Shift only) ── */}
+        {isKetuaShiftSatpam && (
+          <Card className="bg-white rounded-2xl shadow-sm border-none overflow-hidden py-0">
+            <CardHeader className="bg-gradient-to-r from-purple-600 to-indigo-600 p-5 text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur-md">
+                  <ClipboardList className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-bold text-white">Lapor Roster Shift Regu</CardTitle>
+                  <CardDescription className="text-purple-100 text-xs mt-0.5">
+                    {myShiftTeam ? `Regu ${myShiftTeam.id.split('_')[1]} (Ketua: ${myShiftTeam.ketuaShiftName})` : 'Mengambil data regu...'}
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-5 space-y-4">
+              {loadingSatpamConfig ? (
+                <div className="py-8 flex flex-col items-center justify-center text-slate-400">
+                  <Loader2 className="w-6 h-6 animate-spin text-purple-600 mb-2" />
+                  <span className="text-xs font-semibold">Memuat data regu Satpam...</span>
+                </div>
+              ) : (
+                <form onSubmit={handleSubmitSatpamShift} className="space-y-4">
+                  {/* Date selection & Shift Display */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="satpamDate" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Pilih Tanggal Dinas
+                      </Label>
+                      <Input
+                        id="satpamDate"
+                        type="date"
+                        value={satpamReportDate}
+                        onChange={(e) => setSatpamReportDate(e.target.value)}
+                        className="rounded-xl border-slate-200 focus:border-purple-400 focus:ring-purple-400/20 text-sm font-bold text-slate-700 bg-white"
+                        required
+                      />
+                    </div>
+
+                    <div className="flex flex-col justify-center space-y-1">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Jadwal Shift Roster</span>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <Badge className="bg-purple-100 hover:bg-purple-100 text-purple-800 border-none font-extrabold text-sm px-3.5 py-1 rounded-xl">
+                          Shift {activeShift}
+                        </Badge>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {activeShift === 'Pagi' ? '08:00 - 14:00' : activeShift === 'Sore' ? '14:00 - 22:00' : '22:00 - 08:00 (H+1)'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 9 Posts Duty Grid */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-1.5 pl-0.5">
+                      Penugasan Pos Keamanan (9 Pos)
+                    </h3>
+
+                    <div className="space-y-3.5">
+                      {POSTS_CONFIG.map((post) => {
+                        const val = postAssignments[post.id] || { employeeId: '', shiftType: 'Harian' };
+                        const assignedElsewhere = [
+                          ...Object.entries(postAssignments)
+                            .filter(([postId]) => postId !== post.id)
+                            .map(([, assignment]) => assignment.employeeId),
+                          extraEmployeeId
+                        ].filter(Boolean);
+                        return (
+                          <div key={post.id} className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-white p-3 rounded-xl border border-slate-200 hover:shadow-sm transition-shadow">
+                            {/* Pos Name Label */}
+                            <div className="md:col-span-3">
+                              <span className="text-xs font-black text-slate-500 uppercase block tracking-wider leading-tight">{post.id}</span>
+                              <span className="text-xs font-extrabold text-slate-800 truncate block mt-0.5">{post.name}</span>
+                            </div>
+
+                            {/* Guard Dropdown */}
+                            <div className="md:col-span-5">
+                              <Select
+                                value={val.employeeId || 'none'}
+                                onValueChange={(v: string | null) => handleSelectGuard(post.id, v === 'none' || v === null ? '' : v)}
+                              >
+                                <SelectTrigger className="w-full text-sm font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                                  <span className={val.employeeId ? "truncate" : "truncate text-slate-400 font-normal"}>
+                                    {allSatpamEmployees.find(emp => emp.id === val.employeeId)?.name || '-- Pilih Petugas Guard --'}
+                                  </span>
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
+                                  <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
+                                    -- Kosongkan Pos --
+                                  </SelectItem>
+                                  <SelectGroup>
+                                    <SelectLabel className="text-xs font-black text-purple-600 px-2 py-1.5 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
+                                    {groupEmployees.filter(emp => !assignedElsewhere.includes(emp.id)).map(emp => (
+                                      <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
+                                        {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                  <SelectSeparator className="my-1" />
+                                  <SelectGroup>
+                                    <SelectLabel className="text-xs font-black text-slate-400 px-2 py-1.5 bg-slate-50">Satpam Regu Lain (Lembur Cover)</SelectLabel>
+                                    {externalEmployees.filter(emp => !assignedElsewhere.includes(emp.id)).map(emp => (
+                                      <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
+                                        {emp.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            {/* Shift Type Dropdown */}
+                            <div className="md:col-span-4">
+                              <Select
+                                value={val.shiftType}
+                                onValueChange={(v: string | null) => v && handleSelectShiftType(post.id, v)}
+                              >
+                                <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
+                                  <SelectItem value="Harian" className="text-sm py-2 pl-3">Harian (Rp12.500)</SelectItem>
+                                  <SelectItem value="Jumat & Libur" className="text-sm py-2 pl-3">Jumat & Libur (Rp25.000)</SelectItem>
+                                  <SelectItem value="Lembur Sendiri" className="text-sm py-2 pl-3">Lembur Sendiri (Rp30.000)</SelectItem>
+                                  <SelectItem value="Lembur Cover" className="text-sm py-2 pl-3">Lembur Cover (Rp50.000)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                    {/* Penugasan Tambahan (Opsional) */}
+                    {allMainPostsAssigned && (
+                      <div className="pt-3.5 border-t border-dashed border-slate-100 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-0.5 mb-2.5">
+                          Penugasan Tambahan (Opsional)
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-purple-50/10 p-3 rounded-xl border border-purple-100/50">
+                          {/* Custom Pos Select Dropdown */}
+                          <div className="md:col-span-3">
+                            <Select
+                              value={extraPostName || 'none'}
+                              onValueChange={(v: string | null) => setExtraPostName(v === 'none' || v === null ? '' : v)}
+                            >
+                              <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                                <span className={extraPostName ? "truncate" : "truncate text-slate-400 font-normal"}>
+                                  {POSTS_CONFIG.find(p => p.id === extraPostName || p.name === extraPostName)?.name || '-- Pilih Pos --'}
+                                </span>
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
+                                <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
+                                  -- Pilih Pos --
+                                </SelectItem>
+                                {POSTS_CONFIG.map((post) => (
+                                  <SelectItem key={post.id} value={post.id} className="text-sm py-2 pl-3">
+                                    {post.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Guard Dropdown */}
+                          <div className="md:col-span-5">
+                            <Select
+                              value={extraEmployeeId || 'none'}
+                              onValueChange={(v: string | null) => {
+                                const empId = v === 'none' || v === null ? '' : v;
+                                setExtraEmployeeId(empId);
+                                if (empId) {
+                                  setExtraShiftType('Lembur Sendiri');
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="w-full text-sm font-extrabold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                                <span className={extraEmployeeId ? "truncate" : "truncate text-slate-400 font-normal"}>
+                                  {allSatpamEmployees.find(emp => emp.id === extraEmployeeId)?.name || '-- Pilih Petugas Guard --'}
+                                </span>
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
+                                <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
+                                  -- Kosongkan Pos --
+                                </SelectItem>
+                                <SelectGroup>
+                                  <SelectLabel className="text-xs font-black text-purple-600 px-2 py-1.5 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
+                                  {groupEmployees.filter(emp => !Object.values(postAssignments).map(a => a.employeeId).includes(emp.id)).map(emp => (
+                                    <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
+                                      {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                                <SelectSeparator className="my-1" />
+                                <SelectGroup>
+                                  <SelectLabel className="text-xs font-black text-slate-400 px-2 py-1.5 bg-slate-50">Satpam Regu Lain (Lembur Cover)</SelectLabel>
+                                  {externalEmployees.filter(emp => !Object.values(postAssignments).map(a => a.employeeId).includes(emp.id)).map(emp => (
+                                    <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
+                                      {emp.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Shift Type Dropdown */}
+                          <div className="md:col-span-4">
+                            <Select
+                              value={extraShiftType}
+                              onValueChange={(v: string | null) => v && setExtraShiftType(v)}
+                            >
+                              <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
+                                <SelectItem value="Harian" className="text-sm py-2 pl-3">Harian (Rp12.500)</SelectItem>
+                                <SelectItem value="Jumat & Libur" className="text-sm py-2 pl-3">Jumat & Libur (Rp25.000)</SelectItem>
+                                <SelectItem value="Lembur Sendiri" className="text-sm py-2 pl-3">Lembur Sendiri (Rp30.000)</SelectItem>
+                                <SelectItem value="Lembur Cover" className="text-sm py-2 pl-3">Lembur Cover (Rp50.000)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    </div>
+                  </div>
+
+                  {/* Libur & Rest Info */}
+                  <div className="p-4 rounded-xl bg-purple-50/50 border border-purple-100 text-xs font-medium space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-purple-700">Anggota Libur (Regu Istirahat):</span>
+                      <Badge className="bg-purple-100 text-purple-800 border-none font-bold text-[10px] rounded-md py-px px-1.5">Auto-Approved</Badge>
+                    </div>
+                    {offDutyMembers.length === 0 ? (
+                      <p className="text-slate-400 italic">Semua anggota regu sedang ditugaskan di pos.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {offDutyMembers.map(emp => (
+                          <Badge key={emp.id} variant="outline" className="bg-white border-purple-200 text-purple-700 font-extrabold text-[10px] py-0.5 px-2 rounded-md">
+                            {emp.name} (Libur)
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="pt-2">
+                    <Button
+                      type="submit"
+                      disabled={satpamSubmitting}
+                      className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-sm h-11 shadow-md shadow-purple-100 flex items-center justify-center gap-2 cursor-pointer border-none"
+                    >
+                      {satpamSubmitting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                          <span>Mengirim Laporan Regu...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4 text-white" />
+                          <span>Kirim Laporan Regu Shift {activeShift}</span>
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* ── Driver Journeys Panel (Sopir only) ───────────────────────── */}
         {isSopir && (
@@ -1359,7 +2026,51 @@ export default function EmployeeActivitiesPage() {
                           </div>
                         )}
 
-                        {activity.status === 'approved' && activity.fee > 0 && (
+                        {/* Satpam details section */}
+                        {activity.jobCategory === 'SATPAM' && (
+                          <div className="p-3 rounded-xl bg-purple-50/50 border border-purple-100/60 space-y-1.5 text-xs text-purple-950">
+                            <div className="flex justify-between">
+                              <span className="font-semibold text-slate-500">Nama Petugas:</span>
+                              <span className="font-bold text-slate-800">{activity.employeeName}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="font-semibold text-slate-500">Nama Shift:</span>
+                              <span className="font-bold text-slate-800">Shift {activity.shiftName}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="font-semibold text-slate-500">Kategori Shift:</span>
+                              <span className="font-bold text-slate-800">{activity.shiftType}</span>
+                            </div>
+                            {activity.postName && (
+                              <div className="flex justify-between">
+                                <span className="font-semibold text-slate-500">Lokasi Pos:</span>
+                                <span className="font-bold text-slate-800">{activity.postName}</span>
+                              </div>
+                            )}
+                            {activity.ketuaShiftName && (
+                              <div className="flex justify-between">
+                                <span className="font-semibold text-slate-500">Dilaporkan Oleh:</span>
+                                <span className="font-bold text-slate-800">{activity.ketuaShiftName}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {activity.status === 'approved' && activity.jobCategory === 'SATPAM' && (
+                          <div className="flex flex-col gap-1 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <Banknote className="w-4 h-4 text-emerald-600" />
+                                <span className="text-sm font-bold text-emerald-700">{fmtRp(activity.fee)}</span>
+                              </div>
+                              <span className="text-xs text-emerald-600/70 font-bold">
+                                ({activity.shiftType === 'Off-Duty' ? 'Hari Libur' : `Tarif Shift ${activity.shiftType}`})
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {activity.status === 'approved' && activity.jobCategory !== 'SATPAM' && activity.fee > 0 && (
                           <div className="flex flex-col gap-1 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                               <div className="flex items-center gap-2">
@@ -1390,7 +2101,21 @@ export default function EmployeeActivitiesPage() {
                         )}
 
                         {activity.status === 'pending' && (
-                          activity.jobCategory === 'SOPIR' ? (
+                          activity.jobCategory === 'SATPAM' ? (
+                            <div className="flex flex-col gap-1 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <Banknote className="w-4 h-4 text-amber-600" />
+                                  <span className="text-sm font-bold text-amber-700">
+                                    Estimasi Upah: {fmtRp(activity.fee)}
+                                  </span>
+                                </div>
+                                <span className="text-xs text-amber-600/70 font-medium">
+                                  (Tarif Shift {activity.shiftType} - Menunggu Verifikasi)
+                                </span>
+                              </div>
+                            </div>
+                          ) : activity.jobCategory === 'SOPIR' ? (
                             (() => {
                               const est = calculateSopirDefaultFee(
                                 activity.tripType,
@@ -1469,7 +2194,7 @@ export default function EmployeeActivitiesPage() {
                         )}
 
                         {/* Edit / Re-submit action */}
-                        {canEdit && (
+                        {canEdit && activity.jobCategory !== 'SATPAM' && (
                           <Button
                             onClick={() => openEditForm(activity)}
                             variant="outline"
@@ -1494,15 +2219,17 @@ export default function EmployeeActivitiesPage() {
       </div>
 
       {/* ── Floating Action Button ─────────────────────────────────────── */}
-      <button
-        onClick={() => {
-          resetForm();
-          setShowForm(true);
-        }}
-        className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-xl shadow-teal-300/40 hover:shadow-2xl hover:shadow-teal-300/50 hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center"
-      >
-        <Plus className="w-6 h-6" />
-      </button>
+      {!isRegularSatpam && (
+        <button
+          onClick={() => {
+            resetForm();
+            setShowForm(true);
+          }}
+          className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-xl shadow-teal-300/40 hover:shadow-2xl hover:shadow-teal-300/50 hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center"
+        >
+          <Plus className="w-6 h-6" />
+        </button>
+      )}
 
       {/* ── Add / Edit Activity Dialog ─────────────────────────────────── */}
       <Dialog open={showForm} onOpenChange={(open) => { if (!open) resetForm(); }}>

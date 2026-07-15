@@ -73,15 +73,16 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (!loading && user && profile) {
-      if (profile.role === 'honorer') {
+      const roleStr = profile.role as string;
+      if (roleStr === 'honorer' || roleStr === 'ketua_shift_satpam') {
         router.replace('/employee/activities');
-      } else if (profile.role === 'loyalis') {
+      } else if (roleStr === 'loyalis') {
         router.replace('/employee/payslip');
-      } else if (profile.role === 'satker_head') {
+      } else if (roleStr === 'satker_head') {
         router.replace('/dashboard/payroll/activity-review');
-      } else if (profile.role === 'satker_head_loyalis') {
+      } else if (roleStr === 'satker_head_loyalis') {
         router.replace('/dashboard/payroll/uraian');
-      } else if (profile.role === 'loyalis_presence_admin') {
+      } else if (roleStr === 'loyalis_presence_admin') {
         router.replace('/dashboard/payroll/uraian/presensi-loyalis-raw');
       } else {
         router.replace('/dashboard/payroll');

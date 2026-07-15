@@ -88,8 +88,8 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
     };
 
-    // Attach linked employee ID for honorer/loyalis accounts
-    if ((role === 'honorer' || role === 'loyalis') && linkedEmployeeId) {
+    // Attach linked employee ID for honorer/loyalis/ketua_shift_satpam accounts
+    if ((role === 'honorer' || role === 'loyalis' || role === 'ketua_shift_satpam') && linkedEmployeeId) {
       profile.linkedEmployeeId = linkedEmployeeId;
     }
 
@@ -162,8 +162,8 @@ export async function PUT(req: NextRequest) {
       updatePayloadDoc.email = email;
     }
 
-    // Attach or clear linked employee ID for honorer/loyalis accounts
-    if ((role === 'honorer' || role === 'loyalis') && linkedEmployeeId) {
+    // Attach or clear linked employee ID for honorer/loyalis/ketua_shift_satpam accounts
+    if ((role === 'honorer' || role === 'loyalis' || role === 'ketua_shift_satpam') && linkedEmployeeId) {
       updatePayloadDoc.linkedEmployeeId = linkedEmployeeId;
     } else {
       updatePayloadDoc.linkedEmployeeId = admin.firestore.FieldValue.delete();

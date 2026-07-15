@@ -227,16 +227,27 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                   {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' || activeTab === 'presence_corrections' ? (
                     `${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`
                   ) : (
-                    `${MONTHS_ID[month - 1]} (26 ${MONTHS_ID[(month - 2 + 12) % 12].slice(0, 3)} – 25 ${MONTHS_ID[month - 1].slice(0, 3)})`
+                    year > 2026 || (year === 2026 && month > 7) ? (
+                      `${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`
+                    ) : (year === 2026 && month === 7) ? (
+                      `Juli (26 Jun – 31 Jul)`
+                    ) : (
+                      `${MONTHS_ID[month - 1]} (26 ${MONTHS_ID[(month - 2 + 12) % 12].slice(0, 3)} – 25 ${MONTHS_ID[month - 1].slice(0, 3)})`
+                    )
                   )}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent className="w-72">
                 {MONTHS_ID.map((m, i) => ({ name: m, index: i + 1 }))
                   .filter(item => {
-                    if (profile?.role === 'loyalis_presence_admin' && year === 2026) {
-                      return item.index >= 7; // July onwards
-                    }
+                    const now = new Date();
+                    const currentYear = now.getFullYear();
+                    const currentMonth = now.getMonth() + 1;
+                    // Hide future months
+                    if (year === currentYear && item.index > currentMonth) return false;
+                    if (year > currentYear) return false;
+                    // Hide months before July 2026 for non-super_admins
+                    if (profile?.role !== 'super_admin' && year === 2026 && item.index < 7) return false;
                     return true;
                   })
                   .map(({ name: m, index: val }) => {
@@ -251,7 +262,13 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                           {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' || activeTab === 'presence_corrections' ? (
                             <span className="text-[11px] text-slate-400">1 – {lastDay} {m}</span>
                           ) : (
-                            <span className="text-[11px] text-slate-400">26 {prevMonth.slice(0, 3)} – 25 {m.slice(0, 3)} · Bayar 5 {nextMonth.slice(0, 3)}</span>
+                            year > 2026 || (year === 2026 && val > 7) ? (
+                              <span className="text-[11px] text-slate-400">1 – {lastDay} {m.slice(0, 3)} · Bayar 5 {nextMonth.slice(0, 3)}</span>
+                            ) : (year === 2026 && val === 7) ? (
+                              <span className="text-[11px] text-slate-400">26 Jun – 31 Jul · Bayar 5 Agu</span>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">26 {prevMonth.slice(0, 3)} – 25 {m.slice(0, 3)} · Bayar 5 {nextMonth.slice(0, 3)}</span>
+                            )
                           )}
                         </div>
                       </SelectItem>
@@ -265,9 +282,11 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               </SelectTrigger>
               <SelectContent>
                 {YEARS.filter(y => {
-                  if (profile?.role === 'loyalis_presence_admin') {
-                    return y >= 2026;
-                  }
+                  const now = new Date();
+                  const currentYear = now.getFullYear();
+                  if (y > currentYear) return false;
+                  // Hide years before 2026 for non-super_admins
+                  if (profile?.role !== 'super_admin' && y < 2026) return false;
                   return true;
                 }).map(y => (
                   <SelectItem key={y} value={String(y)}>{y}</SelectItem>

@@ -189,6 +189,7 @@ export default function RekapPekaryaPage() {
   // ── SPJ Integration States (to compute SPJ discrepancies) ──
   const [spjEvents, setSpjEvents] = useState<any[]>([]);
   const [approvedActivityReports, setApprovedActivityReports] = useState<any[]>([]);
+  const [ketuaShiftIds, setKetuaShiftIds] = useState<Set<string>>(new Set());
 
   // ── Fetch Kegiatan SPJ Events & ActivityReports ──
   const fetchSpjEvents = useCallback(async () => {
@@ -215,8 +216,23 @@ export default function RekapPekaryaPage() {
           return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         };
 
-        const startDateStr = formatDate(prevMonthDate);
-        const endDateStr = formatDate(currentMonthDate);
+        let startDateStr = "";
+        let endDateStr = "";
+
+        if (year > 2026 || (year === 2026 && month > 7)) {
+          // Future: 1st to end of the month
+          startDateStr = `${year}-${String(month).padStart(2, '0')}-01`;
+          const lastDay = new Date(year, month, 0).getDate();
+          endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        } else if (year === 2026 && month === 7) {
+          // Transition: 26 June to 30 July
+          startDateStr = "2026-06-26";
+          endDateStr = "2026-07-31";
+        } else {
+          // Past: 26th of prev month to 25th of current month
+          startDateStr = formatDate(prevMonthDate);
+          endDateStr = formatDate(currentMonthDate);
+        }
         const prevMonthToken = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
         const [arSnap1, arSnap2] = await Promise.all([
@@ -276,6 +292,22 @@ export default function RekapPekaryaPage() {
     return kegiatanTotal + activityTotal;
   }, [spjEvents, approvedActivityReports]);
 
+  const getComputedSatpamShiftCount = useCallback((empId: string, shiftTypeKey: string) => {
+    let targetShiftType = '';
+    if (shiftTypeKey === 'harian') targetShiftType = 'Harian';
+    else if (shiftTypeKey === 'jumatLibur') targetShiftType = 'Jumat & Libur';
+    else if (shiftTypeKey === 'lemburSendiri') targetShiftType = 'Lembur Sendiri';
+    else if (shiftTypeKey === 'lemburCover') targetShiftType = 'Lembur Cover';
+    
+    if (!targetShiftType) return 0;
+    
+    return approvedActivityReports.filter(ar => 
+      ar.employeeId === empId && 
+      ar.jobCategory === 'SATPAM' &&
+      ar.shiftType === targetShiftType
+    ).length;
+  }, [approvedActivityReports]);
+
   // ── File states ──
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -305,6 +337,10 @@ export default function RekapPekaryaPage() {
     const fetchData = async () => {
       setLoadingEmps(true);
       try {
+        const teamsSnap = await getDocs(collection(db, 'SatpamShiftTeams'));
+        const ids = new Set(teamsSnap.docs.map(d => d.data().ketuaShiftId).filter(Boolean) as string[]);
+        setKetuaShiftIds(ids);
+
         const q2 = query(collection(db, 'Employees_BlueCollar'), where('employment.status', '==', 'active'), where('employment.jobCategory', '==', category));
         const empSnap = await getDocs(q2);
         const empList = empSnap.docs.map(d => ({ employeeId: d.id, ...d.data() } as BlueCollarEmployee));
@@ -525,6 +561,17 @@ export default function RekapPekaryaPage() {
         ...rawValues,
         spj: rawValues.spj !== undefined ? rawValues.spj : getComputedSpj(emp.employeeId),
       };
+      if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7))) {
+        const satpamShiftKeys = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'];
+        satpamShiftKeys.forEach(k => {
+          if (storedValues[k] === undefined) {
+            storedValues[k] = getComputedSatpamShiftCount(emp.employeeId, k);
+          }
+        });
+        if (storedValues.tunjanganJabatan === undefined) {
+          storedValues.tunjanganJabatan = ketuaShiftIds.has(emp.employeeId) ? 100000 : 0;
+        }
+      }
       const storedCounts: Record<string, number> = {};
       const empCols = [...(REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN), ...customColumns];
       empCols.forEach(col => {
@@ -633,6 +680,16 @@ export default function RekapPekaryaPage() {
         if (col.key === 'spj') {
           rawVal = rawValues.spj !== undefined ? rawValues.spj : getComputedSpj(emp.employeeId);
         }
+        if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'].includes(col.key)) {
+          if (rawValues[col.key] === undefined) {
+            rawVal = getComputedSatpamShiftCount(emp.employeeId, col.key);
+          }
+        }
+        if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && col.key === 'tunjanganJabatan') {
+          if (rawValues[col.key] === undefined) {
+            rawVal = ketuaShiftIds.has(emp.employeeId) ? 100000 : 0;
+          }
+        }
         if (rawVal === 0) return { col, count: 0, value: 0, isDual: false };
         const isDual = (DUAL_MAP_KEYS as readonly string[]).includes(col.key) && !!col.multiplier;
         if (isDual && col.multiplier) {
@@ -658,6 +715,17 @@ export default function RekapPekaryaPage() {
         ...rawValues,
         spj: rawValues.spj !== undefined ? rawValues.spj : getComputedSpj(emp.employeeId),
       };
+      if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7))) {
+        const satpamShiftKeys = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'];
+        satpamShiftKeys.forEach(k => {
+          if (computedValues[k] === undefined) {
+            computedValues[k] = getComputedSatpamShiftCount(emp.employeeId, k);
+          }
+        });
+        if (computedValues.tunjanganJabatan === undefined) {
+          computedValues.tunjanganJabatan = ketuaShiftIds.has(emp.employeeId) ? 100000 : 0;
+        }
+      }
       const computedCounts: Record<string, number> = {};
       const baseCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
       const empCols = [...baseCols, ...customColumns];
@@ -1005,9 +1073,15 @@ export default function RekapPekaryaPage() {
                         </td>
                         {columns.map((col, colIdx) => {
                           const isSpj = col.key === 'spj';
+                          const isSatpamShift = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'].includes(col.key);
+                          const isTunjanganJabatan = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && col.key === 'tunjanganJabatan';
                           const cellValue = (isSpj && tableData[emp.employeeId]?.[col.key] === undefined)
                             ? (getComputedSpj(emp.employeeId) || 0)
-                            : (tableData[emp.employeeId]?.[col.key] ?? '');
+                            : (isSatpamShift && tableData[emp.employeeId]?.[col.key] === undefined)
+                              ? (getComputedSatpamShiftCount(emp.employeeId, col.key) || 0)
+                              : (isTunjanganJabatan && tableData[emp.employeeId]?.[col.key] === undefined)
+                                ? (ketuaShiftIds.has(emp.employeeId) ? 100000 : 0)
+                                : (tableData[emp.employeeId]?.[col.key] ?? '');
                           return (
                             <td
                               key={col.key}
@@ -1019,7 +1093,7 @@ export default function RekapPekaryaPage() {
                                 type="text"
                                 value={cellValue}
                                 onChange={(e) => updateCell(emp.employeeId, col.key, e.target.value)}
-                                className={`h-10 text-center font-bold transition-all ${isSpj
+                                className={`h-10 text-center font-bold transition-all ${isSpj || isSatpamShift || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
                                   ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
                                   : hasScanData
                                     ? 'rounded-xl border-slate-400 bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
