@@ -45,6 +45,7 @@ import {
   CheckCircle2,
   Pencil,
   Calendar,
+  XCircle,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import {
@@ -89,7 +90,7 @@ function formatIndonesianDate(dateStr: string): string {
 
 function getJourneyDate(j: any): string {
   if (j.activityDate) return j.activityDate;
-  
+
   // Fallback to ID-based date if activityDate is missing
   if (j.id && j.id.startsWith('JRN-')) {
     const parts = j.id.split('-');
@@ -101,13 +102,13 @@ function getJourneyDate(j: any): string {
       return `${y}-${m}-${d}`;
     }
   }
-  
+
   // Second fallback to createdAt
   if (j.createdAt?.seconds) {
     const d = new Date(j.createdAt.seconds * 1000);
     return d.toISOString().slice(0, 10);
   }
-  
+
   return new Date().toISOString().slice(0, 10);
 }
 
@@ -168,6 +169,7 @@ function DriverJourneysContent() {
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [mapSearchText, setMapSearchText] = useState('');
   const [mapAddress, setMapAddress] = useState('');
+  const [mapAddressImage, setMapAddressImage] = useState<string | null>(null);
   const [mapTarget, setMapTarget] = useState<'start' | 'end'>('end');
 
   const mapRef = React.useRef<any>(null);
@@ -180,8 +182,10 @@ function DriverJourneysContent() {
   let dynamicMealAllowance = 0;
   if (totalDurationPP >= 2 && totalDurationPP <= 6) {
     dynamicMealAllowance = 30000;
-  } else if (totalDurationPP > 6) {
+  } else if (totalDurationPP > 6 && totalDurationPP <= 12) {
     dynamicMealAllowance = 60000;
+  } else if (totalDurationPP > 12) {
+    dynamicMealAllowance = 90000;
   }
 
   const initMap = (element: HTMLDivElement) => {
@@ -212,12 +216,34 @@ function DriverJourneysContent() {
       markerRef.current = marker;
 
       const geocoder = new google.maps.Geocoder();
+      
+      const updateAddressImage = (query: string) => {
+        try {
+          const service = new google.maps.places.PlacesService(map || document.createElement('div'));
+          service.textSearch({ query }, (results: any, status: any) => {
+            if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
+              const matchWithPhoto = results.find((r: any) => r.photos && r.photos.length > 0);
+              if (matchWithPhoto) {
+                setMapAddressImage(matchWithPhoto.photos[0].getUrl({ maxWidth: 600, maxHeight: 200 }));
+                return;
+              }
+            }
+            setMapAddressImage(null);
+          });
+        } catch (e) {
+          console.error(e);
+          setMapAddressImage(null);
+        }
+      };
+
       const updateAddress = (latLng: any) => {
         geocoder.geocode({ location: latLng }, (results: any, status: any) => {
           if (status === 'OK' && results[0]) {
             setMapAddress(results[0].formatted_address);
+            updateAddressImage(results[0].formatted_address);
           } else {
             setMapAddress(`${latLng.lat().toFixed(5)}, ${latLng.lng().toFixed(5)}`);
+            setMapAddressImage(null);
           }
         });
       };
@@ -231,6 +257,7 @@ function DriverJourneysContent() {
             map.setZoom(15);
             marker.setPosition(loc);
             setMapAddress(results[0].formatted_address);
+            updateAddressImage(results[0].formatted_address);
           } else {
             updateAddress(unipduCoords);
           }
@@ -263,7 +290,7 @@ function DriverJourneysContent() {
 
       try {
         const autocomplete = new google.maps.places.Autocomplete(inputEl, {
-          fields: ['formatted_address', 'geometry', 'name'],
+          fields: ['formatted_address', 'geometry', 'name', 'photos'],
         });
 
         autocomplete.addListener('place_changed', () => {
@@ -276,9 +303,34 @@ function DriverJourneysContent() {
             markerRef.current.setPosition(place.geometry.location);
           }
 
+          // Handle photos inside place object
+          if (place.photos && place.photos[0]) {
+            setMapAddressImage(place.photos[0].getUrl({ maxWidth: 600, maxHeight: 200 }));
+          } else if (place.name || place.formatted_address) {
+            // Try to resolve photo via textSearch
+            const query = place.name || place.formatted_address;
+            const service = new google.maps.places.PlacesService(mapRef.current);
+            service.textSearch({ query }, (res: any, stat: any) => {
+              if (stat === google.maps.places.PlacesServiceStatus.OK && res && res[0]?.photos?.[0]) {
+                setMapAddressImage(res[0].photos[0].getUrl({ maxWidth: 600, maxHeight: 200 }));
+              } else {
+                setMapAddressImage(null);
+              }
+            });
+          } else {
+            setMapAddressImage(null);
+          }
+
           if (place.formatted_address) {
-            setMapAddress(place.formatted_address);
-            setMapSearchText(place.name || place.formatted_address);
+            const name = place.name;
+            const address = place.formatted_address;
+            if (name && !name.toLowerCase().startsWith('jl.') && !name.toLowerCase().startsWith('jalan') && !address.toLowerCase().startsWith(name.toLowerCase())) {
+              setMapAddress(`${name}, ${address}`);
+              setMapSearchText(`${name}, ${address}`);
+            } else {
+              setMapAddress(address);
+              setMapSearchText(address);
+            }
           } else {
             const geocoder = new google.maps.Geocoder();
             geocoder.geocode({ location: place.geometry.location }, (results: any, status: any) => {
@@ -413,6 +465,7 @@ function DriverJourneysContent() {
         baseOperationalCost: baseCost,
         mealAllowance: mealAllowance,
         totalOperationalCost: totalCost,
+        destinationImageUrl: mapAddressImage || null,
         ...(!editingJourneyId ? {
           status: 'unassigned',
           createdAt: serverTimestamp(),
@@ -469,7 +522,7 @@ function DriverJourneysContent() {
   // ── Group filtered journeys by activityDate ──
   const groupedJourneys = useMemo(() => {
     const groupsMap: { [key: string]: any[] } = {};
-    
+
     // Sort journeys by activityDate descending (newest first), then by createdAt descending
     const sorted = [...filteredJourneys].sort((a, b) => {
       const dateA = getJourneyDate(a);
@@ -789,6 +842,7 @@ function DriverJourneysContent() {
                       setMapTarget('start');
                       setMapSearchText('');
                       setMapAddress('');
+                      setMapAddressImage(null);
                       setShowMapSelector(true);
                     }}
                     className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
@@ -809,6 +863,7 @@ function DriverJourneysContent() {
                         setMapTarget('start');
                         setMapSearchText(startPoint);
                         setMapAddress(startPoint);
+                        setMapAddressImage(null);
                         setShowMapSelector(true);
                       }}
                       className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
@@ -830,6 +885,7 @@ function DriverJourneysContent() {
                     onClick={() => {
                       setMapSearchText('');
                       setMapAddress('');
+                      setMapAddressImage(null);
                       setShowMapSelector(true);
                     }}
                     className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
@@ -849,6 +905,7 @@ function DriverJourneysContent() {
                       onClick={() => {
                         setMapSearchText(endPoint);
                         setMapAddress(endPoint);
+                        setMapAddressImage(null);
                         setShowMapSelector(true);
                       }}
                       className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
@@ -943,7 +1000,7 @@ function DriverJourneysContent() {
 
                   <div className="space-y-1 text-xs pt-1">
                     <div className="flex justify-between text-slate-500 font-medium">
-                      <span>Biaya BBM & Tol Dasar (PP)</span>
+                      <span>Biaya BBM (PP)</span>
                       <span className="font-bold text-slate-700">{fmtRp(calcDistance * 2 * VEHICLE_RATES[selectedVehicle])}</span>
                     </div>
                     <div className="flex justify-between text-slate-500 font-medium">
@@ -1034,20 +1091,92 @@ function DriverJourneysContent() {
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
-            {/* Search Input inside Map */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            {/* Search Input inside Map (Google Maps Themed Style) */}
+            <div className="relative flex items-center bg-white border border-slate-200 rounded-2xl shadow-sm h-11 px-3.5 gap-2.5 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 transition-all">
+              <div className="flex items-center justify-center w-5 text-indigo-500 shrink-0">
+                <Compass className="w-4.5 h-4.5 animate-pulse" />
+              </div>
               <Input
                 ref={(el) => {
                   if (el) {
                     initAutocomplete(el);
                   }
                 }}
-                placeholder="Cari alamat, gedung, kota..."
+                placeholder="Cari lokasi tujuan dinas..."
                 value={mapSearchText}
                 onChange={(e) => setMapSearchText(e.target.value)}
-                className="pl-9 h-10 rounded-xl text-xs bg-slate-50 border-slate-200 focus:bg-white transition-all"
+                className="flex-1 border-none bg-transparent p-0 focus-visible:ring-0 text-xs font-bold text-slate-700 h-full placeholder:text-slate-400"
               />
+              {mapSearchText && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMapSearchText('');
+                    setMapAddress('');
+                  }}
+                  className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-slate-100 transition-all text-slate-400 hover:text-slate-600 shrink-0"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              )}
+              <div className="w-px h-5 bg-slate-200 shrink-0" />
+              <button
+                type="button"
+                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-indigo-50 transition-all text-indigo-500 hover:text-indigo-600 shrink-0"
+              >
+                <Search className="w-4.5 h-4.5" />
+              </button>
+
+              <style>{`
+                .pac-container {
+                  z-index: 99999 !important;
+                  border-radius: 18px !important;
+                  border: 1px solid #e2e8f0 !important;
+                  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08) !important;
+                  font-family: inherit !important;
+                  padding: 8px 0 !important;
+                  margin-top: 6px !important;
+                }
+                .pac-item {
+                  padding: 10px 14px !important;
+                  font-size: 11px !important;
+                  font-weight: 600 !important;
+                  color: #475569 !important;
+                  cursor: pointer !important;
+                  display: flex !important;
+                  align-items: center !important;
+                  gap: 8px !important;
+                  border-top: 1px solid #f1f5f9 !important;
+                  transition: all 0.15s ease !important;
+                }
+                .pac-item:hover {
+                  background-color: #f8fafc !important;
+                }
+                .pac-item-query {
+                  font-size: 11px !important;
+                  font-weight: 850 !important;
+                  color: #0f172a !important;
+                }
+                .pac-matched {
+                  color: #4f46e5 !important;
+                }
+                .pac-icon {
+                  margin-top: 0 !important;
+                  background-image: none !important;
+                  position: relative !important;
+                  display: inline-block !important;
+                  width: 14px !important;
+                  height: 14px !important;
+                  flex-shrink: 0 !important;
+                }
+                .pac-icon::before {
+                  content: "📍" !important;
+                  font-size: 10px !important;
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                }
+              `}</style>
             </div>
 
             {/* Map Container */}
@@ -1064,6 +1193,23 @@ function DriverJourneysContent() {
                 <span className="text-[10px] font-bold">Memuat Google Maps...</span>
               </div>
             </div>
+
+            {/* Selected Location Image Preview (Google Maps style) */}
+            {mapAddressImage && (
+              <div className="w-full h-32 rounded-xl overflow-hidden border border-slate-100 shadow-sm relative group bg-slate-50 animate-fade-in">
+                <img
+                  src={mapAddressImage}
+                  alt="Location Preview"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/10 to-transparent flex items-end p-3">
+                  <div className="text-[10px] text-white font-extrabold flex items-center gap-1 shadow-sm drop-shadow-md">
+                    <Compass className="w-3.5 h-3.5 text-indigo-300 animate-spin-slow shrink-0" />
+                    <span>Pratinjau Lokasi Terpilih</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Selected Address Box */}
             {mapAddress && (

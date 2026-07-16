@@ -3,7 +3,8 @@ import {
   getFirestore,
   initializeFirestore,
   persistentLocalCache,
-  persistentMultipleTabManager
+  persistentMultipleTabManager,
+  setLogLevel
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
@@ -17,6 +18,9 @@ const firebaseConfig = {
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
+
+// Suppress noisy Firestore internal lease and connection warnings in client browser console
+setLogLevel("silent");
 
 // Initialize Firebase (prevent multiple initializations during development)
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
@@ -62,7 +66,11 @@ export const secondaryApp = getApps().some(a => a.name === 'secondary')
   ? getApp('secondary')
   : initializeApp(secondaryConfig, 'secondary');
 
-export const secondaryDb = getCachedDb(secondaryApp, "__firestore_db_secondary");
+// Secondary database is read-only in the client and does not require persistent local cache,
+// avoiding secondary tab manager instances and database lock conflicts.
+export const secondaryDb = typeof window !== "undefined"
+  ? ((window as any).__firestore_db_secondary || ((window as any).__firestore_db_secondary = getFirestore(secondaryApp)))
+  : getFirestore(secondaryApp);
 export const secondaryAuth = getAuth(secondaryApp);
 
 export default app;

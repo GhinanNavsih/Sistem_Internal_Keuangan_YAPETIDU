@@ -58,6 +58,7 @@ import {
   ThumbsDown,
   RefreshCw,
   ChevronRight,
+  Compass,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import {
@@ -102,6 +103,10 @@ interface ActivityReport {
   points?: string[];
   distanceKm?: number;
   durationHours?: number;
+  journeyId?: string;
+  fuelReceiptUrl?: string;
+  tollReceiptUrl?: string;
+  upahBersih?: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -299,6 +304,117 @@ export default function ActivityReviewPage() {
   // ── Decline Modal ──
   const [declineTarget, setDeclineTarget] = useState<ActivityReport | null>(null);
   const [declineReason, setDeclineReason] = useState('');
+
+  // ── Driver (Sopir) Audit Modal State ──
+  const [auditActivity, setAuditActivity] = useState<ActivityReport | null>(null);
+  const [auditDistanceKm, setAuditDistanceKm] = useState<number>(0);
+  const [auditDurationHours, setAuditDurationHours] = useState<number>(0);
+  const [auditFuelFee, setAuditFuelFee] = useState<number>(0);
+  const [auditTollParkingFee, setAuditTollParkingFee] = useState<number>(0);
+  const [auditVehicleType, setAuditVehicleType] = useState<string>('Suzuki XL7');
+  const [auditIsOvernight, setAuditIsOvernight] = useState<boolean>(false);
+
+  const handleOpenAuditSopir = (activity: ActivityReport) => {
+    setAuditActivity(activity);
+    setAuditDistanceKm(activity.distanceKm || 0);
+    setAuditDurationHours(activity.durationHours || 0);
+    setAuditFuelFee(activity.fuelFee || 0);
+    setAuditTollParkingFee(activity.tollParkingFee || 0);
+    setAuditVehicleType(activity.vehicleType || 'Suzuki XL7');
+    setAuditIsOvernight(!!activity.isOvernight);
+  };
+
+  const getVehicleRate = (vType: string) => {
+    const VEHICLE_RATES: Record<string, number> = {
+      'Bis': 850,
+      'Elf': 680,
+      'Kijang LGX': 567,
+      'Innova Hitam': 1000,
+      'Innova Matic': 1250,
+      'Suzuki': 741,
+      'Suzuki XL7': 741,
+    };
+    return VEHICLE_RATES[vType] || 741;
+  };
+
+  const getMealAllowanceForHours = (hours: number) => {
+    if (hours < 6) return 0;
+    if (hours <= 12) return 60000;
+    return 90000;
+  };
+
+  const auditCalc = useMemo(() => {
+    if (!auditActivity) return null;
+    const rate = getVehicleRate(auditVehicleType);
+    const baselineBBM = Math.ceil(auditDistanceKm * 2 * rate);
+    const baselineMeal = getMealAllowanceForHours(auditDurationHours);
+    const totalBaseline = baselineBBM + baselineMeal;
+    const deltaFuel = Math.max(0, auditFuelFee - baselineBBM);
+    const actualMeal = getMealAllowanceForHours(auditDurationHours);
+    const componentJarak = Math.ceil(auditDistanceKm * 200);
+    const componentWaktu = Math.ceil(auditDurationHours * 5000);
+    const premiumWeekend = isWeekend(auditActivity.activityDate) ? 20000 : 0;
+    const premiumOvernight = auditIsOvernight ? 50000 : 0;
+    const upahBersih = componentJarak + componentWaktu + premiumWeekend + premiumOvernight;
+    const operationalCost = Math.ceil(Math.max(baselineBBM, auditFuelFee) + actualMeal + auditTollParkingFee);
+    
+    return {
+      rate,
+      baselineBBM,
+      baselineMeal,
+      totalBaseline,
+      deltaFuel,
+      componentJarak,
+      componentWaktu,
+      premiumWeekend,
+      premiumOvernight,
+      upahBersih,
+      operationalCost,
+    };
+  }, [auditActivity, auditDistanceKm, auditDurationHours, auditFuelFee, auditTollParkingFee, auditVehicleType, auditIsOvernight]);
+
+  const handleApproveSopirAudit = async () => {
+    if (!auditActivity || !auditCalc || !user) return;
+    setActionLoading(true);
+    try {
+      await updateDoc(doc(db, 'ActivityReports', auditActivity.id), {
+        status: 'approved',
+        fee: auditCalc.operationalCost,
+        upahBersih: auditCalc.upahBersih,
+        distanceKm: auditDistanceKm,
+        durationHours: auditDurationHours,
+        fuelFee: auditFuelFee,
+        tollParkingFee: auditTollParkingFee,
+        vehicleType: auditVehicleType,
+        isOvernight: auditIsOvernight,
+        tripType: auditDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
+        reviewedAt: serverTimestamp(),
+        reviewedBy: user.uid,
+      });
+
+      if (auditActivity.journeyId) {
+        await updateDoc(doc(db, 'DriverJourneys', auditActivity.journeyId), {
+          status: 'completed',
+          upahBersih: auditCalc.upahBersih,
+          newTotalDistanceKm: auditDistanceKm,
+          newTotalDurationHours: auditDurationHours,
+          fuelFee: auditFuelFee,
+          tollParkingFee: auditTollParkingFee,
+          vehicleName: auditVehicleType,
+          isOvernight: auditIsOvernight,
+        });
+      }
+
+      setSuccessMsg(`Laporan perjalanan dinas ${auditActivity.employeeName} berhasil diaudit dan disetujui.`);
+      setAuditActivity(null);
+      fetchActivities();
+    } catch (err) {
+      console.error('Error approving driver audit:', err);
+      setErrorMsg('Gagal menyetujui laporan perjalanan dinas.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   // ── Action Loading ──
   const [actionLoading, setActionLoading] = useState(false);
@@ -1115,15 +1231,27 @@ export default function ActivityReviewPage() {
                           <TableCell className="text-right pr-6">
                             {activity.status === 'pending' && (
                               <div className="flex justify-end gap-1.5">
-                                <Button
-                                  size="sm"
-                                  disabled={actionLoading}
-                                  onClick={() => handleApproveRow(activity, rowFees[activity.id] || '')}
-                                  className="h-7 px-2.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[11px] border border-emerald-200 cursor-pointer"
-                                >
-                                  <ThumbsUp className="w-3 h-3 mr-1" />
-                                  Setujui
-                                </Button>
+                                {activity.jobCategory === 'SOPIR' ? (
+                                  <Button
+                                    size="sm"
+                                    disabled={actionLoading}
+                                    onClick={() => handleOpenAuditSopir(activity)}
+                                    className="h-7 px-2.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold text-[11px] border border-indigo-200 cursor-pointer"
+                                  >
+                                    <ClipboardCheck className="w-3 h-3 mr-1" />
+                                    Audit & Edit
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    disabled={actionLoading}
+                                    onClick={() => handleApproveRow(activity, rowFees[activity.id] || '')}
+                                    className="h-7 px-2.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[11px] border border-emerald-200 cursor-pointer"
+                                  >
+                                    <ThumbsUp className="w-3 h-3 mr-1" />
+                                    Setujui
+                                  </Button>
+                                )}
                                 <Button
                                   size="sm"
                                   variant="ghost"
@@ -1133,6 +1261,17 @@ export default function ActivityReviewPage() {
                                 >
                                   <ThumbsDown className="w-3 h-3 mr-1" />
                                   Tolak
+                                </Button>
+                              </div>
+                            )}
+                            {activity.jobCategory === 'SOPIR' && activity.status !== 'pending' && (
+                              <div className="flex justify-end">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleOpenAuditSopir(activity)}
+                                  className="h-7 px-2.5 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 font-bold text-[11px] border border-slate-200 cursor-pointer"
+                                >
+                                  Lihat Detail
                                 </Button>
                               </div>
                             )}
@@ -1232,6 +1371,253 @@ export default function ActivityReviewPage() {
               {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <XCircle className="w-4 h-4 mr-2" />}
               Konfirmasi Tolak
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Driver (Sopir) Audit & Edit Modal ─────────────────────────── */}
+      <Dialog open={auditActivity !== null} onOpenChange={(open) => { if (!open) setAuditActivity(null); }}>
+        <DialogContent className="sm:max-w-xl rounded-[28px] border-none shadow-2xl bg-white p-6 max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="pb-2 border-b border-slate-100">
+            <DialogTitle className="text-lg font-extrabold flex items-center gap-2.5 text-slate-800">
+              <Compass className="w-5.5 h-5.5 text-indigo-500 shrink-0" />
+              <span>{auditActivity?.status === 'pending' ? 'Audit & Edit Perjalanan Sopir' : 'Detail Audit Perjalanan Sopir'}</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Verifikasi rute, BBM, uang makan, dan hitung delta serta upah bersih sopir.
+            </DialogDescription>
+          </DialogHeader>
+
+          {auditActivity && auditCalc && (
+            <div className="space-y-5 py-4">
+              {/* Profile / Basic Info Card */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1.5 text-xs text-slate-600">
+                <div className="flex justify-between">
+                  <span className="font-semibold text-slate-400">Nama Sopir:</span>
+                  <span className="font-extrabold text-slate-700">{auditActivity.employeeName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-semibold text-slate-400">Keperluan:</span>
+                  <span className="font-extrabold text-slate-700">{auditActivity.activityName.split(' (')[0]}</span>
+                </div>
+                {auditActivity.points && auditActivity.points.length > 0 && (
+                  <div className="flex flex-col gap-0.5 pt-1 border-t border-slate-200/60 mt-1">
+                    <span className="font-semibold text-slate-400 text-[10px] uppercase block tracking-wider">Rute Perjalanan:</span>
+                    <span className="font-bold text-slate-700 text-xs pl-0.5 leading-relaxed bg-white border border-slate-100 p-1.5 rounded-lg mt-0.5">
+                      📍 {auditActivity.points.join(' → ')}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Editable Fields (Only if pending, otherwise view-only) */}
+              <div className="space-y-3.5">
+                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest block">Parameter Audit Perjalanan</span>
+                
+                <div className="grid grid-cols-2 gap-3.5">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-slate-400 uppercase">Jarak Tempuh PP (KM)</Label>
+                    <Input
+                      type="number"
+                      value={auditDistanceKm || ''}
+                      onChange={(e) => setAuditDistanceKm(Math.max(0, parseFloat(e.target.value) || 0))}
+                      disabled={auditActivity.status !== 'pending' || actionLoading}
+                      className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-slate-400 uppercase">Durasi PP (JAM)</Label>
+                    <Input
+                      type="number"
+                      value={auditDurationHours || ''}
+                      onChange={(e) => setAuditDurationHours(Math.max(0, parseFloat(e.target.value) || 0))}
+                      disabled={auditActivity.status !== 'pending' || actionLoading}
+                      className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3.5">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-slate-400 uppercase">Reimburse BBM (Rp)</Label>
+                    <Input
+                      type="number"
+                      value={auditFuelFee || ''}
+                      onChange={(e) => setAuditFuelFee(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      disabled={auditActivity.status !== 'pending' || actionLoading}
+                      className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-slate-400 uppercase">Reimburse Tol & Parkir (Rp)</Label>
+                    <Input
+                      type="number"
+                      value={auditTollParkingFee || ''}
+                      onChange={(e) => setAuditTollParkingFee(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      disabled={auditActivity.status !== 'pending' || actionLoading}
+                      className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3.5 items-center">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-slate-400 uppercase">Jenis Kendaraan</Label>
+                    {auditActivity.status === 'pending' ? (
+                      <Select value={auditVehicleType} onValueChange={(v) => setAuditVehicleType(v || 'Suzuki XL7')}>
+                        <SelectTrigger className="text-xs font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-9 px-3">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+                          {['Suzuki XL7', 'Bis', 'Elf', 'Kijang LGX', 'Innova Hitam', 'Innova Matic'].map(v => (
+                            <SelectItem key={v} value={v}>{v}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        type="text"
+                        value={auditVehicleType}
+                        disabled
+                        className="rounded-xl bg-slate-50 border-slate-200 text-xs font-bold"
+                      />
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-5">
+                    <input
+                      type="checkbox"
+                      id="auditIsOvernight"
+                      checked={auditIsOvernight}
+                      onChange={(e) => setAuditIsOvernight(e.target.checked)}
+                      disabled={auditActivity.status !== 'pending' || actionLoading}
+                      className="w-4.5 h-4.5 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
+                    />
+                    <label htmlFor="auditIsOvernight" className="text-xs font-bold text-slate-600 select-none cursor-pointer">
+                      Menginap (Overnight)
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Comprehensive Audited Costs Breakdown */}
+              <div className="space-y-3.5 pt-4 border-t border-slate-100">
+                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest block">Hasil Perhitungan Audit</span>
+
+                {/* Earning / Wage Split Rows */}
+                <div className="p-3.5 rounded-2xl bg-indigo-50/40 border border-indigo-100/50 space-y-2.5">
+                  <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-wider block">Komponen Earning (Upah Bersih)</span>
+                  <div className="flex justify-between text-xs font-medium text-slate-600">
+                    <span>Komponen Jarak ({auditDistanceKm} km x Rp200)</span>
+                    <span className="font-extrabold text-slate-700">{fmtRp(auditCalc.componentJarak)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs font-medium text-slate-600">
+                    <span>Komponen Waktu ({auditDurationHours} jam x Rp5.000)</span>
+                    <span className="font-extrabold text-slate-700">{fmtRp(auditCalc.componentWaktu)}</span>
+                  </div>
+                  {auditCalc.premiumWeekend > 0 && (
+                    <div className="flex justify-between text-xs font-medium text-slate-600">
+                      <span>Weekend Premium (Hari Libur)</span>
+                      <span className="font-extrabold text-slate-700">+{fmtRp(auditCalc.premiumWeekend)}</span>
+                    </div>
+                  )}
+                  {auditCalc.premiumOvernight > 0 && (
+                    <div className="flex justify-between text-xs font-medium text-slate-600">
+                      <span>Overnight Premium (Menginap)</span>
+                      <span className="font-extrabold text-slate-700">+{fmtRp(auditCalc.premiumOvernight)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm font-extrabold text-slate-800 pt-2 border-t border-indigo-100/60">
+                    <span>Upah Bersih Sopir (Net Wage)</span>
+                    <span className="font-black text-emerald-600">{fmtRp(auditCalc.upahBersih)}</span>
+                  </div>
+                </div>
+
+                {/* Operational Cost Breakdown */}
+                <div className="p-3.5 rounded-2xl bg-blue-50/30 border border-blue-150 space-y-2.5">
+                  <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider block">Biaya Operasional (SPJ)</span>
+                  <div className="flex justify-between text-xs font-medium text-slate-600">
+                    <span>Jatah BBM / Leg Cost (Jarak PP x {getVehicleRate(auditVehicleType)}/km)</span>
+                    <span className="font-extrabold text-blue-600">{fmtRp(auditCalc.baselineBBM)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs font-medium text-slate-600">
+                    <span>Uang Makan Stratum ({auditDurationHours} jam)</span>
+                    <span className="font-extrabold text-blue-600">{fmtRp(auditCalc.baselineMeal)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs font-medium text-slate-600">
+                    <span>Reimburse BBM Terbeli (Input)</span>
+                    <span className="font-extrabold text-blue-600">{fmtRp(auditFuelFee)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs font-medium text-slate-600">
+                    <span>Kelebihan Pembelian BBM (Delta)</span>
+                    <span className="font-extrabold text-blue-600">+{fmtRp(auditCalc.deltaFuel)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs font-medium text-slate-600">
+                    <span>Reimburse Tol & Parkir (Input)</span>
+                    <span className="font-extrabold text-blue-600">+{fmtRp(auditTollParkingFee)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-extrabold text-slate-800 pt-2 border-t border-blue-100">
+                    <span>Total Operational Cost (Biaya SPJ)</span>
+                    <span className="font-black text-blue-600">{fmtRp(auditCalc.operationalCost)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Receipt URLs (Clickable references) */}
+              {(auditActivity.fuelReceiptUrl || auditActivity.tollReceiptUrl) && (
+                <div className="flex gap-2 pt-2 text-xs">
+                  {auditActivity.fuelReceiptUrl && (
+                    <a
+                      href={auditActivity.fuelReceiptUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5"
+                    >
+                      📄 Lihat Bukti BBM
+                    </a>
+                  )}
+                  {auditActivity.tollReceiptUrl && (
+                    <a
+                      href={auditActivity.tollReceiptUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5"
+                    >
+                      📄 Lihat Bukti Tol
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-3 border-t border-slate-100 pt-4">
+            <Button variant="ghost" onClick={() => setAuditActivity(null)} className="rounded-xl font-bold text-slate-500">
+              Kembali
+            </Button>
+            {auditActivity?.status === 'pending' && (
+              <>
+                <Button
+                  onClick={() => {
+                    setDeclineTarget(auditActivity);
+                    setDeclineReason('');
+                    setAuditActivity(null);
+                  }}
+                  disabled={actionLoading}
+                  className="rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 font-bold"
+                >
+                  Tolak Perjalanan
+                </Button>
+                <Button
+                  onClick={handleApproveSopirAudit}
+                  disabled={actionLoading}
+                  className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold hover:shadow-lg shadow-indigo-100"
+                >
+                  {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+                  Audit & Setujui
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

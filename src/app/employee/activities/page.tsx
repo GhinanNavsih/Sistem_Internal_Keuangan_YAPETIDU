@@ -126,6 +126,11 @@ interface ActivityReport {
   points?: string[];
   distanceKm?: number;
   durationHours?: number;
+  upahBersih?: number;
+  extraMealAllowance?: number;
+  extraFuelCost?: number;
+  fuelReceiptUrl?: string;
+  tollReceiptUrl?: string;
   // SATPAM specific fields
   shiftName?: 'Pagi' | 'Sore' | 'Malam' | string;
   shiftType?: 'Harian' | 'Jumat & Libur' | 'Lembur Sendiri' | 'Lembur Cover' | 'Off-Duty' | string;
@@ -133,6 +138,150 @@ interface ActivityReport {
   ketuaShiftId?: string;
   ketuaShiftName?: string;
 }
+
+const getPlacesSearchQuery = (endPoint: string): string => {
+  const firstSegment = endPoint.split(',')[0].trim();
+  
+  if (!firstSegment.toLowerCase().startsWith('jl.') && !firstSegment.toLowerCase().startsWith('jalan')) {
+    return firstSegment;
+  }
+
+  const parts = endPoint.split(',').map(p => p.trim());
+  const streetPart = parts[0];
+  const cleanStreet = streetPart.replace(/\bNo\s*\.?\s*\d+[-\d]*/i, '').trim();
+
+  const cities = ['Surabaya', 'Jombang', 'Sidoarjo', 'Gresik', 'Malang', 'Bangkalan', 'Madura', 'Mojokerto', 'Kediri'];
+  let city = '';
+  for (const part of parts) {
+    for (const c of cities) {
+      if (part.toLowerCase().includes(c.toLowerCase())) {
+        city = c;
+        break;
+      }
+    }
+    if (city) break;
+  }
+
+  if (city) {
+    return `${cleanStreet}, ${city}`;
+  }
+
+  return cleanStreet;
+};
+
+const DestinationImageBanner = ({ destination, cachedUrl }: { destination: string; cachedUrl?: string }) => {
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (cachedUrl) {
+      setImgUrl(cachedUrl);
+      setLoading(false);
+      return;
+    }
+
+    if (typeof window === 'undefined') {
+      setLoading(false);
+      return;
+    }
+
+    const checkAndFetch = () => {
+      const g = (window as any).google;
+      if (!g || !g.maps || !g.maps.places) {
+        setLoading(false);
+        return;
+      }
+
+      const searchQuery = getPlacesSearchQuery(destination);
+      const cacheKey = `place_img_${encodeURIComponent(searchQuery)}`;
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        setImgUrl(cached);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const dummy = document.createElement('div');
+        const service = new g.maps.places.PlacesService(dummy);
+
+        // textSearch returns multiple candidate establishments (such as UPN for Rungkut Madya)
+        service.textSearch({
+          query: searchQuery
+        }, (results: any, status: any) => {
+          if (status === g.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
+            // Find the first result candidate that has photos
+            const matchWithPhoto = results.find((r: any) => r.photos && r.photos.length > 0);
+            if (matchWithPhoto) {
+              const url = matchWithPhoto.photos[0].getUrl({ maxWidth: 600, maxHeight: 200 });
+              if (url) {
+                localStorage.setItem(cacheKey, url);
+                setImgUrl(url);
+                setLoading(false);
+                return;
+              }
+            }
+          }
+
+          // Fallback: If textSearch yields nothing or no photos, try findPlaceFromQuery
+          service.findPlaceFromQuery({
+            query: searchQuery,
+            fields: ['photos']
+          }, (results2: any, status2: any) => {
+            if (status2 === g.maps.places.PlacesServiceStatus.OK && results2 && results2[0]?.photos?.[0]) {
+              const url = results2[0].photos[0].getUrl({ maxWidth: 600, maxHeight: 200 });
+              if (url) {
+                localStorage.setItem(cacheKey, url);
+                setImgUrl(url);
+              }
+            }
+            setLoading(false);
+          });
+        });
+      } catch (e) {
+        console.error('Error fetching places photo:', e);
+        setLoading(false);
+      }
+    };
+
+    const g = (window as any).google;
+    if (g && g.maps && g.maps.places) {
+      checkAndFetch();
+    } else {
+      const timer = setTimeout(checkAndFetch, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [destination]);
+
+  if (loading) {
+    return (
+      <div className="w-full h-32 bg-slate-50 flex items-center justify-center animate-pulse">
+        <Loader2 className="w-5 h-5 text-indigo-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!imgUrl) {
+    return (
+      <div className="w-full h-32 bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center relative overflow-hidden">
+        <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#4f46e5_1px,transparent_1px)] [background-size:16px_16px]" />
+        <Compass className="w-10 h-10 text-indigo-400/50 relative z-10" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full h-32 relative overflow-hidden border-b border-slate-100">
+      <img
+        src={imgUrl}
+        alt={destination}
+        className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+        onError={() => setImgUrl(null)}
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
+    </div>
+  );
+};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -421,6 +570,7 @@ export default function EmployeeActivitiesPage() {
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [mapSearchText, setMapSearchText] = useState('');
   const [mapAddress, setMapAddress] = useState('');
+  const [mapAddressImage, setMapAddressImage] = useState<string | null>(null);
   const [mapTargetIndex, setMapTargetIndex] = useState<number | null>(null);
   const [isCalculatingExtraRoute, setIsCalculatingExtraRoute] = useState(false);
   const [extraRouteError, setExtraRouteError] = useState('');
@@ -482,12 +632,34 @@ export default function EmployeeActivitiesPage() {
       markerRef.current = marker;
 
       const geocoder = new google.maps.Geocoder();
+      
+      const updateAddressImage = (query: string) => {
+        try {
+          const service = new google.maps.places.PlacesService(map || document.createElement('div'));
+          service.textSearch({ query }, (results: any, status: any) => {
+            if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
+              const matchWithPhoto = results.find((r: any) => r.photos && r.photos.length > 0);
+              if (matchWithPhoto) {
+                setMapAddressImage(matchWithPhoto.photos[0].getUrl({ maxWidth: 600, maxHeight: 200 }));
+                return;
+              }
+            }
+            setMapAddressImage(null);
+          });
+        } catch (e) {
+          console.error(e);
+          setMapAddressImage(null);
+        }
+      };
+
       const updateAddress = (latLng: any) => {
         geocoder.geocode({ location: latLng }, (results: any, status: any) => {
           if (status === 'OK' && results[0]) {
             setMapAddress(results[0].formatted_address);
+            updateAddressImage(results[0].formatted_address);
           } else {
             setMapAddress(`${latLng.lat().toFixed(5)}, ${latLng.lng().toFixed(5)}`);
+            setMapAddressImage(null);
           }
         });
       };
@@ -501,6 +673,7 @@ export default function EmployeeActivitiesPage() {
             map.setZoom(15);
             marker.setPosition(loc);
             setMapAddress(results[0].formatted_address);
+            updateAddressImage(results[0].formatted_address);
           } else {
             updateAddress(unipduCoords);
           }
@@ -533,7 +706,7 @@ export default function EmployeeActivitiesPage() {
 
       try {
         const autocomplete = new google.maps.places.Autocomplete(inputEl, {
-          fields: ['formatted_address', 'geometry', 'name'],
+          fields: ['formatted_address', 'geometry', 'name', 'photos'],
         });
 
         autocomplete.addListener('place_changed', () => {
@@ -546,9 +719,34 @@ export default function EmployeeActivitiesPage() {
             markerRef.current.setPosition(place.geometry.location);
           }
 
+          // Handle photos inside place object
+          if (place.photos && place.photos[0]) {
+            setMapAddressImage(place.photos[0].getUrl({ maxWidth: 600, maxHeight: 200 }));
+          } else if (place.name || place.formatted_address) {
+            // Try to resolve photo via textSearch
+            const query = place.name || place.formatted_address;
+            const service = new google.maps.places.PlacesService(mapRef.current);
+            service.textSearch({ query }, (res: any, stat: any) => {
+              if (stat === google.maps.places.PlacesServiceStatus.OK && res && res[0]?.photos?.[0]) {
+                setMapAddressImage(res[0].photos[0].getUrl({ maxWidth: 600, maxHeight: 200 }));
+              } else {
+                setMapAddressImage(null);
+              }
+            });
+          } else {
+            setMapAddressImage(null);
+          }
+
           if (place.formatted_address) {
-            setMapAddress(place.formatted_address);
-            setMapSearchText(place.name || place.formatted_address);
+            const name = place.name;
+            const address = place.formatted_address;
+            if (name && !name.toLowerCase().startsWith('jl.') && !name.toLowerCase().startsWith('jalan') && !address.toLowerCase().startsWith(name.toLowerCase())) {
+              setMapAddress(`${name}, ${address}`);
+              setMapSearchText(`${name}, ${address}`);
+            } else {
+              setMapAddress(address);
+              setMapSearchText(address);
+            }
           } else {
             const geocoder = new google.maps.Geocoder();
             geocoder.geocode({ location: place.geometry.location }, (results: any, status: any) => {
@@ -1618,6 +1816,175 @@ export default function EmployeeActivitiesPage() {
     );
   }
 
+  // Helper to render driver travel history
+  const renderRiwayatSopir = () => {
+    return (
+      <div className="space-y-4 animate-in fade-in duration-200">
+        <div className="grid grid-cols-2 gap-3">
+          <Card className="bg-white rounded-2xl shadow-sm border border-slate-100">
+            <CardContent className="p-4 text-center">
+              <div className="text-2xl font-extrabold text-indigo-600">{stats.approved + stats.pending + stats.declined}</div>
+              <div className="text-[11px] font-semibold text-slate-400 mt-0.5">Total Perjalanan</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-lg shadow-indigo-200/40 border-none">
+            <CardContent className="p-4 text-center">
+              <div className="text-2xl font-extrabold text-white">
+                {fmtRp(activities.filter(a => a.status === 'approved').reduce((sum, a) => sum + (a.upahBersih || 0), 0))}
+              </div>
+              <div className="text-[11px] font-semibold text-indigo-100 mt-0.5">Upah Bersih Disetujui</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setStatusFilter('all')}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'all'
+              ? 'bg-slate-800 text-white shadow-md'
+              : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+              }`}
+          >
+            Semua ({activities.length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('pending')}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'pending'
+              ? 'bg-amber-500 text-white shadow-md'
+              : 'bg-white text-amber-600 border border-amber-200 hover:bg-amber-50'
+              }`}
+          >
+            Menunggu ({stats.pending})
+          </button>
+          <button
+            onClick={() => setStatusFilter('approved')}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'approved'
+              ? 'bg-emerald-500 text-white shadow-md'
+              : 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50'
+              }`}
+          >
+            Disetujui ({stats.approved})
+          </button>
+          <button
+            onClick={() => setStatusFilter('declined')}
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'declined'
+              ? 'bg-rose-500 text-white shadow-md'
+              : 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-50'
+              }`}
+          >
+            Ditolak ({stats.declined})
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="py-16 flex flex-col items-center text-slate-400">
+            <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-3" />
+            <span className="text-sm font-medium animate-pulse">Memuat riwayat perjalanan...</span>
+          </div>
+        ) : filteredActivities.length === 0 ? (
+          <Card className="bg-white rounded-2xl shadow-sm border border-slate-100">
+            <CardContent className="py-16 flex flex-col items-center text-center">
+              <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center mb-4">
+                <Compass className="w-8 h-8 text-slate-300" />
+              </div>
+              <h3 className="text-base font-bold text-slate-700">Belum Ada Riwayat Perjalanan</h3>
+              <p className="text-xs text-slate-400 max-w-xs mt-1.5 leading-relaxed">
+                {statusFilter !== 'all'
+                  ? `Tidak ada riwayat perjalanan berstatus "${getStatusConfig(statusFilter).label}" pada periode ini.`
+                  : 'Perjalanan dinas yang Anda ambil dan laporkan akan muncul di sini.'
+                }
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-2.5">
+            {filteredActivities.map((activity) => {
+              const sc = getStatusConfig(activity.status);
+              const reimburseDelta = (activity.tollParkingFee || 0) + 
+                (activity.extraMealAllowance || 0) + 
+                (activity.extraFuelCost || 0) + 
+                (activity.isOvernight ? 50000 : 0) + 
+                (activity.activityDate && isWeekend(activity.activityDate) ? 20000 : 0);
+
+              return (
+                <Card key={activity.id} className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden hover:border-slate-300 transition-all animate-in fade-in duration-150">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-2.5 h-2.5 rounded-full ${sc.dotClass}`} />
+                        <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-md ${sc.bgClass} ${sc.textClass} border ${sc.borderClass}`}>
+                          {sc.label}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md">
+                        {activity.vehicleType || 'Kendaraan'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-extrabold text-slate-800 leading-snug">
+                        {activity.activityName.split(' (')[0]}
+                      </h4>
+                      {activity.activityName.includes(' (') && (
+                        <div className="flex items-center gap-1 mt-1.5 text-[10px] text-slate-500 font-semibold bg-slate-50/60 p-2 rounded-lg border border-slate-100">
+                          <Compass className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                          <span className="truncate flex-1 text-slate-700 font-extrabold">
+                            {activity.activityName.split(' (')[1].replace(')', '')}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2.5 mt-2 text-[10px] text-slate-400 font-bold">
+                        <span className="flex items-center gap-1">📅 {activity.activityDate}</span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1">⏱️ {activity.timeStart} – {activity.timeEnd}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2.5 border-t border-slate-100">
+                      <div className="flex gap-4">
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Total Reimburse (Delta)</span>
+                          <span className="text-xs font-black text-blue-600">{fmtRp(Math.ceil(reimburseDelta))}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Upah Bersih</span>
+                          <span className="text-xs font-black text-emerald-600">{fmtRp(Math.ceil(activity.upahBersih || 0))}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-1.5">
+                        {activity.fuelReceiptUrl && (
+                          <a
+                            href={activity.fuelReceiptUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md transition-colors"
+                          >
+                            📄 Bukti BBM
+                          </a>
+                        )}
+                        {activity.tollReceiptUrl && (
+                          <a
+                            href={activity.tollReceiptUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md transition-colors"
+                          >
+                            📄 Bukti Tol
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800">
       {/* ── Notifications ────────────────────────────────────────────── */}
@@ -1657,6 +2024,19 @@ export default function EmployeeActivitiesPage() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {isSopir && (
+              <Link href="/employee/driver-history">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-xl h-8 px-2.5 flex items-center gap-1.5 font-bold text-xs cursor-pointer"
+                  title="Lihat Riwayat Perjalanan"
+                >
+                  <Compass className="w-4 h-4 text-indigo-600" />
+                  <span>Riwayat Perjalanan</span>
+                </Button>
+              </Link>
+            )}
             <Link href="/employee/payslip">
               <Button
                 variant="ghost"
@@ -2124,6 +2504,7 @@ export default function EmployeeActivitiesPage() {
                   )}
                   {unassignedJourneys.map((j) => (
                     <Card key={j.id} className="bg-white hover:border-slate-300 transition-all rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
+                      <DestinationImageBanner destination={j.endPoint} cachedUrl={j.destinationImageUrl} />
                       <CardContent className="p-4 space-y-3">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5">
@@ -2187,8 +2568,10 @@ export default function EmployeeActivitiesPage() {
           </div>
         )}
 
-        {/* ── Stats Summary ────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3">
+        {isSopir ? null : (
+          <>
+            {/* ── Stats Summary ────────────────────────────────────────────── */}
+            <div className="grid grid-cols-2 gap-3">
           <Card className="bg-white rounded-2xl shadow-sm border-none">
             <CardContent className="p-4 text-center">
               <div className="text-2xl font-extrabold text-teal-600">{stats.approved + stats.pending + stats.declined}</div>
@@ -2565,6 +2948,8 @@ export default function EmployeeActivitiesPage() {
               );
             })}
           </div>
+        )}
+          </>
         )}
 
         {/* Bottom spacer for FAB */}
@@ -3548,20 +3933,92 @@ export default function EmployeeActivitiesPage() {
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
-            {/* Search Input inside Map */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            {/* Search Input inside Map (Google Maps Themed Style) */}
+            <div className="relative flex items-center bg-white border border-slate-200 rounded-2xl shadow-sm h-11 px-3.5 gap-2.5 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 transition-all">
+              <div className="flex items-center justify-center w-5 text-indigo-500 shrink-0">
+                <Compass className="w-4.5 h-4.5 animate-pulse" />
+              </div>
               <Input
                 ref={(el) => {
                   if (el) {
                     initAutocomplete(el);
                   }
                 }}
-                placeholder="Cari alamat, gedung, kota..."
+                placeholder="Cari lokasi tujuan dinas..."
                 value={mapSearchText}
                 onChange={(e) => setMapSearchText(e.target.value)}
-                className="pl-9 h-10 rounded-xl text-xs bg-slate-50 border-slate-200 focus:bg-white transition-all"
+                className="flex-1 border-none bg-transparent p-0 focus-visible:ring-0 text-xs font-bold text-slate-700 h-full placeholder:text-slate-400"
               />
+              {mapSearchText && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMapSearchText('');
+                    setMapAddress('');
+                  }}
+                  className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-slate-100 transition-all text-slate-400 hover:text-slate-600 shrink-0"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              )}
+              <div className="w-px h-5 bg-slate-200 shrink-0" />
+              <button
+                type="button"
+                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-indigo-50 transition-all text-indigo-500 hover:text-indigo-600 shrink-0"
+              >
+                <Search className="w-4.5 h-4.5" />
+              </button>
+
+              <style>{`
+                .pac-container {
+                  z-index: 99999 !important;
+                  border-radius: 18px !important;
+                  border: 1px solid #e2e8f0 !important;
+                  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08) !important;
+                  font-family: inherit !important;
+                  padding: 8px 0 !important;
+                  margin-top: 6px !important;
+                }
+                .pac-item {
+                  padding: 10px 14px !important;
+                  font-size: 11px !important;
+                  font-weight: 600 !important;
+                  color: #475569 !important;
+                  cursor: pointer !important;
+                  display: flex !important;
+                  align-items: center !important;
+                  gap: 8px !important;
+                  border-top: 1px solid #f1f5f9 !important;
+                  transition: all 0.15s ease !important;
+                }
+                .pac-item:hover {
+                  background-color: #f8fafc !important;
+                }
+                .pac-item-query {
+                  font-size: 11px !important;
+                  font-weight: 850 !important;
+                  color: #0f172a !important;
+                }
+                .pac-matched {
+                  color: #4f46e5 !important;
+                }
+                .pac-icon {
+                  margin-top: 0 !important;
+                  background-image: none !important;
+                  position: relative !important;
+                  display: inline-block !important;
+                  width: 14px !important;
+                  height: 14px !important;
+                  flex-shrink: 0 !important;
+                }
+                .pac-icon::before {
+                  content: "📍" !important;
+                  font-size: 10px !important;
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                }
+              `}</style>
             </div>
 
             {/* Map Container */}
@@ -3578,6 +4035,23 @@ export default function EmployeeActivitiesPage() {
                 <span className="text-[10px] font-bold">Memuat Google Maps...</span>
               </div>
             </div>
+
+            {/* Selected Location Image Preview (Google Maps style) */}
+            {mapAddressImage && (
+              <div className="w-full h-32 rounded-xl overflow-hidden border border-slate-100 shadow-sm relative group bg-slate-50 animate-fade-in">
+                <img
+                  src={mapAddressImage}
+                  alt="Location Preview"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/10 to-transparent flex items-end p-3">
+                  <div className="text-[10px] text-white font-extrabold flex items-center gap-1 shadow-sm drop-shadow-md">
+                    <Compass className="w-3.5 h-3.5 text-indigo-300 animate-spin-slow shrink-0" />
+                    <span>Pratinjau Lokasi Terpilih</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Selected Address Box */}
             {mapAddress && (
