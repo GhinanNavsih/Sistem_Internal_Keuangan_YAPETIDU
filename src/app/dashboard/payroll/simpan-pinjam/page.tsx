@@ -88,6 +88,12 @@ interface SimpanPinjamDoc {
   history?: LoanHistory[];
   catatanTambahan?: string[];
   alasanPenolakan?: string;
+  restructuredFromLoanId?: string;
+  restructuredToLoanId?: string;
+  sisaPinjamanSebelumnya?: number;
+  pinjamanBaru?: number;
+  additionalTenor?: number;
+  tujuanPinjaman?: string;
 }
 
 interface InternalEmployee {
@@ -121,8 +127,9 @@ export default function SimpanPinjamReviewPage() {
   const [employees, setEmployees] = useState<InternalEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'warnings' | 'completed'>('active');
+  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'warnings' | 'completed' | 'restructured'>('active');
   const [selectedLoan, setSelectedLoan] = useState<ProcessedLoan | null>(null);
+  const [showDetailedMatch, setShowDetailedMatch] = useState(false);
 
   // 1. Fetch All Data
   useEffect(() => {
@@ -247,6 +254,12 @@ export default function SimpanPinjamReviewPage() {
         }
       }
 
+      // "Pembayaran Cicilan" is an installment log entry, not a state transition.
+      // Normalize it back to "Disetujui dan Aktif" to match DashboardDataContext behavior.
+      if (resolvedStatus === 'Pembayaran Cicilan') {
+        resolvedStatus = 'Disetujui dan Aktif';
+      }
+
       // Identify warnings / anomalies
       const warnings: string[] = [];
       if (matchType === 'none') {
@@ -257,6 +270,15 @@ export default function SimpanPinjamReviewPage() {
       }
       if (resolvedStatus === 'Lunas' && (loan.sisaHutang || 0) > 0) {
         warnings.push('Anomaly: Status is fully paid (Lunas), but sisaHutang is greater than 0.');
+      }
+      if (resolvedStatus === 'Direstrukturisasi' && (loan.sisaHutang || 0) > 0) {
+        warnings.push('Anomaly: Status is Restructured (Direstrukturisasi), but remaining debt is greater than Rp 0.');
+      }
+      if (resolvedStatus === 'Direstrukturisasi' && !loan.restructuredToLoanId) {
+        warnings.push('Anomaly: Status is Restructured (Direstrukturisasi), but missing reference to the new loan (restructuredToLoanId).');
+      }
+      if (resolvedStatus === 'Menunggu Persetujuan Restrukturisasi' && !loan.restructuredToLoanId) {
+        warnings.push('Anomaly: Status is pending restructuring, but missing reference to the target loan (restructuredToLoanId).');
       }
 
       const monthlyInstallment = Math.round(loan.jumlahPinjaman / loan.tenor);
@@ -309,8 +331,11 @@ export default function SimpanPinjamReviewPage() {
         // Must have at least 1 warning indicator
         if (loan.warnings.length === 0) return false;
       } else if (activeTab === 'completed') {
-        // Loan is completed or has 0 sisaHutang
-        if (loan.status !== 'Lunas' && (loan.sisaHutang || 0) > 0) return false;
+        // Loan is completed (fully paid) and not restructured
+        if (loan.status !== 'Lunas') return false;
+      } else if (activeTab === 'restructured') {
+        // Loan is restructured or pending restructuring
+        if (loan.status !== 'Direstrukturisasi' && loan.status !== 'Menunggu Persetujuan Restrukturisasi') return false;
       }
 
       // Search Query filter
@@ -369,6 +394,49 @@ export default function SimpanPinjamReviewPage() {
       month: 'long',
       year: 'numeric',
     });
+  };
+
+  // Helper to switch view to a related loan
+  const handleViewRelatedLoan = (relatedLoanId: string) => {
+    const related = processedLoans.find(l => l.id === relatedLoanId);
+    if (related) {
+      setSelectedLoan(related);
+      setShowDetailedMatch(false);
+    } else {
+      alert(`Detail pinjaman terkait (${relatedLoanId.substring(0, 8)}) tidak ditemukan di database.`);
+    }
+  };
+
+  // Compose full ancestry history trail by walking the restructuredFromLoanId chain
+  const getComposedHistoryTrail = (loan: ProcessedLoan): { loanId: string; loanLabel: string; entries: LoanHistory[] }[] => {
+    const segments: { loanId: string; loanLabel: string; entries: LoanHistory[] }[] = [];
+
+    // Walk back through the ancestry chain
+    let currentId: string | undefined = loan.restructuredFromLoanId;
+    const visited = new Set<string>();
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      const ancestor = processedLoans.find(l => l.id === currentId);
+      if (ancestor) {
+        segments.unshift({
+          loanId: ancestor.id,
+          loanLabel: `#${ancestor.id.substring(0, 8)}`,
+          entries: ancestor.history || [],
+        });
+        currentId = ancestor.restructuredFromLoanId;
+      } else {
+        break;
+      }
+    }
+
+    // Add the current loan's history at the end
+    segments.push({
+      loanId: loan.id,
+      loanLabel: `#${loan.id.substring(0, 8)} (Saat Ini)`,
+      entries: loan.history || [],
+    });
+
+    return segments;
   };
 
   return (
@@ -466,10 +534,17 @@ export default function SimpanPinjamReviewPage() {
               </button>
               <button
                 type="button"
+                onClick={() => setActiveTab('restructured')}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeTab === 'restructured' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Restrukturisasi ({processedLoans.filter(l => l.status === 'Direstrukturisasi' || l.status === 'Menunggu Persetujuan Restrukturisasi').length})
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveTab('completed')}
                 className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeTab === 'completed' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
-                Lunas / Selesai ({processedLoans.filter(l => l.status === 'Lunas' || l.sisaHutang <= 0).length})
+                Lunas / Selesai ({processedLoans.filter(l => l.status === 'Lunas').length})
               </button>
               <button
                 type="button"
@@ -521,8 +596,32 @@ export default function SimpanPinjamReviewPage() {
                       {/* Borrower identity */}
                       <TableCell className="pl-8 font-semibold text-slate-900 w-[240px]">
                         <div>
-                          <span>{loan.borrowerName}</span>
-                          <div className="text-[10px] font-normal text-slate-400 font-mono mt-0.5">ID: {loan.id}</div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>{loan.borrowerName}</span>
+                            {loan.status === 'Direstrukturisasi' && (
+                              <Badge className="bg-blue-50 text-blue-700 border-blue-100 border text-[9px] font-bold px-1.5 py-0 rounded">
+                                Direstrukturisasi
+                              </Badge>
+                            )}
+                            {loan.status === 'Menunggu Persetujuan Restrukturisasi' && (
+                              <Badge className="bg-purple-50 text-purple-700 border-purple-100 border text-[9px] font-bold px-1.5 py-0 rounded">
+                                Pending Restruktur
+                              </Badge>
+                            )}
+                            {loan.status === 'Lunas' && (
+                              <Badge className="bg-slate-50 text-slate-500 border-slate-200 border text-[9px] font-bold px-1.5 py-0 rounded">
+                                Lunas
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-[10px] font-normal text-slate-400 font-mono mt-0.5 flex items-center gap-1.5">
+                            <span>ID: {loan.id}</span>
+                            {loan.tujuanPinjaman === 'Restrukturisasi pinjaman' && (
+                              <span className="text-[9px] text-indigo-500 font-semibold bg-indigo-50 px-1 rounded">
+                                Hasil Restruktur
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
 
@@ -601,8 +700,12 @@ export default function SimpanPinjamReviewPage() {
         </Card>
       </div>
 
-      {/* Audit Detail Modal Dialog */}
-      <Dialog open={selectedLoan !== null} onOpenChange={open => !open && setSelectedLoan(null)}>
+      <Dialog open={selectedLoan !== null} onOpenChange={open => {
+        if (!open) {
+          setSelectedLoan(null);
+          setShowDetailedMatch(false);
+        }
+      }}>
         {selectedLoan && (
           <DialogContent className="sm:max-w-5xl w-[95vw] p-8 rounded-2xl border-none shadow-2xl bg-white max-h-[90vh] overflow-y-auto">
             <DialogHeader className="mb-6">
@@ -616,6 +719,10 @@ export default function SimpanPinjamReviewPage() {
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-100 border'
                     : selectedLoan.status === 'Lunas'
                     ? 'bg-slate-50 text-slate-500 border-slate-200 border'
+                    : selectedLoan.status === 'Direstrukturisasi'
+                    ? 'bg-blue-50 text-blue-700 border-blue-100 border'
+                    : selectedLoan.status === 'Menunggu Persetujuan Restrukturisasi'
+                    ? 'bg-purple-50 text-purple-700 border-purple-100 border'
                     : 'bg-rose-50 text-rose-700 border-rose-100 border'
                 }`}>
                   {selectedLoan.status}
@@ -625,6 +732,34 @@ export default function SimpanPinjamReviewPage() {
                 Audit data history pengajuan dan relasi payroll karyawan
               </DialogDescription>
             </DialogHeader>
+
+            {/* Lineage / Restructuring Navigation Links */}
+            {(selectedLoan.restructuredFromLoanId || selectedLoan.restructuredToLoanId) && (
+              <div className="flex gap-3 text-xs text-indigo-600 font-semibold mb-6 bg-indigo-50/50 px-4 py-2.5 rounded-xl border border-indigo-100/50 items-center">
+                <span className="text-indigo-800 font-bold">Hubungan Restrukturisasi:</span>
+                {selectedLoan.restructuredFromLoanId && (
+                  <button
+                    type="button"
+                    onClick={() => handleViewRelatedLoan(selectedLoan.restructuredFromLoanId!)}
+                    className="hover:underline cursor-pointer flex items-center gap-1 font-bold bg-white text-indigo-600 border border-indigo-200 rounded px-2 py-0.5"
+                  >
+                    ← Pinjaman Sebelumnya (#{selectedLoan.restructuredFromLoanId.substring(0, 8)})
+                  </button>
+                )}
+                {selectedLoan.restructuredFromLoanId && selectedLoan.restructuredToLoanId && (
+                  <span className="text-indigo-300">·</span>
+                )}
+                {selectedLoan.restructuredToLoanId && (
+                  <button
+                    type="button"
+                    onClick={() => handleViewRelatedLoan(selectedLoan.restructuredToLoanId!)}
+                    className="hover:underline cursor-pointer flex items-center gap-1 font-bold bg-white text-indigo-600 border border-indigo-200 rounded px-2 py-0.5"
+                  >
+                    Pinjaman Baru (#{selectedLoan.restructuredToLoanId.substring(0, 8)}) →
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Warnings Alert Callout */}
             {selectedLoan.warnings.length > 0 && (
@@ -641,144 +776,291 @@ export default function SimpanPinjamReviewPage() {
               </div>
             )}
 
+            {/* Person Link Verification Banner */}
+            <div className={`p-4 rounded-xl mb-6 flex items-center justify-between border ${
+              selectedLoan.matchedEmployee
+                ? 'bg-emerald-50/50 border-emerald-100 text-emerald-800'
+                : 'bg-rose-50/50 border-rose-100 text-rose-800'
+            }`}>
+              <div className="flex items-center gap-2.5 text-xs font-semibold">
+                {selectedLoan.matchedEmployee ? (
+                  <>
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <span>
+                      ✓ Terverifikasi: Peminjam terhubung dengan karyawan internal:{' '}
+                      <span className="font-bold">{selectedLoan.matchedEmployee.name}</span> ({selectedLoan.matchedEmployee.collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'})
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <HelpCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                    <span>
+                      ✗ Tidak Terhubung: Peminjam tidak terhubung dengan record karyawan internal mana pun.
+                    </span>
+                  </>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDetailedMatch(!showDetailedMatch)}
+                className={`text-[11px] font-bold h-7 rounded-lg px-3 border cursor-pointer ${
+                  selectedLoan.matchedEmployee
+                    ? 'hover:bg-emerald-100/50 border-emerald-200 text-emerald-700'
+                    : 'hover:bg-rose-100/50 border-rose-200 text-rose-700'
+                }`}
+              >
+                {showDetailedMatch ? 'Sembunyikan Rincian Match' : 'Tampilkan Rincian Match'}
+              </Button>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Left Column: Loan & Koperasi Profile */}
+              {/* Left Column: Loan Info & Parameters */}
               <div className="space-y-6">
-                <div>
-                  <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                    <User className="w-4 h-4" /> Koperasi Borrower Info
-                  </h3>
-                  <div className="bg-slate-50/70 p-4 rounded-xl space-y-2 border border-slate-100/50">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Nama Lengkap</span>
-                      <span className="font-semibold text-slate-800">{selectedLoan.borrowerName}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Satuan Kerja</span>
-                      <span className="font-semibold text-slate-800">{selectedLoan.borrowerSatuanKerja || '-'}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Nomor WhatsApp</span>
-                      <span className="font-semibold text-slate-800">{selectedLoan.borrowerWhatsapp || '-'}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Email Anggota</span>
-                      <span className="font-semibold text-slate-800 truncate max-w-[150px]">{selectedLoan.borrowerEmail || '-'}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">NIK (KTP)</span>
-                      <span className="font-semibold text-slate-800">{selectedLoan.borrowerNik || '-'}</span>
+                {showDetailedMatch && (
+                  <div>
+                    <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <User className="w-4 h-4" /> Koperasi Borrower Info
+                    </h3>
+                    <div className="bg-slate-50/70 p-4 rounded-xl space-y-2 border border-slate-100/50">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400">Nama Lengkap</span>
+                        <span className="font-semibold text-slate-800">{selectedLoan.borrowerName}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400">Satuan Kerja</span>
+                        <span className="font-semibold text-slate-800">{selectedLoan.borrowerSatuanKerja || '-'}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400">Nomor WhatsApp</span>
+                        <span className="font-semibold text-slate-800">{selectedLoan.borrowerWhatsapp || '-'}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400">Email Anggota</span>
+                        <span className="font-semibold text-slate-800 truncate max-w-[150px]">{selectedLoan.borrowerEmail || '-'}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400">NIK (KTP)</span>
+                        <span className="font-semibold text-slate-800">{selectedLoan.borrowerNik || '-'}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 <div>
                   <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                     <FileText className="w-4 h-4" /> Loan Financial Parameters
                   </h3>
-                  <div className="bg-slate-50/70 p-4 rounded-xl space-y-2 border border-slate-100/50">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Total Pinjaman</span>
-                      <span className="font-bold text-slate-800">Rp {selectedLoan.jumlahPinjaman.toLocaleString('id-ID')}</span>
+                  
+                  {/* Restructured Banner Explainer for Old Loans */}
+                  {selectedLoan.status === 'Direstrukturisasi' && selectedLoan.restructuredToLoanId && (
+                    <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl mb-3 text-blue-800 text-[11px] font-medium leading-relaxed">
+                      <span className="font-bold block mb-1">Pinjaman Telah Direstrukturisasi</span>
+                      Sisa hutang lama telah ditransfer to pinjaman baru{' '}
+                      <button
+                        type="button"
+                        onClick={() => handleViewRelatedLoan(selectedLoan.restructuredToLoanId!)}
+                        className="font-bold underline text-blue-700 hover:text-blue-900 cursor-pointer"
+                      >
+                        #{selectedLoan.restructuredToLoanId.substring(0, 8)}
+                      </button>
+                      . Sisa hutang pada dokumen ini diatur menjadi Rp 0 karena kewajiban pembayaran telah dialihkan ke program pinjaman baru tersebut.
                     </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Tenor Pinjaman</span>
-                      <span className="font-semibold text-slate-800">{selectedLoan.tenor} Bulan</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Cicilan Bulanan</span>
-                      <span className="font-bold text-indigo-600">Rp {selectedLoan.monthlyInstallment.toLocaleString('id-ID')}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Sisa Hutang</span>
-                      <span className="font-bold text-amber-700">Rp {selectedLoan.sisaHutang.toLocaleString('id-ID')}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Jumlah Terbayar</span>
-                      <span className="font-semibold text-slate-800">{selectedLoan.jumlahMenyicil} Cicilan</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Tanggal Pengajuan</span>
-                      <span className="font-semibold text-slate-800">{formatDate(selectedLoan.tanggalPengajuan)}</span>
-                    </div>
-                    {selectedLoan.bankDetails && (
-                      <div className="pt-2 border-t border-slate-200/50 flex justify-between items-center text-xs">
-                        <span className="text-slate-400">Rekening Transfer</span>
-                        <span className="font-semibold text-slate-800">{selectedLoan.bankDetails.bank} - {selectedLoan.bankDetails.nomorRekening}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+                  )}
 
-              {/* Right Column: Internal Matching & Approval History */}
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4" /> Internal Match Info (YAPETIDU)
-                  </h3>
-                  {selectedLoan.matchedEmployee ? (
-                    <div className="bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/50 space-y-2">
+                  {/* Financial Parameters Box */}
+                  {selectedLoan.restructuredFromLoanId ? (
+                    /* Restructured New Loan Breakdown */
+                    <div className="bg-slate-50/70 p-4 rounded-xl space-y-2 border border-slate-100/50">
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-500">Nama Internal</span>
-                        <span className="font-bold text-indigo-950">{selectedLoan.matchedEmployee.name}</span>
+                        <span className="text-slate-400">Sisa Hutang Lama (Dialihkan)</span>
+                        <span className="font-semibold text-slate-800">Rp {(selectedLoan.sisaPinjamanSebelumnya || 0).toLocaleString('id-ID')}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-500">Kategori Karyawan</span>
-                        <span className="font-semibold text-indigo-950">
-                          {selectedLoan.matchedEmployee.collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'}
+                        <span className="text-slate-400">Pinjaman Tambahan Baru</span>
+                        <span className="font-semibold text-slate-800">+ Rp {(selectedLoan.pinjamanBaru || 0).toLocaleString('id-ID')}</span>
+                      </div>
+                      <div className="border-t border-slate-200/50 my-1.5" />
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 font-medium">Total Pinjaman Baru</span>
+                        <span className="font-bold text-slate-800">Rp {selectedLoan.jumlahPinjaman.toLocaleString('id-ID')}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400">Total Tenor</span>
+                        <span className="font-semibold text-slate-800 text-right">
+                          {selectedLoan.tenor - (selectedLoan.additionalTenor || 0)} Bln (Tenor Lama) + {selectedLoan.additionalTenor || 0} Bln (Tambahan) = {selectedLoan.tenor} Bln
                         </span>
                       </div>
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-500">Document ID</span>
-                        <span className="font-mono text-indigo-950">{selectedLoan.matchedEmployee.id}</span>
+                        <span className="text-slate-400">Cicilan Bulanan</span>
+                        <span className="font-bold text-indigo-600">Rp {selectedLoan.monthlyInstallment.toLocaleString('id-ID')}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-500">NIK (Database)</span>
-                        <span className="font-semibold text-indigo-950">{selectedLoan.matchedEmployee.nik || '-'}</span>
+                        <span className="text-slate-400">Sisa Hutang Saat Ini</span>
+                        <span className="font-bold text-amber-700">Rp {selectedLoan.sisaHutang.toLocaleString('id-ID')}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-500">Email Link</span>
-                        <span className="font-semibold text-indigo-950 truncate max-w-[150px]">{selectedLoan.matchedEmployee.email || '-'}</span>
+                        <span className="text-slate-400">Jumlah Terbayar</span>
+                        <span className="font-semibold text-slate-800">{selectedLoan.jumlahMenyicil} Cicilan</span>
                       </div>
-                      <div className="pt-2 border-t border-indigo-200/20 flex justify-between items-center text-xs">
-                        <span className="text-slate-500">Match Accuracy</span>
-                        <Badge className="bg-indigo-600 text-white font-bold text-[9px] px-2 py-0.5 rounded-lg">
-                          {selectedLoan.matchType === 'direct' ? 'Direct ID Reference Match' : 'Name String Match Fallback'}
-                        </Badge>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400">Tanggal Pengajuan</span>
+                        <span className="font-semibold text-slate-800">{formatDate(selectedLoan.tanggalPengajuan)}</span>
                       </div>
+                      {selectedLoan.bankDetails && (
+                        <div className="pt-2 border-t border-slate-200/50 flex justify-between items-center text-xs">
+                          <span className="text-slate-400">Rekening Transfer</span>
+                          <span className="font-semibold text-slate-800">{selectedLoan.bankDetails.bank} - {selectedLoan.bankDetails.nomorRekening}</span>
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <div className="bg-rose-50/30 p-4 rounded-xl border border-rose-100/40 text-center text-slate-500 text-xs">
-                      <HelpCircle className="w-8 h-8 text-rose-500 mx-auto mb-2 opacity-50" />
-                      Tidak ada record karyawan internal yang cocok dengan peminjam koperasi.
+                    /* Regular / Non-Restructured Loan Display */
+                    <div className="bg-slate-50/70 p-4 rounded-xl space-y-2 border border-slate-100/50">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 font-medium">Total Pinjaman</span>
+                        <span className="font-bold text-slate-800">Rp {selectedLoan.jumlahPinjaman.toLocaleString('id-ID')}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 font-medium">Tenor Pinjaman</span>
+                        <span className="font-semibold text-slate-800">{selectedLoan.tenor} Bulan</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 font-medium">Cicilan Bulanan</span>
+                        <span className="font-bold text-indigo-600">Rp {selectedLoan.monthlyInstallment.toLocaleString('id-ID')}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 font-medium">Sisa Hutang</span>
+                        <span className="font-bold text-amber-700">Rp {selectedLoan.sisaHutang.toLocaleString('id-ID')}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 font-medium">Jumlah Terbayar</span>
+                        <span className="font-semibold text-slate-800">{selectedLoan.jumlahMenyicil} Cicilan</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 font-medium">Tanggal Pengajuan</span>
+                        <span className="font-semibold text-slate-800">{formatDate(selectedLoan.tanggalPengajuan)}</span>
+                      </div>
+                      {selectedLoan.bankDetails && (
+                        <div className="pt-2 border-t border-slate-200/50 flex justify-between items-center text-xs">
+                          <span className="text-slate-400 font-medium">Rekening Transfer</span>
+                          <span className="font-semibold text-slate-800">{selectedLoan.bankDetails.bank} - {selectedLoan.bankDetails.nomorRekening}</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
+              </div>
 
-                {/* Loan History Trail */}
+              {/* Right Column: Internal Matching & History */}
+              <div className="space-y-6">
+                {showDetailedMatch && (
+                  <div>
+                    <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4" /> Internal Match Info (YAPETIDU)
+                    </h3>
+                    {selectedLoan.matchedEmployee ? (
+                      <div className="bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/50 space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-500">Nama Internal</span>
+                          <span className="font-bold text-indigo-950">{selectedLoan.matchedEmployee.name}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-500">Kategori Karyawan</span>
+                          <span className="font-semibold text-indigo-950">
+                            {selectedLoan.matchedEmployee.collection === 'Employees_Loyalis' ? 'Loyalis' : 'Pekarya'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-500">Document ID</span>
+                          <span className="font-mono text-indigo-950">{selectedLoan.matchedEmployee.id}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-500">NIK (Database)</span>
+                          <span className="font-semibold text-indigo-950">{selectedLoan.matchedEmployee.nik || '-'}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-500">Email Link</span>
+                          <span className="font-semibold text-indigo-950 truncate max-w-[150px]">{selectedLoan.matchedEmployee.email || '-'}</span>
+                        </div>
+                        <div className="pt-2 border-t border-indigo-200/20 flex justify-between items-center text-xs">
+                          <span className="text-slate-500">Match Accuracy</span>
+                          <Badge className="bg-indigo-600 text-white font-bold text-[9px] px-2 py-0.5 rounded-lg">
+                            {selectedLoan.matchType === 'direct' ? 'Direct ID Reference Match' : 'Name String Match Fallback'}
+                          </Badge>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-rose-50/30 p-4 rounded-xl border border-rose-100/40 text-center text-slate-500 text-xs">
+                        <HelpCircle className="w-8 h-8 text-rose-500 mx-auto mb-2 opacity-50" />
+                        Tidak ada record karyawan internal yang cocok dengan peminjam koperasi.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Loan History Trail — Composed Full Ancestry */}
                 <div>
                   <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                     <History className="w-4 h-4" /> Koperasi Loan History Trail
                   </h3>
-                  <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-100/50 max-h-[160px] overflow-y-auto space-y-3">
-                    {selectedLoan.history && selectedLoan.history.length > 0 ? (
-                      selectedLoan.history.map((h, idx) => (
-                        <div key={idx} className="text-xs flex gap-2.5 items-start">
-                          <div className="w-2 h-2 rounded-full bg-indigo-500 shrink-0 mt-1" />
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-slate-700">{h.status}</span>
-                              <span className="text-[9px] text-slate-400">{formatDate(h.timestamp)}</span>
-                            </div>
-                            {h.notes && <p className="text-[11px] text-slate-500">{h.notes}</p>}
-                          </div>
+                  {(() => {
+                    const segments = getComposedHistoryTrail(selectedLoan);
+                    const hasAncestors = segments.length > 1;
+                    const totalEntries = segments.reduce((sum, s) => sum + s.entries.length, 0);
+
+                    if (totalEntries === 0) {
+                      return (
+                        <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-100/50">
+                          <span className="text-xs text-slate-400 block text-center">Tidak ada riwayat history yang tercatat.</span>
                         </div>
-                      ))
-                    ) : (
-                      <span className="text-xs text-slate-400 block text-center">Tidak ada riwayat history yang tercatat.</span>
-                    )}
-                  </div>
+                      );
+                    }
+
+                    return (
+                      <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-100/50 max-h-[320px] overflow-y-auto space-y-1.5">
+                        {segments.map((segment, segIdx) => (
+                          <div key={segment.loanId}>
+                            {/* Segment separator label */}
+                            {hasAncestors && (
+                              <div className={`flex items-center gap-2 ${segIdx > 0 ? 'mt-3 pt-3 border-t border-dashed border-slate-200' : ''}`}>
+                                <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  segIdx === segments.length - 1
+                                    ? 'bg-indigo-100 text-indigo-700'
+                                    : 'bg-slate-200/70 text-slate-500'
+                                }`}>
+                                  {segment.loanLabel}
+                                </div>
+                                {segIdx < segments.length - 1 && (
+                                  <span className="text-[9px] text-slate-400 italic">Direstrukturisasi →</span>
+                                )}
+                              </div>
+                            )}
+                            {/* History entries for this segment */}
+                            <div className={`space-y-2.5 ${hasAncestors ? 'ml-1 mt-2' : ''}`}>
+                              {segment.entries.map((h, idx) => (
+                                <div key={`${segment.loanId}-${idx}`} className="text-xs flex gap-2.5 items-start">
+                                  <div className={`w-2 h-2 rounded-full shrink-0 mt-1 ${
+                                    segIdx === segments.length - 1 ? 'bg-indigo-500' : 'bg-slate-300'
+                                  }`} />
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className={`font-bold ${
+                                        segIdx === segments.length - 1 ? 'text-slate-700' : 'text-slate-500'
+                                      }`}>{h.status}</span>
+                                      <span className="text-[9px] text-slate-400">{formatDate(h.timestamp)}</span>
+                                    </div>
+                                    {h.notes && <p className="text-[11px] text-slate-500">{h.notes}</p>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

@@ -44,6 +44,7 @@ import {
   Search,
   CheckCircle2,
   Pencil,
+  Calendar,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import {
@@ -68,6 +69,46 @@ const VEHICLE_RATES = {
 
 function fmtRp(val: number): string {
   return 'Rp' + Math.round(val).toLocaleString('id-ID');
+}
+
+function formatIndonesianDate(dateStr: string): string {
+  if (!dateStr) return 'Tanpa Tanggal';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+  const dateObj = new Date(year, month, day);
+  return dateObj.toLocaleDateString('id-ID', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+}
+
+function getJourneyDate(j: any): string {
+  if (j.activityDate) return j.activityDate;
+  
+  // Fallback to ID-based date if activityDate is missing
+  if (j.id && j.id.startsWith('JRN-')) {
+    const parts = j.id.split('-');
+    if (parts.length >= 2 && parts[1].length === 8) {
+      const ymd = parts[1];
+      const y = ymd.slice(0, 4);
+      const m = ymd.slice(4, 6);
+      const d = ymd.slice(6, 8);
+      return `${y}-${m}-${d}`;
+    }
+  }
+  
+  // Second fallback to createdAt
+  if (j.createdAt?.seconds) {
+    const d = new Date(j.createdAt.seconds * 1000);
+    return d.toISOString().slice(0, 10);
+  }
+  
+  return new Date().toISOString().slice(0, 10);
 }
 
 const loadGoogleMapsScript = (callback: () => void) => {
@@ -425,6 +466,43 @@ function DriverJourneysContent() {
     });
   }, [journeys, searchQuery]);
 
+  // ── Group filtered journeys by activityDate ──
+  const groupedJourneys = useMemo(() => {
+    const groupsMap: { [key: string]: any[] } = {};
+    
+    // Sort journeys by activityDate descending (newest first), then by createdAt descending
+    const sorted = [...filteredJourneys].sort((a, b) => {
+      const dateA = getJourneyDate(a);
+      const dateB = getJourneyDate(b);
+      if (dateA !== dateB) {
+        return dateB.localeCompare(dateA); // Newest date first
+      }
+      const timeA = a.createdAt?.seconds || 0;
+      const timeB = b.createdAt?.seconds || 0;
+      return timeB - timeA;
+    });
+
+    sorted.forEach((j) => {
+      const dateKey = getJourneyDate(j) || 'Tanpa Tanggal';
+      if (!groupsMap[dateKey]) {
+        groupsMap[dateKey] = [];
+      }
+      groupsMap[dateKey].push(j);
+    });
+
+    // Convert map to array of objects to guarantee sorted order
+    const orderedDates = Object.keys(groupsMap).sort((a, b) => {
+      if (a === 'Tanpa Tanggal') return 1;
+      if (b === 'Tanpa Tanggal') return -1;
+      return b.localeCompare(a); // Newest date first
+    });
+
+    return orderedDates.map(dateKey => ({
+      dateKey,
+      journeys: groupsMap[dateKey]
+    }));
+  }, [filteredJourneys]);
+
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6 space-y-6">
       <SatkerPekaryaNavBar />
@@ -513,100 +591,125 @@ function DriverJourneysContent() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredJourneys.map((j) => (
-                    <TableRow key={j.id} className="hover:bg-slate-50/50 border-slate-100 transition-colors">
-                      <TableCell className="pl-6 py-4">
-                        <div className="font-bold text-slate-800 text-xs sm:text-sm">{j.activityName}</div>
-                        <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500 font-semibold">
-                          <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                          <span className="truncate max-w-[150px]" title={j.startPoint}>{j.startPoint.split(',')[0]}</span>
-                          <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
-                          <span className="truncate max-w-[150px] font-extrabold text-slate-700" title={j.endPoint}>{j.endPoint}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5 font-bold text-slate-700 text-xs">
-                          <Car className="w-4 h-4 text-slate-400 shrink-0" />
-                          {j.vehicleName}
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-semibold">{fmtRp(j.vehicleRate)}/km</div>
-                      </TableCell>
-                      <TableCell className="font-bold text-slate-700 text-xs">
-                        {j.distanceKm * 2} km
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-black text-indigo-600 text-xs sm:text-sm">{fmtRp(j.totalOperationalCost)}</div>
-                        <div className="text-[9px] text-slate-400 font-bold leading-tight">
-                          Makan: {fmtRp(j.mealAllowance)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-black text-emerald-600 text-xs sm:text-sm">
-                          {fmtRp((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000))} - {fmtRp(((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000)) * 1.9)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {j.status === 'unassigned' && (
-                          <Badge className="bg-slate-100 text-slate-500 border border-slate-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
-                            Belum Diambil
-                          </Badge>
-                        )}
-                        {j.status === 'claimed' && (
-                          <div className="space-y-1">
-                            <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
-                              Aktif Jalan
-                            </Badge>
-                            <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
+                  {groupedJourneys.map((group) => (
+                    <React.Fragment key={group.dateKey}>
+                      {/* Visual Group Subheading */}
+                      <TableRow className="bg-slate-50/70 hover:bg-slate-50/70 border-slate-100/70 select-none">
+                        <TableCell colSpan={7} className="pl-6 py-2">
+                          <div className="flex items-center gap-1.5 text-indigo-700">
+                            <Calendar className="w-3.5 h-3.5 shrink-0" />
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider">
+                              {formatIndonesianDate(group.dateKey)}
+                            </span>
+                            <span className="text-[9px] font-bold text-slate-400 tracking-normal normal-case">
+                              ({group.journeys.length} perjalanan)
+                            </span>
                           </div>
-                        )}
-                        {j.status === 'completed' && (
-                          <div className="space-y-1">
-                            <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
-                              Selesai
-                            </Badge>
-                            <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right pr-6">
-                        {j.status === 'unassigned' ? (
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setEditingJourneyId(j.id);
-                                setActivityName(j.activityName);
-                                setActivityDate(j.activityDate || new Date().toISOString().slice(0, 10));
-                                setStartPoint(j.startPoint);
-                                setEndPoint(j.endPoint);
-                                setSelectedVehicle(j.vehicleName);
-                                setCalcDistance(j.distanceKm);
-                                setCalcDuration(j.durationHours);
-                                setInputDuration(j.customDurationPP || (j.durationHours ? j.durationHours * 2 : 0));
-                                lastCalculatedRef.current = { start: j.startPoint, end: j.endPoint };
-                                setShowAddForm(true);
-                              }}
-                              className="h-8 w-8 p-0 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl cursor-pointer"
-                              title="Edit Perjalanan"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteJourney(j.id)}
-                              className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl cursor-pointer"
-                              title="Hapus Perjalanan"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] font-semibold text-slate-300 select-none">—</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
+                        </TableCell>
+                      </TableRow>
+
+                      {group.journeys.map((j) => (
+                        <TableRow key={j.id} className="hover:bg-slate-50/50 border-slate-100 transition-colors">
+                          <TableCell className="pl-6 py-4">
+                            <div className="font-bold text-slate-800 text-xs sm:text-sm">{j.activityName}</div>
+                            <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500 font-semibold">
+                              <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                              <span className="truncate max-w-[150px]" title={j.startPoint}>{j.startPoint.split(',')[0]}</span>
+                              <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span className="truncate max-w-[150px] font-extrabold text-slate-700" title={j.endPoint}>{j.endPoint}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5 font-bold text-slate-700 text-xs">
+                              <Car className="w-4 h-4 text-slate-400 shrink-0" />
+                              {j.vehicleName}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-semibold">{fmtRp(j.vehicleRate)}/km</div>
+                          </TableCell>
+                          <TableCell className="font-bold text-slate-700 text-xs">
+                            {j.distanceKm * 2} km
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-black text-indigo-600 text-xs sm:text-sm">{fmtRp(j.totalOperationalCost)}</div>
+                            <div className="text-[9px] text-slate-400 font-bold leading-tight">
+                              Makan: {fmtRp(j.mealAllowance)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-black text-emerald-600 text-xs sm:text-sm">
+                              {j.status === 'completed' ? (
+                                <span>{fmtRp(j.upahBersih || ((j.newTotalDistanceKm || j.distanceKm * 2) * 200 + (j.newTotalDurationHours || (j.durationHours || 0) * 2) * 5000))}</span>
+                              ) : (
+                                <span>
+                                  {fmtRp((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000))} - {fmtRp(((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000)) * 1.9)}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {j.status === 'unassigned' && (
+                              <Badge className="bg-slate-100 text-slate-500 border border-slate-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                Belum Diambil
+                              </Badge>
+                            )}
+                            {j.status === 'claimed' && (
+                              <div className="space-y-1">
+                                <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                  Aktif Jalan
+                                </Badge>
+                                <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
+                              </div>
+                            )}
+                            {j.status === 'completed' && (
+                              <div className="space-y-1">
+                                <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                  Selesai
+                                </Badge>
+                                <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right pr-6">
+                            {j.status === 'unassigned' ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditingJourneyId(j.id);
+                                    setActivityName(j.activityName);
+                                    setActivityDate(getJourneyDate(j));
+                                    setStartPoint(j.startPoint);
+                                    setEndPoint(j.endPoint);
+                                    setSelectedVehicle(j.vehicleName);
+                                    setCalcDistance(j.distanceKm);
+                                    setCalcDuration(j.durationHours);
+                                    setInputDuration(j.customDurationPP || (j.durationHours ? j.durationHours * 2 : 0));
+                                    lastCalculatedRef.current = { start: j.startPoint, end: j.endPoint };
+                                    setShowAddForm(true);
+                                  }}
+                                  className="h-8 w-8 p-0 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl cursor-pointer"
+                                  title="Edit Perjalanan"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteJourney(j.id)}
+                                  className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl cursor-pointer"
+                                  title="Hapus Perjalanan"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-slate-300 select-none">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </React.Fragment>
                   ))}
                 </TableBody>
               </Table>

@@ -45,6 +45,7 @@ import {
   ArrowRight,
   Compass,
   Car,
+  Search,
 } from 'lucide-react';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -75,6 +76,26 @@ import {
   SelectLabel,
   SelectSeparator,
 } from '@/components/ui/select';
+
+const loadGoogleMapsScript = (callback: () => void) => {
+  if (typeof window === 'undefined') return;
+  if ((window as any).google) {
+    callback();
+    return;
+  }
+  const existingScript = document.getElementById('googleMapsScript');
+  if (existingScript) {
+    existingScript.addEventListener('load', callback);
+    return;
+  }
+  const script = document.createElement('script');
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}&libraries=places`;
+  script.id = 'googleMapsScript';
+  script.async = true;
+  script.defer = true;
+  script.addEventListener('load', callback);
+  document.head.appendChild(script);
+};
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -395,6 +416,19 @@ export default function EmployeeActivitiesPage() {
   const [routeError, setRouteError] = useState<string>('');
   const [routeCalculatedPoints, setRouteCalculatedPoints] = useState<string[]>([]);
 
+  // ── SOPIR Additional Activities states ──
+  const [extraActivities, setExtraActivities] = useState<any[]>([]);
+  const [showMapSelector, setShowMapSelector] = useState(false);
+  const [mapSearchText, setMapSearchText] = useState('');
+  const [mapAddress, setMapAddress] = useState('');
+  const [mapTargetIndex, setMapTargetIndex] = useState<number | null>(null);
+  const [isCalculatingExtraRoute, setIsCalculatingExtraRoute] = useState(false);
+  const [extraRouteError, setExtraRouteError] = useState('');
+
+  const mapRef = React.useRef<any>(null);
+  const markerRef = React.useRef<any>(null);
+  const mapElementRef = React.useRef<HTMLDivElement | null>(null);
+
   // ── Journey claiming & completion states ──
   const [unassignedJourneys, setUnassignedJourneys] = useState<any[]>([]);
   const [myClaimedJourneys, setMyClaimedJourneys] = useState<any[]>([]);
@@ -402,6 +436,289 @@ export default function EmployeeActivitiesPage() {
   const [activeReportingJourney, setActiveReportingJourney] = useState<any | null>(null);
   const [isClaiming, setIsClaiming] = useState<boolean>(false);
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
+
+  // Reset states and initialize original distance/duration when reporting journey changes
+  useEffect(() => {
+    if (activeReportingJourney) {
+      setExtraActivities([]);
+      setFormTimeStart('');
+      setFormTimeEnd('');
+      setFormFuelFee('');
+      setFormTollParkingFee('');
+      setFormFuelReceiptUrl('');
+      setFormTollReceiptUrl('');
+      setFormIsOvernight(false);
+      setCalculatedDistanceKm((activeReportingJourney.distanceKm || 0) * 2);
+      setCalculatedDurationHours((activeReportingJourney.durationHours || 0) * 2);
+      setExtraRouteError('');
+    }
+  }, [activeReportingJourney]);
+
+  const initMap = (element: HTMLDivElement) => {
+    loadGoogleMapsScript(() => {
+      const google = (window as any).google;
+      if (!google) return;
+      if (mapRef.current && mapElementRef.current === element) return;
+
+      mapElementRef.current = element;
+
+      const unipduCoords = { lat: -7.5458, lng: 112.2858 };
+
+      const map = new google.maps.Map(element, {
+        center: unipduCoords,
+        zoom: 13,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+      });
+      mapRef.current = map;
+
+      const marker = new google.maps.Marker({
+        position: unipduCoords,
+        map: map,
+        draggable: true,
+        animation: google.maps.Animation.DROP,
+      });
+      markerRef.current = marker;
+
+      const geocoder = new google.maps.Geocoder();
+      const updateAddress = (latLng: any) => {
+        geocoder.geocode({ location: latLng }, (results: any, status: any) => {
+          if (status === 'OK' && results[0]) {
+            setMapAddress(results[0].formatted_address);
+          } else {
+            setMapAddress(`${latLng.lat().toFixed(5)}, ${latLng.lng().toFixed(5)}`);
+          }
+        });
+      };
+
+      const existingAddress = mapAddress;
+      if (existingAddress && existingAddress !== 'UNIPDU Jombang, Jawa Timur' && existingAddress !== 'UNIPDU Jombang') {
+        geocoder.geocode({ address: existingAddress }, (results: any, status: any) => {
+          if (status === 'OK' && results[0] && results[0].geometry && results[0].geometry.location) {
+            const loc = results[0].geometry.location;
+            map.setCenter(loc);
+            map.setZoom(15);
+            marker.setPosition(loc);
+            setMapAddress(results[0].formatted_address);
+          } else {
+            updateAddress(unipduCoords);
+          }
+        });
+      } else {
+        updateAddress(unipduCoords);
+      }
+
+      marker.addListener('dragend', () => {
+        const pos = marker.getPosition();
+        if (pos) {
+          updateAddress(pos);
+        }
+      });
+
+      map.addListener('click', (e: any) => {
+        if (e.latLng) {
+          marker.setPosition(e.latLng);
+          updateAddress(e.latLng);
+        }
+      });
+
+    });
+  };
+
+  const initAutocomplete = (inputEl: HTMLInputElement) => {
+    loadGoogleMapsScript(() => {
+      const google = (window as any).google;
+      if (!google || !mapRef.current) return;
+
+      try {
+        const autocomplete = new google.maps.places.Autocomplete(inputEl, {
+          fields: ['formatted_address', 'geometry', 'name'],
+        });
+
+        autocomplete.addListener('place_changed', () => {
+          const place = autocomplete.getPlace();
+          if (!place.geometry || !place.geometry.location) return;
+
+          mapRef.current.setCenter(place.geometry.location);
+          mapRef.current.setZoom(16);
+          if (markerRef.current) {
+            markerRef.current.setPosition(place.geometry.location);
+          }
+
+          if (place.formatted_address) {
+            setMapAddress(place.formatted_address);
+            setMapSearchText(place.name || place.formatted_address);
+          } else {
+            const geocoder = new google.maps.Geocoder();
+            geocoder.geocode({ location: place.geometry.location }, (results: any, status: any) => {
+              if (status === 'OK' && results[0]) {
+                setMapAddress(results[0].formatted_address);
+              }
+            });
+          }
+        });
+      } catch (autoErr) {
+        console.warn('Google Places Autocomplete initialization failed:', autoErr);
+      }
+    });
+  };
+
+  const parseLegDistance = (text: string): number => {
+    if (!text) return 0;
+    const num = parseFloat(text.replace(/,/g, ''));
+    if (isNaN(num)) return 0;
+    if (text.toLowerCase().includes('m') && !text.toLowerCase().includes('k')) {
+      return num / 1000;
+    }
+    return num;
+  };
+
+  const recalculateRouteChain = async (list: any[]) => {
+    if (!activeReportingJourney) return;
+    const extraLocs = list.filter(a => a.type === 'tambah_lokasi' && a.destination);
+    if (extraLocs.length === 0) {
+      setCalculatedDistanceKm((activeReportingJourney.distanceKm || 0) * 2);
+      setCalculatedDurationHours((activeReportingJourney.durationHours || 0) * 2);
+      return;
+    }
+
+    setIsCalculatingExtraRoute(true);
+    setExtraRouteError('');
+    try {
+      const points = [
+        activeReportingJourney.startPoint,
+        activeReportingJourney.endPoint,
+        ...extraLocs.map(l => l.destination),
+        activeReportingJourney.startPoint
+      ];
+
+      const response = await fetch('/api/calculate-route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ points }),
+      });
+      const resData = await response.json();
+      if (!response.ok || !resData.success) {
+        throw new Error(resData.error || 'Gagal menghitung rute tambahan.');
+      }
+
+      setCalculatedDistanceKm(resData.distanceKm);
+      setCalculatedDurationHours(resData.durationHours);
+
+      // Map leg details back to the extraActivities state
+      const updated = [...list];
+      let locCounter = 0;
+      updated.forEach((act, idx) => {
+        if (act.type === 'tambah_lokasi') {
+          if (act.destination) {
+            const leg = resData.legs[locCounter + 1];
+            if (leg) {
+              const dist = parseLegDistance(leg.distanceText);
+              const cost = dist * (activeReportingJourney?.vehicleRate || 0);
+              updated[idx] = {
+                ...act,
+                distanceText: leg.distanceText,
+                distanceKm: dist,
+                legCost: cost
+              };
+            }
+            locCounter++;
+          } else {
+            updated[idx] = {
+              ...act,
+              distanceText: '',
+              distanceKm: 0,
+              legCost: 0
+            };
+          }
+        }
+      });
+      setExtraActivities(updated);
+
+    } catch (err: any) {
+      console.error(err);
+      setExtraRouteError(err.message || 'Terjadi kesalahan saat menghitung rute tambahan.');
+    } finally {
+      setIsCalculatingExtraRoute(false);
+    }
+  };
+
+  const getOriginForLocationIndex = (index: number): string => {
+    if (!activeReportingJourney) return '';
+    for (let i = index - 1; i >= 0; i--) {
+      if (extraActivities[i].type === 'tambah_lokasi' && extraActivities[i].destination) {
+        return extraActivities[i].destination;
+      }
+    }
+    return activeReportingJourney.endPoint;
+  };
+
+  const getReturnLegDetails = () => {
+    if (!activeReportingJourney) return { distanceText: '', legCost: 0 };
+
+    const d0 = activeReportingJourney.distanceKm || 0;
+    let extraSum = 0;
+    extraActivities.forEach(act => {
+      if (act.type === 'tambah_lokasi' && act.distanceKm) {
+        extraSum += act.distanceKm;
+      }
+    });
+
+    const returnDist = Math.max(0, calculatedDistanceKm - d0 - extraSum);
+    const returnCost = returnDist * (activeReportingJourney.vehicleRate || 0);
+
+    return {
+      distanceText: `${returnDist.toFixed(1)} km`,
+      legCost: returnCost
+    };
+  };
+
+  const getMealAllowanceForDuration = (hours: number): number => {
+    if (hours >= 2 && hours <= 6) return 30000;
+    if (hours > 6) return 60000;
+    return 0;
+  };
+
+  const calculateElapsedHours = (start: string, end: string): number => {
+    if (!start || !end) return 0;
+    const [hStart, mStart] = start.split(':').map(Number);
+    const [hEnd, mEnd] = end.split(':').map(Number);
+
+    let diffMinutes = (hEnd * 60 + mEnd) - (hStart * 60 + mStart);
+    if (diffMinutes < 0) {
+      diffMinutes += 24 * 60;
+    }
+    return diffMinutes / 60;
+  };
+
+  const handleAddLocation = () => {
+    const newIdx = extraActivities.length;
+    setExtraActivities([...extraActivities, { type: 'tambah_lokasi', destination: '' }]);
+    setMapTargetIndex(newIdx);
+    setMapSearchText('');
+    setMapAddress('');
+    setShowMapSelector(true);
+  };
+
+  const handleRemoveExtraActivity = async (index: number) => {
+    const updated = extraActivities.filter((_, idx) => idx !== index);
+    setExtraActivities(updated);
+    await recalculateRouteChain(updated);
+  };
+
+  const handleConfirmMapLocation = async () => {
+    if (mapTargetIndex === null) return;
+    const updated = [...extraActivities];
+    updated[mapTargetIndex] = {
+      ...updated[mapTargetIndex],
+      destination: mapAddress
+    };
+    setExtraActivities(updated);
+    setShowMapSelector(false);
+    setMapTargetIndex(null);
+    await recalculateRouteChain(updated);
+  };
 
   // ── Notifications ──
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -800,6 +1117,21 @@ export default function EmployeeActivitiesPage() {
         return;
       }
 
+      // Calculate extra values
+      const originalTotalDist = (activeReportingJourney.distanceKm || 0) * 2;
+      const extraDistanceKm = Math.max(0, calculatedDistanceKm - originalTotalDist);
+      const extraOperationalCost = Math.ceil(extraDistanceKm * (activeReportingJourney.vehicleRate || 0));
+      const calculatedWage = calculatedDistanceKm * 200 + calculatedDurationHours * 5000;
+
+      const baseCostVal = activeReportingJourney.baseOperationalCost || 
+        ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0));
+      const extraFuelCost = Math.max(0, fuelVal - baseCostVal);
+
+      const originalMealAllowance = activeReportingJourney.mealAllowance || 0;
+      const elapsedHours = calculateElapsedHours(formTimeStart, formTimeEnd);
+      const actualMealAllowance = getMealAllowanceForDuration(elapsedHours);
+      const extraMealAllowance = Math.max(0, actualMealAllowance - originalMealAllowance);
+
       // 1. Update the Journey document
       const journeyRef = doc(db, 'DriverJourneys', activeReportingJourney.id);
       await updateDoc(journeyRef, {
@@ -813,10 +1145,20 @@ export default function EmployeeActivitiesPage() {
         timeStart: formTimeStart,
         timeEnd: formTimeEnd,
         completedAt: serverTimestamp(),
+        // New fields
+        extraActivities,
+        extraDistanceKm,
+        extraOperationalCost,
+        newTotalDistanceKm: calculatedDistanceKm,
+        newTotalDurationHours: calculatedDurationHours,
+        upahBersih: calculatedWage,
+        extraMealAllowance,
+        actualMealAllowance,
+        extraFuelCost,
       });
 
-      // 2. Calculate Final Pay
-      let finalFee = (activeReportingJourney.totalOperationalCost || 0) + fuelVal + tollVal;
+      // 2. Calculate Final Pay (Baseline Total + Tolls + Meal Allowance Delta + Fuel Overspending Delta)
+      let finalFee = (activeReportingJourney.totalOperationalCost || 0) + tollVal + extraMealAllowance + extraFuelCost;
       if (formIsOvernight) {
         finalFee += 50000;
       }
@@ -830,7 +1172,10 @@ export default function EmployeeActivitiesPage() {
       const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
       const customDocId = `ACT-${employeeIdSanitized}-${dateSanitized}-${randomSuffix}`;
 
-      const routeText = ` (${activeReportingJourney.startPoint.split(',')[0]} → ${activeReportingJourney.endPoint})`;
+      const extraLocs = extraActivities.filter(a => a.type === 'tambah_lokasi' && a.destination);
+      const extraLocsText = extraLocs.map(l => l.destination.split(',')[0]).join(' → ');
+
+      const routeText = ` (${activeReportingJourney.startPoint.split(',')[0]} → ${activeReportingJourney.endPoint}${extraLocsText ? ' → ' + extraLocsText : ''})`;
       const finalActivityName = activeReportingJourney.activityName + routeText;
 
       const activityPeriod = formDate.substring(0, 7);
@@ -848,17 +1193,25 @@ export default function EmployeeActivitiesPage() {
         status: 'pending',
         fee: finalFee,
         submittedAt: serverTimestamp(),
-        tripType: activeReportingJourney.distanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
+        tripType: calculatedDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
         vehicleType: activeReportingJourney.vehicleName,
         isOvernight: formIsOvernight,
         fuelFee: fuelVal,
         tollParkingFee: tollVal,
         fuelReceiptUrl: formFuelReceiptUrl || '',
         tollReceiptUrl: formTollReceiptUrl || '',
-        points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint],
-        distanceKm: activeReportingJourney.distanceKm,
-        durationHours: activeReportingJourney.durationHours,
+        points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
+        distanceKm: calculatedDistanceKm,
+        durationHours: calculatedDurationHours,
         journeyId: activeReportingJourney.id,
+        // Save extra fields on ActivityReport
+        extraActivities,
+        extraDistanceKm,
+        extraOperationalCost,
+        upahBersih: calculatedWage,
+        extraMealAllowance,
+        actualMealAllowance,
+        extraFuelCost,
       });
 
       setMessage({ type: 'success', text: 'Perjalanan dinas berhasil dilaporkan.' });
@@ -1525,99 +1878,99 @@ export default function EmployeeActivitiesPage() {
                         );
                       })}
 
-                    {/* Penugasan Tambahan (Opsional) */}
-                    {allMainPostsAssigned && (
-                      <div className="pt-3.5 border-t border-dashed border-slate-100 animate-in fade-in slide-in-from-top-2 duration-300">
-                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-0.5 mb-2.5">
-                          Penugasan Tambahan (Opsional)
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-purple-50/10 p-3 rounded-xl border border-purple-100/50">
-                          {/* Custom Pos Select Dropdown */}
-                          <div className="md:col-span-3">
-                            <Select
-                              value={extraPostName || 'none'}
-                              onValueChange={(v: string | null) => setExtraPostName(v === 'none' || v === null ? '' : v)}
-                            >
-                              <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
-                                <span className={extraPostName ? "truncate" : "truncate text-slate-400 font-normal"}>
-                                  {POSTS_CONFIG.find(p => p.id === extraPostName || p.name === extraPostName)?.name || '-- Pilih Pos --'}
-                                </span>
-                              </SelectTrigger>
-                              <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
-                                <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
-                                  -- Pilih Pos --
-                                </SelectItem>
-                                {POSTS_CONFIG.map((post) => (
-                                  <SelectItem key={post.id} value={post.id} className="text-sm py-2 pl-3">
-                                    {post.name}
+                      {/* Penugasan Tambahan (Opsional) */}
+                      {allMainPostsAssigned && (
+                        <div className="pt-3.5 border-t border-dashed border-slate-100 animate-in fade-in slide-in-from-top-2 duration-300">
+                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-0.5 mb-2.5">
+                            Penugasan Tambahan (Opsional)
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-purple-50/10 p-3 rounded-xl border border-purple-100/50">
+                            {/* Custom Pos Select Dropdown */}
+                            <div className="md:col-span-3">
+                              <Select
+                                value={extraPostName || 'none'}
+                                onValueChange={(v: string | null) => setExtraPostName(v === 'none' || v === null ? '' : v)}
+                              >
+                                <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                                  <span className={extraPostName ? "truncate" : "truncate text-slate-400 font-normal"}>
+                                    {POSTS_CONFIG.find(p => p.id === extraPostName || p.name === extraPostName)?.name || '-- Pilih Pos --'}
+                                  </span>
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
+                                  <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
+                                    -- Pilih Pos --
                                   </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {/* Guard Dropdown */}
-                          <div className="md:col-span-5">
-                            <Select
-                              value={extraEmployeeId || 'none'}
-                              onValueChange={(v: string | null) => {
-                                const empId = v === 'none' || v === null ? '' : v;
-                                setExtraEmployeeId(empId);
-                                if (empId) {
-                                  setExtraShiftType('Lembur Sendiri');
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="w-full text-sm font-extrabold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
-                                <span className={extraEmployeeId ? "truncate" : "truncate text-slate-400 font-normal"}>
-                                  {allSatpamEmployees.find(emp => emp.id === extraEmployeeId)?.name || '-- Pilih Petugas Guard --'}
-                                </span>
-                              </SelectTrigger>
-                              <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
-                                <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
-                                  -- Kosongkan Pos --
-                                </SelectItem>
-                                <SelectGroup>
-                                  <SelectLabel className="text-xs font-black text-purple-600 px-2 py-1.5 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
-                                  {groupEmployees.filter(emp => !Object.values(postAssignments).map(a => a.employeeId).includes(emp.id)).map(emp => (
-                                    <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
-                                      {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''}
+                                  {POSTS_CONFIG.map((post) => (
+                                    <SelectItem key={post.id} value={post.id} className="text-sm py-2 pl-3">
+                                      {post.name}
                                     </SelectItem>
                                   ))}
-                                </SelectGroup>
-                                <SelectSeparator className="my-1" />
-                                <SelectGroup>
-                                  <SelectLabel className="text-xs font-black text-slate-400 px-2 py-1.5 bg-slate-50">Satpam Regu Lain (Lembur Cover)</SelectLabel>
-                                  {externalEmployees.filter(emp => !Object.values(postAssignments).map(a => a.employeeId).includes(emp.id)).map(emp => (
-                                    <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
-                                      {emp.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectGroup>
-                              </SelectContent>
-                            </Select>
-                          </div>
+                                </SelectContent>
+                              </Select>
+                            </div>
 
-                          {/* Shift Type Dropdown */}
-                          <div className="md:col-span-4">
-                            <Select
-                              value={extraShiftType}
-                              onValueChange={(v: string | null) => v && setExtraShiftType(v)}
-                            >
-                              <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
-                                <SelectItem value="Harian" className="text-sm py-2 pl-3">Harian (Rp12.500)</SelectItem>
-                                <SelectItem value="Jumat & Libur" className="text-sm py-2 pl-3">Jumat & Libur (Rp25.000)</SelectItem>
-                                <SelectItem value="Lembur Sendiri" className="text-sm py-2 pl-3">Lembur Sendiri (Rp30.000)</SelectItem>
-                                <SelectItem value="Lembur Cover" className="text-sm py-2 pl-3">Lembur Cover (Rp50.000)</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            {/* Guard Dropdown */}
+                            <div className="md:col-span-5">
+                              <Select
+                                value={extraEmployeeId || 'none'}
+                                onValueChange={(v: string | null) => {
+                                  const empId = v === 'none' || v === null ? '' : v;
+                                  setExtraEmployeeId(empId);
+                                  if (empId) {
+                                    setExtraShiftType('Lembur Sendiri');
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="w-full text-sm font-extrabold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                                  <span className={extraEmployeeId ? "truncate" : "truncate text-slate-400 font-normal"}>
+                                    {allSatpamEmployees.find(emp => emp.id === extraEmployeeId)?.name || '-- Pilih Petugas Guard --'}
+                                  </span>
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
+                                  <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
+                                    -- Kosongkan Pos --
+                                  </SelectItem>
+                                  <SelectGroup>
+                                    <SelectLabel className="text-xs font-black text-purple-600 px-2 py-1.5 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
+                                    {groupEmployees.filter(emp => !Object.values(postAssignments).map(a => a.employeeId).includes(emp.id)).map(emp => (
+                                      <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
+                                        {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                  <SelectSeparator className="my-1" />
+                                  <SelectGroup>
+                                    <SelectLabel className="text-xs font-black text-slate-400 px-2 py-1.5 bg-slate-50">Satpam Regu Lain (Lembur Cover)</SelectLabel>
+                                    {externalEmployees.filter(emp => !Object.values(postAssignments).map(a => a.employeeId).includes(emp.id)).map(emp => (
+                                      <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
+                                        {emp.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            {/* Shift Type Dropdown */}
+                            <div className="md:col-span-4">
+                              <Select
+                                value={extraShiftType}
+                                onValueChange={(v: string | null) => v && setExtraShiftType(v)}
+                              >
+                                <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
+                                  <SelectItem value="Harian" className="text-sm py-2 pl-3">Harian (Rp12.500)</SelectItem>
+                                  <SelectItem value="Jumat & Libur" className="text-sm py-2 pl-3">Jumat & Libur (Rp25.000)</SelectItem>
+                                  <SelectItem value="Lembur Sendiri" className="text-sm py-2 pl-3">Lembur Sendiri (Rp30.000)</SelectItem>
+                                  <SelectItem value="Lembur Cover" className="text-sm py-2 pl-3">Lembur Cover (Rp50.000)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      )}
                     </div>
                   </div>
 
@@ -2219,7 +2572,7 @@ export default function EmployeeActivitiesPage() {
       </div>
 
       {/* ── Floating Action Button ─────────────────────────────────────── */}
-      {!isRegularSatpam && (
+      {!isRegularSatpam && !isSopir && (
         <button
           onClick={() => {
             resetForm();
@@ -2689,186 +3042,480 @@ export default function EmployeeActivitiesPage() {
 
       {/* ── Complete Driver Journey Dialog ─────────────────────────────── */}
       <Dialog open={activeReportingJourney !== null} onOpenChange={(open) => { if (!open) setActiveReportingJourney(null); }}>
-        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] rounded-3xl border-none shadow-2xl bg-white p-0 overflow-hidden">
+        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] rounded-3xl border-none shadow-2xl bg-white p-0 overflow-hidden flex flex-col max-h-[90vh]">
           <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 p-5 pb-4">
             <DialogHeader>
               <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-white" /> Report Selesai Perjalanan
+                <CheckCircle2 className="w-5 h-5 text-white" /> Laporan Perjalanan
               </DialogTitle>
-              <DialogDescription className="text-indigo-100 text-xs mt-1">
-                Masukkan rincian nyata perjalanan Anda untuk melengkapi laporan pertanggungjawaban (SPJ).
-              </DialogDescription>
             </DialogHeader>
           </div>
 
-          <form onSubmit={handleCompleteJourneySubmit} className="p-5 space-y-4">
-            {/* Keperluan & Info Mobil */}
-            {activeReportingJourney && (
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 text-slate-600 text-xs space-y-1 font-medium">
-                <div>Keperluan: <strong className="text-slate-800">{activeReportingJourney.activityName}</strong></div>
-                <div>Rute Jalan: <strong className="text-slate-800">{activeReportingJourney.startPoint.split(',')[0]} → {activeReportingJourney.endPoint}</strong></div>
-                <div>Kendaraan: <strong className="text-slate-800">{activeReportingJourney.vehicleName}</strong></div>
-                <div>Tanggal: <strong className="text-slate-800">{activeReportingJourney.activityDate ? new Date(activeReportingJourney.activityDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</strong></div>
-                <div className="pt-1.5 border-t border-slate-200/60 mt-1.5 flex justify-between font-bold text-indigo-600">
-                  <span>Biaya Operasional</span>
-                  <span>{fmtRp(activeReportingJourney.totalOperationalCost)}</span>
-                </div>
-              </div>
-            )}
+          <form onSubmit={handleCompleteJourneySubmit} className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-5 pb-3 space-y-4">
+              {/* Keperluan, Kendaraan & Tanggal Header */}
+              {activeReportingJourney && (() => {
+                const baseCostVal = activeReportingJourney.baseOperationalCost || 
+                  ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0));
+                const mealAllowanceVal = activeReportingJourney.mealAllowance || 0;
+                const totalBaseline = activeReportingJourney.totalOperationalCost || 0;
 
-            {/* Jam Berangkat / Tiba */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="journeyTimeStart" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Jam Berangkat
-                </Label>
-                <Input
-                  id="journeyTimeStart"
-                  type="time"
-                  value={formTimeStart}
-                  onChange={(e) => setFormTimeStart(e.target.value)}
-                  className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
-                  required
-                />
-              </div>
+                return (
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-xs font-semibold text-slate-500 space-y-2">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <div>Keperluan: <strong className="text-slate-700">{activeReportingJourney.activityName}</strong></div>
+                      <div className="text-slate-300">•</div>
+                      <div>Kendaraan: <strong className="text-slate-700">{activeReportingJourney.vehicleName}</strong></div>
+                      <div className="text-slate-300">•</div>
+                      <div>Tanggal: <strong className="text-slate-700">{activeReportingJourney.activityDate ? new Date(activeReportingJourney.activityDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</strong></div>
+                    </div>
+                    <div className="pt-2 border-t border-slate-200/60 flex flex-wrap justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider gap-2">
+                      <div className="flex gap-4">
+                        <span>Tarif Kendaraan: <strong className="text-blue-600 normal-case font-black">{fmtRp(Math.ceil(baseCostVal))}</strong></span>
+                        <span>Uang Makan: <strong className="text-blue-600 normal-case font-black">{fmtRp(Math.ceil(mealAllowanceVal))}</strong></span>
+                      </div>
+                      <div>
+                        Uang Jalan Awal: <strong className="text-blue-600 normal-case font-black text-xs">{fmtRp(Math.ceil(totalBaseline))}</strong>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
-              <div className="space-y-1.5">
-                <Label htmlFor="journeyTimeEnd" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Jam Tiba / Selesai
-                </Label>
-                <Input
-                  id="journeyTimeEnd"
-                  type="time"
-                  value={formTimeEnd}
-                  onChange={(e) => setFormTimeEnd(e.target.value)}
-                  className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
-                  required
-                />
-              </div>
-            </div>
+              {/* Unified Timeline Card */}
+              {activeReportingJourney && (() => {
+                const d0 = activeReportingJourney.distanceKm || 0;
+                const cost0 = (activeReportingJourney.totalOperationalCost || 0) / 2;
+                const returnLeg = getReturnLegDetails();
 
-            {/* Reimburse BBM Row */}
-            <div className="space-y-1.5">
-              <Label htmlFor="journeyFuel" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Reimburse BBM
-              </Label>
-              <div className="grid grid-cols-4 gap-2 items-end">
-                <div className="col-span-3 relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
+                return (
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-indigo-700 uppercase tracking-wider">
+                        <Compass className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+                        Rute Perjalanan (Timeline)
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddLocation}
+                        className="h-6 px-2 text-[9px] font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-md cursor-pointer whitespace-nowrap shrink-0"
+                      >
+                        + Tambah Lokasi
+                      </Button>
+                    </div>
+
+                    <div className="relative pl-6 space-y-4">
+                      {/* Vertical dashed timeline line */}
+                      <div className="absolute left-[9px] top-2 bottom-2 w-0.5 border-l-2 border-dashed border-indigo-200" />
+
+                      {/* Node 0: UNIPDU Start */}
+                      <div className="relative flex items-start gap-2.5 text-xs">
+                        {/* Circle indicator */}
+                        <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-indigo-600 border-2 border-white shadow-sm" />
+                        <div className="space-y-0.5 min-w-0">
+                          <span className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block">Titik Keberangkatan</span>
+                          <div className="font-extrabold text-slate-700 truncate" title={activeReportingJourney.startPoint}>
+                            🏫 {activeReportingJourney.startPoint.split(',')[0]}
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-medium">
+                            Jarak Leg: {d0.toFixed(1)} km (Uang Jalan: <span className="text-blue-600 font-bold">{fmtRp(Math.ceil(cost0))}</span>)
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Node 1: Main Destination */}
+                      <div className="relative flex items-start gap-2.5 text-xs">
+                        {/* Circle indicator */}
+                        <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-indigo-600 border-2 border-white shadow-sm" />
+                        <div className="space-y-0.5 min-w-0">
+                          <span className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block">Tujuan Utama</span>
+                          <div className="font-extrabold text-slate-700 truncate" title={activeReportingJourney.endPoint}>
+                            🎯 {activeReportingJourney.endPoint}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Extra Location Nodes */}
+                      {extraActivities.map((act, index) => {
+                        if (act.type !== 'tambah_lokasi') return null;
+                        return (
+                          <div key={index} className="relative flex items-center justify-between gap-3 text-xs pl-0.5 animate-in fade-in duration-200">
+                            {/* Timeline node dot */}
+                            <div className="absolute -left-[20px] top-[5px] w-3 h-3 rounded-full bg-teal-500 border-2 border-white shadow-sm" />
+
+                            <div className="flex-1 min-w-0 space-y-1">
+                              {act.destination ? (
+                                <div className="space-y-0.5">
+                                  <span className="text-[8px] uppercase tracking-wider text-teal-600 font-bold block">Tujuan Tambahan</span>
+                                  <div className="text-xs font-black text-slate-700 truncate" title={act.destination}>
+                                    📍 {act.destination.split(',')[0]}
+                                  </div>
+                                  {act.distanceText && act.legCost > 0 && (
+                                    <div className="text-[9px] text-slate-400 font-medium">
+                                      Jarak Leg: {act.distanceText} (Uang Jalan: <span className="text-blue-600 font-bold">{fmtRp(Math.ceil(act.legCost))}</span>)
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="text-xs font-semibold text-slate-400 italic">
+                                  Belum memilih lokasi
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() => {
+                                  setMapTargetIndex(index);
+                                  setMapSearchText(act.destination || '');
+                                  setMapAddress(act.destination || '');
+                                  setShowMapSelector(true);
+                                }}
+                                className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white border border-slate-200 px-2.5 h-7 rounded-lg cursor-pointer"
+                              >
+                                {act.destination ? 'Ubah' : 'Pilih'}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() => handleRemoveExtraActivity(index)}
+                                className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Final Node: Return to UNIPDU */}
+                      <div className="relative flex items-start gap-2.5 text-xs">
+                        {/* Circle indicator */}
+                        <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-indigo-600 border-2 border-white shadow-sm" />
+                        <div className="space-y-0.5 min-w-0">
+                          <span className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block">Titik Kepulangan</span>
+                          <div className="font-extrabold text-slate-700 truncate" title={activeReportingJourney.startPoint}>
+                            🏫 {activeReportingJourney.startPoint.split(',')[0]}
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-medium">
+                            Jarak Leg: {returnLeg.distanceText} (Uang Jalan: <span className="text-blue-600 font-bold">{fmtRp(Math.ceil(returnLeg.legCost))}</span>)
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Jam Berangkat / Tiba */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="journeyTimeStart" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Jam Berangkat
+                  </Label>
                   <Input
-                    id="journeyFuel"
-                    placeholder="0"
-                    value={formFuelFee}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '');
-                      setFormFuelFee(val ? Number(val).toLocaleString('id-ID') : '');
-                    }}
-                    className="pl-8 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs h-10 w-full"
+                    id="journeyTimeStart"
+                    type="time"
+                    value={formTimeStart}
+                    onChange={(e) => setFormTimeStart(e.target.value)}
+                    className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
+                    required
                   />
                 </div>
-                <div className="col-span-1">
-                  <input
-                    type="file"
-                    ref={fuelFileInputRef}
-                    accept="image/*,application/pdf"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleUploadReceipt(f, 'bbm');
-                    }}
-                    className="hidden"
-                  />
-                  <Button
-                    type="button"
-                    onClick={() => fuelFileInputRef.current?.click()}
-                    disabled={uploadingFuelReceipt}
-                    className={`w-full rounded-xl text-xs font-bold h-10 border transition-all ${formFuelReceiptUrl
-                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-                      : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
-                      }`}
-                  >
-                    {uploadingFuelReceipt ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto text-slate-500" />
-                    ) : formFuelReceiptUrl ? (
-                      '✓ Bukti'
-                    ) : (
-                      'Bukti'
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
 
-            {/* Tol & Parkir Row */}
-            <div className="space-y-1.5">
-              <Label htmlFor="journeyToll" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Tol & Parkir
-              </Label>
-              <div className="grid grid-cols-4 gap-2 items-end">
-                <div className="col-span-3 relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
+                <div className="space-y-1.5">
+                  <Label htmlFor="journeyTimeEnd" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Jam Tiba / Selesai
+                  </Label>
                   <Input
-                    id="journeyToll"
-                    placeholder="0"
-                    value={formTollParkingFee}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '');
-                      setFormTollParkingFee(val ? Number(val).toLocaleString('id-ID') : '');
-                    }}
-                    className="pl-8 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs h-10 w-full"
+                    id="journeyTimeEnd"
+                    type="time"
+                    value={formTimeEnd}
+                    onChange={(e) => setFormTimeEnd(e.target.value)}
+                    className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
+                    required
                   />
-                </div>
-                <div className="col-span-1">
-                  <input
-                    type="file"
-                    ref={tollFileInputRef}
-                    accept="image/*,application/pdf"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleUploadReceipt(f, 'toll');
-                    }}
-                    className="hidden"
-                  />
-                  <Button
-                    type="button"
-                    onClick={() => tollFileInputRef.current?.click()}
-                    disabled={uploadingTollReceipt}
-                    className={`w-full rounded-xl text-xs font-bold h-10 border transition-all ${formTollReceiptUrl
-                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-                      : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
-                      }`}
-                  >
-                    {uploadingTollReceipt ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto text-slate-500" />
-                    ) : formTollReceiptUrl ? (
-                      '✓ Bukti'
-                    ) : (
-                      'Bukti'
-                    )}
-                  </Button>
                 </div>
               </div>
+
+              {/* Loader for API Recalculation */}
+              {isCalculatingExtraRoute && (
+                <div className="flex items-center justify-center p-2 text-[10px] text-indigo-600 font-bold bg-indigo-50/50 rounded-lg border border-indigo-100/50 animate-in fade-in duration-200 mt-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5 text-indigo-600" />
+                  Menghitung rute tambahan...
+                </div>
+              )}
+
+              {/* Extra Route Errors */}
+              {extraRouteError && (
+                <div className="p-2 text-[10px] bg-rose-50 border border-rose-200 text-rose-700 rounded-lg font-semibold flex items-center gap-2 mt-2">
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>{extraRouteError}</span>
+                </div>
+              )}
+
+              {/* Reimburse BBM Row */}
+              {(() => {
+                const baseCostVal = activeReportingJourney ? (activeReportingJourney.baseOperationalCost || 
+                  ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0))) : 0;
+                return (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="journeyFuel" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      BBM Terbeli <span className="text-blue-600 font-extrabold normal-case tracking-normal">({`Jatah: ${fmtRp(Math.ceil(baseCostVal))}`})</span>
+                    </Label>
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1 relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
+                        <Input
+                          id="journeyFuel"
+                          placeholder="0"
+                          value={formFuelFee}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            setFormFuelFee(val ? Number(val).toLocaleString('id-ID') : '');
+                          }}
+                          className="pl-8 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs h-10 w-full"
+                        />
+                      </div>
+                      <div className="shrink-0 w-24">
+                        <input
+                          type="file"
+                          ref={fuelFileInputRef}
+                          accept="image/*,application/pdf"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleUploadReceipt(f, 'bbm');
+                          }}
+                          className="hidden"
+                        />
+                        <Button
+                          type="button"
+                          onClick={() => fuelFileInputRef.current?.click()}
+                          disabled={uploadingFuelReceipt}
+                          className={`w-full rounded-xl text-xs font-bold h-10 border transition-all ${formFuelReceiptUrl
+                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                            }`}
+                        >
+                          {uploadingFuelReceipt ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto text-slate-500" />
+                          ) : formFuelReceiptUrl ? (
+                            '✓ Bukti'
+                          ) : (
+                            'Bukti'
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Tol & Parkir Row */}
+              <div className="space-y-1.5">
+                <Label htmlFor="journeyToll" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Tol & Parkir Terbayar
+                </Label>
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1 relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
+                    <Input
+                      id="journeyToll"
+                      placeholder="0"
+                      value={formTollParkingFee}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '');
+                        setFormTollParkingFee(val ? Number(val).toLocaleString('id-ID') : '');
+                      }}
+                      className="pl-8 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs h-10 w-full"
+                    />
+                  </div>
+                  <div className="shrink-0 w-24">
+                    <input
+                      type="file"
+                      ref={tollFileInputRef}
+                      accept="image/*,application/pdf"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleUploadReceipt(f, 'toll');
+                      }}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      onClick={() => tollFileInputRef.current?.click()}
+                      disabled={uploadingTollReceipt}
+                      className={`w-full rounded-xl text-xs font-bold h-10 border transition-all ${formTollReceiptUrl
+                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                        }`}
+                    >
+                      {uploadingTollReceipt ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto text-slate-500" />
+                      ) : formTollReceiptUrl ? (
+                        '✓ Bukti'
+                      ) : (
+                        'Bukti'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+
+
+              {/* Rincian Biaya Laporan */}
+              {activeReportingJourney && (() => {
+                const originalTotalDist = (activeReportingJourney.distanceKm || 0) * 2;
+                const extraDistanceKm = Math.max(0, calculatedDistanceKm - originalTotalDist);
+                const extraOperationalCost = Math.ceil(extraDistanceKm * (activeReportingJourney.vehicleRate || 0));
+
+                const originalMealAllowance = activeReportingJourney.mealAllowance || 0;
+                const elapsedHours = (formTimeStart && formTimeEnd) ? calculateElapsedHours(formTimeStart, formTimeEnd) : 0;
+                const actualMealAllowance = (formTimeStart && formTimeEnd) ? getMealAllowanceForDuration(elapsedHours) : originalMealAllowance;
+                const extraMealAllowance = Math.max(0, actualMealAllowance - originalMealAllowance);
+
+                const baseCostVal = activeReportingJourney.baseOperationalCost || 
+                  ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0));
+
+                const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
+                const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
+
+                const extraFuelCost = Math.max(0, fuelVal - baseCostVal);
+
+                const finalFeePreview = (activeReportingJourney.totalOperationalCost || 0) +
+                  tollVal +
+                  (formIsOvernight ? 50000 : 0) +
+                  (formDate && isWeekend(formDate) ? 20000 : 0) +
+                  extraMealAllowance +
+                  extraFuelCost;
+
+                return (
+                  <div className="p-3.5 bg-indigo-50/50 rounded-2xl border border-indigo-100 text-slate-600 text-xs space-y-1.5 font-medium animate-in fade-in duration-200">
+                    <span className="text-[9px] font-bold text-indigo-800 uppercase tracking-wider block mb-1">
+                      Kalkulasi Penyesuaian & Biaya Akhir
+                    </span>
+                    {(() => {
+                      const getStratumLabel = (allowance: number, hours: number): string => {
+                        if (allowance === 30000) return '2 - 6';
+                        if (allowance === 60000) return '>6';
+                        if (allowance === 0) return '<2';
+                        
+                        if (hours >= 2 && hours <= 6) return '2 - 6';
+                        if (hours > 6) return '>6';
+                        return '<2';
+                      };
+
+                      const originalDurationHoursPP = (activeReportingJourney.durationHours || 0) * 2;
+                      const plotStrata = getStratumLabel(activeReportingJourney.mealAllowance || 0, originalDurationHoursPP);
+                      const actualStrata = getStratumLabel(actualMealAllowance, elapsedHours);
+
+                      return (
+                        <div className="overflow-x-auto border border-indigo-100/50 rounded-xl bg-white p-2.5 my-2">
+                          <table className="w-full text-[10px] text-left border-collapse">
+                            <thead>
+                              <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[8px]">
+                                <th className="pb-1.5 font-bold">Aspek</th>
+                                <th className="pb-1.5 font-bold text-center">Plotingan</th>
+                                <th className="pb-1.5 font-bold text-center">Aktual</th>
+                                <th className="pb-1.5 font-bold text-right">Delta</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50 text-slate-600 font-semibold">
+                              <tr>
+                                <td className="py-2 text-slate-500 font-bold">Jarak</td>
+                                <td className="py-2 text-center font-bold text-slate-700">{originalTotalDist.toFixed(1)} km</td>
+                                <td className="py-2 text-center font-bold text-indigo-600">{calculatedDistanceKm.toFixed(1)} km</td>
+                                <td className="py-2 text-right font-black text-indigo-700">
+                                  {extraDistanceKm > 0 ? (
+                                    <span>+{extraDistanceKm.toFixed(1)} km</span>
+                                  ) : (
+                                    <span className="text-slate-300">—</span>
+                                  )}
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-2 text-slate-500 font-bold">BBM</td>
+                                <td className="py-2 text-center font-bold text-slate-700"><span className="text-blue-600">{fmtRp(Math.ceil(baseCostVal))}</span></td>
+                                <td className="py-2 text-center font-bold text-blue-600">{fmtRp(Math.ceil(fuelVal))}</td>
+                                <td className="py-2 text-right font-black text-blue-700">
+                                  {extraFuelCost > 0 ? (
+                                    <span>+{fmtRp(Math.ceil(extraFuelCost))}</span>
+                                  ) : (
+                                    <span className="text-slate-300">—</span>
+                                  )}
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="py-2 text-slate-500 font-bold">Uang Makan</td>
+                                <td className="py-2 text-center font-bold text-slate-700">{plotStrata}</td>
+                                <td className="py-2 text-center font-bold text-indigo-600">{actualStrata}</td>
+                                <td className="py-2 text-right font-black text-blue-700">
+                                  {extraMealAllowance > 0 ? (
+                                    <span>+{fmtRp(Math.ceil(extraMealAllowance))}</span>
+                                  ) : (
+                                    <span className="text-slate-300">—</span>
+                                  )}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Reimburse BBM & Tol */}
+                    {fuelVal > 0 && (
+                      <div className="flex justify-between text-slate-500 animate-in fade-in duration-150">
+                        <span>BBM Terbeli</span>
+                        <span className="font-bold text-blue-600">+{fmtRp(Math.ceil(fuelVal))}</span>
+                      </div>
+                    )}
+                    {tollVal > 0 && (
+                      <div className="flex justify-between text-slate-500 animate-in fade-in duration-150">
+                        <span>Reimburse Tol & Parkir</span>
+                        <span className="font-bold text-blue-600">+{fmtRp(Math.ceil(tollVal))}</span>
+                      </div>
+                    )}
+
+                    {/* Overnight & Weekend allowances */}
+                    {formIsOvernight && (
+                      <div className="flex justify-between text-slate-500 animate-in fade-in duration-150">
+                        <span>Tambahan Menginap</span>
+                        <span className="font-bold text-blue-600">+Rp50.000</span>
+                      </div>
+                    )}
+                    {formDate && isWeekend(formDate) && (
+                      <div className="flex justify-between text-slate-500 animate-in fade-in duration-150">
+                        <span>Tambahan Hari Libur/Weekend</span>
+                        <span className="font-bold text-blue-600">+Rp20.000</span>
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-blue-200/50 flex justify-between font-black text-blue-600 text-sm">
+                      <span>Total Biaya Operasional</span>
+                      <span>{fmtRp(Math.ceil(finalFeePreview))}</span>
+                    </div>
+                    <div className="pt-1.5 border-t border-emerald-200/50 flex justify-between font-black text-emerald-700 text-xs">
+                      <span>Upah Bersih Sopir</span>
+                      <span>{fmtRp(calculatedDistanceKm * 200 + calculatedDurationHours * 5000)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
-            {/* Menginap */}
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                id="journeyOvernight"
-                type="checkbox"
-                checked={formIsOvernight}
-                onChange={(e) => setFormIsOvernight(e.target.checked)}
-                className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
-              />
-              <Label htmlFor="journeyOvernight" className="text-xs font-bold text-slate-600 cursor-pointer">
-                Menginap (Overnight Allowance: +Rp50.000)
-              </Label>
-            </div>
-
-            <div className="flex gap-3 pt-3 border-t border-slate-100">
+            <div className="p-5 pt-3 border-t border-slate-100 bg-slate-50/50 flex gap-3">
               <Button
                 type="button"
                 variant="ghost"
                 onClick={() => setActiveReportingJourney(null)}
-                className="flex-1 rounded-xl font-bold text-slate-500 hover:bg-slate-50 text-xs h-10.5"
+                className="flex-1 rounded-xl font-bold text-slate-500 hover:bg-slate-50 text-xs h-10.5 bg-white border border-slate-200"
               >
                 Batal
               </Button>
@@ -2884,6 +3531,81 @@ export default function EmployeeActivitiesPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Google Maps Selector Dialog */}
+      <Dialog open={showMapSelector} onOpenChange={setShowMapSelector}>
+        <DialogContent className="sm:max-w-[500px] rounded-2xl bg-white border-slate-100 shadow-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base font-extrabold text-slate-800 flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-indigo-600" />
+              Pilih Tujuan di Google Maps
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400 mt-1">
+              Cari lokasi atau geser pin merah ke lokasi tujuan perjalanan dinas.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            {/* Search Input inside Map */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                ref={(el) => {
+                  if (el) {
+                    initAutocomplete(el);
+                  }
+                }}
+                placeholder="Cari alamat, gedung, kota..."
+                value={mapSearchText}
+                onChange={(e) => setMapSearchText(e.target.value)}
+                className="pl-9 h-10 rounded-xl text-xs bg-slate-50 border-slate-200 focus:bg-white transition-all"
+              />
+            </div>
+
+            {/* Map Container */}
+            <div
+              ref={(el) => {
+                if (el) {
+                  initMap(el);
+                }
+              }}
+              className="w-full h-[280px] rounded-xl border border-slate-100 overflow-hidden bg-slate-50 relative flex items-center justify-center"
+            >
+              <div className="flex flex-col items-center gap-2 text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+                <span className="text-[10px] font-bold">Memuat Google Maps...</span>
+              </div>
+            </div>
+
+            {/* Selected Address Box */}
+            {mapAddress && (
+              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 leading-relaxed font-semibold">
+                <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Alamat Terpilih:</span>
+                📍 {mapAddress}
+              </div>
+            )}
+
+            <DialogFooter className="pt-2 border-t border-slate-100 gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowMapSelector(false)}
+                className="rounded-xl font-bold text-slate-500 hover:bg-slate-50 text-xs px-4"
+              >
+                Batal
+              </Button>
+              <Button
+                type="button"
+                disabled={!mapAddress}
+                onClick={handleConfirmMapLocation}
+                className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-10"
+              >
+                Konfirmasi Lokasi
+              </Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
