@@ -12,6 +12,8 @@ env:
     value: "AIzaSyCbfQFInBd9jIfw-6F-261i3y1hSK7T1dg"
   - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
     value: "AIzaSyAsOK43d13BOQTbC0AH7vRFwgO2aMSZCZw"
+  - variable: GOOGLE_MAPS_API_KEY
+    value: "AIzaSyAsOK43d13BOQTbC0AH7vRFwgO2aMSZCZw"
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
     value: "internal-bak.firebaseapp.com"
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
