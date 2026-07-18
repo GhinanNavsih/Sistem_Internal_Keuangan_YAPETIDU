@@ -467,6 +467,18 @@ function getTodayISO(): string {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+function getInitialSatpamDateISO(): string {
+  const d = new Date();
+  const hours = d.getHours();
+  // If it's between midnight 00:00 and 08:30 in local time, default to yesterday
+  if (hours < 8 || (hours === 8 && d.getMinutes() < 30)) {
+    const yesterday = new Date(d);
+    yesterday.setDate(d.getDate() - 1);
+    return yesterday.getFullYear() + '-' + String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + String(yesterday.getDate()).padStart(2, '0');
+  }
+  return getTodayISO();
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 const YEARS = Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i);
@@ -498,7 +510,7 @@ export default function EmployeeActivitiesPage() {
   const [myShiftTeam, setMyShiftTeam] = useState<any | null>(null);
   const [allSatpamEmployees, setAllSatpamEmployees] = useState<any[]>([]);
   const [loadingSatpamConfig, setLoadingSatpamConfig] = useState(false);
-  const [satpamReportDate, setSatpamReportDate] = useState<string>(getTodayISO());
+  const [satpamReportDate, setSatpamReportDate] = useState<string>(getInitialSatpamDateISO());
   const [satpamSubmitting, setSatpamSubmitting] = useState(false);
   const [postAssignments, setPostAssignments] = useState<Record<string, { employeeId: string; shiftType: string }>>({
     'Pos 1': { employeeId: '', shiftType: 'Harian' },
@@ -517,6 +529,7 @@ export default function EmployeeActivitiesPage() {
   const [isExtraPostVisible, setIsExtraPostVisible] = useState(false);
   const [loadingSubmittedSatpam, setLoadingSubmittedSatpam] = useState(false);
   const [isSatpamReportSubmitted, setIsSatpamReportSubmitted] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
 
   // ── Period ──
@@ -1596,27 +1609,8 @@ export default function EmployeeActivitiesPage() {
     }));
   };
 
-  const handleSubmitSatpamShift = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!profile?.linkedEmployeeId || satpamSubmitting) return;
-
-    // Validate that all 9 posts are assigned
-    const emptyPostEntry = Object.entries(postAssignments).find(([, assignment]) => !assignment.employeeId);
-    if (emptyPostEntry) {
-      const [postId] = emptyPostEntry;
-      const postName = POSTS_CONFIG.find(p => p.id === postId)?.name || '';
-      setMessage({
-        type: 'error',
-        text: `${postId}${postName ? ` (${postName})` : ''} masih kosong. Silakan pilih petugas.`
-      });
-      return;
-    }
-
-    if (isExtraPostVisible && extraEmployeeId && !extraPostName.trim()) {
-      setMessage({ type: 'error', text: 'Nama pos tambahan harus diisi jika petugas tambahan dipilih.' });
-      return;
-    }
-
+  const executeSubmitSatpamShift = async () => {
+    if (!profile?.linkedEmployeeId) return;
     setSatpamSubmitting(true);
     try {
       const batch = writeBatch(db);
@@ -1762,6 +1756,36 @@ export default function EmployeeActivitiesPage() {
       setMessage({ type: 'error', text: 'Gagal mengirim laporan shift. Silakan coba lagi.' });
     } finally {
       setSatpamSubmitting(false);
+      setShowConfirmModal(false);
+    }
+  };
+
+  const handleSubmitSatpamShift = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile?.linkedEmployeeId || satpamSubmitting) return;
+
+    // Validate that all 9 posts are assigned
+    const emptyPostEntry = Object.entries(postAssignments).find(([, assignment]) => !assignment.employeeId);
+    if (emptyPostEntry) {
+      const [postId] = emptyPostEntry;
+      const postName = POSTS_CONFIG.find(p => p.id === postId)?.name || '';
+      setMessage({
+        type: 'error',
+        text: `${postId}${postName ? ` (${postName})` : ''} masih kosong. Silakan pilih petugas.`
+      });
+      return;
+    }
+
+    if (isExtraPostVisible && extraEmployeeId && !extraPostName.trim()) {
+      setMessage({ type: 'error', text: 'Nama pos tambahan harus diisi jika petugas tambahan dipilih.' });
+      return;
+    }
+
+    // Intercept with confirmation modal if activeShift is Malam
+    if (activeShift === 'Malam') {
+      setShowConfirmModal(true);
+    } else {
+      await executeSubmitSatpamShift();
     }
   };
 
@@ -2252,7 +2276,7 @@ export default function EmployeeActivitiesPage() {
               ) : (
                 <form onSubmit={handleSubmitSatpamShift} className="space-y-4">
                   {/* Date selection & Shift Display */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 pb-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="satpamDate" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                         Pilih Tanggal Dinas
@@ -2277,6 +2301,29 @@ export default function EmployeeActivitiesPage() {
                           {activeShift === 'Pagi' ? '08:00 - 14:00' : activeShift === 'Sore' ? '14:00 - 22:00' : '22:00 - 08:00 (H+1)'}
                         </span>
                       </div>
+                    </div>
+
+                    {/* Shift Date Range Helper */}
+                    <div className="sm:col-span-2 pt-1 border-t border-slate-200/60 mt-1 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+                      <Clock className="w-3.5 h-3.5 text-purple-500" />
+                      <span>
+                        Waktu Dinas: {(() => {
+                          if (!satpamReportDate) return '';
+                          const options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+                          const startDate = new Date(satpamReportDate);
+                          const startStr = startDate.toLocaleDateString('id-ID', options);
+                          if (activeShift === 'Malam') {
+                            const endDate = new Date(startDate);
+                            endDate.setDate(startDate.getDate() + 1);
+                            const endStr = endDate.toLocaleDateString('id-ID', options);
+                            return `${startStr} (22:00) s/d ${endStr} (08:00 WIB)`;
+                          } else if (activeShift === 'Pagi') {
+                            return `${startStr} (08:00 s/d 14:00 WIB)`;
+                          } else {
+                            return `${startStr} (14:00 s/d 22:00 WIB)`;
+                          }
+                        })()}
+                      </span>
                     </div>
                   </div>
 
@@ -3568,6 +3615,91 @@ export default function EmployeeActivitiesPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Satpam Night Shift Date Confirmation Dialog ───────────────────── */}
+      <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
+        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] rounded-3xl border-none shadow-2xl bg-white p-0 overflow-hidden">
+          <div className="bg-gradient-to-r from-amber-500 to-orange-600 p-5 pb-4">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-white animate-pulse" /> Konfirmasi Tanggal Dinas
+              </DialogTitle>
+              <DialogDescription className="text-amber-50 text-xs mt-1">
+                Harap periksa kembali tanggal dinas untuk Shift Malam Anda.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="p-5 space-y-4 text-sm text-slate-600">
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
+              <div className="flex items-start gap-2.5">
+                <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-extrabold text-amber-900 text-sm">Roster Shift Malam (22:00 - 08:00 WIB)</h4>
+                  <p className="text-xs text-amber-800/80 leading-relaxed mt-1">
+                    Shift Malam dimulai pada malam hari **tanggal mulai** dan berakhir keesokan paginya. Roster tanggal dinas Anda adalah **tanggal saat shift malam Anda dimulai**.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-1">
+              <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tanggal Dinas Terpilih</span>
+                <span className="font-black text-slate-800 text-sm">
+                  {(() => {
+                    if (!satpamReportDate) return '';
+                    const options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+                    return new Date(satpamReportDate).toLocaleDateString('id-ID', options);
+                  })()}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Jam Dinas Dinas</span>
+                <span className="font-extrabold text-indigo-600 text-xs bg-indigo-50 px-2.5 py-1 rounded-md">
+                  {(() => {
+                    if (!satpamReportDate) return '';
+                    const startDate = new Date(satpamReportDate);
+                    const endDate = new Date(startDate);
+                    endDate.setDate(startDate.getDate() + 1);
+                    const formatOpt: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+                    const startStr = startDate.toLocaleDateString('id-ID', formatOpt);
+                    const endStr = endDate.toLocaleDateString('id-ID', formatOpt);
+                    return `${startStr} (22:00) s/d ${endStr} (08:00 WIB)`;
+                  })()}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs font-medium text-slate-400 text-center leading-relaxed">
+              Jika shift Anda dimulai pada malam **{(() => {
+                if (!satpamReportDate) return '';
+                const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long' };
+                return new Date(satpamReportDate).toLocaleDateString('id-ID', options);
+              })()}**, silakan klik **Ya, Kirim Laporan**. Jika tidak, silakan batalkan dan sesuaikan tanggal dinas.
+            </p>
+          </div>
+
+          <DialogFooter className="p-5 pt-0 border-t-0 flex flex-row items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowConfirmModal(false)}
+              className="flex-1 rounded-xl border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-colors h-11"
+            >
+              Batalkan
+            </Button>
+            <Button
+              type="button"
+              onClick={executeSubmitSatpamShift}
+              className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-white font-extrabold hover:from-amber-600 hover:to-orange-700 shadow-md shadow-orange-100 transition-colors h-11 border-none"
+            >
+              Ya, Kirim Laporan
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
