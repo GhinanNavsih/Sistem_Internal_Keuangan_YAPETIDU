@@ -49,7 +49,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
-import { MONTHS_ID } from '@/utils/rekapConfig';
+import { MONTHS_ID, REKAP_COLUMNS } from '@/utils/rekapConfig';
 import {
   calculateYearsOfService,
   calculateGapok,
@@ -558,11 +558,121 @@ export default function EmployeePayslipPage() {
         }
 
         if (!isLoyalis) {
-          // No locked slip for blue collar (honorer)
+          // No locked slip for blue collar (honorer) -> calculate draft on the fly in real-time!
           setConfirmedSlip(null);
           setIsConfirmed(false);
-          setCalculatedEarnings([]);
-          setCalculatedDeductions([]);
+
+          // 1. Fetch approved ActivityReports for this employee & period
+          const activityQ = query(
+            collection(db, 'ActivityReports'),
+            where('employeeId', '==', empId),
+            where('period', '==', periodToken),
+            where('status', '==', 'approved')
+          );
+          const reportsSnap = await getDocs(activityQ);
+          const reports = reportsSnap.docs.map(d => d.data());
+
+          // 2. Fetch KegiatanSpj events for this period
+          let spjEventsTotal = 0;
+          try {
+            const spjQ = query(
+              collection(db, 'KegiatanSpj'),
+              where('period', '==', periodToken)
+            );
+            const spjSnap = await getDocs(spjQ);
+            spjSnap.docs.forEach(d => {
+              const data = d.data();
+              const workerInfo = data.eventWorkers?.[empId];
+              if (workerInfo) {
+                spjEventsTotal += workerInfo.payGiven || 0;
+              }
+            });
+          } catch (err) {
+            console.error('Error fetching KegiatanSpj for draft calculation:', err);
+          }
+
+          const jobCategory = employee?.employment?.jobCategory || '';
+          const earnings: PaySlipField[] = [];
+          const gapok = employee?.salaryProfile?.baseSalaryAmount || 0;
+
+          // Gaji Pokok
+          earnings.push({ label: 'Gaji Pokok', amount: gapok });
+
+          if (jobCategory === 'SATPAM') {
+            let harianCount = 0;
+            let jumatCount = 0;
+            let lemburSendiriCount = 0;
+            let lemburCoverCount = 0;
+
+            reports.forEach(r => {
+              const shiftType = r.shiftType || '';
+              if (shiftType === 'Harian') harianCount++;
+              else if (shiftType === 'Jumat & Libur') jumatCount++;
+              else if (shiftType === 'Lembur Sendiri') lemburSendiriCount++;
+              else if (shiftType === 'Lembur Cover') lemburCoverCount++;
+            });
+
+            earnings.push({ label: 'Vakasi Harian', amount: harianCount * 12500 });
+            earnings.push({ label: 'Jumat & Libur', amount: jumatCount * 25000 });
+            earnings.push({ label: 'Lembur Sendiri', amount: lemburSendiriCount * 30000 });
+            earnings.push({ label: 'Lembur Cover', amount: lemburCoverCount * 50000 });
+            earnings.push({ label: 'Tunjangan Jabatan', amount: roleStr === 'ketua_shift_satpam' ? 100000 : 0 });
+          } else {
+            // General honorer
+            const activityTotal = reports.reduce((sum, r) => sum + (r.fee || 0), 0);
+            const totalSpj = spjEventsTotal + activityTotal;
+
+            const columns = REKAP_COLUMNS[jobCategory] || REKAP_COLUMNS.KEBERSIHAN;
+            columns.forEach(col => {
+              if (col.slipLabel) {
+                if (col.key === 'spj') {
+                  earnings.push({ label: col.slipLabel, amount: totalSpj });
+                } else {
+                  earnings.push({ label: col.slipLabel, amount: 0 });
+                }
+              }
+            });
+          }
+
+          // BPJS Allowance
+          if (employee?.bpjs?.allowanceAmount) {
+            earnings.push({ label: 'BPJS (Tunjangan)', amount: Math.round(employee.bpjs.allowanceAmount) });
+          }
+
+          // Tunjangan Beras
+          earnings.push({ 
+            label: 'Tunjangan Beras', 
+            amount: employee?.salaryProfile?.tunjanganBeras ?? 0 
+          });
+
+          // Deductions (Potongan)
+          const deductions: PaySlipField[] = [];
+          deductions.push({ label: 'KOPERASI ROCHMAD', amount: employee?.deductions?.koperasiRochmad || 0 });
+
+          const bpjsDeduction = employee?.bpjs?.deductionAmount || 0;
+          deductions.push({ label: 'BPJS', amount: bpjsDeduction });
+
+          const thtDeduction = employee?.tht?.deductionAmount || 0;
+          deductions.push({ label: 'TABUNGAN HARI TUA BNI SIMPONI', amount: thtDeduction });
+
+          const savingsDeduction = employee?.savings?.deductionAmount || 0;
+          deductions.push({ label: 'TABUNGAN', amount: savingsDeduction });
+
+          const zizDeduction = employee?.ziz?.deductionAmount || 0;
+          deductions.push({ label: 'ZAKAT INFAQ SODAQOH', amount: zizDeduction });
+          deductions.push({ label: 'REVISI GAJI', amount: 0 });
+
+          const pinluDeduction = employee?.pinlu?.deductionAmount || 0;
+          deductions.push({ label: 'PINLU/TAGIHAN', amount: pinluDeduction });
+
+          // Placeholder / default values for non-matrix elements
+          deductions.push({ label: 'PINJAMAN KOP. UNIPDU', amount: 0 });
+          deductions.push({ label: 'POTONGAN PRESENSI', amount: 0 });
+          deductions.push({ label: 'POTONGAN BONUS PRESENSI', amount: 0 });
+          deductions.push({ label: 'IURAN WAJIB KOP. UNIPDU', amount: 0 });
+
+          setCalculatedEarnings(earnings);
+          setCalculatedDeductions(deductions);
           setLoading(false);
           return;
         }
