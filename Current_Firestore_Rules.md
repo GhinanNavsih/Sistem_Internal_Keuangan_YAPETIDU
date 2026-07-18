@@ -193,12 +193,12 @@ service cloud.firestore {
         )
       );
 
-      // Honorer employees can create a report for themselves.
-      // Ketua Shifts can create reports for guards in their regu (jobCategory 'SATPAM' with valid shift rates).
+      // Honorer employees and Ketua Shifts can create a report for themselves.
+      // Ketua Shifts can also create reports for guards in their regu (jobCategory 'SATPAM' with valid shift rates).
       allow create: if isSuperAdmin() || (
         hasProfile() && (
           (
-            getUserData().role == 'honorer' && 
+            (getUserData().role == 'honorer' || getUserData().role == 'ketua_shift_satpam') && 
             request.resource.data.employeeId == getUserData().linkedEmployeeId &&
             request.resource.data.status == 'pending' &&
             (request.resource.data.fee == 0 || request.resource.data.jobCategory == 'SOPIR')
@@ -215,7 +215,7 @@ service cloud.firestore {
 
       // Super Admins can update all.
       // SatKer Heads can approve (assign fee) or decline reports for their category.
-      // Honorer employees can edit/resubmit their own pending or declined reports.
+      // Honorer employees and Ketua Shifts can edit/resubmit their own pending or declined reports.
       allow update: if isSuperAdmin() || (
         hasProfile() && (
           (
@@ -230,7 +230,7 @@ service cloud.firestore {
             (request.resource.data.status == 'approved' || request.resource.data.status == 'declined')
           ) ||
           (
-            getUserData().role == 'honorer' &&
+            (getUserData().role == 'honorer' || getUserData().role == 'ketua_shift_satpam') &&
             resource.data.employeeId == getUserData().linkedEmployeeId &&
             (resource.data.status == 'pending' || resource.data.status == 'declined') &&
             request.resource.data.employeeId == getUserData().linkedEmployeeId &&
