@@ -67,6 +67,7 @@ import {
 } from 'firebase/firestore';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { MONTHS_ID } from '@/utils/rekapConfig';
+import { syncActivityToPayslip } from '@/utils/payslipSync';
 import {
   Select,
   SelectContent,
@@ -1732,6 +1733,33 @@ export default function EmployeeActivitiesPage() {
       }
 
       await batch.commit();
+
+      // Sync activity reports to payslips for all submitted members
+      try {
+        const uniqueSubmittedEmpIds = new Set<string>();
+        for (const assignment of Object.values(postAssignments)) {
+          if (assignment.employeeId) {
+            uniqueSubmittedEmpIds.add(assignment.employeeId);
+          }
+        }
+        if (isExtraPostVisible && extraEmployeeId && extraPostName) {
+          uniqueSubmittedEmpIds.add(extraEmployeeId);
+        }
+        for (const offDutyEmp of offDutyMembers) {
+          if (offDutyEmp.id) {
+            uniqueSubmittedEmpIds.add(offDutyEmp.id);
+          }
+        }
+
+        await Promise.all(
+          Array.from(uniqueSubmittedEmpIds).map(empId =>
+            syncActivityToPayslip(db, empId, activityPeriod)
+          )
+        );
+      } catch (syncErr) {
+        console.error('Error syncing Satpam activities to payslips:', syncErr);
+      }
+
       setMessage({ type: 'success', text: `Berhasil mengirim laporan shift ${activeShift} tanggal ${satpamReportDate}.` });
 
       // Reset post selection

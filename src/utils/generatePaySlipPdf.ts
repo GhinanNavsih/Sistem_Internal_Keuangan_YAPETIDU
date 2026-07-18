@@ -885,14 +885,13 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
   const sections = [
     {
       title: '1. Gaji Pokok',
-      formula: 'Formula: (Pangkat/Golongan, Masa Kerja)',
+      formula: 'Formula: (Masa Kerja, Ketentuan Internal)',
       bullets: [
-        'Ditentukan oleh Golongan dan Masa Kerja pegawai.',
+        'Ditentukan oleh Masa Kerja dan ketentuan internal lembaga yang berlaku.',
         'Masa Kerja dihitung sejak Tanggal Pengakuan / Mulai Bekerja.',
         'Dicocokkan dengan Matriks Gaji Pokok Yayasan yang berlaku.'
       ],
       params: [
-        { label: 'Golongan', val: data.gradeLevel || '-' },
         { label: 'Masa Kerja', val: data.yearsOfService !== undefined ? `${data.yearsOfService} Tahun` : '-' },
         { label: 'Tgl Pengakuan', val: data.baseDate ? new Date(data.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-' },
         { label: 'Gaji Pokok', val: formatIDR(gapokVal), highlight: true }

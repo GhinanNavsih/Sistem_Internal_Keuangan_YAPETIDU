@@ -168,9 +168,9 @@ export default function EmployeePayslipPage() {
     {
       id: 'gapok',
       title: 'Gaji Pokok',
-      formula: '(Pangkat/Golongan, Masa Kerja)',
+      formula: '(Masa Kerja, Ketentuan Internal)',
       bullets: [
-        'Ditentukan oleh Golongan dan Masa Kerja pegawai',
+        'Ditentukan oleh Masa Kerja dan ketentuan internal lembaga yang berlaku',
         'Masa Kerja dihitung dari tanggal pengakuan masa kerja atau tanggal mulai bekerja',
         'Dicocokkan secara otomatis dengan Matriks Gaji yang berlaku',
       ],
@@ -1418,7 +1418,6 @@ export default function EmployeePayslipPage() {
                             <div className="mt-3.5 ml-4 bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 max-w-2xl animate-in fade-in duration-200">
                               {item.id === 'gapok' && (
                                 <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                  <DocRow label="Golongan" value={employeeData?.gradeLevel || '-'} />
                                   <DocRow label="Masa Kerja" value={`${userVariables.years} Tahun`} />
                                   <DocRow label="Tgl Pengakuan" value={userVariables.baseDate ? new Date(userVariables.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'} />
                                   <DocRow label="Gaji Pokok" value={formatIDR(userVariables.gapokVal)} highlight />

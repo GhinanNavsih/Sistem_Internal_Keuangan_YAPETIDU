@@ -73,6 +73,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { MONTHS_ID } from '@/utils/rekapConfig';
+import { syncActivityToPayslip } from '@/utils/payslipSync';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -408,6 +409,11 @@ export default function ActivityReviewPage() {
       setSuccessMsg(`Laporan perjalanan dinas ${auditActivity.employeeName} berhasil diaudit dan disetujui.`);
       setAuditActivity(null);
       fetchActivities();
+      try {
+        await syncActivityToPayslip(db, auditActivity.employeeId, auditActivity.period);
+      } catch (syncErr) {
+        console.error('Error syncing payslip in handleApproveSopirAudit:', syncErr);
+      }
     } catch (err) {
       console.error('Error approving driver audit:', err);
       setErrorMsg('Gagal menyetujui laporan perjalanan dinas.');
@@ -682,6 +688,11 @@ export default function ActivityReviewPage() {
       });
 
       fetchActivities();
+      try {
+        await syncActivityToPayslip(db, activity.employeeId, activity.period);
+      } catch (syncErr) {
+        console.error('Error syncing payslip in handleApproveRow:', syncErr);
+      }
     } catch (err) {
       console.error('Error approving activity:', err);
       setErrorMsg('Gagal menyetujui kegiatan.');
@@ -709,6 +720,11 @@ export default function ActivityReviewPage() {
       setDeclineTarget(null);
       setDeclineReason('');
       fetchActivities();
+      try {
+        await syncActivityToPayslip(db, declineTarget.employeeId, declineTarget.period);
+      } catch (syncErr) {
+        console.error('Error syncing payslip in handleDecline:', syncErr);
+      }
     } catch (err) {
       console.error('Error declining activity:', err);
       setErrorMsg('Gagal menolak kegiatan.');
@@ -776,6 +792,24 @@ export default function ActivityReviewPage() {
       });
       setSelectedIds(new Set());
       fetchActivities();
+      try {
+        const uniqueKeys = new Set<string>();
+        updates.forEach(upd => {
+          const act = activities.find(a => a.id === upd.id);
+          if (act && act.employeeId && act.period) {
+            uniqueKeys.add(`${act.employeeId}::${act.period}`);
+          }
+        });
+
+        await Promise.all(
+          Array.from(uniqueKeys).map(async key => {
+            const [empId, per] = key.split('::');
+            await syncActivityToPayslip(db, empId, per);
+          })
+        );
+      } catch (syncErr) {
+        console.error('Error syncing payslips in handleBulkApprove:', syncErr);
+      }
     } catch (err) {
       console.error('Error bulk approving activities:', err);
       setErrorMsg('Gagal menyetujui kegiatan secara massal.');
@@ -808,6 +842,24 @@ export default function ActivityReviewPage() {
       setSuccessMsg(`${selectedIds.size} kegiatan berhasil ditolak.`);
       setSelectedIds(new Set());
       fetchActivities();
+      try {
+        const uniqueKeys = new Set<string>();
+        selectedIds.forEach(id => {
+          const act = activities.find(a => a.id === id);
+          if (act && act.employeeId && act.period) {
+            uniqueKeys.add(`${act.employeeId}::${act.period}`);
+          }
+        });
+
+        await Promise.all(
+          Array.from(uniqueKeys).map(async key => {
+            const [empId, per] = key.split('::');
+            await syncActivityToPayslip(db, empId, per);
+          })
+        );
+      } catch (syncErr) {
+        console.error('Error syncing payslips in handleBulkDecline:', syncErr);
+      }
     } catch (err) {
       console.error('Error bulk declining:', err);
       setErrorMsg('Gagal menolak kegiatan secara massal.');
