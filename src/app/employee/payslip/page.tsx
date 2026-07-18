@@ -1719,7 +1719,7 @@ export default function EmployeePayslipPage() {
                   href={whatsappUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full sm:w-auto h-12 rounded-2xl px-8 text-sm font-bold bg-gradient-to-r from-[#25D366] to-[#075E54] hover:opacity-95 text-white shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer border border-emerald-500/10 text-center"
+                  className="w-full sm:w-auto h-12 rounded-2xl px-8 text-sm font-bold bg-gradient-to-r from-[#25D366] to-[#075E54] hover:opacity-95 text-white shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center overflow-hidden"
                 >
                   <MessageCircle className="w-5 h-5 text-white" />
                   Hubungi Admin BAK
@@ -1740,7 +1740,7 @@ export default function EmployeePayslipPage() {
                     href={whatsappUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full sm:w-auto h-12 rounded-2xl px-8 text-sm font-bold bg-gradient-to-r from-[#25D366] to-[#075E54] hover:opacity-95 text-white shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer border border-[#25D366]/10 text-center"
+                    className="w-full sm:w-auto h-12 rounded-2xl px-8 text-sm font-bold bg-gradient-to-r from-[#25D366] to-[#075E54] hover:opacity-95 text-white shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center overflow-hidden"
                   >
                     <MessageCircle className="w-5 h-5 text-white" />
                     Hubungi Admin BAK via WhatsApp
