@@ -3,10 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { auth } from '@/lib/firebase';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Hexagon, Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, LogIn,
+  Hexagon, Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, LogIn, CheckCircle2,
 } from 'lucide-react';
 
 // Inline Google icon — no external icon package needed
@@ -69,6 +71,8 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -94,6 +98,7 @@ export default function LoginPage() {
     e.preventDefault();
     if (!email || !password) return;
     setError(null);
+    setSuccessMessage(null);
     setSubmitting(true);
     try {
       await signInWithEmail(email, password);
@@ -102,6 +107,36 @@ export default function LoginPage() {
       setError(getAuthErrorMessage(err?.code ?? ''));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError('Silakan masukkan email Anda terlebih dahulu pada kolom Email.');
+      setSuccessMessage(null);
+      return;
+    }
+
+    setError(null);
+    setSuccessMessage(null);
+    setForgotPasswordLoading(true);
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setSuccessMessage(`Email pemulihan kata sandi telah dikirim ke ${email}. Silakan periksa kotak masuk (atau folder spam) Anda.`);
+    } catch (err: any) {
+      console.error('Error sending password reset email:', err);
+      if (err?.code === 'auth/user-not-found') {
+        setError('Email tidak terdaftar dalam sistem.');
+      } else if (err?.code === 'auth/invalid-email') {
+        setError('Format email tidak valid.');
+      } else if (err?.code === 'auth/too-many-requests') {
+        setError('Terlalu banyak permintaan reset password. Silakan coba beberapa saat lagi.');
+      } else {
+        setError('Gagal mengirim email pemulihan. Pastikan email Anda benar atau coba lagi nanti.');
+      }
+    } finally {
+      setForgotPasswordLoading(false);
     }
   };
 
@@ -250,6 +285,16 @@ export default function LoginPage() {
             </div>
           )}
 
+          {/* Success banner */}
+          {successMessage && (
+            <div className="mb-6 flex items-start gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl animate-in fade-in slide-in-from-top-2 duration-300">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+              <span className="text-sm text-emerald-700 font-medium leading-relaxed">
+                {successMessage}
+              </span>
+            </div>
+          )}
+
           {/* Email / Password form */}
           <form onSubmit={handleEmailLogin} className="space-y-4">
             {/* Email */}
@@ -274,9 +319,19 @@ export default function LoginPage() {
 
             {/* Password */}
             <div className="space-y-1.5">
-              <label htmlFor="password" className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                Password
-              </label>
+              <div className="flex justify-between items-center">
+                <label htmlFor="password" className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  disabled={forgotPasswordLoading}
+                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline transition-colors focus:outline-none disabled:opacity-50 cursor-pointer"
+                >
+                  {forgotPasswordLoading ? 'Mengirim...' : 'Lupa Password?'}
+                </button>
+              </div>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                 <Input
