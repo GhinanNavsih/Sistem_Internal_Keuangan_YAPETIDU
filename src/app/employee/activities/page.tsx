@@ -1457,7 +1457,7 @@ export default function EmployeeActivitiesPage() {
   }, [isKetuaShiftSatpam, teamNumber, satpamReportDate]);
 
   useEffect(() => {
-    if (!profile?.linkedEmployeeId || !satpamReportDate || !activeShift) return;
+    if (!isKetuaShiftSatpam || !profile?.linkedEmployeeId || !satpamReportDate || !activeShift) return;
 
     let isMounted = true;
     setLoadingSubmittedSatpam(true);
