@@ -1709,7 +1709,7 @@ export default function EmployeePayslipPage() {
               <div className="flex flex-col sm:flex-row items-center gap-3.5 justify-center w-full max-w-xl mx-auto">
                 <Button
                   onClick={handleDownloadPdf}
-                  className="w-full sm:w-auto rounded-2xl px-8 py-6 text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-150 hover:shadow-2xl hover:shadow-indigo-250 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full sm:w-auto h-12 rounded-2xl px-8 text-sm font-bold bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:shadow-indigo-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Download className="w-5 h-5" />
                   Unduh Slip Gaji (PDF)
@@ -1719,7 +1719,7 @@ export default function EmployeePayslipPage() {
                   href={whatsappUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full sm:w-auto rounded-2xl px-8 py-4.5 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl shadow-emerald-100 hover:shadow-2xl transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer border border-emerald-500/20 text-center"
+                  className="w-full sm:w-auto h-12 rounded-2xl px-8 text-sm font-bold bg-gradient-to-r from-[#25D366] to-[#075E54] hover:opacity-95 text-white shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer border border-emerald-500/10 text-center"
                 >
                   <MessageCircle className="w-5 h-5 text-white" />
                   Hubungi Admin BAK
@@ -1730,7 +1730,7 @@ export default function EmployeePayslipPage() {
                 <div className="flex flex-col sm:flex-row items-center gap-3.5 justify-center w-full">
                   <Button
                     disabled
-                    className="w-full sm:w-auto rounded-2xl px-8 py-6 text-sm font-bold bg-slate-100 text-slate-400 border border-slate-200/60 shadow-none cursor-not-allowed flex items-center justify-center gap-2"
+                    className="w-full sm:w-auto h-12 rounded-2xl px-8 text-sm font-bold bg-slate-100 text-slate-400 border border-slate-200/60 shadow-none cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     <Lock className="w-5 h-5 text-slate-400" />
                     Unduh Slip Gaji (PDF)
@@ -1740,7 +1740,7 @@ export default function EmployeePayslipPage() {
                     href={whatsappUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full sm:w-auto rounded-2xl px-8 py-4.5 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl shadow-emerald-100 hover:shadow-2xl transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer border border-emerald-500/20 text-center"
+                    className="w-full sm:w-auto h-12 rounded-2xl px-8 text-sm font-bold bg-gradient-to-r from-[#25D366] to-[#075E54] hover:opacity-95 text-white shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transition-all hover:scale-[1.02] transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer border border-[#25D366]/10 text-center"
                   >
                     <MessageCircle className="w-5 h-5 text-white" />
                     Hubungi Admin BAK via WhatsApp
