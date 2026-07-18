@@ -27,6 +27,7 @@ import {
   Loader2,
   LogOut,
   Plus,
+  X,
   Clock,
   CalendarDays,
   CheckCircle2,
@@ -141,7 +142,7 @@ interface ActivityReport {
 
 const getPlacesSearchQuery = (endPoint: string): string => {
   const firstSegment = endPoint.split(',')[0].trim();
-  
+
   if (!firstSegment.toLowerCase().startsWith('jl.') && !firstSegment.toLowerCase().startsWith('jalan')) {
     return firstSegment;
   }
@@ -513,18 +514,9 @@ export default function EmployeeActivitiesPage() {
   const [extraPostName, setExtraPostName] = useState('');
   const [extraEmployeeId, setExtraEmployeeId] = useState('');
   const [extraShiftType, setExtraShiftType] = useState('Lembur Sendiri');
-
-  const allMainPostsAssigned = useMemo(() => {
-    return Object.values(postAssignments).every(a => a.employeeId !== '');
-  }, [postAssignments]);
-
-  useEffect(() => {
-    if (!allMainPostsAssigned) {
-      setExtraEmployeeId('');
-      setExtraPostName('');
-      setExtraShiftType('Lembur Sendiri');
-    }
-  }, [allMainPostsAssigned]);
+  const [isExtraPostVisible, setIsExtraPostVisible] = useState(false);
+  const [loadingSubmittedSatpam, setLoadingSubmittedSatpam] = useState(false);
+  const [isSatpamReportSubmitted, setIsSatpamReportSubmitted] = useState(false);
 
 
   // ── Period ──
@@ -632,7 +624,7 @@ export default function EmployeeActivitiesPage() {
       markerRef.current = marker;
 
       const geocoder = new google.maps.Geocoder();
-      
+
       const updateAddressImage = (query: string) => {
         try {
           const service = new google.maps.places.PlacesService(map || document.createElement('div'));
@@ -1321,7 +1313,7 @@ export default function EmployeeActivitiesPage() {
       const extraOperationalCost = Math.ceil(extraDistanceKm * (activeReportingJourney.vehicleRate || 0));
       const calculatedWage = calculatedDistanceKm * 200 + calculatedDurationHours * 5000;
 
-      const baseCostVal = activeReportingJourney.baseOperationalCost || 
+      const baseCostVal = activeReportingJourney.baseOperationalCost ||
         ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0));
       const extraFuelCost = Math.max(0, fuelVal - baseCostVal);
 
@@ -1450,6 +1442,114 @@ export default function EmployeeActivitiesPage() {
     return getSatpamShiftForTeam(teamNumber, satpamReportDate);
   }, [isKetuaShiftSatpam, teamNumber, satpamReportDate]);
 
+  useEffect(() => {
+    if (!profile?.linkedEmployeeId || !satpamReportDate || !activeShift) return;
+
+    let isMounted = true;
+    setLoadingSubmittedSatpam(true);
+
+    const q = query(
+      collection(db, 'ActivityReports'),
+      where('activityDate', '==', satpamReportDate),
+      where('shiftName', '==', activeShift),
+      where('jobCategory', '==', 'SATPAM')
+    );
+
+    getDocs(q).then((snap) => {
+      if (!isMounted) return;
+
+      if (!snap.empty) {
+        const newAssignments: Record<string, { employeeId: string; shiftType: string }> = {
+          'Pos 1': { employeeId: '', shiftType: 'Harian' },
+          'Pos 2': { employeeId: '', shiftType: 'Harian' },
+          'Pos 3': { employeeId: '', shiftType: 'Harian' },
+          'Pos 4': { employeeId: '', shiftType: 'Harian' },
+          'Pos 5': { employeeId: '', shiftType: 'Harian' },
+          'Pos 6': { employeeId: '', shiftType: 'Harian' },
+          'Pos 7': { employeeId: '', shiftType: 'Harian' },
+          'Pos 8': { employeeId: '', shiftType: 'Harian' },
+          'Pos 9': { employeeId: '', shiftType: 'Harian' },
+        };
+        let foundExtra = false;
+        let extraEmpId = '';
+        let extraPName = '';
+        let extraSType = 'Lembur Sendiri';
+
+        snap.docs.forEach((doc) => {
+          const data = doc.data();
+          const rawPostName = data.postName || '';
+          
+          if (rawPostName.startsWith('Tambahan:')) {
+            foundExtra = true;
+            extraEmpId = data.employeeId || '';
+            extraPName = rawPostName.replace('Tambahan:', '').trim();
+            const matchedPost = POSTS_CONFIG.find(p => p.name === extraPName || p.id === extraPName);
+            if (matchedPost) {
+              extraPName = matchedPost.id;
+            }
+            extraSType = data.shiftType || 'Lembur Sendiri';
+          } else {
+            const match = rawPostName.match(/^(Pos\s+\d+)/i);
+            if (match) {
+              const posId = match[1];
+              const numMatch = posId.match(/\d+/);
+              if (numMatch) {
+                const normPosId = `Pos ${numMatch[0]}`;
+                if (newAssignments[normPosId]) {
+                  newAssignments[normPosId] = {
+                    employeeId: data.employeeId || '',
+                    shiftType: data.shiftType || 'Harian',
+                  };
+                }
+              }
+            }
+          }
+        });
+
+        setPostAssignments(newAssignments);
+        if (foundExtra) {
+          setExtraEmployeeId(extraEmpId);
+          setExtraPostName(extraPName);
+          setExtraShiftType(extraSType);
+          setIsExtraPostVisible(true);
+        } else {
+          setExtraEmployeeId('');
+          setExtraPostName('');
+          setExtraShiftType('Lembur Sendiri');
+          setIsExtraPostVisible(false);
+        }
+        setIsSatpamReportSubmitted(true);
+      } else {
+        setPostAssignments({
+          'Pos 1': { employeeId: '', shiftType: 'Harian' },
+          'Pos 2': { employeeId: '', shiftType: 'Harian' },
+          'Pos 3': { employeeId: '', shiftType: 'Harian' },
+          'Pos 4': { employeeId: '', shiftType: 'Harian' },
+          'Pos 5': { employeeId: '', shiftType: 'Harian' },
+          'Pos 6': { employeeId: '', shiftType: 'Harian' },
+          'Pos 7': { employeeId: '', shiftType: 'Harian' },
+          'Pos 8': { employeeId: '', shiftType: 'Harian' },
+          'Pos 9': { employeeId: '', shiftType: 'Harian' },
+        });
+        setExtraEmployeeId('');
+        setExtraPostName('');
+        setExtraShiftType('Lembur Sendiri');
+        setIsExtraPostVisible(false);
+        setIsSatpamReportSubmitted(false);
+      }
+      setLoadingSubmittedSatpam(false);
+    }).catch((err) => {
+      console.error('Error fetching submitted Satpam reports:', err);
+      if (isMounted) {
+        setLoadingSubmittedSatpam(false);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [satpamReportDate, activeShift, profile?.linkedEmployeeId]);
+
   const assignedEmployeeIds = useMemo(() => {
     const list = Object.values(postAssignments).map(a => a.employeeId).filter(Boolean);
     if (extraEmployeeId) {
@@ -1511,7 +1611,7 @@ export default function EmployeeActivitiesPage() {
       return;
     }
 
-    if (extraEmployeeId && !extraPostName.trim()) {
+    if (isExtraPostVisible && extraEmployeeId && !extraPostName.trim()) {
       setMessage({ type: 'error', text: 'Nama pos tambahan harus diisi jika petugas tambahan dipilih.' });
       return;
     }
@@ -1576,7 +1676,7 @@ export default function EmployeeActivitiesPage() {
       }
 
       // Add extra post if selected
-      if (extraEmployeeId && extraPostName) {
+      if (isExtraPostVisible && extraEmployeeId && extraPostName) {
         const emp = allSatpamEmployees.find(e => e.id === extraEmployeeId);
         const empName = emp ? emp.name : 'Unknown';
 
@@ -1654,6 +1754,7 @@ export default function EmployeeActivitiesPage() {
       setExtraEmployeeId('');
       setExtraPostName('');
       setExtraShiftType('Lembur Sendiri');
+      setIsExtraPostVisible(false);
       fetchActivities();
     } catch (err) {
       console.error('Error submitting Satpam shift reports:', err);
@@ -1900,10 +2001,10 @@ export default function EmployeeActivitiesPage() {
           <div className="space-y-2.5">
             {filteredActivities.map((activity) => {
               const sc = getStatusConfig(activity.status);
-              const reimburseDelta = (activity.tollParkingFee || 0) + 
-                (activity.extraMealAllowance || 0) + 
-                (activity.extraFuelCost || 0) + 
-                (activity.isOvernight ? 50000 : 0) + 
+              const reimburseDelta = (activity.tollParkingFee || 0) +
+                (activity.extraMealAllowance || 0) +
+                (activity.extraFuelCost || 0) +
+                (activity.isOvernight ? 50000 : 0) +
                 (activity.activityDate && isWeekend(activity.activityDate) ? 20000 : 0);
 
               return (
@@ -2206,10 +2307,11 @@ export default function EmployeeActivitiesPage() {
                               <Select
                                 value={val.employeeId || 'none'}
                                 onValueChange={(v: string | null) => handleSelectGuard(post.id, v === 'none' || v === null ? '' : v)}
+                                disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
                               >
                                 <SelectTrigger className="w-full text-sm font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
                                   <span className={val.employeeId ? "truncate" : "truncate text-slate-400 font-normal"}>
-                                    {allSatpamEmployees.find(emp => emp.id === val.employeeId)?.name || '-- Pilih Petugas Guard --'}
+                                    {allSatpamEmployees.find(emp => emp.id === val.employeeId)?.name || '-- Pilih Petugas --'}
                                   </span>
                                 </SelectTrigger>
                                 <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
@@ -2242,6 +2344,7 @@ export default function EmployeeActivitiesPage() {
                               <Select
                                 value={val.shiftType}
                                 onValueChange={(v: string | null) => v && handleSelectShiftType(post.id, v)}
+                                disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
                               >
                                 <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
                                   <SelectValue />
@@ -2258,96 +2361,124 @@ export default function EmployeeActivitiesPage() {
                         );
                       })}
 
-                      {/* Penugasan Tambahan (Opsional) */}
-                      {allMainPostsAssigned && (
-                        <div className="pt-3.5 border-t border-dashed border-slate-100 animate-in fade-in slide-in-from-top-2 duration-300">
-                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-0.5 mb-2.5">
-                            Penugasan Tambahan (Opsional)
-                          </h4>
-                          <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-purple-50/10 p-3 rounded-xl border border-purple-100/50">
-                            {/* Custom Pos Select Dropdown */}
-                            <div className="md:col-span-3">
-                              <Select
-                                value={extraPostName || 'none'}
-                                onValueChange={(v: string | null) => setExtraPostName(v === 'none' || v === null ? '' : v)}
-                              >
-                                <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
-                                  <span className={extraPostName ? "truncate" : "truncate text-slate-400 font-normal"}>
-                                    {POSTS_CONFIG.find(p => p.id === extraPostName || p.name === extraPostName)?.name || '-- Pilih Pos --'}
-                                  </span>
-                                </SelectTrigger>
-                                <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
-                                  <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
-                                    -- Pilih Pos --
+                      {!isExtraPostVisible ? (
+                        !isSatpamReportSubmitted && (
+                          <div
+                            onClick={() => setIsExtraPostVisible(true)}
+                            className="flex items-center justify-center bg-slate-50/50 hover:bg-slate-50 p-4 rounded-xl border border-dashed border-slate-300 hover:border-slate-400 hover:shadow-sm transition-all cursor-pointer h-[66px] animate-in fade-in duration-200"
+                          >
+                            <span className="text-sm font-extrabold text-indigo-600 hover:text-indigo-700 flex items-center gap-1.5">
+                              <Plus className="w-4.5 h-4.5" /> Tambah Petugas
+                            </span>
+                          </div>
+                        )
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-white p-3 rounded-xl border border-slate-200 hover:shadow-sm transition-shadow animate-in fade-in slide-in-from-top-2 duration-300">
+                          {/* Pilih Pos Dropdown */}
+                          <div className="md:col-span-3">
+                            <Select
+                              value={extraPostName || 'none'}
+                              onValueChange={(v: string | null) => setExtraPostName(v === 'none' || v === null ? '' : v)}
+                              disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                            >
+                              <SelectTrigger className="w-full text-sm font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                                <span className={extraPostName ? "truncate" : "truncate text-slate-400 font-normal"}>
+                                  {POSTS_CONFIG.find(p => p.id === extraPostName || p.name === extraPostName)?.name || '-- Pilih Pos --'}
+                                </span>
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
+                                <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
+                                  -- Pilih Pos --
+                                </SelectItem>
+                                {POSTS_CONFIG.map((post) => (
+                                  <SelectItem key={post.id} value={post.id} className="text-sm py-2 pl-3">
+                                    {post.name}
                                   </SelectItem>
-                                  {POSTS_CONFIG.map((post) => (
-                                    <SelectItem key={post.id} value={post.id} className="text-sm py-2 pl-3">
-                                      {post.name}
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Pilih Petugas Dropdown */}
+                          <div className="md:col-span-5">
+                            <Select
+                              value={extraEmployeeId || 'none'}
+                              onValueChange={(v: string | null) => {
+                                const empId = v === 'none' || v === null ? '' : v;
+                                setExtraEmployeeId(empId);
+                                if (empId) {
+                                  setExtraShiftType('Lembur Sendiri');
+                                }
+                              }}
+                              disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                            >
+                              <SelectTrigger className="w-full text-sm font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                                <span className={extraEmployeeId ? "truncate" : "truncate text-slate-400 font-normal"}>
+                                  {allSatpamEmployees.find(emp => emp.id === extraEmployeeId)?.name || '-- Pilih Petugas --'}
+                                </span>
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
+                                <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
+                                  -- Kosongkan Pos --
+                                </SelectItem>
+                                <SelectGroup>
+                                  <SelectLabel className="text-xs font-black text-purple-600 px-2 py-1.5 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
+                                  {groupEmployees.filter(emp => !Object.values(postAssignments).map(a => a.employeeId).includes(emp.id)).map(emp => (
+                                    <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
+                                      {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''}
                                     </SelectItem>
                                   ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
+                                </SelectGroup>
+                                <SelectSeparator className="my-1" />
+                                <SelectGroup>
+                                  <SelectLabel className="text-xs font-black text-slate-400 px-2 py-1.5 bg-slate-50">Satpam Regu Lain (Lembur Cover)</SelectLabel>
+                                  {externalEmployees.filter(emp => !Object.values(postAssignments).map(a => a.employeeId).includes(emp.id)).map(emp => (
+                                    <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
+                                      {emp.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                          </div>
 
-                            {/* Guard Dropdown */}
-                            <div className="md:col-span-5">
-                              <Select
-                                value={extraEmployeeId || 'none'}
-                                onValueChange={(v: string | null) => {
-                                  const empId = v === 'none' || v === null ? '' : v;
-                                  setExtraEmployeeId(empId);
-                                  if (empId) {
-                                    setExtraShiftType('Lembur Sendiri');
-                                  }
+                          {/* Shift Type Dropdown */}
+                          <div className="md:col-span-3">
+                            <Select
+                              value={extraShiftType}
+                              onValueChange={(v: string | null) => v && setExtraShiftType(v)}
+                              disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                            >
+                              <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
+                                <SelectItem value="Harian" className="text-sm py-2 pl-3">Harian (Rp12.500)</SelectItem>
+                                <SelectItem value="Jumat & Libur" className="text-sm py-2 pl-3">Jumat & Libur (Rp25.000)</SelectItem>
+                                <SelectItem value="Lembur Sendiri" className="text-sm py-2 pl-3">Lembur Sendiri (Rp30.000)</SelectItem>
+                                <SelectItem value="Lembur Cover" className="text-sm py-2 pl-3">Lembur Cover (Rp50.000)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Cancel/Remove Button */}
+                          <div className="md:col-span-1 flex justify-center">
+                            {!isSatpamReportSubmitted && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setIsExtraPostVisible(false);
+                                  setExtraPostName('');
+                                  setExtraEmployeeId('');
+                                  setExtraShiftType('Lembur Sendiri');
                                 }}
+                                className="text-slate-400 hover:text-red-500 transition-colors p-1"
                               >
-                                <SelectTrigger className="w-full text-sm font-extrabold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
-                                  <span className={extraEmployeeId ? "truncate" : "truncate text-slate-400 font-normal"}>
-                                    {allSatpamEmployees.find(emp => emp.id === extraEmployeeId)?.name || '-- Pilih Petugas Guard --'}
-                                  </span>
-                                </SelectTrigger>
-                                <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
-                                  <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
-                                    -- Kosongkan Pos --
-                                  </SelectItem>
-                                  <SelectGroup>
-                                    <SelectLabel className="text-xs font-black text-purple-600 px-2 py-1.5 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
-                                    {groupEmployees.filter(emp => !Object.values(postAssignments).map(a => a.employeeId).includes(emp.id)).map(emp => (
-                                      <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
-                                        {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectGroup>
-                                  <SelectSeparator className="my-1" />
-                                  <SelectGroup>
-                                    <SelectLabel className="text-xs font-black text-slate-400 px-2 py-1.5 bg-slate-50">Satpam Regu Lain (Lembur Cover)</SelectLabel>
-                                    {externalEmployees.filter(emp => !Object.values(postAssignments).map(a => a.employeeId).includes(emp.id)).map(emp => (
-                                      <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
-                                        {emp.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectGroup>
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            {/* Shift Type Dropdown */}
-                            <div className="md:col-span-4">
-                              <Select
-                                value={extraShiftType}
-                                onValueChange={(v: string | null) => v && setExtraShiftType(v)}
-                              >
-                                <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
-                                  <SelectItem value="Harian" className="text-sm py-2 pl-3">Harian (Rp12.500)</SelectItem>
-                                  <SelectItem value="Jumat & Libur" className="text-sm py-2 pl-3">Jumat & Libur (Rp25.000)</SelectItem>
-                                  <SelectItem value="Lembur Sendiri" className="text-sm py-2 pl-3">Lembur Sendiri (Rp30.000)</SelectItem>
-                                  <SelectItem value="Lembur Cover" className="text-sm py-2 pl-3">Lembur Cover (Rp50.000)</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
+                                <X className="w-5 h-5" />
+                              </Button>
+                            )}
                           </div>
                         </div>
                       )}
@@ -2377,13 +2508,27 @@ export default function EmployeeActivitiesPage() {
                   <div className="pt-2">
                     <Button
                       type="submit"
-                      disabled={satpamSubmitting}
-                      className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-sm h-11 shadow-md shadow-purple-100 flex items-center justify-center gap-2 cursor-pointer border-none"
+                      disabled={satpamSubmitting || isSatpamReportSubmitted || loadingSubmittedSatpam}
+                      className={`w-full rounded-xl font-extrabold text-sm h-11 flex items-center justify-center gap-2 border-none shadow-md ${
+                        isSatpamReportSubmitted 
+                          ? 'bg-emerald-600 hover:bg-emerald-600 text-white cursor-not-allowed shadow-emerald-100'
+                          : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-100 cursor-pointer'
+                      }`}
                     >
                       {satpamSubmitting ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin text-white" />
                           <span>Mengirim Laporan Regu...</span>
+                        </>
+                      ) : loadingSubmittedSatpam ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                          <span>Memeriksa Status Laporan...</span>
+                        </>
+                      ) : isSatpamReportSubmitted ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-white animate-bounce" />
+                          <span>Laporan Regu Shift {activeShift} Sudah Dikirim & Disetujui</span>
                         </>
                       ) : (
                         <>
@@ -2572,383 +2717,383 @@ export default function EmployeeActivitiesPage() {
           <>
             {/* ── Stats Summary ────────────────────────────────────────────── */}
             <div className="grid grid-cols-2 gap-3">
-          <Card className="bg-white rounded-2xl shadow-sm border-none">
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-extrabold text-teal-600">{stats.approved + stats.pending + stats.declined}</div>
-              <div className="text-[11px] font-semibold text-slate-400 mt-0.5">Total Kegiatan</div>
-            </CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl shadow-lg shadow-teal-200/40 border-none">
-            <CardContent className="p-4 text-center">
-              <div className="text-2xl font-extrabold text-white">{fmtRp(stats.totalApprovedFee)}</div>
-              <div className="text-[11px] font-semibold text-teal-100 mt-0.5">Total SPJ Disetujui</div>
-            </CardContent>
-          </Card>
-        </div>
+              <Card className="bg-white rounded-2xl shadow-sm border-none">
+                <CardContent className="p-4 text-center">
+                  <div className="text-2xl font-extrabold text-teal-600">{stats.approved + stats.pending + stats.declined}</div>
+                  <div className="text-[11px] font-semibold text-slate-400 mt-0.5">Total Kegiatan</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl shadow-lg shadow-teal-200/40 border-none">
+                <CardContent className="p-4 text-center">
+                  <div className="text-2xl font-extrabold text-white">{fmtRp(stats.totalApprovedFee)}</div>
+                  <div className="text-[11px] font-semibold text-teal-100 mt-0.5">Total SPJ Disetujui</div>
+                </CardContent>
+              </Card>
+            </div>
 
-        {/* ── Mini Stats Row ──────────────────────────────────────────── */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setStatusFilter('all')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'all'
-              ? 'bg-slate-800 text-white shadow-md'
-              : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
-              }`}
-          >
-            Semua ({activities.length})
-          </button>
-          <button
-            onClick={() => setStatusFilter('pending')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'pending'
-              ? 'bg-amber-500 text-white shadow-md'
-              : 'bg-white text-amber-600 border border-amber-200 hover:bg-amber-50'
-              }`}
-          >
-            Menunggu ({stats.pending})
-          </button>
-          <button
-            onClick={() => setStatusFilter('approved')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'approved'
-              ? 'bg-emerald-500 text-white shadow-md'
-              : 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50'
-              }`}
-          >
-            Disetujui ({stats.approved})
-          </button>
-          <button
-            onClick={() => setStatusFilter('declined')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'declined'
-              ? 'bg-rose-500 text-white shadow-md'
-              : 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-50'
-              }`}
-          >
-            Ditolak ({stats.declined})
-          </button>
-        </div>
+            {/* ── Mini Stats Row ──────────────────────────────────────────── */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'all'
+                  ? 'bg-slate-800 text-white shadow-md'
+                  : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                  }`}
+              >
+                Semua ({activities.length})
+              </button>
+              <button
+                onClick={() => setStatusFilter('pending')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'pending'
+                  ? 'bg-amber-500 text-white shadow-md'
+                  : 'bg-white text-amber-600 border border-amber-200 hover:bg-amber-50'
+                  }`}
+              >
+                Menunggu ({stats.pending})
+              </button>
+              <button
+                onClick={() => setStatusFilter('approved')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'approved'
+                  ? 'bg-emerald-500 text-white shadow-md'
+                  : 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50'
+                  }`}
+              >
+                Disetujui ({stats.approved})
+              </button>
+              <button
+                onClick={() => setStatusFilter('declined')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${statusFilter === 'declined'
+                  ? 'bg-rose-500 text-white shadow-md'
+                  : 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-50'
+                  }`}
+              >
+                Ditolak ({stats.declined})
+              </button>
+            </div>
 
-        {/* ── Activity List ────────────────────────────────────────────── */}
-        {loading ? (
-          <div className="py-16 flex flex-col items-center text-slate-400">
-            <Loader2 className="w-8 h-8 animate-spin text-teal-500 mb-3" />
-            <span className="text-sm font-medium animate-pulse">Memuat kegiatan...</span>
-          </div>
-        ) : filteredActivities.length === 0 ? (
-          <Card className="bg-white rounded-2xl shadow-sm border-none">
-            <CardContent className="py-16 flex flex-col items-center text-center">
-              <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center mb-4">
-                <ClipboardList className="w-8 h-8 text-slate-300" />
+            {/* ── Activity List ────────────────────────────────────────────── */}
+            {loading ? (
+              <div className="py-16 flex flex-col items-center text-slate-400">
+                <Loader2 className="w-8 h-8 animate-spin text-teal-500 mb-3" />
+                <span className="text-sm font-medium animate-pulse">Memuat kegiatan...</span>
               </div>
-              <h3 className="text-base font-bold text-slate-700">Belum Ada Kegiatan</h3>
-              <p className="text-xs text-slate-400 max-w-xs mt-1.5 leading-relaxed">
-                {statusFilter !== 'all'
-                  ? `Tidak ada kegiatan berstatus "${getStatusConfig(statusFilter).label}" pada periode ini.`
-                  : 'Tekan tombol "+" di bawah untuk menambahkan kegiatan baru.'
-                }
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-2.5">
-            {filteredActivities.map((activity) => {
-              const sc = getStatusConfig(activity.status);
-              const StatusIcon = sc.icon;
-              const isExpanded = expandedId === activity.id;
-              const canEdit = activity.status === 'declined' || activity.status === 'pending';
+            ) : filteredActivities.length === 0 ? (
+              <Card className="bg-white rounded-2xl shadow-sm border-none">
+                <CardContent className="py-16 flex flex-col items-center text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center mb-4">
+                    <ClipboardList className="w-8 h-8 text-slate-300" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-700">Belum Ada Kegiatan</h3>
+                  <p className="text-xs text-slate-400 max-w-xs mt-1.5 leading-relaxed">
+                    {statusFilter !== 'all'
+                      ? `Tidak ada kegiatan berstatus "${getStatusConfig(statusFilter).label}" pada periode ini.`
+                      : 'Tekan tombol "+" di bawah untuk menambahkan kegiatan baru.'
+                    }
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-2.5">
+                {filteredActivities.map((activity) => {
+                  const sc = getStatusConfig(activity.status);
+                  const StatusIcon = sc.icon;
+                  const isExpanded = expandedId === activity.id;
+                  const canEdit = activity.status === 'declined' || activity.status === 'pending';
 
-              return (
-                <Card
-                  key={activity.id}
-                  className={`bg-white rounded-2xl shadow-sm border-none overflow-hidden transition-all duration-200 ${isExpanded ? 'ring-2 ring-teal-200/60' : ''
-                    }`}
-                >
-                  <CardContent className="p-0">
-                    {/* Main row — tap to expand */}
-                    <button
-                      onClick={() => setExpandedId(isExpanded ? null : activity.id)}
-                      className="w-full flex items-center gap-3 p-4 text-left hover:bg-slate-50/50 transition-colors"
+                  return (
+                    <Card
+                      key={activity.id}
+                      className={`bg-white rounded-2xl shadow-sm border-none overflow-hidden transition-all duration-200 ${isExpanded ? 'ring-2 ring-teal-200/60' : ''
+                        }`}
                     >
-                      {/* Status dot */}
-                      <div className={`w-2.5 h-2.5 rounded-full ${sc.dotClass} shrink-0`} />
+                      <CardContent className="p-0">
+                        {/* Main row — tap to expand */}
+                        <button
+                          onClick={() => setExpandedId(isExpanded ? null : activity.id)}
+                          className="w-full flex items-center gap-3 p-4 text-left hover:bg-slate-50/50 transition-colors"
+                        >
+                          {/* Status dot */}
+                          <div className={`w-2.5 h-2.5 rounded-full ${sc.dotClass} shrink-0`} />
 
-                      {/* Activity info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-bold text-slate-800 truncate">{activity.activityName}</div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[11px] text-slate-400 font-medium">{activity.activityDate}</span>
-                          <span className="text-[11px] text-slate-300">•</span>
-                          <span className="text-[11px] text-slate-400 font-medium">
-                            {activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
-                              ? activity.timeStart
-                              : `${activity.timeStart} – ${activity.timeEnd}`}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Status badge */}
-                      <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[10px] font-bold rounded-lg px-2 py-0.5 shrink-0`}>
-                        {sc.label}
-                      </Badge>
-
-                      {/* Chevron */}
-                      {isExpanded
-                        ? <ChevronUp className="w-4 h-4 text-slate-300 shrink-0" />
-                        : <ChevronDown className="w-4 h-4 text-slate-300 shrink-0" />
-                      }
-                    </button>
-
-                    {/* Expanded detail */}
-                    {isExpanded && (
-                      <div className="px-4 pb-4 pt-1 border-t border-slate-50 space-y-3 animate-in slide-in-from-top-2 duration-200">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Tanggal</span>
-                            <p className="text-sm font-semibold text-slate-700 mt-0.5">{activity.activityDate}</p>
-                          </div>
-                          <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Waktu</span>
-                            <p className="text-sm font-semibold text-slate-700 mt-0.5">
-                              {activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
-                                ? activity.timeStart
-                                : `${activity.timeStart} – ${activity.timeEnd}`}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Driver details section */}
-                        {activity.jobCategory === 'SOPIR' && (
-                          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5 text-xs text-slate-600">
-                            {activity.points && activity.points.length > 0 && (
-                              <div className="space-y-0.5 pb-1.5 border-b border-slate-200/60">
-                                <span className="font-semibold text-slate-400 text-[10px] uppercase block tracking-wider">Rute Perjalanan:</span>
-                                <div className="font-bold text-slate-700 text-xs pl-0.5 leading-relaxed">
-                                  {activity.points.join(' → ')}
-                                </div>
-                              </div>
-                            )}
-                            <div className="flex justify-between">
-                              <span className="font-semibold text-slate-400">Jenis Kendaraan:</span>
-                              <span className="font-bold text-slate-700">{activity.vehicleType || 'Mobil Kecil'}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="font-semibold text-slate-400">Tipe Perjalanan:</span>
-                              <span className="font-bold text-slate-700">{activity.tripType || 'Dalam Kota'}</span>
-                            </div>
-                            {activity.distanceKm && activity.distanceKm > 0 ? (
-                              <div className="flex justify-between">
-                                <span className="font-semibold text-slate-400">Jarak / Waktu Tempuh:</span>
-                                <span className="font-bold text-slate-700">{activity.distanceKm} km ({activity.durationHours || 0} jam)</span>
-                              </div>
-                            ) : null}
-                            <div className="flex justify-between">
-                              <span className="font-semibold text-slate-400">Menginap (Overnight):</span>
-                              <span className="font-bold text-slate-700">{activity.isOvernight ? 'Ya' : 'Tidak'}</span>
-                            </div>
-                            {((activity.fuelFee && activity.fuelFee > 0) || (activity.tollParkingFee && activity.tollParkingFee > 0)) && (
-                              <div className="pt-1.5 border-t border-slate-200/60 mt-1.5 space-y-1">
-                                {activity.fuelFee && activity.fuelFee > 0 && (
-                                  <div className="flex justify-between">
-                                    <span className="font-semibold text-slate-400">Reimburse BBM:</span>
-                                    <span className="font-bold text-slate-700">{fmtRp(activity.fuelFee)}</span>
-                                  </div>
-                                )}
-                                {activity.tollParkingFee && activity.tollParkingFee > 0 && (
-                                  <div className="flex justify-between">
-                                    <span className="font-semibold text-slate-400">Reimburse Tol & Parkir:</span>
-                                    <span className="font-bold text-slate-700">{fmtRp(activity.tollParkingFee)}</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Satpam details section */}
-                        {activity.jobCategory === 'SATPAM' && (
-                          <div className="p-3 rounded-xl bg-purple-50/50 border border-purple-100/60 space-y-1.5 text-xs text-purple-950">
-                            <div className="flex justify-between">
-                              <span className="font-semibold text-slate-500">Nama Petugas:</span>
-                              <span className="font-bold text-slate-800">{activity.employeeName}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="font-semibold text-slate-500">Nama Shift:</span>
-                              <span className="font-bold text-slate-800">Shift {activity.shiftName}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="font-semibold text-slate-500">Kategori Shift:</span>
-                              <span className="font-bold text-slate-800">{activity.shiftType}</span>
-                            </div>
-                            {activity.postName && (
-                              <div className="flex justify-between">
-                                <span className="font-semibold text-slate-500">Lokasi Pos:</span>
-                                <span className="font-bold text-slate-800">{activity.postName}</span>
-                              </div>
-                            )}
-                            {activity.ketuaShiftName && (
-                              <div className="flex justify-between">
-                                <span className="font-semibold text-slate-500">Dilaporkan Oleh:</span>
-                                <span className="font-bold text-slate-800">{activity.ketuaShiftName}</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {activity.status === 'approved' && activity.jobCategory === 'SATPAM' && (
-                          <div className="flex flex-col gap-1 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                              <div className="flex items-center gap-2">
-                                <Banknote className="w-4 h-4 text-emerald-600" />
-                                <span className="text-sm font-bold text-emerald-700">{fmtRp(activity.fee)}</span>
-                              </div>
-                              <span className="text-xs text-emerald-600/70 font-bold">
-                                ({activity.shiftType === 'Off-Duty' ? 'Hari Libur' : `Tarif Shift ${activity.shiftType}`})
+                          {/* Activity info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-bold text-slate-800 truncate">{activity.activityName}</div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[11px] text-slate-400 font-medium">{activity.activityDate}</span>
+                              <span className="text-[11px] text-slate-300">•</span>
+                              <span className="text-[11px] text-slate-400 font-medium">
+                                {activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
+                                  ? activity.timeStart
+                                  : `${activity.timeStart} – ${activity.timeEnd}`}
                               </span>
                             </div>
                           </div>
-                        )}
 
-                        {activity.status === 'approved' && activity.jobCategory !== 'SATPAM' && activity.fee > 0 && (
-                          <div className="flex flex-col gap-1 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                              <div className="flex items-center gap-2">
-                                <Banknote className="w-4 h-4 text-emerald-600" />
-                                <span className="text-sm font-bold text-emerald-700">{fmtRp(activity.fee)}</span>
+                          {/* Status badge */}
+                          <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[10px] font-bold rounded-lg px-2 py-0.5 shrink-0`}>
+                            {sc.label}
+                          </Badge>
+
+                          {/* Chevron */}
+                          {isExpanded
+                            ? <ChevronUp className="w-4 h-4 text-slate-300 shrink-0" />
+                            : <ChevronDown className="w-4 h-4 text-slate-300 shrink-0" />
+                          }
+                        </button>
+
+                        {/* Expanded detail */}
+                        {isExpanded && (
+                          <div className="px-4 pb-4 pt-1 border-t border-slate-50 space-y-3 animate-in slide-in-from-top-2 duration-200">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">Tanggal</span>
+                                <p className="text-sm font-semibold text-slate-700 mt-0.5">{activity.activityDate}</p>
                               </div>
-                              {activity.jobCategory === 'SOPIR' ? (
-                                <span className="text-xs text-emerald-600/70 font-medium">
-                                  (Termasuk Biaya SPJ & Reimburse)
-                                </span>
-                              ) : (
-                                (() => {
-                                  const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName);
-                                  return breakdown && (
-                                    <span className="text-xs text-emerald-600/70 font-medium">
-                                      ({breakdown}{activity.hasUangMakan ? ' + Rp7.500 Uang Makan' : ''})
-                                    </span>
-                                  );
-                                })()
-                              )}
-                              {activity.jobCategory !== 'SOPIR' && activity.hasUangMakan && (
-                                <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-none text-[10px] font-bold rounded-lg px-2 py-0.5">
-                                  + Uang Makan
-                                </Badge>
-                              )}
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">Waktu</span>
+                                <p className="text-sm font-semibold text-slate-700 mt-0.5">
+                                  {activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
+                                    ? activity.timeStart
+                                    : `${activity.timeStart} – ${activity.timeEnd}`}
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                        )}
 
-                        {activity.status === 'pending' && (
-                          activity.jobCategory === 'SATPAM' ? (
-                            <div className="flex flex-col gap-1 p-3 rounded-xl bg-amber-50 border border-amber-200">
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                <div className="flex items-center gap-2">
-                                  <Banknote className="w-4 h-4 text-amber-600" />
-                                  <span className="text-sm font-bold text-amber-700">
-                                    Estimasi Upah: {fmtRp(activity.fee)}
+                            {/* Driver details section */}
+                            {activity.jobCategory === 'SOPIR' && (
+                              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5 text-xs text-slate-600">
+                                {activity.points && activity.points.length > 0 && (
+                                  <div className="space-y-0.5 pb-1.5 border-b border-slate-200/60">
+                                    <span className="font-semibold text-slate-400 text-[10px] uppercase block tracking-wider">Rute Perjalanan:</span>
+                                    <div className="font-bold text-slate-700 text-xs pl-0.5 leading-relaxed">
+                                      {activity.points.join(' → ')}
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="flex justify-between">
+                                  <span className="font-semibold text-slate-400">Jenis Kendaraan:</span>
+                                  <span className="font-bold text-slate-700">{activity.vehicleType || 'Mobil Kecil'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="font-semibold text-slate-400">Tipe Perjalanan:</span>
+                                  <span className="font-bold text-slate-700">{activity.tripType || 'Dalam Kota'}</span>
+                                </div>
+                                {activity.distanceKm && activity.distanceKm > 0 ? (
+                                  <div className="flex justify-between">
+                                    <span className="font-semibold text-slate-400">Jarak / Waktu Tempuh:</span>
+                                    <span className="font-bold text-slate-700">{activity.distanceKm} km ({activity.durationHours || 0} jam)</span>
+                                  </div>
+                                ) : null}
+                                <div className="flex justify-between">
+                                  <span className="font-semibold text-slate-400">Menginap (Overnight):</span>
+                                  <span className="font-bold text-slate-700">{activity.isOvernight ? 'Ya' : 'Tidak'}</span>
+                                </div>
+                                {((activity.fuelFee && activity.fuelFee > 0) || (activity.tollParkingFee && activity.tollParkingFee > 0)) && (
+                                  <div className="pt-1.5 border-t border-slate-200/60 mt-1.5 space-y-1">
+                                    {activity.fuelFee && activity.fuelFee > 0 && (
+                                      <div className="flex justify-between">
+                                        <span className="font-semibold text-slate-400">Reimburse BBM:</span>
+                                        <span className="font-bold text-slate-700">{fmtRp(activity.fuelFee)}</span>
+                                      </div>
+                                    )}
+                                    {activity.tollParkingFee && activity.tollParkingFee > 0 && (
+                                      <div className="flex justify-between">
+                                        <span className="font-semibold text-slate-400">Reimburse Tol & Parkir:</span>
+                                        <span className="font-bold text-slate-700">{fmtRp(activity.tollParkingFee)}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Satpam details section */}
+                            {activity.jobCategory === 'SATPAM' && (
+                              <div className="p-3 rounded-xl bg-purple-50/50 border border-purple-100/60 space-y-1.5 text-xs text-purple-950">
+                                <div className="flex justify-between">
+                                  <span className="font-semibold text-slate-500">Nama Petugas:</span>
+                                  <span className="font-bold text-slate-800">{activity.employeeName}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="font-semibold text-slate-500">Nama Shift:</span>
+                                  <span className="font-bold text-slate-800">Shift {activity.shiftName}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="font-semibold text-slate-500">Kategori Shift:</span>
+                                  <span className="font-bold text-slate-800">{activity.shiftType}</span>
+                                </div>
+                                {activity.postName && (
+                                  <div className="flex justify-between">
+                                    <span className="font-semibold text-slate-500">Lokasi Pos:</span>
+                                    <span className="font-bold text-slate-800">{activity.postName}</span>
+                                  </div>
+                                )}
+                                {activity.ketuaShiftName && (
+                                  <div className="flex justify-between">
+                                    <span className="font-semibold text-slate-500">Dilaporkan Oleh:</span>
+                                    <span className="font-bold text-slate-800">{activity.ketuaShiftName}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {activity.status === 'approved' && activity.jobCategory === 'SATPAM' && (
+                              <div className="flex flex-col gap-1 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <Banknote className="w-4 h-4 text-emerald-600" />
+                                    <span className="text-sm font-bold text-emerald-700">{fmtRp(activity.fee)}</span>
+                                  </div>
+                                  <span className="text-xs text-emerald-600/70 font-bold">
+                                    ({activity.shiftType === 'Off-Duty' ? 'Hari Libur' : `Tarif Shift ${activity.shiftType}`})
                                   </span>
                                 </div>
-                                <span className="text-xs text-amber-600/70 font-medium">
-                                  (Tarif Shift {activity.shiftType} - Menunggu Verifikasi)
-                                </span>
                               </div>
-                            </div>
-                          ) : activity.jobCategory === 'SOPIR' ? (
-                            (() => {
-                              const est = calculateSopirDefaultFee(
-                                activity.tripType,
-                                activity.vehicleType,
-                                activity.isOvernight,
-                                activity.activityDate,
-                                activity.fuelFee,
-                                activity.tollParkingFee
-                              );
-                              return (
+                            )}
+
+                            {activity.status === 'approved' && activity.jobCategory !== 'SATPAM' && activity.fee > 0 && (
+                              <div className="flex flex-col gap-1 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <Banknote className="w-4 h-4 text-emerald-600" />
+                                    <span className="text-sm font-bold text-emerald-700">{fmtRp(activity.fee)}</span>
+                                  </div>
+                                  {activity.jobCategory === 'SOPIR' ? (
+                                    <span className="text-xs text-emerald-600/70 font-medium">
+                                      (Termasuk Biaya SPJ & Reimburse)
+                                    </span>
+                                  ) : (
+                                    (() => {
+                                      const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName);
+                                      return breakdown && (
+                                        <span className="text-xs text-emerald-600/70 font-medium">
+                                          ({breakdown}{activity.hasUangMakan ? ' + Rp7.500 Uang Makan' : ''})
+                                        </span>
+                                      );
+                                    })()
+                                  )}
+                                  {activity.jobCategory !== 'SOPIR' && activity.hasUangMakan && (
+                                    <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-none text-[10px] font-bold rounded-lg px-2 py-0.5">
+                                      + Uang Makan
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {activity.status === 'pending' && (
+                              activity.jobCategory === 'SATPAM' ? (
                                 <div className="flex flex-col gap-1 p-3 rounded-xl bg-amber-50 border border-amber-200">
                                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                     <div className="flex items-center gap-2">
                                       <Banknote className="w-4 h-4 text-amber-600" />
                                       <span className="text-sm font-bold text-amber-700">
-                                        Estimasi SPJ: {fmtRp(est)}
+                                        Estimasi Upah: {fmtRp(activity.fee)}
                                       </span>
                                     </div>
                                     <span className="text-xs text-amber-600/70 font-medium">
-                                      (Menunggu persetujuan SatKer)
+                                      (Tarif Shift {activity.shiftType} - Menunggu Verifikasi)
                                     </span>
                                   </div>
                                 </div>
-                              );
-                            })()
-                          ) : (
-                            (() => {
-                              const baseFee = calculateDefaultFee(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName);
-
-                              // Calculate if it qualifies for Uang Makan
-                              const [sh, sm] = activity.timeStart.split(':').map(Number);
-                              const [eh, em] = activity.timeEnd.split(':').map(Number);
-                              const minutes = (eh * 60 + em) - (sh * 60 + sm);
-                              const halfHours = Math.round(minutes / 30);
-                              const qualifies = halfHours > 4 && activity.activityType !== 'Buang Sampah' && activity.activityName !== 'Buang Sampah';
-
-                              const totalEstimated = qualifies ? baseFee + 7500 : baseFee;
-                              const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName);
-
-                              // Format breakdown with asterisk if qualifies
-                              const breakdownStr = breakdown
-                                ? (qualifies ? `(${breakdown} + *Rp7.500*)` : `(${breakdown})`)
-                                : '';
-
-                              return (
-                                <div className="flex flex-col gap-1 p-3 rounded-xl bg-amber-50 border border-amber-200">
-                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                    <div className="flex items-center gap-2">
-                                      <Banknote className="w-4 h-4 text-amber-600" />
-                                      <span className="text-sm font-bold text-amber-700">
-                                        Estimasi Upah: {fmtRp(totalEstimated)}
-                                      </span>
+                              ) : activity.jobCategory === 'SOPIR' ? (
+                                (() => {
+                                  const est = calculateSopirDefaultFee(
+                                    activity.tripType,
+                                    activity.vehicleType,
+                                    activity.isOvernight,
+                                    activity.activityDate,
+                                    activity.fuelFee,
+                                    activity.tollParkingFee
+                                  );
+                                  return (
+                                    <div className="flex flex-col gap-1 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                        <div className="flex items-center gap-2">
+                                          <Banknote className="w-4 h-4 text-amber-600" />
+                                          <span className="text-sm font-bold text-amber-700">
+                                            Estimasi SPJ: {fmtRp(est)}
+                                          </span>
+                                        </div>
+                                        <span className="text-xs text-amber-600/70 font-medium">
+                                          (Menunggu persetujuan SatKer)
+                                        </span>
+                                      </div>
                                     </div>
-                                    {breakdownStr && (
-                                      <span className="text-xs text-amber-600/70 font-medium">
-                                        {breakdownStr}
-                                      </span>
-                                    )}
-                                  </div>
-                                  {qualifies && (
-                                    <span className="text-xs text-amber-600 font-medium ml-6">
-                                      * Uang Makan jika disetujui oleh Kepala SatKer
-                                    </span>
-                                  )}
-                                </div>
-                              );
-                            })()
-                          )
-                        )}
+                                  );
+                                })()
+                              ) : (
+                                (() => {
+                                  const baseFee = calculateDefaultFee(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName);
 
-                        {activity.status === 'declined' && activity.declineReason && (
-                          <div className="p-3 rounded-xl bg-rose-50 border border-rose-100">
-                            <span className="text-[10px] font-bold text-rose-400 uppercase block mb-1">Alasan Penolakan</span>
-                            <p className="text-sm text-rose-700 font-medium">{activity.declineReason}</p>
+                                  // Calculate if it qualifies for Uang Makan
+                                  const [sh, sm] = activity.timeStart.split(':').map(Number);
+                                  const [eh, em] = activity.timeEnd.split(':').map(Number);
+                                  const minutes = (eh * 60 + em) - (sh * 60 + sm);
+                                  const halfHours = Math.round(minutes / 30);
+                                  const qualifies = halfHours > 4 && activity.activityType !== 'Buang Sampah' && activity.activityName !== 'Buang Sampah';
+
+                                  const totalEstimated = qualifies ? baseFee + 7500 : baseFee;
+                                  const breakdown = getActivityFeeBreakdown(activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName);
+
+                                  // Format breakdown with asterisk if qualifies
+                                  const breakdownStr = breakdown
+                                    ? (qualifies ? `(${breakdown} + *Rp7.500*)` : `(${breakdown})`)
+                                    : '';
+
+                                  return (
+                                    <div className="flex flex-col gap-1 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                        <div className="flex items-center gap-2">
+                                          <Banknote className="w-4 h-4 text-amber-600" />
+                                          <span className="text-sm font-bold text-amber-700">
+                                            Estimasi Upah: {fmtRp(totalEstimated)}
+                                          </span>
+                                        </div>
+                                        {breakdownStr && (
+                                          <span className="text-xs text-amber-600/70 font-medium">
+                                            {breakdownStr}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {qualifies && (
+                                        <span className="text-xs text-amber-600 font-medium ml-6">
+                                          * Uang Makan jika disetujui oleh Kepala SatKer
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })()
+                              )
+                            )}
+
+                            {activity.status === 'declined' && activity.declineReason && (
+                              <div className="p-3 rounded-xl bg-rose-50 border border-rose-100">
+                                <span className="text-[10px] font-bold text-rose-400 uppercase block mb-1">Alasan Penolakan</span>
+                                <p className="text-sm text-rose-700 font-medium">{activity.declineReason}</p>
+                              </div>
+                            )}
+
+                            {/* Edit / Re-submit action */}
+                            {canEdit && activity.jobCategory !== 'SATPAM' && (
+                              <Button
+                                onClick={() => openEditForm(activity)}
+                                variant="outline"
+                                size="sm"
+                                className="w-full rounded-xl border-teal-200 text-teal-600 hover:bg-teal-50 font-bold text-xs"
+                              >
+                                <Pencil className="w-3.5 h-3.5 mr-1.5" />
+                                {activity.status === 'declined' ? 'Edit & Ajukan Ulang' : 'Edit Kegiatan'}
+                              </Button>
+                            )}
                           </div>
                         )}
-
-                        {/* Edit / Re-submit action */}
-                        {canEdit && activity.jobCategory !== 'SATPAM' && (
-                          <Button
-                            onClick={() => openEditForm(activity)}
-                            variant="outline"
-                            size="sm"
-                            className="w-full rounded-xl border-teal-200 text-teal-600 hover:bg-teal-50 font-bold text-xs"
-                          >
-                            <Pencil className="w-3.5 h-3.5 mr-1.5" />
-                            {activity.status === 'declined' ? 'Edit & Ajukan Ulang' : 'Edit Kegiatan'}
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
 
@@ -3440,7 +3585,7 @@ export default function EmployeeActivitiesPage() {
             <div className="flex-1 overflow-y-auto p-5 pb-3 space-y-4">
               {/* Keperluan, Kendaraan & Tanggal Header */}
               {activeReportingJourney && (() => {
-                const baseCostVal = activeReportingJourney.baseOperationalCost || 
+                const baseCostVal = activeReportingJourney.baseOperationalCost ||
                   ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0));
                 const mealAllowanceVal = activeReportingJourney.mealAllowance || 0;
                 const totalBaseline = activeReportingJourney.totalOperationalCost || 0;
@@ -3646,7 +3791,7 @@ export default function EmployeeActivitiesPage() {
 
               {/* Reimburse BBM Row */}
               {(() => {
-                const baseCostVal = activeReportingJourney ? (activeReportingJourney.baseOperationalCost || 
+                const baseCostVal = activeReportingJourney ? (activeReportingJourney.baseOperationalCost ||
                   ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0))) : 0;
                 return (
                   <div className="space-y-1.5">
@@ -3765,7 +3910,7 @@ export default function EmployeeActivitiesPage() {
                 const actualMealAllowance = (formTimeStart && formTimeEnd) ? getMealAllowanceForDuration(elapsedHours) : originalMealAllowance;
                 const extraMealAllowance = Math.max(0, actualMealAllowance - originalMealAllowance);
 
-                const baseCostVal = activeReportingJourney.baseOperationalCost || 
+                const baseCostVal = activeReportingJourney.baseOperationalCost ||
                   ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0));
 
                 const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
@@ -3790,7 +3935,7 @@ export default function EmployeeActivitiesPage() {
                         if (allowance === 30000) return '2 - 6';
                         if (allowance === 60000) return '>6';
                         if (allowance === 0) return '<2';
-                        
+
                         if (hours >= 2 && hours <= 6) return '2 - 6';
                         if (hours > 6) return '>6';
                         return '<2';
