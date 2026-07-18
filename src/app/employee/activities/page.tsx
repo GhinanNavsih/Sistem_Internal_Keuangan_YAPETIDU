@@ -1452,7 +1452,8 @@ export default function EmployeeActivitiesPage() {
       collection(db, 'ActivityReports'),
       where('activityDate', '==', satpamReportDate),
       where('shiftName', '==', activeShift),
-      where('jobCategory', '==', 'SATPAM')
+      where('jobCategory', '==', 'SATPAM'),
+      where('ketuaShiftId', '==', profile.linkedEmployeeId)
     );
 
     getDocs(q).then((snap) => {
