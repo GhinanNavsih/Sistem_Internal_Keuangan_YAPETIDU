@@ -60,7 +60,9 @@ export async function POST(req: NextRequest) {
         start: leg.start_address,
         end: leg.end_address,
         distanceText: leg.distance.text,
-        durationText: leg.duration.text
+        distanceKm: Math.round((leg.distance.value / 1000) * 10) / 10,
+        durationText: leg.duration.text,
+        durationHours: Math.round((leg.duration.value / 3600) * 10) / 10
       });
     }
 

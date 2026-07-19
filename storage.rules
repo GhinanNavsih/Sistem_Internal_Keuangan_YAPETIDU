@@ -17,5 +17,10 @@ service firebase.storage {
     match /presence_corrections/{employeeId}/{filename} {
       allow read, write: if isAuthenticated();
     }
+
+    // Rules for journey receipts folder (BBM, tolls, parking)
+    match /receipts/{journeyId}/{filename} {
+      allow read, write: if isAuthenticated();
+    }
   }
 }

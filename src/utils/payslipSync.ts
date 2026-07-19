@@ -67,7 +67,12 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
       });
     } else {
       // Non-Satpam: sum of activity fees
-      activityTotal = reports.reduce((sum, r) => sum + (r.fee || 0), 0);
+      // For SOPIR, we must sum both operational cost (fee) and net wage (upahBersih)
+      if (jobCategory === 'SOPIR') {
+        activityTotal = reports.reduce((sum, r) => sum + (r.fee || 0) + (r.upahBersih || 0), 0);
+      } else {
+        activityTotal = reports.reduce((sum, r) => sum + (r.fee || 0), 0);
+      }
       
       // Fetch SPJ Events (KegiatanSpj) to get kegiatanTotal
       let spjEventsTotal = 0;

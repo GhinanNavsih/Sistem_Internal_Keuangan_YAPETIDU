@@ -402,8 +402,7 @@ function DriverHistoryContent() {
               const reimburseDelta = (activity.tollParkingFee || 0) + 
                 (activity.extraMealAllowance || 0) + 
                 (activity.extraFuelCost || 0) + 
-                (activity.isOvernight ? 50000 : 0) + 
-                (activity.activityDate && isWeekend(activity.activityDate) ? 20000 : 0);
+                (activity.isOvernight ? 50000 : 0);
 
               return (
                 <Card key={activity.id} className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden hover:border-slate-300 transition-all animate-in fade-in duration-150">

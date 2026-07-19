@@ -66,6 +66,7 @@ const VEHICLE_RATES = {
   'Innova Hitam': 1000,
   'Innova Matic': 1250,
   'Suzuki XL7': 741,
+  'Ndalem': 0,
 };
 
 function fmtRp(val: number): string {
@@ -157,6 +158,7 @@ function DriverJourneysContent() {
   const [startPoint, setStartPoint] = useState('UNIPDU Jombang, Jawa Timur');
   const [endPoint, setEndPoint] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState<keyof typeof VEHICLE_RATES>('Suzuki XL7');
+  const [tollFee, setTollFee] = useState<string>('');
 
   // Calculated preview states
   const [calcDistance, setCalcDistance] = useState<number | null>(null);
@@ -180,12 +182,14 @@ function DriverJourneysContent() {
   // Dynamic preview calculations for meal allowance (Option 2: Flat Rate based on Duration)
   const totalDurationPP = inputDuration || 0;
   let dynamicMealAllowance = 0;
-  if (totalDurationPP >= 2 && totalDurationPP <= 6) {
-    dynamicMealAllowance = 30000;
-  } else if (totalDurationPP > 6 && totalDurationPP <= 12) {
-    dynamicMealAllowance = 60000;
-  } else if (totalDurationPP > 12) {
-    dynamicMealAllowance = 90000;
+  if (selectedVehicle !== 'Ndalem') {
+    if (totalDurationPP >= 2 && totalDurationPP <= 6) {
+      dynamicMealAllowance = 20000;
+    } else if (totalDurationPP > 6 && totalDurationPP <= 12) {
+      dynamicMealAllowance = 40000;
+    } else if (totalDurationPP > 12) {
+      dynamicMealAllowance = 60000;
+    }
   }
 
   const initMap = (element: HTMLDivElement) => {
@@ -216,7 +220,7 @@ function DriverJourneysContent() {
       markerRef.current = marker;
 
       const geocoder = new google.maps.Geocoder();
-      
+
       const updateAddressImage = (query: string) => {
         try {
           const service = new google.maps.places.PlacesService(map || document.createElement('div'));
@@ -442,7 +446,8 @@ function DriverJourneysContent() {
       const rate = VEHICLE_RATES[selectedVehicle];
       const baseCost = calcDistance * 2 * rate; // PP
       const mealAllowance = dynamicMealAllowance;
-      const totalCost = baseCost + mealAllowance;
+      const tollFeeVal = tollFee ? parseInt(tollFee.replace(/\D/g, ''), 10) || 0 : 0;
+      const totalCost = baseCost + mealAllowance + tollFeeVal;
 
       let journeyId = editingJourneyId;
       if (!journeyId) {
@@ -464,6 +469,7 @@ function DriverJourneysContent() {
         customDurationPP: inputDuration || 0,
         baseOperationalCost: baseCost,
         mealAllowance: mealAllowance,
+        tollParkingFee: tollFeeVal,
         totalOperationalCost: totalCost,
         destinationImageUrl: mapAddressImage || null,
         ...(!editingJourneyId ? {
@@ -488,6 +494,7 @@ function DriverJourneysContent() {
       setCalcDuration(null);
       setInputDuration(null);
       setEditingJourneyId(null);
+      setTollFee('');
       setShowAddForm(false);
     } catch (err: any) {
       console.error(err);
@@ -694,7 +701,7 @@ function DriverJourneysContent() {
                                 <span>{fmtRp(j.upahBersih || ((j.newTotalDistanceKm || j.distanceKm * 2) * 200 + (j.newTotalDurationHours || (j.durationHours || 0) * 2) * 5000))}</span>
                               ) : (
                                 <span>
-                                  {fmtRp((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000))} - {fmtRp(((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000)) * 1.9)}
+                                  {fmtRp((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000))} - {fmtRp(((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000)) * 1.25)}
                                 </span>
                               )}
                             </div>
@@ -738,6 +745,7 @@ function DriverJourneysContent() {
                                     setCalcDistance(j.distanceKm);
                                     setCalcDuration(j.durationHours);
                                     setInputDuration(j.customDurationPP || (j.durationHours ? j.durationHours * 2 : 0));
+                                    setTollFee(j.tollParkingFee ? String(j.tollParkingFee) : '');
                                     lastCalculatedRef.current = { start: j.startPoint, end: j.endPoint };
                                     setShowAddForm(true);
                                   }}
@@ -782,6 +790,7 @@ function DriverJourneysContent() {
           setInputDuration(null);
           setCalcError('');
           setEditingJourneyId(null);
+          setTollFee('');
         }
         setShowAddForm(open);
       }}>
@@ -876,7 +885,7 @@ function DriverJourneysContent() {
 
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Tujuan Akhir (Destination)
+                  Tujuan Utama (Destination)
                 </Label>
                 {!endPoint ? (
                   <Button
@@ -917,8 +926,8 @@ function DriverJourneysContent() {
               </div>
             </div>
 
-            {/* Kendaraan & Durasi */}
-            <div className="grid grid-cols-2 gap-4">
+            {/* Kendaraan, Durasi & Tol */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="vehicleSelect" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                   Jenis Kendaraan
@@ -935,7 +944,7 @@ function DriverJourneysContent() {
                   <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
                     {Object.keys(VEHICLE_RATES).map((name) => (
                       <SelectItem key={name} value={name}>
-                        {name} — {fmtRp(VEHICLE_RATES[name as keyof typeof VEHICLE_RATES])}/km
+                        {name === 'Ndalem' ? 'Ndalem — Tanpa Uang Jalan' : `${name} — ${fmtRp(VEHICLE_RATES[name as keyof typeof VEHICLE_RATES])}/km`}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -956,6 +965,23 @@ function DriverJourneysContent() {
                   onChange={(e) => {
                     const val = e.target.value;
                     setInputDuration(val === '' ? null : parseFloat(val));
+                  }}
+                  className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="tollInput" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Estimasi Tol & Parkir (Rp)
+                </Label>
+                <Input
+                  id="tollInput"
+                  type="text"
+                  placeholder="Contoh: 50.000"
+                  value={tollFee}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '');
+                    setTollFee(val ? Number(val).toLocaleString('id-ID') : '');
                   }}
                   className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3"
                 />
@@ -994,7 +1020,9 @@ function DriverJourneysContent() {
                     </div>
                     <div className="bg-white p-2 rounded-lg border border-slate-100">
                       <span className="block text-[8px] text-slate-400 font-bold uppercase">Tarif Mobil</span>
-                      <span className="text-xs font-extrabold text-slate-700">{fmtRp(VEHICLE_RATES[selectedVehicle])}/km</span>
+                      <span className="text-xs font-extrabold text-slate-700">
+                        {selectedVehicle === 'Ndalem' ? 'Tanpa Tarif' : `${fmtRp(VEHICLE_RATES[selectedVehicle])}/km`}
+                      </span>
                     </div>
                   </div>
 
@@ -1007,10 +1035,23 @@ function DriverJourneysContent() {
                       <span>Uang Makan Sopir (Flat Durasi)</span>
                       <span className="font-bold text-slate-700">{fmtRp(dynamicMealAllowance)}</span>
                     </div>
-                    <div className="flex justify-between text-slate-800 font-black border-t border-indigo-200/60 pt-1.5 mt-1 text-sm">
-                      <span>Total Uang Jalan (Operasional)</span>
-                      <span className="text-indigo-700">{fmtRp((calcDistance * 2 * VEHICLE_RATES[selectedVehicle]) + dynamicMealAllowance)}</span>
-                    </div>
+                    {(() => {
+                      const tollFeeVal = tollFee ? parseInt(tollFee.replace(/\D/g, ''), 10) || 0 : 0;
+                      return (
+                        <>
+                          {tollFeeVal > 0 && (
+                            <div className="flex justify-between text-slate-500 font-medium animate-in fade-in duration-150">
+                              <span>Estimasi Tol & Parkir</span>
+                              <span className="font-bold text-slate-700">{fmtRp(tollFeeVal)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-slate-800 font-black border-t border-indigo-200/60 pt-1.5 mt-1 text-sm">
+                            <span>Total Uang Jalan (Operasional)</span>
+                            <span className="text-indigo-700">{fmtRp((calcDistance * 2 * VEHICLE_RATES[selectedVehicle]) + dynamicMealAllowance + tollFeeVal)}</span>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -1042,12 +1083,12 @@ function DriverJourneysContent() {
                     </div>
                     <div className="flex justify-between text-amber-600 font-medium">
                       <span>Aktivitas di Perjalanan</span>
-                      <span className="font-bold text-amber-700">± {fmtRp(((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 0.5)}</span>
+                      <span className="font-bold text-amber-700">s.d. +{fmtRp(((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 0.25)}</span>
                     </div>
                     <div className="flex justify-between text-slate-800 font-black border-t border-emerald-200/60 pt-1.5 mt-1 text-sm">
                       <span>Kisaran Upah Bersih</span>
                       <span className="text-emerald-700">
-                        {fmtRp((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000))} - {fmtRp(((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 1.9)}
+                        {fmtRp((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000))} - {fmtRp(((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 1.25)}
                       </span>
                     </div>
                   </div>

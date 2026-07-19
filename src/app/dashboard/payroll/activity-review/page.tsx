@@ -137,6 +137,7 @@ function calculateSopirDefaultFee(
     'Innova Matic': 1250,
     'Suzuki': 741,
     'Suzuki XL7': 741,
+    'Ndalem': 0,
   };
 
   let fee = 0;
@@ -144,13 +145,15 @@ function calculateSopirDefaultFee(
   if (distanceKm && distanceKm > 0) {
     // New Google Maps route journey calculation:
     // PP distance * rate + 20% meal allowance
-    const rate = VEHICLE_RATES[vehicleType || 'Suzuki'] || 741;
+    const rate = vehicleType === 'Ndalem' ? 0 : (VEHICLE_RATES[vehicleType || 'Suzuki'] || 741);
     const baseCost = distanceKm * 2 * rate;
-    fee = baseCost * 1.20; // Includes 20% meal allowance
+    fee = vehicleType === 'Ndalem' ? 0 : baseCost * 1.20; // Includes 20% meal allowance
   } else {
     // Legacy fallback (no distance recorded)
     if (vehicleType === 'Bus/Truk' || vehicleType === 'Bis') {
       fee = 50000;
+    } else if (vehicleType === 'Ndalem') {
+      fee = 0;
     } else {
       fee = 30000;
     }
@@ -161,10 +164,7 @@ function calculateSopirDefaultFee(
     fee += 50000;
   }
 
-  // Weekend premium (+Rp20.000)
-  if (activityDate && isWeekend(activityDate)) {
-    fee += 20000;
-  }
+  // Weekend premium removed
 
   // Actual reimbursements
   if (fuelFee && fuelFee > 0) {
@@ -334,30 +334,33 @@ export default function ActivityReviewPage() {
       'Innova Matic': 1250,
       'Suzuki': 741,
       'Suzuki XL7': 741,
+      'Ndalem': 0,
     };
-    return VEHICLE_RATES[vType] || 741;
+    return vType === 'Ndalem' ? 0 : (VEHICLE_RATES[vType] || 741);
   };
 
   const getMealAllowanceForHours = (hours: number) => {
-    if (hours < 6) return 0;
-    if (hours <= 12) return 60000;
-    return 90000;
+    if (hours >= 2 && hours <= 6) return 20000;
+    if (hours > 6 && hours <= 12) return 40000;
+    if (hours > 12) return 60000;
+    return 0;
   };
 
   const auditCalc = useMemo(() => {
     if (!auditActivity) return null;
     const rate = getVehicleRate(auditVehicleType);
     const baselineBBM = Math.ceil(auditDistanceKm * 2 * rate);
-    const baselineMeal = getMealAllowanceForHours(auditDurationHours);
+    const baselineMeal = auditVehicleType === 'Ndalem' ? 0 : getMealAllowanceForHours(auditDurationHours);
     const totalBaseline = baselineBBM + baselineMeal;
-    const deltaFuel = Math.max(0, auditFuelFee - baselineBBM);
-    const actualMeal = getMealAllowanceForHours(auditDurationHours);
+    const deltaFuel = auditVehicleType === 'Ndalem' ? 0 : Math.max(0, auditFuelFee - baselineBBM);
+    const actualMeal = auditVehicleType === 'Ndalem' ? 0 : getMealAllowanceForHours(auditDurationHours);
     const componentJarak = Math.ceil(auditDistanceKm * 200);
     const componentWaktu = Math.ceil(auditDurationHours * 5000);
-    const premiumWeekend = isWeekend(auditActivity.activityDate) ? 20000 : 0;
+    const premiumWeekend = 0;
     const premiumOvernight = auditIsOvernight ? 50000 : 0;
     const upahBersih = componentJarak + componentWaktu + premiumWeekend + premiumOvernight;
-    const operationalCost = Math.ceil(Math.max(baselineBBM, auditFuelFee) + actualMeal + auditTollParkingFee);
+    const fuelComponent = auditVehicleType === 'Ndalem' ? 0 : Math.max(baselineBBM, auditFuelFee);
+    const operationalCost = Math.ceil(fuelComponent + actualMeal + auditTollParkingFee);
     
     return {
       rate,
@@ -1521,7 +1524,7 @@ export default function ActivityReviewPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
-                          {['Suzuki XL7', 'Bis', 'Elf', 'Kijang LGX', 'Innova Hitam', 'Innova Matic'].map(v => (
+                          {['Suzuki XL7', 'Bis', 'Elf', 'Kijang LGX', 'Innova Hitam', 'Innova Matic', 'Ndalem'].map(v => (
                             <SelectItem key={v} value={v}>{v}</SelectItem>
                           ))}
                         </SelectContent>
