@@ -347,6 +347,20 @@ function fmtRp(val: number): string {
   return 'Rp' + val.toLocaleString('id-ID');
 }
 
+function padTime(time: string): string {
+  if (!time) return '';
+  const parts = time.split(':');
+  if (parts.length === 2) {
+    const h = parts[0].padStart(2, '0');
+    const m = parts[1].padEnd(2, '0');
+    return `${h}:${m}`;
+  }
+  if (parts.length === 1 && parts[0].length > 0) {
+    return `${parts[0].padStart(2, '0')}:00`;
+  }
+  return time;
+}
+
 function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: string, activityName?: string): number {
   if (activityType === 'Buang Sampah' || activityName === 'Buang Sampah') {
     return 5000;
@@ -1340,8 +1354,23 @@ export default function EmployeeActivitiesPage() {
       skipSaveDraftRef.current = false;
       return;
     }
+    const timeRegex = /^([0-9]{2}):([0-9]{2})$/;
     if (!formTimeStart || !formTimeEnd) {
       setMessage({ type: 'error', text: 'Waktu mulai dan selesai harus diisi.' });
+      isSubmittingRef.current = false;
+      setSubmitting(false);
+      skipSaveDraftRef.current = false;
+      return;
+    }
+    if (!timeRegex.test(formTimeStart)) {
+      setMessage({ type: 'error', text: 'Format waktu berangkat harus HH:MM (contoh: 08:00).' });
+      isSubmittingRef.current = false;
+      setSubmitting(false);
+      skipSaveDraftRef.current = false;
+      return;
+    }
+    if (!timeRegex.test(formTimeEnd)) {
+      setMessage({ type: 'error', text: 'Format waktu tiba harus HH:MM (contoh: 17:00).' });
       isSubmittingRef.current = false;
       setSubmitting(false);
       skipSaveDraftRef.current = false;
@@ -1896,13 +1925,18 @@ export default function EmployeeActivitiesPage() {
       setMessage({ type: 'error', text: 'Tanggal kegiatan harus diisi.' });
       return;
     }
-    if (!formTimeStart) {
-      setMessage({ type: 'error', text: 'Waktu mulai harus diisi.' });
+    const timeRegex = /^([0-9]{2}):([0-9]{2})$/;
+    if (formTimeStart && !timeRegex.test(formTimeStart)) {
+      setMessage({ type: 'error', text: 'Format waktu mulai harus HH:MM (contoh: 08:00).' });
       return;
     }
     if (!isBuangSampah) {
       if (!formTimeEnd) {
         setMessage({ type: 'error', text: 'Waktu selesai harus diisi.' });
+        return;
+      }
+      if (!timeRegex.test(formTimeEnd)) {
+        setMessage({ type: 'error', text: 'Format waktu selesai harus HH:MM (contoh: 17:00).' });
         return;
       }
       if (formTimeEnd <= formTimeStart) {
@@ -3666,9 +3700,34 @@ export default function EmployeeActivitiesPage() {
                   <Timer className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                   <Input
                     id="timeStart"
-                    type="time"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={5}
+                    placeholder="HH:MM"
                     value={formTimeStart}
-                    onChange={(e) => setFormTimeStart(e.target.value)}
+                    onChange={(e) => {
+                      let val = e.target.value.replace(/[^0-9]/g, '');
+                      if (val.length > 4) val = val.slice(0, 4);
+                      if (val.length === 1 && parseInt(val, 10) > 2) {
+                        val = `0${val}`;
+                      }
+                      if (val.length >= 2) {
+                        const hours = parseInt(val.slice(0, 2), 10);
+                        if (hours > 23) val = '23' + val.slice(2);
+                      }
+                      if (val.length === 4) {
+                        const minutes = parseInt(val.slice(2, 4), 10);
+                        if (minutes > 59) val = val.slice(0, 2) + '59';
+                      }
+                      if (val.length > 2) {
+                        setFormTimeStart(`${val.slice(0, 2)}:${val.slice(2)}`);
+                      } else {
+                        setFormTimeStart(val);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      setFormTimeStart(padTime(e.target.value));
+                    }}
                     className="pl-9 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
                     required
                   />
@@ -3683,9 +3742,34 @@ export default function EmployeeActivitiesPage() {
                     <Timer className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                     <Input
                       id="timeEnd"
-                      type="time"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={5}
+                      placeholder="HH:MM"
                       value={formTimeEnd}
-                      onChange={(e) => setFormTimeEnd(e.target.value)}
+                      onChange={(e) => {
+                        let val = e.target.value.replace(/[^0-9]/g, '');
+                        if (val.length > 4) val = val.slice(0, 4);
+                        if (val.length === 1 && parseInt(val, 10) > 2) {
+                          val = `0${val}`;
+                        }
+                        if (val.length >= 2) {
+                          const hours = parseInt(val.slice(0, 2), 10);
+                          if (hours > 23) val = '23' + val.slice(2);
+                        }
+                        if (val.length === 4) {
+                          const minutes = parseInt(val.slice(2, 4), 10);
+                          if (minutes > 59) val = val.slice(0, 2) + '59';
+                        }
+                        if (val.length > 2) {
+                          setFormTimeEnd(`${val.slice(0, 2)}:${val.slice(2)}`);
+                        } else {
+                          setFormTimeEnd(val);
+                        }
+                      }}
+                      onBlur={(e) => {
+                        setFormTimeEnd(padTime(e.target.value));
+                      }}
                       className="pl-9 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
                       required
                     />
@@ -3994,9 +4078,34 @@ export default function EmployeeActivitiesPage() {
                   </Label>
                   <Input
                     id="journeyTimeStart"
-                    type="time"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={5}
+                    placeholder="HH:MM"
                     value={formTimeStart}
-                    onChange={(e) => setFormTimeStart(e.target.value)}
+                    onChange={(e) => {
+                      let val = e.target.value.replace(/[^0-9]/g, '');
+                      if (val.length > 4) val = val.slice(0, 4);
+                      if (val.length === 1 && parseInt(val, 10) > 2) {
+                        val = `0${val}`;
+                      }
+                      if (val.length >= 2) {
+                        const hours = parseInt(val.slice(0, 2), 10);
+                        if (hours > 23) val = '23' + val.slice(2);
+                      }
+                      if (val.length === 4) {
+                        const minutes = parseInt(val.slice(2, 4), 10);
+                        if (minutes > 59) val = val.slice(0, 2) + '59';
+                      }
+                      if (val.length > 2) {
+                        setFormTimeStart(`${val.slice(0, 2)}:${val.slice(2)}`);
+                      } else {
+                        setFormTimeStart(val);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      setFormTimeStart(padTime(e.target.value));
+                    }}
                     className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
                     required
                   />
@@ -4008,9 +4117,34 @@ export default function EmployeeActivitiesPage() {
                   </Label>
                   <Input
                     id="journeyTimeEnd"
-                    type="time"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={5}
+                    placeholder="HH:MM"
                     value={formTimeEnd}
-                    onChange={(e) => setFormTimeEnd(e.target.value)}
+                    onChange={(e) => {
+                      let val = e.target.value.replace(/[^0-9]/g, '');
+                      if (val.length > 4) val = val.slice(0, 4);
+                      if (val.length === 1 && parseInt(val, 10) > 2) {
+                        val = `0${val}`;
+                      }
+                      if (val.length >= 2) {
+                        const hours = parseInt(val.slice(0, 2), 10);
+                        if (hours > 23) val = '23' + val.slice(2);
+                      }
+                      if (val.length === 4) {
+                        const minutes = parseInt(val.slice(2, 4), 10);
+                        if (minutes > 59) val = val.slice(0, 2) + '59';
+                      }
+                      if (val.length > 2) {
+                        setFormTimeEnd(`${val.slice(0, 2)}:${val.slice(2)}`);
+                      } else {
+                        setFormTimeEnd(val);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      setFormTimeEnd(padTime(e.target.value));
+                    }}
                     className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
                     required
                   />
