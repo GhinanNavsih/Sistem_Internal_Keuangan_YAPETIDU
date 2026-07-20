@@ -187,7 +187,7 @@ service cloud.firestore {
       // Ketua Shifts can also read reports they submitted for their regu.
       allow read: if isSuperAdmin() || (
         hasProfile() && (
-          (getUserData().role == 'satker_head' && resource.data.jobCategory in getPermittedCategories()) ||
+          (resource.data.jobCategory in getPermittedCategories()) ||
           ((getUserData().role == 'honorer' || getUserData().role == 'ketua_shift_satpam') && resource.data.employeeId == getUserData().linkedEmployeeId) ||
           (getUserData().role == 'ketua_shift_satpam' && resource.data.ketuaShiftId == getUserData().linkedEmployeeId)
         )

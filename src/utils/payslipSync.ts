@@ -36,6 +36,7 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
     const q = query(
       collection(db, 'ActivityReports'),
       where('employeeId', '==', employeeId),
+      where('jobCategory', '==', jobCategory),
       where('period', '==', period),
       where('status', '==', 'approved')
     );
