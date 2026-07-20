@@ -183,7 +183,9 @@ function DriverJourneysContent() {
   const totalDurationPP = inputDuration || 0;
   let dynamicMealAllowance = 0;
   if (selectedVehicle !== 'Ndalem') {
-    if (totalDurationPP >= 2 && totalDurationPP <= 6) {
+    if (totalDurationPP > 0 && totalDurationPP < 2) {
+      dynamicMealAllowance = 5000;
+    } else if (totalDurationPP >= 2 && totalDurationPP <= 6) {
       dynamicMealAllowance = 20000;
     } else if (totalDurationPP > 6 && totalDurationPP <= 12) {
       dynamicMealAllowance = 40000;
@@ -698,10 +700,10 @@ function DriverJourneysContent() {
                           <TableCell>
                             <div className="font-black text-emerald-600 text-xs sm:text-sm">
                               {j.status === 'completed' ? (
-                                <span>{fmtRp(j.upahBersih || ((j.newTotalDistanceKm || j.distanceKm * 2) * 200 + (j.newTotalDurationHours || (j.durationHours || 0) * 2) * 5000))}</span>
+                                <span>{fmtRp(j.upahBersih || ((j.newTotalDistanceKm || j.distanceKm * 2) * 300 + (j.newTotalDurationHours || (j.durationHours || 0) * 2) * 5000))}</span>
                               ) : (
                                 <span>
-                                  {fmtRp((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000))} - {fmtRp(((j.distanceKm * 2 * 200) + ((j.durationHours || 0) * 2 * 5000)) * 1.25)}
+                                  {fmtRp((j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000))} - {fmtRp(((j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000)) * 1.25)}
                                 </span>
                               )}
                             </div>
@@ -1074,8 +1076,8 @@ function DriverJourneysContent() {
 
                   <div className="space-y-1 text-xs pt-1">
                     <div className="flex justify-between text-slate-500 font-medium">
-                      <span>Komponen Jarak (Rp200/km)</span>
-                      <span className="font-bold text-slate-700">{fmtRp(calcDistance * 2 * 200)}</span>
+                      <span>Komponen Jarak (Rp300/km)</span>
+                      <span className="font-bold text-slate-700">{fmtRp(calcDistance * 2 * 300)}</span>
                     </div>
                     <div className="flex justify-between text-slate-500 font-medium">
                       <span>Komponen Waktu (Rp5.000/jam)</span>
@@ -1083,12 +1085,12 @@ function DriverJourneysContent() {
                     </div>
                     <div className="flex justify-between text-amber-600 font-medium">
                       <span>Aktivitas di Perjalanan</span>
-                      <span className="font-bold text-amber-700">s.d. +{fmtRp(((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 0.25)}</span>
+                      <span className="font-bold text-amber-700">s.d. +{fmtRp(((calcDistance * 2 * 300) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 0.25)}</span>
                     </div>
                     <div className="flex justify-between text-slate-800 font-black border-t border-emerald-200/60 pt-1.5 mt-1 text-sm">
                       <span>Kisaran Upah Bersih</span>
                       <span className="text-emerald-700">
-                        {fmtRp((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000))} - {fmtRp(((calcDistance * 2 * 200) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 1.25)}
+                        {fmtRp((calcDistance * 2 * 300) + ((calcDuration ? calcDuration * 2 : 0) * 5000))} - {fmtRp(((calcDistance * 2 * 300) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 1.25)}
                       </span>
                     </div>
                   </div>

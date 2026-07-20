@@ -340,6 +340,7 @@ export default function ActivityReviewPage() {
   };
 
   const getMealAllowanceForHours = (hours: number) => {
+    if (hours > 0 && hours < 2) return 5000;
     if (hours >= 2 && hours <= 6) return 20000;
     if (hours > 6 && hours <= 12) return 40000;
     if (hours > 12) return 60000;
@@ -354,7 +355,7 @@ export default function ActivityReviewPage() {
     const totalBaseline = baselineBBM + baselineMeal;
     const deltaFuel = auditVehicleType === 'Ndalem' ? 0 : Math.max(0, auditFuelFee - baselineBBM);
     const actualMeal = auditVehicleType === 'Ndalem' ? 0 : getMealAllowanceForHours(auditDurationHours);
-    const componentJarak = Math.ceil(auditDistanceKm * 200);
+    const componentJarak = Math.ceil(auditDistanceKm * 300);
     const componentWaktu = Math.ceil(auditDurationHours * 5000);
     const premiumWeekend = 0;
     const premiumOvernight = auditIsOvernight ? 50000 : 0;
@@ -1563,7 +1564,7 @@ export default function ActivityReviewPage() {
                 <div className="p-3.5 rounded-2xl bg-indigo-50/40 border border-indigo-100/50 space-y-2.5">
                   <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-wider block">Komponen Earning (Upah Bersih)</span>
                   <div className="flex justify-between text-xs font-medium text-slate-600">
-                    <span>Komponen Jarak ({auditDistanceKm} km x Rp200)</span>
+                    <span>Komponen Jarak ({auditDistanceKm} km x Rp300)</span>
                     <span className="font-extrabold text-slate-700">{fmtRp(auditCalc.componentJarak)}</span>
                   </div>
                   <div className="flex justify-between text-xs font-medium text-slate-600">
