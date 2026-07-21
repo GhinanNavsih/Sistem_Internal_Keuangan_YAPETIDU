@@ -48,6 +48,7 @@ import {
   Car,
   Search,
   Eye,
+  Target,
 } from 'lucide-react';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -603,6 +604,7 @@ export default function EmployeeActivitiesPage() {
 
   // ── Journey claiming & completion states ──
   const [unassignedJourneys, setUnassignedJourneys] = useState<any[]>([]);
+  const [myAssignedJourneys, setMyAssignedJourneys] = useState<any[]>([]);
   const [myClaimedJourneys, setMyClaimedJourneys] = useState<any[]>([]);
   const [loadingJourneys, setLoadingJourneys] = useState(false);
   const [activeReportingJourney, setActiveReportingJourney] = useState<any | null>(null);
@@ -1110,7 +1112,7 @@ export default function EmployeeActivitiesPage() {
     if (!isSopir || !profile?.linkedEmployeeId) return;
 
     setLoadingJourneys(true);
-    // 1. Unassigned journeys
+    // 1. Unassigned journeys (Open Pool)
     const qUnassigned = query(
       collection(db, 'DriverJourneys'),
       where('status', '==', 'unassigned')
@@ -1124,7 +1126,20 @@ export default function EmployeeActivitiesPage() {
       setLoadingJourneys(false);
     });
 
-    // 2. Active claimed journeys for this driver
+    // 2. Assigned journeys pre-allocated for this driver
+    const qMyAssigned = query(
+      collection(db, 'DriverJourneys'),
+      where('assignedTo', '==', profile.linkedEmployeeId),
+      where('status', '==', 'assigned')
+    );
+    const unsubMyAssigned = onSnapshot(qMyAssigned, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setMyAssignedJourneys(list);
+    }, (err) => {
+      console.error('Error listening to assigned journeys:', err);
+    });
+
+    // 3. Active claimed journeys for this driver
     const qMyClaimed = query(
       collection(db, 'DriverJourneys'),
       where('employeeId', '==', profile.linkedEmployeeId),
@@ -1139,6 +1154,7 @@ export default function EmployeeActivitiesPage() {
 
     return () => {
       unsubUnassigned();
+      unsubMyAssigned();
       unsubMyClaimed();
     };
   }, [isSopir, profile?.linkedEmployeeId]);
@@ -1251,6 +1267,35 @@ export default function EmployeeActivitiesPage() {
       setRouteCalculatedPoints([]);
     } finally {
       setIsCalculatingRoute(false);
+    }
+  };
+
+  const handleStartAssignedJourney = async (journeyId: string) => {
+    if (!profile?.linkedEmployeeId) return;
+    if (myClaimedJourneys.length > 0) {
+      setMessage({
+        type: 'error',
+        text: 'Anda sedang menjalankan perjalanan aktif. Selesaikan atau laporkan perjalanan aktif Anda terlebih dahulu.',
+      });
+      return;
+    }
+
+    setIsClaiming(true);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    try {
+      await updateDoc(doc(db, 'DriverJourneys', journeyId), {
+        status: 'claimed',
+        employeeId: profile.linkedEmployeeId,
+        employeeName: profile.displayName || '',
+        claimedAt: serverTimestamp(),
+      });
+      setMessage({ type: 'success', text: 'Perjalanan tugas berhasil dimulai. Silakan laporkan setelah selesai.' });
+    } catch (err) {
+      console.error('Error starting assigned journey:', err);
+      setMessage({ type: 'error', text: 'Gagal memulai perjalanan tugas.' });
+    } finally {
+      setIsClaiming(false);
     }
   };
 
@@ -2779,7 +2824,78 @@ export default function EmployeeActivitiesPage() {
         {/* ── Driver Journeys Panel (Sopir only) ───────────────────────── */}
         {isSopir && (
           <div className="space-y-4">
-            {/* 1. Active claimed journeys */}
+            {/* 1. Bucket Top: Horizontal Carousel for Assigned Tasks */}
+            {myAssignedJourneys.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between pl-1">
+                  <h3 className="text-xs font-bold text-purple-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Target className="w-4 h-4 text-purple-600" />
+                    Tugas Penugasan Khusus Anda ({myAssignedJourneys.length})
+                  </h3>
+                  <span className="text-[10px] font-extrabold text-purple-700 bg-purple-100/80 border border-purple-200 px-2 py-0.5 rounded-full">
+                    Jadwal Mendatang
+                  </span>
+                </div>
+
+                <div className="flex overflow-x-auto snap-x snap-mandatory scrollbar-none gap-3 pb-2 pt-1 -mx-1 px-1">
+                  {myAssignedJourneys.map((j) => (
+                    <Card key={j.id} className="min-w-[280px] sm:min-w-[320px] max-w-[340px] snap-start shrink-0 bg-gradient-to-br from-purple-900 via-indigo-900 to-slate-900 text-white rounded-2xl shadow-md border-none overflow-hidden relative flex flex-col justify-between">
+                      <div className="absolute top-0 right-0 w-28 h-28 rounded-full bg-purple-500/10 -translate-y-4 translate-x-4 blur-md pointer-events-none" />
+                      <CardContent className="p-4 space-y-3 relative z-10 flex-1 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold tracking-wider text-purple-200 uppercase bg-purple-500/40 border border-purple-400/30 px-2 py-0.5 rounded-md">
+                              Ditugaskan Khusus
+                            </span>
+                            {j.activityDate && (
+                              <span className="text-[10px] font-bold text-purple-200 bg-white/10 px-2 py-0.5 rounded-md">
+                                {new Date(j.activityDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-sm font-bold mt-2 text-white leading-snug">
+                            {j.activityName}
+                          </h4>
+                        </div>
+
+                        <div className="p-2.5 rounded-xl bg-white/10 text-white text-xs font-medium space-y-1 mt-2">
+                          <div className="flex items-center gap-1.5 text-purple-100">
+                            <MapPin className="w-4 h-4 text-purple-300 shrink-0" />
+                            <span className="font-semibold text-white/95">Tujuan:</span>
+                            <span className="truncate flex-1 font-extrabold text-white" title={j.endPoint}>{j.endPoint}</span>
+                          </div>
+                          <div className="flex justify-between pt-1 border-t border-white/10 text-[10px] text-purple-200">
+                            <span>Kendaraan: <strong>{j.vehicleName}</strong></span>
+                            <span>Operasional: <strong>{fmtRp(j.totalOperationalCost)}</strong></span>
+                          </div>
+                          {(() => {
+                            const baseWage = (j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000);
+                            const maxWage = baseWage * 1.25;
+                            return (
+                              <div className="pt-1 border-t border-white/10 text-[10px] text-purple-200 flex justify-between items-center">
+                                <span>Estimasi Upah:</span>
+                                <span className="font-black text-amber-300">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        <Button
+                          disabled={myClaimedJourneys.length > 0 || isClaiming}
+                          onClick={() => handleStartAssignedJourney(j.id)}
+                          className="w-full mt-2 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-extrabold text-xs h-9 gap-1.5 cursor-pointer shadow-sm border-none disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isClaiming ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                          Mulai Perjalanan Tugas
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 2. Bucket Middle: Active claimed journeys */}
             {myClaimedJourneys.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider pl-1">
@@ -2856,11 +2972,11 @@ export default function EmployeeActivitiesPage() {
               </div>
             )}
 
-            {/* 2. Open / Unassigned Journeys */}
+            {/* 3. Bucket Bottom: Open / Unassigned Journeys Pool */}
             <div className="space-y-2">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider pl-1 flex items-center gap-1.5">
                 <Compass className="w-4.5 h-4.5 text-slate-400" />
-                Pemesanan Perjalanan Terbuka
+                Pemesanan Perjalanan Terbuka (Pool)
               </h3>
               {loadingJourneys ? (
                 <div className="p-6 text-center text-slate-400 bg-white border border-slate-100 rounded-2xl flex items-center justify-center gap-2">
@@ -2869,7 +2985,7 @@ export default function EmployeeActivitiesPage() {
                 </div>
               ) : unassignedJourneys.length === 0 ? (
                 <div className="p-6 text-center text-slate-400 bg-white/50 border border-dashed border-slate-200 rounded-2xl">
-                  <span className="text-xs font-medium">Belum ada perjalanan dinas baru yang ditugaskan.</span>
+                  <span className="text-xs font-medium">Belum ada perjalanan dinas terbuka di pool umum.</span>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-2.5">
@@ -2887,7 +3003,7 @@ export default function EmployeeActivitiesPage() {
                           <div className="flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full bg-emerald-500" />
                             <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-md">
-                              Tersedia
+                              Pool Umum
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5">

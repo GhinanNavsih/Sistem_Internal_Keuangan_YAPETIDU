@@ -52,6 +52,7 @@ import {
   collection,
   query,
   where,
+  getDocs,
   onSnapshot,
   setDoc,
   doc,
@@ -159,6 +160,34 @@ function DriverJourneysContent() {
   const [endPoint, setEndPoint] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState<keyof typeof VEHICLE_RATES>('Suzuki XL7');
   const [tollFee, setTollFee] = useState<string>('');
+
+  // Driver Assignment States
+  const [drivers, setDrivers] = useState<any[]>([]);
+  const [assignedDriverId, setAssignedDriverId] = useState<string>('');
+
+  useEffect(() => {
+    const fetchDrivers = async () => {
+      try {
+        const q = query(
+          collection(db, 'Employees_BlueCollar'),
+          where('employment.status', '==', 'active'),
+          where('employment.jobCategory', '==', 'SOPIR')
+        );
+        const snap = await getDocs(q);
+        const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        setDrivers(list);
+      } catch (err) {
+        console.error('Error fetching drivers:', err);
+      }
+    };
+    fetchDrivers();
+  }, []);
+
+  const getDriverStatus = (empId: string) => {
+    const activeCount = journeys.filter(j => (j.employeeId === empId || j.assignedTo === empId) && j.status === 'claimed').length;
+    const assignedCount = journeys.filter(j => j.assignedTo === empId && j.status === 'assigned').length;
+    return { activeCount, assignedCount };
+  };
 
   // Calculated preview states
   const [calcDistance, setCalcDistance] = useState<number | null>(null);
@@ -459,6 +488,15 @@ function DriverJourneysContent() {
         journeyId = `JRN-${dateSanitized}-${randomSuffix}`;
       }
 
+      const selectedDriver = drivers.find(d => d.id === assignedDriverId);
+      const assignedToName = selectedDriver ? selectedDriver.name : null;
+
+      const existingJourney = journeys.find(j => j.id === editingJourneyId);
+      let targetStatus = existingJourney?.status || 'unassigned';
+      if (!editingJourneyId || existingJourney?.status === 'unassigned' || existingJourney?.status === 'assigned') {
+        targetStatus = assignedDriverId ? 'assigned' : 'unassigned';
+      }
+
       await setDoc(doc(db, 'DriverJourneys', journeyId), {
         activityName: activityName.trim(),
         activityDate: activityDate,
@@ -474,8 +512,10 @@ function DriverJourneysContent() {
         tollParkingFee: tollFeeVal,
         totalOperationalCost: totalCost,
         destinationImageUrl: mapAddressImage || null,
+        assignedTo: assignedDriverId || null,
+        assignedToName: assignedToName || null,
+        status: targetStatus,
         ...(!editingJourneyId ? {
-          status: 'unassigned',
           createdAt: serverTimestamp(),
           createdBy: profile?.uid || 'system',
           period: periodToken,
@@ -496,6 +536,7 @@ function DriverJourneysContent() {
       setCalcDuration(null);
       setInputDuration(null);
       setEditingJourneyId(null);
+      setAssignedDriverId('');
       setTollFee('');
       setShowAddForm(false);
     } catch (err: any) {
@@ -711,8 +752,16 @@ function DriverJourneysContent() {
                           <TableCell>
                             {j.status === 'unassigned' && (
                               <Badge className="bg-slate-100 text-slate-500 border border-slate-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
-                                Belum Diambil
+                                Belum Ditugaskan
                               </Badge>
+                            )}
+                            {j.status === 'assigned' && (
+                              <div className="space-y-1">
+                                <Badge className="bg-purple-50 text-purple-700 border border-purple-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                  Ditugaskan
+                                </Badge>
+                                <div className="text-[10px] font-bold text-slate-600 block">{j.assignedToName || 'Sopir'}</div>
+                              </div>
                             )}
                             {j.status === 'claimed' && (
                               <div className="space-y-1">
@@ -748,6 +797,7 @@ function DriverJourneysContent() {
                                     setCalcDuration(j.durationHours);
                                     setInputDuration(j.customDurationPP || (j.durationHours ? j.durationHours * 2 : 0));
                                     setTollFee(j.tollParkingFee ? String(j.tollParkingFee) : '');
+                                    setAssignedDriverId(j.assignedTo || '');
                                     lastCalculatedRef.current = { start: j.startPoint, end: j.endPoint };
                                     setShowAddForm(true);
                                   }}
@@ -792,6 +842,7 @@ function DriverJourneysContent() {
           setInputDuration(null);
           setCalcError('');
           setEditingJourneyId(null);
+          setAssignedDriverId('');
           setTollFee('');
         }
         setShowAddForm(open);
@@ -837,6 +888,45 @@ function DriverJourneysContent() {
                   required
                 />
               </div>
+            </div>
+
+            {/* Penugasan Sopir (Opsional) */}
+            <div className="space-y-1.5">
+              <Label htmlFor="driverAssignment" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Penugasan Sopir (Opsional)
+              </Label>
+              <Select value={assignedDriverId || 'unassigned'} onValueChange={(v: string | null) => setAssignedDriverId(!v || v === 'unassigned' ? '' : v)}>
+                <SelectTrigger id="driverAssignment" className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                  <SelectValue placeholder="Pilih Sopir (Atau biarkan terbuka untuk semua)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">-- Buka Pool Umum (Belum Ditugaskan) --</SelectItem>
+                  {drivers.map(driver => {
+                    const { activeCount, assignedCount } = getDriverStatus(driver.id);
+                    let statusBadge = 'Bebas';
+                    if (activeCount > 0) statusBadge = `${activeCount} Aktif Jalan`;
+                    else if (assignedCount > 0) statusBadge = `${assignedCount} Terjadwal`;
+
+                    return (
+                      <SelectItem key={driver.id} value={driver.id}>
+                        {driver.name || 'Sopir'} • [{statusBadge}]
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              {assignedDriverId && (() => {
+                const { activeCount, assignedCount } = getDriverStatus(assignedDriverId);
+                if (activeCount > 0 || assignedCount > 0) {
+                  return (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] font-semibold text-amber-800 flex items-center gap-2 mt-1 animate-in fade-in duration-200">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Sopir ini memiliki {activeCount > 0 ? `${activeCount} tugas aktif sedang berjalan` : `${assignedCount} tugas terjadwal`}. Perjalanan ini akan masuk sebagai tugas mendatang bagi sopir tersebut.</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
 
             {/* Titik Mulai & Tujuan */}
