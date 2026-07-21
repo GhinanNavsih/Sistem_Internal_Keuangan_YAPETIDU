@@ -59,7 +59,32 @@ import {
   RefreshCw,
   ChevronRight,
   Compass,
+  Trash2,
+  Plus,
+  Lock,
+  Edit2,
+  MapPin,
 } from 'lucide-react';
+
+const loadGoogleMapsScript = (callback: () => void) => {
+  if (typeof window === 'undefined') return;
+  if ((window as any).google) {
+    callback();
+    return;
+  }
+  const existingScript = document.getElementById('googleMapsScript');
+  if (existingScript) {
+    existingScript.addEventListener('load', callback);
+    return;
+  }
+  const script = document.createElement('script');
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}&libraries=places`;
+  script.id = 'googleMapsScript';
+  script.async = true;
+  script.defer = true;
+  script.addEventListener('load', callback);
+  document.head.appendChild(script);
+};
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -108,6 +133,32 @@ interface ActivityReport {
   fuelReceiptUrl?: string;
   tollReceiptUrl?: string;
   upahBersih?: number;
+  extraMealAllowance?: number;
+  extraFuelCost?: number;
+  extraTollCost?: number;
+  extraDistanceKm?: number;
+  extraOperationalCost?: number;
+  actualMealAllowance?: number;
+  positiveReimburseDelta?: number;
+  extraActivities?: any[];
+  vehicleRate?: number;
+  baseOperationalCost?: number;
+  mealAllowance?: number;
+  preAuthorizedMeal?: number;
+  preAuthorizedToll?: number;
+  totalOperationalCost?: number;
+  totalPreAuthorizedAllowance?: number;
+  totalActualSpent?: number;
+  reimburseDelta?: number;
+  unspentCash?: number;
+  remainingUnspentCash?: number;
+  baseDriverWage?: number;
+  componentJarak?: number;
+  componentWaktu?: number;
+  premiumOvernight?: number;
+  customDurationPP?: number;
+  startPoint?: string;
+  endPoint?: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -141,12 +192,12 @@ function calculateSopirDefaultFee(
   };
 
   let fee = 0;
-  
+
   if (distanceKm && distanceKm > 0) {
     // New Google Maps route journey calculation:
-    // PP distance * rate + 20% meal allowance
+    // distanceKm is already the PP (round-trip) value from the activity report
     const rate = vehicleType === 'Ndalem' ? 0 : (VEHICLE_RATES[vehicleType || 'Suzuki'] || 741);
-    const baseCost = distanceKm * 2 * rate;
+    const baseCost = distanceKm * rate;
     fee = vehicleType === 'Ndalem' ? 0 : baseCost * 1.20; // Includes 20% meal allowance
   } else {
     // Legacy fallback (no distance recorded)
@@ -212,20 +263,20 @@ function calculateDefaultFee(
   if (activityType === 'Buang Sampah' || activityName === 'Buang Sampah') {
     return 5000;
   }
-  
+
   if (!timeStart || !timeEnd) return 0;
-  
+
   // Parse HH:MM format
   const [sh, sm] = timeStart.split(':').map(Number);
   const [eh, em] = timeEnd.split(':').map(Number);
-  
+
   if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return 0;
-  
+
   const minutes = (eh * 60 + em) - (sh * 60 + sm);
   if (minutes < 0) return 0;
-  
+
   const halfHours = Math.round(minutes / 30);
-  
+
   // Determine activity type
   let type = activityType;
   if (!type && activityName) {
@@ -240,14 +291,14 @@ function calculateDefaultFee(
       type = 'Lainnya';
     }
   }
-  
+
   if (!type) {
     type = 'Lainnya';
   }
-  
+
   const isPiketOrStandby = type === 'Piket' || type === 'Standby';
   const rate = isPiketOrStandby ? 2000 : 2500;
-  
+
   return halfHours * rate;
 }
 
@@ -310,19 +361,276 @@ export default function ActivityReviewPage() {
   const [auditActivity, setAuditActivity] = useState<ActivityReport | null>(null);
   const [auditDistanceKm, setAuditDistanceKm] = useState<number>(0);
   const [auditDurationHours, setAuditDurationHours] = useState<number>(0);
-  const [auditFuelFee, setAuditFuelFee] = useState<number>(0);
-  const [auditTollParkingFee, setAuditTollParkingFee] = useState<number>(0);
+  const [auditAuthorizedDurationPP, setAuditAuthorizedDurationPP] = useState<number>(0);
+  const [auditFuelDelta, setAuditFuelDelta] = useState<number>(0);
+  const [auditTollDelta, setAuditTollDelta] = useState<number>(0);
+  const [auditMealDelta, setAuditMealDelta] = useState<number>(0);
   const [auditVehicleType, setAuditVehicleType] = useState<string>('Suzuki XL7');
   const [auditIsOvernight, setAuditIsOvernight] = useState<boolean>(false);
+  const [auditPoints, setAuditPoints] = useState<string[]>([]);
+  const [isManualDistanceOverride, setIsManualDistanceOverride] = useState<boolean>(false);
+  const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
+
+  // Google Maps Location Picker Modal state
+  const [showMapSelector, setShowMapSelector] = useState(false);
+  const [mapSearchText, setMapSearchText] = useState('');
+  const [mapAddress, setMapAddress] = useState('');
+  const [mapAddressImage, setMapAddressImage] = useState<string | null>(null);
+  const [mapTargetIndex, setMapTargetIndex] = useState<number | null>(null);
+
+  const mapRef = React.useRef<any>(null);
+  const markerRef = React.useRef<any>(null);
+  const mapElementRef = React.useRef<HTMLDivElement | null>(null);
+
+  const initMap = (element: HTMLDivElement) => {
+    loadGoogleMapsScript(() => {
+      const google = (window as any).google;
+      if (!google) return;
+      if (mapRef.current && mapElementRef.current === element) return;
+
+      mapElementRef.current = element;
+      const unipduCoords = { lat: -7.5458, lng: 112.2858 };
+
+      const map = new google.maps.Map(element, {
+        center: unipduCoords,
+        zoom: 13,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+      });
+      mapRef.current = map;
+
+      const marker = new google.maps.Marker({
+        position: unipduCoords,
+        map: map,
+        draggable: true,
+        animation: google.maps.Animation.DROP,
+      });
+      markerRef.current = marker;
+
+      const geocoder = new google.maps.Geocoder();
+
+      const updateAddressImage = (queryStr: string) => {
+        try {
+          const service = new google.maps.places.PlacesService(map || document.createElement('div'));
+          service.textSearch({ query: queryStr }, (results: any, status: any) => {
+            if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
+              const matchWithPhoto = results.find((r: any) => r.photos && r.photos.length > 0);
+              if (matchWithPhoto) {
+                setMapAddressImage(matchWithPhoto.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
+                return;
+              }
+            }
+            setMapAddressImage(null);
+          });
+        } catch (e) {
+          console.error(e);
+          setMapAddressImage(null);
+        }
+      };
+
+      const updateAddress = (latLng: any) => {
+        geocoder.geocode({ location: latLng }, (results: any, status: any) => {
+          if (status === 'OK' && results[0]) {
+            setMapAddress(results[0].formatted_address);
+            updateAddressImage(results[0].formatted_address);
+          } else {
+            setMapAddress(`${latLng.lat().toFixed(5)}, ${latLng.lng().toFixed(5)}`);
+            setMapAddressImage(null);
+          }
+        });
+      };
+
+      const existingAddress = mapAddress;
+      if (existingAddress && existingAddress !== 'UNIPDU Jombang, Jawa Timur' && existingAddress !== 'UNIPDU Jombang') {
+        geocoder.geocode({ address: existingAddress }, (results: any, status: any) => {
+          if (status === 'OK' && results[0] && results[0].geometry && results[0].geometry.location) {
+            const loc = results[0].geometry.location;
+            map.setCenter(loc);
+            map.setZoom(15);
+            marker.setPosition(loc);
+            setMapAddress(results[0].formatted_address);
+            updateAddressImage(results[0].formatted_address);
+          } else {
+            updateAddress(unipduCoords);
+          }
+        });
+      } else {
+        updateAddress(unipduCoords);
+      }
+
+      marker.addListener('dragend', () => {
+        const pos = marker.getPosition();
+        if (pos) {
+          updateAddress(pos);
+        }
+      });
+
+      map.addListener('click', (e: any) => {
+        if (e.latLng) {
+          marker.setPosition(e.latLng);
+          updateAddress(e.latLng);
+        }
+      });
+    });
+  };
+
+  const initAutocomplete = (inputEl: HTMLInputElement) => {
+    loadGoogleMapsScript(() => {
+      const google = (window as any).google;
+      if (!google || !mapRef.current) return;
+
+      try {
+        const autocomplete = new google.maps.places.Autocomplete(inputEl, {
+          types: ['geocode', 'establishment'],
+        });
+
+        autocomplete.addListener('place_changed', () => {
+          const place = autocomplete.getPlace();
+          if (place.geometry && place.geometry.location) {
+            mapRef.current.setCenter(place.geometry.location);
+            mapRef.current.setZoom(16);
+            if (markerRef.current) {
+              markerRef.current.setPosition(place.geometry.location);
+            }
+            if (place.formatted_address) {
+              setMapAddress(place.formatted_address);
+              if (place.photos && place.photos.length > 0) {
+                setMapAddressImage(place.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
+              }
+            }
+          }
+        });
+      } catch (e) {
+        console.error('Autocomplete error:', e);
+      }
+    });
+  };
+
+  const handleOpenMapForIndex = (index: number) => {
+    setMapTargetIndex(index);
+    const currentVal = auditPoints[index] || '';
+    setMapAddress(currentVal);
+    setMapSearchText(currentVal);
+    setMapAddressImage(null);
+    setShowMapSelector(true);
+  };
+
+  const handleConfirmMapLocation = () => {
+    if (mapTargetIndex === null || !mapAddress) return;
+    const newPts = [...auditPoints];
+    newPts[mapTargetIndex] = mapAddress;
+    setAuditPoints(newPts);
+    setShowMapSelector(false);
+    setMapTargetIndex(null);
+    recalculateRouteFromPoints(newPts);
+  };
+
+  const recalculateRouteFromPoints = (pointsToCalc: string[]) => {
+    const validPts = pointsToCalc.filter(p => p && p.trim().length > 0);
+    if (validPts.length < 2) return;
+    setIsCalculatingRoute(true);
+
+    loadGoogleMapsScript(() => {
+      const g = (window as any).google;
+      if (!g || !g.maps) {
+        setIsCalculatingRoute(false);
+        return;
+      }
+
+      try {
+        const service = new g.maps.DirectionsService();
+        const origin = validPts[0];
+        const destination = validPts[validPts.length - 1];
+        const waypoints = validPts.slice(1, validPts.length - 1).map(pt => ({
+          location: pt,
+          stopover: true,
+        }));
+
+        service.route(
+          {
+            origin: origin,
+            destination: destination,
+            waypoints: waypoints,
+            travelMode: g.maps.TravelMode.DRIVING,
+          },
+          (result: any, status: any) => {
+            setIsCalculatingRoute(false);
+            if (status === 'OK' && result && result.routes && result.routes[0]) {
+              const route = result.routes[0];
+              let totalMeters = 0;
+              let totalSeconds = 0;
+
+              route.legs.forEach((leg: any) => {
+                if (leg.distance?.value) totalMeters += leg.distance.value;
+                if (leg.duration?.value) totalSeconds += leg.duration.value;
+              });
+
+              if (totalMeters > 0) {
+                const oneWayKm = totalMeters / 1000;
+                const oneWayHrs = totalSeconds / 3600;
+                const roundTripKm = Math.round(oneWayKm * 2 * 10) / 10;
+                const roundTripHrs = Math.round(oneWayHrs * 2 * 10) / 10;
+
+                setAuditDistanceKm(roundTripKm);
+                setAuditDurationHours(roundTripHrs);
+              }
+            } else {
+              console.warn('DirectionsService route status:', status);
+            }
+          }
+        );
+      } catch (err) {
+        console.error('Error in recalculateRouteFromPoints:', err);
+        setIsCalculatingRoute(false);
+      }
+    });
+  };
 
   const handleOpenAuditSopir = (activity: ActivityReport) => {
     setAuditActivity(activity);
-    setAuditDistanceKm(activity.distanceKm || 0);
-    setAuditDurationHours(activity.durationHours || 0);
-    setAuditFuelFee(activity.fuelFee || 0);
-    setAuditTollParkingFee(activity.tollParkingFee || 0);
-    setAuditVehicleType(activity.vehicleType || 'Suzuki XL7');
+    const distKm = activity.distanceKm || 0;
+    const durHrs = activity.durationHours || 0;
+    const authDurPP = activity.customDurationPP !== undefined && activity.customDurationPP !== null && activity.customDurationPP > 0
+      ? activity.customDurationPP
+      : durHrs;
+    const vType = activity.vehicleType || 'Suzuki XL7';
+    setAuditDistanceKm(distKm);
+    setAuditDurationHours(durHrs);
+    setAuditAuthorizedDurationPP(authDurPP);
+    setAuditVehicleType(vType);
     setAuditIsOvernight(!!activity.isOvernight);
+
+    const pts = activity.points && activity.points.length > 0
+      ? activity.points
+      : [activity.startPoint || 'UNIPDU Jombang, Jawa Timur', activity.endPoint || ''];
+    setAuditPoints(pts);
+    setIsManualDistanceOverride(false);
+
+    const rate = getVehicleRate(vType);
+    const baseFuel = activity.baseOperationalCost !== undefined && activity.baseOperationalCost !== null
+      ? activity.baseOperationalCost
+      : Math.ceil(distKm * rate);
+
+    // 1. BBM Delta: Use saved extraFuelCost if available; otherwise calculate from fuelFee - baseFuel
+    const fuelDelta = activity.extraFuelCost !== undefined && activity.extraFuelCost !== null
+      ? activity.extraFuelCost
+      : Math.max(0, (activity.fuelFee || 0) - baseFuel);
+
+    // 2. Tol & Parkir Delta: Use saved extraTollCost if available; otherwise calculate from tollParkingFee - preAuthorizedToll
+    const preToll = activity.preAuthorizedToll ?? 0;
+    const tollDelta = activity.extraTollCost !== undefined && activity.extraTollCost !== null
+      ? activity.extraTollCost
+      : Math.max(0, (activity.tollParkingFee || 0) - preToll);
+
+    // 3. Uang Makan Delta: Use saved extraMealAllowance if available; otherwise 0
+    const mealDelta = activity.extraMealAllowance !== undefined && activity.extraMealAllowance !== null
+      ? activity.extraMealAllowance
+      : 0;
+
+    setAuditFuelDelta(fuelDelta);
+    setAuditTollDelta(tollDelta);
+    setAuditMealDelta(mealDelta);
   };
 
   const getVehicleRate = (vType: string) => {
@@ -336,7 +644,7 @@ export default function ActivityReviewPage() {
       'Suzuki XL7': 741,
       'Ndalem': 0,
     };
-    return vType === 'Ndalem' ? 0 : (VEHICLE_RATES[vType] || 741);
+    return VEHICLE_RATES[vType] || 741;
   };
 
   const getMealAllowanceForHours = (hours: number) => {
@@ -350,25 +658,60 @@ export default function ActivityReviewPage() {
   const auditCalc = useMemo(() => {
     if (!auditActivity) return null;
     const rate = getVehicleRate(auditVehicleType);
-    const baselineBBM = Math.ceil(auditDistanceKm * 2 * rate);
-    const baselineMeal = auditVehicleType === 'Ndalem' ? 0 : getMealAllowanceForHours(auditDurationHours);
-    const totalBaseline = baselineBBM + baselineMeal;
-    const deltaFuel = auditVehicleType === 'Ndalem' ? 0 : Math.max(0, auditFuelFee - baselineBBM);
-    const actualMeal = auditVehicleType === 'Ndalem' ? 0 : getMealAllowanceForHours(auditDurationHours);
+
+    // Base BBM
+    const baselineBBM = auditActivity.baseOperationalCost !== undefined && auditActivity.baseOperationalCost !== null
+      ? auditActivity.baseOperationalCost
+      : Math.ceil(auditDistanceKm * rate);
+
+    // Base Meal follows journey duration inputted by Kepala SatKer (auditAuthorizedDurationPP)
+    const authDurForMeal = auditAuthorizedDurationPP || auditDurationHours;
+    const baselineMeal = auditVehicleType === 'Ndalem'
+      ? 0
+      : (auditActivity.preAuthorizedMeal !== undefined && auditActivity.preAuthorizedMeal !== null && auditActivity.preAuthorizedMeal > 0
+        ? auditActivity.preAuthorizedMeal
+        : getMealAllowanceForHours(authDurForMeal));
+
+    const baselineToll = auditActivity.preAuthorizedToll ?? 0;
+    const totalBaseline = baselineBBM + baselineMeal + baselineToll;
+
+    const deltaFuel = auditVehicleType === 'Ndalem' ? 0 : auditFuelDelta;
+    const deltaToll = auditTollDelta;
+    const deltaMeal = auditVehicleType === 'Ndalem' ? 0 : auditMealDelta;
+    const extraOps = auditActivity.extraOperationalCost || 0;
+
     const componentJarak = Math.ceil(auditDistanceKm * 300);
     const componentWaktu = Math.ceil(auditDurationHours * 5000);
     const premiumWeekend = 0;
     const premiumOvernight = auditIsOvernight ? 50000 : 0;
     const upahBersih = componentJarak + componentWaktu + premiumWeekend + premiumOvernight;
-    const fuelComponent = auditVehicleType === 'Ndalem' ? 0 : Math.max(baselineBBM, auditFuelFee);
-    const operationalCost = Math.ceil(fuelComponent + actualMeal + auditTollParkingFee);
-    
+
+    const positiveDelta = deltaFuel + deltaToll + deltaMeal + extraOps;
+    const unspentCash = auditActivity.unspentCash || 0;
+    const totalReimburseDelta = Math.max(0, positiveDelta - unspentCash);
+
+    const actualFuel = baselineBBM + deltaFuel;
+    const actualMeal = baselineMeal + deltaMeal;
+    const actualToll = baselineToll + deltaToll;
+
+    const initialTotalOps = auditActivity.totalOperationalCost || (baselineBBM + baselineMeal + baselineToll);
+    const operationalCost = Math.ceil(initialTotalOps + positiveDelta - unspentCash);
+
     return {
       rate,
       baselineBBM,
       baselineMeal,
+      baselineToll,
       totalBaseline,
+      actualFuel,
+      actualMeal,
+      actualToll,
       deltaFuel,
+      deltaToll,
+      deltaMeal,
+      extraOps,
+      positiveDelta,
+      totalReimburseDelta,
       componentJarak,
       componentWaktu,
       premiumWeekend,
@@ -376,22 +719,34 @@ export default function ActivityReviewPage() {
       upahBersih,
       operationalCost,
     };
-  }, [auditActivity, auditDistanceKm, auditDurationHours, auditFuelFee, auditTollParkingFee, auditVehicleType, auditIsOvernight]);
+  }, [auditActivity, auditDistanceKm, auditDurationHours, auditFuelDelta, auditTollDelta, auditMealDelta, auditVehicleType, auditIsOvernight]);
 
   const handleApproveSopirAudit = async () => {
     if (!auditActivity || !auditCalc || !user) return;
     setActionLoading(true);
     try {
+      const actualFuelFee = auditCalc.baselineBBM + auditFuelDelta;
+      const preToll = auditActivity.preAuthorizedToll ?? 0;
+      const actualTollFee = preToll + auditTollDelta;
+
       await updateDoc(doc(db, 'ActivityReports', auditActivity.id), {
         status: 'approved',
-        fee: auditCalc.operationalCost,
+        fee: auditCalc.upahBersih,
+        totalOperationalCost: auditCalc.operationalCost,
         upahBersih: auditCalc.upahBersih,
         distanceKm: auditDistanceKm,
         durationHours: auditDurationHours,
-        fuelFee: auditFuelFee,
-        tollParkingFee: auditTollParkingFee,
+        fuelFee: actualFuelFee,
+        extraFuelCost: auditFuelDelta,
+        tollParkingFee: actualTollFee,
+        extraTollCost: auditTollDelta,
+        extraMealAllowance: auditMealDelta,
+        reimburseDelta: auditCalc.totalReimburseDelta,
         vehicleType: auditVehicleType,
+        vehicleRate: auditCalc.rate,
+        baseOperationalCost: auditCalc.baselineBBM,
         isOvernight: auditIsOvernight,
+        points: auditPoints,
         tripType: auditDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
         reviewedAt: serverTimestamp(),
         reviewedBy: user.uid,
@@ -400,13 +755,24 @@ export default function ActivityReviewPage() {
       if (auditActivity.journeyId) {
         await updateDoc(doc(db, 'DriverJourneys', auditActivity.journeyId), {
           status: 'completed',
+          fee: auditCalc.operationalCost,
+          totalOperationalCost: auditCalc.operationalCost,
           upahBersih: auditCalc.upahBersih,
           newTotalDistanceKm: auditDistanceKm,
           newTotalDurationHours: auditDurationHours,
-          fuelFee: auditFuelFee,
-          tollParkingFee: auditTollParkingFee,
+          fuelFee: actualFuelFee,
+          extraFuelCost: auditFuelDelta,
+          tollParkingFee: actualTollFee,
+          extraTollCost: auditTollDelta,
+          extraMealAllowance: auditMealDelta,
+          reimburseDelta: auditCalc.totalReimburseDelta,
           vehicleName: auditVehicleType,
+          vehicleRate: auditCalc.rate,
+          baseOperationalCost: auditCalc.baselineBBM,
           isOvernight: auditIsOvernight,
+          points: auditPoints,
+          reviewedAt: serverTimestamp(),
+          reviewedBy: user.uid,
         });
       }
 
@@ -716,10 +1082,21 @@ export default function ActivityReviewPage() {
       await updateDoc(doc(db, 'ActivityReports', declineTarget.id), {
         status: 'declined',
         fee: 0,
+        upahBersih: 0,
         declineReason: declineReason.trim() || '',
         reviewedAt: serverTimestamp(),
         reviewedBy: user.uid,
       });
+
+      if (declineTarget.journeyId) {
+        await updateDoc(doc(db, 'DriverJourneys', declineTarget.journeyId), {
+          status: 'declined',
+          upahBersih: 0,
+          declineReason: declineReason.trim() || '',
+          reviewedAt: serverTimestamp(),
+          reviewedBy: user.uid,
+        });
+      }
       setSuccessMsg(`Kegiatan "${declineTarget.activityName}" oleh ${declineTarget.employeeName} telah ditolak.`);
       setDeclineTarget(null);
       setDeclineReason('');
@@ -782,7 +1159,7 @@ export default function ActivityReviewPage() {
       });
       await batch.commit();
       setSuccessMsg(`${updates.length} kegiatan berhasil disetujui.`);
-      
+
       // Clear row fees for approved activities
       setRowFees(prev => {
         const next = { ...prev };
@@ -1013,11 +1390,10 @@ export default function ActivityReviewPage() {
           {/* Menunggu */}
           <button
             onClick={() => setStatusFilter(statusFilter === 'pending' ? 'all' : 'pending')}
-            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
-              statusFilter === 'pending'
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${statusFilter === 'pending'
                 ? 'bg-amber-50 ring-2 ring-amber-400 shadow-amber-100'
                 : 'bg-white hover:bg-amber-50/40 hover:ring-1 hover:ring-amber-200'
-            }`}
+              }`}
           >
             <div className="text-2xl font-extrabold text-amber-500">{stats.pending}</div>
             <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'pending' ? 'text-amber-600' : 'text-slate-400'}`}>Menunggu</div>
@@ -1026,11 +1402,10 @@ export default function ActivityReviewPage() {
           {/* Disetujui */}
           <button
             onClick={() => setStatusFilter(statusFilter === 'approved' ? 'all' : 'approved')}
-            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
-              statusFilter === 'approved'
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${statusFilter === 'approved'
                 ? 'bg-emerald-50 ring-2 ring-emerald-400 shadow-emerald-100'
                 : 'bg-white hover:bg-emerald-50/40 hover:ring-1 hover:ring-emerald-200'
-            }`}
+              }`}
           >
             <div className="text-2xl font-extrabold text-emerald-500">{stats.approved}</div>
             <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'approved' ? 'text-emerald-600' : 'text-slate-400'}`}>Disetujui</div>
@@ -1039,11 +1414,10 @@ export default function ActivityReviewPage() {
           {/* Ditolak */}
           <button
             onClick={() => setStatusFilter(statusFilter === 'declined' ? 'all' : 'declined')}
-            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
-              statusFilter === 'declined'
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${statusFilter === 'declined'
                 ? 'bg-rose-50 ring-2 ring-rose-400 shadow-rose-100'
                 : 'bg-white hover:bg-rose-50/40 hover:ring-1 hover:ring-rose-200'
-            }`}
+              }`}
           >
             <div className="text-2xl font-extrabold text-rose-500">{stats.declined}</div>
             <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'declined' ? 'text-rose-600' : 'text-slate-400'}`}>Ditolak</div>
@@ -1052,11 +1426,10 @@ export default function ActivityReviewPage() {
           {/* Total (show all) */}
           <button
             onClick={() => setStatusFilter('all')}
-            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
-              statusFilter === 'all'
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${statusFilter === 'all'
                 ? 'bg-slate-100 ring-2 ring-slate-400'
                 : 'bg-white hover:bg-slate-50 hover:ring-1 hover:ring-slate-200'
-            }`}
+              }`}
           >
             <div className="text-2xl font-extrabold text-slate-700">{stats.total}</div>
             <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'all' ? 'text-slate-600' : 'text-slate-400'}`}>Total Laporan</div>
@@ -1161,7 +1534,7 @@ export default function ActivityReviewPage() {
                           <TableCell className="font-bold text-slate-800 text-sm py-3.5">
                             {activity.employeeName}
                           </TableCell>
-                           <TableCell className="text-sm text-slate-700 font-medium max-w-[200px]">
+                          <TableCell className="text-sm text-slate-700 font-medium max-w-[200px]">
                             <span className="truncate block font-semibold">{activity.activityName}</span>
                             {activity.jobCategory === 'SOPIR' && (
                               <div className="flex flex-col gap-1 mt-1.5">
@@ -1220,7 +1593,18 @@ export default function ActivityReviewPage() {
                             )}
                           </TableCell>
                           <TableCell className="text-sm font-bold text-slate-700 whitespace-nowrap">
-                            {activity.status === 'approved' && activity.fee > 0
+                            {activity.jobCategory === 'SOPIR' ? (
+                              <div className="flex flex-col">
+                                <span className="text-sm font-black text-emerald-600">
+                                  {fmtRp(activity.upahBersih || 0)}
+                                </span>
+                                {(activity.reimburseDelta || 0) > 0 && (
+                                  <span className="text-[10px] text-blue-600 font-bold">
+                                    +Reimburse: {fmtRp(activity.reimburseDelta || 0)}
+                                  </span>
+                                )}
+                              </div>
+                            ) : activity.status === 'approved' && activity.fee > 0
                               ? fmtRp(activity.fee)
                               : activity.status === 'pending' ? (
                                 <div className="flex">
@@ -1256,9 +1640,9 @@ export default function ActivityReviewPage() {
                                 const minutes = (eh * 60 + em) - (sh * 60 + sm);
                                 const halfHours = Math.round(minutes / 30);
                                 const qualifies = halfHours > 4 && activity.activityType !== 'Buang Sampah' && activity.activityName !== 'Buang Sampah';
-                                
+
                                 if (!qualifies) return <span className="text-slate-300">—</span>;
-                                
+
                                 const isAdded = !!rowUangMakan[activity.id];
                                 return (
                                   <Button
@@ -1266,11 +1650,10 @@ export default function ActivityReviewPage() {
                                     type="button"
                                     disabled={actionLoading}
                                     onClick={() => handleToggleUangMakan(activity.id, activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName)}
-                                    className={`h-7 px-2.5 rounded-lg font-bold text-[10px] cursor-pointer transition-colors ${
-                                      isAdded 
-                                        ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' 
+                                    className={`h-7 px-2.5 rounded-lg font-bold text-[10px] cursor-pointer transition-colors ${isAdded
+                                        ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
                                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
-                                    }`}
+                                      }`}
                                   >
                                     {isAdded ? '✓ Uang Makan' : '+ Uang Makan'}
                                   </Button>
@@ -1433,10 +1816,10 @@ export default function ActivityReviewPage() {
 
       {/* ── Driver (Sopir) Audit & Edit Modal ─────────────────────────── */}
       <Dialog open={auditActivity !== null} onOpenChange={(open) => { if (!open) setAuditActivity(null); }}>
-        <DialogContent className="sm:max-w-xl rounded-[28px] border-none shadow-2xl bg-white p-6 max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="pb-2 border-b border-slate-100">
-            <DialogTitle className="text-lg font-extrabold flex items-center gap-2.5 text-slate-800">
-              <Compass className="w-5.5 h-5.5 text-indigo-500 shrink-0" />
+        <DialogContent className="w-[96vw] max-w-[96vw] sm:max-w-[96vw] h-[92vh] max-h-[92vh] rounded-[28px] border-none shadow-2xl bg-white p-5 sm:p-7 flex flex-col justify-between overflow-hidden">
+          <DialogHeader className="pb-2.5 border-b border-slate-100 shrink-0">
+            <DialogTitle className="text-xl font-extrabold flex items-center gap-2.5 text-slate-800">
+              <Compass className="w-6 h-6 text-indigo-500 shrink-0" />
               <span>{auditActivity?.status === 'pending' ? 'Audit & Edit Perjalanan Sopir' : 'Detail Audit Perjalanan Sopir'}</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-400">
@@ -1445,209 +1828,443 @@ export default function ActivityReviewPage() {
           </DialogHeader>
 
           {auditActivity && auditCalc && (
-            <div className="space-y-5 py-4">
-              {/* Profile / Basic Info Card */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1.5 text-xs text-slate-600">
-                <div className="flex justify-between">
-                  <span className="font-semibold text-slate-400">Nama Sopir:</span>
-                  <span className="font-extrabold text-slate-700">{auditActivity.employeeName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-semibold text-slate-400">Keperluan:</span>
-                  <span className="font-extrabold text-slate-700">{auditActivity.activityName.split(' (')[0]}</span>
-                </div>
-                {auditActivity.points && auditActivity.points.length > 0 && (
-                  <div className="flex flex-col gap-0.5 pt-1 border-t border-slate-200/60 mt-1">
-                    <span className="font-semibold text-slate-400 text-[10px] uppercase block tracking-wider">Rute Perjalanan:</span>
-                    <span className="font-bold text-slate-700 text-xs pl-0.5 leading-relaxed bg-white border border-slate-100 p-1.5 rounded-lg mt-0.5">
-                      📍 {auditActivity.points.join(' → ')}
-                    </span>
-                  </div>
-                )}
-              </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0 py-2 overflow-y-auto lg:overflow-hidden">
+              {/* LEFT HALF: Card 1 (Journey Overview) & Card 2 (Parameter Audit) */}
+              <div className="flex flex-col gap-4 overflow-y-auto pr-1">
+                {/* CARD 1: Journey Overview Card */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-3 text-xs text-slate-600 shadow-xs">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Ringkasan Perjalanan</span>
 
-              {/* Editable Fields (Only if pending, otherwise view-only) */}
-              <div className="space-y-3.5">
-                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest block">Parameter Audit Perjalanan</span>
-                
-                <div className="grid grid-cols-2 gap-3.5">
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-bold text-slate-400 uppercase">Jarak Tempuh PP (KM)</Label>
-                    <Input
-                      type="number"
-                      value={auditDistanceKm || ''}
-                      onChange={(e) => setAuditDistanceKm(Math.max(0, parseFloat(e.target.value) || 0))}
-                      disabled={auditActivity.status !== 'pending' || actionLoading}
-                      className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs font-bold"
-                    />
+                  <div className="grid grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-slate-100">
+                    <div>
+                      <span className="font-semibold text-slate-400 text-[11px] block">Nama Sopir:</span>
+                      <span className="font-extrabold text-slate-800 text-sm">{auditActivity.employeeName}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-slate-400 text-[11px] block">Keperluan:</span>
+                      <span className="font-extrabold text-slate-700">{auditActivity.activityName.split(' (')[0]}</span>
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-bold text-slate-400 uppercase">Durasi PP (JAM)</Label>
-                    <Input
-                      type="number"
-                      value={auditDurationHours || ''}
-                      onChange={(e) => setAuditDurationHours(Math.max(0, parseFloat(e.target.value) || 0))}
-                      disabled={auditActivity.status !== 'pending' || actionLoading}
-                      className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs font-bold"
-                    />
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-3.5">
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-bold text-slate-400 uppercase">Reimburse BBM (Rp)</Label>
-                    <Input
-                      type="number"
-                      value={auditFuelFee || ''}
-                      onChange={(e) => setAuditFuelFee(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                      disabled={auditActivity.status !== 'pending' || actionLoading}
-                      className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs font-bold"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-bold text-slate-400 uppercase">Reimburse Tol & Parkir (Rp)</Label>
-                    <Input
-                      type="number"
-                      value={auditTollParkingFee || ''}
-                      onChange={(e) => setAuditTollParkingFee(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                      disabled={auditActivity.status !== 'pending' || actionLoading}
-                      className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs font-bold"
-                    />
-                  </div>
-                </div>
+                  {/* RUTE PERJALANAN TIMELINE EDITOR */}
+                  <div className="space-y-2 pt-1.5 border-t border-slate-200/60">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-slate-400 text-[10px] uppercase tracking-wider flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-indigo-500" />
+                        Rute Perjalanan ({auditPoints.length} Lokasi)
+                      </span>
+                      {auditActivity.status === 'pending' && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={isCalculatingRoute || actionLoading}
+                          onClick={() => recalculateRouteFromPoints(auditPoints)}
+                          className="h-6 px-2 text-[10px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 rounded-lg cursor-pointer"
+                        >
+                          {isCalculatingRoute ? (
+                            <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                          ) : (
+                            <RefreshCw className="w-3 h-3 mr-1" />
+                          )}
+                          Hitung Ulang Rute
+                        </Button>
+                      )}
+                    </div>
 
-                <div className="grid grid-cols-2 gap-3.5 items-center">
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-bold text-slate-400 uppercase">Jenis Kendaraan</Label>
-                    {auditActivity.status === 'pending' ? (
-                      <Select value={auditVehicleType} onValueChange={(v) => setAuditVehicleType(v || 'Suzuki XL7')}>
-                        <SelectTrigger className="text-xs font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-9 px-3">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
-                          {['Suzuki XL7', 'Bis', 'Elf', 'Kijang LGX', 'Innova Hitam', 'Innova Matic', 'Ndalem'].map(v => (
-                            <SelectItem key={v} value={v}>{v}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        type="text"
-                        value={auditVehicleType}
-                        disabled
-                        className="rounded-xl bg-slate-50 border-slate-200 text-xs font-bold"
-                      />
+                    <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                      {auditPoints.map((pt, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-slate-400 shrink-0 w-16">
+                            {idx === 0 ? '📍 Awal' : idx === 1 ? '🏁 Utama' : `📍 Extra #${idx - 1}`}
+                          </span>
+                          {auditActivity.status === 'pending' ? (
+                            <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                              <Input
+                                type="text"
+                                value={pt}
+                                readOnly
+                                onClick={() => handleOpenMapForIndex(idx)}
+                                placeholder={idx === 0 ? 'Titik Awal' : 'Pilih Lokasi...'}
+                                className="h-8 text-xs font-semibold rounded-xl border-slate-200 focus:border-indigo-400 bg-slate-50 hover:bg-slate-100/80 cursor-pointer transition-colors flex-1 min-w-0 truncate"
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleOpenMapForIndex(idx)}
+                                className="h-8 px-2.5 text-[10px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 rounded-xl shrink-0 cursor-pointer flex items-center gap-1"
+                              >
+                                <MapPin className="w-3 h-3 text-indigo-600" />
+                                Pilih Map
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-xs font-bold text-slate-700 leading-relaxed bg-white border border-slate-200/80 p-2 rounded-xl flex-1">
+                              {pt}
+                            </span>
+                          )}
+                          {auditActivity.status === 'pending' && idx > 1 && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                const newPts = auditPoints.filter((_, i) => i !== idx);
+                                setAuditPoints(newPts);
+                                recalculateRouteFromPoints(newPts);
+                              }}
+                              className="h-8 w-8 p-0 text-rose-500 hover:bg-rose-50 rounded-xl shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {auditActivity.status === 'pending' && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          const newPts = [...auditPoints, ''];
+                          setAuditPoints(newPts);
+                          handleOpenMapForIndex(newPts.length - 1);
+                        }}
+                        className="h-7 px-2.5 text-[10px] font-extrabold text-indigo-600 bg-indigo-50/60 hover:bg-indigo-100/80 border border-indigo-100 rounded-xl w-full flex items-center justify-center gap-1 mt-1 cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Tambah Lokasi / Destinasi
+                      </Button>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2 pt-5">
-                    <input
-                      type="checkbox"
-                      id="auditIsOvernight"
-                      checked={auditIsOvernight}
-                      onChange={(e) => setAuditIsOvernight(e.target.checked)}
-                      disabled={auditActivity.status !== 'pending' || actionLoading}
-                      className="w-4.5 h-4.5 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
-                    />
-                    <label htmlFor="auditIsOvernight" className="text-xs font-bold text-slate-600 select-none cursor-pointer">
-                      Menginap (Overnight)
-                    </label>
+                  {/* Receipt Attachments */}
+                  {(auditActivity.fuelReceiptUrl || auditActivity.tollReceiptUrl) && (
+                    <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200/60">
+                      {auditActivity.fuelReceiptUrl && (
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Bukti BBM:</span>
+                          {auditActivity.fuelReceiptUrl.split(',').filter(Boolean).map((url, idx, arr) => (
+                            <a
+                              key={idx}
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] font-extrabold text-emerald-700 hover:text-emerald-900 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs"
+                            >
+                              📄 Lihat Bukti BBM {arr.length > 1 ? `#${idx + 1}` : ''}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {auditActivity.tollReceiptUrl && (
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Bukti Tol & Parkir:</span>
+                          {auditActivity.tollReceiptUrl.split(',').filter(Boolean).map((url, idx, arr) => (
+                            <a
+                              key={idx}
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] font-extrabold text-indigo-700 hover:text-indigo-900 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs"
+                            >
+                              📄 Lihat Bukti Tol {arr.length > 1 ? `#${idx + 1}` : ''}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* CARD 2: Parameter Audit Perjalanan Card */}
+                <div className="p-4 rounded-2xl bg-white border border-slate-200/80 space-y-3.5 shadow-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest block">
+                      Parameter Audit Perjalanan
+                    </span>
+                    {auditActivity.status === 'pending' && (
+                      <button
+                        type="button"
+                        onClick={() => setIsManualDistanceOverride(!isManualDistanceOverride)}
+                        className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        {isManualDistanceOverride ? <Lock className="w-3 h-3 text-slate-400" /> : <Edit2 className="w-3 h-3" />}
+                        {isManualDistanceOverride ? 'Kunci (Otomatis Rute)' : 'Ubah Manual'}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3.5">
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <Label className="text-[9.5px] font-bold text-slate-400 uppercase">Jarak Tempuh PP (KM)</Label>
+                        {!isManualDistanceOverride && (
+                          <span className="text-[8.5px] font-extrabold text-slate-400 flex items-center gap-0.5">
+                            <Lock className="w-2.5 h-2.5" /> Otomatis Rute
+                          </span>
+                        )}
+                      </div>
+                      <Input
+                        type="number"
+                        value={auditDistanceKm || ''}
+                        onChange={(e) => setAuditDistanceKm(Math.max(0, parseFloat(e.target.value) || 0))}
+                        disabled={!isManualDistanceOverride || auditActivity.status !== 'pending' || actionLoading}
+                        className={`rounded-xl text-xs font-bold transition-all ${!isManualDistanceOverride
+                            ? 'bg-slate-100/70 border-slate-200 text-slate-600 cursor-not-allowed'
+                            : 'border-slate-200 focus:border-indigo-400 text-slate-800 bg-white'
+                          }`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <Label className="text-[9.5px] font-bold text-slate-400 uppercase">Waktu Tempuh PP (JAM)</Label>
+                        {!isManualDistanceOverride && (
+                          <span className="text-[8.5px] font-extrabold text-slate-400 flex items-center gap-0.5">
+                            <Lock className="w-2.5 h-2.5" /> Otomatis Rute
+                          </span>
+                        )}
+                      </div>
+                      <Input
+                        type="number"
+                        value={auditDurationHours || ''}
+                        onChange={(e) => setAuditDurationHours(Math.max(0, parseFloat(e.target.value) || 0))}
+                        disabled={!isManualDistanceOverride || auditActivity.status !== 'pending' || actionLoading}
+                        className={`rounded-xl text-xs font-bold transition-all ${!isManualDistanceOverride
+                            ? 'bg-slate-100/70 border-slate-200 text-slate-600 cursor-not-allowed'
+                            : 'border-slate-200 focus:border-indigo-400 text-slate-800 bg-white'
+                          }`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-[9px] font-bold text-slate-400 uppercase">Reimburse BBM (Delta)</Label>
+                      <Input
+                        type="number"
+                        placeholder="Sesuai Anggaran"
+                        value={auditFuelDelta || ''}
+                        onChange={(e) => setAuditFuelDelta(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        disabled={auditActivity.status !== 'pending' || actionLoading}
+                        className={`rounded-xl text-xs font-bold transition-all ${!auditFuelDelta || auditFuelDelta === 0
+                            ? 'bg-emerald-50/80 border-emerald-300 text-emerald-700 placeholder:text-emerald-600/70 focus:border-emerald-500 font-semibold'
+                            : 'border-slate-200 focus:border-indigo-400 text-slate-800'
+                          }`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[9px] font-bold text-slate-400 uppercase">Uang Makan (Delta)</Label>
+                      <Input
+                        type="number"
+                        placeholder="Sesuai Anggaran"
+                        value={auditMealDelta || ''}
+                        onChange={(e) => setAuditMealDelta(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        disabled={auditActivity.status !== 'pending' || actionLoading}
+                        className={`rounded-xl text-xs font-bold transition-all ${!auditMealDelta || auditMealDelta === 0
+                            ? 'bg-emerald-50/80 border-emerald-300 text-emerald-700 placeholder:text-emerald-600/70 focus:border-emerald-500 font-semibold'
+                            : 'border-slate-200 focus:border-indigo-400 text-slate-800'
+                          }`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[9px] font-bold text-slate-400 uppercase">Tol & Parkir (Delta)</Label>
+                      <Input
+                        type="number"
+                        placeholder="Sesuai Anggaran"
+                        value={auditTollDelta || ''}
+                        onChange={(e) => setAuditTollDelta(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        disabled={auditActivity.status !== 'pending' || actionLoading}
+                        className={`rounded-xl text-xs font-bold transition-all ${!auditTollDelta || auditTollDelta === 0
+                            ? 'bg-emerald-50/80 border-emerald-300 text-emerald-700 placeholder:text-emerald-600/70 focus:border-emerald-500 font-semibold'
+                            : 'border-slate-200 focus:border-indigo-400 text-slate-800'
+                          }`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3.5 items-center pt-1">
+                    <div className="space-y-1">
+                      <Label className="text-[9.5px] font-bold text-slate-400 uppercase">Jenis Kendaraan</Label>
+                      {auditActivity.status === 'pending' ? (
+                        <Select value={auditVehicleType} onValueChange={(v) => setAuditVehicleType(v || 'Suzuki XL7')}>
+                          <SelectTrigger className="text-xs font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-9 px-3">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+                            {['Suzuki XL7', 'Bis', 'Elf', 'Kijang LGX', 'Innova Hitam', 'Innova Matic', 'Ndalem'].map(v => (
+                              <SelectItem key={v} value={v}>{v}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          type="text"
+                          value={auditVehicleType}
+                          disabled
+                          className="rounded-xl bg-slate-50 border-slate-200 text-xs font-bold"
+                        />
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-4">
+                      <input
+                        type="checkbox"
+                        id="auditIsOvernight"
+                        checked={auditIsOvernight}
+                        onChange={(e) => setAuditIsOvernight(e.target.checked)}
+                        disabled={auditActivity.status !== 'pending' || actionLoading}
+                        className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
+                      />
+                      <label htmlFor="auditIsOvernight" className="text-xs font-bold text-slate-600 select-none cursor-pointer">
+                        Menginap (Overnight)
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Comprehensive Audited Costs Breakdown */}
-              <div className="space-y-3.5 pt-4 border-t border-slate-100">
-                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest block">Hasil Perhitungan Audit</span>
+              {/* RIGHT HALF: Card 3 (Komponen Earning) & Card 4 (Biaya Operasional Matrix) */}
+              <div className="flex flex-col gap-4 overflow-y-auto pr-1">
+                {/* CARD 3: Komponen Earning (Upah Bersih Sopir) Card */}
+                <div className="p-4 rounded-2xl bg-indigo-50/40 border border-indigo-100/60 space-y-2.5 text-xs shadow-xs">
+                  <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest block">Komponen Earning (Upah Bersih Sopir)</span>
 
-                {/* Earning / Wage Split Rows */}
-                <div className="p-3.5 rounded-2xl bg-indigo-50/40 border border-indigo-100/50 space-y-2.5">
-                  <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-wider block">Komponen Earning (Upah Bersih)</span>
-                  <div className="flex justify-between text-xs font-medium text-slate-600">
-                    <span>Komponen Jarak ({auditDistanceKm} km x Rp300)</span>
-                    <span className="font-extrabold text-slate-700">{fmtRp(auditCalc.componentJarak)}</span>
+                  <div className="grid grid-cols-2 gap-3 text-slate-600 font-medium pt-1">
+                    <div className="flex justify-between bg-white p-2.5 rounded-xl border border-indigo-100/50">
+                      <span>Komponen Jarak ({auditDistanceKm} km x Rp300)</span>
+                      <span className="font-extrabold text-slate-800">{fmtRp(auditCalc.componentJarak)}</span>
+                    </div>
+                    <div className="flex justify-between bg-white p-2.5 rounded-xl border border-indigo-100/50">
+                      <span>Komponen Waktu ({auditDurationHours} jam x Rp5.000)</span>
+                      <span className="font-extrabold text-slate-800">{fmtRp(auditCalc.componentWaktu)}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-xs font-medium text-slate-600">
-                    <span>Komponen Waktu ({auditDurationHours} jam x Rp5.000)</span>
-                    <span className="font-extrabold text-slate-700">{fmtRp(auditCalc.componentWaktu)}</span>
-                  </div>
-                  {auditCalc.premiumWeekend > 0 && (
-                    <div className="flex justify-between text-xs font-medium text-slate-600">
-                      <span>Weekend Premium (Hari Libur)</span>
-                      <span className="font-extrabold text-slate-700">+{fmtRp(auditCalc.premiumWeekend)}</span>
+
+                  {(auditCalc.premiumWeekend > 0 || auditCalc.premiumOvernight > 0) && (
+                    <div className="flex gap-3 pt-1">
+                      {auditCalc.premiumWeekend > 0 && (
+                        <div className="flex-1 flex justify-between bg-white p-2.5 rounded-xl border border-indigo-100/50">
+                          <span>Weekend Premium</span>
+                          <span className="font-extrabold text-slate-800">+{fmtRp(auditCalc.premiumWeekend)}</span>
+                        </div>
+                      )}
+                      {auditCalc.premiumOvernight > 0 && (
+                        <div className="flex-1 flex justify-between bg-white p-2.5 rounded-xl border border-indigo-100/50">
+                          <span>Overnight Premium</span>
+                          <span className="font-extrabold text-slate-800">+{fmtRp(auditCalc.premiumOvernight)}</span>
+                        </div>
+                      )}
                     </div>
                   )}
-                  {auditCalc.premiumOvernight > 0 && (
-                    <div className="flex justify-between text-xs font-medium text-slate-600">
-                      <span>Overnight Premium (Menginap)</span>
-                      <span className="font-extrabold text-slate-700">+{fmtRp(auditCalc.premiumOvernight)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm font-extrabold text-slate-800 pt-2 border-t border-indigo-100/60">
+
+                  <div className="flex justify-between text-sm font-extrabold text-slate-800 pt-2 border-t border-indigo-200/50">
                     <span>Upah Bersih Sopir (Net Wage)</span>
-                    <span className="font-black text-emerald-600">{fmtRp(auditCalc.upahBersih)}</span>
+                    <span className="font-black text-emerald-600 text-base">{fmtRp(auditCalc.upahBersih)}</span>
                   </div>
                 </div>
 
-                {/* Operational Cost Breakdown */}
-                <div className="p-3.5 rounded-2xl bg-blue-50/30 border border-blue-150 space-y-2.5">
-                  <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider block">Biaya Operasional (SPJ)</span>
-                  <div className="flex justify-between text-xs font-medium text-slate-600">
-                    <span>Jatah BBM / Leg Cost (Jarak PP x {getVehicleRate(auditVehicleType)}/km)</span>
-                    <span className="font-extrabold text-blue-600">{fmtRp(auditCalc.baselineBBM)}</span>
+                {/* CARD 4: Biaya Operasional (SPJ) — Matriks Perbandingan Card */}
+                <div className="p-4 rounded-2xl bg-blue-50/40 border border-blue-150 space-y-3 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-blue-700 uppercase tracking-widest block">
+                      Biaya Operasional (SPJ) — Matriks Perbandingan
+                    </span>
+                    <Badge variant="outline" className="bg-blue-100/60 border-blue-200 text-blue-700 text-[10px] font-bold">
+                      Otorisasi vs Audit
+                    </Badge>
                   </div>
-                  <div className="flex justify-between text-xs font-medium text-slate-600">
-                    <span>Uang Makan Stratum ({auditDurationHours} jam)</span>
-                    <span className="font-extrabold text-blue-600">{fmtRp(auditCalc.baselineMeal)}</span>
+
+                  {/* Comparison Table */}
+                  <div className="overflow-x-auto rounded-xl border border-blue-100 bg-white shadow-xs">
+                    <table className="w-full text-xs text-left border-collapse">
+                      <thead>
+                        <tr className="bg-blue-100/40 text-[9.5px] font-extrabold text-blue-800 uppercase tracking-wider border-b border-blue-100">
+                          <th className="py-2.5 px-3.5">Komponen Biaya</th>
+                          <th className="py-2.5 px-3.5 text-right">Otorisasi (Jatah)</th>
+                          <th className="py-2.5 px-3.5 text-right">Aktual / Audit</th>
+                          <th className="py-2.5 px-3.5 text-right">Delta (Reimburse)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                        <tr>
+                          <td className="py-2.5 px-3.5 font-semibold text-slate-800">
+                            Biaya BBM (PP)
+                            <span className="block text-[9px] text-slate-400 font-normal">
+                              {auditDistanceKm} km @ {getVehicleRate(auditVehicleType)}/km
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3.5 text-right font-bold text-slate-600">{fmtRp(auditCalc.baselineBBM)}</td>
+                          <td className="py-2.5 px-3.5 text-right font-bold text-slate-800">{fmtRp(auditCalc.actualFuel)}</td>
+                          <td className="py-2.5 px-3.5 text-right font-extrabold text-blue-600">
+                            {auditCalc.deltaFuel > 0 ? `+${fmtRp(auditCalc.deltaFuel)}` : '—'}
+                          </td>
+                        </tr>
+
+                        <tr>
+                          <td className="py-2.5 px-3.5 font-semibold text-slate-800">
+                            Uang Makan Stratum
+                            <span className="block text-[9px] text-slate-400 font-normal">
+                              Durasi {(auditAuthorizedDurationPP || auditDurationHours).toFixed(1).replace(/\.0$/, '')} jam
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3.5 text-right font-bold text-slate-600">{fmtRp(auditCalc.baselineMeal)}</td>
+                          <td className="py-2.5 px-3.5 text-right font-bold text-slate-800">{fmtRp(auditCalc.actualMeal)}</td>
+                          <td className="py-2.5 px-3.5 text-right font-extrabold text-blue-600">
+                            {auditCalc.deltaMeal > 0 ? `+${fmtRp(auditCalc.deltaMeal)}` : '—'}
+                          </td>
+                        </tr>
+
+                        <tr>
+                          <td className="py-2.5 px-3.5 font-semibold text-slate-800">Tol & Parkir</td>
+                          <td className="py-2.5 px-3.5 text-right font-bold text-slate-600">{fmtRp(auditCalc.baselineToll)}</td>
+                          <td className="py-2.5 px-3.5 text-right font-bold text-slate-800">{fmtRp(auditCalc.actualToll)}</td>
+                          <td className="py-2.5 px-3.5 text-right font-extrabold text-blue-600">
+                            {auditCalc.deltaToll > 0 ? `+${fmtRp(auditCalc.deltaToll)}` : '—'}
+                          </td>
+                        </tr>
+
+                        {auditCalc.extraOps > 0 && (
+                          <tr className="bg-amber-50/40">
+                            <td className="py-2.5 px-3.5 font-semibold text-amber-800">
+                              Kelebihan Rute / Jarak
+                              <span className="block text-[9px] text-amber-600 font-normal">Tambah titik lokasi</span>
+                            </td>
+                            <td className="py-2.5 px-3.5 text-right text-slate-400">—</td>
+                            <td className="py-2.5 px-3.5 text-right font-bold text-amber-800">+{fmtRp(auditCalc.extraOps)}</td>
+                            <td className="py-2.5 px-3.5 text-right font-extrabold text-amber-700">+{fmtRp(auditCalc.extraOps)}</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
-                  <div className="flex justify-between text-xs font-medium text-slate-600">
-                    <span>Reimburse BBM Terbeli (Input)</span>
-                    <span className="font-extrabold text-blue-600">{fmtRp(auditFuelFee)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs font-medium text-slate-600">
-                    <span>Kelebihan Pembelian BBM (Delta)</span>
-                    <span className="font-extrabold text-blue-600">+{fmtRp(auditCalc.deltaFuel)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs font-medium text-slate-600">
-                    <span>Reimburse Tol & Parkir (Input)</span>
-                    <span className="font-extrabold text-blue-600">+{fmtRp(auditTollParkingFee)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm font-extrabold text-slate-800 pt-2 border-t border-blue-100">
-                    <span>Total Operational Cost (Biaya SPJ)</span>
-                    <span className="font-black text-blue-600">{fmtRp(auditCalc.operationalCost)}</span>
+
+                  {/* Summary Totals */}
+                  <div className="space-y-1.5 pt-1 text-xs">
+                    <div className="flex justify-between font-medium text-slate-500">
+                      <span>Total Uang Jalan Awal (Otorisasi)</span>
+                      <span className="font-bold text-slate-700">{fmtRp(auditCalc.totalBaseline)}</span>
+                    </div>
+
+                    <div className="flex justify-between font-medium text-blue-600">
+                      <span>Total Kelebihan Reimburse (Total Delta)</span>
+                      <span className="font-extrabold text-blue-700">+{fmtRp(auditCalc.totalReimburseDelta)}</span>
+                    </div>
+
+                    <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-blue-200/80">
+                      <span>Total Biaya Operasional (SPJ Akhir)</span>
+                      <span className="text-blue-700 text-base font-black">{fmtRp(auditCalc.operationalCost)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-
-              {/* Receipt URLs (Clickable references) */}
-              {(auditActivity.fuelReceiptUrl || auditActivity.tollReceiptUrl) && (
-                <div className="flex gap-2 pt-2 text-xs">
-                  {auditActivity.fuelReceiptUrl && (
-                    <a
-                      href={auditActivity.fuelReceiptUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5"
-                    >
-                      📄 Lihat Bukti BBM
-                    </a>
-                  )}
-                  {auditActivity.tollReceiptUrl && (
-                    <a
-                      href={auditActivity.tollReceiptUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5"
-                    >
-                      📄 Lihat Bukti Tol
-                    </a>
-                  )}
-                </div>
-              )}
             </div>
           )}
 
-          <DialogFooter className="gap-3 border-t border-slate-100 pt-4">
+          <DialogFooter className="gap-3 border-t border-slate-100 pt-3 shrink-0">
             <Button variant="ghost" onClick={() => setAuditActivity(null)} className="rounded-xl font-bold text-slate-500">
               Kembali
             </Button>
@@ -1675,6 +2292,175 @@ export default function ActivityReviewPage() {
               </>
             )}
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Google Maps Selector Dialog ──────────────────────────────────── */}
+      <Dialog open={showMapSelector} onOpenChange={setShowMapSelector}>
+        <DialogContent className="sm:max-w-[500px] rounded-2xl bg-white border-slate-100 shadow-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base font-extrabold text-slate-800 flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-indigo-600" />
+              Pilih Tujuan di Google Maps
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400 mt-1">
+              Cari lokasi atau geser pin merah ke lokasi tujuan perjalanan dinas.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            {/* Search Input inside Map (Google Maps Themed Style) */}
+            <div className="relative flex items-center bg-white border border-slate-200 rounded-2xl shadow-sm h-11 px-3.5 gap-2.5 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 transition-all">
+              <div className="flex items-center justify-center w-5 text-indigo-500 shrink-0">
+                <Compass className="w-4.5 h-4.5 animate-pulse" />
+              </div>
+              <Input
+                ref={(el) => {
+                  if (el) {
+                    initAutocomplete(el);
+                  }
+                }}
+                placeholder="Cari lokasi tujuan dinas..."
+                value={mapSearchText}
+                onChange={(e) => setMapSearchText(e.target.value)}
+                className="flex-1 border-none bg-transparent p-0 focus-visible:ring-0 text-xs font-bold text-slate-700 h-full placeholder:text-slate-400"
+              />
+              {mapSearchText && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMapSearchText('');
+                    setMapAddress('');
+                  }}
+                  className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-slate-100 transition-all text-slate-400 hover:text-slate-600 shrink-0"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              )}
+              <div className="w-px h-5 bg-slate-200 shrink-0" />
+              <button
+                type="button"
+                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-indigo-50 transition-all text-indigo-500 hover:text-indigo-600 shrink-0"
+              >
+                <Search className="w-4.5 h-4.5" />
+              </button>
+
+              <style>{`
+                .pac-container {
+                  z-index: 99999 !important;
+                  border-radius: 16px !important;
+                  border: 1px solid #e2e8f0 !important;
+                  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+                  -webkit-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+                  background-color: #ffffff !important;
+                  font-family: inherit !important;
+                  padding: 6px 0 !important;
+                  margin-top: 6px !important;
+                  width: min(452px, calc(100vw - 3rem)) !important;
+                  left: 50% !important;
+                  transform: translateX(-50%) !important;
+                }
+                .pac-item {
+                  padding: 10px 14px !important;
+                  font-size: 11px !important;
+                  font-weight: 600 !important;
+                  color: #475569 !important;
+                  cursor: pointer !important;
+                  display: flex !important;
+                  align-items: center !important;
+                  gap: 8px !important;
+                  border-top: 1px solid #f1f5f9 !important;
+                  transition: all 0.15s ease !important;
+                }
+                .pac-item:hover {
+                  background-color: #f8fafc !important;
+                }
+                .pac-item-query {
+                  font-size: 11px !important;
+                  font-weight: 850 !important;
+                  color: #0f172a !important;
+                }
+                .pac-matched {
+                  color: #4f46e5 !important;
+                }
+                .pac-icon {
+                  margin-top: 0 !important;
+                  background-image: none !important;
+                  position: relative !important;
+                  display: inline-block !important;
+                  width: 14px !important;
+                  height: 14px !important;
+                  flex-shrink: 0 !important;
+                }
+                .pac-icon::before {
+                  content: "📍" !important;
+                  font-size: 10px !important;
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                }
+              `}</style>
+            </div>
+
+            {/* Map Container */}
+            <div
+              ref={(el) => {
+                if (el) {
+                  initMap(el);
+                }
+              }}
+              className="w-full h-[280px] rounded-xl border border-slate-100 overflow-hidden bg-slate-50 relative flex items-center justify-center"
+            >
+              <div className="flex flex-col items-center gap-2 text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+                <span className="text-[10px] font-bold">Memuat Google Maps...</span>
+              </div>
+            </div>
+
+            {/* Selected Location Image Preview */}
+            {mapAddressImage && (
+              <div className="w-full h-32 rounded-xl overflow-hidden border border-slate-100 shadow-sm relative group bg-slate-50 animate-fade-in">
+                <img
+                  src={mapAddressImage}
+                  alt="Location Preview"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/10 to-transparent flex items-end p-3">
+                  <div className="text-[10px] text-white font-extrabold flex items-center gap-1 shadow-sm drop-shadow-md">
+                    <Compass className="w-3.5 h-3.5 text-indigo-300 animate-spin-slow shrink-0" />
+                    <span>Pratinjau Lokasi Terpilih</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Selected Address Box */}
+            {mapAddress && (
+              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 leading-relaxed font-semibold">
+                <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Alamat Terpilih:</span>
+                📍 {mapAddress}
+              </div>
+            )}
+
+            <DialogFooter className="pt-2 border-t border-slate-100 gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowMapSelector(false)}
+                className="rounded-xl font-bold text-slate-500 hover:bg-slate-50 text-xs px-4"
+              >
+                Batal
+              </Button>
+              <Button
+                type="button"
+                disabled={!mapAddress}
+                onClick={handleConfirmMapLocation}
+                className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-10 cursor-pointer"
+              >
+                Konfirmasi Lokasi
+              </Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

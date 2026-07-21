@@ -39,7 +39,8 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
           if (
             pathname !== '/dashboard/payroll/activity-review' &&
             !pathname.startsWith('/dashboard/payroll/uraian') &&
-            !pathname.startsWith('/dashboard/payroll/driver-journeys')
+            !pathname.startsWith('/dashboard/payroll/driver-journeys') &&
+            !pathname.startsWith('/dashboard/payroll/journey-dashboard')
           ) {
             router.replace('/dashboard/payroll/activity-review');
           }
@@ -101,7 +102,8 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     profile.role === 'satker_head' &&
     pathname !== '/dashboard/payroll/activity-review' &&
     !pathname.startsWith('/dashboard/payroll/uraian') &&
-    !pathname.startsWith('/dashboard/payroll/driver-journeys')
+    !pathname.startsWith('/dashboard/payroll/driver-journeys') &&
+    !pathname.startsWith('/dashboard/payroll/journey-dashboard')
   ) {
     return null;
   }

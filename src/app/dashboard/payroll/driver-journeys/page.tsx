@@ -209,7 +209,7 @@ function DriverJourneysContent() {
   const lastCalculatedRef = React.useRef<{ start: string; end: string }>({ start: '', end: '' });
 
   // Dynamic preview calculations for meal allowance (Option 2: Flat Rate based on Duration)
-  const totalDurationPP = inputDuration || 0;
+  const totalDurationPP = inputDuration !== null ? inputDuration : (calcDuration ? calcDuration * 2 : 0);
   let dynamicMealAllowance = 0;
   if (selectedVehicle !== 'Ndalem') {
     if (totalDurationPP > 0 && totalDurationPP < 2) {
@@ -259,7 +259,7 @@ function DriverJourneysContent() {
             if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
               const matchWithPhoto = results.find((r: any) => r.photos && r.photos.length > 0);
               if (matchWithPhoto) {
-                setMapAddressImage(matchWithPhoto.photos[0].getUrl({ maxWidth: 600, maxHeight: 200 }));
+                setMapAddressImage(matchWithPhoto.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
                 return;
               }
             }
@@ -340,14 +340,14 @@ function DriverJourneysContent() {
 
           // Handle photos inside place object
           if (place.photos && place.photos[0]) {
-            setMapAddressImage(place.photos[0].getUrl({ maxWidth: 600, maxHeight: 200 }));
+            setMapAddressImage(place.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
           } else if (place.name || place.formatted_address) {
             // Try to resolve photo via textSearch
             const query = place.name || place.formatted_address;
             const service = new google.maps.places.PlacesService(mapRef.current);
             service.textSearch({ query }, (res: any, stat: any) => {
               if (stat === google.maps.places.PlacesServiceStatus.OK && res && res[0]?.photos?.[0]) {
-                setMapAddressImage(res[0].photos[0].getUrl({ maxWidth: 600, maxHeight: 200 }));
+                setMapAddressImage(res[0].photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
               } else {
                 setMapAddressImage(null);
               }
@@ -422,10 +422,11 @@ function DriverJourneysContent() {
       return;
     }
 
-    // Skip if we already calculated for these points
+    // Skip only if we already successfully calculated distance for these exact points
     if (
       lastCalculatedRef.current.start === startPoint &&
-      lastCalculatedRef.current.end === endPoint
+      lastCalculatedRef.current.end === endPoint &&
+      calcDistance !== null
     ) {
       return;
     }
@@ -497,26 +498,39 @@ function DriverJourneysContent() {
         targetStatus = assignedDriverId ? 'assigned' : 'unassigned';
       }
 
+      const durPP = totalDurationPP;
+      const compJarak = Math.ceil(calcDistance * 2 * 300);
+      const compWaktu = Math.ceil(durPP * 5000);
+      const estBaseWage = compJarak + compWaktu;
+      const estMaxWage = Math.ceil(estBaseWage * 1.25);
+
       await setDoc(doc(db, 'DriverJourneys', journeyId), {
         activityName: activityName.trim(),
         activityDate: activityDate,
+        journeyDate: activityDate,
         startPoint: startPoint.trim(),
         endPoint: endPoint.trim(),
         vehicleName: selectedVehicle,
         vehicleRate: rate,
         distanceKm: calcDistance,
+        totalDistanceKm: calcDistance * 2,
         durationHours: calcDuration || 0,
-        customDurationPP: inputDuration || 0,
+        customDurationPP: durPP,
         baseOperationalCost: baseCost,
         mealAllowance: mealAllowance,
         tollParkingFee: tollFeeVal,
         totalOperationalCost: totalCost,
+        estimatedComponentJarak: compJarak,
+        estimatedComponentWaktu: compWaktu,
+        estimatedBaseDriverWage: estBaseWage,
+        estimatedMaxDriverWage: estMaxWage,
         destinationImageUrl: mapAddressImage || null,
         assignedTo: assignedDriverId || null,
         assignedToName: assignedToName || null,
         status: targetStatus,
         ...(!editingJourneyId ? {
           createdAt: serverTimestamp(),
+          authorizedAt: serverTimestamp(),
           createdBy: profile?.uid || 'system',
           period: periodToken,
         } : {
@@ -538,6 +552,7 @@ function DriverJourneysContent() {
       setEditingJourneyId(null);
       setAssignedDriverId('');
       setTollFee('');
+      lastCalculatedRef.current = { start: '', end: '' };
       setShowAddForm(false);
     } catch (err: any) {
       console.error(err);
@@ -844,6 +859,7 @@ function DriverJourneysContent() {
           setEditingJourneyId(null);
           setAssignedDriverId('');
           setTollFee('');
+          lastCalculatedRef.current = { start: '', end: '' };
         }
         setShowAddForm(open);
       }}>
@@ -897,7 +913,20 @@ function DriverJourneysContent() {
               </Label>
               <Select value={assignedDriverId || 'unassigned'} onValueChange={(v: string | null) => setAssignedDriverId(!v || v === 'unassigned' ? '' : v)}>
                 <SelectTrigger id="driverAssignment" className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
-                  <SelectValue placeholder="Pilih Sopir (Atau biarkan terbuka untuk semua)" />
+                  <SelectValue>
+                    {(() => {
+                      if (!assignedDriverId || assignedDriverId === 'unassigned') {
+                        return 'Buka Pool Umum (Belum Ditugaskan)';
+                      }
+                      const selectedDriver = drivers.find(d => d.id === assignedDriverId);
+                      if (!selectedDriver) return assignedDriverId;
+                      const { activeCount, assignedCount } = getDriverStatus(assignedDriverId);
+                      let statusBadge = 'Bebas';
+                      if (activeCount > 0) statusBadge = `${activeCount} Aktif Jalan`;
+                      else if (assignedCount > 0) statusBadge = `${assignedCount} Terjadwal`;
+                      return `${selectedDriver.name || 'Sopir'} • [${statusBadge}]`;
+                    })()}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="unassigned">-- Buka Pool Umum (Belum Ditugaskan) --</SelectItem>
@@ -1090,9 +1119,22 @@ function DriverJourneysContent() {
 
             {/* Calculation Errors */}
             {calcError && (
-              <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-semibold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>{calcError}</span>
+              <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-semibold flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{calcError}</span>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    lastCalculatedRef.current = { start: '', end: '' };
+                    setCalcDistance(null);
+                  }}
+                  className="text-[10px] font-bold bg-rose-600 hover:bg-rose-700 text-white h-7 px-2.5 rounded-lg shrink-0"
+                >
+                  Coba Lagi
+                </Button>
               </div>
             )}
 
@@ -1263,12 +1305,17 @@ function DriverJourneysContent() {
               <style>{`
                 .pac-container {
                   z-index: 99999 !important;
-                  border-radius: 18px !important;
+                  border-radius: 16px !important;
                   border: 1px solid #e2e8f0 !important;
-                  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08) !important;
+                  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+                  -webkit-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+                  background-color: #ffffff !important;
                   font-family: inherit !important;
-                  padding: 8px 0 !important;
+                  padding: 6px 0 !important;
                   margin-top: 6px !important;
+                  width: min(452px, calc(100vw - 3rem)) !important;
+                  left: 50% !important;
+                  transform: translateX(-50%) !important;
                 }
                 .pac-item {
                   padding: 10px 14px !important;
@@ -1370,6 +1417,7 @@ function DriverJourneysContent() {
                   } else {
                     setEndPoint(mapAddress);
                   }
+                  lastCalculatedRef.current = { start: '', end: '' };
                   setCalcDistance(null);
                   setShowMapSelector(false);
                 }}

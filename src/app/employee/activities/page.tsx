@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Card,
   CardContent,
@@ -49,12 +50,15 @@ import {
   Search,
   Eye,
   Target,
+  Save,
+  Upload,
 } from 'lucide-react';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
   collection,
   getDocs,
+  getDoc,
   addDoc,
   setDoc,
   doc,
@@ -124,7 +128,7 @@ interface ActivityReport {
   reviewedBy?: string;
   // SOPIR specific fields
   tripType?: 'Dalam Kota' | 'Luar Kota';
-  vehicleType?: 'Mobil Kecil' | 'Bus/Truk';
+  vehicleType?: 'Mobil Kecil' | 'Bus/Truk' | string;
   isOvernight?: boolean;
   fuelFee?: number;
   tollParkingFee?: number;
@@ -134,8 +138,35 @@ interface ActivityReport {
   upahBersih?: number;
   extraMealAllowance?: number;
   extraFuelCost?: number;
+  extraTollCost?: number;
+  extraDistanceKm?: number;
+  extraOperationalCost?: number;
+  actualMealAllowance?: number;
+  positiveReimburseDelta?: number;
   fuelReceiptUrl?: string;
   tollReceiptUrl?: string;
+  journeyId?: string;
+  extraActivities?: any[];
+  vehicleRate?: number;
+  baseOperationalCost?: number;
+  mealAllowance?: number;
+  preAuthorizedMeal?: number;
+  preAuthorizedToll?: number;
+  totalOperationalCost?: number;
+  totalPreAuthorizedAllowance?: number;
+  totalActualSpent?: number;
+  reimburseDelta?: number;
+  unspentCash?: number;
+  remainingUnspentCash?: number;
+  baseDriverWage?: number;
+  componentJarak?: number;
+  componentWaktu?: number;
+  premiumOvernight?: number;
+  authorizedAt?: any;
+  journeyDate?: string;
+  claimedAt?: any;
+  completedAt?: any;
+  customDurationPP?: number;
   // SATPAM specific fields
   shiftName?: 'Pagi' | 'Sore' | 'Malam' | string;
   shiftType?: 'Harian' | 'Jumat & Libur' | 'Lembur Sendiri' | 'Lembur Cover' | 'Off-Duty' | string;
@@ -198,7 +229,7 @@ const DestinationImageBanner = ({ destination, cachedUrl }: { destination: strin
       }
 
       const searchQuery = getPlacesSearchQuery(destination);
-      const cacheKey = `place_img_${encodeURIComponent(searchQuery)}`;
+      const cacheKey = `place_img_hd_${encodeURIComponent(searchQuery)}`;
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
         setImgUrl(cached);
@@ -218,7 +249,7 @@ const DestinationImageBanner = ({ destination, cachedUrl }: { destination: strin
             // Find the first result candidate that has photos
             const matchWithPhoto = results.find((r: any) => r.photos && r.photos.length > 0);
             if (matchWithPhoto) {
-              const url = matchWithPhoto.photos[0].getUrl({ maxWidth: 600, maxHeight: 200 });
+              const url = matchWithPhoto.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 });
               if (url) {
                 localStorage.setItem(cacheKey, url);
                 setImgUrl(url);
@@ -234,7 +265,7 @@ const DestinationImageBanner = ({ destination, cachedUrl }: { destination: strin
             fields: ['photos']
           }, (results2: any, status2: any) => {
             if (status2 === g.maps.places.PlacesServiceStatus.OK && results2 && results2[0]?.photos?.[0]) {
-              const url = results2[0].photos[0].getUrl({ maxWidth: 600, maxHeight: 200 });
+              const url = results2[0].photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 });
               if (url) {
                 localStorage.setItem(cacheKey, url);
                 setImgUrl(url);
@@ -512,8 +543,10 @@ const POSTS_CONFIG = [
   { id: 'Pos 9', name: 'Pos Hurun-inn' },
 ];
 
-export default function EmployeeActivitiesPage() {
+function ActivitiesContent() {
   const { profile, logout, user } = useAuth();
+  const searchParams = useSearchParams();
+  const editReportIdParam = searchParams.get('editReportId');
   const fuelFileInputRef = React.useRef<HTMLInputElement>(null);
   const tollFileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -573,12 +606,14 @@ export default function EmployeeActivitiesPage() {
 
   // ── SOPIR specific form states ──
   const [formTripType, setFormTripType] = useState<'Dalam Kota' | 'Luar Kota'>('Dalam Kota');
-  const [formVehicleType, setFormVehicleType] = useState<'Mobil Kecil' | 'Bus/Truk'>('Mobil Kecil');
+  const [formVehicleType, setFormVehicleType] = useState<string>('Mobil Kecil');
   const [formIsOvernight, setFormIsOvernight] = useState<boolean>(false);
   const [formFuelFee, setFormFuelFee] = useState<string>('');
   const [formTollParkingFee, setFormTollParkingFee] = useState<string>('');
-  const [formFuelReceiptUrl, setFormFuelReceiptUrl] = useState<string>('');
-  const [formTollReceiptUrl, setFormTollReceiptUrl] = useState<string>('');
+  const [formFuelReceiptUrls, setFormFuelReceiptUrls] = useState<string[]>([]);
+  const [formTollReceiptUrls, setFormTollReceiptUrls] = useState<string[]>([]);
+  const formFuelReceiptUrl = formFuelReceiptUrls.join(',');
+  const formTollReceiptUrl = formTollReceiptUrls.join(',');
   const [uploadingFuelReceipt, setUploadingFuelReceipt] = useState<boolean>(false);
   const [uploadingTollReceipt, setUploadingTollReceipt] = useState<boolean>(false);
   const [formPoints, setFormPoints] = useState<string[]>(['Pool Unipdu', '']);
@@ -610,6 +645,7 @@ export default function EmployeeActivitiesPage() {
   const [activeReportingJourney, setActiveReportingJourney] = useState<any | null>(null);
   const [isClaiming, setIsClaiming] = useState<boolean>(false);
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
+  const [isSavingDraft, setIsSavingDraft] = useState<boolean>(false);
 
   // Reset states and initialize original distance/duration when reporting journey changes
   useEffect(() => {
@@ -619,8 +655,10 @@ export default function EmployeeActivitiesPage() {
       setFormTimeEnd(activeReportingJourney.draftTimeEnd || '17:00');
       setFormFuelFee(activeReportingJourney.draftFuelFee || '');
       setFormTollParkingFee(activeReportingJourney.draftTollParkingFee || '');
-      setFormFuelReceiptUrl(activeReportingJourney.draftFuelReceiptUrl || '');
-      setFormTollReceiptUrl(activeReportingJourney.draftTollReceiptUrl || '');
+      const rawFuel = activeReportingJourney.draftFuelReceiptUrl || activeReportingJourney.fuelReceiptUrl || '';
+      setFormFuelReceiptUrls(rawFuel ? rawFuel.split(',').filter(Boolean) : []);
+      const rawToll = activeReportingJourney.draftTollReceiptUrl || activeReportingJourney.tollReceiptUrl || '';
+      setFormTollReceiptUrls(rawToll ? rawToll.split(',').filter(Boolean) : []);
       setFormIsOvernight(activeReportingJourney.draftIsOvernight || false);
       setCalculatedDistanceKm(
         activeReportingJourney.draftCalculatedDistanceKm !== undefined
@@ -635,6 +673,28 @@ export default function EmployeeActivitiesPage() {
       setExtraRouteError('');
     }
   }, [activeReportingJourney]);
+
+  // Auto-open edit modal if editReportId param is passed from DriverHistoryPage
+  useEffect(() => {
+    if (!editReportIdParam || !profile?.linkedEmployeeId) return;
+
+    const fetchAndEdit = async () => {
+      try {
+        const docRef = doc(db, 'ActivityReports', editReportIdParam);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const act = { id: docSnap.id, ...docSnap.data() } as ActivityReport;
+          if (act.employeeId === profile.linkedEmployeeId && (act.status === 'pending' || act.status === 'declined')) {
+            openEditForm(act);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching report to edit from URL param:', err);
+      }
+    };
+
+    fetchAndEdit();
+  }, [editReportIdParam, profile?.linkedEmployeeId]);
 
   const initMap = (element: HTMLDivElement) => {
     loadGoogleMapsScript(() => {
@@ -672,7 +732,7 @@ export default function EmployeeActivitiesPage() {
             if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
               const matchWithPhoto = results.find((r: any) => r.photos && r.photos.length > 0);
               if (matchWithPhoto) {
-                setMapAddressImage(matchWithPhoto.photos[0].getUrl({ maxWidth: 600, maxHeight: 200 }));
+                setMapAddressImage(matchWithPhoto.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
                 return;
               }
             }
@@ -753,14 +813,14 @@ export default function EmployeeActivitiesPage() {
 
           // Handle photos inside place object
           if (place.photos && place.photos[0]) {
-            setMapAddressImage(place.photos[0].getUrl({ maxWidth: 600, maxHeight: 200 }));
+            setMapAddressImage(place.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
           } else if (place.name || place.formatted_address) {
             // Try to resolve photo via textSearch
             const query = place.name || place.formatted_address;
             const service = new google.maps.places.PlacesService(mapRef.current);
             service.textSearch({ query }, (res: any, stat: any) => {
               if (stat === google.maps.places.PlacesServiceStatus.OK && res && res[0]?.photos?.[0]) {
-                setMapAddressImage(res[0].photos[0].getUrl({ maxWidth: 600, maxHeight: 200 }));
+                setMapAddressImage(res[0].photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
               } else {
                 setMapAddressImage(null);
               }
@@ -937,18 +997,21 @@ export default function EmployeeActivitiesPage() {
 
   const handleSaveDraft = async (journeyId: string) => {
     try {
+      const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
+      const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
       const journeyRef = doc(db, 'DriverJourneys', journeyId);
       await updateDoc(journeyRef, {
         draftTimeStart: formTimeStart,
         draftTimeEnd: formTimeEnd,
         draftIsOvernight: formIsOvernight,
-        draftFuelFee: formFuelFee,
-        draftTollParkingFee: formTollParkingFee,
-        draftFuelReceiptUrl: formFuelReceiptUrl || '',
-        draftTollReceiptUrl: formTollReceiptUrl || '',
+        draftFuelFee: fuelVal,
+        draftTollParkingFee: tollVal,
+        draftFuelReceiptUrl: formFuelReceiptUrls.join(','),
+        draftTollReceiptUrl: formTollReceiptUrls.join(','),
         draftExtraActivities: extraActivities,
         draftCalculatedDistanceKm: calculatedDistanceKm,
-        draftCalculatedDurationHours: calculatedDurationHours
+        draftCalculatedDurationHours: calculatedDurationHours,
+        updatedAt: serverTimestamp()
       });
     } catch (err) {
       console.error('Error saving draft:', err);
@@ -1189,8 +1252,8 @@ export default function EmployeeActivitiesPage() {
     setFormIsOvernight(false);
     setFormFuelFee('');
     setFormTollParkingFee('');
-    setFormFuelReceiptUrl('');
-    setFormTollReceiptUrl('');
+    setFormFuelReceiptUrls([]);
+    setFormTollReceiptUrls([]);
     setUploadingFuelReceipt(false);
     setUploadingTollReceipt(false);
     setFormPoints(['Pool Unipdu', '']);
@@ -1202,7 +1265,71 @@ export default function EmployeeActivitiesPage() {
     setShowForm(false);
   };
 
+  useEffect(() => {
+    if (activeReportingJourney) {
+      const rawFuel = activeReportingJourney.draftFuelReceiptUrl || activeReportingJourney.fuelReceiptUrl || '';
+      setFormFuelReceiptUrls(rawFuel ? rawFuel.split(',').filter(Boolean) : []);
+      const rawToll = activeReportingJourney.draftTollReceiptUrl || activeReportingJourney.tollReceiptUrl || '';
+      setFormTollReceiptUrls(rawToll ? rawToll.split(',').filter(Boolean) : []);
+    } else {
+      setFormFuelReceiptUrls([]);
+      setFormTollReceiptUrls([]);
+    }
+  }, [activeReportingJourney]);
+
   const openEditForm = (activity: ActivityReport) => {
+    if (activity.jobCategory === 'SOPIR' && activity.journeyId) {
+      const extraLocs = (activity.points || []).slice(2);
+      const extraActivitiesFromPoints = activity.extraActivities || extraLocs.map((dest: string) => ({
+        type: 'tambah_lokasi',
+        destination: dest
+      }));
+
+      const vRate = activity.vehicleRate || 741;
+      const isNdalem = activity.vehicleType === 'Ndalem';
+      const calcBaseCost = isNdalem ? 0 : Math.ceil((activity.distanceKm || 0) * vRate);
+      const authDurPP = activity.customDurationPP || (activity.durationHours ? activity.durationHours * 2 : 0);
+      const calcMeal = isNdalem ? 0 : (activity.mealAllowance !== undefined && activity.mealAllowance !== null ? activity.mealAllowance : getMealAllowanceForDuration(authDurPP));
+      const calcToll = activity.preAuthorizedToll !== undefined && activity.preAuthorizedToll !== null ? activity.preAuthorizedToll : 0;
+      const calcTotalOps = activity.totalOperationalCost || (calcBaseCost + calcMeal + calcToll);
+      const baseOpsCost = activity.baseOperationalCost || calcBaseCost;
+
+      const reportingJourney = {
+        id: activity.journeyId,
+        activityName: (activity.activityName || 'Perjalanan Dinas').replace(/\s*\(.*\)\s*$/, ''),
+        vehicleName: activity.vehicleType || 'Suzuki XL7',
+        vehicleRate: vRate,
+        startPoint: activity.points?.[0] || 'UNIPDU Jombang, Jawa Timur',
+        endPoint: activity.points?.[1] || '',
+        distanceKm: (activity.distanceKm || 0) / 2,
+        durationHours: (activity.durationHours || 0) / 2,
+        customDurationPP: authDurPP,
+        baseOperationalCost: baseOpsCost,
+        mealAllowance: calcMeal,
+        tollParkingFee: calcToll,
+        totalOperationalCost: calcTotalOps,
+        authorizedAt: activity.authorizedAt || null,
+        journeyDate: activity.journeyDate || activity.activityDate || null,
+        claimedAt: activity.claimedAt || null,
+        completedAt: activity.completedAt || null,
+        // Prefill draft values from existing activity report
+        draftTimeStart: activity.timeStart || '08:00',
+        draftTimeEnd: activity.timeEnd || '17:00',
+        draftIsOvernight: !!activity.isOvernight,
+        draftFuelFee: activity.fuelFee ? String(activity.fuelFee) : '',
+        draftTollParkingFee: activity.tollParkingFee ? String(activity.tollParkingFee) : '',
+        draftFuelReceiptUrl: activity.fuelReceiptUrl || '',
+        draftTollReceiptUrl: activity.tollReceiptUrl || '',
+        draftExtraActivities: extraActivitiesFromPoints,
+        draftCalculatedDistanceKm: activity.distanceKm || 0,
+        draftCalculatedDurationHours: activity.durationHours || 0,
+        editingActivityDocId: activity.id,
+      };
+
+      setActiveReportingJourney(reportingJourney);
+      return;
+    }
+
     const cleanName = activity.activityName.replace(/\s*\(.*\)\s*$/, '');
     setEditingActivity(activity);
     const type = isKebersihan
@@ -1356,47 +1483,69 @@ export default function EmployeeActivitiesPage() {
 
   const compressImage = (file: File): Promise<File> => {
     if (!file.type.startsWith('image/')) return Promise.resolve(file);
+    const ONE_MB = 1024 * 1024; // 1 MB limit
+
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          const MAX_WIDTH = 1600;
-          const MAX_HEIGHT = 1600;
-          let width = img.width;
-          let height = img.height;
+          let maxDimension = 1920;
+          let quality = 0.85;
 
-          if (width > height) {
-            if (width > MAX_WIDTH) {
-              height = Math.round((height * MAX_WIDTH) / width);
-              width = MAX_WIDTH;
+          const getBlob = (curWidth: number, curHeight: number, curQuality: number): Promise<Blob | null> => {
+            const canvas = document.createElement('canvas');
+            canvas.width = curWidth;
+            canvas.height = curHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return Promise.resolve(null);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, curWidth, curHeight);
+            ctx.drawImage(img, 0, 0, curWidth, curHeight);
+            return new Promise((res) => canvas.toBlob(res, 'image/jpeg', curQuality));
+          };
+
+          const attemptCompression = async () => {
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > maxDimension) {
+                height = Math.round((height * maxDimension) / width);
+                width = maxDimension;
+              }
+            } else {
+              if (height > maxDimension) {
+                width = Math.round((width * maxDimension) / height);
+                height = maxDimension;
+              }
             }
-          } else {
-            if (height > MAX_HEIGHT) {
-              width = Math.round((width * MAX_HEIGHT) / height);
-              height = MAX_HEIGHT;
+
+            let blob = await getBlob(width, height, quality);
+
+            // Iteratively scale down quality/dimensions until size <= 1MB
+            let attempts = 0;
+            while (blob && blob.size > ONE_MB && attempts < 6) {
+              attempts++;
+              quality -= 0.12;
+              if (quality < 0.4) {
+                quality = 0.6;
+                width = Math.round(width * 0.8);
+                height = Math.round(height * 0.8);
+              }
+              blob = await getBlob(width, height, Math.max(0.35, quality));
             }
-          }
 
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return resolve(file);
+            if (!blob) return resolve(file);
 
-          ctx.drawImage(img, 0, 0, width, height);
-          canvas.toBlob(
-            (blob) => {
-              if (!blob) return resolve(file);
-              const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
-                type: 'image/jpeg',
-                lastModified: Date.now(),
-              });
-              resolve(compressedFile);
-            },
-            'image/jpeg',
-            0.82
-          );
+            const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            resolve(compressedFile);
+          };
+
+          attemptCompression();
         };
         img.onerror = () => resolve(file);
         img.src = e.target?.result as string;
@@ -1422,9 +1571,9 @@ export default function EmployeeActivitiesPage() {
       await uploadBytes(fileRef, processedFile);
       const downloadUrl = await getDownloadURL(fileRef);
       if (isBbm) {
-        setFormFuelReceiptUrl(downloadUrl);
+        setFormFuelReceiptUrls(prev => [...prev, downloadUrl]);
       } else {
-        setFormTollReceiptUrl(downloadUrl);
+        setFormTollReceiptUrls(prev => [...prev, downloadUrl]);
       }
       setMessage({ type: 'success', text: `Bukti ${isBbm ? 'BBM' : 'Tol & Parkir'} berhasil diunggah.` });
     } catch (err: any) {
@@ -1492,14 +1641,14 @@ export default function EmployeeActivitiesPage() {
       const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
       const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
 
-      if (fuelVal > 0 && !formFuelReceiptUrl) {
+      if (fuelVal > 0 && formFuelReceiptUrls.length === 0) {
         setMessage({ type: 'error', text: 'Mohon unggah bukti reimburse BBM terlebih dahulu.' });
         isSubmittingRef.current = false;
         setSubmitting(false);
         skipSaveDraftRef.current = false;
         return;
       }
-      if (tollVal > 0 && !formTollReceiptUrl) {
+      if (tollVal > 0 && formTollReceiptUrls.length === 0) {
         setMessage({ type: 'error', text: 'Mohon unggah bukti tol & parkir terlebih dahulu.' });
         isSubmittingRef.current = false;
         setSubmitting(false);
@@ -1507,23 +1656,51 @@ export default function EmployeeActivitiesPage() {
         return;
       }
 
-      // Calculate extra values
+      // Calculate extra & allowance deduction values
       const isNdalem = activeReportingJourney.vehicleName === 'Ndalem';
       const originalTotalDist = (activeReportingJourney.distanceKm || 0) * 2;
       const extraDistanceKm = Math.max(0, calculatedDistanceKm - originalTotalDist);
       const extraOperationalCost = Math.ceil(extraDistanceKm * (activeReportingJourney.vehicleRate || 0));
-      const premiumWeekend = 0;
-      const premiumOvernight = formIsOvernight ? 50000 : 0;
-      const calculatedWage = calculatedDistanceKm * 300 + calculatedDurationHours * 5000 + premiumWeekend + premiumOvernight;
+
+      const preAuthorizedDurationPP = activeReportingJourney.customDurationPP || (activeReportingJourney.durationHours ? activeReportingJourney.durationHours * 2 : 0);
+      const preAuthorizedMeal = isNdalem
+        ? 0
+        : (activeReportingJourney.mealAllowance !== undefined && activeReportingJourney.mealAllowance !== null && activeReportingJourney.mealAllowance > 0
+            ? activeReportingJourney.mealAllowance
+            : getMealAllowanceForDuration(preAuthorizedDurationPP));
 
       const baseCostVal = activeReportingJourney.baseOperationalCost ||
-        ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0) - (activeReportingJourney.tollParkingFee || 0));
-      const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
+        ((activeReportingJourney.totalOperationalCost || 0) - preAuthorizedMeal - (activeReportingJourney.tollParkingFee || 0));
+      const preAuthorizedToll = activeReportingJourney.tollParkingFee || 0;
+      const totalPreAuthorizedAllowance = baseCostVal + preAuthorizedToll;
 
-      const originalMealAllowance = activeReportingJourney.mealAllowance || 0;
-      const elapsedHours = calculateElapsedHours(formTimeStart, formTimeEnd);
+      const totalActualSpent = fuelVal + tollVal;
+
+      const elapsedHours = (formTimeStart && formTimeEnd) ? calculateElapsedHours(formTimeStart, formTimeEnd) : 0;
       const actualMealAllowance = isNdalem ? 0 : getMealAllowanceForDuration(elapsedHours);
-      const extraMealAllowance = isNdalem ? 0 : Math.max(0, actualMealAllowance - originalMealAllowance);
+      const extraMealAllowance = isNdalem ? 0 : Math.max(0, actualMealAllowance - preAuthorizedMeal);
+
+      const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
+      const extraTollCost = Math.max(0, tollVal - preAuthorizedToll);
+
+      // Positive Reimburse Delta before unspent deduction
+      const positiveReimburseDelta = extraMealAllowance + extraFuelCost + extraTollCost + extraOperationalCost;
+
+      // Operational Allowance Savings / Unspent Cash
+      const unspentCash = Math.max(0, totalPreAuthorizedAllowance - totalActualSpent);
+
+      // Deductions: Step 1 (Subtract from Reimburse Delta) & Step 2 (Subtract from Upah Bersih)
+      const finalReimburseDelta = Math.max(0, positiveReimburseDelta - unspentCash);
+      const remainingUnspentCash = Math.max(0, unspentCash - positiveReimburseDelta);
+
+      // Driver Base Wage & Final Net Wage
+      const premiumWeekend = 0;
+      const premiumOvernight = formIsOvernight ? 50000 : 0;
+      const baseDriverWage = calculatedDistanceKm * 300 + calculatedDurationHours * 5000 + premiumWeekend + premiumOvernight;
+      const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
+
+      // Final Total Fee
+      const finalFee = Math.max(0, (activeReportingJourney.totalOperationalCost || 0) + positiveReimburseDelta - unspentCash);
 
       // 1. Update the Journey document
       const journeyRef = doc(db, 'DriverJourneys', activeReportingJourney.id);
@@ -1531,23 +1708,43 @@ export default function EmployeeActivitiesPage() {
         status: 'completed',
         fuelFee: fuelVal,
         tollParkingFee: tollVal,
-        fuelReceiptUrl: formFuelReceiptUrl || '',
-        tollReceiptUrl: formTollReceiptUrl || '',
+        fuelReceiptUrl: formFuelReceiptUrls.join(','),
+        tollReceiptUrl: formTollReceiptUrls.join(','),
         isOvernight: formIsOvernight,
         activityDate: formDate,
         timeStart: formTimeStart,
         timeEnd: formTimeEnd,
         completedAt: serverTimestamp(),
+        authorizedAt: activeReportingJourney.authorizedAt || activeReportingJourney.createdAt || null,
+        journeyDate: activeReportingJourney.journeyDate || activeReportingJourney.activityDate || null,
+        claimedAt: activeReportingJourney.claimedAt || null,
         // New fields
         extraActivities,
         extraDistanceKm,
         extraOperationalCost,
-        newTotalDistanceKm: calculatedDistanceKm,
-        newTotalDurationHours: calculatedDurationHours,
-        upahBersih: calculatedWage,
+        extraFuelCost,
+        extraTollCost,
         extraMealAllowance,
         actualMealAllowance,
-        extraFuelCost,
+        positiveReimburseDelta,
+        newTotalDistanceKm: calculatedDistanceKm,
+        newTotalDurationHours: calculatedDurationHours,
+        baseDriverWage,
+        upahBersih: finalUpahBersih,
+        reimburseDelta: finalReimburseDelta,
+        unspentCash,
+        remainingUnspentCash,
+        baseOperationalCost: baseCostVal,
+        preAuthorizedMeal,
+        preAuthorizedToll,
+        customDurationPP: preAuthorizedDurationPP,
+        totalPreAuthorizedAllowance,
+        totalActualSpent,
+        totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
+        vehicleRate: activeReportingJourney.vehicleRate || 741,
+        componentJarak: calculatedDistanceKm * 300,
+        componentWaktu: calculatedDurationHours * 5000,
+        premiumOvernight: formIsOvernight ? 50000 : 0,
         // Clear draft fields
         draftTimeStart: deleteField(),
         draftTimeEnd: deleteField(),
@@ -1561,17 +1758,11 @@ export default function EmployeeActivitiesPage() {
         draftCalculatedDurationHours: deleteField()
       });
 
-      // 2. Calculate Final Pay (Baseline Total + Tolls + Meal Allowance Delta + Fuel Overspending Delta)
-      const finalFee = (activeReportingJourney.totalOperationalCost || 0) +
-        (tollVal - (activeReportingJourney.tollParkingFee || 0)) +
-        extraMealAllowance +
-        extraFuelCost;
-
-      // 3. Create the ActivityReport document
+      // 3. Create or Update the ActivityReport document
       const employeeIdSanitized = profile.linkedEmployeeId.replace(/[^a-zA-Z0-9_-]/g, '');
       const dateSanitized = formDate.replace(/-/g, '');
       const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-      const customDocId = `ACT-${employeeIdSanitized}-${dateSanitized}-${randomSuffix}`;
+      const customDocId = activeReportingJourney.editingActivityDocId || `ACT-${employeeIdSanitized}-${dateSanitized}-${randomSuffix}`;
 
       const extraLocs = extraActivities.filter(a => a.type === 'tambah_lokasi' && a.destination);
       const extraLocsText = extraLocs.map(l => l.destination.split(',')[0]).join(' → ');
@@ -1592,30 +1783,51 @@ export default function EmployeeActivitiesPage() {
         timeStart: formTimeStart,
         timeEnd: formTimeEnd,
         status: 'pending',
-        fee: finalFee,
+        fee: finalUpahBersih,
         submittedAt: serverTimestamp(),
+        completedAt: serverTimestamp(),
+        authorizedAt: activeReportingJourney.authorizedAt || activeReportingJourney.createdAt || null,
+        journeyDate: activeReportingJourney.journeyDate || activeReportingJourney.activityDate || null,
+        claimedAt: activeReportingJourney.claimedAt || null,
         tripType: calculatedDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
         vehicleType: activeReportingJourney.vehicleName,
         isOvernight: formIsOvernight,
         fuelFee: fuelVal,
         tollParkingFee: tollVal,
-        fuelReceiptUrl: formFuelReceiptUrl || '',
-        tollReceiptUrl: formTollReceiptUrl || '',
+        fuelReceiptUrl: formFuelReceiptUrls.join(','),
+        tollReceiptUrl: formTollReceiptUrls.join(','),
         points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
         distanceKm: calculatedDistanceKm,
         durationHours: calculatedDurationHours,
         journeyId: activeReportingJourney.id,
-        // Save extra fields on ActivityReport
+        // Save extra & deduction fields on ActivityReport
         extraActivities,
         extraDistanceKm,
         extraOperationalCost,
-        upahBersih: calculatedWage,
+        extraFuelCost,
+        extraTollCost,
         extraMealAllowance,
         actualMealAllowance,
-        extraFuelCost,
-      });
+        positiveReimburseDelta,
+        baseDriverWage,
+        upahBersih: finalUpahBersih,
+        reimburseDelta: finalReimburseDelta,
+        unspentCash,
+        remainingUnspentCash,
+        baseOperationalCost: baseCostVal,
+        preAuthorizedMeal,
+        preAuthorizedToll,
+        customDurationPP: preAuthorizedDurationPP,
+        totalPreAuthorizedAllowance,
+        totalActualSpent,
+        totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
+        vehicleRate: activeReportingJourney.vehicleRate || 741,
+        componentJarak: calculatedDistanceKm * 300,
+        componentWaktu: calculatedDurationHours * 5000,
+        premiumOvernight: formIsOvernight ? 50000 : 0,
+      }, { merge: true });
 
-      setMessage({ type: 'success', text: 'Perjalanan dinas berhasil dilaporkan.' });
+      setMessage({ type: 'success', text: activeReportingJourney.editingActivityDocId ? 'Laporan perjalanan berhasil diperbarui.' : 'Perjalanan dinas berhasil dilaporkan.' });
 
       setActiveReportingJourney(null);
       resetForm();
@@ -2067,6 +2279,8 @@ export default function EmployeeActivitiesPage() {
       isOvernight: formIsOvernight,
       fuelFee: formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0,
       tollParkingFee: formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0,
+      fuelReceiptUrl: formFuelReceiptUrls.join(','),
+      tollReceiptUrl: formTollReceiptUrls.join(','),
       points: formPoints.map(p => p.trim()).filter(Boolean),
       distanceKm: calculatedDistanceKm,
       durationHours: calculatedDurationHours,
@@ -2257,10 +2471,9 @@ export default function EmployeeActivitiesPage() {
           <div className="space-y-2.5">
             {filteredActivities.map((activity) => {
               const sc = getStatusConfig(activity.status);
-              const reimburseDelta = (activity.tollParkingFee || 0) +
-                (activity.extraMealAllowance || 0) +
-                (activity.extraFuelCost || 0) +
-                (activity.isOvernight ? 50000 : 0);
+              const reimburseDelta = activity.reimburseDelta !== undefined
+                ? activity.reimburseDelta
+                : Math.max(0, (activity.tollParkingFee || 0) + (activity.extraMealAllowance || 0) + (activity.extraFuelCost || 0));
 
               return (
                 <Card key={activity.id} className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden hover:border-slate-300 transition-all animate-in fade-in duration-150">
@@ -2308,26 +2521,47 @@ export default function EmployeeActivitiesPage() {
                         </div>
                       </div>
 
-                      <div className="flex gap-1.5">
+                      <div className="flex flex-col gap-2 items-end">
                         {activity.fuelReceiptUrl && (
-                          <a
-                            href={activity.fuelReceiptUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md transition-colors"
-                          >
-                            📄 Bukti BBM
-                          </a>
+                          <div className="flex flex-wrap gap-1 justify-end">
+                            {activity.fuelReceiptUrl.split(',').filter(Boolean).map((url, idx, arr) => (
+                              <a
+                                key={idx}
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[9px] font-bold text-emerald-600 hover:text-emerald-800 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md transition-colors"
+                              >
+                                📄 Bukti BBM {arr.length > 1 ? `#${idx + 1}` : ''}
+                              </a>
+                            ))}
+                          </div>
                         )}
                         {activity.tollReceiptUrl && (
-                          <a
-                            href={activity.tollReceiptUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md transition-colors"
+                          <div className="flex flex-wrap gap-1 justify-end">
+                            {activity.tollReceiptUrl.split(',').filter(Boolean).map((url, idx, arr) => (
+                              <a
+                                key={idx}
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md transition-colors"
+                              >
+                                📄 Bukti Tol {arr.length > 1 ? `#${idx + 1}` : ''}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                        {(activity.status === 'pending' || activity.status === 'declined') && (
+                          <Button
+                            onClick={() => openEditForm(activity)}
+                            variant="outline"
+                            size="sm"
+                            className="rounded-lg border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-7 px-2.5 gap-1 cursor-pointer"
                           >
-                            📄 Bukti Tol
-                          </a>
+                            <Pencil className="w-3 h-3 text-indigo-600" />
+                            <span>Edit</span>
+                          </Button>
                         )}
                       </div>
                     </div>
@@ -2345,7 +2579,7 @@ export default function EmployeeActivitiesPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800">
       {/* ── Notifications ────────────────────────────────────────────── */}
       {message && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-xs sm:text-sm font-semibold shadow-xl border max-w-[90%] w-[420px] animate-in fade-in slide-in-from-top-4 duration-300 ${message.type === 'success'
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[10000] flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-xs sm:text-sm font-semibold shadow-xl border max-w-[90%] w-[420px] animate-in fade-in slide-in-from-top-4 duration-300 ${message.type === 'success'
           ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
           : 'bg-rose-50 text-rose-800 border-rose-200'
           }`}>
@@ -2901,74 +3135,75 @@ export default function EmployeeActivitiesPage() {
                 <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider pl-1">
                   Perjalanan Aktif Anda
                 </h3>
-                {myClaimedJourneys.map((j) => (
-                  <Card key={j.id} className="bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-2xl shadow-lg border-none overflow-hidden relative">
-                    <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-white/5 -translate-y-6 translate-x-6 blur-md pointer-events-none" />
-                    <CardContent className="p-4 sm:p-5 space-y-3.5 relative z-10">
-                      <div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-bold tracking-widest text-indigo-200 uppercase bg-indigo-500/50 px-2 py-0.5 rounded-md">
-                            Dalam Perjalanan
-                          </span>
-                          <span className="text-[10px] font-bold text-indigo-200">
-                            {j.vehicleName} ({fmtRp(j.vehicleRate)}/km)
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-bold mt-1 text-white leading-snug">
-                          {j.activityName}
-                        </h4>
-                      </div>
+                {myClaimedJourneys.map((j) => {
+                  const baseWage = (j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000);
+                  const maxWage = baseWage * 1.25;
 
-                      <div className="p-2.5 rounded-xl bg-white/10 text-white text-xs font-medium space-y-1">
-                        <div className="flex items-center gap-1.5 text-indigo-100">
-                          <MapPin className="w-4 h-4 text-indigo-200 shrink-0" />
-                          <span className="font-semibold text-white/95">Tujuan utama:</span>
-                          <span className="truncate flex-1 font-extrabold text-white" title={j.endPoint}>{j.endPoint}</span>
+                  return (
+                    <Card key={j.id} className="bg-white rounded-2xl shadow-lg border-2 border-indigo-200 overflow-hidden relative transition-all">
+                      <CardContent className="p-4 sm:p-5 space-y-3.5 relative z-10">
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-black tracking-wider text-emerald-700 uppercase bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                              Dalam Perjalanan
+                            </span>
+                            <span className="text-xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg">
+                              {j.vehicleName} ({fmtRp(j.vehicleRate)}/km)
+                            </span>
+                          </div>
+                          <h4 className="text-base sm:text-lg font-extrabold mt-2.5 text-slate-900 leading-snug">
+                            {j.activityName}
+                          </h4>
                         </div>
-                        <div className="flex justify-between pt-1 border-t border-white/10 text-[10px] text-indigo-100">
-                          <span>Estimasi Jarak (PP): <strong>{j.distanceKm * 2} km</strong></span>
-                          <span>Biaya Operasional: <strong>{fmtRp(j.totalOperationalCost)}</strong></span>
-                        </div>
-                        {(() => {
-                          const baseWage = (j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000);
-                          const maxWage = baseWage * 1.25;
-                          return (
-                            <div className="pt-1.5 border-t border-white/10 text-[10px] text-indigo-100 flex justify-between items-center">
-                              <span>Estimasi Upah Sopir:</span>
-                              <span className="font-black text-amber-300">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
-                            </div>
-                          );
-                        })()}
-                      </div>
 
-                      <div className="flex flex-col gap-2">
-                        <Button
-                          onClick={() => {
-                            setActiveReportingJourney(j);
-                            setFormDate(new Date().toISOString().slice(0, 10));
-                            setFormTimeStart('08:00');
-                            setFormTimeEnd('17:00');
-                            setFormIsOvernight(false);
-                            setFormFuelFee('');
-                            setFormTollParkingFee('');
-                          }}
-                          className="w-full rounded-xl bg-white text-indigo-700 hover:bg-slate-100 hover:text-indigo-800 transition-all font-extrabold text-xs h-9.5 gap-1.5 cursor-pointer shadow-sm border-none"
-                        >
-                          <CheckCircle2 className="w-4.5 h-4.5" />
-                          Laporan Perjalanan
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() => handleCancelJourney(j.id)}
-                          className="w-full rounded-xl text-white/90 hover:text-white hover:bg-white/10 transition-all font-bold text-xs h-8.5 gap-1.5 cursor-pointer border border-white/20"
-                        >
-                          <XCircle className="w-4 h-4 text-white/90 shrink-0" />
-                          Batalkan Klaim Perjalanan
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                        <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl">
+                          <MapPin className="w-4 h-4 text-indigo-600 shrink-0" />
+                          <span className="font-bold text-slate-500">Tujuan utama:</span>
+                          <span className="truncate flex-1 font-extrabold text-slate-800" title={j.endPoint}>{j.endPoint}</span>
+                        </div>
+
+                        {/* 2-Column Cards Grid: Left = Biaya Operasional, Right = Estimasi Upah Sopir */}
+                        <div className="grid grid-cols-2 gap-2.5 pt-1">
+                          <div className="bg-indigo-50/70 border border-indigo-100 p-3.5 rounded-xl space-y-0.5">
+                            <span className="block text-[9px] font-black text-indigo-600 uppercase tracking-wider">Biaya Operasional</span>
+                            <span className="text-xs sm:text-sm font-black text-indigo-900 block">{fmtRp(j.totalOperationalCost)}</span>
+                          </div>
+                          <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-xl space-y-0.5">
+                            <span className="block text-[9px] font-black text-emerald-600 uppercase tracking-wider">Estimasi Upah Sopir</span>
+                            <span className="text-xs sm:text-sm font-black text-emerald-900 block">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-2 pt-1">
+                          <Button
+                            onClick={() => {
+                              setActiveReportingJourney(j);
+                              setFormDate(j.activityDate || getTodayISO());
+                              setFormTimeStart(j.draftTimeStart || j.timeStart || '08:00');
+                              setFormTimeEnd(j.draftTimeEnd || j.timeEnd || '17:00');
+                              setFormIsOvernight(j.draftIsOvernight ?? j.isOvernight ?? false);
+                              setFormFuelFee(j.draftFuelFee ? String(j.draftFuelFee) : (j.fuelFee ? String(j.fuelFee) : ''));
+                              setFormTollParkingFee(j.draftTollParkingFee ? String(j.draftTollParkingFee) : (j.tollParkingFee ? String(j.tollParkingFee) : ''));
+                            }}
+                            className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs sm:text-sm h-10.5 gap-2 cursor-pointer shadow-md shadow-indigo-100 transition-all border-none"
+                          >
+                            <CheckCircle2 className="w-4.5 h-4.5" />
+                            Laporan Perjalanan
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            onClick={() => handleCancelJourney(j.id)}
+                            className="w-full rounded-xl bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-bold text-xs h-9 gap-1.5 cursor-pointer transition-all"
+                          >
+                            <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                            Batalkan Klaim Perjalanan
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
 
@@ -4086,17 +4321,6 @@ export default function EmployeeActivitiesPage() {
 
           <form onSubmit={handleCompleteJourneySubmit} className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto p-5 pb-3 space-y-4">
-              {/* Error / Alert Message inside modal */}
-              {message && (
-                <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 animate-in fade-in duration-200 ${
-                  message.type === 'success'
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                    : 'bg-rose-50 text-rose-800 border-rose-200'
-                }`}>
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{message.text}</span>
-                </div>
-              )}
               {/* Keperluan, Kendaraan & Tanggal Header */}
               {activeReportingJourney && (() => {
                 const baseCostVal = activeReportingJourney.baseOperationalCost ||
@@ -4111,7 +4335,14 @@ export default function EmployeeActivitiesPage() {
                       <div className="text-slate-300">•</div>
                       <div>Kendaraan: <strong className="text-slate-700">{activeReportingJourney.vehicleName}</strong></div>
                       <div className="text-slate-300">•</div>
-                      <div>Tanggal: <strong className="text-slate-700">{activeReportingJourney.activityDate ? new Date(activeReportingJourney.activityDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</strong></div>
+                      <div>
+                        Tanggal: <strong className="text-slate-700">
+                          {(() => {
+                            const d = formDate || activeReportingJourney.activityDate || getTodayISO();
+                            return new Date(d.includes('T') ? d : `${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                          })()}
+                        </strong>
+                      </div>
                     </div>
                     <div className="pt-2 border-t border-slate-200/60 flex flex-wrap justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider gap-2">
                       <div className="flex gap-4">
@@ -4382,7 +4613,7 @@ export default function EmployeeActivitiesPage() {
                             className="pl-8 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs h-10 w-full"
                           />
                         </div>
-                        <div className="shrink-0 w-28">
+                        <div className="shrink-0 w-28 sm:w-32">
                           <input
                             type="file"
                             ref={fuelFileInputRef}
@@ -4398,47 +4629,59 @@ export default function EmployeeActivitiesPage() {
                             type="button"
                             onClick={() => fuelFileInputRef.current?.click()}
                             disabled={uploadingFuelReceipt}
-                            className={`w-full rounded-xl text-xs font-bold h-10 border transition-all ${formFuelReceiptUrl
-                              ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-                              : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                            className={`w-full rounded-xl text-[11px] sm:text-xs font-bold h-10 px-2 flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${formFuelReceiptUrls.length > 0
+                              ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                              : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 shadow-sm'
                               }`}
                           >
                             {uploadingFuelReceipt ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto text-slate-500" />
-                            ) : formFuelReceiptUrl ? (
-                              '✓ Unggah Lagi'
+                            ) : formFuelReceiptUrls.length > 0 ? (
+                              <>
+                                <Plus className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                <span className="truncate">Tambah Bukti</span>
+                              </>
                             ) : (
-                              'Upload Bukti'
+                              <>
+                                <Upload className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                <span className="truncate">Upload Bukti</span>
+                              </>
                             )}
                           </Button>
                         </div>
                       </div>
 
-                      {/* Receipt Preview & Delete Bar for BBM */}
-                      {formFuelReceiptUrl && (
-                        <div className="flex items-center justify-between gap-2 p-2 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px] animate-in fade-in duration-200">
-                          <div className="flex items-center gap-1.5 truncate font-bold text-emerald-800">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span className="truncate">Bukti BBM terunggah</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <a
-                              href={formFuelReceiptUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-sm transition-colors"
-                            >
-                              <Eye className="w-3 h-3" /> Lihat
-                            </a>
-                            <button
-                              type="button"
-                              onClick={() => setFormFuelReceiptUrl('')}
-                              className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors"
-                              title="Hapus Bukti"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                      {/* Receipt Preview & Delete List for BBM */}
+                      {formFuelReceiptUrls.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          {formFuelReceiptUrls.map((url, index) => (
+                            <div key={index} className="flex items-center justify-between gap-2 p-2 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px] animate-in fade-in duration-200">
+                              <div className="flex items-center gap-1.5 truncate font-bold text-emerald-800">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span className="truncate">
+                                  Bukti BBM {formFuelReceiptUrls.length > 1 ? `#${index + 1}` : 'terunggah'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <a
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-sm transition-colors"
+                                >
+                                  <Eye className="w-3 h-3" /> Lihat
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => setFormFuelReceiptUrls(prev => prev.filter((_, i) => i !== index))}
+                                  className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                  title="Hapus Bukti Ini"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -4468,7 +4711,7 @@ export default function EmployeeActivitiesPage() {
                       className="pl-8 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs h-10 w-full"
                     />
                   </div>
-                  <div className="shrink-0 w-28">
+                  <div className="shrink-0 w-28 sm:w-32">
                     <input
                       type="file"
                       ref={tollFileInputRef}
@@ -4484,47 +4727,59 @@ export default function EmployeeActivitiesPage() {
                       type="button"
                       onClick={() => tollFileInputRef.current?.click()}
                       disabled={uploadingTollReceipt}
-                      className={`w-full rounded-xl text-xs font-bold h-10 border transition-all ${formTollReceiptUrl
-                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-                        : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                      className={`w-full rounded-xl text-[11px] sm:text-xs font-bold h-10 px-2 flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${formTollReceiptUrls.length > 0
+                        ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 shadow-sm'
                         }`}
                     >
                       {uploadingTollReceipt ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto text-slate-500" />
-                      ) : formTollReceiptUrl ? (
-                        '✓ Unggah Lagi'
+                      ) : formTollReceiptUrls.length > 0 ? (
+                        <>
+                          <Plus className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                          <span className="truncate">Tambah Bukti</span>
+                        </>
                       ) : (
-                        'Upload Bukti'
+                        <>
+                          <Upload className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                          <span className="truncate">Upload Bukti</span>
+                        </>
                       )}
                     </Button>
                   </div>
                 </div>
 
-                {/* Receipt Preview & Delete Bar for Toll */}
-                {formTollReceiptUrl && (
-                  <div className="flex items-center justify-between gap-2 p-2 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px] animate-in fade-in duration-200">
-                    <div className="flex items-center gap-1.5 truncate font-bold text-emerald-800">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span className="truncate">Bukti Tol & Parkir terunggah</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <a
-                        href={formTollReceiptUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-sm transition-colors"
-                      >
-                        <Eye className="w-3 h-3" /> Lihat
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => setFormTollReceiptUrl('')}
-                        className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors"
-                        title="Hapus Bukti"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                {/* Receipt Preview & Delete List for Toll */}
+                {formTollReceiptUrls.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    {formTollReceiptUrls.map((url, index) => (
+                      <div key={index} className="flex items-center justify-between gap-2 p-2 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px] animate-in fade-in duration-200">
+                        <div className="flex items-center gap-1.5 truncate font-bold text-emerald-800">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="truncate">
+                            Bukti Tol & Parkir {formTollReceiptUrls.length > 1 ? `#${index + 1}` : 'terunggah'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-sm transition-colors"
+                          >
+                            <Eye className="w-3 h-3" /> Lihat
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => setFormTollReceiptUrls(prev => prev.filter((_, i) => i !== index))}
+                            className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                            title="Hapus Bukti Ini"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -4577,8 +4832,15 @@ export default function EmployeeActivitiesPage() {
                         return '<2';
                       };
 
-                      const originalDurationHoursPP = (activeReportingJourney.durationHours || 0) * 2;
-                      const plotStrata = getStratumLabel(activeReportingJourney.mealAllowance || 0, originalDurationHoursPP);
+                      const isNdalem = activeReportingJourney.vehicleName === 'Ndalem';
+                      const preAuthorizedDurationPP = activeReportingJourney.customDurationPP || (activeReportingJourney.durationHours ? activeReportingJourney.durationHours * 2 : 0);
+                      const preAuthorizedMeal = isNdalem
+                        ? 0
+                        : (activeReportingJourney.mealAllowance !== undefined && activeReportingJourney.mealAllowance !== null && activeReportingJourney.mealAllowance > 0
+                            ? activeReportingJourney.mealAllowance
+                            : getMealAllowanceForDuration(preAuthorizedDurationPP));
+
+                      const plotStrata = getStratumLabel(preAuthorizedMeal, preAuthorizedDurationPP);
                       const actualStrata = getStratumLabel(actualMealAllowance, elapsedHours);
 
                       return (
@@ -4662,61 +4924,137 @@ export default function EmployeeActivitiesPage() {
                       return null;
                     })()}
                     {(() => {
-                      const extraToll = Math.max(0, tollVal - (activeReportingJourney.tollParkingFee || 0));
-                      const deltaTotal = extraToll +
-                        extraMealAllowance +
-                        extraFuelCost;
+                      const isNdalem = activeReportingJourney.vehicleName === 'Ndalem';
+                      const preAuthorizedDurationPP = activeReportingJourney.customDurationPP || (activeReportingJourney.durationHours ? activeReportingJourney.durationHours * 2 : 0);
+                      const preAuthorizedMeal = isNdalem
+                        ? 0
+                        : (activeReportingJourney.mealAllowance !== undefined && activeReportingJourney.mealAllowance !== null && activeReportingJourney.mealAllowance > 0
+                            ? activeReportingJourney.mealAllowance
+                            : getMealAllowanceForDuration(preAuthorizedDurationPP));
+
+                      const elapsedHours = (formTimeStart && formTimeEnd) ? calculateElapsedHours(formTimeStart, formTimeEnd) : 0;
+                      const actualMealAllowance = isNdalem ? 0 : ((formTimeStart && formTimeEnd) ? getMealAllowanceForDuration(elapsedHours) : preAuthorizedMeal);
+                      const extraMealAllowance = isNdalem ? 0 : Math.max(0, actualMealAllowance - preAuthorizedMeal);
+
+                      const baseCostVal = activeReportingJourney.baseOperationalCost ||
+                        ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0) - (activeReportingJourney.tollParkingFee || 0));
+                      const preAuthorizedToll = activeReportingJourney.tollParkingFee || 0;
+                      const totalPreAuthorizedAllowance = baseCostVal + preAuthorizedToll;
+
+                      const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
+                      const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
+                      const totalActualSpent = fuelVal + tollVal;
+
+                      const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
+                      const extraTollCost = Math.max(0, tollVal - preAuthorizedToll);
+                      const originalTotalDist = (activeReportingJourney.distanceKm || 0) * 2;
+                      const extraDistanceKm = Math.max(0, calculatedDistanceKm - originalTotalDist);
+                      const extraOperationalCost = Math.ceil(extraDistanceKm * (activeReportingJourney.vehicleRate || 0));
+
+                      const positiveReimburseDelta = extraMealAllowance + extraFuelCost + extraTollCost + extraOperationalCost;
+                      const unspentCash = Math.max(0, totalPreAuthorizedAllowance - totalActualSpent);
+
+                      const finalReimburseDelta = Math.max(0, positiveReimburseDelta - unspentCash);
+                      const remainingUnspentCash = Math.max(0, unspentCash - positiveReimburseDelta);
+
+                      const baseDriverWage = calculatedDistanceKm * 300 + calculatedDurationHours * 5000 + (formIsOvernight ? 50000 : 0);
+                      const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
+
                       return (
-                        <div className="pt-2 border-t border-blue-200/50 flex justify-between font-black text-blue-600 text-sm">
-                          <span>Total Reimburse (Delta)</span>
-                          <span>{fmtRp(Math.ceil(deltaTotal))}</span>
-                        </div>
+                        <>
+                          <div className="pt-2 border-t border-blue-200/50 flex justify-between font-black text-blue-600 text-sm">
+                            <span>Total Reimburse (Delta)</span>
+                            <span>{fmtRp(Math.ceil(finalReimburseDelta))}</span>
+                          </div>
+                          {unspentCash > 0 && (
+                            <div className="flex justify-between text-slate-400 text-[10px] font-semibold pl-2">
+                              <span>• Penghematan Uang Jalan Operasional</span>
+                              <span className="text-amber-600 font-bold">-{fmtRp(Math.ceil(unspentCash))}</span>
+                            </div>
+                          )}
+
+                          <div className="pt-1.5 border-t border-emerald-200/50 flex justify-between font-black text-emerald-700 text-xs">
+                            <span>Upah Bersih Sopir</span>
+                            <span>{fmtRp(Math.ceil(finalUpahBersih))}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400 text-[10px] font-semibold pl-2">
+                            <span>• Komponen Jarak ({calculatedDistanceKm.toFixed(1)} km)</span>
+                            <span>{fmtRp(Math.ceil(calculatedDistanceKm * 300))}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400 text-[10px] font-semibold pl-2">
+                            <span>• Komponen Waktu ({calculatedDurationHours.toFixed(1)} jam)</span>
+                            <span>{fmtRp(Math.ceil(calculatedDurationHours * 5000))}</span>
+                          </div>
+                          {formIsOvernight && (
+                            <div className="flex justify-between text-slate-400 text-[10px] font-semibold pl-2">
+                              <span>• Tambahan Menginap (Overnight)</span>
+                              <span>+Rp50.000</span>
+                            </div>
+                          )}
+                          {remainingUnspentCash > 0 && (
+                            <div className="flex justify-between text-rose-500 text-[10px] font-bold pl-2 bg-rose-50 p-1 rounded-md">
+                              <span>• Potongan Sisa Penghematan Operasional</span>
+                              <span>-{fmtRp(Math.ceil(remainingUnspentCash))}</span>
+                            </div>
+                          )}
+                        </>
                       );
                     })()}
-                    <div className="pt-1.5 border-t border-emerald-200/50 flex justify-between font-black text-emerald-700 text-xs">
-                      <span>Upah Bersih Sopir</span>
-                      <span>{fmtRp(calculatedDistanceKm * 300 + calculatedDurationHours * 5000 + (formIsOvernight ? 50000 : 0))}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-400 text-[10px] font-semibold pl-2">
-                      <span>• Komponen Jarak ({calculatedDistanceKm.toFixed(1)} km)</span>
-                      <span>{fmtRp(Math.ceil(calculatedDistanceKm * 300))}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-400 text-[10px] font-semibold pl-2">
-                      <span>• Komponen Waktu ({calculatedDurationHours.toFixed(1)} jam)</span>
-                      <span>{fmtRp(Math.ceil(calculatedDurationHours * 5000))}</span>
-                    </div>
-                    {formIsOvernight && (
-                      <div className="flex justify-between text-slate-400 text-[10px] font-semibold pl-2">
-                        <span>• Tambahan Menginap (Overnight)</span>
-                        <span>+Rp50.000</span>
-                      </div>
-                    )}
                   </div>
                 );
               })()}
             </div>
 
-            <div className="p-5 pt-3 border-t border-slate-100 bg-slate-50/50 flex gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setActiveReportingJourney(null)}
-                className="flex-1 rounded-xl font-bold text-slate-500 hover:bg-slate-50 text-xs h-10.5 bg-white border border-slate-200"
+            <div className="p-4 border-t border-slate-100 bg-slate-50/80 flex flex-col gap-2.5">
+              {/* Error / Alert Message directly above action buttons */}
+              {message && (
+                <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 animate-in fade-in duration-200 ${
+                  message.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : 'bg-rose-50 text-rose-800 border-rose-200'
+                }`}>
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span className="flex-1 leading-snug">{message.text}</span>
+                  <button type="button" onClick={() => setMessage(null)} className="text-slate-400 hover:text-slate-600 font-bold text-xs ml-1">✕</button>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isSavingDraft || submitting}
+                  onClick={async () => {
+                  if (!activeReportingJourney) return;
+                  setIsSavingDraft(true);
+                  await handleSaveDraft(activeReportingJourney.id);
+                  setMessage({ type: 'success', text: 'Draft laporan berhasil disimpan. Anda dapat melanjutkannya kembali kapan saja.' });
+                  setIsSavingDraft(false);
+                  skipSaveDraftRef.current = true;
+                  setActiveReportingJourney(null);
+                }}
+                className="flex-1 rounded-xl font-extrabold text-slate-700 hover:bg-slate-100 bg-white hover:text-slate-900 border border-slate-300 text-xs h-10.5 gap-1.5 cursor-pointer shadow-sm"
               >
-                Batal
+                {isSavingDraft ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
+                ) : (
+                  <Save className="w-4 h-4 text-slate-600" />
+                )}
+                Simpan Draft
               </Button>
               <Button
                 type="submit"
-                disabled={submitting}
-                className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-bold text-xs h-10.5 shadow-md shadow-indigo-200"
+                disabled={submitting || isSavingDraft}
+                className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-extrabold text-xs h-10.5 shadow-md shadow-indigo-200 gap-1.5 cursor-pointer"
               >
                 {submitting ? (
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
                 ) : null}
                 Kirim Laporan
               </Button>
             </div>
-          </form>
+          </div>
+        </form>
         </DialogContent>
       </Dialog>
 
@@ -4773,12 +5111,17 @@ export default function EmployeeActivitiesPage() {
               <style>{`
                 .pac-container {
                   z-index: 99999 !important;
-                  border-radius: 18px !important;
+                  border-radius: 16px !important;
                   border: 1px solid #e2e8f0 !important;
-                  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08) !important;
+                  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+                  -webkit-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+                  background-color: #ffffff !important;
                   font-family: inherit !important;
-                  padding: 8px 0 !important;
+                  padding: 6px 0 !important;
                   margin-top: 6px !important;
+                  width: min(452px, calc(100vw - 3rem)) !important;
+                  left: 50% !important;
+                  transform: translateX(-50%) !important;
                 }
                 .pac-item {
                   padding: 10px 14px !important;
@@ -4910,5 +5253,17 @@ export default function EmployeeActivitiesPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function EmployeeActivitiesPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+      </div>
+    }>
+      <ActivitiesContent />
+    </Suspense>
   );
 }

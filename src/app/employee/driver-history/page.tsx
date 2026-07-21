@@ -22,6 +22,7 @@ import {
   MapPin,
   CalendarDays,
   ArrowLeft,
+  Pencil,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import {
@@ -68,6 +69,18 @@ interface ActivityReport {
   extraFuelCost?: number;
   fuelReceiptUrl?: string;
   tollReceiptUrl?: string;
+  reimburseDelta?: number;
+  unspentCash?: number;
+  remainingUnspentCash?: number;
+  vehicleRate?: number;
+  baseOperationalCost?: number;
+  mealAllowance?: number;
+  preAuthorizedToll?: number;
+  totalOperationalCost?: number;
+  authorizedAt?: any;
+  journeyDate?: string;
+  claimedAt?: any;
+  completedAt?: any;
 }
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
@@ -399,10 +412,9 @@ function DriverHistoryContent() {
           <div className="space-y-2.5">
             {filteredActivities.map((activity) => {
               const sc = getStatusConfig(activity.status);
-              const reimburseDelta = (activity.tollParkingFee || 0) + 
-                (activity.extraMealAllowance || 0) + 
-                (activity.extraFuelCost || 0) + 
-                (activity.isOvernight ? 50000 : 0);
+              const reimburseDelta = activity.reimburseDelta !== undefined
+                ? activity.reimburseDelta
+                : Math.max(0, (activity.tollParkingFee || 0) + (activity.extraMealAllowance || 0) + (activity.extraFuelCost || 0));
 
               return (
                 <Card key={activity.id} className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden hover:border-slate-300 transition-all animate-in fade-in duration-150">
@@ -457,7 +469,7 @@ function DriverHistoryContent() {
                         </div>
                       </div>
 
-                      <div className="flex gap-1.5">
+                      <div className="flex items-center gap-1.5">
                         {activity.fuelReceiptUrl && (
                           <a
                             href={activity.fuelReceiptUrl}
@@ -477,6 +489,18 @@ function DriverHistoryContent() {
                           >
                             📄 Bukti Tol
                           </a>
+                        )}
+                        {(activity.status === 'pending' || activity.status === 'declined') && (
+                          <Link href={`/employee/activities?editReportId=${activity.id}`}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="rounded-lg border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-7 px-2.5 gap-1 cursor-pointer"
+                            >
+                              <Pencil className="w-3 h-3 text-indigo-600" />
+                              <span>Edit</span>
+                            </Button>
+                          </Link>
                         )}
                       </div>
                     </div>

@@ -3,7 +3,7 @@
 import React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { ClipboardCheck, ScanLine, LogOut, Compass } from 'lucide-react';
+import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function SatkerPekaryaNavBar() {
@@ -20,10 +20,12 @@ export default function SatkerPekaryaNavBar() {
   const uraianUrl = `/dashboard/payroll/uraian/rekap-pekarya?month=${month}&year=${year}`;
   const activityUrl = `/dashboard/payroll/activity-review?month=${month}&year=${year}`;
   const journeysUrl = `/dashboard/payroll/driver-journeys?month=${month}&year=${year}`;
+  const dashboardUrl = `/dashboard/payroll/journey-dashboard?month=${month}&year=${year}`;
 
   const isActivity = pathname.startsWith('/dashboard/payroll/activity-review');
   const isUraian = pathname.startsWith('/dashboard/payroll/uraian');
   const isJourneys = pathname.startsWith('/dashboard/payroll/driver-journeys');
+  const isDashboard = pathname.startsWith('/dashboard/payroll/journey-dashboard');
 
   const navBtnClass = (active: boolean) =>
     `px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
@@ -60,7 +62,14 @@ export default function SatkerPekaryaNavBar() {
           className={navBtnClass(isJourneys)}
         >
           <Compass className="w-4 h-4" />
-          Perjalanan Driver
+          Pre-Otorisasi
+        </button>
+        <button
+          onClick={() => router.push(dashboardUrl)}
+          className={navBtnClass(isDashboard)}
+        >
+          <BarChart3 className="w-4 h-4" />
+          Dashboard Perjalanan
         </button>
         <button
           onClick={() => router.push(uraianUrl)}
