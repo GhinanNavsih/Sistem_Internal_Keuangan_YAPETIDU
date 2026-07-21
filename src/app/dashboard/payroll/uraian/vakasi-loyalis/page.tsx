@@ -22,7 +22,7 @@ import {
   Upload, Loader2, CheckCircle2, FileText, AlertCircle, ImageIcon, Trash2, Eye,
   RotateCw, Sparkles, X, Building2, Code2, ShieldCheck, FileDown, Plus, Save,
   LogOut, Calendar, Clock, Send, CheckCircle, RotateCcw, AlertTriangle, Users,
-  XCircle, Lock, FileSpreadsheet, Banknote
+  XCircle, Lock, FileSpreadsheet, Banknote, ExternalLink
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -1316,7 +1316,9 @@ export default function VakasiLoyalisPage() {
                         </div>
                         <div className="flex gap-1.5">
                           <Button size="icon" variant="ghost" onClick={() => setLightboxUrl(reportFileUrl)} className="h-7 w-7 rounded-lg text-indigo-600"><Eye className="w-4 h-4" /></Button>
-                          <Button size="icon" variant="ghost" onClick={() => { setReportFileUrl(null); setReportFileName(null); }} className="h-7 w-7 rounded-lg text-red-500"><Trash2 className="w-4 h-4" /></Button>
+                          {!isReadOnly && (
+                            <Button size="icon" variant="ghost" onClick={() => { setReportFileUrl(null); setReportFileName(null); }} className="h-7 w-7 rounded-lg text-red-500"><Trash2 className="w-4 h-4" /></Button>
+                          )}
                         </div>
                       </div>
                     ) : (
@@ -1331,8 +1333,8 @@ export default function VakasiLoyalisPage() {
               </div>
             )}
 
-            {/* View Uploaded File for Super Admin */}
-            {profile?.role === 'super_admin' && reportFileUrl && (
+            {/* View Uploaded File for Admin / Reviewer */}
+            {profile?.role !== 'satker_head_loyalis' && reportFileUrl && (
               <div className="border border-slate-100 rounded-[20px] overflow-hidden bg-slate-50/50 p-4 space-y-3">
                 <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">Berkas Laporan Pertanggungjawaban</h4>
                 <div className="flex items-center justify-between bg-white border border-slate-150 p-2.5 rounded-xl max-w-md">
@@ -1489,15 +1491,74 @@ export default function VakasiLoyalisPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Image Lightbox */}
-      {lightboxUrl && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4" onClick={() => setLightboxUrl(null)}>
-          <div className="relative max-w-4xl w-full max-h-[85vh] flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
-            <Button type="button" variant="ghost" size="icon" onClick={() => setLightboxUrl(null)} className="absolute -top-12 right-0 text-white hover:bg-white/20 rounded-full h-10 w-10"><X className="w-6 h-6" /></Button>
-            <img src={lightboxUrl} alt="File LPJ" className="max-w-full max-h-[80vh] rounded-2xl object-contain shadow-2xl border border-white/10" />
+      {/* Image / PDF Lightbox Viewer */}
+      {lightboxUrl && (() => {
+        const isPdf = Boolean(
+          reportFileName?.toLowerCase().endsWith('.pdf') ||
+          lightboxUrl.toLowerCase().includes('.pdf') ||
+          lightboxUrl.toLowerCase().includes('application/pdf')
+        );
+
+        return (
+          <div
+            className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex flex-col items-center justify-center p-4 sm:p-6"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <div
+              className="relative max-w-5xl w-full h-[88vh] flex flex-col bg-slate-900/95 p-4 rounded-3xl border border-white/10 shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header Bar */}
+              <div className="flex items-center justify-between w-full pb-3 mb-3 border-b border-white/10 px-2 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0 pr-4">
+                  <FileText className="w-5 h-5 text-indigo-400 shrink-0" />
+                  <span className="text-white font-semibold text-xs sm:text-sm truncate">
+                    {reportFileName || 'Berkas Laporan Pertanggungjawaban'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={lightboxUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shadow-md"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Buka di Tab Baru</span>
+                    <span className="sm:hidden">Buka</span>
+                  </a>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setLightboxUrl(null)}
+                    className="text-slate-400 hover:text-white hover:bg-white/10 rounded-full h-8 w-8 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Content Area */}
+              <div className="w-full flex-1 flex items-center justify-center overflow-hidden rounded-2xl bg-slate-950/60 relative">
+                {isPdf ? (
+                  <iframe
+                    src={lightboxUrl}
+                    className="w-full h-full rounded-2xl border-none bg-white"
+                    title={reportFileName || 'File LPJ PDF'}
+                  />
+                ) : (
+                  <img
+                    src={lightboxUrl}
+                    alt={reportFileName || 'File LPJ'}
+                    className="max-w-full max-h-full rounded-2xl object-contain shadow-2xl"
+                  />
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
