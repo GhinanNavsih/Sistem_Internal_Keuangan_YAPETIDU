@@ -18,16 +18,33 @@ export function generateKegiatanLoyalisRecapXlsx({
   existingEvents,
   loyalisEmployees,
 }: GenerateKegiatanLoyalisRecapXlsxParams): void {
-  const getDeptIndex = (dbDept: string): number => {
-    if (!dbDept) return -1;
-    const clean = dbDept.trim().toUpperCase();
-    if (clean === 'REKTORAT') return 0;
-    if (clean === 'PASCASARJANA') return 1;
-    if (clean === 'FAK. AGAMA ISLAM') return 2;
-    if (clean === 'FAK. BISNIS, BAHASA DAN PENDIDIKAN') return 3;
-    if (clean === 'FAK. SAINS DAN TEKNOLOGI') return 4;
-    if (clean === 'FAK. ILMU KESEHATAN' || clean === 'FAK. ILMU KESH') return 5;
-    if (clean === 'UPT & LEMBAGA' || clean === 'UPT DAN LEMBAGA') return 6;
+  const getDeptIndex = (deptStr: string): number => {
+    if (!deptStr) return -1;
+    const clean = deptStr.trim().toUpperCase();
+
+    // Column 0: REKTORAT (Rektorat, BAK)
+    if (clean.includes('REKTORAT') || clean === 'BAK' || clean.includes('REKTOR')) return 0;
+
+    // Column 1: PASCASARJANA
+    if (clean.includes('PASCA')) return 1;
+
+    // Column 2: FAK. AGAMA ISLAM (FAI, Agama Islam)
+    if (clean.includes('AGAMA') || clean.includes('ISLAM') || clean === 'FAI') return 2;
+
+    // Column 3: FAK. BISNIS, BAHASA DAN PENDIDIKAN (FEB, FBS, FIP, FBBP, Bisnis, Bahasa, Pendidikan)
+    if (clean.includes('BISNIS') || clean.includes('BAHASA') || clean.includes('PENDIDIKAN') ||
+        clean === 'FEB' || clean === 'FBS' || clean === 'FIP' || clean === 'FBBP') return 3;
+
+    // Column 4: FAK. SAINS DAN TEKNOLOGI (FST, FT, FKI, FSP, Sains, Teknologi)
+    if (clean.includes('SAINS') || clean.includes('TEKNOLOGI') ||
+        clean === 'FST' || clean === 'FT' || clean === 'FKI' || clean === 'FSP') return 4;
+
+    // Column 5: FAK. ILMU KESEHATAN / FAK. ILMU KESH (FIK, Kesehatan, Kesh)
+    if (clean.includes('KESEHATAN') || clean.includes('KESH') || clean === 'FIK') return 5;
+
+    // Column 6: UPT & LEMBAGA (UPT, Lembaga, Satpam, Yayasan)
+    if (clean.includes('UPT') || clean.includes('LEMBAGA') || clean === 'SATPAM' || clean === 'YAYASAN') return 6;
+
     return -1;
   };
 
@@ -77,13 +94,21 @@ export function generateKegiatanLoyalisRecapXlsx({
       const emp = loyalisEmployees.find(e => e.id.toLowerCase() === empId.toLowerCase()) ||
                   loyalisEmployees.find(e => e.name.trim().toLowerCase() === (w.employeeName || '').trim().toLowerCase());
 
-      const dbDept = emp ? emp.department : (w.department || '');
-      const idx = getDeptIndex(dbDept);
-
-      if (idx !== -1) {
-        rowValues[idx] += payout;
-        hasPayout = true;
+      const empDept = emp ? emp.department : '';
+      let idx = getDeptIndex(empDept);
+      if (idx === -1) {
+        idx = getDeptIndex(w.department || '');
       }
+      if (idx === -1) {
+        idx = getDeptIndex(evt.departmentUnit || '');
+      }
+      // If still unmatched, default to UPT & LEMBAGA (column 6) so every accepted payout is added to total
+      if (idx === -1) {
+        idx = 6;
+      }
+
+      rowValues[idx] += payout;
+      hasPayout = true;
     });
 
     if (hasPayout) {
