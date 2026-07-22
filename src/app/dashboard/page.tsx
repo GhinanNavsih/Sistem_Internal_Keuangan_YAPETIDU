@@ -1254,41 +1254,46 @@ export default function TreasuryDashboard() {
       const slip = selectedPeriodSlipsMap[emp.id];
       let gross = 0;
 
-      const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
-                          (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
-      const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
-                                (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
-      const gradeLevel = emp.academic_and_tier?.level_code || '';
-      const mappedEmp = { joinDate: joinDateVal, dateRecognized: dateRecognizedVal, gradeLevel } as any;
-      const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
+      if (slip && slip.earnings && slip.earnings.length > 0) {
+        gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+      } else {
+        const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
+                            (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
+        const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
+                                  (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
+        const gradeLevel = emp.academic_and_tier?.level_code || '';
+        const mappedEmp = { joinDate: joinDateVal, dateRecognized: dateRecognizedVal, gradeLevel } as any;
+        const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
 
-      const getLoyalisPresenceBonus = (empId: string): number => {
-        if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-          const entry = selectedPeriodLoyalisPresence.entries[empId];
-          if (!entry) return 0;
-        }
-        return 250000;
-      };
+        const getLoyalisPresenceBonus = (empId: string): number => {
+          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+            const entry = selectedPeriodLoyalisPresence.entries[empId];
+            if (!entry) return 0;
+          }
+          return 250000;
+        };
 
-      const getLoyalisPresensiEarning = (empId: string): number => {
-        const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
-        const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
-        if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-          const entry = selectedPeriodLoyalisPresence.entries[empId];
-          if (!entry) return 0;
-        }
-        return Math.round(workingDays * expectedHours * 1650);
-      };
+        const getLoyalisPresensiEarning = (empId: string): number => {
+          const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
+          const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
+          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
+            const entry = selectedPeriodLoyalisPresence.entries[empId];
+            if (!entry) return 0;
+          }
+          return Math.round(workingDays * expectedHours * 1650);
+        };
 
-      gross = calculateTotalEarnings(
-        emp,
-        gapokVal,
-        undefined,
-        selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
-        functionalAllowanceMap[emp.id] ?? 0,
-        getLoyalisPresenceBonus(emp.id),
-        getLoyalisPresensiEarning(emp.id)
-      );
+        gross = calculateTotalEarnings(
+          emp,
+          gapokVal,
+          undefined,
+          selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
+          functionalAllowanceMap[emp.id] ?? 0,
+          getLoyalisPresenceBonus(emp.id),
+          getLoyalisPresensiEarning(emp.id),
+          kepangkatanAllowanceMap[emp.id] ?? 0
+        );
+      }
 
       const dept = emp.employment_profile?.department_unit || 'LAIN-LAIN';
       loyalisMap[dept] = (loyalisMap[dept] || 0) + gross;
@@ -1300,17 +1305,21 @@ export default function TreasuryDashboard() {
       const slip = selectedPeriodSlipsMap[emp.id];
       let gross = 0;
 
-      const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
-      const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
-      const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
-      const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
-      const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
+      if (slip && slip.earnings && slip.earnings.length > 0) {
+        gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+      } else {
+        const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
+        const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
+        const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
+        const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
+        const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
 
-      gross = calculateTotalEarnings(
-        emp,
-        gapokVal,
-        uraianEntry
-      );
+        gross = calculateTotalEarnings(
+          emp,
+          gapokVal,
+          uraianEntry
+        );
+      }
 
       const category = emp.employment?.jobCategory || 'LAIN-LAIN';
       pekaryaMap[category] = (pekaryaMap[category] || 0) + gross;
@@ -1367,6 +1376,7 @@ export default function TreasuryDashboard() {
     salaryMatrixBlue,
     salaryMatrixWhite,
     functionalAllowanceMap,
+    kepangkatanAllowanceMap,
     selectedPeriodLoyalisPresence,
     selectedPeriodVakasiTambahanMap,
     selectedPeriodUraianMap,
@@ -1601,6 +1611,9 @@ export default function TreasuryDashboard() {
     salaryMatrixBlue,
     salaryMatrixWhite,
     functionalAllowanceMap,
+    kepangkatanAllowanceMap,
+    koperasiDeductions,
+    koperasiSavings,
     selectedPeriodLoyalisPresence,
     selectedPeriodVakasiTambahanMap,
     selectedPeriodUraianMap
