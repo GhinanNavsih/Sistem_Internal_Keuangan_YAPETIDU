@@ -62,7 +62,9 @@ export function generateKegiatanLoyalisRecapXlsx({
   const columnTotals = new Array(7).fill(0);
   let grandTotal = 0;
 
-  existingEvents.forEach(evt => {
+  const approvedEvents = existingEvents.filter(evt => !evt.status || evt.status === 'approved');
+
+  approvedEvents.forEach(evt => {
     const workersMap = evt.eventWorkers || {};
     const rowValues = new Array(7).fill(0);
     let hasPayout = false;

@@ -853,25 +853,27 @@ export default function VakasiLoyalisPage() {
   };
 
   const handlePrintLoyalisRecap = () => {
-    if (!existingEvents || existingEvents.length === 0) {
-      alert('Tidak ada rincian kegiatan ditemukan untuk periode ini.');
+    const approvedEvents = (existingEvents || []).filter(evt => !evt.status || evt.status === 'approved');
+    if (approvedEvents.length === 0) {
+      alert('Tidak ada rincian kegiatan disetujui (accepted) ditemukan untuk periode ini.');
       return;
     }
     generateKegiatanLoyalisRecapPdf({
       period: MONTHS_ID[month - 1] + ' ' + year,
-      existingEvents,
+      existingEvents: approvedEvents,
       loyalisEmployees,
     });
   };
 
   const handleExportLoyalisRecapXlsx = () => {
-    if (!existingEvents || existingEvents.length === 0) {
-      alert('Tidak ada rincian kegiatan ditemukan untuk periode ini.');
+    const approvedEvents = (existingEvents || []).filter(evt => !evt.status || evt.status === 'approved');
+    if (approvedEvents.length === 0) {
+      alert('Tidak ada rincian kegiatan disetujui (accepted) ditemukan untuk periode ini.');
       return;
     }
     generateKegiatanLoyalisRecapXlsx({
       period: MONTHS_ID[month - 1] + ' ' + year,
-      existingEvents,
+      existingEvents: approvedEvents,
       loyalisEmployees,
     });
   };

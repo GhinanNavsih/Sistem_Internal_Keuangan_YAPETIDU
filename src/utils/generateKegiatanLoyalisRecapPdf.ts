@@ -63,12 +63,14 @@ export function generateKegiatanLoyalisRecapPdf({
     return -1;
   };
 
-  // Compile rows
+  // Compile rows (only accepted/approved Vakasi Tambahan)
   const tableRows: any[] = [];
   const columnTotals = new Array(7).fill(0);
   let grandTotal = 0;
 
-  existingEvents.forEach(evt => {
+  const approvedEvents = existingEvents.filter(evt => !evt.status || evt.status === 'approved');
+
+  approvedEvents.forEach(evt => {
     const workersMap = evt.eventWorkers || {};
     const rowValues = new Array(7).fill(0);
     let hasPayout = false;
@@ -192,9 +194,9 @@ export function generateKegiatanLoyalisRecapPdf({
   }
 
   if (grandTotal === 0 && typeof window !== 'undefined') {
-    const sampleEvt = existingEvents.find(e => e.eventWorkers && Object.keys(e.eventWorkers).length > 0);
+    const sampleEvt = approvedEvents.find(e => e.eventWorkers && Object.keys(e.eventWorkers).length > 0);
     const sampleKeys = sampleEvt ? Object.keys(sampleEvt.eventWorkers).slice(0, 5).join(', ') : 'None';
-    alert(`Debug Info:\n- Total Events: ${existingEvents.length}\n- Total Employees: ${loyalisEmployees.length}\n- Sample Event Workers Keys: ${sampleKeys}\n- Sample Employee ID: ${loyalisEmployees.length > 0 ? loyalisEmployees[0].id : 'None'}`);
+    alert(`Debug Info:\n- Total Approved Events: ${approvedEvents.length}\n- Total Employees: ${loyalisEmployees.length}\n- Sample Event Workers Keys: ${sampleKeys}\n- Sample Employee ID: ${loyalisEmployees.length > 0 ? loyalisEmployees[0].id : 'None'}`);
   }
 
   if (saveToFile) {

@@ -68,10 +68,12 @@ export default function CetakKegiatanLoyalisDialog({
       return;
     }
 
-    // 2. Filter existing events and map worker payout rows
+    // 2. Filter existing events to only include accepted/approved Vakasi Tambahan and map worker payout rows
+    const approvedEvents = existingEvents.filter(evt => !evt.status || evt.status === 'approved');
+
     const groups: KegiatanLoyalisGroup[] = [];
 
-    existingEvents.forEach(evt => {
+    approvedEvents.forEach(evt => {
       const workersMap = evt.eventWorkers || {};
       const workers: KegiatanLoyalisWorker[] = Object.entries(workersMap)
         .filter(([empId]) => deptEmployeeIds.has(empId))

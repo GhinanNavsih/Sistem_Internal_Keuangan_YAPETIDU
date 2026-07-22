@@ -55,8 +55,9 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
+import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 
 interface ManagedUser {
   uid: string;
@@ -324,6 +325,17 @@ export default function UserManagementPage() {
 
       if (newRole === 'ketua_shift_satpam') {
         const selectedEmp = allEmployees.find(e => e.id === newLinkedEmployeeId);
+        // Clean up: If this employee was previously assigned as leader of another team, clear that assignment first
+        for (const t of shiftTeams) {
+          if (t.id !== `team_${newTeamNumber}` && t.ketuaShiftId === newLinkedEmployeeId) {
+            await updateDoc(doc(db, 'SatpamShiftTeams', t.id), {
+              ketuaShiftId: '',
+              ketuaShiftName: '',
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+
         await setDoc(doc(db, 'SatpamShiftTeams', `team_${newTeamNumber}`), {
           ketuaShiftId: newLinkedEmployeeId,
           ketuaShiftName: selectedEmp ? selectedEmp.name : '',
@@ -381,7 +393,8 @@ export default function UserManagementPage() {
       setEditTeamMembers(matchedTeam.memberEmployeeIds || []);
     } else {
       setEditTeamNumber('1');
-      setEditTeamMembers([]);
+      const team1 = shiftTeams.find(t => t.id === 'team_1');
+      setEditTeamMembers(team1?.memberEmployeeIds || []);
     }
   };
 
@@ -417,6 +430,17 @@ export default function UserManagementPage() {
 
       if (editRole === 'ketua_shift_satpam') {
         const selectedEmp = allEmployees.find(e => e.id === editLinkedEmployeeId);
+        // Clean up: If this employee was previously leader of another team, clear that assignment
+        for (const t of shiftTeams) {
+          if (t.id !== `team_${editTeamNumber}` && t.ketuaShiftId === editLinkedEmployeeId) {
+            await updateDoc(doc(db, 'SatpamShiftTeams', t.id), {
+              ketuaShiftId: '',
+              ketuaShiftName: '',
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+
         await setDoc(doc(db, 'SatpamShiftTeams', `team_${editTeamNumber}`), {
           ketuaShiftId: editLinkedEmployeeId,
           ketuaShiftName: selectedEmp ? selectedEmp.name : '',
@@ -786,14 +810,59 @@ export default function UserManagementPage() {
                             <Label className="text-xs font-semibold text-slate-500">Nomor Regu (Roster Team Slot)</Label>
                             <select
                               value={newTeamNumber}
-                              onChange={(e) => setNewTeamNumber(e.target.value)}
+                              onChange={(e) => {
+                                const selectedTeamNum = e.target.value;
+                                setNewTeamNumber(selectedTeamNum);
+                                const matchedTeam = shiftTeams.find(t => t.id === `team_${selectedTeamNum}`);
+                                if (matchedTeam) {
+                                  setNewTeamMembers(matchedTeam.memberEmployeeIds || []);
+                                }
+                              }}
                               className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-purple-500"
                             >
-                              <option value="1">Regu 1 (Slot: {shiftTeams.find(t => t.id === 'team_1')?.ketuaShiftName?.toUpperCase() || 'BELUM DITENTUKAN'})</option>
-                              <option value="2">Regu 2 (Slot: {shiftTeams.find(t => t.id === 'team_2')?.ketuaShiftName?.toUpperCase() || 'BELUM DITENTUKAN'})</option>
-                              <option value="3">Regu 3 (Slot: {shiftTeams.find(t => t.id === 'team_3')?.ketuaShiftName?.toUpperCase() || 'BELUM DITENTUKAN'})</option>
+                              <option value="1">Regu 1 (Slot: Shift {getSatpamShiftForTeam(1, new Date())})</option>
+                              <option value="2">Regu 2 (Slot: Shift {getSatpamShiftForTeam(2, new Date())})</option>
+                              <option value="3">Regu 3 (Slot: Shift {getSatpamShiftForTeam(3, new Date())})</option>
                             </select>
                           </div>
+
+                          {/* Warning Banner for Team Conflict / Reorganization */}
+                          {(() => {
+                            const selectedTeam = shiftTeams.find(t => t.id === `team_${newTeamNumber}`);
+                            const currentLeaderId = selectedTeam?.ketuaShiftId;
+                            const currentLeaderName = selectedTeam?.ketuaShiftName;
+                            const isConflict = currentLeaderId && currentLeaderId !== newLinkedEmployeeId;
+                            const selectedEmpName = allEmployees.find(e => e.id === newLinkedEmployeeId)?.name || 'Pengguna baru ini';
+                            const otherTeam = shiftTeams.find(t => t.ketuaShiftId === newLinkedEmployeeId && t.id !== `team_${newTeamNumber}`);
+
+                            return (
+                              <>
+                                {isConflict && (
+                                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-900 text-xs font-medium space-y-1 shadow-xs">
+                                    <div className="flex items-center gap-2 font-bold text-amber-800">
+                                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                                      <span>Perhatian: Reorganisasi Ketua Shift</span>
+                                    </div>
+                                    <p className="leading-relaxed text-[11px] text-amber-700">
+                                      Regu {newTeamNumber} saat ini dipimpin oleh <strong className="font-bold underline decoration-amber-400">{currentLeaderName}</strong>. Membuat akun Ketua Shift baru ini akan menetapkan <strong className="font-bold">{selectedEmpName}</strong> sebagai Ketua Shift Regu {newTeamNumber} menggantikan {currentLeaderName}.
+                                    </p>
+                                  </div>
+                                )}
+
+                                {otherTeam && (
+                                  <div className="p-3 rounded-xl bg-blue-50 border border-blue-200/80 text-blue-900 text-xs font-medium space-y-1 shadow-xs">
+                                    <div className="flex items-center gap-2 font-bold text-blue-800">
+                                      <Shield className="w-4 h-4 text-blue-600 shrink-0" />
+                                      <span>Pemindahan Kepemimpinan Regu</span>
+                                    </div>
+                                    <p className="leading-relaxed text-[11px] text-blue-700">
+                                      {selectedEmpName} sebelumnya tercatat sebagai Ketua Shift Regu {otherTeam.id.split('_')[1]}. Perubahan ini akan memindahkan kepemimpinannya ke Regu {newTeamNumber}.
+                                    </p>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
 
                           {/* 3. Pilih Anggota Regu */}
                           <div className="space-y-1.5">
@@ -1143,309 +1212,395 @@ export default function UserManagementPage() {
 
       {/* Edit User Modal Dialog */}
       <Dialog open={editingUser !== null} onOpenChange={(open) => !open && setEditingUser(null)}>
-        <DialogContent className="sm:max-w-md max-w-full rounded-3xl border-none shadow-2xl bg-white p-6">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold flex items-center gap-2 text-slate-900">
-              <UserCog className="w-5.5 h-5.5 text-indigo-600" />
-              Edit Otoritas Pengguna
+        <DialogContent className="w-[96vw] max-w-[96vw] sm:max-w-[96vw] h-[92vh] max-h-[92vh] rounded-[28px] border-none shadow-2xl bg-white p-5 sm:p-7 flex flex-col justify-between overflow-hidden">
+          <DialogHeader className="pb-3 border-b border-slate-100 shrink-0">
+            <DialogTitle className="text-xl font-extrabold flex items-center gap-2.5 text-slate-800">
+              <UserCog className="w-6 h-6 text-indigo-500 shrink-0" />
+              <span>Edit Otoritas Pengguna</span>
             </DialogTitle>
-            <DialogDescription className="text-slate-500">
-              Perbarui nama lengkap, level otoritas, atau izin unit kerja untuk <strong>{editingUser?.email}</strong>.
+            <DialogDescription className="text-xs text-slate-400">
+              Perbarui nama lengkap, level otoritas, atau izin unit kerja untuk <strong className="text-slate-700 font-semibold">{editingUser?.email}</strong>.
             </DialogDescription>
           </DialogHeader>
 
           {editingUser && (
-            <div className="space-y-5 py-4">
-              {/* Display Name */}
-              <div>
-                <Label htmlFor="editName" className="text-xs font-semibold text-slate-500 block mb-1.5">Nama Lengkap</Label>
-                <div className="relative">
-                  <Input
-                    id="editName"
-                    placeholder="Ketik nama pegawai..."
-                    value={editDisplayName}
-                    onChange={(e) => {
-                      setEditDisplayName(e.target.value);
-                      setShowEditNameSuggestions(true);
-                    }}
-                    onFocus={() => setShowEditNameSuggestions(true)}
-                    onBlur={() => {
-                      setTimeout(() => setShowEditNameSuggestions(false), 200);
-                    }}
-                    className="rounded-xl border-slate-200 mt-0 focus:border-indigo-500 focus:ring-indigo-500/20 h-[42px]"
-                    autoComplete="off"
-                  />
-                  {showEditNameSuggestions && (
-                    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
-                      {allEmployees
-                        .filter(emp => emp.name.toLowerCase().includes(editDisplayName.toLowerCase()))
-                        .map(emp => (
-                          <div
-                            key={emp.id}
-                            onMouseDown={() => {
-                              setEditDisplayName(emp.name);
-                              setShowEditNameSuggestions(false);
-                            }}
-                            className="p-3 text-xs font-bold text-slate-700 hover:bg-indigo-50/50 cursor-pointer transition-colors"
-                          >
-                            {emp.name} ({emp.type === 'Pekarya' ? `Pekarya - ${emp.detail}` : `Loyalis - ${emp.detail}`})
-                          </div>
-                        ))}
-                      {allEmployees.filter(emp => emp.name.toLowerCase().includes(editDisplayName.toLowerCase())).length === 0 && (
-                        <div className="p-3 text-xs italic text-slate-400 bg-slate-50">Nama tidak ditemukan. Tetap gunakan "{editDisplayName}"</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0 py-3 overflow-y-auto lg:overflow-hidden">
+              {/* LEFT COLUMN: Data Kredensial & Tingkat Otoritas */}
+              <div className="flex flex-col gap-5 overflow-y-auto pr-1">
+                {/* Card 1: Data Kredensial */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-4 shadow-xs">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-indigo-500" />
+                    Data Kredensial
+                  </span>
 
-              {/* Email Address */}
-              <div>
-                <Label htmlFor="editEmail" className="text-xs font-semibold text-slate-500 block mb-1.5">Alamat Email</Label>
-                <Input
-                  id="editEmail"
-                  type="email"
-                  placeholder="Ketik alamat email..."
-                  value={editEmail}
-                  onChange={(e) => setEditEmail(e.target.value)}
-                  className="rounded-xl border-slate-200 mt-0 focus:border-indigo-500 focus:ring-indigo-500/20 h-[42px]"
-                  autoComplete="off"
-                />
-              </div>
-
-              {/* Role */}
-              <div>
-                <Label className="text-xs font-semibold text-slate-500">Tingkat Otoritas</Label>
-                <div className="mt-1.5">
-                  <select
-                    value={editRole}
-                    onChange={(e) => {
-                      const role = e.target.value as any;
-                      setEditRole(role);
-                      if (role !== 'satker_head') {
-                        setEditPermitted([]);
-                      }
-                      if (role !== 'honorer' && role !== 'loyalis') {
-                        setEditLinkedEmployeeId('');
-                      }
-                    }}
-                    className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-                  >
-                    <option value="satker_head">Kepala Satuan Kerja Pekarya (SatKer Pekarya)</option>
-                    <option value="satker_head_loyalis">Kepala Satuan Kerja Loyalis (SatKer Loyalis)</option>
-                    <option value="employee_admin">Staf Master Data Pegawai (Employee Admin)</option>
-                    <option value="super_admin">Super Administrator (BAK)</option>
-                    <option value="honorer">Karyawan Honorer (Lapor Kegiatan)</option>
-                    <option value="loyalis">Karyawan Loyalis (Lihat Slip Gaji)</option>
-                    <option value="loyalis_presence_admin">Penanggung Jawab Presensi Loyalis</option>
-                    <option value="ketua_shift_satpam">Ketua Shift SATPAM (Lapor Shift Regu)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Permitted Categories */}
-              <div>
-                <Label className="text-xs font-semibold text-slate-500">Akses Satuan Kerja (Unit)</Label>
-                {editRole === 'super_admin' ? (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-100 text-amber-800 text-[11px] font-medium leading-relaxed mt-1.5">
-                    Super Administrator memiliki hak akses bypass ke seluruh unit. Pilihan dinonaktifkan.
-                  </div>
-                ) : editRole === 'employee_admin' ? (
-                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-800 text-[11px] font-medium leading-relaxed mt-1.5">
-                    Employee Administrator memiliki hak akses penuh ke seluruh data pegawai. Pilihan dinonaktifkan.
-                  </div>
-                ) : editRole === 'satker_head_loyalis' ? (
-                  <div className="p-3 rounded-xl bg-violet-50 border border-violet-100 text-violet-800 text-[11px] font-medium leading-relaxed mt-1.5">
-                    Kepala Satuan Kerja Loyalis secara otomatis memiliki hak akses penuh ke seluruh data Loyalis. Pilihan dinonaktifkan.
-                  </div>
-                ) : editRole === 'loyalis_presence_admin' ? (
-                  <div className="p-3 rounded-xl bg-pink-50 border border-pink-100 text-pink-800 text-[11px] font-medium leading-relaxed mt-1.5">
-                    Penanggung Jawab Presensi Loyalis memiliki akses khusus ke halaman kalkulator presensi loyalis via raw daily logs. Pilihan dinonaktifkan.
-                  </div>
-                ) : editRole === 'ketua_shift_satpam' ? (
-                  <div className="space-y-4 mt-1.5">
-                    <div className="p-3 rounded-xl bg-purple-50 border border-purple-100 text-purple-800 text-[11px] font-medium leading-relaxed">
-                      Pilih Ketua Shift dan atur regu anggotanya (maksimal 9 anggota).
-                    </div>
-                    
-                    {/* 1. Pilih Ketua Shift */}
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold text-slate-500">Pilih Ketua Shift</Label>
-                      <select
-                        value={editLinkedEmployeeId}
-                        onChange={(e) => {
-                          setEditLinkedEmployeeId(e.target.value);
-                          setEditTeamMembers(prev => prev.filter(id => id !== e.target.value));
-                        }}
-                        className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
-                      >
-                        <option value="">-- Pilih Ketua Shift --</option>
-                        {allEmployees
-                          .filter(emp => emp.type === 'Pekarya' && emp.detail === 'SATPAM')
-                          .map(emp => (
-                            <option key={emp.id} value={emp.id}>
-                              {emp.name}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-
-                    {/* 2. Pilih Nomor Regu */}
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold text-slate-500">Nomor Regu (Roster Team Slot)</Label>
-                      <select
-                        value={editTeamNumber}
-                        onChange={(e) => setEditTeamNumber(e.target.value)}
-                        className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-purple-500"
-                      >
-                        <option value="1">Regu 1 (Slot: {shiftTeams.find(t => t.id === 'team_1')?.ketuaShiftName?.toUpperCase() || 'BELUM DITENTUKAN'})</option>
-                        <option value="2">Regu 2 (Slot: {shiftTeams.find(t => t.id === 'team_2')?.ketuaShiftName?.toUpperCase() || 'BELUM DITENTUKAN'})</option>
-                        <option value="3">Regu 3 (Slot: {shiftTeams.find(t => t.id === 'team_3')?.ketuaShiftName?.toUpperCase() || 'BELUM DITENTUKAN'})</option>
-                      </select>
-                    </div>
-
-                    {/* 3. Pilih Anggota Regu */}
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold text-slate-500 flex justify-between">
-                        <span>Pilih Anggota Regu</span>
-                        <span className="text-purple-600 font-bold">Terpilih: {editTeamMembers.length}</span>
-                      </Label>
-                      
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 max-h-[180px] overflow-y-auto space-y-2">
-                        {allEmployees
-                          .filter(emp => emp.type === 'Pekarya' && emp.detail === 'SATPAM' && emp.id !== editLinkedEmployeeId)
-                          .map(emp => {
-                            const isChecked = editTeamMembers.includes(emp.id);
-                            return (
-                              <div key={emp.id} className="flex items-center space-x-2.5">
-                                <Checkbox
-                                  id={`edit-member-${emp.id}`}
-                                  checked={isChecked}
-                                  onCheckedChange={() => {
-                                    setEditTeamMembers(prev => 
-                                      prev.includes(emp.id)
-                                        ? prev.filter(id => id !== emp.id)
-                                        : [...prev, emp.id]
-                                    );
-                                  }}
-                                  className="rounded border-slate-300 data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
-                                />
-                                <Label htmlFor={`edit-member-${emp.id}`} className="text-xs font-bold text-slate-700 cursor-pointer select-none">
-                                  {emp.name}
-                                </Label>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  </div>
-                ) : editRole === 'honorer' ? (
-                  <div className="space-y-3 mt-1.5">
-                    <div className="p-3 rounded-xl bg-teal-50 border border-teal-100 text-teal-800 text-[11px] font-medium leading-relaxed">
-                      Pilih karyawan Pekarya yang dihubungkan ke akun ini.
-                    </div>
+                  {/* Nama Lengkap Input */}
+                  <div>
+                    <Label htmlFor="editName" className="text-xs font-semibold text-slate-600 block mb-1.5">Nama Lengkap</Label>
                     <div className="relative">
                       <Input
-                        placeholder="Cari nama karyawan Pekarya..."
-                        value={editEmployeeSearchText}
+                        id="editName"
+                        placeholder="Ketik nama pegawai..."
+                        value={editDisplayName}
                         onChange={(e) => {
-                          setEditEmployeeSearchText(e.target.value);
-                          if (!e.target.value) {
-                            setEditLinkedEmployeeId('');
-                          }
-                          setShowEditEmployeeSuggestions(true);
+                          setEditDisplayName(e.target.value);
+                          setShowEditNameSuggestions(true);
                         }}
-                        onFocus={() => setShowEditEmployeeSuggestions(true)}
+                        onFocus={() => setShowEditNameSuggestions(true)}
                         onBlur={() => {
-                          setTimeout(() => setShowEditEmployeeSuggestions(false), 200);
+                          setTimeout(() => setShowEditNameSuggestions(false), 200);
                         }}
-                        className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 h-[42px]"
+                        className="rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20 h-[42px] bg-white text-sm font-semibold"
                         autoComplete="off"
                       />
-                      {showEditEmployeeSuggestions && (
+                      {showEditNameSuggestions && (
                         <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
-                          {cleaningEmployees
-                            .filter(emp => emp.name.toLowerCase().includes(editEmployeeSearchText.toLowerCase()))
+                          {allEmployees
+                            .filter(emp => emp.name.toLowerCase().includes(editDisplayName.toLowerCase()))
                             .map(emp => (
                               <div
                                 key={emp.id}
                                 onMouseDown={() => {
-                                  setEditLinkedEmployeeId(emp.id);
-                                  setEditEmployeeSearchText(`${emp.name} (${emp.category})`);
-                                  setShowEditEmployeeSuggestions(false);
+                                  setEditDisplayName(emp.name);
+                                  setShowEditNameSuggestions(false);
                                 }}
-                                className="p-3 text-xs font-bold text-slate-700 hover:bg-teal-50/50 cursor-pointer transition-colors"
+                                className="p-3 text-xs font-bold text-slate-700 hover:bg-indigo-50/50 cursor-pointer transition-colors"
                               >
-                                {emp.name} ({emp.category})
+                                {emp.name} ({emp.type === 'Pekarya' ? `Pekarya - ${emp.detail}` : `Loyalis - ${emp.detail}`})
                               </div>
                             ))}
-                          {cleaningEmployees.filter(emp => emp.name.toLowerCase().includes(editEmployeeSearchText.toLowerCase())).length === 0 && (
-                            <div className="p-3 text-xs italic text-slate-400 bg-slate-50">Karyawan tidak ditemukan.</div>
+                          {allEmployees.filter(emp => emp.name.toLowerCase().includes(editDisplayName.toLowerCase())).length === 0 && (
+                            <div className="p-3 text-xs italic text-slate-400 bg-slate-50">Nama tidak ditemukan. Tetap gunakan "{editDisplayName}"</div>
                           )}
                         </div>
                       )}
                     </div>
                   </div>
-                ) : editRole === 'loyalis' ? (
-                  <div className="space-y-3 mt-1.5">
-                    <div className="p-3 rounded-xl bg-sky-50 border border-sky-100 text-sky-800 text-[11px] font-medium leading-relaxed">
-                      Pilih karyawan Loyalis yang dihubungkan ke akun ini.
+
+                  {/* Alamat Email Input */}
+                  <div>
+                    <Label htmlFor="editEmail" className="text-xs font-semibold text-slate-600 block mb-1.5">Alamat Email</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 w-4 h-4 text-slate-400 pointer-events-none" />
+                      <Input
+                        id="editEmail"
+                        type="email"
+                        placeholder="Ketik alamat email..."
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        className="pl-9 rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20 h-[42px] bg-white text-sm font-semibold"
+                        autoComplete="off"
+                      />
                     </div>
+                  </div>
+                </div>
+
+                {/* Card 2: Peran & Otoritas */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-4 shadow-xs">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-indigo-500" />
+                    Peran & Otoritas Sistem
+                  </span>
+
+                  <div>
+                    <Label className="text-xs font-semibold text-slate-600 block mb-1.5">Tingkat Otoritas</Label>
                     <select
-                      value={editLinkedEmployeeId}
-                      onChange={(e) => setEditLinkedEmployeeId(e.target.value)}
-                      className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20"
+                      value={editRole}
+                      onChange={(e) => {
+                        const role = e.target.value as any;
+                        setEditRole(role);
+                        if (role !== 'satker_head') {
+                          setEditPermitted([]);
+                        }
+                        if (role !== 'honorer' && role !== 'loyalis') {
+                          setEditLinkedEmployeeId('');
+                        }
+                      }}
+                      className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3.5 py-3 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 shadow-xs"
                     >
-                      <option value="">-- Pilih Karyawan --</option>
-                      {allEmployees
-                        .filter(emp => emp.type === 'Loyalis')
-                        .map(emp => (
-                          <option key={emp.id} value={emp.id}>
-                            {emp.name} ({emp.detail})
-                          </option>
-                        ))}
+                      <option value="satker_head">Kepala Satuan Kerja Pekarya (SatKer Pekarya)</option>
+                      <option value="satker_head_loyalis">Kepala Satuan Kerja Loyalis (SatKer Loyalis)</option>
+                      <option value="employee_admin">Staf Master Data Pegawai (Employee Admin)</option>
+                      <option value="super_admin">Super Administrator (BAK)</option>
+                      <option value="honorer">Karyawan Honorer (Lapor Kegiatan)</option>
+                      <option value="loyalis">Karyawan Loyalis (Lihat Slip Gaji)</option>
+                      <option value="loyalis_presence_admin">Penanggung Jawab Presensi Loyalis</option>
+                      <option value="ketua_shift_satpam">Ketua Shift SATPAM (Lapor Shift Regu)</option>
                     </select>
                   </div>
-                ) : (
-                  <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50 max-h-[140px] overflow-y-auto space-y-2 mt-1.5">
-                    {dynamicCategories.map(cat => {
-                      const isChecked = editPermitted.includes(cat);
-                      return (
-                        <div key={cat} className="flex items-center space-x-2.5">
-                          <Checkbox
-                            id={`edit-cat-${cat}`}
-                            checked={isChecked}
-                            onCheckedChange={() => handleToggleEditPermitted(cat)}
-                            className="rounded border-slate-300 data-[state=checked]:bg-indigo-600"
-                          />
-                          <Label htmlFor={`edit-cat-${cat}`} className="text-xs font-bold text-slate-700 uppercase cursor-pointer select-none">
-                            {cat}
-                          </Label>
-                        </div>
-                      );
-                    })}
+
+                  {/* Role Summary Badge */}
+                  <div className="p-3.5 rounded-xl bg-white border border-slate-200/80 text-xs leading-relaxed text-slate-600 space-y-1">
+                    <span className="font-bold text-slate-800 text-[11px] block">Ringkasan Hak Akses:</span>
+                    {editRole === 'satker_head' && <span>Dapat melakukan scan presensi dan approval kegiatan pada unit kerja yang diizinkan.</span>}
+                    {editRole === 'satker_head_loyalis' && <span>Mengelola data vakasi & laporan kehadiran Loyalis secara penuh.</span>}
+                    {editRole === 'employee_admin' && <span>Akses khusus pengelolaan Master Data Pegawai (White Collar & Blue Collar).</span>}
+                    {editRole === 'super_admin' && <span>Akses penuh bypass ke seluruh modul payroll, legalitas, dan pengaturan pengguna.</span>}
+                    {editRole === 'honorer' && <span>Akun khusus karyawan Pekarya untuk pelaporan kegiatan harian di Portal Karyawan.</span>}
+                    {editRole === 'loyalis' && <span>Akun khusus karyawan Loyalis untuk melihat slip gaji digital mandiri.</span>}
+                    {editRole === 'loyalis_presence_admin' && <span>Mengelola kalkulator presensi loyalis via raw daily logs.</span>}
+                    {editRole === 'ketua_shift_satpam' && <span>Dapat melaporkan shift kehadiran harian seluruh anggota regunya.</span>}
                   </div>
-                )}
+                </div>
+              </div>
+
+              {/* RIGHT COLUMN: Hak Akses, Pengaturan Unit & Regu */}
+              <div className="flex flex-col gap-4 overflow-y-auto pr-1">
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-4 shadow-xs h-full flex flex-col">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-indigo-500" />
+                    {editRole === 'honorer' || editRole === 'loyalis' ? 'Hubungkan Data Pegawai' :
+                     editRole === 'ketua_shift_satpam' ? 'Konfigurasi Regu & Shift Satpam' :
+                     'Akses Unit Kerja'}
+                  </span>
+
+                  {/* Content per role */}
+                  {editRole === 'super_admin' ? (
+                    <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-200/80 text-amber-900 text-xs font-medium leading-relaxed">
+                      Super Administrator memiliki hak akses bypass ke <strong>seluruh unit kerja</strong>. Pilihan unit dinonaktifkan.
+                    </div>
+                  ) : editRole === 'employee_admin' ? (
+                    <div className="p-4 rounded-xl bg-emerald-50/80 border border-emerald-200/80 text-emerald-900 text-xs font-medium leading-relaxed">
+                      Employee Administrator memiliki hak akses penuh ke <strong>seluruh data pegawai</strong>. Pilihan unit dinonaktifkan.
+                    </div>
+                  ) : editRole === 'satker_head_loyalis' ? (
+                    <div className="p-4 rounded-xl bg-violet-50/80 border border-violet-200/80 text-violet-900 text-xs font-medium leading-relaxed">
+                      Kepala Satuan Kerja Loyalis secara otomatis memiliki hak akses penuh ke <strong>seluruh unit Loyalis</strong>.
+                    </div>
+                  ) : editRole === 'loyalis_presence_admin' ? (
+                    <div className="p-4 rounded-xl bg-pink-50/80 border border-pink-200/80 text-pink-900 text-xs font-medium leading-relaxed">
+                      Penanggung Jawab Presensi Loyalis memiliki akses khusus ke kalkulator presensi loyalis via raw daily logs.
+                    </div>
+                  ) : editRole === 'ketua_shift_satpam' ? (
+                    <div className="space-y-4 flex-1 flex flex-col">
+                      <div className="p-3.5 rounded-xl bg-purple-50 border border-purple-100 text-purple-900 text-xs leading-relaxed font-medium">
+                        Atur Ketua Shift dan alokasi 9 anggota regu yang dipimpin.
+                      </div>
+
+                      {/* 1. Pilih Ketua Shift */}
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Pilih Ketua Shift</Label>
+                        <select
+                          value={editLinkedEmployeeId}
+                          onChange={(e) => {
+                            setEditLinkedEmployeeId(e.target.value);
+                            setEditTeamMembers(prev => prev.filter(id => id !== e.target.value));
+                          }}
+                          className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                        >
+                          <option value="">-- Pilih Ketua Shift --</option>
+                          {allEmployees
+                            .filter(emp => emp.type === 'Pekarya' && emp.detail === 'SATPAM')
+                            .map(emp => (
+                              <option key={emp.id} value={emp.id}>
+                                {emp.name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      {/* 2. Pilih Nomor Regu */}
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Nomor Regu (Roster Team Slot)</Label>
+                        <select
+                          value={editTeamNumber}
+                          onChange={(e) => {
+                            const selectedTeamNum = e.target.value;
+                            setEditTeamNumber(selectedTeamNum);
+                            const matchedTeam = shiftTeams.find(t => t.id === `team_${selectedTeamNum}`);
+                            if (matchedTeam) {
+                              setEditTeamMembers(matchedTeam.memberEmployeeIds || []);
+                            }
+                          }}
+                          className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-purple-500"
+                        >
+                          <option value="1">Regu 1 (Slot: Shift {getSatpamShiftForTeam(1, new Date())})</option>
+                          <option value="2">Regu 2 (Slot: Shift {getSatpamShiftForTeam(2, new Date())})</option>
+                          <option value="3">Regu 3 (Slot: Shift {getSatpamShiftForTeam(3, new Date())})</option>
+                        </select>
+                      </div>
+
+                      {/* Warning Banner for Team Conflict / Reorganization */}
+                      {(() => {
+                        const selectedTeam = shiftTeams.find(t => t.id === `team_${editTeamNumber}`);
+                        const currentLeaderId = selectedTeam?.ketuaShiftId;
+                        const currentLeaderName = selectedTeam?.ketuaShiftName;
+                        const isConflict = currentLeaderId && currentLeaderId !== editLinkedEmployeeId;
+                        const selectedEmpName = allEmployees.find(e => e.id === editLinkedEmployeeId)?.name || 'Pengguna ini';
+                        const otherTeam = shiftTeams.find(t => t.ketuaShiftId === editLinkedEmployeeId && t.id !== `team_${editTeamNumber}`);
+
+                        return (
+                          <>
+                            {isConflict && (
+                              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-900 text-xs font-medium space-y-1 shadow-xs">
+                                <div className="flex items-center gap-2 font-bold text-amber-800">
+                                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                                  <span>Perhatian: Reorganisasi Ketua Shift</span>
+                                </div>
+                                <p className="leading-relaxed text-[11px] text-amber-700">
+                                  Regu {editTeamNumber} saat ini dipimpin oleh <strong className="font-bold underline decoration-amber-400">{currentLeaderName}</strong>. Menyimpan perubahan ini akan menetapkan <strong className="font-bold">{selectedEmpName}</strong> sebagai Ketua Shift Regu {editTeamNumber} menggantikan {currentLeaderName}.
+                                </p>
+                              </div>
+                            )}
+
+                            {otherTeam && (
+                              <div className="p-3 rounded-xl bg-blue-50 border border-blue-200/80 text-blue-900 text-xs font-medium space-y-1 shadow-xs">
+                                <div className="flex items-center gap-2 font-bold text-blue-800">
+                                  <Shield className="w-4 h-4 text-blue-600 shrink-0" />
+                                  <span>Pemindahan Kepemimpinan Regu</span>
+                                </div>
+                                <p className="leading-relaxed text-[11px] text-blue-700">
+                                  {selectedEmpName} sebelumnya tercatat sebagai Ketua Shift Regu {otherTeam.id.split('_')[1]}. Perubahan ini akan memindahkan kepemimpinannya ke Regu {editTeamNumber}.
+                                </p>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+
+                      {/* 3. Pilih Anggota Regu */}
+                      <div className="space-y-1.5 flex-1 flex flex-col min-h-0">
+                        <Label className="text-xs font-semibold text-slate-600 flex justify-between">
+                          <span>Pilih Anggota Regu</span>
+                          <span className="text-purple-600 font-bold">Terpilih: {editTeamMembers.length}</span>
+                        </Label>
+                        
+                        <div className="p-3 rounded-xl bg-white border border-slate-200/80 flex-1 min-h-[160px] overflow-y-auto space-y-2">
+                          {allEmployees
+                            .filter(emp => emp.type === 'Pekarya' && emp.detail === 'SATPAM' && emp.id !== editLinkedEmployeeId)
+                            .map(emp => {
+                              const isChecked = editTeamMembers.includes(emp.id);
+                              return (
+                                <div key={emp.id} className="flex items-center space-x-2.5 hover:bg-slate-50 p-1 rounded-lg transition-colors">
+                                  <Checkbox
+                                    id={`edit-member-${emp.id}`}
+                                    checked={isChecked}
+                                    onCheckedChange={() => {
+                                      setEditTeamMembers(prev => 
+                                        prev.includes(emp.id)
+                                          ? prev.filter(id => id !== emp.id)
+                                          : [...prev, emp.id]
+                                      );
+                                    }}
+                                    className="rounded border-slate-300 data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
+                                  />
+                                  <Label htmlFor={`edit-member-${emp.id}`} className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                                    {emp.name}
+                                  </Label>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
+                  ) : editRole === 'honorer' ? (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-xl bg-teal-50 border border-teal-100 text-teal-800 text-[11px] font-medium leading-relaxed">
+                        Pilih karyawan Pekarya yang dihubungkan ke akun ini.
+                      </div>
+                      <div className="relative">
+                        <Input
+                          placeholder="Cari nama karyawan Pekarya..."
+                          value={editEmployeeSearchText}
+                          onChange={(e) => {
+                            setEditEmployeeSearchText(e.target.value);
+                            if (!e.target.value) {
+                              setEditLinkedEmployeeId('');
+                            }
+                            setShowEditEmployeeSuggestions(true);
+                          }}
+                          onFocus={() => setShowEditEmployeeSuggestions(true)}
+                          onBlur={() => {
+                            setTimeout(() => setShowEditEmployeeSuggestions(false), 200);
+                          }}
+                          className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 h-[42px] bg-white font-semibold text-sm"
+                          autoComplete="off"
+                        />
+                        {showEditEmployeeSuggestions && (
+                          <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50 animate-in fade-in slide-in-from-top-1">
+                            {cleaningEmployees
+                              .filter(emp => emp.name.toLowerCase().includes(editEmployeeSearchText.toLowerCase()))
+                              .map(emp => (
+                                <div
+                                  key={emp.id}
+                                  onMouseDown={() => {
+                                    setEditLinkedEmployeeId(emp.id);
+                                    setEditEmployeeSearchText(`${emp.name} (${emp.category})`);
+                                    setShowEditEmployeeSuggestions(false);
+                                  }}
+                                  className="p-3 text-xs font-bold text-slate-700 hover:bg-teal-50/50 cursor-pointer transition-colors"
+                                >
+                                  {emp.name} ({emp.category})
+                                </div>
+                              ))}
+                            {cleaningEmployees.filter(emp => emp.name.toLowerCase().includes(editEmployeeSearchText.toLowerCase())).length === 0 && (
+                              <div className="p-3 text-xs italic text-slate-400 bg-slate-50">Karyawan tidak ditemukan.</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : editRole === 'loyalis' ? (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-xl bg-sky-50 border border-sky-100 text-sky-800 text-[11px] font-medium leading-relaxed">
+                        Pilih karyawan Loyalis yang dihubungkan ke akun ini.
+                      </div>
+                      <select
+                        value={editLinkedEmployeeId}
+                        onChange={(e) => setEditLinkedEmployeeId(e.target.value)}
+                        className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20"
+                      >
+                        <option value="">-- Pilih Karyawan --</option>
+                        {allEmployees
+                          .filter(emp => emp.type === 'Loyalis')
+                          .map(emp => (
+                            <option key={emp.id} value={emp.id}>
+                              {emp.name} ({emp.detail})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-xl border border-slate-200 bg-white max-h-[300px] overflow-y-auto space-y-2.5">
+                      {dynamicCategories.map(cat => {
+                        const isChecked = editPermitted.includes(cat);
+                        return (
+                          <div key={cat} className="flex items-center space-x-2.5 hover:bg-slate-50 p-1.5 rounded-lg transition-colors">
+                            <Checkbox
+                              id={`edit-cat-${cat}`}
+                              checked={isChecked}
+                              onCheckedChange={() => handleToggleEditPermitted(cat)}
+                              className="rounded border-slate-300 data-[state=checked]:bg-indigo-600"
+                            />
+                            <Label htmlFor={`edit-cat-${cat}`} className="text-xs font-bold text-slate-700 uppercase cursor-pointer select-none">
+                              {cat}
+                            </Label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="pt-3 border-t border-slate-100 shrink-0 flex items-center justify-end gap-3">
             <Button
               type="button"
-              variant="ghost"
-              autoFocus
+              variant="outline"
               onClick={() => setEditingUser(null)}
-              className="rounded-xl font-bold text-slate-500 hover:bg-slate-50"
+              className="rounded-xl border-slate-200 text-slate-600 font-bold hover:bg-slate-50 px-5"
             >
               Batal
             </Button>
             <Button
-              onClick={handleUpdateUser}
+              type="button"
               disabled={actionLoading}
-              className="rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-md shadow-indigo-100 flex items-center gap-2"
+              onClick={handleUpdateUser}
+              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 shadow-sm shadow-indigo-200 flex items-center gap-2"
             >
-              {actionLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+              {actionLoading && <Loader2 className="w-4 h-4 animate-spin text-white" />}
               Simpan Perubahan
             </Button>
           </DialogFooter>
