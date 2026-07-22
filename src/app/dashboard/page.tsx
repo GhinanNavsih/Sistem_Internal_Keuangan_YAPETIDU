@@ -2488,46 +2488,6 @@ export default function TreasuryDashboard() {
 
             </div>
 
-            {/* Section 6: Quick Navigation Cards */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-800">Navigasi Cepat Modul</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                {/* Nav Card 1 */}
-                <Link href="/dashboard/payroll">
-                  <div className="group bg-white/60 backdrop-blur-md p-6 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-indigo-300/60 hover:-translate-y-1 transition-all duration-300 cursor-pointer flex justify-between items-start">
-                    <div className="space-y-2">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all">
-                        <FileText className="w-5 h-5" />
-                      </div>
-                      <h4 className="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">Validasi Gaji</h4>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        Periksa rincian slip gaji, kelola override data, lakukan persetujuan (konfirmasi), serta unduh rekapitulasi slip.
-                      </p>
-                    </div>
-                    <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all mt-1" />
-                  </div>
-                </Link>
-
-                {/* Nav Card 2 */}
-                <Link href="/dashboard/employees">
-                  <div className="group bg-white/60 backdrop-blur-md p-6 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-indigo-300/60 hover:-translate-y-1 transition-all duration-300 cursor-pointer flex justify-between items-start">
-                    <div className="space-y-2">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all">
-                        <Users className="w-5 h-5" />
-                      </div>
-                      <h4 className="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">Master Data Pegawai</h4>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        Kelola data induk pegawai Loyalis (Gaji Pokok/Jabatan Struktural) dan Pekarya (Harian/Mingguan).
-                      </p>
-                    </div>
-                    <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all mt-1" />
-                  </div>
-                </Link>
-
-              </div>
-            </div>
-
           </>
         )}
 
