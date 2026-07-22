@@ -250,6 +250,77 @@ function JourneyReportContent() {
   const [isCalculatingExtraRoute, setIsCalculatingExtraRoute] = useState(false);
   const [extraRouteError, setExtraRouteError] = useState('');
 
+  // Live real-time calculations for Reimburse Delta & Upah Bersih
+  const liveCalculations = useMemo(() => {
+    if (!journey) return null;
+    const isNdalem = journey.vehicleName === 'Ndalem';
+    const originalTotalDist = (journey.distanceKm || 0) * 2;
+    const extraDistanceKm = Math.max(0, calculatedDistanceKm - originalTotalDist);
+    const extraOperationalCost = Math.ceil(extraDistanceKm * (journey.vehicleRate || 0));
+
+    const preAuthorizedDurationPP = journey.customDurationPP || (journey.durationHours ? journey.durationHours * 2 : 0);
+    const preAuthorizedMeal = isNdalem
+      ? 0
+      : (journey.mealAllowance !== undefined && journey.mealAllowance !== null && journey.mealAllowance > 0
+          ? journey.mealAllowance
+          : getMealAllowanceForDuration(preAuthorizedDurationPP));
+
+    const baseCostVal = journey.baseOperationalCost ||
+      ((journey.totalOperationalCost || 0) - preAuthorizedMeal - (journey.tollParkingFee || 0));
+    const preAuthorizedToll = journey.tollParkingFee || 0;
+    const totalPreAuthorizedAllowance = baseCostVal + preAuthorizedToll;
+
+    const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
+    const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
+    const totalActualSpent = fuelVal + tollVal;
+
+    const elapsedHours = (formTimeStart && formTimeEnd) ? calculateElapsedHours(formTimeStart, formTimeEnd) : 0;
+    const actualMealAllowance = isNdalem ? 0 : getMealAllowanceForDuration(elapsedHours);
+    const extraMealAllowance = isNdalem ? 0 : Math.max(0, actualMealAllowance - preAuthorizedMeal);
+
+    const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
+    const extraTollCost = Math.max(0, tollVal - preAuthorizedToll);
+
+    const positiveReimburseDelta = extraMealAllowance + extraFuelCost + extraTollCost + extraOperationalCost;
+    const unspentCash = Math.max(0, totalPreAuthorizedAllowance - totalActualSpent);
+
+    const finalReimburseDelta = Math.max(0, positiveReimburseDelta - unspentCash);
+    const remainingUnspentCash = Math.max(0, unspentCash - positiveReimburseDelta);
+
+    const premiumOvernight = formIsOvernight ? 50000 : 0;
+    const componentJarak = calculatedDistanceKm * 300;
+    const componentWaktu = calculatedDurationHours * 5000;
+    const baseDriverWage = componentJarak + componentWaktu + premiumOvernight;
+    const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
+
+    return {
+      isNdalem,
+      extraDistanceKm,
+      extraOperationalCost,
+      preAuthorizedMeal,
+      actualMealAllowance,
+      extraMealAllowance,
+      baseCostVal,
+      extraFuelCost,
+      preAuthorizedToll,
+      extraTollCost,
+      totalPreAuthorizedAllowance,
+      totalActualSpent,
+      positiveReimburseDelta,
+      unspentCash,
+      finalReimburseDelta,
+      remainingUnspentCash,
+      premiumOvernight,
+      componentJarak,
+      componentWaktu,
+      baseDriverWage,
+      finalUpahBersih,
+      elapsedHours,
+      fuelVal,
+      tollVal,
+    };
+  }, [journey, calculatedDistanceKm, calculatedDurationHours, formTimeStart, formTimeEnd, formIsOvernight, formFuelFee, formTollParkingFee]);
+
   // Map selector modal
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [mapSearchText, setMapSearchText] = useState('');
@@ -1243,6 +1314,86 @@ function JourneyReportContent() {
                   </div>
                 )}
               </div>
+
+              {/* ── Real-time Calculation Summary Card ─────────────────── */}
+              {liveCalculations && (
+                <div className="bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-4 sm:p-5 shadow-xl space-y-3.5 border border-indigo-700/50">
+                  <div className="flex items-center justify-between border-b border-indigo-700/50 pb-2.5">
+                    <span className="text-xs font-black uppercase tracking-wider text-indigo-200 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      Kalkulasi Otomatis (Real-time)
+                    </span>
+                    <span className="text-[10px] font-extrabold bg-indigo-800/80 text-indigo-200 px-2 py-0.5 rounded-md border border-indigo-700">
+                      Otomatis
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Left: Total Reimburse (Delta) */}
+                    <div className="bg-indigo-950/80 p-3 rounded-2xl border border-indigo-700/50 space-y-1">
+                      <span className="text-[9px] font-black text-indigo-300 uppercase tracking-wider block">
+                        Total Reimburse (Delta)
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-blue-400 block">
+                        {fmtRp(liveCalculations.finalReimburseDelta)}
+                      </span>
+                      {liveCalculations.positiveReimburseDelta > 0 && (
+                        <p className="text-[9px] text-indigo-200 font-medium leading-tight">
+                          Item ekstra: +{fmtRp(liveCalculations.positiveReimburseDelta)}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Right: Estimasi Upah Bersih */}
+                    <div className="bg-emerald-950/80 p-3 rounded-2xl border border-emerald-700/50 space-y-1">
+                      <span className="text-[9px] font-black text-emerald-300 uppercase tracking-wider block">
+                        Estimasi Upah Bersih
+                      </span>
+                      <span className="text-base sm:text-lg font-black text-emerald-400 block">
+                        {fmtRp(liveCalculations.finalUpahBersih)}
+                      </span>
+                      <p className="text-[9px] text-emerald-200 font-medium leading-tight">
+                        Base: {fmtRp(liveCalculations.baseDriverWage)}
+                        {liveCalculations.remainingUnspentCash > 0 && ` (-${fmtRp(liveCalculations.remainingUnspentCash)})`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Breakdown Badges */}
+                  <div className="space-y-1.5 pt-1 text-[10px]">
+                    {liveCalculations.extraDistanceKm > 0 && (
+                      <div className="flex items-center justify-between bg-indigo-950/40 px-2.5 py-1 rounded-lg border border-indigo-800/40 text-indigo-200">
+                        <span>Rute Tambahan (+{liveCalculations.extraDistanceKm.toFixed(1)} km)</span>
+                        <span className="font-bold text-amber-300">+{fmtRp(liveCalculations.extraOperationalCost)}</span>
+                      </div>
+                    )}
+                    {liveCalculations.extraMealAllowance > 0 && (
+                      <div className="flex items-center justify-between bg-indigo-950/40 px-2.5 py-1 rounded-lg border border-indigo-800/40 text-indigo-200">
+                        <span>Tambahan Uang Makan</span>
+                        <span className="font-bold text-amber-300">+{fmtRp(liveCalculations.extraMealAllowance)}</span>
+                      </div>
+                    )}
+                    {liveCalculations.extraFuelCost > 0 && (
+                      <div className="flex items-center justify-between bg-indigo-950/40 px-2.5 py-1 rounded-lg border border-indigo-800/40 text-indigo-200">
+                        <span>Kelebihan BBM</span>
+                        <span className="font-bold text-amber-300">+{fmtRp(liveCalculations.extraFuelCost)}</span>
+                      </div>
+                    )}
+                    {liveCalculations.extraTollCost > 0 && (
+                      <div className="flex items-center justify-between bg-indigo-950/40 px-2.5 py-1 rounded-lg border border-indigo-800/40 text-indigo-200">
+                        <span>Kelebihan Tol & Parkir</span>
+                        <span className="font-bold text-amber-300">+{fmtRp(liveCalculations.extraTollCost)}</span>
+                      </div>
+                    )}
+                    {liveCalculations.unspentCash > 0 && (
+                      <div className="flex items-center justify-between bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-800/40 text-emerald-200">
+                        <span>Sisa Uang Jalan Operasional</span>
+                        <span className="font-bold text-emerald-300">-{fmtRp(liveCalculations.unspentCash)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* ── Sticky Action Bar Footer ───────────────────────────── */}
               <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-lg border-t border-slate-200/80 p-3 shadow-lg">
