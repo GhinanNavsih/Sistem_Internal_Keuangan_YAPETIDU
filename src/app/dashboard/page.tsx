@@ -854,9 +854,9 @@ export default function TreasuryDashboard() {
       agg.totalSlipsCount++;
 
       // Include locked, confirmed, printed, and draft slips in historical sums
-      const isEligible = d.status === 'locked' || d.status === 'confirmed' || d.status === 'printed' || d.status === 'draft';
+      const isEligible = !d.status || d.status === 'locked' || d.status === 'confirmed' || d.status === 'printed' || d.status === 'draft';
       if (isEligible) {
-        const isConfirmed = d.status === 'locked' || d.status === 'confirmed' || d.status === 'printed';
+        const isConfirmed = !d.status || d.status === 'locked' || d.status === 'confirmed' || d.status === 'printed' || d.status === 'draft';
         if (isConfirmed) {
           agg.confirmedSlipsCount++;
         }
@@ -943,7 +943,7 @@ export default function TreasuryDashboard() {
         let deductionsList: { label: string; amount: number }[] = [];
         let earningsList: { label: string; amount: number }[] = [];
 
-        if (slip && (slip.status === 'locked' || slip.status === 'confirmed' || slip.status === 'printed')) {
+        if (!slip || !slip.status || slip.status === 'draft' || slip.status === 'locked' || slip.status === 'confirmed' || slip.status === 'printed') {
           agg.confirmedSlipsCount++;
           agg.confirmedLoyalisCount++;
         }
@@ -1051,7 +1051,7 @@ export default function TreasuryDashboard() {
         let deductionsList: { label: string; amount: number }[] = [];
         let earningsList: { label: string; amount: number }[] = [];
 
-        if (slip && (slip.status === 'locked' || slip.status === 'confirmed' || slip.status === 'printed')) {
+        if (!slip || !slip.status || slip.status === 'draft' || slip.status === 'locked' || slip.status === 'confirmed' || slip.status === 'printed') {
           agg.confirmedSlipsCount++;
           agg.confirmedPekaryaCount++;
         }
@@ -1126,6 +1126,7 @@ export default function TreasuryDashboard() {
     salaryMatrixBlue,
     salaryMatrixWhite,
     functionalAllowanceMap,
+    kepangkatanAllowanceMap,
     koperasiDeductions,
     koperasiSavings,
     selectedPeriodUraianMap,
@@ -2050,8 +2051,8 @@ export default function TreasuryDashboard() {
               <div className="group bg-white/60 backdrop-blur-md p-5 rounded-2xl border border-slate-200/50 shadow-sm hover:shadow-lg hover:border-slate-300/60 hover:-translate-y-0.5 transition-all duration-300">
                 <div className="flex items-center justify-between mb-4">
                   <div className="space-y-0.5">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pegawai Terbayar</p>
-                    <p className="text-slate-400 text-[11px]">Slip terkonfirmasi periode ini</p>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pegawai Terhitung</p>
+                    <p className="text-slate-400 text-[11px]">Draft & terkonfirmasi periode ini</p>
                   </div>
                   <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 group-hover:bg-slate-200 transition-colors">
                     <CheckCircle className="w-5 h-5" />
