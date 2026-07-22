@@ -324,10 +324,14 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         {profile && (
           <div className="flex flex-wrap items-center justify-between gap-4 w-full">
             <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
-              {profile.role === 'satker_head' && (
+              {(profile.role === 'satker_head' || profile.role === 'super_admin') && (
                 <button
                   onClick={() => router.push(`/dashboard/payroll/activity-review?month=${month}&year=${year}`)}
-                  className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer text-slate-500 hover:text-slate-800 hover:bg-slate-50`}
+                  className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                    pathname.startsWith('/dashboard/payroll/activity-review')
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                  }`}
                 >
                   <ClipboardCheck className="w-4.5 h-4.5" />
                   Review Kegiatan

@@ -12,6 +12,7 @@ import {
   FileSpreadsheet,
   Banknote,
   Coins,
+  Car,
   LogOut,
   Menu,
   X
@@ -49,6 +50,12 @@ export default function Sidebar() {
       exact: true
     },
     {
+      name: 'Dashboard Perjalanan',
+      path: `/dashboard/payroll/journey-dashboard?month=${currentMonth}&year=${currentYear}`,
+      icon: Car,
+      activePattern: '/dashboard/payroll/journey-dashboard'
+    },
+    {
       name: 'Manajemen Akses',
       path: '/dashboard/users',
       icon: UserCog
@@ -76,6 +83,9 @@ export default function Sidebar() {
       return pathname === item.path;
     }
     if (item.activePattern) {
+      if (item.activePattern === '/dashboard/payroll/uraian') {
+        return pathname.startsWith('/dashboard/payroll/uraian') || pathname.startsWith('/dashboard/payroll/activity-review');
+      }
       return pathname.startsWith(item.activePattern);
     }
     return pathname.startsWith(item.path);

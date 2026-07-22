@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -39,6 +39,7 @@ import type {
 import { generateRekapPresensiKebersihanyPdf } from '@/utils/generateRekapPresensiKebersihan';
 
 export default function RekapPekaryaPage() {
+  const router = useRouter();
   const { profile } = useAuth();
   const searchParams = useSearchParams();
 
@@ -851,7 +852,7 @@ export default function RekapPekaryaPage() {
       <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-[20px] border border-slate-200/60 shadow-sm">
         {['KEBERSIHAN', 'KEBERSIHAN_IC'].includes(category) && (
           <Button
-            onClick={() => window.location.href = '/dashboard/payroll/activity-review'}
+            onClick={() => router.push(`/dashboard/payroll/activity-review?month=${month}&year=${year}`)}
             variant="outline"
             className="rounded-xl border-teal-200 text-teal-700 bg-teal-50 hover:bg-teal-100 hover:border-teal-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer"
           >
