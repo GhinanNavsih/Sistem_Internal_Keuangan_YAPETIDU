@@ -470,26 +470,6 @@ function DriverHistoryContent() {
                       </div>
 
                       <div className="flex items-center gap-1.5">
-                        {activity.fuelReceiptUrl && (
-                          <a
-                            href={activity.fuelReceiptUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md transition-colors"
-                          >
-                            📄 Bukti BBM
-                          </a>
-                        )}
-                        {activity.tollReceiptUrl && (
-                          <a
-                            href={activity.tollReceiptUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md transition-colors"
-                          >
-                            📄 Bukti Tol
-                          </a>
-                        )}
                         {(activity.status === 'pending' || activity.status === 'declined') && (
                           <Link href={`/employee/activities?editReportId=${activity.id}`}>
                             <Button
