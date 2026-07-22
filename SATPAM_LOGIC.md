@@ -42,14 +42,14 @@ There are 3 fixed shift schedules:
 ## 3. Posts and Duty Assignment
 
 There are **9 posts** to guard:
-1. Pos 1: Pos Graha
-2. Pos 2: Pos FIK
-3. Pos 3: Pos Stasiun
-4. Pos 4: Pos IC
-5. Pos 5: Pos Ploso Plaza
+1. Pos 1: Pos IC
+2. Pos 2: Pos Stasiun
+3. Pos 3: Pos ATM Graha
+4. Pos 4: Pos Plaza
+5. Pos 5: Pos Masjid Induk
 6. Pos 6: Pos Gor
 7. Pos 7: Pos Saintek
-8. Pos 8: Pos Masjid Induk
+8. Pos 8: Pos Parkiran FIK
 9. Pos 9: Pos Hurun-inn
 
 ### Daily Duty Assignments

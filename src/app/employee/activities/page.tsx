@@ -532,14 +532,14 @@ function getInitialSatpamDateISO(): string {
 const YEARS = Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i);
 
 const POSTS_CONFIG = [
-  { id: 'Pos 1', name: 'Pos Graha' },
-  { id: 'Pos 2', name: 'Pos FIK' },
-  { id: 'Pos 3', name: 'Pos Stasiun' },
-  { id: 'Pos 4', name: 'Pos IC' },
-  { id: 'Pos 5', name: 'Pos Plaza' },
+  { id: 'Pos 1', name: 'Pos IC' },
+  { id: 'Pos 2', name: 'Pos Stasiun' },
+  { id: 'Pos 3', name: 'Pos ATM Graha' },
+  { id: 'Pos 4', name: 'Pos Plaza' },
+  { id: 'Pos 5', name: 'Pos Masjid Induk' },
   { id: 'Pos 6', name: 'Pos Gor' },
   { id: 'Pos 7', name: 'Pos Saintek' },
-  { id: 'Pos 8', name: 'Pos Masjid Induk' },
+  { id: 'Pos 8', name: 'Pos Parkiran FIK' },
   { id: 'Pos 9', name: 'Pos Hurun-inn' },
 ];
 
