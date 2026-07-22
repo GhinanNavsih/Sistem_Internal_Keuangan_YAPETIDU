@@ -796,11 +796,11 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
   const bottomMargin = 15;
   let y = 15;
 
-  function drawPageHeader() {
+  function drawPageHeader(titleText = 'LAMPIRAN: PANDUAN & PERHITUNGAN PENERIMAAN GAJI') {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(63, 81, 181); // Indigo color
-    doc.text('LAMPIRAN: PANDUAN & PERHITUNGAN DETAIL GAJI', startX, y);
+    doc.text(titleText, startX, y);
     
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
@@ -874,190 +874,387 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
     children_pt: 0
   };
 
-  const ensureSpace = (height: number) => {
+  const ensureSpace = (height: number, pageTitle = 'LAMPIRAN: PANDUAN & PERHITUNGAN PENERIMAAN GAJI') => {
     if (y + height > pageHeight - bottomMargin) {
       doc.addPage();
       y = 15;
-      drawPageHeader();
+      drawPageHeader(pageTitle);
     }
   };
 
-  const sections = [
-    {
-      title: '1. Gaji Pokok',
-      formula: 'Formula: (Masa Kerja, Ketentuan Internal)',
-      bullets: [
-        'Ditentukan oleh Masa Kerja dan ketentuan internal lembaga yang berlaku.',
-        'Masa Kerja dihitung sejak Tanggal Pengakuan / Mulai Bekerja.',
-        'Dicocokkan dengan Matriks Gaji Pokok Yayasan yang berlaku.'
-      ],
-      params: [
-        { label: 'Masa Kerja', val: data.yearsOfService !== undefined ? `${data.yearsOfService} Tahun` : '-' },
-        { label: 'Tgl Pengakuan', val: data.baseDate ? new Date(data.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-' },
-        { label: 'Gaji Pokok', val: formatIDR(gapokVal), highlight: true }
-      ]
-    },
-    {
-      title: '2. Tunjangan Keluarga',
-      formula: 'Formula: Gaji Pokok x % Akumulasi Tanggungan',
-      bullets: [
-        'Dihitung dari persentase anggota keluarga terdaftar:',
-        'Suami/Istri: 5% (maks 1) | Anak SD: 5% | Anak SLTP: 7.5% | Anak SLTA: 10% | Anak PT: 12.5%.'
-      ],
-      params: [
-        { label: 'Tanggungan Suami/Istri', val: `${famMetrics.spouse_count} orang (5%)` },
-        { label: 'Tanggungan Anak (SD/SLTP/SLTA/PT)', val: `${famMetrics.children_sd}/${famMetrics.children_sltp}/${famMetrics.children_slta}/${famMetrics.children_pt} orang` },
-        { label: 'Persentase Total', val: `${(((famMetrics.spouse_count * 0.05) + (famMetrics.children_sd * 0.05) + (famMetrics.children_sltp * 0.075) + (famMetrics.children_slta * 0.1) + (famMetrics.children_pt * 0.125)) * 100).toFixed(1)}%` },
-        { label: 'Tunjangan Keluarga', val: formatIDR(tunjKeluargaVal), highlight: true }
-      ]
-    },
-    {
-      title: '3. Tunjangan Fungsional',
-      formula: 'Formula: (Pendidikan Terakhir, Jenjang Fungsional)',
-      bullets: [
-        'Ditentukan oleh tingkat pendidikan terakhir pegawai.',
-        'Disesuaikan dengan jenjang jabatan fungsional akademik yang diakui.',
-        'Menggunakan Nilai Dasar jika jenjang fungsional belum ditetapkan.'
-      ],
-      params: [
-        { label: 'Pendidikan Terakhir', val: data.educationLevel || '-' },
-        { label: 'Jenjang Fungsional', val: data.functionalTier || '-' },
-        { label: 'Tunjangan Fungsional', val: formatIDR(tunjFungsionalVal), highlight: true }
-      ]
-    },
-    {
-      title: '4. Kepangkatan',
-      formula: 'Formula: (Akumulasi Angka Kredit / KUM)',
-      bullets: [
-        'Berdasarkan total akumulasi angka kredit kepangkatan (KUM).',
-        'Nominal dicocokkan dengan Matriks Kepangkatan Yayasan.'
-      ],
-      params: [
-        { label: 'Akumulasi Kredit (KUM)', val: data.cummulativeCredit !== undefined ? String(data.cummulativeCredit) : '-' },
-        { label: 'Jenjang Kepangkatan', val: data.designation || '-' },
-        { label: 'T. Kepangkatan', val: formatIDR(tunjKepangkatanVal), highlight: true }
-      ]
-    },
-    {
-      title: '5. Presensi & Bonus Presensi',
-      formula: 'Formula: Penerimaan Penuh - Potongan Deviasi Menit Kerja',
-      bullets: [
-        'Penerimaan Presensi = Hari Kerja Aktif x Target Menit/hari x Rp 27,5.',
-        'Potongan Presensi = Kekurangan Menit (delta Target vs Kerja Riil) x Rp 27,5.',
-        'Bonus Presensi = Rp 250.000 (dikreditkan penuh; dipotong jika ada pelanggaran).'
-      ],
-      params: [
-        { label: 'Hari Kerja Aktif', val: `${presenceInfo.workingDays} hari` },
-        { label: 'Total Waktu Kerja', val: `${targetMinutes} menit` },
-        { label: 'Waktu Dikerjakan', val: `${actualMinutes} menit` },
-        { 
-          label: 'Bersih Presensi', 
-          val: `${formatIDR(Math.max(0, presensiEarningVal - potonganPresensiVal)).replace(/\s+/g, '')}\n= (${targetMinutes.toLocaleString('id-ID')} x Rp27,5) - ((${targetMinutes.toLocaleString('id-ID')} - ${actualMinutes.toLocaleString('id-ID')}) x Rp27,5)\n= ${formatIDR(presensiEarningVal).replace(/\s+/g, '')} - (${absenceMinutes.toLocaleString('id-ID')} x Rp27,5)\n= ${formatIDR(presensiEarningVal).replace(/\s+/g, '')} - ${formatIDR(potonganPresensiVal).replace(/\s+/g, '')}\n= ${formatIDR(Math.max(0, presensiEarningVal - potonganPresensiVal)).replace(/\s+/g, '')}`, 
-          highlight: true 
-        },
-        { 
-          label: 'Bersih Bonus Presensi', 
-          val: `${formatIDR(Math.max(0, bonusPresensiVal - potonganBonusPresensiVal)).replace(/\s+/g, '')}\nStratum ${potonganBonusPresensiVal === 0 ? 1 : potonganBonusPresensiVal <= 100000 ? 2 : potonganBonusPresensiVal <= 150000 ? 3 : potonganBonusPresensiVal <= 200000 ? 4 : 5} (${
-            potonganBonusPresensiVal === 0 ? 'Kekurangan = 0 menit' :
-            potonganBonusPresensiVal <= 100000 ? `Kekurangan ≤ ${(presenceInfo.workingDays * 30).toLocaleString('id-ID')} menit` :
-            potonganBonusPresensiVal <= 150000 ? `Kekurangan ≤ ${(presenceInfo.workingDays * 35).toLocaleString('id-ID')} menit` :
-            potonganBonusPresensiVal <= 200000 ? `Kekurangan ≤ ${(presenceInfo.workingDays * 40).toLocaleString('id-ID')} menit` :
-            `Kekurangan > ${(presenceInfo.workingDays * 40).toLocaleString('id-ID')} menit`
-          })\n= ${formatIDR(bonusPresensiVal).replace(/\s+/g, '')} - ${formatIDR(potonganBonusPresensiVal).replace(/\s+/g, '')}`, 
-          highlight: true 
-        }
-      ]
-    },
-    {
-      title: '6. Tunjangan Struktural',
-      formula: 'Formula: Jabatan Utama (100%) + Jabatan Tambahan (50%)',
-      bullets: [
-        'Dibayarkan penuh (100%) untuk jabatan dengan tunjangan tertinggi.',
-        'Masing-masing jabatan struktural tambahan dibayar sebesar 50%.'
-      ],
-      params: [
-        { label: 'Jabatan Terdaftar', val: data.jobCategory || '-' },
-        { label: 'Total T. Struktural', val: formatIDR(totalStrukturalVal), highlight: true }
-      ]
-    },
-    {
-      title: '7. Tunjangan Hari Tua & Instruksional',
-      formula: 'Formula: THT (10% x Gapok) + T. Khusus Instruksional',
-      bullets: [
-        'Tunjangan Hari Tua = 10% dari Gaji Pokok (subsidi dari Yayasan).',
-        'Tunjangan Instruksional = tunjangan khusus berdasarkan kebijakan/kondisi tertentu.'
-      ],
-      params: [
-        { label: 'Tunjangan Hari Tua', val: formatIDR(tunjHariTuaVal) },
-        { label: 'T. Instruksional', val: formatIDR(tunjInstruksionalVal) }
-      ]
-    },
-    {
-      title: '8. Tunjangan BPJS & Beras',
-      formula: 'Formula: Subsidi BPJS TK + BPJS KES + Tunjangan Beras',
-      bullets: [
-        'Tunjangan BPJS TK dan BPJS KES = subsidi iuran resmi sesuai ketentuan.',
-        'Tunjangan Beras = tunjangan pangan pokok yang bersifat tetap.'
-      ],
-      params: [
-        { label: 'T. BPJS TK', val: formatIDR(bpjsTkVal) },
-        { label: 'T. BPJS KES', val: formatIDR(bpjsKesVal) },
-        { label: 'Tunjangan Beras', val: formatIDR(berasVal) }
-      ]
-    },
-    {
-      title: '9. Vakasi Tambahan',
-      formula: 'Formula: Total Honorarium Kegiatan Resmi',
-      bullets: [
-        'Akumulasi honorarium dari kepanitiaan/kegiatan resmi disetujui periode ini.'
-      ],
-      customDraw: (sectionY: number) => {
-        let currentY = sectionY;
-        if (vakasiEvents.length > 0) {
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(7.5);
-          doc.setTextColor(120);
-          doc.text('Daftar Kegiatan Resmi:', startX + 5, currentY);
-          currentY += 4;
-          
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(8);
-          doc.setTextColor(50);
-          vakasiEvents.forEach((evt) => {
-            ensureSpace(5);
-            doc.text(`• ${String(evt.eventName)}`, startX + 8, currentY);
-            doc.setFont('helvetica', 'bold');
-            doc.text(formatIDR(evt.payGiven), startX + 175, currentY, { align: 'right' });
-            doc.setFont('helvetica', 'normal');
-            currentY += 4.5;
-          });
-        } else {
-          doc.setFont('helvetica', 'italic');
-          doc.setFontSize(8);
-          doc.setTextColor(140);
-          doc.text('Tidak ada kegiatan resmi terdaftar pada periode ini.', startX + 5, currentY);
-          currentY += 5;
-        }
-        
-        ensureSpace(8);
-        doc.setFillColor(235, 240, 250);
-        doc.rect(startX + 3, currentY, tableWidth - 6, 7, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
-        doc.setTextColor(63, 81, 181);
-        doc.text('Total Vakasi Tambahan', startX + 6, currentY + 4.8);
-        doc.text(formatIDR(totalVakasiVal), startX + 174, currentY + 4.8, { align: 'right' });
-        
-        return currentY + 11;
-      }
+  const getEarningAmount = (labels: string[]) => {
+    const match = data.earnings.find((e) => labels.some(l => e.label.toUpperCase() === l.toUpperCase() || e.label.toUpperCase().includes(l.toUpperCase())));
+    return match ? match.amount : 0;
+  };
+  const getDeductionAmount = (labels: string[]) => {
+    const match = data.deductions.find((d) => labels.some(l => d.label.toUpperCase() === l.toUpperCase() || d.label.toUpperCase().includes(l.toUpperCase())));
+    return match ? match.amount : 0;
+  };
+
+  const mapDeductionToSection = (d: PaySlipField, indexNum: number) => {
+    const labelUpper = d.label.toUpperCase();
+    let title = `${indexNum}. ${d.label.toUpperCase()}`;
+    let bullets: string[] = [];
+    let note = '';
+
+    if (labelUpper.includes('BPJS')) {
+      title = `${indexNum}. POTONGAN BPJS`;
+      bullets = [
+        'Iuran BPJS Ketenagakerjaan dan/atau Kesehatan yang dicatat pada sisi Potongan.',
+        'Karena iuran ditanggung 100% oleh lembaga, nominal Potongan ini persis seimbang dengan Tunjangan BPJS pada sisi Penerimaan (Net Zero Effect).'
+      ];
+      note = 'Subsidi 100% Lembaga (Net Zero Effect)';
+    } else if (labelUpper.includes('PINJAMAN KOP') || labelUpper.includes('KOPERASI UNIPDU')) {
+      title = `${indexNum}. PINJAMAN KOPERASI UNIPDU`;
+      bullets = [
+        'Potongan cicilan bulanan pinjaman anggota Koperasi UNIPDU.',
+        'Dipotong secara otomatis dari penggajian bulanan sesuai jadwal angsuran.'
+      ];
+      note = 'Cicilan Otomatis Koperasi UNIPDU';
+    } else if (labelUpper.includes('IURAN WAJIB')) {
+      title = `${indexNum}. IURAN WAJIB KOPERASI UNIPDU`;
+      bullets = [
+        'Iuran wajib keanggotaan Koperasi UNIPDU.',
+        'Disisihkan setiap bulan sebagai simpanan wajib anggota.'
+      ];
+      note = 'Simpanan Wajib Koperasi UNIPDU';
+    } else if (labelUpper.includes('BNI SIMPONI') || labelUpper.includes('THT')) {
+      title = `${indexNum}. TABUNGAN HARI TUA BNI SIMPONI`;
+      bullets = [
+        'Potongan tabungan pensiun / hari tua melalui program BNI Simponi.',
+        'Sesuai dengan kesepakatan dan profil kepegawaian.'
+      ];
+      note = 'Program Tabungan Pensiun BNI Simponi';
+    } else if (labelUpper.includes('ROCHMAD')) {
+      title = `${indexNum}. KOPERASI ROCHMAD`;
+      bullets = [
+        'Potongan rutin keanggotaan atau angsuran Koperasi Rochmad.'
+      ];
+      note = 'Keanggotaan Koperasi Rochmad';
+    } else if (labelUpper.includes('PINLU') || labelUpper.includes('TAGIHAN')) {
+      title = `${indexNum}. PINLU / TAGIHAN`;
+      bullets = [
+        'Potongan pinjaman lunak (Pinlu) dari lembaga atau tagihan resmi lainnya yang dicicil/dibayar dari gaji.'
+      ];
+      note = 'Pinjaman Lunak / Tagihan Resmi';
+    } else if (labelUpper.includes('PRESENSI') && !labelUpper.includes('BONUS')) {
+      title = `${indexNum}. POTONGAN PRESENSI`;
+      bullets = [
+        'Potongan berdasarkan selisih antara waktu kehadiran aktual dan target waktu kerja (delta menit x Rp 27,5).'
+      ];
+      note = 'Deviasi Menit Kerja Aktif';
+    } else if (labelUpper.includes('BONUS PRESENSI')) {
+      title = `${indexNum}. POTONGAN BONUS PRESENSI`;
+      bullets = [
+        'Penyesuaian potongan bonus presensi berdasarkan stratum deviasi kedisiplinan.'
+      ];
+      note = 'Penyesuaian Stratum Bonus Presensi';
+    } else if (labelUpper.includes('ZAKAT') || labelUpper.includes('INFAQ')) {
+      title = `${indexNum}. ZAKAT / INFAQ / SODAQOH`;
+      bullets = [
+        'Potongan zakat profesi, infaq, atau sodaqoh yang disalurkan melalui lembaga.'
+      ];
+      note = 'Zakat & Infaq Pegawai';
+    } else if (labelUpper.includes('TABUNGAN')) {
+      title = `${indexNum}. TABUNGAN PEGAWAI`;
+      bullets = [
+        'Potongan tabungan wajib pegawai yang disisihkan setiap bulan.'
+      ];
+      note = 'Tabungan Rutin Bulanan';
+    } else {
+      title = `${indexNum}. ${d.label.toUpperCase()}`;
+      bullets = [
+        `Potongan resmi penggajian untuk ${d.label}.`
+      ];
+      note = 'Potongan Resmi Kepegawaian';
     }
-  ];
+
+    return {
+      title,
+      bullets,
+      params: [
+        { label: 'Jenis Potongan', val: d.label },
+        { label: 'Keterangan Detail', val: note },
+        { label: 'Nominal Potongan', val: formatIDR(d.amount), highlight: true }
+      ]
+    };
+  };
+
+  let sections: any[] = [];
+
+  if (data.isLoyalis) {
+    sections = [
+      {
+        title: '1. Gaji Pokok',
+        bullets: [
+          'Ditentukan oleh Masa Kerja dan ketentuan internal lembaga yang berlaku.',
+          'Masa Kerja dihitung sejak Tanggal Pengakuan / Mulai Bekerja.',
+          'Dicocokkan dengan Matriks Gaji Pokok Yayasan yang berlaku.'
+        ],
+        params: [
+          { label: 'Masa Kerja', val: data.yearsOfService !== undefined ? `${data.yearsOfService} Tahun` : '-' },
+          { label: 'Tgl Pengakuan', val: data.baseDate ? new Date(data.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-' },
+          { label: 'Gaji Pokok', val: formatIDR(gapokVal), highlight: true }
+        ]
+      },
+      {
+        title: '2. Tunjangan Keluarga',
+        bullets: [
+          'Dihitung dari persentase anggota keluarga terdaftar:',
+          'Suami/Istri: 5% (maks 1) | Anak SD: 5% | Anak SLTP: 7.5% | Anak SLTA: 10% | Anak PT: 12.5%.'
+        ],
+        params: [
+          { label: 'Tanggungan Suami/Istri', val: `${famMetrics.spouse_count} orang (5%)` },
+          { label: 'Tanggungan Anak (SD/SLTP/SLTA/PT)', val: `${famMetrics.children_sd}/${famMetrics.children_sltp}/${famMetrics.children_slta}/${famMetrics.children_pt} orang` },
+          { label: 'Persentase Total', val: `${(((famMetrics.spouse_count * 0.05) + (famMetrics.children_sd * 0.05) + (famMetrics.children_sltp * 0.075) + (famMetrics.children_slta * 0.1) + (famMetrics.children_pt * 0.125)) * 100).toFixed(1)}%` },
+          { label: 'Tunjangan Keluarga', val: formatIDR(tunjKeluargaVal), highlight: true }
+        ]
+      },
+      {
+        title: '3. Tunjangan Fungsional',
+        bullets: [
+          'Ditentukan oleh tingkat pendidikan terakhir pegawai.',
+          'Disesuaikan dengan jenjang jabatan fungsional akademik yang diakui.',
+          'Menggunakan Nilai Dasar jika jenjang fungsional belum ditetapkan.'
+        ],
+        params: [
+          { label: 'Pendidikan Terakhir', val: data.educationLevel || '-' },
+          { label: 'Jenjang Fungsional', val: data.functionalTier || '-' },
+          { label: 'Tunjangan Fungsional', val: formatIDR(tunjFungsionalVal), highlight: true }
+        ]
+      },
+      {
+        title: '4. Kepangkatan',
+        bullets: [
+          'Berdasarkan total akumulasi angka kredit kepangkatan (KUM).',
+          'Nominal dicocokkan dengan Matriks Kepangkatan Yayasan.'
+        ],
+        params: [
+          { label: 'Akumulasi Kredit (KUM)', val: data.cummulativeCredit !== undefined ? String(data.cummulativeCredit) : '-' },
+          { label: 'Jenjang Kepangkatan', val: data.designation || '-' },
+          { label: 'T. Kepangkatan', val: formatIDR(tunjKepangkatanVal), highlight: true }
+        ]
+      },
+      {
+        title: '5. Presensi & Bonus Presensi',
+        bullets: [
+          'Penerimaan Presensi = Hari Kerja Aktif x Target Menit/hari x Rp 27,5.',
+          'Potongan Presensi = Kekurangan Menit (delta Target vs Kerja Riil) x Rp 27,5.',
+          'Bonus Presensi = Rp 250.000 (dikreditkan penuh; dipotong jika ada pelanggaran).'
+        ],
+        params: [
+          { label: 'Hari Kerja Aktif', val: `${presenceInfo.workingDays} hari` },
+          { label: 'Total Waktu Kerja', val: `${targetMinutes} menit` },
+          { label: 'Waktu Dikerjakan', val: `${actualMinutes} menit` },
+          { 
+            label: 'Bersih Presensi', 
+            val: `${formatIDR(Math.max(0, presensiEarningVal - potonganPresensiVal)).replace(/\s+/g, '')}\n= (${targetMinutes.toLocaleString('id-ID')} x Rp27,5) - ((${targetMinutes.toLocaleString('id-ID')} - ${actualMinutes.toLocaleString('id-ID')}) x Rp27,5)\n= ${formatIDR(presensiEarningVal).replace(/\s+/g, '')} - (${absenceMinutes.toLocaleString('id-ID')} x Rp27,5)\n= ${formatIDR(presensiEarningVal).replace(/\s+/g, '')} - ${formatIDR(potonganPresensiVal).replace(/\s+/g, '')}\n= ${formatIDR(Math.max(0, presensiEarningVal - potonganPresensiVal)).replace(/\s+/g, '')}`, 
+            highlight: true 
+          },
+          { 
+            label: 'Bersih Bonus Presensi', 
+            val: `${formatIDR(Math.max(0, bonusPresensiVal - potonganBonusPresensiVal)).replace(/\s+/g, '')}\nStratum ${potonganBonusPresensiVal === 0 ? 1 : potonganBonusPresensiVal <= 100000 ? 2 : potonganBonusPresensiVal <= 150000 ? 3 : potonganBonusPresensiVal <= 200000 ? 4 : 5} (${
+              potonganBonusPresensiVal === 0 ? 'Kekurangan = 0 menit' :
+              potonganBonusPresensiVal <= 100000 ? `Kekurangan ≤ ${(presenceInfo.workingDays * 30).toLocaleString('id-ID')} menit` :
+              potonganBonusPresensiVal <= 150000 ? `Kekurangan ≤ ${(presenceInfo.workingDays * 35).toLocaleString('id-ID')} menit` :
+              potonganBonusPresensiVal <= 200000 ? `Kekurangan ≤ ${(presenceInfo.workingDays * 40).toLocaleString('id-ID')} menit` :
+              `Kekurangan > ${(presenceInfo.workingDays * 40).toLocaleString('id-ID')} menit`
+            })\n= ${formatIDR(bonusPresensiVal).replace(/\s+/g, '')} - ${formatIDR(potonganBonusPresensiVal).replace(/\s+/g, '')}`, 
+            highlight: true 
+          }
+        ]
+      },
+      {
+        title: '6. Tunjangan Struktural',
+        bullets: [
+          'Dibayarkan penuh (100%) untuk jabatan dengan tunjangan tertinggi.',
+          'Masing-masing jabatan struktural tambahan dibayar sebesar 50%.'
+        ],
+        params: [
+          { label: 'Jabatan Terdaftar', val: data.jobCategory || '-' },
+          { label: 'Total T. Struktural', val: formatIDR(totalStrukturalVal), highlight: true }
+        ]
+      },
+      {
+        title: '7. Tunjangan Hari Tua & Instruksional',
+        bullets: [
+          'Tunjangan Hari Tua = 10% dari Gaji Pokok (subsidi dari Yayasan).',
+          'Tunjangan Instruksional = tunjangan khusus berdasarkan kebijakan/kondisi tertentu.'
+        ],
+        params: [
+          { label: 'Tunjangan Hari Tua', val: formatIDR(tunjHariTuaVal) },
+          { label: 'T. Instruksional', val: formatIDR(tunjInstruksionalVal) }
+        ]
+      },
+      {
+        title: '8. Tunjangan BPJS & Beras',
+        bullets: [
+          'T. BPJS (TK & KES): Subsidi iuran 100% yang ditanggung oleh lembaga.',
+          'Lembaga membayarkan seluruh iuran BPJS pegawai secara penuh di sisi Penerimaan.',
+          'Tunjangan Beras = tunjangan pangan pokok yang bersifat tetap.'
+        ],
+        params: [
+          { label: 'T. BPJS TK', val: formatIDR(bpjsTkVal) },
+          { label: 'T. BPJS KES', val: formatIDR(bpjsKesVal) },
+          { label: 'Tunjangan Beras', val: formatIDR(berasVal) }
+        ]
+      },
+      {
+        title: '9. Vakasi Tambahan',
+        bullets: [
+          'Akumulasi honorarium dari kepanitiaan/kegiatan resmi disetujui periode ini.'
+        ],
+        customDraw: (sectionY: number) => {
+          let currentY = sectionY;
+          if (vakasiEvents.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.5);
+            doc.setTextColor(120);
+            doc.text('Daftar Kegiatan Resmi:', startX + 5, currentY);
+            currentY += 4;
+            
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(50);
+            vakasiEvents.forEach((evt) => {
+              ensureSpace(5);
+              doc.text(`• ${String(evt.eventName)}`, startX + 8, currentY);
+              doc.setFont('helvetica', 'bold');
+              doc.text(formatIDR(evt.payGiven), startX + 175, currentY, { align: 'right' });
+              doc.setFont('helvetica', 'normal');
+              currentY += 4.5;
+            });
+          } else {
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(8);
+            doc.setTextColor(140);
+            doc.text('Tidak ada kegiatan resmi terdaftar pada periode ini.', startX + 5, currentY);
+            currentY += 5;
+          }
+          
+          ensureSpace(8);
+          doc.setFillColor(235, 240, 250);
+          doc.rect(startX + 3, currentY, tableWidth - 6, 7, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8.5);
+          doc.setTextColor(63, 81, 181);
+          doc.text('Total Vakasi Tambahan', startX + 6, currentY + 4.8);
+          doc.text(formatIDR(totalVakasiVal), startX + 174, currentY + 4.8, { align: 'right' });
+          
+          return currentY + 11;
+        }
+      }
+    ];
+    const activeDeductions = data.deductions.filter(d => d.amount > 0);
+    const deductionSections = activeDeductions.map((d, idx) => ({
+      ...mapDeductionToSection(d, 1 + idx),
+      isFirstDeduction: idx === 0,
+      isDeductionSection: true,
+    }));
+    sections = [...sections, ...deductionSections];
+  } else {
+    // Pekarya Documentation
+    const harianVal = getEarningAmount(['VAKASI HARIAN', 'HARIAN']);
+    const jumatVal = getEarningAmount(['JUMAT & LIBUR', 'BONUS JUM\'AT', 'JUMAT']);
+    const lemburSendiriVal = getEarningAmount(['LEMBUR SENDIRI']);
+    const lemburCoverVal = getEarningAmount(['LEMBUR COVER']);
+    const lemburVal = getEarningAmount(['LEMBUR']);
+    const piketVal = getEarningAmount(['PIKET']);
+    const praktekVal = getEarningAmount(['PRAKTEK']);
+    const bonusPekaryaVal = getEarningAmount(['BONUS PRESENSI', 'BONUS PRESENSI BULANAN', 'BONUS PRESENSI TRIWULANAN', 'BONUS MUTLAK']);
+    const spjVal = getEarningAmount(['SPJ']);
+    const bpjsPekaryaVal = getEarningAmount(['BPJS (TUNJANGAN)', 'BPJS', 'T. BPJS (SUBSIDI)']);
+    const berasVal = getEarningAmount(['BERAS']);
+    const pinjamanKopVal = getDeductionAmount(['PINJAMAN KOP']);
+
+    const pekaryaEarningsSections = [
+      {
+        title: '1. Gaji Pokok Pekarya',
+        bullets: [
+          'Ditetapkan berdasarkan gaji pokok dasar pegawai Pekarya pada master data.',
+          'Nominal tidak tergantung pada jumlah jam kerja mingguan.'
+        ],
+        params: [
+          { label: 'Kategori Pegawai', val: data.jobCategory || 'PEKARYA' },
+          { label: 'Gaji Pokok', val: formatIDR(gapokVal), highlight: true }
+        ]
+      },
+      {
+        title: '2. Insentif Shift & Vakasi Harian',
+        bullets: [
+          'Insentif kehadiran dinas shift dan penugasan khusus harian pegawai Pekarya.'
+        ],
+        params: [
+          { label: 'Vakasi Harian', val: formatIDR(harianVal) },
+          { label: 'Jumat & Libur', val: formatIDR(jumatVal) },
+          ...(lemburSendiriVal > 0 ? [{ label: 'Lembur Sendiri', val: formatIDR(lemburSendiriVal) }] : []),
+          ...(lemburCoverVal > 0 ? [{ label: 'Lembur Cover', val: formatIDR(lemburCoverVal) }] : []),
+          ...(lemburVal > 0 ? [{ label: 'Lembur', val: formatIDR(lemburVal) }] : []),
+          ...(piketVal > 0 ? [{ label: 'Piket', val: formatIDR(piketVal) }] : []),
+          ...(praktekVal > 0 ? [{ label: 'Praktek', val: formatIDR(praktekVal) }] : []),
+          { label: 'Total Insentif Shift', val: formatIDR(harianVal + jumatVal + lemburSendiriVal + lemburCoverVal + lemburVal + piketVal + praktekVal), highlight: true }
+        ]
+      },
+      {
+        title: '3. Bonus Presensi & Ketertiban',
+        bullets: [
+          'Diberikan kepada pegawai Pekarya yang memenuhi kualifikasi kedisiplinan dan ketepatan presensi.'
+        ],
+        params: [
+          { label: 'Bonus Presensi', val: formatIDR(bonusPekaryaVal), highlight: true }
+        ]
+      },
+      {
+        title: '4. SPJ (Surat Perintah Jalan & Pelaporan Kegiatan)',
+        bullets: [
+          'Akumulasi honor kegiatan harian, perjalanan dinas, serta event resmi disetujui.'
+        ],
+        params: [
+          { label: 'Total SPJ Disetujui', val: formatIDR(spjVal), highlight: true }
+        ]
+      },
+      {
+        title: '5. BPJS (Tunjangan) & Tunjangan Beras',
+        bullets: [
+          'BPJS (Tunjangan): Subsidi iuran dari lembaga (Lembaga menanggung 100% iuran BPJS).',
+          'Potongan BPJS: Dicatat seimbang pada sisi Potongan (Net Zero Effect).',
+          'Tunjangan Beras: Tunjangan natura bulanan.'
+        ],
+        params: [
+          { label: 'T. BPJS (Subsidi)', val: formatIDR(bpjsPekaryaVal) },
+          { label: 'Tunjangan Beras', val: formatIDR(berasVal) },
+          { label: 'Total Tunjangan Tambahan', val: formatIDR(bpjsPekaryaVal + berasVal), highlight: true }
+        ]
+      }
+    ];
+
+    const activeDeductions = data.deductions.filter(d => d.amount > 0);
+    const deductionSections = activeDeductions.map((d, idx) => ({
+      ...mapDeductionToSection(d, 1 + idx),
+      isFirstDeduction: idx === 0,
+      isDeductionSection: true,
+    }));
+
+    sections = [...pekaryaEarningsSections, ...deductionSections];
+  }
 
   // Draw sections
   sections.forEach((sec) => {
+    if (sec.isFirstDeduction) {
+      doc.addPage();
+      y = 15;
+      drawPageHeader('LAMPIRAN: PANDUAN & RINCIAN POTONGAN GAJI');
+    }
+
+    const currentHeaderTitle = sec.isDeductionSection 
+      ? 'LAMPIRAN: PANDUAN & RINCIAN POTONGAN GAJI' 
+      : 'LAMPIRAN: PANDUAN & PERHITUNGAN PENERIMAAN GAJI';
+
     // Estimate height needed
     let estimateH = 6;
-    estimateH += sec.bullets.length * 4.5;
+    if (sec.bullets) {
+      estimateH += sec.bullets.length * 4.5;
+    }
     if (sec.params) {
       estimateH += sec.params.length * 4.5 + 6;
     } else {
@@ -1066,35 +1263,32 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
 
     ensureSpace(estimateH);
 
-    // Draw Title & Formula
+    // Draw Title
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
     doc.setTextColor(40);
     doc.text(sec.title.toUpperCase(), startX, y);
-    
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(8);
-    doc.setTextColor(110);
-    doc.text(sec.formula, startX + 180, y, { align: 'right' });
     y += 4.5;
 
     // Draw Bullets
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(80);
-    sec.bullets.forEach((b) => {
-      const lines = doc.splitTextToSize(b, tableWidth - 8);
-      lines.forEach((ln: string) => {
-        doc.text(`• ${ln}`, startX + 4, y);
-        y += 4.2;
+    if (sec.bullets && sec.bullets.length > 0) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(80);
+      sec.bullets.forEach((b: string) => {
+        const lines = doc.splitTextToSize(b, tableWidth - 8);
+        lines.forEach((ln: string) => {
+          doc.text(`• ${ln}`, startX + 4, y);
+          y += 4.2;
+        });
       });
-    });
-    y += 1.5;
+      y += 1.5;
+    }
 
     // Draw parameters/data box
     if (sec.params) {
       let boxHeight = 3;
-      sec.params.forEach((p) => {
+      sec.params.forEach((p: any) => {
         const valLines = String(p.val).split('\n');
         boxHeight += 4.5 + (valLines.length - 1) * 3.8;
       });
@@ -1105,12 +1299,12 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
       doc.rect(startX + 3, y, tableWidth - 6, boxHeight, 'FD');
       
       let paramY = y + 4.2;
-      sec.params.forEach((p) => {
+      sec.params.forEach((p: any) => {
         if (p.highlight) {
           doc.setFont('helvetica', 'bold');
           doc.setTextColor(63, 81, 181);
         } else {
-          doc.setFont('helvetica', 'medium');
+          doc.setFont('helvetica', 'normal');
           doc.setTextColor(100);
         }
         doc.setFontSize(8);
@@ -1118,7 +1312,7 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
         doc.text(':', startX + 65, paramY);
         
         if (p.highlight) {
-          doc.setFont('helvetica', 'extrabold');
+          doc.setFont('helvetica', 'bold');
           doc.setTextColor(46, 125, 50); // Emerald-700 green
         } else {
           doc.setFont('helvetica', 'bold');
@@ -1157,10 +1351,8 @@ export function generatePaySlipPdf(data: PaySlipData, saveToFile = true): jsPDF 
 
   drawPaySlip(doc, data);
 
-  if (data.isLoyalis) {
-    doc.addPage();
-    drawDocumentationPage(doc, data);
-  }
+  doc.addPage();
+  drawDocumentationPage(doc, data);
 
   if (saveToFile) {
     const filename = `Slip_Gaji_${data.employeeName.replace(/\s+/g, '_')}.pdf`;
@@ -1181,10 +1373,8 @@ export function generateMultiPaySlipPdf(slips: PaySlipData[], filename = 'Multi_
       doc.addPage();
     }
     drawPaySlip(doc, data);
-    if (data.isLoyalis) {
-      doc.addPage();
-      drawDocumentationPage(doc, data);
-    }
+    doc.addPage();
+    drawDocumentationPage(doc, data);
   });
 
   if (saveToFile) {

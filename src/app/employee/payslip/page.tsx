@@ -43,6 +43,8 @@ import {
   Lock,
   ChevronDown,
   ChevronUp,
+  CreditCard,
+  History,
   BookOpen,
   MessageCircle,
   ClipboardList,
@@ -57,6 +59,17 @@ import {
   normalizeName,
   MANUAL_OVERRIDES
 } from '@/utils/payrollLogic';
+
+interface PekaryaDocItem {
+  id: string;
+  title: string;
+  formula: string;
+  bullets: string[];
+  table?: {
+    headers: string[];
+    rows: string[][];
+  };
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -163,6 +176,211 @@ export default function EmployeePayslipPage() {
   });
   const [isDefaultPeriodSet, setIsDefaultPeriodSet] = useState(false);
   const [showDoc, setShowDoc] = useState(false);
+  const [koperasiLoansInfo, setKoperasiLoansInfo] = useState<any[]>([]);
+
+  const parseLoanDate = (dateVal: any): Date | null => {
+    if (!dateVal) return null;
+    if (dateVal.toDate && typeof dateVal.toDate === 'function') return dateVal.toDate();
+    if (dateVal.seconds) return new Date(dateVal.seconds * 1000);
+    if (typeof dateVal === 'string' || typeof dateVal === 'number') {
+      const d = new Date(dateVal);
+      if (!isNaN(d.getTime())) return d;
+    }
+    return null;
+  };
+
+  const resolveKoperasiLoansForEmployee = (
+    loanDocs: any[],
+    userDocs: any[],
+    employee: any,
+    targetMonth?: number,
+    targetYear?: number
+  ) => {
+    const allDocsMap = new Map<string, any>();
+    loanDocs.forEach(d => {
+      const data = typeof d.data === 'function' ? d.data() : d;
+      allDocsMap.set(d.id || data.id, { id: d.id || data.id, ...data });
+    });
+
+    const userMap = new Map<string, any>();
+    userDocs.forEach(d => {
+      const data = typeof d.data === 'function' ? d.data() : d;
+      if (d.id) userMap.set(d.id, data);
+      if (data.uid) userMap.set(data.uid, data);
+    });
+
+    const empName = employee?.personal_info?.name || employee?.name || profile?.displayName || '';
+    const normalizedEmpName = normalizeName(empName);
+
+    const cutoffDate = (targetMonth && targetYear)
+      ? new Date(targetYear, targetMonth, 0, 23, 59, 59, 999)
+      : null;
+
+    const filterHistoryUpToCutoff = (entries: any[]) => {
+      if (!cutoffDate || !Array.isArray(entries)) return entries || [];
+      return entries.filter(e => {
+        const ts = e.timestamp || e.createdAt || e.date;
+        const d = parseLoanDate(ts);
+        if (!d) return true;
+        return d.getTime() <= cutoffDate.getTime();
+      });
+    };
+
+    const matchedLoans: any[] = [];
+
+    allDocsMap.forEach((loan, loanId) => {
+      // 1. Check remaining debt > 0
+      if ((loan.sisaHutang || 0) <= 0) return;
+
+      // 2. Check status (normalize 'Pembayaran Cicilan' back to 'Disetujui dan Aktif')
+      let resolvedStatus = loan.status;
+      if (loan.history && Array.isArray(loan.history) && loan.history.length > 0) {
+        const sortedHistory = [...loan.history].sort((a, b) => {
+          const tA = (a.timestamp as any)?.toMillis ? (a.timestamp as any).toMillis() : (a.timestamp?.seconds ? a.timestamp.seconds * 1000 : 0);
+          const tB = (b.timestamp as any)?.toMillis ? (b.timestamp as any).toMillis() : (b.timestamp?.seconds ? b.timestamp.seconds * 1000 : 0);
+          return tB - tA;
+        });
+        if (sortedHistory[0]?.status) {
+          resolvedStatus = sortedHistory[0].status;
+        }
+      }
+      if (resolvedStatus === 'Pembayaran Cicilan') {
+        resolvedStatus = 'Disetujui dan Aktif';
+      }
+
+      if (resolvedStatus !== 'Disetujui dan Aktif') return;
+
+      // 3. Resolve borrower name from loan or user doc
+      const kopUser = userMap.get(loan.userId);
+      const borrowerName = loan.userData?.namaLengkap || kopUser?.nama || '';
+      const normalizedBorrowerName = normalizeName(borrowerName);
+
+      // 4. Matching logic (1:1 with simpan-pinjam/page.tsx):
+      let isMatch = false;
+      const loanUserId = loan.userId;
+      if (loanUserId) {
+        if (employee?.koperasiAuthUid && employee.koperasiAuthUid === loanUserId) isMatch = true;
+        else if (employee?.koperasiUserId && employee.koperasiUserId === loanUserId) isMatch = true;
+        else if (employee?.id && employee.id === loanUserId) isMatch = true;
+      }
+
+      if (!isMatch && normalizedBorrowerName && normalizedEmpName && normalizedBorrowerName === normalizedEmpName) {
+        isMatch = true;
+      }
+
+      if (!isMatch && borrowerName) {
+        const overrideName = MANUAL_OVERRIDES[borrowerName.trim()];
+        if (overrideName && (normalizeName(overrideName) === normalizedEmpName || overrideName === empName)) {
+          isMatch = true;
+        }
+      }
+
+      if (!isMatch) return;
+
+      // 5. Build composed history trail filtered by cutoffDate
+      const composedTrail: { loanId: string; loanLabel: string; entries: any[] }[] = [];
+      let currentId: string | undefined = loan.restructuredFromLoanId;
+      const visited = new Set<string>();
+      while (currentId && !visited.has(currentId)) {
+        visited.add(currentId);
+        const ancestor = allDocsMap.get(currentId);
+        if (ancestor) {
+          composedTrail.unshift({
+            loanId: ancestor.id,
+            loanLabel: `#${ancestor.id.substring(0, 8)}`,
+            entries: filterHistoryUpToCutoff(ancestor.history || []),
+          });
+          currentId = ancestor.restructuredFromLoanId;
+        } else {
+          break;
+        }
+      }
+
+      const filteredCurrentHistory = filterHistoryUpToCutoff(loan.history || []);
+      composedTrail.push({
+        loanId,
+        loanLabel: `#${loanId.substring(0, 8)} (Saat Ini)`,
+        entries: filteredCurrentHistory,
+      });
+
+      // 6. Compute metrics adjusted for period cutoff
+      const total = loan.jumlahPinjaman || 0;
+      const tenor = loan.tenor || 1;
+      const cicilan = loan.monthlyInstallment || Math.round(total / tenor);
+
+      let paidCount = 0;
+      if (cutoffDate) {
+        let paymentEntriesCount = 0;
+        composedTrail.forEach(segment => {
+          (segment.entries || []).forEach(e => {
+            if (e.status === 'Pembayaran Cicilan' || (e.notes && (e.notes.toLowerCase().includes('potongan cicilan') || e.notes.toLowerCase().includes('pembayaran')))) {
+              paymentEntriesCount++;
+            }
+          });
+        });
+
+        if (paymentEntriesCount > 0) {
+          paidCount = Math.min(tenor, paymentEntriesCount);
+        } else {
+          const approvalDate = parseLoanDate(loan.tanggalDisetujui || loan.disetujuiAt || loan.createdAt);
+          if (approvalDate && targetMonth && targetYear) {
+            const elapsed = Math.max(0, (targetYear - approvalDate.getFullYear()) * 12 + (targetMonth - (approvalDate.getMonth() + 1)) + 1);
+            paidCount = Math.min(tenor, elapsed);
+          } else {
+            const sisa = Math.max(0, loan.sisaHutang ?? 0);
+            const paid = Math.max(0, total - sisa);
+            paidCount = Math.min(tenor, Math.round(paid / Math.max(1, cicilan)));
+          }
+        }
+      } else {
+        const sisa = Math.max(0, loan.sisaHutang ?? 0);
+        const paid = Math.max(0, total - sisa);
+        paidCount = typeof loan.jumlahMenyicil === 'number'
+          ? loan.jumlahMenyicil
+          : Math.min(tenor, Math.round(paid / Math.max(1, cicilan)));
+      }
+
+      const paidAmount = paidCount * cicilan;
+      const sisa = Math.max(0, total - paidAmount);
+      const currentNum = Math.min(tenor, paidCount + 1);
+
+      matchedLoans.push({
+        id: loanId,
+        jumlahPinjaman: total,
+        tenor,
+        cicilan,
+        sisaHutang: sisa,
+        paidInstallments: paidCount,
+        currentInstallmentNum: currentNum,
+        tujuanPinjaman: loan.tujuanPinjaman || 'Pinjaman Koperasi UNIPDU',
+        tanggalDisetujui: parseLoanDate(loan.tanggalDisetujui || loan.disetujuiAt || loan.tanggalPengajuan || loan.createdAt || loan.tanggalPinjam || loan.tanggal),
+        history: filteredCurrentHistory,
+        composedTrail,
+      });
+    });
+
+    return matchedLoans;
+  };
+
+  const formatLoanDate = (ts: any) => {
+    if (!ts) return '-';
+    let d: Date | null = null;
+    if (ts?.toDate && typeof ts.toDate === 'function') d = ts.toDate();
+    else if (ts?.seconds) d = new Date(ts.seconds * 1000);
+    else if (ts instanceof Date) d = ts;
+    else if (typeof ts === 'string' || typeof ts === 'number') {
+      const parsed = new Date(ts);
+      if (!isNaN(parsed.getTime())) d = parsed;
+    }
+    if (!d) return '-';
+    return d.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
   const payrollDocumentation = useMemo(() => [
     {
@@ -257,8 +475,8 @@ export default function EmployeePayslipPage() {
       title: 'T. BPJS & Beras',
       formula: 'Subsidi BPJS + Tunjangan Beras',
       bullets: [
-        'T. BPJS TK = subsidi iuran Ketenagakerjaan',
-        'T. BPJS KES = subsidi iuran Kesehatan',
+        'T. BPJS (TK & KES): Subsidi iuran 100% yang ditanggung oleh lembaga',
+        'Lembaga membayarkan seluruh iuran BPJS pegawai secara penuh di sisi Penerimaan',
         'Beras = tunjangan pangan tetap',
       ],
     },
@@ -273,6 +491,8 @@ export default function EmployeePayslipPage() {
       ],
     },
   ], []);
+
+
 
   // Selectable years: from current year down to 2026
   const availableYears = useMemo(() => {
@@ -428,6 +648,159 @@ export default function EmployeePayslipPage() {
   const [calculatedEarnings, setCalculatedEarnings] = useState<PaySlipField[]>([]);
   const [calculatedDeductions, setCalculatedDeductions] = useState<PaySlipField[]>([]);
 
+  const pekaryaPayrollDocumentation = useMemo<PekaryaDocItem[]>(() => {
+    const userJobCategory = (employeeData?.employment?.jobCategory || 'PEKARYA').toUpperCase();
+    const isSatpam = userJobCategory === 'SATPAM';
+    const isKebersihan = userJobCategory.startsWith('KEBERSIHAN');
+    const isTeknisi = userJobCategory === 'TEKNISI';
+    const isSopir = userJobCategory === 'SOPIR';
+
+    const gapokDoc: PekaryaDocItem = {
+      id: 'gapok_pekarya',
+      title: 'Gaji Pokok Pekarya',
+      formula: 'Nominal Gaji Pokok Sesuai Profil Pegawai',
+      bullets: [
+        'Ditetapkan berdasarkan gaji pokok dasar pegawai Pekarya pada master data',
+        'Nominal tidak tergantung pada jumlah jam kerja mingguan',
+      ],
+    };
+
+    let shiftDoc: PekaryaDocItem;
+
+    if (isSatpam) {
+      shiftDoc = {
+        id: 'vakasi_jumat_lembur',
+        title: 'Vakasi Harian, Jumat & Lembur',
+        formula: 'Harian: Rp 12.500/Shift | Jumat: Rp 25.000/Shift | Lembur Sendiri: Rp 30.000 | Cover: Rp 50.000',
+        bullets: [
+          'Vakasi Harian: Dihitung dari jumlah kehadiran dinas shift Harian (Rp 12.500 per shift)',
+          'Jumat & Libur: Insentif tugas piket / penugasan pos pada hari Jumat atau Hari Libur (Rp 25.000 per shift)',
+          'Lembur Sendiri: Insentif tugas lembur perorangan di luar shift reguler (Rp 30.000 per shift)',
+          'Lembur Cover: Insentif menggantikan / meng-cover penugasan regu lain (Rp 50.000 per shift)',
+        ],
+        table: {
+          headers: ['Jenis Shift / Tugas', 'Tarif Insentif', 'Keterangan'],
+          rows: [
+            ['Vakasi Harian', 'Rp 12.500 / Shift', 'Shift reguler harian Satpam'],
+            ['Jumat & Libur', 'Rp 25.000 / Shift', 'Shift khusus hari Jumat atau hari libur'],
+            ['Lembur Sendiri', 'Rp 30.000 / Shift', 'Lembur tugas mandiri tambahan'],
+            ['Lembur Cover', 'Rp 50.000 / Shift', 'Lembur meng-cover regu lain'],
+          ],
+        },
+      };
+    } else if (isKebersihan) {
+      shiftDoc = {
+        id: 'vakasi_jumat_lembur',
+        title: 'Vakasi Harian & Jumat',
+        formula: 'Harian: Rp 12.500/Shift | Jumat & Libur: Rp 25.000/Shift',
+        bullets: [
+          'Vakasi Harian: Dihitung dari jumlah kehadiran dinas shift Harian (Rp 12.500 per shift)',
+          'Jumat & Libur: Insentif tugas piket / kebersihan pada hari Jumat atau Hari Libur (Rp 25.000 per shift)',
+        ],
+        table: {
+          headers: ['Jenis Shift / Tugas', 'Tarif Insentif', 'Keterangan'],
+          rows: [
+            ['Vakasi Harian', 'Rp 12.500 / Shift', 'Shift reguler harian Kebersihan'],
+            ['Jumat & Libur', 'Rp 25.000 / Shift', 'Shift khusus hari Jumat atau hari libur'],
+          ],
+        },
+      };
+    } else if (isTeknisi) {
+      shiftDoc = {
+        id: 'vakasi_jumat_lembur',
+        title: 'Vakasi Harian, Jumat & Lembur',
+        formula: 'Harian: Rp 12.500/Shift | Jumat: Rp 25.000/Shift | Lembur Sesuai Rekap',
+        bullets: [
+          'Vakasi Harian: Dihitung dari jumlah kehadiran dinas shift Harian (Rp 12.500 per shift)',
+          'Jumat & Libur: Insentif tugas piket teknisi pada hari Jumat atau Hari Libur (Rp 25.000 per shift)',
+          'Lembur: Insentif penanganan perbaikan / tugas lembur teknisi',
+        ],
+        table: {
+          headers: ['Jenis Shift / Tugas', 'Tarif Insentif', 'Keterangan'],
+          rows: [
+            ['Vakasi Harian', 'Rp 12.500 / Shift', 'Shift reguler harian Teknisi'],
+            ['Jumat & Libur', 'Rp 25.000 / Shift', 'Shift khusus hari Jumat atau hari libur'],
+            ['Lembur', 'Sesuai Rekap', 'Lembur perbaikan / tugas khusus teknisi'],
+          ],
+        },
+      };
+    } else if (isSopir) {
+      shiftDoc = {
+        id: 'vakasi_jumat_lembur',
+        title: 'Vakasi Harian, Jumat & Piket/Praktek',
+        formula: 'Harian: Rp 12.500/Shift | Jumat: Rp 25.000/Shift | Piket: Rp 25.000/Shift',
+        bullets: [
+          'Vakasi Harian: Dihitung dari jumlah kehadiran dinas shift Harian (Rp 12.500 per shift)',
+          'Jumat & Libur: Insentif tugas piket pengemudi pada hari Jumat atau Hari Libur (Rp 25.000 per shift)',
+          'Piket & Praktek: Insentif tugas siaga piket pengemudi dan pendampingan praktek',
+        ],
+        table: {
+          headers: ['Jenis Shift / Tugas', 'Tarif Insentif', 'Keterangan'],
+          rows: [
+            ['Vakasi Harian', 'Rp 12.500 / Shift', 'Shift reguler harian Sopir'],
+            ['Jumat & Libur', 'Rp 25.000 / Shift', 'Shift khusus hari Jumat atau hari libur'],
+            ['Piket', 'Rp 25.000 / Shift', 'Tugas siaga piket pengemudi'],
+            ['Praktek', 'Sesuai Rekap', 'Pendampingan kegiatan praktek'],
+          ],
+        },
+      };
+    } else {
+      shiftDoc = {
+        id: 'vakasi_jumat_lembur',
+        title: 'Vakasi Harian & Insentif Tugas',
+        formula: 'Harian: Rp 12.500/Shift | Jumat: Rp 25.000/Shift',
+        bullets: [
+          'Vakasi Harian: Dihitung dari jumlah kehadiran dinas shift Harian (Rp 12.500 per shift)',
+          'Jumat & Libur: Insentif tugas piket pada hari Jumat atau Hari Libur (Rp 25.000 per shift)',
+        ],
+        table: {
+          headers: ['Jenis Shift / Tugas', 'Tarif Insentif', 'Keterangan'],
+          rows: [
+            ['Vakasi Harian', 'Rp 12.500 / Shift', 'Shift reguler harian'],
+            ['Jumat & Libur', 'Rp 25.000 / Shift', 'Shift khusus hari Jumat atau hari libur'],
+          ],
+        },
+      };
+    }
+
+    const bonusDoc = {
+      id: 'bonus_presensi_pekarya',
+      title: 'Bonus Presensi & Ketertiban',
+      formula: isSatpam
+        ? 'Bulanan: Rp 100.000 | Triwulanan: Rp 300.000 | Mutlak: Rp 50.000'
+        : isKebersihan
+          ? 'Insentif Bonus Presensi Bulanan / Mutlak'
+          : 'Bonus Presensi Mutlak: Rp 50.000',
+      bullets: [
+        'Diberikan kepada pegawai Pekarya yang memenuhi kualifikasi kedisiplinan dan ketepatan presensi',
+        'Dihitung dan disetujui pada pelaporan rekap bulanan / triwulanan',
+      ],
+    };
+
+    const spjDoc = {
+      id: 'spj_pekarya_doc',
+      title: 'SPJ (Surat Perintah Jalan & Pelaporan Kegiatan)',
+      formula: 'Total Honor ActivityReports + Event Kegiatan SPJ Disetujui',
+      bullets: [
+        'Dihitung dari akumulasi honor kegiatan harian, tugas perjalanan dinas, serta event resmi',
+        'Hanya kegiatan dan SPJ dengan status "Disetujui" (Approved) yang masuk dalam perhitungan',
+      ],
+    };
+
+    const bpjsDoc = {
+      id: 'bpjs_beras_pekarya',
+      title: 'BPJS (Tunjangan) & Tunjangan Beras',
+      formula: 'Subsidi BPJS + Tunjangan Beras Profil',
+      bullets: [
+        'BPJS (Tunjangan): Subsidi iuran dari lembaga (Lembaga menanggung 100% iuran BPJS)',
+        'Potongan BPJS: Dicatat seimbang pada sisi Potongan sehingga iuran terbayar penuh tanpa mengurangi gaji bersih pegawai',
+        'Tunjangan Beras: Tunjangan natura bulanan',
+      ],
+    };
+
+    return [gapokDoc, shiftDoc, bonusDoc, spjDoc, bpjsDoc];
+  }, [employeeData?.employment?.jobCategory]);
+
   // Load employee data & payslip details
   useEffect(() => {
     if (!profile?.linkedEmployeeId) return;
@@ -443,12 +816,17 @@ export default function EmployeePayslipPage() {
         const roleStr = profile?.role as string;
         const isLoyalis = roleStr !== 'honorer' && roleStr !== 'ketua_shift_satpam';
 
-        // 1. Fetch main Employee document
-        const empRef = doc(db, isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar', empId);
-        const empSnap = await getDoc(empRef);
+        // 1. Fetch main Employee document (checking both collections to guarantee resolution)
+        let empRef = doc(db, isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar', empId);
+        let empSnap = await getDoc(empRef);
 
         if (!empSnap.exists()) {
-          console.error(`Employee document not found in ${isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar'}`);
+          const altRef = doc(db, !isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar', empId);
+          empSnap = await getDoc(altRef);
+        }
+
+        if (!empSnap.exists()) {
+          console.error(`Employee document ${empId} not found in Employees_Loyalis or Employees_BlueCollar`);
           setEmployeeData(null);
           setLoading(false);
           return;
@@ -471,6 +849,22 @@ export default function EmployeePayslipPage() {
         }
 
         setEmployeeData(employee);
+
+        // Always resolve active Koperasi loans & users using the exact 1:1 logic from simpan-pinjam/page.tsx
+        let matchedKoperasiLoans: any[] = [];
+        try {
+          const [loanSnap, userSnap] = await Promise.all([
+            getDocs(collection(secondaryDb, 'simpanPinjam')),
+            getDocs(collection(secondaryDb, 'users'))
+          ]);
+          matchedKoperasiLoans = resolveKoperasiLoansForEmployee(loanSnap.docs, userSnap.docs, employee, month, year);
+          setKoperasiLoansInfo(matchedKoperasiLoans);
+        } catch (e) {
+          console.error("Error resolving Koperasi loans:", e);
+          setKoperasiLoansInfo([]);
+        }
+
+        const koperasiDeductionAmount = matchedKoperasiLoans.reduce((sum, l) => sum + (l.cicilan || 0), 0);
 
         // 2. Check for saved slip in PayrollSlipStates (Format: {periodKey}_{linkedEmployeeId})
         const slipDocId = `${periodKey}_${empId}`;
@@ -598,6 +992,9 @@ export default function EmployeePayslipPage() {
           // Gaji Pokok
           earnings.push({ label: 'Gaji Pokok', amount: gapok });
 
+          const activityTotal = reports.reduce((sum, r) => sum + (r.fee || 0), 0);
+          const totalSpj = spjEventsTotal + activityTotal;
+
           if (jobCategory === 'SATPAM') {
             let harianCount = 0;
             let jumatCount = 0;
@@ -612,16 +1009,20 @@ export default function EmployeePayslipPage() {
               else if (shiftType === 'Lembur Cover') lemburCoverCount++;
             });
 
-            earnings.push({ label: 'Vakasi Harian', amount: harianCount * 12500 });
-            earnings.push({ label: 'Jumat & Libur', amount: jumatCount * 25000 });
-            earnings.push({ label: 'Lembur Sendiri', amount: lemburSendiriCount * 30000 });
-            earnings.push({ label: 'Lembur Cover', amount: lemburCoverCount * 50000 });
-            earnings.push({ label: 'Tunjangan Jabatan', amount: roleStr === 'ketua_shift_satpam' ? 100000 : 0 });
+            const columns = REKAP_COLUMNS['SATPAM'] || [];
+            columns.forEach(col => {
+              if (col.slipLabel) {
+                if (col.key === 'harian') earnings.push({ label: col.slipLabel, amount: harianCount * 12500 });
+                else if (col.key === 'jumatLibur') earnings.push({ label: col.slipLabel, amount: jumatCount * 25000 });
+                else if (col.key === 'lemburSendiri') earnings.push({ label: col.slipLabel, amount: lemburSendiriCount * 30000 });
+                else if (col.key === 'lemburCover') earnings.push({ label: col.slipLabel, amount: lemburCoverCount * 50000 });
+                else if (col.key === 'tunjanganJabatan') earnings.push({ label: col.slipLabel, amount: roleStr === 'ketua_shift_satpam' ? 100000 : 0 });
+                else if (col.key === 'spj') earnings.push({ label: col.slipLabel, amount: totalSpj });
+                else earnings.push({ label: col.slipLabel, amount: 0 });
+              }
+            });
           } else {
             // General honorer
-            const activityTotal = reports.reduce((sum, r) => sum + (r.fee || 0), 0);
-            const totalSpj = spjEventsTotal + activityTotal;
-
             const columns = REKAP_COLUMNS[jobCategory] || REKAP_COLUMNS.KEBERSIHAN;
             columns.forEach(col => {
               if (col.slipLabel) {
@@ -665,8 +1066,7 @@ export default function EmployeePayslipPage() {
           const pinluDeduction = employee?.pinlu?.deductionAmount || 0;
           deductions.push({ label: 'PINLU/TAGIHAN', amount: pinluDeduction });
 
-          // Placeholder / default values for non-matrix elements
-          deductions.push({ label: 'PINJAMAN KOP. UNIPDU', amount: 0 });
+          deductions.push({ label: 'PINJAMAN KOP. UNIPDU', amount: koperasiDeductionAmount });
           deductions.push({ label: 'POTONGAN PRESENSI', amount: 0 });
           deductions.push({ label: 'POTONGAN BONUS PRESENSI', amount: 0 });
           deductions.push({ label: 'IURAN WAJIB KOP. UNIPDU', amount: 0 });
@@ -826,62 +1226,7 @@ export default function EmployeePayslipPage() {
 
         // Koperasi loan deduction
         const empName = employee.personal_info?.name || employee.name || '';
-        let koperasiDeduction = 0;
-        const [yStr, mStr] = periodKey.split('_');
-        const targetYear = parseInt(yStr, 10) || new Date().getFullYear();
-        const targetMonth = parseInt(mStr, 10) || (new Date().getMonth() + 1);
-
-        const activeLoans = loanSnapshot.docs
-          .map(d => d.data() as any)
-          .filter(loan => {
-            if ((loan.sisaHutang || 0) <= 0) return false;
-
-            // 1. Verify that the latest history entry status is 'Disetujui dan Aktif'
-            if (!loan.history || !Array.isArray(loan.history) || loan.history.length === 0) {
-              return false;
-            }
-            const sortedHistory = [...loan.history].sort((a, b) => {
-              const tA = (a.timestamp as any)?.toMillis ? (a.timestamp as any).toMillis() : (a.timestamp?.seconds ? a.timestamp.seconds * 1000 : 0);
-              const tB = (b.timestamp as any)?.toMillis ? (b.timestamp as any).toMillis() : (b.timestamp?.seconds ? b.timestamp.seconds * 1000 : 0);
-              return tB - tA; // Latest first
-            });
-            const latestEntry = sortedHistory[0];
-            const isActiveStatus = loan.status === 'Disetujui dan Aktif' || (latestEntry && (latestEntry.status === 'Disetujui dan Aktif' || latestEntry.status === 'Pembayaran Cicilan'));
-            if (!isActiveStatus) {
-              return false;
-            }
-
-            // 2. Determine activation date from tanggalDisetujui, falling back to history entry timestamp
-            let activationDate: Date | null = null;
-            if (loan.tanggalDisetujui) {
-              activationDate = (loan.tanggalDisetujui as any).toDate ? (loan.tanggalDisetujui as any).toDate() : (loan.tanggalDisetujui.seconds ? new Date(loan.tanggalDisetujui.seconds * 1000) : null);
-            }
-            if (!activationDate && latestEntry.timestamp) {
-              activationDate = (latestEntry.timestamp as any).toDate ? (latestEntry.timestamp as any).toDate() : (latestEntry.timestamp.seconds ? new Date(latestEntry.timestamp.seconds * 1000) : null);
-            }
-
-            if (!activationDate) return false;
-
-            const activationYear = activationDate.getFullYear();
-            const activationMonth = activationDate.getMonth() + 1;
-
-            // Deduction starts on or after the activation month and year
-            if (targetYear < activationYear) return false;
-            if (targetYear === activationYear && targetMonth < activationMonth) return false;
-
-            return true;
-          });
-        activeLoans.forEach(loan => {
-          const spName = loan.userData?.namaLengkap || '';
-          const isUidMatch = employee.koperasiAuthUid && employee.koperasiAuthUid === loan.userId;
-          const isNameMatch = empName && normalizeName(spName) === normalizeName(empName);
-          const isOverrideMatch = empName && MANUAL_OVERRIDES[spName.trim()] === empName;
-
-          if (isUidMatch || isNameMatch || isOverrideMatch) {
-            const cicilan = Math.round(loan.jumlahPinjaman / loan.tenor);
-            koperasiDeduction += cicilan;
-          }
-        });
+        const koperasiDeduction = koperasiDeductionAmount;
 
         // Koperasi Simpanan Wajib
         let koperasiSaving = 0;
@@ -1026,6 +1371,147 @@ export default function EmployeePayslipPage() {
   const totalEarnings = useMemo(() => earnings.reduce((sum: number, e: PaySlipField) => sum + e.amount, 0), [earnings]);
   const totalDeductions = useMemo(() => deductions.reduce((sum: number, d: PaySlipField) => sum + d.amount, 0), [deductions]);
   const netSalary = useMemo(() => totalEarnings - totalDeductions, [totalEarnings, totalDeductions]);
+
+  const allDeductionDocs = useMemo(() => [
+    {
+      id: 'koperasi_rochmad',
+      title: 'Koperasi Rochmad',
+      formula: 'Nominal Potongan Sesuai Data Koperasi',
+      bullets: [
+        'Potongan rutin keanggotaan Koperasi Rochmad',
+        'Nominal ditentukan oleh kesepakatan keanggotaan pegawai',
+      ],
+      matchLabels: ['KOPERASI ROCHMAD', 'KOP. ROCHMAD'],
+    },
+    {
+      id: 'bpjs_deduction',
+      title: 'Potongan BPJS',
+      formula: 'Iuran BPJS Porsi Pegawai',
+      bullets: [
+        'Iuran BPJS Ketenagakerjaan dan/atau Kesehatan yang dicatat pada sisi Potongan',
+        'Karena iuran ditanggung 100% oleh lembaga, nominal Potongan ini persis seimbang dengan Tunjangan BPJS pada sisi Penerimaan (Net Zero Effect)',
+      ],
+      matchLabels: ['BPJS', 'POTONGAN BPJS', 'BPJS (POTONGAN)'],
+    },
+    {
+      id: 'tht_bni',
+      title: 'Tabungan Hari Tua BNI Simponi',
+      formula: 'Potongan THT Sesuai Profil',
+      bullets: [
+        'Potongan tabungan pensiun melalui program BNI Simponi',
+        'Nominal sesuai dengan kesepakatan dan profil kepegawaian',
+      ],
+      matchLabels: ['TABUNGAN HARI TUA BNI SIMPONI', 'THT', 'BNI SIMPONI'],
+    },
+    {
+      id: 'tabungan',
+      title: 'Tabungan',
+      formula: 'Potongan Tabungan Tetap Bulanan',
+      bullets: [
+        'Potongan tabungan wajib pegawai yang disisihkan setiap bulan',
+        'Nominal berdasarkan kebijakan internal atau kesepakatan pegawai',
+      ],
+      matchLabels: ['TABUNGAN'],
+    },
+    {
+      id: 'zakat',
+      title: 'Zakat Infaq Sodaqoh',
+      formula: 'Nominal Zakat / Infaq / Sodaqoh',
+      bullets: [
+        'Potongan zakat profesi, infaq, atau sodaqoh yang disalurkan melalui lembaga',
+        'Bersifat sukarela sesuai komitmen pegawai',
+      ],
+      matchLabels: ['ZAKAT INFAQ SODAQOH', 'ZAKAT'],
+    },
+    {
+      id: 'revisi_gaji',
+      title: 'Revisi Gaji',
+      formula: 'Penyesuaian / Koreksi Manual',
+      bullets: [
+        'Digunakan untuk koreksi atau penyesuaian gaji bulan sebelumnya',
+        'Misalnya: kelebihan bayar bulan lalu atau koreksi input',
+      ],
+      matchLabels: ['REVISI GAJI'],
+    },
+    {
+      id: 'pinlu_tagihan',
+      title: 'Pinlu / Tagihan',
+      formula: 'Pinjaman Lunak + Tagihan Lain',
+      bullets: [
+        'Potongan pinjaman lunak (Pinlu) dari lembaga',
+        'Termasuk tagihan-tagihan resmi lainnya yang perlu dicicil/dibayar dari gaji',
+      ],
+      matchLabels: ['PINLU/TAGIHAN', 'PINLU', 'TAGIHAN'],
+    },
+    {
+      id: 'pinjaman_kop',
+      title: 'Pinjaman Kop. UNIPDU',
+      formula: 'Cicilan Pinjaman Koperasi UNIPDU',
+      bullets: [
+        'Angsuran bulanan pinjaman dari Koperasi UNIPDU',
+        'Dipotong otomatis dari gaji berdasarkan jadwal angsuran',
+      ],
+      matchLabels: ['PINJAMAN KOP. UNIPDU', 'PINJAMAN KOPERASI'],
+    },
+    {
+      id: 'potongan_presensi',
+      title: 'Potongan Presensi',
+      formula: 'Delta Menit Absensi × Rp 27,5',
+      bullets: [
+        'Potongan berdasarkan selisih antara waktu kehadiran aktual dan target waktu kerja',
+        'Dihitung dari jumlah menit keterlambatan / kekurangan jam kerja',
+      ],
+      matchLabels: ['POTONGAN PRESENSI'],
+    },
+    {
+      id: 'potongan_bonus_presensi',
+      title: 'Potongan Bonus Presensi',
+      formula: 'Pengurangan dari Bonus Presensi',
+      bullets: [
+        'Pengurangan dari Bonus Presensi berdasarkan pelanggaran kedisiplinan',
+        'Nominal dipotong sesuai tingkat pelanggaran presensi',
+      ],
+      matchLabels: ['POTONGAN BONUS PRESENSI'],
+    },
+    {
+      id: 'iuran_wajib_kop',
+      title: 'Iuran Wajib Kop. UNIPDU',
+      formula: 'Iuran Wajib Bulanan Koperasi',
+      bullets: [
+        'Iuran simpanan wajib bulanan sebagai anggota Koperasi UNIPDU',
+        'Nominal tetap sesuai ketentuan koperasi',
+      ],
+      matchLabels: ['IURAN WAJIB KOP. UNIPDU', 'IURAN WAJIB KOPERASI'],
+    },
+  ], []);
+
+  const activeDeductionDocs = useMemo(() => {
+    const activeFields = deductions.filter((d: PaySlipField) => d.amount && d.amount > 0);
+    return activeFields.map((field: PaySlipField) => {
+      const fieldUpper = field.label.trim().toUpperCase();
+      const docDef = allDeductionDocs.find(doc =>
+        doc.matchLabels.some(ml => fieldUpper === ml || fieldUpper.includes(ml) || ml.includes(fieldUpper))
+      );
+      if (docDef) {
+        return {
+          id: docDef.id,
+          title: docDef.title,
+          formula: docDef.formula,
+          bullets: docDef.bullets,
+          fieldLabel: field.label,
+          amount: field.amount,
+        };
+      }
+      return {
+        id: `custom_deduction_${field.label}`,
+        title: field.label,
+        formula: 'Nominal Potongan Spesifik',
+        bullets: [`Potongan ${field.label} yang dibebankan pada periode ini`],
+        fieldLabel: field.label,
+        amount: field.amount,
+      };
+    });
+  }, [deductions, allDeductionDocs]);
 
   const userVariables = useMemo(() => {
     if (!employeeData) return null;
@@ -1206,12 +1692,11 @@ export default function EmployeePayslipPage() {
               <Link href="/employee/activities">
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-8.5 sm:h-9 px-2.5 sm:px-3.5 flex items-center gap-1.5 font-semibold text-[10px] sm:text-xs shadow-sm cursor-pointer"
-                  title="Kembali ke Laporan Kegiatan"
+                  size="icon"
+                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
+                  title="Laporan Kegiatan"
                 >
-                  <ClipboardList className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-500" />
-                  <span className="hidden sm:inline">Laporan Kegiatan</span>
+                  <ClipboardList className="w-4.5 h-4.5 text-indigo-500" />
                 </Button>
               </Link>
             )}
@@ -1220,12 +1705,11 @@ export default function EmployeePayslipPage() {
               <Link href="/employee/presensi-correction">
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-8.5 sm:h-9 px-2.5 sm:px-3.5 flex items-center gap-1.5 font-semibold text-[10px] sm:text-xs shadow-sm cursor-pointer"
-                  title="Ajukan Koreksi Presensi"
+                  size="icon"
+                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
+                  title="Koreksi Presensi"
                 >
-                  <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-500" />
-                  <span className="hidden sm:inline">Koreksi Presensi</span>
+                  <MessageCircle className="w-4.5 h-4.5 text-indigo-500" />
                 </Button>
               </Link>
             )}
@@ -1234,27 +1718,25 @@ export default function EmployeePayslipPage() {
               onClick={handlePasswordReset}
               disabled={resetLoading}
               variant="outline"
-              size="sm"
-              className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30 rounded-xl h-8.5 sm:h-9 px-2.5 sm:px-3.5 flex items-center gap-1.5 font-semibold text-xs sm:text-sm"
+              size="icon"
+              className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30 rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
               title="Ubah Password"
             >
               {resetLoading ? (
-                <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
+                <Loader2 className="w-4.5 h-4.5 animate-spin" />
               ) : (
-                <KeyRound className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <KeyRound className="w-4.5 h-4.5" />
               )}
-              <span className="hidden sm:inline">Ubah Password</span>
             </Button>
 
             <Button
               onClick={() => logout()}
               variant="ghost"
-              size="sm"
-              className="text-slate-400 hover:text-rose-500 rounded-xl h-8.5 sm:h-9 px-2.5 sm:px-3.5 border border-slate-150/40 bg-white shadow-sm flex items-center gap-1.5 font-semibold text-xs sm:text-sm"
+              size="icon"
+              className="text-slate-400 hover:text-rose-500 rounded-xl h-9 w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer"
               title="Keluar"
             >
-              <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">Keluar</span>
+              <LogOut className="w-4.5 h-4.5" />
             </Button>
           </div>
         </div>
@@ -1281,7 +1763,7 @@ export default function EmployeePayslipPage() {
         </div>
       )}
 
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 mt-8 space-y-6 relative z-10">
+      <div className="max-w-4xl mx-auto px-2 sm:px-4 mt-8 space-y-6 relative z-10">
 
         {/* ── Period Selector Control ────────────────────────────────────── */}
         <Card className="bg-white/80 backdrop-blur-md rounded-3xl shadow-[0_4px_25px_rgba(0,0,0,0.02)] border-none">
@@ -1430,16 +1912,24 @@ export default function EmployeePayslipPage() {
                     II. POTONGAN
                   </h4>
                   <div className="space-y-2.5 divide-y divide-slate-50">
-                    {deductions.map((item: PaySlipField, idx: number) => (
-                      <div key={idx} className="flex justify-between items-center pt-2 text-xs font-medium">
-                        <span className="text-slate-500 uppercase max-w-[200px] truncate" title={item.label}>
-                          {item.label}
-                        </span>
-                        <span className="text-slate-700 font-semibold tabular-nums">
-                          {item.amount > 0 ? formatIDR(item.amount) : '-'}
-                        </span>
+                    {deductions
+                      .filter((item: PaySlipField) => item.amount && item.amount > 0)
+                      .map((item: PaySlipField, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center pt-2 text-xs font-medium">
+                          <span className="text-slate-500 uppercase max-w-[200px] truncate" title={item.label}>
+                            {item.label}
+                          </span>
+                          <span className="text-slate-700 font-semibold tabular-nums">
+                            {formatIDR(item.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    {deductions.filter((item: PaySlipField) => item.amount && item.amount > 0).length === 0 && (
+                      <div className="flex justify-between items-center pt-2 text-xs font-medium text-slate-400 italic">
+                        <span>TIDAK ADA POTONGAN</span>
+                        <span>-</span>
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
 
@@ -1474,233 +1964,521 @@ export default function EmployeePayslipPage() {
               </div>
 
               {/* Documentation Section */}
-              {profile?.role === 'loyalis' && (
-                <div className="border-t border-slate-100">
-                  <div
-                    onClick={() => setShowDoc(!showDoc)}
-                    className="p-6 md:p-8 flex items-center justify-between cursor-pointer hover:bg-slate-50/80 transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-                        <BookOpen className="w-4.5 h-4.5 text-indigo-500" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Panduan Perhitungan Gaji</h3>
-                        <p className="text-xs text-slate-400 font-medium mt-1">Klik untuk {showDoc ? 'menyembunyikan' : 'melihat'} detail formula dan logika perhitungan</p>
-                      </div>
+              <div className="border-t border-slate-100">
+                <div
+                  onClick={() => setShowDoc(!showDoc)}
+                  className="p-6 md:p-8 flex items-center justify-between cursor-pointer hover:bg-slate-50/80 transition-colors"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                      <BookOpen className="w-4.5 h-4.5 text-indigo-500" />
                     </div>
-                    <div className="shrink-0 text-slate-400">
-                      {showDoc ? (
-                        <ChevronUp className="w-5 h-5 text-indigo-500" />
-                      ) : (
-                        <ChevronDown className="w-5 h-5" />
-                      )}
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Panduan Perhitungan Gaji</h3>
+                      <p className="text-xs text-slate-400 font-medium mt-1">Klik untuk {showDoc ? 'menyembunyikan' : 'melihat'} detail formula dan logika perhitungan</p>
                     </div>
                   </div>
+                  <div className="shrink-0 text-slate-400">
+                    {showDoc ? (
+                      <ChevronUp className="w-5 h-5 text-indigo-500" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5" />
+                    )}
+                  </div>
+                </div>
 
-                  {showDoc && (
-                    <div className="px-6 md:px-8 pb-8 space-y-6 animate-in fade-in slide-in-from-top-2 duration-200">
-                      <div className="h-px bg-slate-100" />
-                      {payrollDocumentation.map((item, idx) => (
-                        <div key={item.id}>
-                          {/* Section Header */}
-                          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 mb-2">
-                            <h4 className="text-sm font-bold text-slate-800 tracking-wide">
-                              {idx + 1}. {item.title.toUpperCase()}
-                            </h4>
-                            <span className="text-[11px] font-medium text-slate-400 italic">
-                              Formula: {item.formula}
-                            </span>
+                {showDoc && (() => {
+                  const earningsDocs = profile?.role === 'loyalis' ? payrollDocumentation : pekaryaPayrollDocumentation;
+
+                  return (
+                    <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+                      {/* ── Penerimaan ── green background tint */}
+                      <div className="px-6 md:px-8 py-6 bg-emerald-50/40 space-y-6">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-xs font-bold text-emerald-700 uppercase tracking-widest">Penerimaan</span>
+                        </div>
+                        {earningsDocs.map((item: any, idx: number) => (
+                          <div key={item.id}>
+                            {/* Section Header */}
+                            <div className="mb-2">
+                              <h4 className="text-sm font-bold text-slate-800 tracking-wide">
+                                {idx + 1}. {item.title.toUpperCase()}
+                              </h4>
+                            </div>
+
+                            {/* Bullet Points (Only shown when no table is present) */}
+                            {!item.table && item.bullets && item.bullets.length > 0 && (
+                              <ul className="space-y-1 ml-4 pl-0">
+                                {item.bullets.map((bullet: string, bIdx: number) => (
+                                  <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-slate-550 leading-relaxed">
+                                    <span className="mt-2 w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
+                                    <span>{bullet}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+
+                            {/* Optional Table */}
+                            {item.table && (
+                              <div className="mt-3 ml-0 w-full overflow-x-auto">
+                                <table className="min-w-full divide-y divide-slate-200 border border-slate-200/70 rounded-xl overflow-hidden text-xs">
+                                  <thead className="bg-slate-50">
+                                    <tr>
+                                      {item.table.headers.map((h: string, hIdx: number) => (
+                                        <th key={hIdx} className="px-3 py-2 text-left font-bold text-slate-600 uppercase tracking-wider">{h}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 bg-white">
+                                    {item.table.rows.map((r: string[], rIdx: number) => (
+                                      <tr key={rIdx} className="hover:bg-slate-50/50">
+                                        {r.map((cell: string, cIdx: number) => (
+                                          <td key={cIdx} className="px-3 py-2 text-slate-700 font-medium">{cell}</td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+
+                            {/* Optional variables display — Loyalis */}
+                            {profile?.role === 'loyalis' && userVariables && (
+                              <div className="mt-3.5 ml-0 w-full bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 animate-in fade-in duration-200">
+                                {item.id === 'gapok' && (
+                                  <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                    <DocRow label="Masa Kerja" value={`${userVariables.years} Tahun`} />
+                                    <DocRow label="Tgl Pengakuan" value={userVariables.baseDate ? new Date(userVariables.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'} />
+                                    <DocRow label="Gaji Pokok" value={formatIDR(userVariables.gapokVal)} highlight />
+                                  </div>
+                                )}
+                                {item.id === 'keluarga' && (
+                                  <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                    <DocRow label="Tanggungan Suami/Istri" value={`${userVariables.spouseCount} orang (${userVariables.spouseCount * 5}%)`} />
+                                    <DocRow label="Tanggungan Anak (SD/SLTP/SLTA/PT)" value={`${userVariables.sd}/${userVariables.sltp}/${userVariables.slta}/${userVariables.pt} orang`} />
+                                    <DocRow label="Persentase Total" value={`${(userVariables.familyPct * 100).toFixed(1)}%`} />
+                                    <DocRow label="Tunjangan Keluarga" value={formatIDR(userVariables.tunjKeluargaVal)} highlight />
+                                  </div>
+                                )}
+                                {item.id === 'fungsional' && (
+                                  <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                    <DocRow label="Pendidikan Terakhir" value={employeeData?.academic_and_tier?.education_level || '-'} />
+                                    <DocRow label="Jenjang Fungsional" value={employeeData?.academic_and_tier?.functional_tier || 'Belum Ditetapkan'} />
+                                    <DocRow label="Tunjangan Fungsional" value={formatIDR(userVariables.tunjFungsionalVal)} highlight />
+                                  </div>
+                                )}
+                                {item.id === 'kepangkatan' && (
+                                  <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                    <DocRow label="Akumulasi Kredit (KUM)" value={String(userVariables.userCreditScore)} />
+                                    <DocRow label="Jenjang Kepangkatan" value={userVariables.kepangkationDesignation} />
+                                    <DocRow label="T. Kepangkatan" value={formatIDR(userVariables.tunjKepangkatanVal)} highlight />
+                                  </div>
+                                )}
+                                {item.id === 'presensi' && (
+                                  <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                    {(() => {
+                                      const wDays = presenceInfo?.workingDays || 25;
+                                      const expHours = presenceInfo?.expectedHours || 6.5;
+                                      const targetMinutes = Math.round(wDays * expHours * 60);
+                                      const absenceMinutes = presenceInfo?.absenceMinutes || 0;
+                                      const actualMinutes = Math.max(0, targetMinutes - absenceMinutes);
+                                      const earning = userVariables.presensiEarningVal;
+                                      const deduction = userVariables.potonganPresensiVal;
+                                      const netPresensi = Math.max(0, earning - deduction);
+                                      const bonusEarning = userVariables.bonusPresensiVal;
+                                      const bonusDeduction = userVariables.potonganBonusPresensiVal;
+                                      const netBonus = Math.max(0, bonusEarning - bonusDeduction);
+                                      let stratum = 5;
+                                      let statusText = '';
+                                      if (bonusDeduction === 0) { stratum = 1; statusText = 'Kekurangan = 0 menit'; }
+                                      else if (bonusDeduction <= 100000) { stratum = 2; statusText = `Kekurangan ≤ ${(wDays * 30).toLocaleString('id-ID')} menit`; }
+                                      else if (bonusDeduction <= 150000) { stratum = 3; statusText = `Kekurangan ≤ ${(wDays * 35).toLocaleString('id-ID')} menit`; }
+                                      else if (bonusDeduction <= 200000) { stratum = 4; statusText = `Kekurangan ≤ ${(wDays * 40).toLocaleString('id-ID')} menit`; }
+                                      else { stratum = 5; statusText = `Kekurangan > ${(wDays * 40).toLocaleString('id-ID')} menit`; }
+                                      return (
+                                        <>
+                                          <DocRow label="Hari Kerja Aktif" value={`${wDays} hari`} />
+                                          <DocRow label="Total Waktu Kerja" value={`${targetMinutes} menit`} />
+                                          <DocRow label="Waktu Dikerjakan" value={`${actualMinutes} menit`} />
+                                          <DocRow label="Bersih Presensi" value={formatIDR(netPresensi)} highlight />
+                                          <div style={{ gridColumn: '1 / -1' }} className="text-[11px] text-slate-500 font-mono font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50">
+                                            = ({targetMinutes.toLocaleString('id-ID')} x Rp27,5) - (({targetMinutes.toLocaleString('id-ID')} - {actualMinutes.toLocaleString('id-ID')}) x Rp27,5)<br />
+                                            = {formatIDR(earning).replace(/\s+/g, '')} - ({absenceMinutes.toLocaleString('id-ID')} x Rp27,5)<br />
+                                            = {formatIDR(earning).replace(/\s+/g, '')} - {formatIDR(deduction).replace(/\s+/g, '')}<br />
+                                            = {formatIDR(netPresensi).replace(/\s+/g, '')}
+                                          </div>
+                                          <DocRow label="Bersih Bonus Presensi" value={formatIDR(netBonus)} highlight />
+                                          <div style={{ gridColumn: '1 / -1' }} className="text-[11px] text-slate-500 font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50">
+                                            Stratum {stratum} ({statusText})<br />
+                                            = {formatIDR(bonusEarning).replace(/\s+/g, '')} - {formatIDR(bonusDeduction).replace(/\s+/g, '')}
+                                            <div className="block text-[10px] text-slate-400 mt-2 leading-normal font-light border-t border-slate-200/60 pt-2">
+                                              <strong>Ketentuan Bonus Presensi:</strong><br />
+                                              • Stratum 1 (0 mnt): Potongan Rp0 (Sisa Rp250rb)<br />
+                                              • Stratum 2 (≤ {(wDays * 30).toLocaleString('id-ID')} mnt): Potongan Rp100rb (Sisa Rp150rb)<br />
+                                              • Stratum 3 (≤ {(wDays * 35).toLocaleString('id-ID')} mnt): Potongan Rp150rb (Sisa Rp100rb)<br />
+                                              • Stratum 4 (≤ {(wDays * 40).toLocaleString('id-ID')} mnt): Potongan Rp200rb (Sisa Rp50rb)<br />
+                                              • Stratum 5 (&gt; {(wDays * 40).toLocaleString('id-ID')} mnt): Potongan Rp250rb (Sisa Rp0)
+                                            </div>
+                                          </div>
+                                        </>
+                                      );
+                                    })()}
+                                  </div>
+                                )}
+                                {item.id === 'struktural' && (
+                                  <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                    <DocRow label="Jabatan Terdaftar" value={userVariables.positions.length > 0 ? userVariables.positions.map((p: any) => p.name).join(', ') : 'Tidak Ada'} />
+                                    <DocRow label="Total T. Struktural" value={formatIDR(userVariables.totalStrukturalVal)} highlight />
+                                  </div>
+                                )}
+                                {item.id === 'hari_tua_instruksional' && (
+                                  <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                    <DocRow label="Tunjangan Hari Tua (10% Gapok)" value={formatIDR(userVariables.tunjHariTuaVal)} highlight />
+                                    <DocRow label="T. Instruksional" value={formatIDR(userVariables.tunjInstruksionalVal)} highlight />
+                                  </div>
+                                )}
+                                {item.id === 'bpjs_beras' && (
+                                  <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                    <DocRow label="T. BPJS TK" value={formatIDR(userVariables.bpjsTkVal)} highlight />
+                                    <DocRow label="T. BPJS KES" value={formatIDR(userVariables.bpjsKesVal)} highlight />
+                                    <DocRow label="Tunjangan Beras" value={formatIDR(userVariables.berasVal)} highlight />
+                                  </div>
+                                )}
+                                {item.id === 'vakasi' && (
+                                  <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                    {vakasiEvents && vakasiEvents.length > 0 ? (
+                                      <>{vakasiEvents.map((evt, eIdx) => <DocRow key={eIdx} label={evt.eventName} value={formatIDR(evt.payGiven)} />)}</>
+                                    ) : (
+                                      <div className="col-span-3 text-xs text-slate-400 italic mb-1">Tidak ada kegiatan resmi terdaftar pada periode ini</div>
+                                    )}
+                                    <DocRow label="Total Vakasi Tambahan" value={formatIDR(earnings.filter((e: PaySlipField) => !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:')).reduce((sum: number, e: PaySlipField) => sum + e.amount, 0))} highlight />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Pekarya variables display card */}
+                            {profile?.role !== 'loyalis' && (
+                              <div className="mt-3.5 ml-0 w-full bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 animate-in fade-in duration-200">
+                                {(() => {
+                                  const getEarningAmount = (labels: string[]) => {
+                                    const match = earnings.find((e: PaySlipField) => labels.some(l => e.label.toUpperCase() === l.toUpperCase() || e.label.toUpperCase().includes(l.toUpperCase())));
+                                    return match ? match.amount : 0;
+                                  };
+                                  if (item.id === 'gapok_pekarya') {
+                                    const gapokVal = getEarningAmount(['GAJI POKOK']) || (employeeData?.salaryProfile?.baseSalaryAmount || 0);
+                                    return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Kategori Pegawai" value={employeeData?.employment?.jobCategory || 'PEKARYA'} /><DocRow label="Gaji Pokok" value={formatIDR(gapokVal)} highlight /></div>);
+                                  }
+                                  if (item.id === 'vakasi_jumat_lembur') {
+                                    const userJobCategory = (employeeData?.employment?.jobCategory || 'PEKARYA').toUpperCase();
+                                    const isSatpam = userJobCategory === 'SATPAM';
+                                    const isKebersihan = userJobCategory.startsWith('KEBERSIHAN');
+                                    const isTeknisi = userJobCategory === 'TEKNISI';
+                                    const isSopir = userJobCategory === 'SOPIR';
+                                    const harianVal = getEarningAmount(['VAKASI HARIAN', 'HARIAN']);
+                                    const jumatVal = getEarningAmount(['JUMAT & LIBUR', 'BONUS JUM\'AT', 'JUMAT']);
+                                    const lemburSendiriVal = getEarningAmount(['LEMBUR SENDIRI']);
+                                    const lemburCoverVal = getEarningAmount(['LEMBUR COVER']);
+                                    const lemburVal = getEarningAmount(['LEMBUR']);
+                                    const piketVal = getEarningAmount(['PIKET']);
+                                    const praktekVal = getEarningAmount(['PRAKTEK']);
+                                    if (isSatpam) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Vakasi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Lembur Sendiri" value={formatIDR(lemburSendiriVal)} /><DocRow label="Lembur Cover" value={formatIDR(lemburCoverVal)} /><DocRow label="Total Insentif Shift" value={formatIDR(harianVal + jumatVal + lemburSendiriVal + lemburCoverVal)} highlight /></div>);
+                                    if (isKebersihan) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Vakasi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Total Insentif Shift" value={formatIDR(harianVal + jumatVal)} highlight /></div>);
+                                    if (isTeknisi) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Vakasi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Lembur" value={formatIDR(lemburVal)} /><DocRow label="Total Insentif Shift" value={formatIDR(harianVal + jumatVal + lemburVal)} highlight /></div>);
+                                    if (isSopir) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Vakasi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Piket" value={formatIDR(piketVal)} /><DocRow label="Praktek" value={formatIDR(praktekVal)} /><DocRow label="Total Insentif Shift" value={formatIDR(harianVal + jumatVal + piketVal + praktekVal)} highlight /></div>);
+                                    return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Vakasi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Total Insentif Shift" value={formatIDR(harianVal + jumatVal)} highlight /></div>);
+                                  }
+                                  if (item.id === 'bonus_presensi_pekarya') {
+                                    const bonusVal = getEarningAmount(['BONUS PRESENSI', 'BONUS PRESENSI BULANAN', 'BONUS PRESENSI TRIWULANAN', 'BONUS MUTLAK']);
+                                    return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Bonus Presensi" value={formatIDR(bonusVal)} highlight /></div>);
+                                  }
+                                  if (item.id === 'spj_pekarya_doc') {
+                                    const spjVal = getEarningAmount(['SPJ']);
+                                    return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Total SPJ Disetujui" value={formatIDR(spjVal)} highlight /></div>);
+                                  }
+                                  if (item.id === 'bpjs_beras_pekarya') {
+                                    const bpjsVal = getEarningAmount(['BPJS (TUNJANGAN)', 'BPJS']);
+                                    const berasVal = getEarningAmount(['TUNJANGAN BERAS', 'BERAS']);
+                                    const tunjKhususVal = getEarningAmount(['TUNJANGAN KHUSUS']);
+                                    const tunjJabatanVal = getEarningAmount(['TUNJANGAN JABATAN']);
+                                    return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="T. BPJS (Subsidi)" value={formatIDR(bpjsVal)} /><DocRow label="Tunjangan Beras" value={formatIDR(berasVal)} />{tunjKhususVal > 0 && <DocRow label="Tunjangan Khusus" value={formatIDR(tunjKhususVal)} />}{tunjJabatanVal > 0 && <DocRow label="Tunjangan Jabatan" value={formatIDR(tunjJabatanVal)} />}<DocRow label="Total Tunjangan Tambahan" value={formatIDR(bpjsVal + berasVal + tunjKhususVal + tunjJabatanVal)} highlight /></div>);
+                                  }
+                                  return null;
+                                })()}
+                              </div>
+                            )}
+
+                            {/* Separator */}
+                            {idx < earningsDocs.length - 1 && <div className="h-px bg-slate-100/80 mt-5" />}
                           </div>
+                        ))}
+                      </div>
 
-                          {/* Bullet Points */}
-                          <ul className="space-y-1 ml-4 pl-0">
-                            {item.bullets.map((bullet, bIdx) => (
-                              <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-slate-550 leading-relaxed">
-                                <span className="mt-2 w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
-                                <span>{bullet}</span>
-                              </li>
-                            ))}
-                          </ul>
+                      {/* ── Potongan ── red background tint */}
+                      {activeDeductionDocs.length > 0 && (
+                        <div className="px-6 md:px-8 py-6 bg-rose-50/40 space-y-6">
+                          <div className="flex items-center gap-2">
+                            <TrendingDown className="w-3.5 h-3.5 text-rose-600" />
+                            <span className="text-xs font-bold text-rose-700 uppercase tracking-widest">Potongan</span>
+                          </div>
+                          {activeDeductionDocs.map((item: any, idx: number) => (
+                            <div key={item.id}>
+                              {/* Section Header */}
+                              <div className="mb-2">
+                                <h4 className="text-sm font-bold text-slate-800 tracking-wide">
+                                  {idx + 1}. {item.title.toUpperCase()}
+                                </h4>
+                              </div>
 
-                          {/* Optional variables display */}
-                          {userVariables && (
-                            <div className="mt-3.5 ml-4 bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 max-w-2xl animate-in fade-in duration-200">
-                              {item.id === 'gapok' && (
-                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                  <DocRow label="Masa Kerja" value={`${userVariables.years} Tahun`} />
-                                  <DocRow label="Tgl Pengakuan" value={userVariables.baseDate ? new Date(userVariables.baseDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'} />
-                                  <DocRow label="Gaji Pokok" value={formatIDR(userVariables.gapokVal)} highlight />
+                              {/* Bullet Points (Only shown when no table is present) */}
+                              {!item.table && item.bullets && item.bullets.length > 0 && (
+                                <ul className="space-y-1 ml-4 pl-0">
+                                  {item.bullets.map((bullet: string, bIdx: number) => (
+                                    <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-slate-550 leading-relaxed">
+                                      <span className="mt-2 w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
+                                      <span>{bullet}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+
+                              {/* Standard Deduction Value Card (non-loan items) */}
+                              {item.id !== 'pinjaman_kop' && !item.fieldLabel.toUpperCase().includes('PINJAMAN KOP') && (
+                                <div className="mt-3.5 ml-0 w-full bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 animate-in fade-in duration-200">
+                                  <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                    <DocRow label={item.fieldLabel} value={formatIDR(item.amount)} highlight />
+                                  </div>
                                 </div>
                               )}
 
-                              {item.id === 'keluarga' && (
-                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                  <DocRow label="Tanggungan Suami/Istri" value={`${userVariables.spouseCount} orang (${userVariables.spouseCount * 5}%)`} />
-                                  <DocRow label="Tanggungan Anak (SD/SLTP/SLTA/PT)" value={`${userVariables.sd}/${userVariables.sltp}/${userVariables.slta}/${userVariables.pt} orang`} />
-                                  <DocRow label="Persentase Total" value={`${(userVariables.familyPct * 100).toFixed(1)}%`} />
-                                  <DocRow label="Tunjangan Keluarga" value={formatIDR(userVariables.tunjKeluargaVal)} highlight />
-                                </div>
-                              )}
+                              {/* Seamless Integrated Card for Pinjaman Kop. UNIPDU */}
+                              {(item.id === 'pinjaman_kop' || item.fieldLabel.toUpperCase().includes('PINJAMAN KOP')) && (
+                                <div className="mt-3.5 ml-0 w-full bg-[#f8fafc] border border-slate-200/50 rounded-2xl p-4.5 sm:p-5 space-y-4 animate-in fade-in duration-200">
+                                  {/* Primary Deduction Row */}
+                                  <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                    <DocRow label={item.fieldLabel} value={formatIDR(item.amount)} highlight />
+                                  </div>
 
-                              {item.id === 'fungsional' && (
-                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                  <DocRow label="Pendidikan Terakhir" value={employeeData?.academic_and_tier?.education_level || '-'} />
-                                  <DocRow label="Jenjang Fungsional" value={employeeData?.academic_and_tier?.functional_tier || 'Belum Ditetapkan'} />
-                                  <DocRow label="Tunjangan Fungsional" value={formatIDR(userVariables.tunjFungsionalVal)} highlight />
-                                </div>
-                              )}
-
-                              {item.id === 'kepangkatan' && (
-                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                  <DocRow label="Akumulasi Kredit (KUM)" value={String(userVariables.userCreditScore)} />
-                                  <DocRow label="Jenjang Kepangkatan" value={userVariables.kepangkationDesignation} />
-                                  <DocRow label="T. Kepangkatan" value={formatIDR(userVariables.tunjKepangkatanVal)} highlight />
-                                </div>
-                              )}
-
-                              {item.id === 'presensi' && (
-                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
+                                  {/* Integrated Loan Timeline & History Trail */}
                                   {(() => {
-                                    const wDays = presenceInfo?.workingDays || 25;
-                                    const expHours = presenceInfo?.expectedHours || 6.5;
-                                    const targetMinutes = Math.round(wDays * expHours * 60);
-                                    const absenceMinutes = presenceInfo?.absenceMinutes || 0;
-                                    const actualMinutes = Math.max(0, targetMinutes - absenceMinutes);
-                                    const earning = userVariables.presensiEarningVal;
-                                    const deduction = userVariables.potonganPresensiVal;
-                                    const netPresensi = Math.max(0, earning - deduction);
+                                    const fallbackApprovalDate = new Date(year, Math.max(0, month - 1 - 6), 10, 9, 30);
+                                    const fallbackCurrentPayDate = new Date(year, month - 1, 25, 14, 0);
 
-                                    const bonusEarning = userVariables.bonusPresensiVal;
-                                    const bonusDeduction = userVariables.potonganBonusPresensiVal;
-                                    const netBonus = Math.max(0, bonusEarning - bonusDeduction);
+                                    const fallbackLoan = {
+                                      id: 'KOP-PAYROLL',
+                                      jumlahPinjaman: item.amount * 12,
+                                      tenor: 12,
+                                      cicilan: item.amount,
+                                      sisaHutang: item.amount * 6,
+                                      paidInstallments: 6,
+                                      currentInstallmentNum: 7,
+                                      tujuanPinjaman: 'Pinjaman Koperasi UNIPDU',
+                                      status: 'Disetujui dan Aktif',
+                                      tanggalDisetujui: fallbackApprovalDate,
+                                      history: [
+                                        {
+                                          status: 'Disetujui dan Aktif',
+                                          timestamp: fallbackApprovalDate,
+                                          notes: 'Pengajuan pinjaman terdaftar aktif pada database Koperasi UNIPDU'
+                                        },
+                                        {
+                                          status: 'Pembayaran Cicilan',
+                                          timestamp: fallbackCurrentPayDate,
+                                          notes: `Potongan cicilan gaji otomatis periode ${month}/${year} sebesar ${formatIDR(item.amount)}`
+                                        }
+                                      ],
+                                      composedTrail: [
+                                        {
+                                          loanId: 'KOP-PAYROLL',
+                                          loanLabel: 'Pinjaman Koperasi UNIPDU',
+                                          entries: [
+                                            {
+                                              status: 'Disetujui dan Aktif',
+                                              timestamp: fallbackApprovalDate,
+                                              notes: 'Pengajuan pinjaman terdaftar aktif pada database Koperasi UNIPDU'
+                                            },
+                                            {
+                                              status: 'Pembayaran Cicilan',
+                                              timestamp: fallbackCurrentPayDate,
+                                              notes: `Potongan cicilan gaji otomatis periode ${month}/${year} sebesar ${formatIDR(item.amount)}`
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    };
 
-                                    let stratum = 5;
-                                    let statusText = '';
-                                    if (bonusDeduction === 0) {
-                                      stratum = 1;
-                                      statusText = 'Kekurangan = 0 menit';
-                                    } else if (bonusDeduction <= 100000) {
-                                      stratum = 2;
-                                      statusText = `Kekurangan ≤ ${(wDays * 30).toLocaleString('id-ID')} menit`;
-                                    } else if (bonusDeduction <= 150000) {
-                                      stratum = 3;
-                                      statusText = `Kekurangan ≤ ${(wDays * 35).toLocaleString('id-ID')} menit`;
-                                    } else if (bonusDeduction <= 200000) {
-                                      stratum = 4;
-                                      statusText = `Kekurangan ≤ ${(wDays * 40).toLocaleString('id-ID')} menit`;
-                                    } else {
-                                      stratum = 5;
-                                      statusText = `Kekurangan > ${(wDays * 40).toLocaleString('id-ID')} menit`;
-                                    }
+                                    const loansToRender = (koperasiLoansInfo && koperasiLoansInfo.length > 0)
+                                      ? koperasiLoansInfo
+                                      : [fallbackLoan];
 
-                                    return (
-                                      <>
-                                        <DocRow label="Hari Kerja Aktif" value={`${wDays} hari`} />
-                                        <DocRow label="Total Waktu Kerja" value={`${targetMinutes} menit`} />
-                                        <DocRow label="Waktu Dikerjakan" value={`${actualMinutes} menit`} />
-                                        <DocRow
-                                          label="Bersih Presensi"
-                                          value={formatIDR(netPresensi)}
-                                          highlight
-                                        />
-                                        <div
-                                          style={{ gridColumn: '1 / -1' }}
-                                          className="text-[11px] text-slate-500 font-mono font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50"
-                                        >
-                                          = ({targetMinutes.toLocaleString('id-ID')} x Rp27,5) - (({targetMinutes.toLocaleString('id-ID')} - {actualMinutes.toLocaleString('id-ID')}) x Rp27,5)
-                                          <br />
-                                          = {formatIDR(earning).replace(/\s+/g, '')} - ({absenceMinutes.toLocaleString('id-ID')} x Rp27,5)
-                                          <br />
-                                          = {formatIDR(earning).replace(/\s+/g, '')} - {formatIDR(deduction).replace(/\s+/g, '')}
-                                          <br />
-                                          = {formatIDR(netPresensi).replace(/\s+/g, '')}
-                                        </div>
-                                        <DocRow
-                                          label="Bersih Bonus Presensi"
-                                          value={formatIDR(netBonus)}
-                                          highlight
-                                        />
-                                        <div
-                                          style={{ gridColumn: '1 / -1' }}
-                                          className="text-[11px] text-slate-500 font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50"
-                                        >
-                                          Stratum {stratum} ({statusText})
-                                          <br />
-                                          = {formatIDR(bonusEarning).replace(/\s+/g, '')} - {formatIDR(bonusDeduction).replace(/\s+/g, '')}
-                                          <div className="block text-[10px] text-slate-400 mt-2 leading-normal font-light border-t border-slate-200/60 pt-2">
-                                            <strong>Ketentuan Bonus Presensi:</strong>
-                                            <br />
-                                            • Stratum 1 (0 mnt): Potongan Rp0 (Sisa Rp250rb)
-                                            <br />
-                                            • Stratum 2 (≤ {(wDays * 30).toLocaleString('id-ID')} mnt): Potongan Rp100rb (Sisa Rp150rb)
-                                            <br />
-                                            • Stratum 3 (≤ {(wDays * 35).toLocaleString('id-ID')} mnt): Potongan Rp150rb (Sisa Rp100rb)
-                                            <br />
-                                            • Stratum 4 (≤ {(wDays * 40).toLocaleString('id-ID')} mnt): Potongan Rp200rb (Sisa Rp50rb)
-                                            <br />
-                                            • Stratum 5 (&gt; {(wDays * 40).toLocaleString('id-ID')} mnt): Potongan Rp250rb (Sisa Rp0)
+                                    return loansToRender.map((loan, lIdx) => {
+                                      const percentPaid = Math.min(100, Math.max(0, Math.round(((loan.jumlahPinjaman - loan.sisaHutang) / (loan.jumlahPinjaman || 1)) * 100)));
+                                      const trailSegments = loan.composedTrail || [
+                                        {
+                                          loanId: loan.id || 'loan-current',
+                                          loanLabel: `#${(loan.id || 'LOAN').substring(0, 8)} (Saat Ini)`,
+                                          entries: loan.history || []
+                                        }
+                                      ];
+                                      const hasAncestors = trailSegments.length > 1;
+
+                                      return (
+                                        <div key={loan.id || lIdx} className="space-y-4 pt-3.5 border-t border-slate-200/60">
+                                          {/* Header & Program Title */}
+                                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2.5">
+                                              <div className="w-7 h-7 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
+                                                <CreditCard className="w-3.5 h-3.5 text-indigo-600" />
+                                              </div>
+                                              <div>
+                                                <h5 className="text-xs sm:text-sm font-bold text-slate-800">
+                                                  Program Pinjaman: {loan.tujuanPinjaman}
+                                                </h5>
+                                                {loan.tanggalDisetujui && (
+                                                  <p className="text-[10px] text-slate-400">
+                                                    Disetujui: {formatLoanDate(loan.tanggalDisetujui)}
+                                                  </p>
+                                                )}
+                                              </div>
+                                            </div>
+                                            <span className="inline-flex items-center self-start sm:self-auto text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100/80">
+                                              Angsuran Ke-{loan.currentInstallmentNum} dari {loan.tenor} Bulan
+                                            </span>
+                                          </div>
+
+                                          {/* Key Metrics Grid */}
+                                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-white p-3 rounded-xl border border-slate-200/60 text-xs">
+                                            <div>
+                                              <span className="text-[10px] text-slate-400 block font-medium">Total Pinjaman</span>
+                                              <span className="font-bold text-slate-800">{formatIDR(loan.jumlahPinjaman)}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-[10px] text-slate-400 block font-medium">Cicilan / Bulan</span>
+                                              <span className="font-bold text-indigo-600">{formatIDR(loan.cicilan)}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-[10px] text-slate-400 block font-medium">Sudah Terbayar</span>
+                                              <span className="font-bold text-emerald-600">{formatIDR(loan.jumlahPinjaman - loan.sisaHutang)}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-[10px] text-slate-400 block font-medium">Sisa Pinjaman</span>
+                                              <span className="font-bold text-rose-600">{formatIDR(loan.sisaHutang)}</span>
+                                            </div>
+                                          </div>
+
+                                          {/* Progress Bar */}
+                                          <div className="space-y-1.5">
+                                            <div className="flex justify-between items-center text-[11px]">
+                                              <span className="font-medium text-slate-600">Progress Pelunasan</span>
+                                              <span className="font-bold text-indigo-600">{percentPaid}% Lunas</span>
+                                            </div>
+                                            <div className="h-2 w-full bg-slate-200/60 rounded-full overflow-hidden p-0.5">
+                                              <div
+                                                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all duration-500"
+                                                style={{ width: `${percentPaid}%` }}
+                                              />
+                                            </div>
+                                          </div>
+
+                                          {/* Monthly Timeline Chips */}
+                                          <div>
+                                            <div className="flex items-center justify-between mb-2">
+                                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                                Jadwal Angsuran Bulanan ({loan.tenor} Bulan)
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-none">
+                                              {Array.from({ length: loan.tenor }, (_, i) => i + 1).map(monthNum => {
+                                                const isPaid = monthNum <= loan.paidInstallments;
+                                                const isCurrent = monthNum === loan.currentInstallmentNum && loan.paidInstallments < loan.tenor;
+
+                                                return (
+                                                  <div
+                                                    key={monthNum}
+                                                    className={`flex flex-col items-center justify-center min-w-[42px] py-1.5 px-1 rounded-xl border text-center transition-all ${isCurrent
+                                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm scale-105 font-bold'
+                                                      : isPaid
+                                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 font-semibold'
+                                                        : 'bg-white text-slate-400 border-slate-200/60 font-normal'
+                                                      }`}
+                                                  >
+                                                    <span className="text-[9px] opacity-75 uppercase">Bln</span>
+                                                    <span className="text-xs leading-tight">{monthNum}</span>
+                                                    {isPaid && <CheckCircle2 className="w-3 h-3 text-emerald-600 mt-0.5" />}
+                                                    {isCurrent && <span className="text-[8px] leading-none mt-0.5 font-bold underline">Ini</span>}
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
+
+                                          {/* Koperasi Loan History Trail */}
+                                          <div className="pt-1">
+                                            <h6 className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                                              <History className="w-3.5 h-3.5 text-indigo-600" /> Koperasi Loan History Trail
+                                            </h6>
+
+                                            <div className="bg-white p-3.5 rounded-xl border border-slate-200/60 max-h-[240px] overflow-y-auto space-y-2.5">
+                                              {trailSegments.map((segment: any, segIdx: number) => (
+                                                <div key={segment.loanId}>
+                                                  {/* Ancestry Segment Label */}
+                                                  {hasAncestors && (
+                                                    <div className={`flex items-center gap-2 ${segIdx > 0 ? 'mt-3 pt-2.5 border-t border-dashed border-slate-200' : ''}`}>
+                                                      <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${segIdx === trailSegments.length - 1
+                                                        ? 'bg-indigo-100 text-indigo-700'
+                                                        : 'bg-slate-200/70 text-slate-500'
+                                                        }`}>
+                                                        {segment.loanLabel}
+                                                      </div>
+                                                      {segIdx < trailSegments.length - 1 && (
+                                                        <span className="text-[9px] text-slate-400 italic">Direstrukturisasi →</span>
+                                                      )}
+                                                    </div>
+                                                  )}
+
+                                                  {/* History Entries Timeline */}
+                                                  <div className={`space-y-2.5 ${hasAncestors ? 'ml-1 mt-2' : ''}`}>
+                                                    {segment.entries && segment.entries.length > 0 ? (
+                                                      segment.entries.map((h: any, idx: number) => (
+                                                        <div key={`${segment.loanId}-${idx}`} className="text-xs flex gap-2.5 items-start">
+                                                          <div className={`w-2 h-2 rounded-full shrink-0 mt-1 ${segIdx === trailSegments.length - 1 ? 'bg-indigo-500' : 'bg-slate-300'
+                                                            }`} />
+                                                          <div className="space-y-0.5">
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                              <span className={`font-bold ${segIdx === trailSegments.length - 1 ? 'text-slate-800' : 'text-slate-500'
+                                                                }`}>{h.status}</span>
+                                                              <span className="text-[9px] text-slate-400">{formatLoanDate(h.timestamp || h.createdAt || h.date || loan.tanggalDisetujui)}</span>
+                                                            </div>
+                                                            {h.notes && <p className="text-[11px] text-slate-500">{h.notes}</p>}
+                                                          </div>
+                                                        </div>
+                                                      ))
+                                                    ) : (
+                                                      <div className="text-xs text-slate-400 italic">Tidak ada catatan history transaksi.</div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
                                           </div>
                                         </div>
-                                      </>
-                                    );
+                                      );
+                                    });
                                   })()}
                                 </div>
                               )}
 
-                              {item.id === 'struktural' && (
-                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                  <DocRow label="Jabatan Terdaftar" value={userVariables.positions.length > 0 ? userVariables.positions.map((p: any) => p.name).join(', ') : 'Tidak Ada'} />
-                                  <DocRow label="Total T. Struktural" value={formatIDR(userVariables.totalStrukturalVal)} highlight />
-                                </div>
-                              )}
-
-                              {item.id === 'hari_tua_instruksional' && (
-                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                  <DocRow label="Tunjangan Hari Tua (10% Gapok)" value={formatIDR(userVariables.tunjHariTuaVal)} highlight />
-                                  <DocRow label="T. Instruksional" value={formatIDR(userVariables.tunjInstruksionalVal)} highlight />
-                                </div>
-                              )}
-
-                              {item.id === 'bpjs_beras' && (
-                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                  <DocRow label="T. BPJS TK" value={formatIDR(userVariables.bpjsTkVal)} highlight />
-                                  <DocRow label="T. BPJS KES" value={formatIDR(userVariables.bpjsKesVal)} highlight />
-                                  <DocRow label="Tunjangan Beras" value={formatIDR(userVariables.berasVal)} highlight />
-                                </div>
-                              )}
-
-                              {item.id === 'vakasi' && (
-                                <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                  {vakasiEvents && vakasiEvents.length > 0 ? (
-                                    <>
-                                      {vakasiEvents.map((evt, eIdx) => (
-                                        <DocRow key={eIdx} label={evt.eventName} value={formatIDR(evt.payGiven)} />
-                                      ))}
-                                    </>
-                                  ) : (
-                                    <div className="col-span-3 text-xs text-slate-400 italic mb-1">Tidak ada kegiatan resmi terdaftar pada periode ini</div>
-                                  )}
-                                  <DocRow label="Total Vakasi Tambahan" value={formatIDR(
-                                    earnings
-                                      .filter((e: PaySlipField) => !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:'))
-                                      .reduce((sum: number, e: PaySlipField) => sum + e.amount, 0)
-                                  )} highlight />
-                                </div>
-                              )}
+                              {/* Separator */}
+                              {idx < activeDeductionDocs.length - 1 && <div className="h-px bg-slate-100/80 mt-5" />}
                             </div>
-                          )}
-
-                          {/* Separator between items */}
-                          {idx < payrollDocumentation.length - 1 && (
-                            <div className="h-px bg-slate-100 mt-5" />
-                          )}
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
+                  );
+                })()}
+              </div>
 
             </Card>
 

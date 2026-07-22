@@ -1,0 +1,155 @@
+================================================================================
+DOKUMENTASI DAN PANDUAN LENGKAP MANFAAT LINDUNGAN BPJS
+UNTUK PEKERJA (BLUE COLLAR) UNIPDU JOMBANG
+================================================================================
+
+Diterbitkan oleh : Unit Keuangan & Penggajian UNIPDU Jombang
+Peruntukan       : Panduan Operasional & Sosialisasi Karyawan
+Topik Utama      : Struktur BPJS, Perhitungan Slip Gaji (Rp 472.878), 
+                   dan Rincian Manfaat Lapangan 5 Program BPJS
+
+================================================================================
+BAGIAN 1: PEMAHAMAN UMUM & SEGMENTASI BPJS KESEHATAN
+================================================================================
+
+Di Indonesia, BPJS Kesehatan terbagi menjadi beberapa segmen utama yang menentukan
+besaran iuran, skema pembayaran, dan tingkat layanan rumah sakit:
+
+1. SEGMENTASI INDIVIDUAL / MANDIRI (PBPU - Pekerja Bukan Penerima Upah)
+   - Diperuntukkan bagi masyarakat umum, pekerja informal, atau wirausaha.
+   - Pembayaran dilakukan FLAT / FIXED per orang per bulan.
+   - Aturan Mutlak: Kepala Keluarga wajib membayar seluruh anggota yang terdaftar
+     dalam Kartu Keluarga (KK).
+   - Rincian Tarif per Orang:
+     * Kelas 1 : Rp 150.000 / orang / bulan
+     * Kelas 2 : Rp 100.000 / orang / bulan
+     * Kelas 3 : Rp 35.000 / orang / bulan (Pemerintah subsidi Rp 7.000)
+   - Contoh Kasus:
+     Karyawan dengan 4 anggota keluarga di KK (Suami, Istri, 2 Anak) di Kelas 3
+     harus membayar: 4 x Rp 35.000 = Rp 140.000 / bulan dari kantong pribadi.
+
+2. SEGMENTASI PERUSAHAAN / FORMAL (PPU - Pekerja Penerima Upah)
+   - Diperuntukkan bagi staf, dosen, dan pekerja formal di instansi/perusahaan (seperti UNIPDU).
+   - Pembayaran berbasis persentase (5%) dari gaji/UMK, BUKAN dihitung per kepala.
+   - Iuran 5% tersebut secara otomatis MENCOVER hingga 5 Anggota Keluarga 
+     (Pekerja + Suami/Istri + 3 Anak) dengan standar perawatan Kelas 1 atau Kelas 2.
+   - Skema Pembagian Iuran Kesehatan (5%):
+     * Tanggungan Pemberi Kerja (UNIPDU) : 4%
+     * Potongan Gaji Pekerja             : 1%
+
+================================================================================
+BAGIAN 2: BEDAH ANGKAM DAN MEKANISME SLIP GAJI UNIPDU (Rp 472.878)
+================================================================================
+
+Pada slip gaji pekerja kebersihan / blue collar UNIPDU, muncul angka spesifik 
+sebesar Rp 472.878 pada kolom Pendapatan maupun Potongan.
+
+A. DARI MANA ANGKA Rp 472.878 BERASAL?
+   Angka ini merupakan total iuran LENGKAP untuk 5 Program Proteksi Sosial 
+   (BPJS Kesehatan + BPJS Ketenagakerjaan) sebesar 14,24% yang dihitung berdasarkan 
+   Standar UMK (Upah Minimum Kabupaten) Jombang Tahun 2026, yaitu Rp 3.320.770.
+
+   Aturan Batas Bawah (Floor Rule):
+   Meskipun Take Home Pay atau Gaji Pokok harian pekerja berada di bawah UMK,
+   peraturan perundang-undangan mewajibkan instansi formal menggunakan nilai UMK
+   sebagai basis perhitungan minimal agar pekerja mendapatkan hak jaminan penuh.
+
+   Rincian Persentase dan Nominal Perhitungan (Basis UMK Rp 3.320.770):
+   -----------------------------------------------------------------------------
+   No.  Program BPJS                   Persentase    Perhitungan Nom. (Rp)
+   -----------------------------------------------------------------------------
+   1.   BPJS Kesehatan                 5.00%         Rp 166.038,50
+   2.   JKK (Jaminan Kecelakaan Kerja) 0.24%         Rp   7.969,85
+   3.   JKM (Jaminan Kematian)         0.30%         Rp   9.962,31
+   4.   JHT (Jaminan Hari Tua)         5.70%         Rp 189.283,89
+   5.   JP  (Jaminan Pensiun)          3.00%         Rp  99.623,10
+   -----------------------------------------------------------------------------
+        TOTAL KONTRIBUSI SEBULAN       14.24%        Rp 472.877,65 
+        (Dibulatkan pada sistem)                     => Rp 472.878
+   -----------------------------------------------------------------------------
+
+B. MEKANISME "NET-ZERO" PADA PAYROLL UNIPDU
+   Di dalam slip gaji pekerja:
+   - Kolom Uraian Pendapatan : BPJS (Tunjangan) = + Rp 472.878
+   - Kolom Potongan          : BPJS             = - Rp 472.878
+   
+   Dampak Netto: + Rp 472.878 - Rp 472.878 = Rp 0.
+   
+   Artinya: UNIPDU memberikan fasilitas subsidi penuh bagi pekerja blue-collar,
+   sehingga pekerja mendapatkan perlindungan total senilai Rp 472.878 setiap bulan
+   TANPA MENGURANGI uang tunai (take-home pay) yang dibawa pulang ke rumah.
+
+================================================================================
+BAGIAN 3: RINCIAN MANFAAT LAPANGAN 5 PROGRAM BPJS
+================================================================================
+
+Berikut adalah manfaat nyata yang didapatkan oleh pekerja dan keluarganya di lapangan:
+
+1. BPJS KESEHATAN (Jaminan Kesehatan Masyarakat)
+   -----------------------------------------------------------------------------
+   - Cakupan Kasus : Pengobatan sakit harian, rawat jalan, rawat inap, operasi,
+                     hingga perawatan medis kronis.
+   - Penerima      : Pekerja + Suami/Istri + hingga 3 Anak (Total 5 Jiwa).
+   - Hak Kelas     : Fasilitas kamar perawatan Kelas 1 / Kelas 2 di RS rujukan.
+   - Biaya         : 100% Gratis selama mengikuti prosedur/faskes rujukan resmi.
+
+2. JKK (Jaminan Kecelakaan Kerja)
+   -----------------------------------------------------------------------------
+   - Cakupan Kasus : Kecelakaan saat bekerja di area kampus UNIPDU ATAU kecelakaan
+                     di jalan raya saat berangkat/pulang kerja.
+   - Biaya Medis   : DICOVER 100% TANPA BATAS ATAS (Uncapped) di Rumah Sakit 
+                     Trauma Center hingga sembuh total.
+   - Pengganti Gaji: Jika pekerja harus cuti pemulihan, BPJS membayar 100% gaji 
+                     dilaporkan selama 12 bulan pertama (STMB).
+   - Beasiswa Anak : Jika kecelakaan mengakibatkan meninggal/cacat total, 
+                     2 orang anak mendapat beasiswa dari TK hingga Sarjana (S1) 
+                     dengan total nilai hingga Rp 174.000.000.
+
+3. JKM (Jaminan Kematian)
+   -----------------------------------------------------------------------------
+   - Cakupan Kasus : Pekerja meninggal dunia BUKAN karena kecelakaan kerja 
+                     (misal: sakit, usia lanjut, atau musibah di luar jam kerja).
+   - Santunan Tunai: Ahli waris menerima total santunan tunai sebesar Rp 42.000.000, 
+                     yang terdiri dari:
+                     * Santunan Kematian : Rp 20.000.000
+                     * Biaya Pemakaman   : Rp 10.000.000
+                     * Santunan Berkala  : Rp 12.000.000 (dibayarkan sekaligus)
+   - Beasiswa Anak : Jika masa kepesertaan minimal 3 tahun, 2 anak berhak mendapat
+                     beasiswa pendidikan hingga Perguruan Tinggi.
+
+4. JHT (Jaminan Hari Tua)
+   -----------------------------------------------------------------------------
+   - Sifat Program : Tabungan investasi jangka panjang dengan bunga pengawasan pemerintah.
+   - Hak Pencairan : 100% Saldo Pokok + Hasil Pengembangan (Bunga) dapat dicairkan saat:
+                     * Mengundurkan diri / Berhenti bekerja dari UNIPDU.
+                     * Memasuki usia 56 tahun.
+                     * Mengalami cacat total tetap.
+   - Pencairan Awal: Setelah 10 tahun kepesertaan, saldo bisa dicairkan 10% (persiapan pensiun)
+                     atau 30% (uang muka kepemilikan rumah).
+
+5. JP (Jaminan Pensiun)
+   -----------------------------------------------------------------------------
+   - Sifat Program : Pendapatan bulanan seumur hidup setelah masa kerja berakhir.
+   - Hak Pencairan : Memasuki usia pensiun (58+ tahun), pekerja menerima gaji pensiun
+                     tiap bulan yang ditransfer langsung ke rekening pribadi.
+   - Keberlanjutan : Jika pensiunan meninggal dunia, uang pensiun bulanan terus mengalir
+                     kepada Istri/Suami (pensiun janda/duda) atau anak hingga berusia 23 tahun.
+   - Syarat Minimal: Masa iur minimal 15 tahun (180 bulan). Jika kurang dari 15 tahun,
+                     seluruh akumulasi iuran + hasil pengembangan dibayarkan sekaligus (Lump Sum).
+
+================================================================================
+BAGIAN 4: RINGKASAN UNTUK SOSIALISASI KARYAWAN
+================================================================================
+
+Poin penting yang perlu dipahami oleh setiap pekerja blue-collar UNIPDU:
+
+1. Anda tidak dipotong uang dingin dari gaji bersih untuk BPJS ini (Subsidi UNIPDU).
+2. Anda dan seluruh keluarga inti (Istri & Anak) sudah memiliki asuransi kesehatan resmi.
+3. Anda dilindungi secara penuh dari risiko kecelakaan kerja sejak berangkat dari rumah.
+4. Keluarga Anda memiliki dana pengaman sosial jika terjadi musibah meninggal dunia.
+5. Anda memiliki tabungan masa tua (JHT) dan jaminan pensiun bulanan (JP) untuk hari tua.
+
+================================================================================
+Laporan ini disusun secara otomatis oleh Sistem Manajemen Keuangan & SDM UNIPDU.
+Tanggal Penerbitan: 22 Juli 2026
+================================================================================

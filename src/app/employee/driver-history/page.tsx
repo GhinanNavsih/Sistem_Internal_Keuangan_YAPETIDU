@@ -264,22 +264,22 @@ function DriverHistoryContent() {
             <Link href="/employee/payslip">
               <Button
                 variant="ghost"
-                size="sm"
-                className="text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-xl h-8 px-2.5 flex items-center gap-1.5 font-bold text-xs cursor-pointer"
-                title="Lihat Slip Gaji"
+                size="icon"
+                className="text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-xl h-9 w-9 flex items-center justify-center cursor-pointer"
+                title="Slip Gaji"
               >
-                <Banknote className="w-4 h-4 text-emerald-600" />
-                <span>Slip Gaji</span>
+                <Banknote className="w-4.5 h-4.5 text-emerald-600" />
               </Button>
             </Link>
 
             <Button
               onClick={() => logout()}
               variant="ghost"
-              size="sm"
-              className="text-slate-400 hover:text-rose-500 rounded-xl h-8 px-2.5"
+              size="icon"
+              className="text-slate-400 hover:text-rose-500 rounded-xl h-9 w-9 flex items-center justify-center"
+              title="Keluar"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-4.5 h-4.5" />
             </Button>
           </div>
         </div>

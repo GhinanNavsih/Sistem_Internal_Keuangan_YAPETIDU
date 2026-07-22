@@ -214,28 +214,28 @@ export function buildInitialEarnings(
     // Gaji Pokok – always known
     earnings.push({ label: 'Gaji Pokok', amount: gapok });
 
-    if (allCols.length > 0 && uraian) {
-      // Auto-fill from UraianGaji data using column config
+    if (allCols.length > 0) {
       for (const col of allCols) {
         if (col.slipLabel) {
-          // If it's a count column and we have the raw count, compute it.
-          // Otherwise, use the value from the values map (which is already a nominal currency amount).
           let amount = 0;
-          if (col.type === 'count' && uraian.counts && uraian.counts[col.key] !== undefined) {
-            amount = computeSlipAmount(col, uraian.counts[col.key]);
-          } else {
-            amount = uraian.values[col.key] ?? 0;
+          if (uraian) {
+            if (col.type === 'count' && uraian.counts && uraian.counts[col.key] !== undefined) {
+              amount = computeSlipAmount(col, uraian.counts[col.key]);
+            } else if (uraian.values && uraian.values[col.key] !== undefined) {
+              amount = uraian.values[col.key] ?? 0;
+            }
+          }
+          // Auto-fill SPJ from vakasiTambahanSum or emp.spjAmount if amount is 0
+          if (col.key === 'spj' && amount === 0) {
+            if (vakasiTambahanSum && vakasiTambahanSum > 0) {
+              amount = vakasiTambahanSum;
+            } else if (emp.spjAmount) {
+              amount = emp.spjAmount;
+            }
           }
           earnings.push({ label: col.slipLabel, amount });
         }
       }
-    } else {
-      // Fallback: generic placeholder rows when no UraianGaji data exists
-      earnings.push({ label: 'Vakasi Harian', amount: 0 });
-      earnings.push({ label: "Bonus Jum'at", amount: 0 });
-      earnings.push({ label: 'Lembur', amount: 0 });
-      earnings.push({ label: 'Bonus Finger', amount: 0 });
-      earnings.push({ label: 'Bonus presensi', amount: 0 });
     }
 
     // BPJS Allowance – we have this
@@ -249,13 +249,11 @@ export function buildInitialEarnings(
       amount: emp.salaryProfile?.tunjanganBeras ?? 0 
     });
 
-    // Vakasi Tambahan for Pekarya
+    // Vakasi Tambahan for Pekarya if detailed items exist
     if (vakasiTambahanList && vakasiTambahanList.length > 0) {
       vakasiTambahanList.forEach((item) => {
         earnings.push({ label: item.eventName, amount: item.payGiven });
       });
-    } else if (vakasiTambahanSum && vakasiTambahanSum > 0) {
-      earnings.push({ label: 'Vakasi Tambahan', amount: vakasiTambahanSum });
     }
   }
 
@@ -289,23 +287,18 @@ export function buildInitialDeductions(
     deductions.push({ label: 'Potongan Bonus Presensi', amount: presenceDeduction });
     deductions.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving });
   } else {
-    // BPJS deduction
-    if (emp.bpjs?.deductionAmount) {
-      deductions.push({ label: 'BPJS', amount: Math.round(emp.bpjs.deductionAmount) });
-    }
-
-    // Koperasi Rochmad
-    if (emp.deductions?.koperasiRochmad) {
-      deductions.push({ label: 'Kop. Rochmad', amount: emp.deductions.koperasiRochmad });
-    }
-
-    // Koperasi Unipdu from sample
-    deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: koperasiDeduction });
-
-    // Simpanan Wajib Koperasi
-    if (koperasiSaving) {
-      deductions.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving });
-    }
+    // Blue Collar deductions matching standardized layout
+    deductions.push({ label: 'Koperasi Rochmad', amount: emp.deductions?.koperasiRochmad || 0 });
+    deductions.push({ label: 'BPJS', amount: emp.bpjs?.deductionAmount ? Math.round(emp.bpjs.deductionAmount) : 0 });
+    deductions.push({ label: 'Tabungan Hari Tua BNI Simponi', amount: emp.tht?.deductionAmount || 0 });
+    deductions.push({ label: 'Tabungan', amount: emp.savings?.deductionAmount || 0 });
+    deductions.push({ label: 'Zakat Infaq Sodaqoh', amount: emp.ziz?.deductionAmount || 0 });
+    deductions.push({ label: 'Revisi Gaji', amount: 0 });
+    deductions.push({ label: 'Pinlu/Tagihan', amount: emp.pinlu?.deductionAmount || 0 });
+    deductions.push({ label: 'Pinjaman Kop. UNIPDU', amount: koperasiDeduction || 0 });
+    deductions.push({ label: 'Potongan Presensi', amount: presensiDeduction || 0 });
+    deductions.push({ label: 'Potongan Bonus Presensi', amount: presenceDeduction || 0 });
+    deductions.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving || 0 });
   }
 
   return deductions;
