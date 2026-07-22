@@ -71,6 +71,16 @@ function num(value: any): number {
   return isNaN(n) ? 0 : n;
 }
 
+function toTitleCase(str: string): string {
+  if (!str) return '';
+  return str
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map(word => word ? word.charAt(0).toUpperCase() + word.slice(1) : '')
+    .join(' ');
+}
+
 async function migrateBlueCollar() {
   const filePath = path.resolve(process.cwd(), 'Data Pegawai Blue Collar.xlsx');
 
@@ -79,11 +89,12 @@ async function migrateBlueCollar() {
     process.exit(1);
   }
 
-  console.log('📖 Reading Excel file...');
   const workbook = xlsx.readFile(filePath);
-  const sheetName = workbook.SheetNames[0];
+  const sheetName = workbook.SheetNames[0] || 'Master';
   const sheet = workbook.Sheets[sheetName];
-  const rows = xlsx.utils.sheet_to_json<any>(sheet);
+  const rows: any[] = xlsx.utils.sheet_to_json(sheet);
+
+  console.log(`📦  Loaded ${rows.length} rows from Master sheet.`);
 
   const employees: any[] = [];
   let counter = 1;
@@ -91,8 +102,9 @@ async function migrateBlueCollar() {
   const jobCatCount: Record<string, number> = {};
 
   for (const row of rows) {
-    const name: string = String(row['Nama'] || '').trim();
-    if (!name) continue;
+    const rawName: string = String(row['Nama'] || '').trim();
+    if (!rawName) continue;
+    const name = toTitleCase(rawName);
 
     // --- Status ---
     const statusRaw = String(row['Status'] || '').trim().toUpperCase();

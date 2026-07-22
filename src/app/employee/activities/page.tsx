@@ -1883,17 +1883,19 @@ function ActivitiesContent() {
     getDocs(q).then((snap) => {
       if (!isMounted) return;
 
+      const defaultShiftTypeForDate = getDefaultShiftTypeForDate(satpamReportDate);
+
       if (!snap.empty) {
         const newAssignments: Record<string, { employeeId: string; shiftType: string }> = {
-          'Pos 1': { employeeId: '', shiftType: 'Harian' },
-          'Pos 2': { employeeId: '', shiftType: 'Harian' },
-          'Pos 3': { employeeId: '', shiftType: 'Harian' },
-          'Pos 4': { employeeId: '', shiftType: 'Harian' },
-          'Pos 5': { employeeId: '', shiftType: 'Harian' },
-          'Pos 6': { employeeId: '', shiftType: 'Harian' },
-          'Pos 7': { employeeId: '', shiftType: 'Harian' },
-          'Pos 8': { employeeId: '', shiftType: 'Harian' },
-          'Pos 9': { employeeId: '', shiftType: 'Harian' },
+          'Pos 1': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 2': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 3': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 4': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 5': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 6': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 7': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 8': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 9': { employeeId: '', shiftType: defaultShiftTypeForDate },
         };
         let foundExtra = false;
         let extraEmpId = '';
@@ -1923,7 +1925,7 @@ function ActivitiesContent() {
                 if (newAssignments[normPosId]) {
                   newAssignments[normPosId] = {
                     employeeId: data.employeeId || '',
-                    shiftType: data.shiftType || 'Harian',
+                    shiftType: data.shiftType || defaultShiftTypeForDate,
                   };
                 }
               }
@@ -1946,15 +1948,15 @@ function ActivitiesContent() {
         setIsSatpamReportSubmitted(true);
       } else {
         setPostAssignments({
-          'Pos 1': { employeeId: '', shiftType: 'Harian' },
-          'Pos 2': { employeeId: '', shiftType: 'Harian' },
-          'Pos 3': { employeeId: '', shiftType: 'Harian' },
-          'Pos 4': { employeeId: '', shiftType: 'Harian' },
-          'Pos 5': { employeeId: '', shiftType: 'Harian' },
-          'Pos 6': { employeeId: '', shiftType: 'Harian' },
-          'Pos 7': { employeeId: '', shiftType: 'Harian' },
-          'Pos 8': { employeeId: '', shiftType: 'Harian' },
-          'Pos 9': { employeeId: '', shiftType: 'Harian' },
+          'Pos 1': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 2': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 3': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 4': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 5': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 6': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 7': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 8': { employeeId: '', shiftType: defaultShiftTypeForDate },
+          'Pos 9': { employeeId: '', shiftType: defaultShiftTypeForDate },
         });
         setExtraEmployeeId('');
         setExtraPostName('');
@@ -1989,8 +1991,17 @@ function ActivitiesContent() {
 
   const isFriday = (dateStr: string) => {
     if (!dateStr) return false;
-    const d = new Date(dateStr);
-    return d.getDay() === 5; // Friday is 5
+    const parts = dateStr.split('-');
+    if (parts.length < 3) return false;
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    const dateObj = new Date(y, m, d);
+    return dateObj.getDay() === 5; // Friday is 5
+  };
+
+  const getDefaultShiftTypeForDate = (dateStr: string) => {
+    return isFriday(dateStr) ? 'Jumat & Libur' : 'Harian';
   };
 
   const handleSelectGuard = (postId: string, employeeId: string) => {
@@ -1998,7 +2009,7 @@ function ActivitiesContent() {
       const isExternal = !groupEmployeeIds.includes(employeeId) && employeeId !== '';
       const defaultType = isExternal
         ? 'Lembur Cover'
-        : (isFriday(satpamReportDate) ? 'Jumat & Libur' : 'Harian');
+        : getDefaultShiftTypeForDate(satpamReportDate);
 
       return {
         ...prev,
@@ -2173,16 +2184,17 @@ function ActivitiesContent() {
       setMessage({ type: 'success', text: `Berhasil mengirim laporan shift ${activeShift} tanggal ${satpamReportDate}.` });
 
       // Reset post selection
+      const defaultShiftTypeForReset = getDefaultShiftTypeForDate(satpamReportDate);
       setPostAssignments({
-        'Pos 1': { employeeId: '', shiftType: 'Harian' },
-        'Pos 2': { employeeId: '', shiftType: 'Harian' },
-        'Pos 3': { employeeId: '', shiftType: 'Harian' },
-        'Pos 4': { employeeId: '', shiftType: 'Harian' },
-        'Pos 5': { employeeId: '', shiftType: 'Harian' },
-        'Pos 6': { employeeId: '', shiftType: 'Harian' },
-        'Pos 7': { employeeId: '', shiftType: 'Harian' },
-        'Pos 8': { employeeId: '', shiftType: 'Harian' },
-        'Pos 9': { employeeId: '', shiftType: 'Harian' },
+        'Pos 1': { employeeId: '', shiftType: defaultShiftTypeForReset },
+        'Pos 2': { employeeId: '', shiftType: defaultShiftTypeForReset },
+        'Pos 3': { employeeId: '', shiftType: defaultShiftTypeForReset },
+        'Pos 4': { employeeId: '', shiftType: defaultShiftTypeForReset },
+        'Pos 5': { employeeId: '', shiftType: defaultShiftTypeForReset },
+        'Pos 6': { employeeId: '', shiftType: defaultShiftTypeForReset },
+        'Pos 7': { employeeId: '', shiftType: defaultShiftTypeForReset },
+        'Pos 8': { employeeId: '', shiftType: defaultShiftTypeForReset },
+        'Pos 9': { employeeId: '', shiftType: defaultShiftTypeForReset },
       });
       setExtraEmployeeId('');
       setExtraPostName('');
@@ -2799,7 +2811,8 @@ function ActivitiesContent() {
 
                     <div className="space-y-3.5">
                       {POSTS_CONFIG.map((post) => {
-                        const val = postAssignments[post.id] || { employeeId: '', shiftType: 'Harian' };
+                        const defaultShiftTypeForRender = getDefaultShiftTypeForDate(satpamReportDate);
+                        const val = postAssignments[post.id] || { employeeId: '', shiftType: defaultShiftTypeForRender };
                         const assignedElsewhere = [
                           ...Object.entries(postAssignments)
                             .filter(([postId]) => postId !== post.id)

@@ -13,12 +13,12 @@ This document details the scheduling, post assignment, and payroll logic for the
 
 ### Group Roster
 Based on organizational data:
-1. **Group 1 (Ketua: BASTOMI)**
-   - Members: SLAMET, SLAMET RIADI, SLAMET RAHARJO, BAMBANG HARIYONO, MATRAJI, MUHAMAD FUADY, SOEHARTO, ANDIK PRIYO UTOMO, SAMSUN.
-2. **Group 2 (Ketua: MUJIONO)**
-   - Members: ABIN MUSTOFA, MARIANTO, POEDJI UTOMO, SAMSUL HADI, ALIMIN, AMIR, MAKHIN, SLAMET GANGSAR, NANANG ABDUL AJIS.
-3. **Group 3 (Ketua: SUHARIONO)**
-   - Members: DIDIK SISWANTO, RUSMANTO, FATHONI, WAWAN WIRAWAN, IRIANTO, DODIK SUHANDOKO, SUGENG PRAYITNO SATPAM, SUBACHIN, MOH SAMSUL HIDAYAT.
+1. **Group 1 (Ketua: Bastomi)**
+   - Members: Slamet, Slamet Riadi, Slamet Raharjo, Bambang Hariyono, Matraji, Muhamad Fuady, Soeharto, Andik Priyo Utomo, Samsun.
+2. **Group 2 (Ketua: Mujiono)**
+   - Members: Abin Mustofa, Marianto, Poedji Utomo, Samsul Hadi, Alimin, Amir, Makhin, Slamet Gangsar, Nanang Abdul Ajis.
+3. **Group 3 (Ketua: Suhariono)**
+   - Members: Didik Siswanto, Rusmanto, Fathoni, Wawan Wirawan, Irianto, Dodik Suhandoko, Sugeng Prayitno Satpam, Subachin, Moh Samsul Hidayat.
 
 ---
 
