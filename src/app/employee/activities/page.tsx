@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Card,
   CardContent,
@@ -545,6 +545,7 @@ const POSTS_CONFIG = [
 
 function ActivitiesContent() {
   const { profile, logout, user } = useAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const editReportIdParam = searchParams.get('editReportId');
   const fuelFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -1222,6 +1223,14 @@ function ActivitiesContent() {
     };
   }, [isSopir, profile?.linkedEmployeeId]);
 
+  // Auto-redirect driver to dedicated /employee/activities/journey-report if an active claimed journey exists
+  useEffect(() => {
+    if (isSopir && myClaimedJourneys.length > 0) {
+      const activeJourney = myClaimedJourneys[0];
+      router.push(`/employee/activities/journey-report?id=${activeJourney.id}`);
+    }
+  }, [isSopir, myClaimedJourneys, router]);
+
   // ── Filtered activities ──
   const filteredActivities = useMemo(() => {
     if (statusFilter === 'all') return activities;
@@ -1279,54 +1288,7 @@ function ActivitiesContent() {
 
   const openEditForm = (activity: ActivityReport) => {
     if (activity.jobCategory === 'SOPIR' && activity.journeyId) {
-      const extraLocs = (activity.points || []).slice(2);
-      const extraActivitiesFromPoints = activity.extraActivities || extraLocs.map((dest: string) => ({
-        type: 'tambah_lokasi',
-        destination: dest
-      }));
-
-      const vRate = activity.vehicleRate || 741;
-      const isNdalem = activity.vehicleType === 'Ndalem';
-      const calcBaseCost = isNdalem ? 0 : Math.ceil((activity.distanceKm || 0) * vRate);
-      const authDurPP = activity.customDurationPP || (activity.durationHours ? activity.durationHours * 2 : 0);
-      const calcMeal = isNdalem ? 0 : (activity.mealAllowance !== undefined && activity.mealAllowance !== null ? activity.mealAllowance : getMealAllowanceForDuration(authDurPP));
-      const calcToll = activity.preAuthorizedToll !== undefined && activity.preAuthorizedToll !== null ? activity.preAuthorizedToll : 0;
-      const calcTotalOps = activity.totalOperationalCost || (calcBaseCost + calcMeal + calcToll);
-      const baseOpsCost = activity.baseOperationalCost || calcBaseCost;
-
-      const reportingJourney = {
-        id: activity.journeyId,
-        activityName: (activity.activityName || 'Perjalanan Dinas').replace(/\s*\(.*\)\s*$/, ''),
-        vehicleName: activity.vehicleType || 'Suzuki XL7',
-        vehicleRate: vRate,
-        startPoint: activity.points?.[0] || 'UNIPDU Jombang, Jawa Timur',
-        endPoint: activity.points?.[1] || '',
-        distanceKm: (activity.distanceKm || 0) / 2,
-        durationHours: (activity.durationHours || 0) / 2,
-        customDurationPP: authDurPP,
-        baseOperationalCost: baseOpsCost,
-        mealAllowance: calcMeal,
-        tollParkingFee: calcToll,
-        totalOperationalCost: calcTotalOps,
-        authorizedAt: activity.authorizedAt || null,
-        journeyDate: activity.journeyDate || activity.activityDate || null,
-        claimedAt: activity.claimedAt || null,
-        completedAt: activity.completedAt || null,
-        // Prefill draft values from existing activity report
-        draftTimeStart: activity.timeStart || '08:00',
-        draftTimeEnd: activity.timeEnd || '17:00',
-        draftIsOvernight: !!activity.isOvernight,
-        draftFuelFee: activity.fuelFee ? String(activity.fuelFee) : '',
-        draftTollParkingFee: activity.tollParkingFee ? String(activity.tollParkingFee) : '',
-        draftFuelReceiptUrl: activity.fuelReceiptUrl || '',
-        draftTollReceiptUrl: activity.tollReceiptUrl || '',
-        draftExtraActivities: extraActivitiesFromPoints,
-        draftCalculatedDistanceKm: activity.distanceKm || 0,
-        draftCalculatedDurationHours: activity.durationHours || 0,
-        editingActivityDocId: activity.id,
-      };
-
-      setActiveReportingJourney(reportingJourney);
+      router.push(`/employee/activities/journey-report?id=${activity.journeyId}`);
       return;
     }
 
@@ -1417,7 +1379,7 @@ function ActivitiesContent() {
         employeeName: profile.displayName || '',
         claimedAt: serverTimestamp(),
       });
-      setMessage({ type: 'success', text: 'Perjalanan tugas berhasil dimulai. Silakan laporkan setelah selesai.' });
+      router.push(`/employee/activities/journey-report?id=${journeyId}`);
     } catch (err) {
       console.error('Error starting assigned journey:', err);
       setMessage({ type: 'error', text: 'Gagal memulai perjalanan tugas.' });
@@ -1447,7 +1409,7 @@ function ActivitiesContent() {
         employeeName: profile.displayName || '',
         claimedAt: serverTimestamp(),
       });
-      setMessage({ type: 'success', text: 'Perjalanan berhasil diambil. Silakan laporkan setelah selesai.' });
+      router.push(`/employee/activities/journey-report?id=${journeyId}`);
     } catch (err) {
       console.error('Error claiming journey:', err);
       setMessage({ type: 'error', text: 'Gagal mengambil perjalanan.' });
@@ -3189,15 +3151,7 @@ function ActivitiesContent() {
 
                         <div className="flex flex-col gap-2 pt-1">
                           <Button
-                            onClick={() => {
-                              setActiveReportingJourney(j);
-                              setFormDate(j.activityDate || getTodayISO());
-                              setFormTimeStart(j.draftTimeStart || j.timeStart || '08:00');
-                              setFormTimeEnd(j.draftTimeEnd || j.timeEnd || '17:00');
-                              setFormIsOvernight(j.draftIsOvernight ?? j.isOvernight ?? false);
-                              setFormFuelFee(j.draftFuelFee ? String(j.draftFuelFee) : (j.fuelFee ? String(j.fuelFee) : ''));
-                              setFormTollParkingFee(j.draftTollParkingFee ? String(j.draftTollParkingFee) : (j.tollParkingFee ? String(j.tollParkingFee) : ''));
-                            }}
+                            onClick={() => router.push(`/employee/activities/journey-report?id=${j.id}`)}
                             className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs sm:text-sm h-10.5 gap-2 cursor-pointer shadow-md shadow-indigo-100 transition-all border-none"
                           >
                             <CheckCircle2 className="w-4.5 h-4.5" />
