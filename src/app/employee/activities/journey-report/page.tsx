@@ -847,40 +847,22 @@ function JourneyReportContent() {
         <form onSubmit={handleCompleteJourneySubmit} className="space-y-4">
           
           {/* Keperluan, Kendaraan & Tanggal Header Card */}
-          {(() => {
-            const baseCostVal = activeReportingJourney.baseOperationalCost ||
-              ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0) - (activeReportingJourney.tollParkingFee || 0));
-            const mealAllowanceVal = activeReportingJourney.mealAllowance || 0;
-            const totalBaseline = activeReportingJourney.totalOperationalCost || 0;
-
-            return (
-              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs text-xs font-semibold text-slate-500 space-y-2.5">
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <div>Keperluan: <strong className="text-slate-700 font-extrabold">{activeReportingJourney.activityName}</strong></div>
-                    <div className="text-slate-300">•</div>
-                    <div>Kendaraan: <strong className="text-slate-700 font-extrabold">{activeReportingJourney.vehicleName}</strong></div>
-                    <div className="text-slate-300">•</div>
-                    <div>
-                      Tanggal: <strong className="text-slate-700 font-extrabold">
-                        {(() => {
-                          const d = formDate || activeReportingJourney.activityDate || getTodayISO();
-                          return new Date(d.includes('T') ? d : `${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-                        })()}
-                      </strong>
-                    </div>
-                  </div>
-                  <div className="pt-2 border-t border-slate-200/60 flex flex-wrap justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider gap-2">
-                    <div className="flex gap-4">
-                      <span>Tarif Kendaraan: <strong className="text-blue-600 normal-case font-black">{fmtRp(Math.ceil(baseCostVal))}</strong></span>
-                      <span>Uang Makan: <strong className="text-blue-600 normal-case font-black">{fmtRp(Math.ceil(mealAllowanceVal))}</strong></span>
-                    </div>
-                    <div>
-                      Uang Jalan Awal: <strong className="text-blue-600 normal-case font-black text-xs">{fmtRp(Math.ceil(totalBaseline))}</strong>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs text-xs font-semibold text-slate-500">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <div>Keperluan: <strong className="text-slate-700 font-extrabold">{activeReportingJourney.activityName}</strong></div>
+              <div className="text-slate-300">•</div>
+              <div>Kendaraan: <strong className="text-slate-700 font-extrabold">{activeReportingJourney.vehicleName}</strong></div>
+              <div className="text-slate-300">•</div>
+              <div>
+                Tanggal: <strong className="text-slate-700 font-extrabold">
+                  {(() => {
+                    const d = formDate || activeReportingJourney.activityDate || getTodayISO();
+                    return new Date(d.includes('T') ? d : `${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                  })()}
+                </strong>
+              </div>
+            </div>
+          </div>
 
             {/* Unified Route Timeline Card */}
             {(() => {
