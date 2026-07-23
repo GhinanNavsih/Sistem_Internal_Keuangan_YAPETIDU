@@ -762,7 +762,9 @@ function JourneyReportContent() {
     try {
       const journeyRef = doc(db, 'DriverJourneys', activeReportingJourney.id);
       await updateDoc(journeyRef, {
-        status: 'open',
+        status: 'unassigned',
+        employeeId: deleteField(),
+        employeeName: deleteField(),
         claimedBy: deleteField(),
         claimedByName: deleteField(),
         claimedAt: deleteField(),

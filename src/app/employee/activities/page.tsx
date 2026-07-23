@@ -1181,7 +1181,7 @@ function ActivitiesContent() {
     // 1. Unassigned journeys (Open Pool)
     const qUnassigned = query(
       collection(db, 'DriverJourneys'),
-      where('status', '==', 'unassigned')
+      where('status', 'in', ['unassigned', 'open'])
     );
     const unsubUnassigned = onSnapshot(qUnassigned, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
