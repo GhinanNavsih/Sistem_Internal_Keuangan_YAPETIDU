@@ -3223,7 +3223,7 @@ function ActivitiesContent() {
                   <span className="text-xs font-medium">Belum ada perjalanan dinas terbuka di pool umum.</span>
                 </div>
               ) : (
-                <div className="divide-y-2 divide-slate-300/80">
+                <div>
                   {myClaimedJourneys.length > 0 && (
                     <div className="p-3.5 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl font-bold flex items-center gap-2 mb-3">
                       <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -3231,7 +3231,7 @@ function ActivitiesContent() {
                     </div>
                   )}
                   {unassignedJourneys.map((j) => (
-                    <div key={j.id} className="pt-6 pb-8 space-y-3.5 first:pt-2">
+                    <div key={j.id} className="pt-6 pb-8 border-b-2 border-slate-300/80 space-y-3.5 first:pt-2">
                       <div className="rounded-2xl overflow-hidden shadow-xs border border-slate-200/60">
                         <DestinationImageBanner destination={j.endPoint} cachedUrl={j.destinationImageUrl} />
                       </div>
