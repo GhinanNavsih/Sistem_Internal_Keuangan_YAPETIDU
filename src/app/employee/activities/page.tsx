@@ -2632,7 +2632,7 @@ function ActivitiesContent() {
 
         {/* ── Period Selector ──────────────────────────────────────────── */}
         {isSopir ? (
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4">
+          <div className="py-3 border-b border-slate-200/80">
             <div className="flex items-center gap-3">
               <CalendarDays className="w-4 h-4 text-teal-500 shrink-0" />
               <div className="flex items-center gap-2 flex-1">
@@ -3223,17 +3223,19 @@ function ActivitiesContent() {
                   <span className="text-xs font-medium">Belum ada perjalanan dinas terbuka di pool umum.</span>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-2.5">
+                <div className="divide-y divide-slate-200/80">
                   {myClaimedJourneys.length > 0 && (
-                    <div className="p-3.5 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl font-bold flex items-center gap-2">
+                    <div className="p-3.5 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl font-bold flex items-center gap-2 mb-3">
                       <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                       <span>Anda memiliki perjalanan aktif. Selesaikan atau laporkan terlebih dahulu sebelum mengambil perjalanan baru.</span>
                     </div>
                   )}
                   {unassignedJourneys.map((j) => (
-                    <div key={j.id} className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-                      <DestinationImageBanner destination={j.endPoint} cachedUrl={j.destinationImageUrl} />
-                      <div className="p-4 space-y-3">
+                    <div key={j.id} className="py-4 space-y-3">
+                      <div className="rounded-2xl overflow-hidden shadow-xs border border-slate-200/60">
+                        <DestinationImageBanner destination={j.endPoint} cachedUrl={j.destinationImageUrl} />
+                      </div>
+                      <div className="space-y-3">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -3261,7 +3263,7 @@ function ActivitiesContent() {
                           </div>
                         </div>
 
-                        <div className="flex justify-between items-center pt-2.5 border-t border-slate-100">
+                        <div className="flex justify-between items-center pt-2.5 border-t border-slate-200/60">
                           <div className="flex gap-4">
                             <div>
                               <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Biaya Operasional</span>
