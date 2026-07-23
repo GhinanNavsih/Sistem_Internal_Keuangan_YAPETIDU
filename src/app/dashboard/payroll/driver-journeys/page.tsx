@@ -61,12 +61,12 @@ import {
 } from 'firebase/firestore';
 
 const VEHICLE_RATES = {
-  'Bis': 850,
-  'Elf': 680,
-  'Kijang LGX': 567,
-  'Innova Hitam': 1000,
-  'Innova Matic': 1250,
-  'Suzuki XL7': 741,
+  'Bis': 2500,
+  'Elf': 1350,
+  'Kijang LGX': 1200,
+  'Innova Hitam': 1250,
+  'Innova Matic': 1450,
+  'Suzuki XL7': 1000,
   'Ndalem': 0,
 };
 

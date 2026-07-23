@@ -918,7 +918,7 @@ function JourneyReportContent() {
         totalPreAuthorizedAllowance,
         totalActualSpent,
         totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
-        vehicleRate: activeReportingJourney.vehicleRate || 741,
+        vehicleRate: activeReportingJourney.vehicleRate || 1000,
         componentJarak: calculatedDistanceKm * 300,
         componentWaktu: calculatedDurationHours * 5000,
         premiumOvernight: formIsOvernight ? 50000 : 0,

@@ -1630,8 +1630,8 @@ function ActivitiesContent() {
       const preAuthorizedMeal = isNdalem
         ? 0
         : (activeReportingJourney.mealAllowance !== undefined && activeReportingJourney.mealAllowance !== null && activeReportingJourney.mealAllowance > 0
-            ? activeReportingJourney.mealAllowance
-            : getMealAllowanceForDuration(preAuthorizedDurationPP));
+          ? activeReportingJourney.mealAllowance
+          : getMealAllowanceForDuration(preAuthorizedDurationPP));
 
       const baseCostVal = activeReportingJourney.baseOperationalCost ||
         ((activeReportingJourney.totalOperationalCost || 0) - preAuthorizedMeal - (activeReportingJourney.tollParkingFee || 0));
@@ -1705,7 +1705,7 @@ function ActivitiesContent() {
         totalPreAuthorizedAllowance,
         totalActualSpent,
         totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
-        vehicleRate: activeReportingJourney.vehicleRate || 741,
+        vehicleRate: activeReportingJourney.vehicleRate || 1000,
         componentJarak: calculatedDistanceKm * 300,
         componentWaktu: calculatedDurationHours * 5000,
         premiumOvernight: formIsOvernight ? 50000 : 0,
@@ -1785,7 +1785,7 @@ function ActivitiesContent() {
         totalPreAuthorizedAllowance,
         totalActualSpent,
         totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
-        vehicleRate: activeReportingJourney.vehicleRate || 741,
+        vehicleRate: activeReportingJourney.vehicleRate || 1000,
         componentJarak: calculatedDistanceKm * 300,
         componentWaktu: calculatedDurationHours * 5000,
         premiumOvernight: formIsOvernight ? 50000 : 0,
@@ -3032,8 +3032,8 @@ function ActivitiesContent() {
                       type="submit"
                       disabled={satpamSubmitting || isSatpamReportSubmitted || loadingSubmittedSatpam}
                       className={`w-full rounded-xl font-extrabold text-sm h-11 flex items-center justify-center gap-2 border-none shadow-md ${isSatpamReportSubmitted
-                          ? 'bg-emerald-600 hover:bg-emerald-600 text-white cursor-not-allowed shadow-emerald-100'
-                          : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-100 cursor-pointer'
+                        ? 'bg-emerald-600 hover:bg-emerald-600 text-white cursor-not-allowed shadow-emerald-100'
+                        : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-100 cursor-pointer'
                         }`}
                     >
                       {satpamSubmitting ? (
@@ -3236,21 +3236,23 @@ function ActivitiesContent() {
                         <DestinationImageBanner destination={j.endPoint} cachedUrl={j.destinationImageUrl} />
                       </div>
                       <div className="space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-1.5">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-md">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                            <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-md">
                               Pool Umum
                             </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
                             {j.activityDate && (
-                              <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-md">
+                              <span className="text-[10px] font-extrabold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md">
                                 {new Date(j.activityDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                               </span>
                             )}
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md">
+                              {j.vehicleName} ({fmtRp(j.vehicleRate)}/km)
+                            </span>
                           </div>
-                          <span className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
-                            {j.vehicleName} ({fmtRp(j.vehicleRate)}/km)
-                          </span>
                         </div>
 
                         <div>

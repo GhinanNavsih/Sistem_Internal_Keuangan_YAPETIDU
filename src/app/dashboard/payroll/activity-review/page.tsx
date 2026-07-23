@@ -181,13 +181,13 @@ function calculateSopirDefaultFee(
   durationHours?: number
 ): number {
   const VEHICLE_RATES: Record<string, number> = {
-    'Bis': 850,
-    'Elf': 680,
-    'Kijang LGX': 567,
-    'Innova Hitam': 1000,
-    'Innova Matic': 1250,
-    'Suzuki': 741,
-    'Suzuki XL7': 741,
+    'Bis': 2500,
+    'Elf': 1350,
+    'Kijang LGX': 1200,
+    'Innova Hitam': 1250,
+    'Innova Matic': 1450,
+    'Suzuki': 1000,
+    'Suzuki XL7': 1000,
     'Ndalem': 0,
   };
 
@@ -196,7 +196,7 @@ function calculateSopirDefaultFee(
   if (distanceKm && distanceKm > 0) {
     // New Google Maps route journey calculation:
     // distanceKm is already the PP (round-trip) value from the activity report
-    const rate = vehicleType === 'Ndalem' ? 0 : (VEHICLE_RATES[vehicleType || 'Suzuki'] || 741);
+    const rate = vehicleType === 'Ndalem' ? 0 : (VEHICLE_RATES[vehicleType || 'Suzuki'] || 1000);
     const baseCost = distanceKm * rate;
     fee = vehicleType === 'Ndalem' ? 0 : baseCost * 1.20; // Includes 20% meal allowance
   } else {
@@ -635,16 +635,16 @@ export default function ActivityReviewPage() {
 
   const getVehicleRate = (vType: string) => {
     const VEHICLE_RATES: Record<string, number> = {
-      'Bis': 850,
-      'Elf': 680,
-      'Kijang LGX': 567,
-      'Innova Hitam': 1000,
-      'Innova Matic': 1250,
-      'Suzuki': 741,
-      'Suzuki XL7': 741,
+      'Bis': 2500,
+      'Elf': 1350,
+      'Kijang LGX': 1200,
+      'Innova Hitam': 1250,
+      'Innova Matic': 1450,
+      'Suzuki': 1000,
+      'Suzuki XL7': 1000,
       'Ndalem': 0,
     };
-    return VEHICLE_RATES[vType] || 741;
+    return VEHICLE_RATES[vType] || 1000;
   };
 
   const getMealAllowanceForHours = (hours: number) => {
