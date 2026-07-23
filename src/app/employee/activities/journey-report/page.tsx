@@ -107,6 +107,139 @@ function padTime(time: string): string {
   return time;
 }
 
+const getPlacesSearchQuery = (endPoint: string): string => {
+  if (!endPoint) return '';
+  const firstSegment = endPoint.split(',')[0].trim();
+
+  if (!firstSegment.toLowerCase().startsWith('jl.') && !firstSegment.toLowerCase().startsWith('jalan')) {
+    return firstSegment;
+  }
+
+  const parts = endPoint.split(',').map(p => p.trim());
+  const streetPart = parts[0];
+  const cleanStreet = streetPart.replace(/\bNo\s*\.?\s*\d+[-\d]*/i, '').trim();
+
+  const cities = ['Surabaya', 'Jombang', 'Sidoarjo', 'Gresik', 'Malang', 'Bangkalan', 'Madura', 'Mojokerto', 'Kediri'];
+  let city = '';
+  for (const part of parts) {
+    for (const c of cities) {
+      if (part.toLowerCase().includes(c.toLowerCase())) {
+        city = c;
+        break;
+      }
+    }
+    if (city) break;
+  }
+
+  if (city) {
+    return `${cleanStreet}, ${city}`;
+  }
+
+  return cleanStreet;
+};
+
+const DestinationImageBanner = ({ destination, cachedUrl }: { destination: string; cachedUrl?: string }) => {
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (cachedUrl) {
+      setImgUrl(cachedUrl);
+      setLoading(false);
+      return;
+    }
+
+    if (!destination || typeof window === 'undefined') {
+      setLoading(false);
+      return;
+    }
+
+    const checkAndFetch = () => {
+      const g = (window as any).google;
+      if (!g || !g.maps || !g.maps.places) {
+        setLoading(false);
+        return;
+      }
+
+      const searchQuery = getPlacesSearchQuery(destination);
+      const cacheKey = `place_img_hd_${encodeURIComponent(searchQuery)}`;
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        setImgUrl(cached);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const dummy = document.createElement('div');
+        const service = new g.maps.places.PlacesService(dummy);
+
+        service.textSearch({ query: searchQuery }, (results: any, status: any) => {
+          if (status === g.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
+            const matchWithPhoto = results.find((r: any) => r.photos && r.photos.length > 0);
+            if (matchWithPhoto) {
+              const url = matchWithPhoto.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 });
+              if (url) {
+                localStorage.setItem(cacheKey, url);
+                setImgUrl(url);
+                setLoading(false);
+                return;
+              }
+            }
+          }
+
+          service.findPlaceFromQuery({ query: searchQuery, fields: ['photos'] }, (results2: any, status2: any) => {
+            if (status2 === g.maps.places.PlacesServiceStatus.OK && results2 && results2[0]?.photos?.[0]) {
+              const url = results2[0].photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 });
+              if (url) {
+                localStorage.setItem(cacheKey, url);
+                setImgUrl(url);
+              }
+            }
+            setLoading(false);
+          });
+        });
+      } catch (e) {
+        console.error('Error fetching places photo:', e);
+        setLoading(false);
+      }
+    };
+
+    loadGoogleMapsScript(() => {
+      checkAndFetch();
+    });
+  }, [destination, cachedUrl]);
+
+  if (loading) {
+    return (
+      <div className="w-full h-36 bg-slate-100 flex items-center justify-center animate-pulse">
+        <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!imgUrl) {
+    return (
+      <div className="w-full h-36 bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center relative overflow-hidden">
+        <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#4f46e5_1px,transparent_1px)] [background-size:16px_16px]" />
+        <Compass className="w-10 h-10 text-indigo-400/50 relative z-10" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full h-36 relative overflow-hidden border-b border-slate-100">
+      <img
+        src={imgUrl}
+        alt={destination}
+        className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+        onError={() => setImgUrl(null)}
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-black/10 to-transparent" />
+    </div>
+  );
+};
+
 function JourneyReportContent() {
   const { profile } = useAuth();
   const router = useRouter();
@@ -846,20 +979,26 @@ function JourneyReportContent() {
 
         <form onSubmit={handleCompleteJourneySubmit} className="space-y-4">
           
-          {/* Keperluan, Kendaraan & Tanggal Header Card */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs text-xs font-semibold text-slate-500">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <div>Keperluan: <strong className="text-slate-700 font-extrabold">{activeReportingJourney.activityName}</strong></div>
-              <div className="text-slate-300">•</div>
-              <div>Kendaraan: <strong className="text-slate-700 font-extrabold">{activeReportingJourney.vehicleName}</strong></div>
-              <div className="text-slate-300">•</div>
-              <div>
-                Tanggal: <strong className="text-slate-700 font-extrabold">
-                  {(() => {
-                    const d = formDate || activeReportingJourney.activityDate || getTodayISO();
-                    return new Date(d.includes('T') ? d : `${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-                  })()}
-                </strong>
+          {/* Keperluan, Kendaraan & Tanggal Header Card with Destination Banner */}
+          <div className="rounded-2xl bg-white border border-slate-200/80 shadow-xs overflow-hidden">
+            <DestinationImageBanner
+              destination={activeReportingJourney.endPoint}
+              cachedUrl={activeReportingJourney.destinationImageUrl}
+            />
+            <div className="p-4 sm:p-5 text-xs font-semibold text-slate-500">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <div>Keperluan: <strong className="text-slate-700 font-extrabold">{activeReportingJourney.activityName}</strong></div>
+                <div className="text-slate-300">•</div>
+                <div>Kendaraan: <strong className="text-slate-700 font-extrabold">{activeReportingJourney.vehicleName}</strong></div>
+                <div className="text-slate-300">•</div>
+                <div>
+                  Tanggal: <strong className="text-slate-700 font-extrabold">
+                    {(() => {
+                      const d = formDate || activeReportingJourney.activityDate || getTodayISO();
+                      return new Date(d.includes('T') ? d : `${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                    })()}
+                  </strong>
+                </div>
               </div>
             </div>
           </div>
