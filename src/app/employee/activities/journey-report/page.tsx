@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -138,9 +138,65 @@ const getPlacesSearchQuery = (endPoint: string): string => {
   return cleanStreet;
 };
 
-const DestinationImageBanner = ({ destination, cachedUrl }: { destination: string; cachedUrl?: string }) => {
+const getAverageColorFromImage = (imgUrl: string): Promise<{ hex: string; rgb: { r: number; g: number; b: number } } | null> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        canvas.width = 32;
+        canvas.height = 32;
+        ctx.drawImage(img, 0, 0, 32, 32);
+        const imageData = ctx.getImageData(0, 0, 32, 32);
+        const data = imageData.data;
+        let r = 0, g = 0, b = 0, count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const alpha = data[i + 3];
+          if (alpha > 128) {
+            r += data[i];
+            g += data[i + 1];
+            b += data[i + 2];
+            count++;
+          }
+        }
+        if (count === 0) {
+          resolve(null);
+          return;
+        }
+        r = Math.round(r / count);
+        g = Math.round(g / count);
+        b = Math.round(b / count);
+
+        const hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+        resolve({ hex, rgb: { r, g, b } });
+      } catch (e) {
+        console.warn('Canvas error reading average color:', e);
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = imgUrl;
+  });
+};
+
+const DestinationImageBanner = ({
+  destination,
+  cachedUrl,
+  onColorExtracted,
+}: {
+  destination: string;
+  cachedUrl?: string;
+  onColorExtracted?: (hex: string, rgb: { r: number; g: number; b: number }) => void;
+}) => {
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [extractedHex, setExtractedHex] = useState<string | null>(null);
 
   useEffect(() => {
     if (cachedUrl) {
@@ -210,6 +266,20 @@ const DestinationImageBanner = ({ destination, cachedUrl }: { destination: strin
     });
   }, [destination, cachedUrl]);
 
+  useEffect(() => {
+    if (!imgUrl) return;
+    let isMounted = true;
+    getAverageColorFromImage(imgUrl).then((colorData) => {
+      if (isMounted && colorData) {
+        setExtractedHex(colorData.hex);
+        onColorExtracted?.(colorData.hex, colorData.rgb);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [imgUrl, onColorExtracted]);
+
   if (loading) {
     return (
       <div className="w-full h-36 bg-slate-100 flex items-center justify-center animate-pulse">
@@ -236,6 +306,12 @@ const DestinationImageBanner = ({ destination, cachedUrl }: { destination: strin
         onError={() => setImgUrl(null)}
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-black/10 to-transparent" />
+      {extractedHex && (
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-md border border-white/20 text-white text-[10px] font-mono font-bold shadow-sm">
+          <span className="w-2 h-2 rounded-full border border-white/40 inline-block" style={{ backgroundColor: extractedHex }} />
+          <span>{extractedHex}</span>
+        </div>
+      )}
     </div>
   );
 };
@@ -260,6 +336,21 @@ function JourneyReportContent() {
   const [isCancelling, setIsCancelling] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const [themeColor, setThemeColor] = useState<{ hex: string; rgb: { r: number; g: number; b: number } } | null>(null);
+
+  const handleColorExtracted = useCallback((hex: string, rgb: { r: number; g: number; b: number }) => {
+    setThemeColor({ hex, rgb });
+  }, []);
+
+  const pageBgStyle = useMemo(() => {
+    if (!themeColor) return { backgroundColor: '#f8fafc' };
+    const { r, g, b } = themeColor.rgb;
+    return {
+      background: `linear-gradient(to bottom, rgba(${r}, ${g}, ${b}, 0.22) 0%, rgba(${r}, ${g}, ${b}, 0.06) 550px, #f8fafc 100%)`,
+      transition: 'background 0.8s ease-in-out',
+    };
+  }, [themeColor]);
 
   // Form states
   const [formDate, setFormDate] = useState('');
@@ -936,7 +1027,7 @@ function JourneyReportContent() {
   const returnLeg = getReturnLegDetails();
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans pb-24 text-slate-800 relative">
+    <div className="min-h-screen font-sans pb-24 text-slate-800 relative transition-all duration-700" style={pageBgStyle}>
       {/* ── Top Header Bar ─────────────────────────────────────────────── */}
       <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 sticky top-0 z-30 shadow-md">
         <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between">
@@ -984,6 +1075,7 @@ function JourneyReportContent() {
             <DestinationImageBanner
               destination={activeReportingJourney.endPoint}
               cachedUrl={activeReportingJourney.destinationImageUrl}
+              onColorExtracted={handleColorExtracted}
             />
             <div className="p-4 sm:p-5 text-xs font-semibold text-slate-500">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
