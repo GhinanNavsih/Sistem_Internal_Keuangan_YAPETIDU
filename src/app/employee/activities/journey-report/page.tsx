@@ -358,12 +358,6 @@ const DestinationImageBanner = ({
         onError={() => setImgUrl(null)}
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-black/10 to-transparent" />
-      {extractedHex && (
-        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-md border border-white/20 text-white text-[10px] font-mono font-bold shadow-sm">
-          <span className="w-2 h-2 rounded-full border border-white/40 inline-block" style={{ backgroundColor: extractedHex }} />
-          <span>{extractedHex}</span>
-        </div>
-      )}
     </div>
   );
 };
