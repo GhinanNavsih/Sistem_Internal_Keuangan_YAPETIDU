@@ -205,6 +205,26 @@ const getPlacesSearchQuery = (endPoint: string): string => {
   return cleanStreet;
 };
 
+const LATEST_VEHICLE_RATES: Record<string, number> = {
+  'Bis': 2500,
+  'Elf': 1350,
+  'Kijang LGX': 1200,
+  'Innova Hitam': 1250,
+  'Innova Matic': 1450,
+  'Suzuki': 1000,
+  'Suzuki XL7': 1000,
+  'Ndalem': 0,
+};
+
+function getEffectiveVehicleRate(vName?: string, savedRate?: number): number {
+  if (!vName) return savedRate || 1000;
+  if (LATEST_VEHICLE_RATES[vName] !== undefined) return LATEST_VEHICLE_RATES[vName];
+  for (const [k, v] of Object.entries(LATEST_VEHICLE_RATES)) {
+    if (vName.toLowerCase().includes(k.toLowerCase())) return v;
+  }
+  return savedRate || 1000;
+}
+
 const DestinationImageBanner = ({ destination, cachedUrl }: { destination: string; cachedUrl?: string }) => {
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -3126,7 +3146,7 @@ function ActivitiesContent() {
                             Dalam Perjalanan
                           </span>
                           <span className="text-xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg">
-                            {j.vehicleName} ({fmtRp(j.vehicleRate)}/km)
+                            {j.vehicleName} ({fmtRp(getEffectiveVehicleRate(j.vehicleName, j.vehicleRate))}/km)
                           </span>
                         </div>
                         <h4 className="text-base sm:text-lg font-extrabold mt-2.5 text-slate-900 leading-snug">
@@ -3218,7 +3238,7 @@ function ActivitiesContent() {
                               </span>
                             )}
                             <span className="text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md">
-                              {j.vehicleName} ({fmtRp(j.vehicleRate)}/km)
+                              {j.vehicleName} ({fmtRp(getEffectiveVehicleRate(j.vehicleName, j.vehicleRate))}/km)
                             </span>
                           </div>
                         </div>
