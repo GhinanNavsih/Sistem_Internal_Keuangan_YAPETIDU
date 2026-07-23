@@ -138,7 +138,7 @@ const getPlacesSearchQuery = (endPoint: string): string => {
   return cleanStreet;
 };
 
-const getAverageColorFromImage = async (imgUrl: string): Promise<{ hex: string; rgb: { r: number; g: number; b: number } } | null> => {
+const getDominantColorFromImage = async (imgUrl: string): Promise<{ hex: string; rgb: { r: number; g: number; b: number } } | null> => {
   try {
     let sourceUrl = imgUrl;
 
@@ -169,33 +169,62 @@ const getAverageColorFromImage = async (imgUrl: string): Promise<{ hex: string; 
             resolve(null);
             return;
           }
-          canvas.width = 32;
-          canvas.height = 32;
-          ctx.drawImage(img, 0, 0, 32, 32);
-          const imageData = ctx.getImageData(0, 0, 32, 32);
+          canvas.width = 64;
+          canvas.height = 64;
+          ctx.drawImage(img, 0, 0, 64, 64);
+          const imageData = ctx.getImageData(0, 0, 64, 64);
           const data = imageData.data;
-          let r = 0, g = 0, b = 0, count = 0;
+
+          const buckets: { [key: string]: { r: number; g: number; b: number; count: number } } = {};
+          const step = 24;
+
           for (let i = 0; i < data.length; i += 4) {
             const alpha = data[i + 3];
-            if (alpha > 128) {
-              r += data[i];
-              g += data[i + 1];
-              b += data[i + 2];
-              count++;
+            if (alpha < 128) continue;
+
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+
+            const maxRGB = Math.max(r, g, b);
+            const minRGB = Math.min(r, g, b);
+            const chroma = maxRGB - minRGB;
+
+            // Filter out pure white, dark black, and flat gray to highlight vivid landmark features
+            if (maxRGB > 240 && chroma < 20) continue;
+            if (maxRGB < 25) continue;
+
+            const qR = Math.min(255, Math.floor(r / step) * step + Math.floor(step / 2));
+            const qG = Math.min(255, Math.floor(g / step) * step + Math.floor(step / 2));
+            const qB = Math.min(255, Math.floor(b / step) * step + Math.floor(step / 2));
+
+            const key = `${qR},${qG},${qB}`;
+            const weight = 1 + (chroma / 255) * 1.5;
+
+            if (!buckets[key]) {
+              buckets[key] = { r: qR, g: qG, b: qB, count: weight };
+            } else {
+              buckets[key].count += weight;
             }
           }
-          if (count === 0) {
-            resolve(null);
+
+          let dominantBucket: { r: number; g: number; b: number; count: number } | null = null;
+          for (const key in buckets) {
+            if (!dominantBucket || buckets[key].count > dominantBucket.count) {
+              dominantBucket = buckets[key];
+            }
+          }
+
+          if (!dominantBucket) {
+            resolve({ hex: '#4F46E5', rgb: { r: 79, g: 70, b: 229 } });
             return;
           }
-          r = Math.round(r / count);
-          g = Math.round(g / count);
-          b = Math.round(b / count);
 
+          const { r, g, b } = dominantBucket;
           const hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
           resolve({ hex, rgb: { r, g, b } });
         } catch (e) {
-          console.warn('Canvas error reading average color:', e);
+          console.warn('Canvas error reading dominant color:', e);
           resolve(null);
         }
       };
@@ -203,7 +232,7 @@ const getAverageColorFromImage = async (imgUrl: string): Promise<{ hex: string; 
       img.src = sourceUrl;
     });
   } catch (e) {
-    console.error('getAverageColorFromImage error:', e);
+    console.error('getDominantColorFromImage error:', e);
     return null;
   }
 };
@@ -292,7 +321,7 @@ const DestinationImageBanner = ({
   useEffect(() => {
     if (!imgUrl) return;
     let isMounted = true;
-    getAverageColorFromImage(imgUrl).then((colorData) => {
+    getDominantColorFromImage(imgUrl).then((colorData) => {
       if (isMounted && colorData) {
         setExtractedHex(colorData.hex);
         onColorExtracted?.(colorData.hex, colorData.rgb);
