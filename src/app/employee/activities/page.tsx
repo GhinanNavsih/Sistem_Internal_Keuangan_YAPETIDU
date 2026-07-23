@@ -2631,8 +2631,8 @@ function ActivitiesContent() {
 
 
         {/* ── Period Selector ──────────────────────────────────────────── */}
-        <Card className="bg-white rounded-2xl shadow-sm border-none">
-          <CardContent className="p-4">
+        {isSopir ? (
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4">
             <div className="flex items-center gap-3">
               <CalendarDays className="w-4 h-4 text-teal-500 shrink-0" />
               <div className="flex items-center gap-2 flex-1">
@@ -2641,25 +2641,11 @@ function ActivitiesContent() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
-                    {MONTHS_ID.map((m, i) => {
-                      const now = new Date();
-                      const currentYear = now.getFullYear();
-                      const currentMonth = now.getMonth() + 1;
-                      const isHidden = isKetuaShiftSatpam && (
-                        (year === 2026 && (i + 1) < 7) ||
-                        (year === currentYear && (i + 1) > currentMonth) ||
-                        (year > currentYear)
-                      );
-                      if (isHidden) return null;
-                      return (
-                        <SelectItem
-                          key={i + 1}
-                          value={String(i + 1)}
-                        >
-                          {m}
-                        </SelectItem>
-                      );
-                    })}
+                    {MONTHS_ID.map((m, i) => (
+                      <SelectItem key={i + 1} value={String(i + 1)}>
+                        {m}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
@@ -2667,28 +2653,76 @@ function ActivitiesContent() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
-                    {YEARS.map(y => {
-                      const now = new Date();
-                      const currentYear = now.getFullYear();
-                      const isHidden = isKetuaShiftSatpam && (
-                        y < 2026 || y > currentYear
-                      );
-                      if (isHidden) return null;
-                      return (
-                        <SelectItem
-                          key={y}
-                          value={String(y)}
-                        >
-                          {y}
-                        </SelectItem>
-                      );
-                    })}
+                    {YEARS.map(y => (
+                      <SelectItem key={y} value={String(y)}>
+                        {y}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        ) : (
+          <Card className="bg-white rounded-2xl shadow-sm border-none">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <CalendarDays className="w-4 h-4 text-teal-500 shrink-0" />
+                <div className="flex items-center gap-2 flex-1">
+                  <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
+                    <SelectTrigger className="text-sm font-bold text-slate-700 bg-slate-50 rounded-xl border border-slate-200 h-10 px-3 flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                      {MONTHS_ID.map((m, i) => {
+                        const now = new Date();
+                        const currentYear = now.getFullYear();
+                        const currentMonth = now.getMonth() + 1;
+                        const isHidden = isKetuaShiftSatpam && (
+                          (year === 2026 && (i + 1) < 7) ||
+                          (year === currentYear && (i + 1) > currentMonth) ||
+                          (year > currentYear)
+                        );
+                        if (isHidden) return null;
+                        return (
+                          <SelectItem
+                            key={i + 1}
+                            value={String(i + 1)}
+                          >
+                            {m}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
+                    <SelectTrigger className="text-sm font-bold text-slate-700 bg-slate-50 rounded-xl border border-slate-200 h-10 px-3 w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                      {YEARS.map(y => {
+                        const now = new Date();
+                        const currentYear = now.getFullYear();
+                        const isHidden = isKetuaShiftSatpam && (
+                          y < 2026 || y > currentYear
+                        );
+                        if (isHidden) return null;
+                        return (
+                          <SelectItem
+                            key={y}
+                            value={String(y)}
+                          >
+                            {y}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* ── Satpam Shift Team Daily Logging Form (Ketua Shift only) ── */}
         {isKetuaShiftSatpam && (
@@ -3116,60 +3150,58 @@ function ActivitiesContent() {
                   const maxWage = baseWage * 1.25;
 
                   return (
-                    <Card key={j.id} className="bg-white rounded-2xl shadow-lg border-2 border-indigo-200 overflow-hidden relative transition-all">
-                      <CardContent className="p-4 sm:p-5 space-y-3.5 relative z-10">
-                        <div>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[10px] font-black tracking-wider text-emerald-700 uppercase bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                              Dalam Perjalanan
-                            </span>
-                            <span className="text-xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg">
-                              {j.vehicleName} ({fmtRp(j.vehicleRate)}/km)
-                            </span>
-                          </div>
-                          <h4 className="text-base sm:text-lg font-extrabold mt-2.5 text-slate-900 leading-snug">
-                            {j.activityName}
-                          </h4>
+                    <div key={j.id} className="bg-white rounded-2xl border-2 border-indigo-200 shadow-xs overflow-hidden p-4 sm:p-5 space-y-3.5">
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-black tracking-wider text-emerald-700 uppercase bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            Dalam Perjalanan
+                          </span>
+                          <span className="text-xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg">
+                            {j.vehicleName} ({fmtRp(j.vehicleRate)}/km)
+                          </span>
                         </div>
+                        <h4 className="text-base sm:text-lg font-extrabold mt-2.5 text-slate-900 leading-snug">
+                          {j.activityName}
+                        </h4>
+                      </div>
 
-                        <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl">
-                          <MapPin className="w-4 h-4 text-indigo-600 shrink-0" />
-                          <span className="font-bold text-slate-500">Tujuan utama:</span>
-                          <span className="truncate flex-1 font-extrabold text-slate-800" title={j.endPoint}>{j.endPoint}</span>
-                        </div>
+                      <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl">
+                        <MapPin className="w-4 h-4 text-indigo-600 shrink-0" />
+                        <span className="font-bold text-slate-500">Tujuan utama:</span>
+                        <span className="truncate flex-1 font-extrabold text-slate-800" title={j.endPoint}>{j.endPoint}</span>
+                      </div>
 
-                        {/* 2-Column Cards Grid: Left = Biaya Operasional, Right = Estimasi Upah Sopir */}
-                        <div className="grid grid-cols-2 gap-2.5 pt-1">
-                          <div className="bg-indigo-50/70 border border-indigo-100 p-3.5 rounded-xl space-y-0.5">
-                            <span className="block text-[9px] font-black text-indigo-600 uppercase tracking-wider">Biaya Operasional</span>
-                            <span className="text-xs sm:text-sm font-black text-indigo-900 block">{fmtRp(j.totalOperationalCost)}</span>
-                          </div>
-                          <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-xl space-y-0.5">
-                            <span className="block text-[9px] font-black text-emerald-600 uppercase tracking-wider">Estimasi Upah Sopir</span>
-                            <span className="text-xs sm:text-sm font-black text-emerald-900 block">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
-                          </div>
+                      {/* 2-Column Cards Grid: Left = Biaya Operasional, Right = Estimasi Upah Sopir */}
+                      <div className="grid grid-cols-2 gap-2.5 pt-1">
+                        <div className="bg-indigo-50/70 border border-indigo-100 p-3.5 rounded-xl space-y-0.5">
+                          <span className="block text-[9px] font-black text-indigo-600 uppercase tracking-wider">Biaya Operasional</span>
+                          <span className="text-xs sm:text-sm font-black text-indigo-900 block">{fmtRp(j.totalOperationalCost)}</span>
                         </div>
+                        <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-xl space-y-0.5">
+                          <span className="block text-[9px] font-black text-emerald-600 uppercase tracking-wider">Estimasi Upah Sopir</span>
+                          <span className="text-xs sm:text-sm font-black text-emerald-900 block">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
+                        </div>
+                      </div>
 
-                        <div className="flex flex-col gap-2 pt-1">
-                          <Button
-                            onClick={() => router.push(`/employee/activities/journey-report?id=${j.id}`)}
-                            className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs sm:text-sm h-10.5 gap-2 cursor-pointer shadow-md shadow-indigo-100 transition-all border-none"
-                          >
-                            <CheckCircle2 className="w-4.5 h-4.5" />
-                            Laporan Perjalanan
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            onClick={() => handleCancelJourney(j.id)}
-                            className="w-full rounded-xl bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-bold text-xs h-9 gap-1.5 cursor-pointer transition-all"
-                          >
-                            <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
-                            Batalkan Klaim Perjalanan
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
+                      <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
+                        <Button
+                          onClick={() => router.push(`/employee/activities/journey-report?id=${j.id}`)}
+                          className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs sm:text-sm h-10.5 gap-2 cursor-pointer shadow-md shadow-indigo-100 transition-all border-none"
+                        >
+                          <CheckCircle2 className="w-4.5 h-4.5" />
+                          Laporan Perjalanan
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => handleCancelJourney(j.id)}
+                          className="w-full rounded-xl bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-bold text-xs h-9 gap-1.5 cursor-pointer transition-all"
+                        >
+                          <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                          Batalkan Klaim Perjalanan
+                        </Button>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -3199,9 +3231,9 @@ function ActivitiesContent() {
                     </div>
                   )}
                   {unassignedJourneys.map((j) => (
-                    <Card key={j.id} className="bg-white hover:border-slate-300 transition-all rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
+                    <div key={j.id} className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
                       <DestinationImageBanner destination={j.endPoint} cachedUrl={j.destinationImageUrl} />
-                      <CardContent className="p-4 space-y-3">
+                      <div className="p-4 space-y-3">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -3255,8 +3287,8 @@ function ActivitiesContent() {
                             Ambil<br />Perjalanan
                           </Button>
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
