@@ -1079,15 +1079,7 @@ function JourneyReportContent() {
       {/* ── Top Header Bar ─────────────────────────────────────────────── */}
       <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 sticky top-0 z-30 shadow-md">
         <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between">
-          <button
-            onClick={handleBackToDashboard}
-            className="flex items-center gap-2 text-xs font-bold text-white hover:text-indigo-100 transition-colors cursor-pointer bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl border border-white/20"
-          >
-            <ArrowLeft className="w-4 h-4 text-white" />
-            <span>Dashboard</span>
-          </button>
-
-          <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
+          <div className="flex items-center gap-2 text-white font-extrabold text-base sm:text-lg">
             <CheckCircle2 className="w-5 h-5 text-white" />
             <span>Laporan Perjalanan</span>
           </div>
