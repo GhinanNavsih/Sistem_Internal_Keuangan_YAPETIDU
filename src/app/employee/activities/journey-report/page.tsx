@@ -844,19 +844,17 @@ function JourneyReportContent() {
           </div>
         )}
 
-        {/* ── Main Form Card ────────────────────────────────────────────── */}
-        <Card className="bg-white rounded-3xl shadow-xl border-none overflow-hidden">
-          <form onSubmit={handleCompleteJourneySubmit} className="p-4 sm:p-5 space-y-4">
-            
-            {/* Keperluan, Kendaraan & Tanggal Header Card */}
-            {(() => {
-              const baseCostVal = activeReportingJourney.baseOperationalCost ||
-                ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0) - (activeReportingJourney.tollParkingFee || 0));
-              const mealAllowanceVal = activeReportingJourney.mealAllowance || 0;
-              const totalBaseline = activeReportingJourney.totalOperationalCost || 0;
+        <form onSubmit={handleCompleteJourneySubmit} className="space-y-4">
+          
+          {/* Keperluan, Kendaraan & Tanggal Header Card */}
+          {(() => {
+            const baseCostVal = activeReportingJourney.baseOperationalCost ||
+              ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0) - (activeReportingJourney.tollParkingFee || 0));
+            const mealAllowanceVal = activeReportingJourney.mealAllowance || 0;
+            const totalBaseline = activeReportingJourney.totalOperationalCost || 0;
 
-              return (
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-xs font-semibold text-slate-500 space-y-2.5">
+            return (
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs text-xs font-semibold text-slate-500 space-y-2.5">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <div>Keperluan: <strong className="text-slate-700 font-extrabold">{activeReportingJourney.activityName}</strong></div>
                     <div className="text-slate-300">•</div>
@@ -890,7 +888,7 @@ function JourneyReportContent() {
               const wage0 = (d0 * 300) + ((activeReportingJourney.durationHours || 0) * 5000);
 
               return (
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+              <div className="p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-indigo-700 uppercase tracking-wider">
                       <Compass className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
@@ -1008,8 +1006,10 @@ function JourneyReportContent() {
               );
             })()}
 
-            {/* Jam Berangkat / Tiba */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Input Data & Pengeluaran Operasional Card */}
+            <div className="p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+              {/* Jam Berangkat / Tiba */}
+              <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="journeyTimeStart" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                   Jam Berangkat
@@ -1295,6 +1295,7 @@ function JourneyReportContent() {
                 </div>
               );
             })()}
+            </div>
 
             {/* Rincian Biaya Laporan & Table Delta Breakdown Card */}
             {(() => {
@@ -1317,7 +1318,7 @@ function JourneyReportContent() {
               const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
 
               return (
-                <div className="p-3.5 bg-indigo-50/50 rounded-2xl border border-indigo-100 text-slate-600 text-xs space-y-1.5 font-medium">
+                <div className="p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/80 shadow-xs text-slate-600 text-xs space-y-2 font-medium">
                   <span className="text-[9px] font-bold text-indigo-800 uppercase tracking-wider block mb-1">
                     Kalkulasi Penyesuaian & Biaya Akhir
                   </span>
@@ -1535,7 +1536,6 @@ function JourneyReportContent() {
             </div>
 
           </form>
-        </Card>
 
         {/* Map Location Selector Modal */}
         {showMapSelector && (
