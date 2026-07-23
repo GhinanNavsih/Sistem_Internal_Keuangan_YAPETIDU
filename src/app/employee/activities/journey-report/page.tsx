@@ -138,51 +138,74 @@ const getPlacesSearchQuery = (endPoint: string): string => {
   return cleanStreet;
 };
 
-const getAverageColorFromImage = (imgUrl: string): Promise<{ hex: string; rgb: { r: number; g: number; b: number } } | null> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
+const getAverageColorFromImage = async (imgUrl: string): Promise<{ hex: string; rgb: { r: number; g: number; b: number } } | null> => {
+  try {
+    let sourceUrl = imgUrl;
+
+    if (imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) {
       try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(null);
-          return;
-        }
-        canvas.width = 32;
-        canvas.height = 32;
-        ctx.drawImage(img, 0, 0, 32, 32);
-        const imageData = ctx.getImageData(0, 0, 32, 32);
-        const data = imageData.data;
-        let r = 0, g = 0, b = 0, count = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          const alpha = data[i + 3];
-          if (alpha > 128) {
-            r += data[i];
-            g += data[i + 1];
-            b += data[i + 2];
-            count++;
+        const apiRes = await fetch(`/api/get-image-color?url=${encodeURIComponent(imgUrl)}`);
+        if (apiRes.ok) {
+          const json = await apiRes.json();
+          if (json.dataUrl) {
+            sourceUrl = json.dataUrl;
           }
         }
-        if (count === 0) {
-          resolve(null);
-          return;
-        }
-        r = Math.round(r / count);
-        g = Math.round(g / count);
-        b = Math.round(b / count);
-
-        const hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
-        resolve({ hex, rgb: { r, g, b } });
-      } catch (e) {
-        console.warn('Canvas error reading average color:', e);
-        resolve(null);
+      } catch (err) {
+        console.warn('Proxy fetch for image color failed, using direct url fallback:', err);
       }
-    };
-    img.onerror = () => resolve(null);
-    img.src = imgUrl;
-  });
+    }
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      if (!sourceUrl.startsWith('data:')) {
+        img.crossOrigin = 'anonymous';
+      }
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(null);
+            return;
+          }
+          canvas.width = 32;
+          canvas.height = 32;
+          ctx.drawImage(img, 0, 0, 32, 32);
+          const imageData = ctx.getImageData(0, 0, 32, 32);
+          const data = imageData.data;
+          let r = 0, g = 0, b = 0, count = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            const alpha = data[i + 3];
+            if (alpha > 128) {
+              r += data[i];
+              g += data[i + 1];
+              b += data[i + 2];
+              count++;
+            }
+          }
+          if (count === 0) {
+            resolve(null);
+            return;
+          }
+          r = Math.round(r / count);
+          g = Math.round(g / count);
+          b = Math.round(b / count);
+
+          const hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+          resolve({ hex, rgb: { r, g, b } });
+        } catch (e) {
+          console.warn('Canvas error reading average color:', e);
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = sourceUrl;
+    });
+  } catch (e) {
+    console.error('getAverageColorFromImage error:', e);
+    return null;
+  }
 };
 
 const DestinationImageBanner = ({
@@ -347,7 +370,7 @@ function JourneyReportContent() {
     if (!themeColor) return { backgroundColor: '#f8fafc' };
     const { r, g, b } = themeColor.rgb;
     return {
-      background: `linear-gradient(to bottom, rgba(${r}, ${g}, ${b}, 0.22) 0%, rgba(${r}, ${g}, ${b}, 0.06) 550px, #f8fafc 100%)`,
+      background: `linear-gradient(to bottom, rgba(${r}, ${g}, ${b}, 0.35) 0%, rgba(${r}, ${g}, ${b}, 0.16) 600px, rgba(${r}, ${g}, ${b}, 0.10) 100%)`,
       transition: 'background 0.8s ease-in-out',
     };
   }, [themeColor]);
