@@ -135,7 +135,7 @@ const loadGoogleMapsScript = (callback: () => void) => {
 };
 
 function DriverJourneysContent() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -436,9 +436,14 @@ function DriverJourneysContent() {
         setCalculating(true);
         setCalcError('');
         try {
+          if (!user) throw new Error('Sesi tidak ditemukan.');
+          const idToken = await user.getIdToken();
           const response = await fetch('/api/calculate-route', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${idToken}`,
+            },
             body: JSON.stringify({ points: [startPoint, endPoint] }),
           });
           const data = await response.json();
@@ -463,7 +468,7 @@ function DriverJourneysContent() {
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [startPoint, endPoint]);
+  }, [startPoint, endPoint, user]);
 
   // ── Submit Journey Creation ──
   const handleCreateJourney = async (e: React.FormEvent) => {
@@ -564,14 +569,11 @@ function DriverJourneysContent() {
 
   // ── Delete Journey (Only unassigned ones) ──
   const handleDeleteJourney = async (id: string) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus perjalanan ini?')) return;
-    try {
-      await deleteDoc(doc(db, 'DriverJourneys', id));
-      setMessage({ type: 'success', text: 'Perjalanan berhasil dihapus.' });
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: 'error', text: 'Gagal menghapus perjalanan.' });
-    }
+    void id;
+    setMessage({
+      type: 'error',
+      text: 'Penghapusan perjalanan dinonaktifkan agar riwayat tetap utuh. Gunakan pembatalan beralasan.',
+    });
   };
 
   // ── Filtered list ──

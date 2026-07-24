@@ -15,8 +15,8 @@
  *   Team 3 = Shift Sore
  */
 
-// Anchor Monday: July 13, 2026 in local Jakarta time
-const REF_MONDAY_MS = new Date('2026-07-13T00:00:00+07:00').getTime();
+// Anchor Monday: July 13, 2026 at the exact rotation boundary in Jakarta.
+const REF_MONDAY_MS = new Date('2026-07-13T08:00:00+07:00').getTime();
 
 export type SatpamShift = 'Pagi' | 'Sore' | 'Malam';
 
@@ -26,31 +26,53 @@ export type SatpamShift = 'Pagi' | 'Sore' | 'Malam';
  * Any date/time before Monday 08:00 belongs to the previous week's schedule.
  */
 export function getSchedulingMonday(dateInput: Date | string | number): Date {
-  const d = new Date(dateInput);
-  
-  // Set to local Jakarta time representation (approximate helper offset)
-  // To keep it timezone robust, we find the local calendar day
-  const localYear = d.getFullYear();
-  const localMonth = d.getMonth();
-  const localDate = d.getDate();
-  const localHours = d.getHours();
-  
-  // Create a local date for computation
-  const baseDate = new Date(localYear, localMonth, localDate, localHours, d.getMinutes());
-  
-  // Adjust: if it's Monday before 08:00, subtract 8 hours so it falls into Sunday (previous week)
-  if (baseDate.getDay() === 1 && baseDate.getHours() < 8) {
-    baseDate.setHours(baseDate.getHours() - 8);
+  const isDateOnly =
+    typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput);
+
+  let year: number;
+  let month: number;
+  let dayOfMonth: number;
+  let hour = 8;
+
+  if (isDateOnly) {
+    [year, month, dayOfMonth] = (dateInput as string).split('-').map(Number);
+  } else {
+    const instant = new Date(dateInput);
+    if (Number.isNaN(instant.getTime())) {
+      throw new Error('Tanggal rotasi Satpam tidak valid.');
+    }
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(instant);
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    year = Number(values.year);
+    month = Number(values.month);
+    dayOfMonth = Number(values.day);
+    hour = Number(values.hour);
   }
-  
-  // Find Monday of the resulting week
-  const day = baseDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
-  const diffToMonday = day === 0 ? -6 : 1 - day; // Sunday is -6 days from Monday, others are (1 - day)
-  
-  const monday = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + diffToMonday);
-  monday.setHours(8, 0, 0, 0); // Monday starts at 08:00
-  
-  return monday;
+
+  // Use UTC for calendar arithmetic; Jakarta has a fixed +07:00 offset and no DST.
+  let calendarDate = new Date(Date.UTC(year, month - 1, dayOfMonth));
+  if (!isDateOnly && calendarDate.getUTCDay() === 1 && hour < 8) {
+    calendarDate = new Date(calendarDate.getTime() - 24 * 60 * 60 * 1000);
+  }
+
+  const weekday = calendarDate.getUTCDay();
+  const daysSinceMonday = weekday === 0 ? 6 : weekday - 1;
+  const mondayCalendar = new Date(
+    calendarDate.getTime() - daysSinceMonday * 24 * 60 * 60 * 1000,
+  );
+  const mondayDateOnly = [
+    mondayCalendar.getUTCFullYear(),
+    String(mondayCalendar.getUTCMonth() + 1).padStart(2, '0'),
+    String(mondayCalendar.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+  return new Date(`${mondayDateOnly}T08:00:00+07:00`);
 }
 
 /**
@@ -69,8 +91,7 @@ export function getSatpamShiftForTeam(
   const msDiff = schedMonday.getTime() - REF_MONDAY_MS;
   const msInWeek = 7 * 24 * 60 * 60 * 1000;
   
-  // Use Math.round to handle floating issues from daylight saving if any
-  let diffWeeks = Math.round(msDiff / msInWeek);
+  const diffWeeks = Math.round(msDiff / msInWeek);
   
   // Modulo 3 weeks cycle
   let cycleIndex = diffWeeks % 3;

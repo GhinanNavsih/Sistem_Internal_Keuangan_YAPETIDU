@@ -1,4 +1,14 @@
-import { doc, getDoc, getDocs, collection, query, where, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, runTransaction } from 'firebase/firestore';
+import {
+  dedupeSatpamActivityReports,
+  SATPAM_RATES,
+  SatpamActivityLike,
+} from '@/lib/payroll/domain';
+import {
+  activityBelongsToPayrollPeriod,
+  approvedActivitySpjAmount,
+  sumApprovedEventSpj,
+} from '@/lib/payroll/pekaryaSpj';
 
 export interface PaySlipField {
   label: string;
@@ -37,11 +47,17 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
       collection(db, 'ActivityReports'),
       where('employeeId', '==', employeeId),
       where('jobCategory', '==', jobCategory),
-      where('period', '==', period),
       where('status', '==', 'approved')
     );
     const reportsSnap = await getDocs(q);
-    const reports = reportsSnap.docs.map(d => d.data());
+    const rawReports: Array<SatpamActivityLike & Record<string, any>> =
+      reportsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const periodReports = rawReports.filter((report) =>
+      activityBelongsToPayrollPeriod(report, period),
+    );
+    const reports = jobCategory === 'SATPAM'
+      ? dedupeSatpamActivityReports(periodReports)
+      : periodReports;
 
     // 3. Convert period format (e.g. "2026-07" -> "2026_07")
     const periodKey = period.replace('-', '_');
@@ -49,8 +65,6 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
     // 4. Update UraianGaji document (if it exists)
     const uraianDocId = `${periodKey}_${jobCategory}`;
     const uraianRef = doc(db, 'UraianGaji', uraianDocId);
-    const uraianSnap = await getDoc(uraianRef);
-
     let harianCount = 0;
     let jumatCount = 0;
     let lemburSendiriCount = 0;
@@ -67,36 +81,36 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
         else if (shiftType === 'Lembur Cover') lemburCoverCount++;
       });
     } else {
-      // Non-Satpam: sum of activity fees
-      // For SOPIR, we must sum both operational cost (fee) and net wage (upahBersih)
-      if (jobCategory === 'SOPIR') {
-        activityTotal = reports.reduce((sum, r) => sum + (r.fee || 0) + (r.upahBersih || 0), 0);
-      } else {
-        activityTotal = reports.reduce((sum, r) => sum + (r.fee || 0), 0);
-      }
+      // Only reviewed employee earnings enter SPJ. For SOPIR, operational
+      // reimbursements are excluded and upahBersih is counted exactly once.
+      activityTotal = reports.reduce((sum, report) => {
+        return sum + approvedActivitySpjAmount(report);
+      }, 0);
       
       // Fetch SPJ Events (KegiatanSpj) to get kegiatanTotal
       let spjEventsTotal = 0;
       try {
         const spjQ = query(
           collection(db, 'KegiatanSpj'),
-          where('period', '==', period)
+          where('period', '==', period),
+          where('jobCategory', '==', jobCategory),
         );
         const spjSnap = await getDocs(spjQ);
-        spjSnap.docs.forEach(d => {
-          const data = d.data();
-          const workerInfo = data.eventWorkers?.[employeeId];
-          if (workerInfo) {
-            spjEventsTotal += workerInfo.payGiven || 0;
-          }
-        });
+        spjEventsTotal = sumApprovedEventSpj(
+          spjSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+          employeeId,
+          jobCategory,
+          period,
+        );
       } catch (err) {
         console.error('[payslipSync] Error fetching KegiatanSpj:', err);
       }
       totalSpj = spjEventsTotal + activityTotal;
     }
 
-    if (uraianSnap.exists()) {
+    await runTransaction(db, async transaction => {
+      const uraianSnap = await transaction.get(uraianRef);
+      if (!uraianSnap.exists()) return;
       const uraianData = uraianSnap.data();
       const entries = { ...(uraianData.entries || {}) };
       const currentEntry = entries[employeeId] || { employeeId, name: employeeName };
@@ -107,10 +121,10 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
       if (jobCategory === 'SATPAM') {
         updatedValues = {
           ...updatedValues,
-          harian: harianCount * 12500,
-          jumatLibur: jumatCount * 25000,
-          lemburSendiri: lemburSendiriCount * 30000,
-          lemburCover: lemburCoverCount * 50000,
+          harian: harianCount * SATPAM_RATES.Harian,
+          jumatLibur: jumatCount * SATPAM_RATES['Jumat & Libur'],
+          lemburSendiri: lemburSendiriCount * SATPAM_RATES['Lembur Sendiri'],
+          lemburCover: lemburCoverCount * SATPAM_RATES['Lembur Cover'],
         };
         updatedCounts = {
           ...updatedCounts,
@@ -136,41 +150,11 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
         counts: updatedCounts,
       };
 
-      await updateDoc(uraianRef, { entries });
-      console.log(`[payslipSync] Successfully synced activities to UraianGaji for ${employeeId} (${period})`);
-    }
-
-    // 5. Update PayrollSlipStates document (if it exists)
-    const slipDocId = `${periodKey}_${employeeId}`;
-    const slipRef = doc(db, 'PayrollSlipStates', slipDocId);
-    const slipSnap = await getDoc(slipRef);
-
-    if (slipSnap.exists()) {
-      const slipData = slipSnap.data();
-      const earnings: PaySlipField[] = [...(slipData.earnings || [])];
-
-      const updateOrAddEarning = (label: string, amount: number) => {
-        const idx = earnings.findIndex(e => e.label === label);
-        if (idx > -1) {
-          earnings[idx] = { ...earnings[idx], amount };
-        } else {
-          earnings.push({ label, amount });
-        }
-      };
-
-      if (jobCategory === 'SATPAM') {
-        updateOrAddEarning('Vakasi Harian', harianCount * 12500);
-        updateOrAddEarning('Jumat & Libur', jumatCount * 25000);
-        updateOrAddEarning('Lembur Sendiri', lemburSendiriCount * 30000);
-        updateOrAddEarning('Lembur Cover', lemburCoverCount * 50000);
-      } else {
-        updateOrAddEarning('SPJ', totalSpj);
-      }
-
-      await updateDoc(slipRef, { earnings });
-      console.log(`[payslipSync] Successfully synced activities to PayrollSlipStates for ${employeeId} (${period})`);
-    }
+      transaction.update(uraianRef, { entries });
+    });
+    console.log(`[payslipSync] Successfully synced activities to UraianGaji for ${employeeId} (${period})`);
   } catch (err) {
     console.error(`[payslipSync] Error syncing activities for employeeId ${employeeId}:`, err);
+    throw err;
   }
 }

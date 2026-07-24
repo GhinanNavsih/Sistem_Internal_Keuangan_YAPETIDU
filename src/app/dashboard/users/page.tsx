@@ -39,7 +39,7 @@ import {
   Users,
   Search,
   Pencil,
-  Trash2,
+  UserX,
   Loader2,
   CheckCircle2,
   AlertTriangle,
@@ -55,18 +55,20 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
+import { UserRole } from '@/lib/payroll/roles';
 
 interface ManagedUser {
   uid: string;
   email: string;
   displayName?: string;
-  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin' | 'ketua_shift_satpam';
+  role: UserRole;
   permittedCategories: string[];
   linkedEmployeeId?: string;
   createdAt?: string;
+  disabled?: boolean;
 }
 
 interface CleaningEmployee {
@@ -119,7 +121,7 @@ export default function UserManagementPage() {
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
-  const [newRole, setNewRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin' | 'ketua_shift_satpam'>('satker_head');
+  const [newRole, setNewRole] = useState<UserRole>('satker_head');
   const [newPermitted, setNewPermitted] = useState<string[]>([]);
   const [newLinkedEmployeeId, setNewLinkedEmployeeId] = useState('');
   const [newEmployeeSearchText, setNewEmployeeSearchText] = useState('');
@@ -132,7 +134,7 @@ export default function UserManagementPage() {
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [editDisplayName, setEditDisplayName] = useState('');
   const [editEmail, setEditEmail] = useState('');
-  const [editRole, setEditRole] = useState<'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin' | 'ketua_shift_satpam'>('satker_head');
+  const [editRole, setEditRole] = useState<UserRole>('satker_head');
   const [editPermitted, setEditPermitted] = useState<string[]>([]);
   const [editLinkedEmployeeId, setEditLinkedEmployeeId] = useState('');
   const [editEmployeeSearchText, setEditEmployeeSearchText] = useState('');
@@ -294,6 +296,13 @@ export default function UserManagementPage() {
       setErrorMsg('Email dan Password wajib diisi.');
       return;
     }
+    if (
+      newRole === 'ketua_shift_satpam' &&
+      (!newLinkedEmployeeId || newTeamMembers.length !== 9)
+    ) {
+      setErrorMsg('Ketua Shift dan tepat 9 anggota regu wajib dipilih.');
+      return;
+    }
 
     isActionLoadingRef.current = true;
     setActionLoading(true);
@@ -324,24 +333,25 @@ export default function UserManagementPage() {
       }
 
       if (newRole === 'ketua_shift_satpam') {
-        const selectedEmp = allEmployees.find(e => e.id === newLinkedEmployeeId);
-        // Clean up: If this employee was previously assigned as leader of another team, clear that assignment first
-        for (const t of shiftTeams) {
-          if (t.id !== `team_${newTeamNumber}` && t.ketuaShiftId === newLinkedEmployeeId) {
-            await updateDoc(doc(db, 'SatpamShiftTeams', t.id), {
-              ketuaShiftId: '',
-              ketuaShiftName: '',
-              updatedAt: new Date().toISOString(),
-            });
-          }
-        }
-
-        await setDoc(doc(db, 'SatpamShiftTeams', `team_${newTeamNumber}`), {
-          ketuaShiftId: newLinkedEmployeeId,
-          ketuaShiftName: selectedEmp ? selectedEmp.name : '',
-          memberEmployeeIds: newTeamMembers,
-          updatedAt: new Date().toISOString(),
+        const teamResponse = await fetch('/api/admin/satpam-teams', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            teamId: `team_${newTeamNumber}`,
+            ketuaShiftId: newLinkedEmployeeId,
+            memberEmployeeIds: newTeamMembers,
+            reason: 'Konfigurasi regu untuk akun Ketua Shift baru',
+          }),
         });
+        if (!teamResponse.ok) {
+          const teamError = await teamResponse.json();
+          throw new Error(
+            `${teamError.error || 'Konfigurasi regu gagal.'} Akun sudah dibuat; perbaiki konfigurasi regu lalu simpan ulang.`,
+          );
+        }
       }
 
       setSuccessMsg(`Akun ${newEmail} berhasil dibuat!`);
@@ -401,6 +411,13 @@ export default function UserManagementPage() {
   // Submit Edit changes
   const handleUpdateUser = async () => {
     if (!user || !editingUser || isActionLoadingRef.current) return;
+    if (
+      editRole === 'ketua_shift_satpam' &&
+      (!editLinkedEmployeeId || editTeamMembers.length !== 9)
+    ) {
+      setErrorMsg('Ketua Shift dan tepat 9 anggota regu wajib dipilih.');
+      return;
+    }
     isActionLoadingRef.current = true;
     setActionLoading(true);
     setErrorMsg(null);
@@ -429,24 +446,23 @@ export default function UserManagementPage() {
       }
 
       if (editRole === 'ketua_shift_satpam') {
-        const selectedEmp = allEmployees.find(e => e.id === editLinkedEmployeeId);
-        // Clean up: If this employee was previously leader of another team, clear that assignment
-        for (const t of shiftTeams) {
-          if (t.id !== `team_${editTeamNumber}` && t.ketuaShiftId === editLinkedEmployeeId) {
-            await updateDoc(doc(db, 'SatpamShiftTeams', t.id), {
-              ketuaShiftId: '',
-              ketuaShiftName: '',
-              updatedAt: new Date().toISOString(),
-            });
-          }
-        }
-
-        await setDoc(doc(db, 'SatpamShiftTeams', `team_${editTeamNumber}`), {
-          ketuaShiftId: editLinkedEmployeeId,
-          ketuaShiftName: selectedEmp ? selectedEmp.name : '',
-          memberEmployeeIds: editTeamMembers,
-          updatedAt: new Date().toISOString(),
+        const teamResponse = await fetch('/api/admin/satpam-teams', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            teamId: `team_${editTeamNumber}`,
+            ketuaShiftId: editLinkedEmployeeId,
+            memberEmployeeIds: editTeamMembers,
+            reason: 'Perubahan konfigurasi regu oleh Super Administrator',
+          }),
         });
+        if (!teamResponse.ok) {
+          const teamError = await teamResponse.json();
+          throw new Error(teamError.error || 'Gagal menyimpan konfigurasi regu.');
+        }
       }
 
       const updatedCategories = (editRole === 'honorer' || editRole === 'loyalis' || editRole === 'ketua_shift_satpam')
@@ -481,12 +497,12 @@ export default function UserManagementPage() {
     }
   };
 
-  // Open Delete confirmation dialog
+  // Open account deactivation confirmation dialog
   const openDeleteDialog = (u: ManagedUser) => {
     setDeletingUser(u);
   };
 
-  // Execute Delete
+  // Deactivate the account while retaining its historical profile and references.
   const handleDeleteUser = async () => {
     if (!user || !deletingUser || isActionLoadingRef.current) return;
     isActionLoadingRef.current = true;
@@ -504,15 +520,15 @@ export default function UserManagementPage() {
 
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || 'Gagal menghapus pengguna.');
+        throw new Error(errData.error || 'Gagal menonaktifkan pengguna.');
       }
 
-      setSuccessMsg(`Akun ${deletingUser.email} berhasil dihapus dari sistem.`);
+      setSuccessMsg(`Akun ${deletingUser.email} dinonaktifkan; seluruh riwayat tetap disimpan.`);
       setDeletingUser(null);
       router.refresh();
       await fetchData();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Terjadi kesalahan saat menghapus pengguna.');
+      setErrorMsg(err.message || 'Terjadi kesalahan saat menonaktifkan pengguna.');
     } finally {
       isActionLoadingRef.current = false;
       setActionLoading(false);
@@ -720,6 +736,8 @@ export default function UserManagementPage() {
                         <option value="satker_head_loyalis">Kepala Satuan Kerja Loyalis (SatKer Loyalis)</option>
                         <option value="employee_admin">Staf Master Data Pegawai (Employee Admin)</option>
                         <option value="super_admin">Super Administrator (BAK)</option>
+                        <option value="finance_verifier">Badan Keuangan (Verifikator)</option>
+                        <option value="payroll_authorizer">Kepala Biro Umum (Pengesah)</option>
                         <option value="honorer">Karyawan Honorer (Lapor Kegiatan)</option>
                         <option value="loyalis">Karyawan Loyalis (Lihat Slip Gaji)</option>
                         <option value="loyalis_presence_admin">Penanggung Jawab Presensi Loyalis</option>
@@ -732,6 +750,8 @@ export default function UserManagementPage() {
                         {newRole === 'satker_head_loyalis' && <span className="text-xs text-slate-600 leading-relaxed block">Dapat login dan mengelola data vakasi/kehadiran Loyalis pada halaman Vakasi Tambahan. Dilarang membuka menu dashboard lain.</span>}
                         {newRole === 'employee_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Hanya memiliki wewenang untuk mengelola data induk pegawai (Master Data Pegawai). Dilarang membuka menu payroll/uraian/lainnya.</span>}
                         {newRole === 'super_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Akses penuh dan bebas ke semua fitur sistem payroll, Legalitas, dan manajemen user.</span>}
+                        {newRole === 'finance_verifier' && <span className="text-xs text-slate-600 leading-relaxed block">Memverifikasi draf payroll dan membuat instruksi pembayaran, tetapi tidak dapat mengesahkan sebagai KBU.</span>}
+                        {newRole === 'payroll_authorizer' && <span className="text-xs text-slate-600 leading-relaxed block">Mengesahkan dan mengunci snapshot payroll setelah verifikasi oleh petugas Keuangan yang berbeda.</span>}
                         {newRole === 'honorer' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk karyawan kebersihan yang hanya dapat mengakses halaman lapor kegiatan harian. Harus dihubungkan ke data pegawai.</span>}
                         {newRole === 'loyalis' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk karyawan Loyalis (white collar) yang hanya dapat mengakses halaman slip gaji. Harus dihubungkan ke data pegawai.</span>}
                         {newRole === 'loyalis_presence_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Memiliki wewenang khusus HANYA untuk menghitung dan mengelola kehadiran Loyalis bulanan via raw daily logs. Dilarang membuka menu dashboard lain.</span>}
@@ -856,7 +876,7 @@ export default function UserManagementPage() {
                                       <span>Pemindahan Kepemimpinan Regu</span>
                                     </div>
                                     <p className="leading-relaxed text-[11px] text-blue-700">
-                                      {selectedEmpName} sebelumnya tercatat sebagai Ketua Shift Regu {otherTeam.id.split('_')[1]}. Perubahan ini akan memindahkan kepemimpinannya ke Regu {newTeamNumber}.
+                                      {selectedEmpName} masih tercatat di Regu {otherTeam.id.split('_')[1]}. Simpan akan ditolak sampai konfigurasi regu lama diselesaikan agar tidak ada keanggotaan ganda.
                                     </p>
                                   </div>
                                 )}
@@ -1090,6 +1110,11 @@ export default function UserManagementPage() {
                               <div>
                                 <span className="text-slate-800 text-sm block leading-tight">{u.displayName || '-'}</span>
                                 {isMe && <span className="text-[10px] font-bold text-emerald-600 block mt-0.5">Sesi Anda</span>}
+                                {u.disabled && (
+                                  <span className="text-[10px] font-bold text-rose-600 block mt-0.5">
+                                    Dinonaktifkan — riwayat disimpan
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </TableCell>
@@ -1190,11 +1215,11 @@ export default function UserManagementPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                disabled={isMe}
+                                disabled={isMe || u.disabled}
                                 onClick={() => openDeleteDialog(u)}
                                 className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50/50 disabled:opacity-30 disabled:pointer-events-none"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <UserX className="w-4 h-4" />
                               </Button>
                             </div>
                           </TableCell>
@@ -1322,6 +1347,8 @@ export default function UserManagementPage() {
                       <option value="satker_head_loyalis">Kepala Satuan Kerja Loyalis (SatKer Loyalis)</option>
                       <option value="employee_admin">Staf Master Data Pegawai (Employee Admin)</option>
                       <option value="super_admin">Super Administrator (BAK)</option>
+                      <option value="finance_verifier">Badan Keuangan (Verifikator)</option>
+                      <option value="payroll_authorizer">Kepala Biro Umum (Pengesah)</option>
                       <option value="honorer">Karyawan Honorer (Lapor Kegiatan)</option>
                       <option value="loyalis">Karyawan Loyalis (Lihat Slip Gaji)</option>
                       <option value="loyalis_presence_admin">Penanggung Jawab Presensi Loyalis</option>
@@ -1336,6 +1363,8 @@ export default function UserManagementPage() {
                     {editRole === 'satker_head_loyalis' && <span>Mengelola data vakasi & laporan kehadiran Loyalis secara penuh.</span>}
                     {editRole === 'employee_admin' && <span>Akses khusus pengelolaan Master Data Pegawai (White Collar & Blue Collar).</span>}
                     {editRole === 'super_admin' && <span>Akses penuh bypass ke seluruh modul payroll, legalitas, dan pengaturan pengguna.</span>}
+                    {editRole === 'finance_verifier' && <span>Memverifikasi draf payroll dan membuat instruksi pembayaran.</span>}
+                    {editRole === 'payroll_authorizer' && <span>Mengesahkan dan mengunci payroll sebagai Kepala Biro Umum.</span>}
                     {editRole === 'honorer' && <span>Akun khusus karyawan Pekarya untuk pelaporan kegiatan harian di Portal Karyawan.</span>}
                     {editRole === 'loyalis' && <span>Akun khusus karyawan Loyalis untuk melihat slip gaji digital mandiri.</span>}
                     {editRole === 'loyalis_presence_admin' && <span>Mengelola kalkulator presensi loyalis via raw daily logs.</span>}
@@ -1450,7 +1479,7 @@ export default function UserManagementPage() {
                                   <span>Pemindahan Kepemimpinan Regu</span>
                                 </div>
                                 <p className="leading-relaxed text-[11px] text-blue-700">
-                                  {selectedEmpName} sebelumnya tercatat sebagai Ketua Shift Regu {otherTeam.id.split('_')[1]}. Perubahan ini akan memindahkan kepemimpinannya ke Regu {editTeamNumber}.
+                                  {selectedEmpName} masih tercatat di Regu {otherTeam.id.split('_')[1]}. Simpan akan ditolak sampai konfigurasi regu lama diselesaikan agar tidak ada keanggotaan ganda.
                                 </p>
                               </div>
                             )}
@@ -1613,10 +1642,10 @@ export default function UserManagementPage() {
           <DialogHeader>
             <DialogTitle className="text-xl font-bold flex items-center gap-2 text-rose-600">
               <AlertTriangle className="w-6 h-6 shrink-0" />
-              Hapus Akun Pengguna?
+              Nonaktifkan Akun Pengguna?
             </DialogTitle>
             <DialogDescription className="text-slate-500 text-sm mt-1 leading-relaxed">
-              Tindakan ini bersifat **permanen**. Akun dengan email <strong>{deletingUser?.email}</strong> akan dihapus sepenuhnya dari Firebase Authentication (sehingga mereka tidak bisa login lagi) dan profil di Firestore akan dihapus.
+              Akun <strong>{deletingUser?.email}</strong> akan langsung kehilangan akses login. Profil, referensi, dan seluruh riwayat audit tetap disimpan dan tidak dihapus.
             </DialogDescription>
           </DialogHeader>
 
@@ -1627,15 +1656,15 @@ export default function UserManagementPage() {
               onClick={() => setDeletingUser(null)}
               className="rounded-xl font-bold text-slate-500 hover:bg-slate-50"
             >
-              Batal, Simpan Akun
+              Batal
             </Button>
             <Button
               onClick={handleDeleteUser}
               disabled={actionLoading}
               className="rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 shadow-md shadow-rose-100 flex items-center gap-2"
             >
-              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-              Ya, Hapus Permanen
+              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserX className="w-4 h-4" />}
+              Ya, Nonaktifkan
             </Button>
           </DialogFooter>
         </DialogContent>

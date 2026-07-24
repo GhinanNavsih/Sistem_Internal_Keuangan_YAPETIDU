@@ -1,0 +1,433 @@
+import { createHash } from 'node:crypto';
+import { NextRequest } from 'next/server';
+import admin, { adminDb } from '@/lib/firebase-admin';
+import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
+import {
+  activityDurationMinutes,
+  assertPekaryaActivityType,
+  isPekaryaJobCategory,
+  normalizeActivityIdentityPart,
+  pekaryaPayrollPeriodForDate,
+} from '@/lib/payroll/pekaryaSpj';
+import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
+import {
+  errorResponse,
+  HttpError,
+  requireAuthenticatedProfile,
+  requireRole,
+} from '@/lib/server/auth';
+
+export const dynamic = 'force-dynamic';
+
+interface SubmitActivityCommand {
+  requestId: string;
+  reportId?: string;
+  activityName: string;
+  activityType: string;
+  activityDate: string;
+  timeStart: string;
+  timeEnd?: string;
+  driverData?: Record<string, unknown>;
+}
+
+const SAFE_REPORT_ID = /^[A-Za-z0-9_-]{1,180}$/;
+const ALLOWED_DRIVER_FIELDS = [
+  'tripType',
+  'vehicleType',
+  'isOvernight',
+  'fuelFee',
+  'tollParkingFee',
+  'fuelReceiptUrl',
+  'tollReceiptUrl',
+  'points',
+  'distanceKm',
+  'durationHours',
+  'journeyId',
+  'extraActivities',
+  'extraDistanceKm',
+  'extraOperationalCost',
+  'extraFuelCost',
+  'extraTollCost',
+  'extraMealAllowance',
+  'actualMealAllowance',
+  'positiveReimburseDelta',
+  'baseDriverWage',
+  'upahBersih',
+  'reimburseDelta',
+  'unspentCash',
+  'remainingUnspentCash',
+  'baseOperationalCost',
+  'preAuthorizedMeal',
+  'preAuthorizedToll',
+  'customDurationPP',
+  'totalPreAuthorizedAllowance',
+  'totalActualSpent',
+  'totalOperationalCost',
+  'vehicleRate',
+  'componentJarak',
+  'componentWaktu',
+  'premiumOvernight',
+] as const;
+
+function parseCommand(raw: unknown): SubmitActivityCommand {
+  if (!raw || typeof raw !== 'object') {
+    throw new HttpError(400, 'Laporan kegiatan tidak valid.');
+  }
+  const value = raw as Partial<SubmitActivityCommand>;
+  if (typeof value.requestId !== 'string') {
+    throw new HttpError(400, 'requestId wajib diisi.');
+  }
+  try {
+    assertRequestId(value.requestId);
+  } catch (error) {
+    throw new HttpError(400, error instanceof Error ? error.message : 'requestId tidak valid.');
+  }
+  if (value.reportId && !SAFE_REPORT_ID.test(value.reportId)) {
+    throw new HttpError(400, 'ID laporan tidak valid.');
+  }
+  const activityName =
+    typeof value.activityName === 'string' ? value.activityName.normalize('NFKC').trim() : '';
+  if (activityName.length < 2 || activityName.length > 180) {
+    throw new HttpError(400, 'Nama kegiatan wajib diisi antara 2 dan 180 karakter.');
+  }
+  try {
+    assertPekaryaActivityType(value.activityType);
+  } catch (error) {
+    throw new HttpError(400, error instanceof Error ? error.message : 'Jenis kegiatan tidak valid.');
+  }
+  if (
+    typeof value.activityDate !== 'string' ||
+    typeof value.timeStart !== 'string' ||
+    (value.timeEnd !== undefined && typeof value.timeEnd !== 'string')
+  ) {
+    throw new HttpError(400, 'Tanggal atau waktu kegiatan tidak valid.');
+  }
+  return {
+    requestId: value.requestId,
+    reportId: value.reportId,
+    activityName,
+    activityType: value.activityType,
+    activityDate: value.activityDate,
+    timeStart: value.timeStart,
+    timeEnd: value.timeEnd || '',
+    driverData:
+      value.driverData && typeof value.driverData === 'object' ? value.driverData : undefined,
+  };
+}
+
+function jakartaDateToday(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+function sanitizeDriverData(
+  value: Record<string, unknown> | undefined,
+  category: string,
+): Record<string, unknown> {
+  if (category !== 'SOPIR') return {};
+  if (!value) return {};
+  const result: Record<string, unknown> = {};
+  for (const key of ALLOWED_DRIVER_FIELDS) {
+    if (value[key] !== undefined) result[key] = value[key];
+  }
+
+  const boundedMoneyFields = [
+    'fuelFee',
+    'tollParkingFee',
+    'extraOperationalCost',
+    'extraFuelCost',
+    'extraTollCost',
+    'extraMealAllowance',
+    'actualMealAllowance',
+    'positiveReimburseDelta',
+    'baseDriverWage',
+    'upahBersih',
+    'reimburseDelta',
+    'unspentCash',
+    'remainingUnspentCash',
+    'baseOperationalCost',
+    'preAuthorizedMeal',
+    'preAuthorizedToll',
+    'totalPreAuthorizedAllowance',
+    'totalActualSpent',
+    'totalOperationalCost',
+    'componentJarak',
+    'componentWaktu',
+    'premiumOvernight',
+  ];
+  for (const key of boundedMoneyFields) {
+    const number = result[key];
+    if (
+      number !== undefined &&
+      (typeof number !== 'number' ||
+        !Number.isFinite(number) ||
+        number < 0 ||
+        number > 100_000_000)
+    ) {
+      throw new HttpError(400, `Nilai ${key} tidak valid.`);
+    }
+  }
+  for (const key of ['distanceKm', 'durationHours', 'extraDistanceKm', 'customDurationPP']) {
+    const number = result[key];
+    if (
+      number !== undefined &&
+      (typeof number !== 'number' || !Number.isFinite(number) || number < 0 || number > 10_000)
+    ) {
+      throw new HttpError(400, `Nilai ${key} tidak valid.`);
+    }
+  }
+  if (result.points !== undefined) {
+    if (
+      !Array.isArray(result.points) ||
+      result.points.length < 2 ||
+      result.points.length > 30 ||
+      result.points.some((point) => typeof point !== 'string' || point.length > 300)
+    ) {
+      throw new HttpError(400, 'Rute perjalanan tidak valid.');
+    }
+  }
+  if (
+    result.journeyId !== undefined &&
+    (typeof result.journeyId !== 'string' || !SAFE_REPORT_ID.test(result.journeyId))
+  ) {
+    throw new HttpError(400, 'ID perjalanan tidak valid.');
+  }
+  return result;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const actor = await requireAuthenticatedProfile(request);
+    requireRole(actor, ['honorer']);
+    if (!actor.linkedEmployeeId) {
+      throw new HttpError(409, 'Akun belum terhubung ke data pegawai.');
+    }
+    const command = parseCommand(await request.json());
+    const payrollPeriod = pekaryaPayrollPeriodForDate(command.activityDate);
+    if (command.activityDate > jakartaDateToday()) {
+      throw new HttpError(400, 'Tanggal kegiatan tidak boleh berada di masa depan.');
+    }
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(command.timeStart)) {
+      throw new HttpError(400, 'Waktu mulai wajib menggunakan format HH:MM.');
+    }
+    if (command.activityType !== 'Buang Sampah') {
+      try {
+        activityDurationMinutes(command.timeStart, command.timeEnd || '');
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : 'Durasi tidak valid.');
+      }
+    } else if (command.timeEnd) {
+      throw new HttpError(400, 'Kegiatan Buang Sampah tidak menggunakan waktu selesai.');
+    }
+
+    const employeeId = actor.linkedEmployeeId;
+    const requestHash = createHash('sha256').update(JSON.stringify(command)).digest('hex');
+    const safeEmployeeId = employeeId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 72);
+    const reportId = command.reportId || `PEK-${safeEmployeeId}-${command.requestId}`;
+    const identity = [
+      safeEmployeeId,
+      command.activityDate.replaceAll('-', ''),
+      command.timeStart.replace(':', ''),
+      (command.timeEnd || 'none').replace(':', ''),
+      normalizeActivityIdentityPart(command.activityName),
+    ].join('__');
+
+    const result = await adminDb.runTransaction(async (transaction) => {
+      const employeeRef = adminDb.collection('Employees_BlueCollar').doc(employeeId);
+      const reportRef = adminDb.collection('ActivityReports').doc(reportId);
+      const indexRef = adminDb.collection('PekaryaActivityIndexes').doc(identity);
+      const periodRef = adminDb.collection('PayrollPeriods').doc(payrollPeriod);
+      const slipRef = adminDb
+        .collection('PayrollSlipStates')
+        .doc(`${payrollPeriod.replace('-', '_')}_${employeeId}`);
+      const idempotencyRef = adminDb
+        .collection('FinancialIdempotencyKeys')
+        .doc(`${actor.uid}__${command.requestId}`);
+      const [employeeSnapshot, reportSnapshot, indexSnapshot, periodSnapshot, slipSnapshot, idemSnapshot] =
+        await Promise.all([
+          transaction.get(employeeRef),
+          transaction.get(reportRef),
+          transaction.get(indexRef),
+          transaction.get(periodRef),
+          transaction.get(slipRef),
+          transaction.get(idempotencyRef),
+        ]);
+
+      if (idemSnapshot.exists) {
+        const previous = idemSnapshot.data()!;
+        if (previous.requestHash !== requestHash || previous.entityId !== reportId) {
+          throw new HttpError(409, 'requestId sudah digunakan untuk laporan berbeda.');
+        }
+        return { reportId, status: previous.resultingStatus, idempotent: true };
+      }
+      if (!employeeSnapshot.exists) {
+        throw new HttpError(404, 'Data Pekarya yang terhubung tidak ditemukan.');
+      }
+      const employee = employeeSnapshot.data()!;
+      const jobCategory = employee.employment?.jobCategory;
+      if (
+        employee.employment?.status !== 'active' ||
+        !isPekaryaJobCategory(jobCategory) ||
+        jobCategory === 'SATPAM'
+      ) {
+        throw new HttpError(409, 'Pegawai tidak aktif atau kategori tidak mendukung laporan ini.');
+      }
+      if (!periodSnapshot.exists || periodSnapshot.data()?.attendanceStatus !== 'open') {
+        throw new HttpError(409, 'Periode payroll belum dibuka atau sudah ditutup.');
+      }
+      if (slipSnapshot.exists && isImmutablePayrollStatus(slipSnapshot.data()?.status)) {
+        throw new HttpError(409, 'Slip periode ini sudah dikunci; ajukan koreksi resmi.');
+      }
+      const before = reportSnapshot.exists ? reportSnapshot.data()! : null;
+      if (command.reportId) {
+        if (!reportSnapshot.exists || before?.employeeId !== employeeId) {
+          throw new HttpError(404, 'Laporan yang akan diajukan ulang tidak ditemukan.');
+        }
+        if (!['pending', 'declined'].includes(before.status)) {
+          throw new HttpError(409, 'Laporan yang sudah disetujui tidak dapat diubah.');
+        }
+      } else if (reportSnapshot.exists) {
+        throw new HttpError(409, 'ID laporan sudah ada.');
+      }
+      if (indexSnapshot.exists && indexSnapshot.data()?.reportId !== reportId) {
+        throw new HttpError(409, 'Kegiatan yang sama sudah pernah dilaporkan.');
+      }
+
+      const driverData = sanitizeDriverData(command.driverData, jobCategory);
+      const journeyId = typeof driverData.journeyId === 'string' ? driverData.journeyId : null;
+      let journeyRef: FirebaseFirestore.DocumentReference | null = null;
+      let journeyBefore: FirebaseFirestore.DocumentData | null = null;
+      if (journeyId) {
+        journeyRef = adminDb.collection('DriverJourneys').doc(journeyId);
+        const journeySnapshot = await transaction.get(journeyRef);
+        if (!journeySnapshot.exists) {
+          throw new HttpError(404, 'Perjalanan dinas tidak ditemukan.');
+        }
+        journeyBefore = journeySnapshot.data()!;
+        const ownsJourney =
+          journeyBefore.employeeId === employeeId ||
+          journeyBefore.assignedTo === employeeId;
+        if (!ownsJourney || !['claimed', 'submitted', 'completed'].includes(journeyBefore.status)) {
+          throw new HttpError(409, 'Perjalanan dinas tidak dimiliki oleh pegawai ini.');
+        }
+      }
+
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      const after = {
+        employeeId,
+        employeeName: String(employee.name || actor.displayName || ''),
+        jobCategory,
+        period: payrollPeriod,
+        payrollPeriod,
+        activityName: command.activityName,
+        activityType: command.activityType,
+        activityDate: command.activityDate,
+        timeStart: command.timeStart,
+        timeEnd: command.activityType === 'Buang Sampah' ? '' : command.timeEnd,
+        crossesMidnight:
+          command.activityType !== 'Buang Sampah' &&
+          Boolean(command.timeEnd && command.timeEnd < command.timeStart),
+        status: 'pending',
+        fee: 0,
+        declineReason: '',
+        reviewedAt: null,
+        reviewedBy: null,
+        submittedAt: now,
+        submissionRevision: Number(before?.submissionRevision || 0) + 1,
+        source: jobCategory === 'SOPIR' ? 'honorer_driver_report' : 'honorer_activity_form',
+        schemaVersion: 2,
+        ...driverData,
+        // Employee-submitted calculations are evidence only. The approved
+        // financial amount remains zero until Kepala SatKer reviews it.
+        submittedFeeEstimate:
+          typeof driverData.upahBersih === 'number' ? driverData.upahBersih : 0,
+        upahBersih: 0,
+      };
+
+      transaction.set(reportRef, after);
+      transaction.set(indexRef, {
+        reportId,
+        employeeId,
+        payrollPeriod,
+        createdAt: indexSnapshot.exists ? indexSnapshot.data()?.createdAt : now,
+        updatedAt: now,
+      });
+      if (journeyRef) {
+        const journeyEvidence = { ...driverData };
+        delete journeyEvidence.journeyId;
+        const submittedUpahEstimate =
+          typeof journeyEvidence.upahBersih === 'number' ? journeyEvidence.upahBersih : 0;
+        delete journeyEvidence.upahBersih;
+        const submittedDistanceKm =
+          typeof journeyEvidence.distanceKm === 'number' ? journeyEvidence.distanceKm : 0;
+        const submittedDurationHours =
+          typeof journeyEvidence.durationHours === 'number' ? journeyEvidence.durationHours : 0;
+        const submittedVehicleType =
+          typeof journeyEvidence.vehicleType === 'string' ? journeyEvidence.vehicleType : '';
+        const submittedTripType =
+          typeof journeyEvidence.tripType === 'string' ? journeyEvidence.tripType : '';
+        delete journeyEvidence.distanceKm;
+        delete journeyEvidence.durationHours;
+        delete journeyEvidence.vehicleType;
+        delete journeyEvidence.tripType;
+        transaction.update(journeyRef, {
+          ...journeyEvidence,
+          status: 'submitted',
+          period: payrollPeriod,
+          payrollPeriod,
+          activityDocId: reportId,
+          activityDate: command.activityDate,
+          timeStart: command.timeStart,
+          timeEnd: command.timeEnd,
+          submittedUpahEstimate,
+          submittedDistanceKm,
+          submittedDurationHours,
+          submittedVehicleType,
+          submittedTripType,
+          newTotalDistanceKm: submittedDistanceKm,
+          newTotalDurationHours: submittedDurationHours,
+          submittedAt: now,
+          updatedAt: now,
+          draftTimeStart: admin.firestore.FieldValue.delete(),
+          draftTimeEnd: admin.firestore.FieldValue.delete(),
+          draftIsOvernight: admin.firestore.FieldValue.delete(),
+          draftFuelFee: admin.firestore.FieldValue.delete(),
+          draftTollParkingFee: admin.firestore.FieldValue.delete(),
+          draftFuelReceiptUrl: admin.firestore.FieldValue.delete(),
+          draftTollReceiptUrl: admin.firestore.FieldValue.delete(),
+          draftExtraActivities: admin.firestore.FieldValue.delete(),
+          draftCalculatedDistanceKm: admin.firestore.FieldValue.delete(),
+          draftCalculatedDurationHours: admin.firestore.FieldValue.delete(),
+        });
+      }
+      transaction.create(
+        newFinancialAuditRef(),
+        buildFinancialAuditRecord(actor, {
+          action: before ? 'PEKARYA_ACTIVITY_RESUBMITTED' : 'PEKARYA_ACTIVITY_SUBMITTED',
+          entityType: 'ActivityReport',
+          entityId: reportId,
+          reason: before ? 'Pengajuan ulang laporan kegiatan Pekarya' : 'Pengajuan laporan kegiatan Pekarya',
+          requestId: command.requestId,
+          before,
+          after,
+          metadata: { payrollPeriod, jobCategory, journeyId },
+        }),
+      );
+      transaction.create(idempotencyRef, {
+        requestHash,
+        entityId: reportId,
+        resultingStatus: 'pending',
+        createdAt: now,
+      });
+      return { reportId, status: 'pending', payrollPeriod, idempotent: false };
+    });
+
+    return Response.json(result, { status: 201 });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}

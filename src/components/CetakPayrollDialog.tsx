@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx';
 import { calculateGapok } from '@/utils/payrollLogic';
 import { calculateTotalEarnings, calculateTotalDeductions, calculateNetSalary } from '@/utils/salaryCalculator';
 import { BlueCollarEmployee, SalaryMatrix, UraianGajiDocument } from '@/types';
+import { isTransferEligibleStatus } from '@/lib/payroll/domain';
 
 interface EmployeeRow {
   id: string;
@@ -68,7 +69,13 @@ export default function CetakPayrollDialog({
 }: CetakPayrollDialogProps) {
 
   const handleExportXlsx = () => {
-    const activeEmployees = employees.filter(e => e.isActive || slipStates?.[e.id]?.status === 'locked');
+    const activeEmployees = employees.filter(e =>
+      isTransferEligibleStatus(slipStates?.[e.id]?.status),
+    );
+    if (activeEmployees.length === 0) {
+      window.alert('Tidak ada slip terkunci yang dapat diekspor.');
+      return;
+    }
     
     const roleOrder = [
       'REKTORAT',
@@ -111,14 +118,15 @@ export default function CetakPayrollDialog({
 
       let netSalary = 0;
       const savedSlip = slipStates?.[emp.id];
-      if (savedSlip && savedSlip.earnings && savedSlip.earnings.length > 0) {
+      if (
+        savedSlip &&
+        isTransferEligibleStatus(savedSlip.status) &&
+        savedSlip.earnings &&
+        savedSlip.earnings.length > 0
+      ) {
         const totalEarnings = savedSlip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
         const totalDeductions = (savedSlip.deductions || []).reduce((sum: number, d: any) => sum + (d.amount || 0), 0);
         netSalary = totalEarnings - totalDeductions;
-      } else {
-        const earnings = calculateTotalEarnings(emp.raw, gapok, uraianEntry, vakasiSum, fAllowance, pBonus, presEarning, kepangkatanAllowanceMap?.[emp.id] ?? 0);
-        const totalDeductions = calculateTotalDeductions(emp.raw, kopDeduction, pDeduction, presDeduction, kopSaving);
-        netSalary = calculateNetSalary(earnings, totalDeductions);
       }
 
       let satker = cat;

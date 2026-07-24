@@ -218,79 +218,13 @@ export default function VakasiLoyalisPage() {
     deletedEventName?: string,
     updatedEvent?: { id: string; eventName: string; status: string; eventWorkers: Record<string, any> }
   ) => {
-    const dbPeriod = periodVal.replace('-', '_');
-    const slipDocId = `${dbPeriod}_${workerId}`;
-    const slipRef = doc(db, 'PayrollSlipStates', slipDocId);
-    const slipSnap = await getDoc(slipRef);
-    if (!slipSnap.exists()) return;
-
-    const slipData = slipSnap.data();
-    if (slipData.status !== 'draft') return; // Only update draft slips
-
-    const oldEarnings = slipData.earnings || [];
-    let newEarnings = [...oldEarnings];
-
-    if (deletedEventName) {
-      newEarnings = oldEarnings.filter((e: any) => e.label !== deletedEventName);
-    } else {
-      const vakasiSnap = await getDocs(
-        query(
-          collection(db, 'VakasiTambahan'),
-          where('period', '==', periodVal),
-          where('status', '==', 'approved')
-        )
-      );
-
-      let approvedEvents = vakasiSnap.docs.map(d => ({
-        id: d.id,
-        eventName: d.data().eventName,
-        eventWorkers: d.data().eventWorkers || {},
-        status: d.data().status
-      }));
-
-      // Override or inject updatedEvent to handle Firestore indexing latency
-      if (updatedEvent) {
-        approvedEvents = approvedEvents.filter(evt => evt.id !== updatedEvent.id);
-        if (updatedEvent.status === 'approved') {
-          approvedEvents.push(updatedEvent);
-        }
-      }
-
-      const workerVakasiList: { eventName: string; payGiven: number }[] = [];
-      approvedEvents.forEach(evt => {
-        const worker = evt.eventWorkers?.[workerId];
-        if (worker && worker.payGiven) {
-          workerVakasiList.push({ eventName: evt.eventName, payGiven: worker.payGiven });
-        }
-      });
-
-      const allEventsSnap = await getDocs(
-        query(collection(db, 'VakasiTambahan'), where('period', '==', periodVal))
-      );
-
-      let allEvents = allEventsSnap.docs.map(d => ({
-        id: d.id,
-        eventName: d.data().eventName
-      }));
-      if (updatedEvent) {
-        allEvents = allEvents.filter(evt => evt.id !== updatedEvent.id);
-        allEvents.push({ id: updatedEvent.id, eventName: updatedEvent.eventName });
-      }
-      const allEventNames = new Set(allEvents.map(d => d.eventName).filter(Boolean));
-
-      const cleanEarnings = oldEarnings.filter((e: any) => !allEventNames.has(e.label) && e.label !== 'Vakasi Tambahan');
-
-      newEarnings = [...cleanEarnings];
-      workerVakasiList.forEach(item => {
-        newEarnings.push({ label: item.eventName, amount: item.payGiven });
-      });
-    }
-
-    await setDoc(slipRef, {
-      ...slipData,
-      earnings: newEarnings,
-      generatedAt: new Date().toISOString(),
-    }, { merge: true });
+    // Retain this awaited hook for callers, but never mutate a payslip here.
+    // Finance refreshes affected drafts from VakasiTambahan and saves them via
+    // /api/payroll/slips. Final snapshots are immutable.
+    void workerId;
+    void periodVal;
+    void deletedEventName;
+    void updatedEvent;
   };
 
   const sanitizeEventId = (name: string): string => {
@@ -700,70 +634,11 @@ export default function VakasiLoyalisPage() {
   };
 
   const handleDeleteEvent = async (eventId: string) => {
-    if (isSavingRef.current) return;
-    if (!confirm('Apakah Anda yakin ingin menghapus event ini?')) return;
-    try {
-      isSavingRef.current = true;
-      setSaving(true);
-
-      const eventRef = doc(db, 'VakasiTambahan', eventId);
-      const eventSnap = await getDoc(eventRef);
-      if (eventSnap.exists()) {
-        const eventData = eventSnap.data();
-        const eventWorkers = eventData.eventWorkers || {};
-        const eventPeriod = eventData.period;
-        const deletedEventName = eventData.eventName;
-
-        if (eventPeriod) {
-          const slipPeriod = eventPeriod.replace('-', '_');
-          const lockedNames: string[] = [];
-
-          await Promise.all(
-            Object.entries(eventWorkers).map(async ([workerId, w]: [string, any]) => {
-              const slipSnap = await getDoc(doc(db, 'PayrollSlipStates', `${slipPeriod}_${workerId}`));
-              if (slipSnap.exists() && slipSnap.data()?.status === 'locked') {
-                lockedNames.push(w.employeeName || workerId);
-              }
-            })
-          );
-
-          if (lockedNames.length > 0) {
-            isSavingRef.current = false;
-            setSaving(false);
-            setMessage({
-              type: 'error',
-              text: `Gagal menghapus: Slip gaji untuk karyawan berikut telah terkunci. Harap buka kunci slip mereka di dashboard terlebih dahulu:\n- ${lockedNames.join('\n- ')}`
-            });
-            return;
-          }
-
-          await deleteDoc(eventRef);
-          await Promise.all(
-            Object.keys(eventWorkers).map(workerId => syncEmployeeVakasiPay(workerId, eventPeriod, deletedEventName))
-          );
-        }
-      }
-      setMessage({ type: 'success', text: 'Event Vakasi Tambahan berhasil dihapus.' });
-      setSelectedEventId(null);
-      setEventName('');
-      setIsEndOfMonth(false);
-      setSelectedDept('');
-      setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
-      setReportFile(null);
-      setReportFileUrl(null);
-      setReportFileName(null);
-      setCurrentEventStatus(null);
-      setCurrentEventReviewNote(null);
-      setCurrentEventSubmittedBy(null);
-      setCurrentEventSubmittedByName(null);
-      setCurrentEventSubmittedByEmail(null);
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: 'error', text: 'Gagal menghapus event.' });
-    } finally {
-      isSavingRef.current = false;
-      setSaving(false);
-    }
+    void eventId;
+    setMessage({
+      type: 'error',
+      text: 'Penghapusan event dinonaktifkan agar riwayat tetap utuh. Gunakan koreksi atau status pembatalan beralasan.',
+    });
   };
 
   const handleAddRow = () => {

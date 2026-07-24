@@ -1,130 +1,196 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { randomUUID } from 'node:crypto';
+import { NextRequest } from 'next/server';
+import admin, { adminAuth, adminDb } from '@/lib/firebase-admin';
 
 export const dynamic = 'force-dynamic';
 
-// GET: Verify token validity before showing the password form
-export async function GET(req: NextRequest) {
+function tokenFromRequest(request: NextRequest): string {
+  const token = new URL(request.url).searchParams.get('token') || '';
+  if (!/^[A-Za-z0-9_-]{32,256}$/.test(token)) {
+    throw new Error('Tautan reaktivasi tidak valid.');
+  }
+  return token;
+}
+
+function isExpired(value: unknown): boolean {
+  const timestamp =
+    value instanceof admin.firestore.Timestamp
+      ? value.toMillis()
+      : new Date(String(value || '')).getTime();
+  return !Number.isFinite(timestamp) || timestamp <= Date.now();
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
+  return typeof error.code === 'string' ? error.code : undefined;
+}
+
+export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const token = searchParams.get('token');
-
-    if (!token) {
-      return NextResponse.json({ error: 'Token reaktivasi wajib disertakan.' }, { status: 400 });
+    const token = tokenFromRequest(request);
+    const snapshot = await adminDb.collection('reactivation_tokens').doc(token).get();
+    const data = snapshot.data();
+    if (
+      !snapshot.exists ||
+      !data ||
+      data.used === true ||
+      data.processing === true ||
+      isExpired(data.expiresAt)
+    ) {
+      return Response.json(
+        { error: 'Tautan reaktivasi tidak valid, sedang diproses, atau kedaluwarsa.' },
+        { status: 400, headers: { 'Cache-Control': 'no-store' } },
+      );
     }
-
-    const tokenDocRef = adminDb.collection('reactivation_tokens').doc(token);
-    const tokenSnap = await tokenDocRef.get();
-
-    if (!tokenSnap.exists) {
-      return NextResponse.json({ error: 'Tautan reaktivasi tidak valid.' }, { status: 400 });
-    }
-
-    const tokenData = tokenSnap.data();
-    if (!tokenData) {
-      return NextResponse.json({ error: 'Tautan reaktivasi kosong.' }, { status: 400 });
-    }
-
-    const { email, displayName, expiresAt, used } = tokenData;
-
-    // Check if used
-    if (used) {
-      return NextResponse.json({ error: 'Tautan reaktivasi ini sudah digunakan sebelumnya.' }, { status: 400 });
-    }
-
-    // Check if expired
-    if (new Date(expiresAt) < new Date()) {
-      return NextResponse.json({ error: 'Tautan reaktivasi ini telah kedaluwarsa (berlaku maksimal 7 hari).' }, { status: 400 });
-    }
-
-    return NextResponse.json({
-      valid: true,
-      email,
-      displayName,
-    });
-  } catch (error: any) {
-    console.error('Reactivation Verification API error:', error);
-    return NextResponse.json({ error: error?.message || 'Terjadi kesalahan internal server.' }, { status: 500 });
+    return Response.json(
+      {
+        valid: true,
+        email: data.email,
+        displayName: data.displayName,
+      },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : 'Tautan reaktivasi tidak valid.' },
+      { status: 400, headers: { 'Cache-Control': 'no-store' } },
+    );
   }
 }
 
-// POST: Restores access and sets the new password
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
+  const claimId = randomUUID();
+  let tokenRef: FirebaseFirestore.DocumentReference | undefined;
   try {
-    const body = await req.json();
-    const { token, password } = body;
-
-    if (!token) {
-      return NextResponse.json({ error: 'Token reaktivasi wajib disertakan.' }, { status: 400 });
+    const body = await request.json();
+    const token = typeof body.token === 'string' ? body.token : '';
+    const password = typeof body.password === 'string' ? body.password : '';
+    if (!/^[A-Za-z0-9_-]{32,256}$/.test(token)) {
+      return Response.json({ error: 'Tautan reaktivasi tidak valid.' }, { status: 400 });
+    }
+    if (password.length < 10 || password.length > 128) {
+      return Response.json(
+        { error: 'Kata sandi baru wajib berisi 10–128 karakter.' },
+        { status: 400 },
+      );
     }
 
-    if (!password || password.length < 6) {
-      return NextResponse.json({ error: 'Kata sandi baru wajib diisi dan minimal terdiri dari 6 karakter.' }, { status: 400 });
-    }
-
-    const tokenDocRef = adminDb.collection('reactivation_tokens').doc(token);
-    const tokenSnap = await tokenDocRef.get();
-
-    if (!tokenSnap.exists) {
-      return NextResponse.json({ error: 'Tautan reaktivasi tidak valid.' }, { status: 400 });
-    }
-
-    const tokenData = tokenSnap.data();
-    if (!tokenData) {
-      return NextResponse.json({ error: 'Tautan reaktivasi kosong.' }, { status: 400 });
-    }
-
-    const { uid, expiresAt, used } = tokenData;
-
-    // Check if used
-    if (used) {
-      return NextResponse.json({ error: 'Tautan reaktivasi ini sudah digunakan sebelumnya.' }, { status: 400 });
-    }
-
-    // Check if expired
-    if (new Date(expiresAt) < new Date()) {
-      return NextResponse.json({ error: 'Tautan reaktivasi ini telah kedaluwarsa (berlaku maksimal 7 hari).' }, { status: 400 });
-    }
-
-    // Check if user exists in Firestore
-    const userDocRef = adminDb.collection('users').doc(uid);
-    const userSnap = await userDocRef.get();
-    if (!userSnap.exists) {
-      return NextResponse.json({ error: 'Profil pengguna tidak ditemukan di sistem.' }, { status: 400 });
-    }
-
-    // 1. Re-enable user in Firebase Auth and set their new password
-    try {
-      await adminAuth.updateUser(uid, {
-        disabled: false,
-        password: password,
-      });
-    } catch (authErr: any) {
-      console.error(`Firebase Auth update failed for user ${uid}:`, authErr);
-      if (authErr.code === 'auth/user-not-found') {
-        return NextResponse.json({ error: 'Akun autentikasi tidak ditemukan.' }, { status: 404 });
+    tokenRef = adminDb.collection('reactivation_tokens').doc(token);
+    const claim = await adminDb.runTransaction(async (transaction) => {
+      const tokenSnapshot = await transaction.get(tokenRef!);
+      const tokenData = tokenSnapshot.data();
+      if (
+        !tokenSnapshot.exists ||
+        !tokenData ||
+        tokenData.used === true ||
+        tokenData.processing === true ||
+        isExpired(tokenData.expiresAt) ||
+        typeof tokenData.uid !== 'string'
+      ) {
+        throw new Error('Tautan reaktivasi tidak valid, sudah digunakan, atau kedaluwarsa.');
       }
-      throw authErr;
+      const userRef = adminDb.collection('users').doc(tokenData.uid);
+      const userSnapshot = await transaction.get(userRef);
+      if (!userSnapshot.exists) {
+        throw new Error('Profil pengguna tidak ditemukan di sistem.');
+      }
+      transaction.set(
+        tokenRef!,
+        {
+          processing: true,
+          processingClaimId: claimId,
+          processingAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      return { uid: tokenData.uid as string, userRef };
+    });
+
+    try {
+      await adminAuth.updateUser(claim.uid, {
+        disabled: false,
+        password,
+      });
+      await adminAuth.revokeRefreshTokens(claim.uid);
+    } catch (error) {
+      await adminDb.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(tokenRef!);
+        if (snapshot.data()?.processingClaimId === claimId && snapshot.data()?.used !== true) {
+          transaction.set(
+            tokenRef!,
+            {
+              processing: false,
+              processingClaimId: null,
+              processingFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        }
+      });
+      throw error;
     }
 
-    // 2. Update status in Firestore user doc
-    await userDocRef.update({
-      status: 'active',
-      updatedAt: new Date().toISOString(),
+    await adminDb.runTransaction(async (transaction) => {
+      const [tokenSnapshot, userSnapshot] = await Promise.all([
+        transaction.get(tokenRef!),
+        transaction.get(claim.userRef),
+      ]);
+      if (
+        tokenSnapshot.data()?.processingClaimId !== claimId ||
+        tokenSnapshot.data()?.used === true ||
+        !userSnapshot.exists
+      ) {
+        throw new Error('Klaim reaktivasi berubah sebelum diselesaikan.');
+      }
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      transaction.set(
+        claim.userRef,
+        {
+          disabled: false,
+          status: 'active',
+          reactivatedAt: now,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+      transaction.set(
+        tokenRef!,
+        {
+          used: true,
+          usedAt: now,
+          processing: false,
+          processingClaimId: null,
+        },
+        { merge: true },
+      );
+      transaction.create(adminDb.collection('FinancialAuditLogs').doc(), {
+        action: 'USER_REACTIVATED',
+        entityType: 'UserProfile',
+        entityId: claim.uid,
+        reason: 'Reaktivasi mandiri menggunakan token satu-kali',
+        actorUid: claim.uid,
+        actorRole: 'self_service_reactivation',
+        actorEmail: userSnapshot.data()?.email || null,
+        before: { disabled: userSnapshot.data()?.disabled === true },
+        after: { disabled: false },
+        metadata: { tokenDocumentId: tokenRef!.id },
+        occurredAt: now,
+        schemaVersion: 1,
+      });
     });
 
-    // 3. Mark the token as used
-    await tokenDocRef.update({
-      used: true,
-      usedAt: new Date().toISOString(),
-    });
-
-    return NextResponse.json({
+    return Response.json({
       success: true,
-      message: 'Kata sandi Anda berhasil diperbarui dan akun Anda telah aktif kembali. Silakan masuk menggunakan kata sandi baru Anda.',
+      message: 'Kata sandi diperbarui dan akun aktif kembali. Silakan masuk.',
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Reactivation API error:', error);
-    return NextResponse.json({ error: error?.message || 'Terjadi kesalahan internal server.' }, { status: 500 });
+    const message =
+      errorCode(error) === 'auth/user-not-found'
+        ? 'Akun autentikasi tidak ditemukan.'
+        : error instanceof Error
+          ? error.message
+          : 'Terjadi kesalahan internal server.';
+    return Response.json({ error: message }, { status: 400 });
   }
 }

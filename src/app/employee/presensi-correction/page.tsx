@@ -174,18 +174,11 @@ export default function PresensiCorrectionPage() {
 
   const handleDeleteRequest = async (id: string) => {
     setActiveMenuId(null);
-    if (!window.confirm('Apakah Anda yakin ingin menghapus pengajuan koreksi ini?')) return;
-    try {
-      setLoading(true);
-      await deleteDoc(doc(db, 'LoyalisPresenceCorrections', id));
-      setMessage({ type: 'success', text: 'Pengajuan koreksi berhasil dihapus.' });
-      fetchRequests();
-    } catch (err: any) {
-      console.error(err);
-      setMessage({ type: 'error', text: err.message || 'Gagal menghapus pengajuan.' });
-    } finally {
-      setLoading(false);
-    }
+    void id;
+    setMessage({
+      type: 'error',
+      text: 'Penghapusan pengajuan dinonaktifkan agar riwayat koreksi tetap utuh.',
+    });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -336,12 +329,13 @@ export default function PresensiCorrectionPage() {
         requestData.employeeId = empId;
         requestData.employeeName = profile?.displayName || 'Karyawan';
 
-        await setDoc(doc(db, 'LoyalisPresenceCorrections', customDocId), requestData, { merge: true });
-
-        // If the old document had a different ID (edited date or old auto-generated ID), delete the old one
-        if (targetId !== customDocId) {
-          await deleteDoc(doc(db, 'LoyalisPresenceCorrections', targetId));
-        }
+        // Preserve the original document identity so editing a date never
+        // requires deleting the historical correction document.
+        await setDoc(
+          doc(db, 'LoyalisPresenceCorrections', targetId),
+          requestData,
+          { merge: true },
+        );
 
         setMessage({ 
           type: 'success', 

@@ -9,19 +9,48 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const res = await fetch(imageUrl, {
+    const parsedUrl = new URL(imageUrl);
+    const bucket =
+      process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
+      'internal-bak.firebasestorage.app';
+    const allowed =
+      parsedUrl.protocol === 'https:' &&
+      (
+        (
+          parsedUrl.hostname === 'firebasestorage.googleapis.com' &&
+          parsedUrl.pathname.startsWith(`/v0/b/${bucket}/o/`)
+        ) ||
+        (
+          parsedUrl.hostname === 'storage.googleapis.com' &&
+          parsedUrl.pathname.startsWith(`/${bucket}/`)
+        ) ||
+        parsedUrl.hostname === bucket
+      );
+    if (!allowed) {
+      return NextResponse.json({ error: 'Image host is not allowed' }, { status: 400 });
+    }
+
+    const res = await fetch(parsedUrl, {
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       },
+      signal: AbortSignal.timeout(8_000),
     });
 
     if (!res.ok) {
       return NextResponse.json({ error: 'Failed to fetch image' }, { status: res.status });
     }
 
-    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    const contentType = res.headers.get('content-type') || '';
+    const contentLength = Number(res.headers.get('content-length') || 0);
+    if (!contentType.startsWith('image/') || contentLength > 5 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Invalid or oversized image' }, { status: 400 });
+    }
     const arrayBuffer = await res.arrayBuffer();
+    if (arrayBuffer.byteLength > 5 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Image exceeds 5 MB' }, { status: 400 });
+    }
     const base64 = Buffer.from(arrayBuffer).toString('base64');
     const dataUrl = `data:${contentType};base64,${base64}`;
 

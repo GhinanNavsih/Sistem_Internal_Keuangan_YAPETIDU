@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  errorResponse,
+  HttpError,
+  requireAuthenticatedProfile,
+} from '@/lib/server/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
+    await requireAuthenticatedProfile(req);
     const body = await req.json();
     const { points } = body;
 
@@ -13,7 +19,11 @@ export async function POST(req: NextRequest) {
 
     // Filter out any empty entries
     const activePoints = points.map(p => String(p).trim()).filter(Boolean);
-    if (activePoints.length < 2) {
+    if (
+      activePoints.length < 2 ||
+      activePoints.length > 10 ||
+      activePoints.some((point) => point.length > 200)
+    ) {
       return NextResponse.json({ error: 'Minimal 2 lokasi valid harus diisi.' }, { status: 400 });
     }
 
@@ -78,6 +88,9 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: any) {
+    if (error instanceof HttpError) {
+      return errorResponse(error);
+    }
     console.error('Error in calculate-route API:', error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }

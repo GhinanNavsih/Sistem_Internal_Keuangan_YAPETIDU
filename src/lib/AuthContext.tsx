@@ -11,14 +11,16 @@ import {
 } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, getDocFromCache } from 'firebase/firestore';
+import { UserRole } from '@/lib/payroll/roles';
 
 export interface UserProfile {
   uid: string;
   email: string;
-  role: 'super_admin' | 'satker_head' | 'satker_head_loyalis' | 'employee_admin' | 'honorer' | 'loyalis' | 'loyalis_presence_admin';
+  role: UserRole;
   permittedCategories: string[];
   displayName?: string;
   linkedEmployeeId?: string;
+  disabled?: boolean;
 }
 
 interface AuthContextType {
@@ -96,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (firebaseUser) {
         try {
           const prof = await getUserProfile(firebaseUser.uid);
-          if (prof) {
+          if (prof && prof.disabled !== true) {
             setUser(firebaseUser);
             setProfile(prof);
           } else {
@@ -123,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const credential = await signInWithEmailAndPassword(auth, email, password);
     const firebaseUser = credential.user;
     const prof = await getUserProfile(firebaseUser.uid);
-    if (!prof) {
+    if (!prof || prof.disabled === true) {
       await signOut(auth);
       throw new Error('Akun Anda belum terdaftar dalam sistem. Silakan hubungi administrator Badan Administrasi Keuangan (BAK).');
     }
@@ -136,7 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const credential = await signInWithPopup(auth, provider);
     const firebaseUser = credential.user;
     const prof = await getUserProfile(firebaseUser.uid);
-    if (!prof) {
+    if (!prof || prof.disabled === true) {
       await signOut(auth);
       throw new Error('Akun Anda belum terdaftar dalam sistem. Silakan hubungi administrator Badan Administrasi Keuangan (BAK).');
     }
@@ -162,4 +164,3 @@ export function useAuth() {
   if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
   return ctx;
 }
-

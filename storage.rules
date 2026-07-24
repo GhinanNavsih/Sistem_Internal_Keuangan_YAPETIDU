@@ -1,26 +1,85 @@
 rules_version = '2';
+
 service firebase.storage {
   match /b/{bucket}/o {
-    
-    // Helper to check if user is logged in
-    function isAuthenticated() {
+    function signedIn() {
       return request.auth != null;
     }
 
-    // Rules for vakasi reports folder
+    function profile() {
+      return firestore.get(
+        /databases/(default)/documents/users/$(request.auth.uid)
+      ).data;
+    }
+
+    function hasActiveProfile() {
+      return signedIn() && profile().disabled != true;
+    }
+
+    function roleIs(role) {
+      return hasActiveProfile() && profile().role == role;
+    }
+
+    function isFinance() {
+      return roleIs('super_admin') ||
+        roleIs('finance_verifier') ||
+        roleIs('payroll_authorizer');
+    }
+
+    function validReportFile() {
+      return request.resource.size < 10 * 1024 * 1024 &&
+        request.resource.contentType.matches('(application/pdf|image/.*)');
+    }
+
+    // Payslips are written by the protected Admin API and served with
+    // short-lived signed URLs. Direct client access is always denied.
+    match /payslips/{allPaths=**} {
+      allow read, write: if false;
+    }
+
     match /vakasi_reports/{period}/{filename} {
-      // Allow any authenticated user (admins, satker heads, employees) to read and write reports
-      allow read, write: if isAuthenticated();
+      allow read: if isFinance() || roleIs('satker_head') ||
+        roleIs('satker_head_loyalis');
+      allow create, update: if
+        (isFinance() || roleIs('satker_head') || roleIs('satker_head_loyalis')) &&
+        validReportFile();
+      allow delete: if false;
     }
 
-    // Rules for presence corrections folder
     match /presence_corrections/{employeeId}/{filename} {
-      allow read, write: if isAuthenticated();
+      allow read: if isFinance() || roleIs('loyalis_presence_admin') ||
+        (hasActiveProfile() && profile().linkedEmployeeId == employeeId);
+      allow create, update: if
+        (
+          roleIs('loyalis_presence_admin') ||
+          (hasActiveProfile() && profile().linkedEmployeeId == employeeId)
+        ) &&
+        request.resource.size < 5 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+      allow delete: if false;
     }
 
-    // Rules for journey receipts folder (BBM, tolls, parking)
     match /receipts/{journeyId}/{filename} {
-      allow read, write: if isAuthenticated();
+      function journey() {
+        return firestore.get(
+          /databases/(default)/documents/DriverJourneys/$(journeyId)
+        ).data;
+      }
+      allow read: if isFinance() || roleIs('satker_head') ||
+        (hasActiveProfile() && journey().employeeId == profile().linkedEmployeeId);
+      allow create, update: if
+        (
+          isFinance() ||
+          roleIs('satker_head') ||
+          (hasActiveProfile() && journey().employeeId == profile().linkedEmployeeId)
+        ) &&
+        request.resource.size < 5 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+      allow delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

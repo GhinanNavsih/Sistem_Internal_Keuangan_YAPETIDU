@@ -835,42 +835,8 @@ export default function PresensiLoyalisRawPage() {
 
       await setDoc(doc(db, 'LoyalisPresence', periodToken), payload);
 
-      // Automatically update any existing saved slip states in PayrollSlipStates
-      try {
-        const updatePromises = Object.keys(entriesMap).map(async (empId) => {
-          const slipRef = doc(db, 'PayrollSlipStates', `${periodToken}_${empId}`);
-          const slipSnap = await getDoc(slipRef);
-          if (slipSnap.exists()) {
-            const slipData = slipSnap.data();
-            const currentDeductions = slipData.deductions || [];
-
-            const entry = entriesMap[empId];
-            const newPresensiDeduct = Math.round(((entry.absenceMinutes || 0) / 60) * 1650);
-            const newPresenceBonusDeduct = entry.deduction || 0;
-
-            let updatedDeductions = [...currentDeductions];
-
-            const presensiIdx = updatedDeductions.findIndex(d => d.label === 'Potongan Presensi');
-            if (presensiIdx > -1) {
-              updatedDeductions[presensiIdx] = { ...updatedDeductions[presensiIdx], amount: newPresensiDeduct };
-            } else {
-              updatedDeductions.push({ label: 'Potongan Presensi', amount: newPresensiDeduct });
-            }
-
-            const presenceIdx = updatedDeductions.findIndex(d => d.label === 'Potongan Bonus Presensi');
-            if (presenceIdx > -1) {
-              updatedDeductions[presenceIdx] = { ...updatedDeductions[presenceIdx], amount: newPresenceBonusDeduct };
-            } else {
-              updatedDeductions.push({ label: 'Potongan Bonus Presensi', amount: newPresenceBonusDeduct });
-            }
-
-            await setDoc(slipRef, { deductions: updatedDeductions }, { merge: true });
-          }
-        });
-        await Promise.all(updatePromises);
-      } catch (err) {
-        console.error("Gagal memperbarui slip gaji secara otomatis:", err);
-      }
+      // Do not mutate PayrollSlipStates here. Drafts are refreshed and saved by
+      // Finance through the protected lifecycle API; final slips stay immutable.
 
       // Update correction requests
       try {
@@ -902,48 +868,10 @@ export default function PresensiLoyalisRawPage() {
   };
 
   const handleDeletePresence = async () => {
-    if (!confirm('Apakah Anda yakin ingin menghapus data presensi periode ini?')) return;
-    setSavingPresence(true);
-    try {
-      await deleteDoc(doc(db, 'LoyalisPresence', periodToken));
-
-      // Reset deductions in PayrollSlipStates when presence is deleted
-      try {
-        const resetPromises = loyalisEmployees.map(async (emp) => {
-          const slipRef = doc(db, 'PayrollSlipStates', `${periodToken}_${emp.id}`);
-          const slipSnap = await getDoc(slipRef);
-          if (slipSnap.exists()) {
-            const slipData = slipSnap.data();
-            const currentDeductions = slipData.deductions || [];
-
-            let updatedDeductions = [...currentDeductions];
-
-            const presensiIdx = updatedDeductions.findIndex(d => d.label === 'Potongan Presensi');
-            if (presensiIdx > -1) {
-              updatedDeductions[presensiIdx] = { ...updatedDeductions[presensiIdx], amount: 0 };
-            }
-
-            const presenceIdx = updatedDeductions.findIndex(d => d.label === 'Potongan Bonus Presensi');
-            if (presenceIdx > -1) {
-              updatedDeductions[presenceIdx] = { ...updatedDeductions[presenceIdx], amount: 0 };
-            }
-
-            await setDoc(slipRef, { deductions: updatedDeductions }, { merge: true });
-          }
-        });
-        await Promise.all(resetPromises);
-      } catch (err) {
-        console.error("Gagal menyetel ulang slip gaji secara otomatis:", err);
-      }
-
-      setMessage({ type: 'success', text: 'Data presensi berhasil dihapus.' });
-      setExistingPresence(null);
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: 'error', text: 'Gagal menghapus data presensi.' });
-    } finally {
-      setSavingPresence(false);
-    }
+    setMessage({
+      type: 'error',
+      text: 'Penghapusan data presensi dinonaktifkan. Gunakan koreksi beralasan agar riwayat tetap utuh.',
+    });
   };
 
   const handleApplyPekaryaPresence = async () => {

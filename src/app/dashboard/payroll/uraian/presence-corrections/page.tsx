@@ -326,38 +326,11 @@ export default function PresenceCorrectionsAdminPage() {
         updatedAt: serverTimestamp()
       });
 
-      // 2. Automatically update corresponding PayrollSlipStates
-      const slipRef = doc(db, 'PayrollSlipStates', `${periodToken}_${req.employeeId}`);
-      const slipSnap = await getDoc(slipRef);
-      if (slipSnap.exists()) {
-        const slipData = slipSnap.data();
-        const currentDeductions = slipData.deductions || [];
-        
-        const newPresensiDeduct = Math.round(((updatedEmployeeEntry.absenceMinutes || 0) / 60) * 1650);
-        const newPresenceBonusDeduct = updatedEmployeeEntry.deduction || 0;
-        
-        let updatedDeductions = [...currentDeductions];
-        
-        const presensiIdx = updatedDeductions.findIndex(d => d.label === 'Potongan Presensi');
-        if (presensiIdx > -1) {
-          updatedDeductions[presensiIdx] = { ...updatedDeductions[presensiIdx], amount: newPresensiDeduct };
-        } else {
-          updatedDeductions.push({ label: 'Potongan Presensi', amount: newPresensiDeduct });
-        }
+      // Payroll slips are intentionally not mutated here. Finance must refresh
+      // and save a draft through the protected lifecycle API; final snapshots
+      // remain immutable.
 
-        const presenceIdx = updatedDeductions.findIndex(d => d.label === 'Potongan Bonus Presensi');
-        if (presenceIdx > -1) {
-          updatedDeductions[presenceIdx] = { ...updatedDeductions[presenceIdx], amount: newPresenceBonusDeduct };
-        } else {
-          updatedDeductions.push({ label: 'Potongan Bonus Presensi', amount: newPresenceBonusDeduct });
-        }
-        
-        await updateDoc(slipRef, {
-          deductions: updatedDeductions
-        });
-      }
-
-      // 3. Mark request as approved
+      // 2. Mark request as approved
       const requestRef = doc(db, 'LoyalisPresenceCorrections', req.id);
       await updateDoc(requestRef, {
         status: 'approved',

@@ -503,15 +503,8 @@ export default function PelaporanKegiatanPage() {
   };
 
   const handleDeletePelaporan = async (id: string) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus laporan ini?')) return;
-    try {
-      await deleteDoc(doc(db, 'PelaporanKegiatan', id));
-      if (selectedPelaporanId === id) resetPelaporanForm();
-      alert('Laporan Kegiatan berhasil dihapus.');
-    } catch (err) {
-      console.error('Error deleting PelaporanKegiatan:', err);
-      alert('Gagal menghapus Laporan Kegiatan.');
-    }
+    void id;
+    alert('Penghapusan laporan dinonaktifkan agar riwayat tetap utuh. Gunakan alur koreksi.');
   };
 
   const handlePrintPelaporan = () => {

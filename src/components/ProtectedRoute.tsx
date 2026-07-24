@@ -59,6 +59,18 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
           if (!pathname.startsWith('/employee/')) {
             router.replace('/employee/activities');
           }
+        } else if (profile.role === 'ketua_shift_satpam') {
+          if (pathname !== '/employee/activities') {
+            router.replace('/employee/activities');
+          }
+        } else if (profile.role === 'payroll_authorizer') {
+          if (pathname !== '/dashboard/payroll') {
+            router.replace('/dashboard/payroll');
+          }
+        } else if (profile.role === 'finance_verifier') {
+          if (!pathname.startsWith('/dashboard/payroll')) {
+            router.replace('/dashboard/payroll');
+          }
         } else if (profile.role === 'loyalis') {
           // Loyalis employees can access payslip and presensi-correction
           if (pathname !== '/employee/payslip' && pathname !== '/employee/presensi-correction') {
@@ -116,6 +128,18 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   if (profile.role === 'honorer' && !pathname.startsWith('/employee/')) {
     return null;
   }
+  if (profile.role === 'ketua_shift_satpam' && pathname !== '/employee/activities') {
+    return null;
+  }
+  if (
+    profile.role === 'finance_verifier' &&
+    !pathname.startsWith('/dashboard/payroll')
+  ) {
+    return null;
+  }
+  if (profile.role === 'payroll_authorizer' && pathname !== '/dashboard/payroll') {
+    return null;
+  }
   if (profile.role === 'loyalis' && pathname !== '/employee/payslip' && pathname !== '/employee/presensi-correction') {
     return null;
   }
@@ -125,4 +149,3 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   return <>{children}</>;
 }
-

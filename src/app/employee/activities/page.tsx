@@ -69,12 +69,11 @@ import {
   serverTimestamp,
   Timestamp,
   onSnapshot,
-  writeBatch,
-  deleteField,
 } from 'firebase/firestore';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { MONTHS_ID } from '@/utils/rekapConfig';
-import { syncActivityToPayslip } from '@/utils/payslipSync';
+import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import { SatpamPostId } from '@/lib/payroll/domain';
 import {
   Select,
   SelectContent,
@@ -173,6 +172,15 @@ interface ActivityReport {
   postName?: string;
   ketuaShiftId?: string;
   ketuaShiftName?: string;
+  coveredEmployeeId?: string;
+  overtimeReason?: string;
+}
+
+interface SatpamPostAssignment {
+  employeeId: string;
+  shiftType: string;
+  coveredEmployeeId?: string;
+  overtimeReason?: string;
 }
 
 const getPlacesSearchQuery = (endPoint: string): string => {
@@ -427,8 +435,8 @@ function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: 
 
   if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return 0;
 
-  const minutes = (eh * 60 + em) - (sh * 60 + sm);
-  if (minutes < 0) return 0;
+  let minutes = (eh * 60 + em) - (sh * 60 + sm);
+  if (minutes < 0) minutes += 24 * 60;
 
   const halfHours = Math.round(minutes / 30);
 
@@ -469,8 +477,8 @@ function getActivityFeeBreakdown(timeStart: string, timeEnd: string, activityTyp
 
   if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return '';
 
-  const minutes = (eh * 60 + em) - (sh * 60 + sm);
-  if (minutes < 0) return '';
+  let minutes = (eh * 60 + em) - (sh * 60 + sm);
+  if (minutes < 0) minutes += 24 * 60;
 
   const halfHours = Math.round(minutes / 30);
 
@@ -574,7 +582,12 @@ function ActivitiesContent() {
   const tollFileInputRef = React.useRef<HTMLInputElement>(null);
 
   const userJobCategory = profile?.permittedCategories?.[0] || '';
-  const isKebersihan = userJobCategory === 'KEBERSIHAN' || userJobCategory === 'KEBERSIHAN_IC';
+  const isKebersihan = [
+    'KEBERSIHAN',
+    'KEBERSIHAN_IC',
+    'KEBERSIHAN_PONTI',
+    'PONTI',
+  ].includes(userJobCategory);
   const isSopir = userJobCategory === 'SOPIR';
   const isKetuaShiftSatpam = (profile?.role as string) === 'ketua_shift_satpam';
   const isRegularSatpam = profile?.permittedCategories?.includes('SATPAM') && !isKetuaShiftSatpam && profile?.role !== 'honorer';
@@ -585,7 +598,7 @@ function ActivitiesContent() {
   const [loadingSatpamConfig, setLoadingSatpamConfig] = useState(false);
   const [satpamReportDate, setSatpamReportDate] = useState<string>(getInitialSatpamDateISO());
   const [satpamSubmitting, setSatpamSubmitting] = useState(false);
-  const [postAssignments, setPostAssignments] = useState<Record<string, { employeeId: string; shiftType: string }>>({
+  const [postAssignments, setPostAssignments] = useState<Record<string, SatpamPostAssignment>>({
     'Pos 1': { employeeId: '', shiftType: 'Harian' },
     'Pos 2': { employeeId: '', shiftType: 'Harian' },
     'Pos 3': { employeeId: '', shiftType: 'Harian' },
@@ -599,6 +612,10 @@ function ActivitiesContent() {
   const [extraPostName, setExtraPostName] = useState('');
   const [extraEmployeeId, setExtraEmployeeId] = useState('');
   const [extraShiftType, setExtraShiftType] = useState('Lembur Sendiri');
+  const [extraOvertimeReason, setExtraOvertimeReason] = useState('');
+  const [satpamRegularPayType, setSatpamRegularPayType] = useState<'Harian' | 'Jumat & Libur'>('Harian');
+  const [holidayCalendarConfigured, setHolidayCalendarConfigured] = useState(false);
+  const satpamRequestIdsRef = useRef<Record<string, string>>({});
   const [isExtraPostVisible, setIsExtraPostVisible] = useState(false);
   const [loadingSubmittedSatpam, setLoadingSubmittedSatpam] = useState(false);
   const [isSatpamReportSubmitted, setIsSatpamReportSubmitted] = useState(false);
@@ -625,6 +642,7 @@ function ActivitiesContent() {
   const [formTimeEnd, setFormTimeEnd] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const isSubmittingRef = useRef(false);
+  const activityRequestIdRef = useRef<string | null>(null);
   const skipSaveDraftRef = useRef(false);
 
   // ── SOPIR specific form states ──
@@ -899,6 +917,8 @@ function ActivitiesContent() {
     setIsCalculatingExtraRoute(true);
     setExtraRouteError('');
     try {
+      if (!user) throw new Error('Sesi tidak ditemukan.');
+      const idToken = await user.getIdToken();
       const points = [
         activeReportingJourney.startPoint,
         activeReportingJourney.endPoint,
@@ -908,7 +928,10 @@ function ActivitiesContent() {
 
       const response = await fetch('/api/calculate-route', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({ points }),
       });
       const resData = await response.json();
@@ -1099,48 +1122,38 @@ function ActivitiesContent() {
     }
   }, [isKetuaShiftSatpam, year, month]);
 
-  // ── Load Satpam configuration (my shift team and all active Satpam) ──
+  // ── Load the minimum Satpam directory through the authorized server DTO ──
   useEffect(() => {
     if (!isKetuaShiftSatpam || !profile?.linkedEmployeeId) return;
 
     const loadSatpamConfig = async () => {
       setLoadingSatpamConfig(true);
       try {
-        // 1. Fetch shift team where I am the Ketua Shift
-        const teamQuery = query(
-          collection(db, 'SatpamShiftTeams'),
-          where('ketuaShiftId', '==', profile.linkedEmployeeId)
-        );
-        const teamSnap = await getDocs(teamQuery);
-        if (!teamSnap.empty) {
-          const teamDoc = teamSnap.docs[0];
-          setMyShiftTeam({
-            id: teamDoc.id,
-            ...teamDoc.data()
-          });
-        }
-
-        // 2. Fetch all active Satpam employees
-        const satpamQuery = query(
-          collection(db, 'Employees_BlueCollar'),
-          where('employment.status', '==', 'active'),
-          where('employment.jobCategory', '==', 'SATPAM')
-        );
-        const satpamSnap = await getDocs(satpamQuery);
-        const list = satpamSnap.docs.map(d => ({
-          id: d.id,
-          name: d.data().name || '',
-        })).sort((a, b) => a.name.localeCompare(b.name));
-        setAllSatpamEmployees(list);
+        const config = await authenticatedJson<{
+          team: any;
+          employees: { id: string; name: string }[];
+          regularPayType: 'Harian' | 'Jumat & Libur';
+          holidayCalendarConfigured: boolean;
+        }>(`/api/satpam/config?dutyDate=${encodeURIComponent(satpamReportDate)}`, {
+          method: 'GET',
+        });
+        setMyShiftTeam(config.team);
+        setAllSatpamEmployees(config.employees);
+        setSatpamRegularPayType(config.regularPayType);
+        setHolidayCalendarConfigured(config.holidayCalendarConfigured);
       } catch (err) {
         console.error('Error loading Satpam shift configuration:', err);
+        setMessage({
+          type: 'error',
+          text: err instanceof Error ? err.message : 'Konfigurasi Satpam gagal dimuat.',
+        });
       } finally {
         setLoadingSatpamConfig(false);
       }
     };
 
     loadSatpamConfig();
-  }, [isKetuaShiftSatpam, profile?.linkedEmployeeId]);
+  }, [isKetuaShiftSatpam, profile?.linkedEmployeeId, satpamReportDate]);
 
   useEffect(() => {
     if (message) {
@@ -1270,6 +1283,7 @@ function ActivitiesContent() {
 
   // ── Form Handlers ──
   const resetForm = () => {
+    activityRequestIdRef.current = null;
     const defaultType = isKebersihan ? 'Piket' : 'Lainnya';
     const defaultName = isKebersihan ? 'Piket' : (isSopir ? 'Perjalanan Dinas' : '');
     setFormActivityType(defaultType);
@@ -1355,9 +1369,14 @@ function ActivitiesContent() {
     setIsCalculatingRoute(true);
     setRouteError('');
     try {
+      if (!user) throw new Error('Sesi tidak ditemukan.');
+      const idToken = await user.getIdToken();
       const response = await fetch('/api/calculate-route', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({ points: activePoints }),
       });
       const resData = await response.json();
@@ -1683,133 +1702,61 @@ function ActivitiesContent() {
       const baseDriverWage = calculatedDistanceKm * 300 + calculatedDurationHours * 5000 + premiumWeekend + premiumOvernight;
       const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
 
-      // Final Total Fee
-      const finalFee = Math.max(0, (activeReportingJourney.totalOperationalCost || 0) + positiveReimburseDelta - unspentCash);
-
-      // 1. Update the Journey document
-      const journeyRef = doc(db, 'DriverJourneys', activeReportingJourney.id);
-      await updateDoc(journeyRef, {
-        status: 'completed',
-        fuelFee: fuelVal,
-        tollParkingFee: tollVal,
-        fuelReceiptUrl: formFuelReceiptUrls.join(','),
-        tollReceiptUrl: formTollReceiptUrls.join(','),
-        isOvernight: formIsOvernight,
-        activityDate: formDate,
-        timeStart: formTimeStart,
-        timeEnd: formTimeEnd,
-        completedAt: serverTimestamp(),
-        authorizedAt: activeReportingJourney.authorizedAt || activeReportingJourney.createdAt || null,
-        journeyDate: activeReportingJourney.journeyDate || activeReportingJourney.activityDate || null,
-        claimedAt: activeReportingJourney.claimedAt || null,
-        // New fields
-        extraActivities,
-        extraDistanceKm,
-        extraOperationalCost,
-        extraFuelCost,
-        extraTollCost,
-        extraMealAllowance,
-        actualMealAllowance,
-        positiveReimburseDelta,
-        newTotalDistanceKm: calculatedDistanceKm,
-        newTotalDurationHours: calculatedDurationHours,
-        baseDriverWage,
-        upahBersih: finalUpahBersih,
-        reimburseDelta: finalReimburseDelta,
-        unspentCash,
-        remainingUnspentCash,
-        baseOperationalCost: baseCostVal,
-        preAuthorizedMeal,
-        preAuthorizedToll,
-        customDurationPP: preAuthorizedDurationPP,
-        totalPreAuthorizedAllowance,
-        totalActualSpent,
-        totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
-        vehicleRate: activeReportingJourney.vehicleRate || 1000,
-        componentJarak: calculatedDistanceKm * 300,
-        componentWaktu: calculatedDurationHours * 5000,
-        premiumOvernight: formIsOvernight ? 50000 : 0,
-        // Clear draft fields
-        draftTimeStart: deleteField(),
-        draftTimeEnd: deleteField(),
-        draftIsOvernight: deleteField(),
-        draftFuelFee: deleteField(),
-        draftTollParkingFee: deleteField(),
-        draftFuelReceiptUrl: deleteField(),
-        draftTollReceiptUrl: deleteField(),
-        draftExtraActivities: deleteField(),
-        draftCalculatedDistanceKm: deleteField(),
-        draftCalculatedDurationHours: deleteField()
-      });
-
-      // 3. Create or Update the ActivityReport document
-      const employeeIdSanitized = profile.linkedEmployeeId.replace(/[^a-zA-Z0-9_-]/g, '');
-      const dateSanitized = formDate.replace(/-/g, '');
-      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-      const customDocId = activeReportingJourney.editingActivityDocId || `ACT-${employeeIdSanitized}-${dateSanitized}-${randomSuffix}`;
-
       const extraLocs = extraActivities.filter(a => a.type === 'tambah_lokasi' && a.destination);
       const extraLocsText = extraLocs.map(l => l.destination.split(',')[0]).join(' → ');
 
       const routeText = ` (${activeReportingJourney.startPoint.split(',')[0]} → ${activeReportingJourney.endPoint}${extraLocsText ? ' → ' + extraLocsText : ''})`;
       const finalActivityName = activeReportingJourney.activityName + routeText;
 
-      const activityPeriod = formDate.substring(0, 7);
-
-      await setDoc(doc(db, 'ActivityReports', customDocId), {
-        employeeId: profile.linkedEmployeeId,
-        employeeName: profile.displayName || '',
-        jobCategory: 'SOPIR',
-        period: activityPeriod,
+      await authenticatedJson('/api/pekarya/activities', {
+        method: 'POST',
+        body: JSON.stringify({
+        requestId: createFinancialRequestId('driver_activity_submit'),
+        reportId: activeReportingJourney.editingActivityDocId || undefined,
         activityName: finalActivityName,
         activityType: 'Lainnya',
         activityDate: formDate,
         timeStart: formTimeStart,
         timeEnd: formTimeEnd,
-        status: 'pending',
-        fee: finalUpahBersih,
-        submittedAt: serverTimestamp(),
-        completedAt: serverTimestamp(),
-        authorizedAt: activeReportingJourney.authorizedAt || activeReportingJourney.createdAt || null,
-        journeyDate: activeReportingJourney.journeyDate || activeReportingJourney.activityDate || null,
-        claimedAt: activeReportingJourney.claimedAt || null,
-        tripType: calculatedDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
-        vehicleType: activeReportingJourney.vehicleName,
-        isOvernight: formIsOvernight,
-        fuelFee: fuelVal,
-        tollParkingFee: tollVal,
-        fuelReceiptUrl: formFuelReceiptUrls.join(','),
-        tollReceiptUrl: formTollReceiptUrls.join(','),
-        points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
-        distanceKm: calculatedDistanceKm,
-        durationHours: calculatedDurationHours,
-        journeyId: activeReportingJourney.id,
-        // Save extra & deduction fields on ActivityReport
-        extraActivities,
-        extraDistanceKm,
-        extraOperationalCost,
-        extraFuelCost,
-        extraTollCost,
-        extraMealAllowance,
-        actualMealAllowance,
-        positiveReimburseDelta,
-        baseDriverWage,
-        upahBersih: finalUpahBersih,
-        reimburseDelta: finalReimburseDelta,
-        unspentCash,
-        remainingUnspentCash,
-        baseOperationalCost: baseCostVal,
-        preAuthorizedMeal,
-        preAuthorizedToll,
-        customDurationPP: preAuthorizedDurationPP,
-        totalPreAuthorizedAllowance,
-        totalActualSpent,
-        totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
-        vehicleRate: activeReportingJourney.vehicleRate || 1000,
-        componentJarak: calculatedDistanceKm * 300,
-        componentWaktu: calculatedDurationHours * 5000,
-        premiumOvernight: formIsOvernight ? 50000 : 0,
-      }, { merge: true });
+        driverData: {
+          tripType: calculatedDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
+          vehicleType: activeReportingJourney.vehicleName,
+          isOvernight: formIsOvernight,
+          fuelFee: fuelVal,
+          tollParkingFee: tollVal,
+          fuelReceiptUrl: formFuelReceiptUrls.join(','),
+          tollReceiptUrl: formTollReceiptUrls.join(','),
+          points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
+          distanceKm: calculatedDistanceKm,
+          durationHours: calculatedDurationHours,
+          journeyId: activeReportingJourney.id,
+          extraActivities,
+          extraDistanceKm,
+          extraOperationalCost,
+          extraFuelCost,
+          extraTollCost,
+          extraMealAllowance,
+          actualMealAllowance,
+          positiveReimburseDelta,
+          baseDriverWage,
+          upahBersih: finalUpahBersih,
+          reimburseDelta: finalReimburseDelta,
+          unspentCash,
+          remainingUnspentCash,
+          baseOperationalCost: baseCostVal,
+          preAuthorizedMeal,
+          preAuthorizedToll,
+          customDurationPP: preAuthorizedDurationPP,
+          totalPreAuthorizedAllowance,
+          totalActualSpent,
+          totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
+          vehicleRate: activeReportingJourney.vehicleRate || 1000,
+          componentJarak: calculatedDistanceKm * 300,
+          componentWaktu: calculatedDurationHours * 5000,
+          premiumOvernight: formIsOvernight ? 50000 : 0,
+        },
+      }),
+      });
 
       setMessage({ type: 'success', text: activeReportingJourney.editingActivityDocId ? 'Laporan perjalanan berhasil diperbarui.' : 'Perjalanan dinas berhasil dilaporkan.' });
 
@@ -1850,6 +1797,14 @@ function ActivitiesContent() {
     return getSatpamShiftForTeam(teamNumber, satpamReportDate);
   }, [isKetuaShiftSatpam, teamNumber, satpamReportDate]);
 
+  const satpamPendingStorageKey = useMemo(
+    () =>
+      profile?.linkedEmployeeId
+        ? `unipdu:satpam-pending:${profile.linkedEmployeeId}:${satpamReportDate}:${activeShift}`
+        : '',
+    [profile?.linkedEmployeeId, satpamReportDate, activeShift],
+  );
+
   useEffect(() => {
     if (!isKetuaShiftSatpam || !profile?.linkedEmployeeId || !satpamReportDate || !activeShift) return;
 
@@ -1870,7 +1825,7 @@ function ActivitiesContent() {
       const defaultShiftTypeForDate = getDefaultShiftTypeForDate(satpamReportDate);
 
       if (!snap.empty) {
-        const newAssignments: Record<string, { employeeId: string; shiftType: string }> = {
+          const newAssignments: Record<string, SatpamPostAssignment> = {
           'Pos 1': { employeeId: '', shiftType: defaultShiftTypeForDate },
           'Pos 2': { employeeId: '', shiftType: defaultShiftTypeForDate },
           'Pos 3': { employeeId: '', shiftType: defaultShiftTypeForDate },
@@ -1885,20 +1840,22 @@ function ActivitiesContent() {
         let extraEmpId = '';
         let extraPName = '';
         let extraSType = 'Lembur Sendiri';
+        let extraReason = '';
 
         snap.docs.forEach((doc) => {
           const data = doc.data();
           const rawPostName = data.postName || '';
 
-          if (rawPostName.startsWith('Tambahan:')) {
+          if (rawPostName.startsWith('Tambahan:') || data.assignmentKind === 'extra') {
             foundExtra = true;
             extraEmpId = data.employeeId || '';
-            extraPName = rawPostName.replace('Tambahan:', '').trim();
+            extraPName = rawPostName.replace('Tambahan:', '').split(':')[0].trim();
             const matchedPost = POSTS_CONFIG.find(p => p.name === extraPName || p.id === extraPName);
             if (matchedPost) {
               extraPName = matchedPost.id;
             }
             extraSType = data.shiftType || 'Lembur Sendiri';
+            extraReason = data.overtimeReason || '';
           } else {
             const match = rawPostName.match(/^(Pos\s+\d+)/i);
             if (match) {
@@ -1910,6 +1867,8 @@ function ActivitiesContent() {
                   newAssignments[normPosId] = {
                     employeeId: data.employeeId || '',
                     shiftType: data.shiftType || defaultShiftTypeForDate,
+                    coveredEmployeeId: data.coveredEmployeeId || '',
+                    overtimeReason: data.overtimeReason || '',
                   };
                 }
               }
@@ -1922,16 +1881,18 @@ function ActivitiesContent() {
           setExtraEmployeeId(extraEmpId);
           setExtraPostName(extraPName);
           setExtraShiftType(extraSType);
+          setExtraOvertimeReason(extraReason);
           setIsExtraPostVisible(true);
         } else {
           setExtraEmployeeId('');
           setExtraPostName('');
           setExtraShiftType('Lembur Sendiri');
+          setExtraOvertimeReason('');
           setIsExtraPostVisible(false);
         }
         setIsSatpamReportSubmitted(true);
       } else {
-        setPostAssignments({
+        const blankAssignments: Record<string, SatpamPostAssignment> = {
           'Pos 1': { employeeId: '', shiftType: defaultShiftTypeForDate },
           'Pos 2': { employeeId: '', shiftType: defaultShiftTypeForDate },
           'Pos 3': { employeeId: '', shiftType: defaultShiftTypeForDate },
@@ -1941,11 +1902,55 @@ function ActivitiesContent() {
           'Pos 7': { employeeId: '', shiftType: defaultShiftTypeForDate },
           'Pos 8': { employeeId: '', shiftType: defaultShiftTypeForDate },
           'Pos 9': { employeeId: '', shiftType: defaultShiftTypeForDate },
-        });
-        setExtraEmployeeId('');
-        setExtraPostName('');
-        setExtraShiftType('Lembur Sendiri');
-        setIsExtraPostVisible(false);
+        };
+        let restoredPending = false;
+        if (satpamPendingStorageKey) {
+          try {
+            const rawPending = window.localStorage.getItem(satpamPendingStorageKey);
+            const pending = rawPending ? JSON.parse(rawPending) : null;
+            if (
+              pending?.requestId &&
+              pending?.payload?.dutyDate === satpamReportDate &&
+              Array.isArray(pending.payload.assignments)
+            ) {
+              for (const assignment of pending.payload.assignments) {
+                if (!blankAssignments[assignment.postId]) continue;
+                blankAssignments[assignment.postId] = {
+                  employeeId: assignment.employeeId || '',
+                  shiftType: assignment.coveredEmployeeId
+                    ? 'Lembur Cover'
+                    : defaultShiftTypeForDate,
+                  coveredEmployeeId: assignment.coveredEmployeeId || '',
+                  overtimeReason: assignment.overtimeReason || '',
+                };
+              }
+              const pendingExtra = pending.payload.extraAssignment;
+              setExtraEmployeeId(pendingExtra?.employeeId || '');
+              setExtraPostName(pendingExtra?.postId || '');
+              setExtraShiftType('Lembur Sendiri');
+              setExtraOvertimeReason(pendingExtra?.overtimeReason || '');
+              setIsExtraPostVisible(Boolean(pendingExtra));
+              satpamRequestIdsRef.current[
+                `${satpamReportDate}_${activeShift}`
+              ] = pending.requestId;
+              restoredPending = true;
+              setMessage({
+                type: 'error',
+                text: 'Pengiriman sebelumnya belum terkonfirmasi. Draf lokal dipulihkan; kirim ulang dengan data yang sama.',
+              });
+            }
+          } catch (error) {
+            console.warn('Draf antrean Satpam lokal tidak dapat dipulihkan:', error);
+          }
+        }
+        setPostAssignments(blankAssignments);
+        if (!restoredPending) {
+          setExtraEmployeeId('');
+          setExtraPostName('');
+          setExtraShiftType('Lembur Sendiri');
+          setExtraOvertimeReason('');
+          setIsExtraPostVisible(false);
+        }
         setIsSatpamReportSubmitted(false);
       }
       setLoadingSubmittedSatpam(false);
@@ -1959,7 +1964,12 @@ function ActivitiesContent() {
     return () => {
       isMounted = false;
     };
-  }, [satpamReportDate, activeShift, profile?.linkedEmployeeId]);
+  }, [
+    satpamReportDate,
+    activeShift,
+    profile?.linkedEmployeeId,
+    satpamPendingStorageKey,
+  ]);
 
   const assignedEmployeeIds = useMemo(() => {
     const list = Object.values(postAssignments).map(a => a.employeeId).filter(Boolean);
@@ -1985,6 +1995,7 @@ function ActivitiesContent() {
   };
 
   const getDefaultShiftTypeForDate = (dateStr: string) => {
+    if (dateStr === satpamReportDate) return satpamRegularPayType;
     return isFriday(dateStr) ? 'Jumat & Libur' : 'Harian';
   };
 
@@ -1999,18 +2010,24 @@ function ActivitiesContent() {
         ...prev,
         [postId]: {
           employeeId,
-          shiftType: defaultType
+          shiftType: defaultType,
+          coveredEmployeeId: '',
+          overtimeReason: '',
         }
       };
     });
   };
 
-  const handleSelectShiftType = (postId: string, type: string) => {
+  const handleCoverDetail = (
+    postId: string,
+    field: 'coveredEmployeeId' | 'overtimeReason',
+    value: string,
+  ) => {
     setPostAssignments(prev => ({
       ...prev,
       [postId]: {
         ...prev[postId],
-        shiftType: type
+        [field]: value,
       }
     }));
   };
@@ -2019,150 +2036,44 @@ function ActivitiesContent() {
     if (!profile?.linkedEmployeeId) return;
     setSatpamSubmitting(true);
     try {
-      const batch = writeBatch(db);
-      const activityPeriod = satpamReportDate.substring(0, 7); // "YYYY-MM"
-      const dateSanitized = satpamReportDate.replace(/-/g, '');
-
-      // Shift Times Config based on active shift
-      let timeStart = '08:00';
-      let timeEnd = '14:00';
-      if (activeShift === 'Sore') {
-        timeStart = '14:00';
-        timeEnd = '22:00';
-      } else if (activeShift === 'Malam') {
-        timeStart = '22:00';
-        timeEnd = '08:00';
-      }
-
-      // Rates Map
-      const RATES_MAP: Record<string, number> = {
-        'Harian': 12500,
-        'Jumat & Libur': 25000,
-        'Lembur Sendiri': 30000,
-        'Lembur Cover': 50000,
-        'Off-Duty': 0,
-      };
-
-      // 1. Submit reports for the 9 assigned posts
-      for (const [postId, assignment] of Object.entries(postAssignments)) {
-        const emp = allSatpamEmployees.find(e => e.id === assignment.employeeId);
-        const empName = emp ? emp.name : 'Unknown';
-
-        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-        const docId = `ACT-${assignment.employeeId}-${dateSanitized}-${randomSuffix}`;
-
-        const postName = `${postId}: ${POSTS_CONFIG.find(p => p.id === postId)?.name || ''}`;
-        const fee = RATES_MAP[assignment.shiftType] || 0;
-
-        const docRef = doc(db, 'ActivityReports', docId);
-        batch.set(docRef, {
+      const requestKey = `${satpamReportDate}_${activeShift}`;
+      const requestId =
+        satpamRequestIdsRef.current[requestKey] ||
+        createFinancialRequestId('satpam_shift');
+      satpamRequestIdsRef.current[requestKey] = requestId;
+      const payload = {
+        requestId,
+        dutyDate: satpamReportDate,
+        assignments: Object.entries(postAssignments).map(([postId, assignment]) => ({
+          postId: postId as SatpamPostId,
           employeeId: assignment.employeeId,
-          employeeName: empName,
-          jobCategory: 'SATPAM',
-          period: activityPeriod,
-          activityName: `Pengamanan di ${postName}`,
-          activityType: 'Lainnya',
-          activityDate: satpamReportDate,
-          timeStart,
-          timeEnd,
-          status: 'approved', // Automatically approved
-          fee,
-          shiftType: assignment.shiftType,
-          postName,
-          shiftName: activeShift,
-          ketuaShiftId: profile.linkedEmployeeId,
-          ketuaShiftName: profile.displayName || '',
-          submittedAt: serverTimestamp(),
-        });
-      }
-
-      // Add extra post if selected
-      if (isExtraPostVisible && extraEmployeeId && extraPostName) {
-        const emp = allSatpamEmployees.find(e => e.id === extraEmployeeId);
-        const empName = emp ? emp.name : 'Unknown';
-
-        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-        const docId = `ACT-${extraEmployeeId}-${dateSanitized}-${randomSuffix}`;
-
-        const targetPost = POSTS_CONFIG.find(p => p.id === extraPostName || p.name === extraPostName);
-        const postName = `Tambahan: ${targetPost ? targetPost.name : extraPostName}`;
-        const fee = RATES_MAP[extraShiftType] || 0;
-
-        const docRef = doc(db, 'ActivityReports', docId);
-        batch.set(docRef, {
-          employeeId: extraEmployeeId,
-          employeeName: empName,
-          jobCategory: 'SATPAM',
-          period: activityPeriod,
-          activityName: `Pengamanan di ${postName}`,
-          activityType: 'Lainnya',
-          activityDate: satpamReportDate,
-          timeStart,
-          timeEnd,
-          status: 'approved',
-          fee,
-          shiftType: extraShiftType,
-          postName,
-          shiftName: activeShift,
-          ketuaShiftId: profile.linkedEmployeeId,
-          ketuaShiftName: profile.displayName || '',
-          submittedAt: serverTimestamp(),
-        });
-      }
-
-      // 2. Submit reports for the off-duty members
-      for (const offDutyEmp of offDutyMembers) {
-        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-        const docId = `ACT-${offDutyEmp.id}-${dateSanitized}-${randomSuffix}`;
-
-        const docRef = doc(db, 'ActivityReports', docId);
-        batch.set(docRef, {
-          employeeId: offDutyEmp.id,
-          employeeName: offDutyEmp.name,
-          jobCategory: 'SATPAM',
-          period: activityPeriod,
-          activityName: 'Off-Duty (Rest Day)',
-          activityType: 'Lainnya',
-          activityDate: satpamReportDate,
-          timeStart: '',
-          timeEnd: '',
-          status: 'approved', // Off-duty reports with 0 fee auto-approve
-          fee: 0,
-          shiftType: 'Off-Duty',
-          postName: 'Off-Duty',
-          shiftName: activeShift,
-          ketuaShiftId: profile.linkedEmployeeId,
-          ketuaShiftName: profile.displayName || '',
-          submittedAt: serverTimestamp(),
-        });
-      }
-
-      await batch.commit();
-
-      // Sync activity reports to payslips for all submitted members
-      try {
-        const uniqueSubmittedEmpIds = new Set<string>();
-        for (const assignment of Object.values(postAssignments)) {
-          if (assignment.employeeId) {
-            uniqueSubmittedEmpIds.add(assignment.employeeId);
-          }
-        }
-        if (isExtraPostVisible && extraEmployeeId && extraPostName) {
-          uniqueSubmittedEmpIds.add(extraEmployeeId);
-        }
-        for (const offDutyEmp of offDutyMembers) {
-          if (offDutyEmp.id) {
-            uniqueSubmittedEmpIds.add(offDutyEmp.id);
-          }
-        }
-
-        await Promise.all(
-          Array.from(uniqueSubmittedEmpIds).map(empId =>
-            syncActivityToPayslip(db, empId, activityPeriod)
-          )
+          ...(assignment.shiftType === 'Lembur Cover' && {
+            coveredEmployeeId: assignment.coveredEmployeeId,
+            overtimeReason: assignment.overtimeReason,
+          }),
+        })),
+        ...(isExtraPostVisible && extraEmployeeId && extraPostName && {
+          extraAssignment: {
+            postId: extraPostName as SatpamPostId,
+            employeeId: extraEmployeeId,
+            overtimeReason: extraOvertimeReason,
+          },
+        }),
+      };
+      if (satpamPendingStorageKey) {
+        window.localStorage.setItem(
+          satpamPendingStorageKey,
+          JSON.stringify({ requestId, payload, savedAt: new Date().toISOString() }),
         );
-      } catch (syncErr) {
-        console.error('Error syncing Satpam activities to payslips:', syncErr);
+      }
+
+      await authenticatedJson('/api/satpam/shifts', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      delete satpamRequestIdsRef.current[requestKey];
+      if (satpamPendingStorageKey) {
+        window.localStorage.removeItem(satpamPendingStorageKey);
       }
 
       setMessage({ type: 'success', text: `Berhasil mengirim laporan shift ${activeShift} tanggal ${satpamReportDate}.` });
@@ -2183,11 +2094,18 @@ function ActivitiesContent() {
       setExtraEmployeeId('');
       setExtraPostName('');
       setExtraShiftType('Lembur Sendiri');
+      setExtraOvertimeReason('');
       setIsExtraPostVisible(false);
       fetchActivities();
     } catch (err) {
       console.error('Error submitting Satpam shift reports:', err);
-      setMessage({ type: 'error', text: 'Gagal mengirim laporan shift. Silakan coba lagi.' });
+      setMessage({
+        type: 'error',
+        text:
+          err instanceof Error
+            ? `${err.message} Draf tetap tersimpan lokal untuk dicoba ulang.`
+            : 'Gagal mengirim laporan shift. Draf tetap tersimpan lokal untuk dicoba ulang.',
+      });
     } finally {
       setSatpamSubmitting(false);
       setShowConfirmModal(false);
@@ -2197,6 +2115,13 @@ function ActivitiesContent() {
   const handleSubmitSatpamShift = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.linkedEmployeeId || satpamSubmitting) return;
+    if (!holidayCalendarConfigured) {
+      setMessage({
+        type: 'error',
+        text: `Kalender hari libur ${satpamReportDate.slice(0, 4)} belum dikonfigurasi oleh Finance.`,
+      });
+      return;
+    }
 
     // Validate that all 9 posts are assigned
     const emptyPostEntry = Object.entries(postAssignments).find(([, assignment]) => !assignment.employeeId);
@@ -2209,9 +2134,34 @@ function ActivitiesContent() {
       });
       return;
     }
+    if (!Object.values(postAssignments).some(
+      assignment => assignment.employeeId === profile.linkedEmployeeId,
+    )) {
+      setMessage({ type: 'error', text: 'Ketua Shift wajib menjaga salah satu dari sembilan pos.' });
+      return;
+    }
+    const invalidCover = Object.entries(postAssignments).find(([, assignment]) =>
+      assignment.shiftType === 'Lembur Cover' &&
+      (!assignment.coveredEmployeeId || (assignment.overtimeReason || '').trim().length < 8),
+    );
+    if (invalidCover) {
+      setMessage({
+        type: 'error',
+        text: `${invalidCover[0]}: pilih anggota yang digantikan dan isi alasan minimal 8 karakter.`,
+      });
+      return;
+    }
 
     if (isExtraPostVisible && extraEmployeeId && !extraPostName.trim()) {
       setMessage({ type: 'error', text: 'Nama pos tambahan harus diisi jika petugas tambahan dipilih.' });
+      return;
+    }
+    if (
+      isExtraPostVisible &&
+      extraEmployeeId &&
+      extraOvertimeReason.trim().length < 8
+    ) {
+      setMessage({ type: 'error', text: 'Alasan Lembur Sendiri wajib minimal 8 karakter.' });
       return;
     }
 
@@ -2237,8 +2187,12 @@ function ActivitiesContent() {
       setMessage({ type: 'error', text: 'Tanggal kegiatan harus diisi.' });
       return;
     }
-    const timeRegex = /^([0-9]{2}):([0-9]{2})$/;
-    if (formTimeStart && !timeRegex.test(formTimeStart)) {
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    if (!formTimeStart) {
+      setMessage({ type: 'error', text: 'Waktu mulai harus diisi.' });
+      return;
+    }
+    if (!timeRegex.test(formTimeStart)) {
       setMessage({ type: 'error', text: 'Format waktu mulai harus HH:MM (contoh: 08:00).' });
       return;
     }
@@ -2251,8 +2205,8 @@ function ActivitiesContent() {
         setMessage({ type: 'error', text: 'Format waktu selesai harus HH:MM (contoh: 17:00).' });
         return;
       }
-      if (formTimeEnd <= formTimeStart) {
-        setMessage({ type: 'error', text: 'Waktu selesai harus lebih dari waktu mulai.' });
+      if (formTimeEnd === formTimeStart) {
+        setMessage({ type: 'error', text: 'Waktu selesai tidak boleh sama dengan waktu mulai.' });
         return;
       }
     }
@@ -2285,57 +2239,39 @@ function ActivitiesContent() {
     isSubmittingRef.current = true;
     setSubmitting(true);
     try {
-      if (editingActivity) {
-        // Re-submit / edit a declined activity → reset to pending
-        await updateDoc(doc(db, 'ActivityReports', editingActivity.id), {
+      const requestId =
+        activityRequestIdRef.current ||
+        createFinancialRequestId(editingActivity ? 'activity_resubmit' : 'activity_submit');
+      activityRequestIdRef.current = requestId;
+      await authenticatedJson('/api/pekarya/activities', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId,
+          reportId: editingActivity?.id,
           activityName: finalActivityName,
           activityType: formActivityType,
           activityDate: formDate,
           timeStart: formTimeStart,
           timeEnd: isBuangSampah ? '' : formTimeEnd,
-          status: 'pending',
-          fee: 0,
-          declineReason: '',
-          submittedAt: serverTimestamp(),
-          ...driverFields,
-        });
-        setMessage({ type: 'success', text: 'Kegiatan berhasil diperbarui dan diajukan ulang.' });
-      } else {
-        // New submission
-        // Determine the period from the activity date
-        const activityPeriod = formDate.substring(0, 7); // "YYYY-MM"
-
-        // Generate unique, identifiable document ID: ACT-[employeeId]-[date]-[4CharRandomSuffix]
-        const employeeIdSanitized = (profile.linkedEmployeeId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '');
-        const dateSanitized = formDate.replace(/-/g, '');
-        const randomSuffix = Array.from({ length: 4 }, () =>
-          'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.charAt(Math.floor(Math.random() * 36))
-        ).join('');
-        const customDocId = `ACT-${employeeIdSanitized}-${dateSanitized}-${randomSuffix}`;
-
-        await setDoc(doc(db, 'ActivityReports', customDocId), {
-          employeeId: profile.linkedEmployeeId,
-          employeeName: profile.displayName || '',
-          jobCategory: profile.permittedCategories?.[0] || '',
-          period: activityPeriod,
-          activityName: finalActivityName,
-          activityType: formActivityType,
-          activityDate: formDate,
-          timeStart: formTimeStart,
-          timeEnd: isBuangSampah ? '' : formTimeEnd,
-          status: 'pending',
-          fee: 0,
-          submittedAt: serverTimestamp(),
-          ...driverFields,
-        });
-        setMessage({ type: 'success', text: 'Kegiatan berhasil dilaporkan.' });
-      }
+          driverData: isSopir ? driverFields : undefined,
+        }),
+      });
+      activityRequestIdRef.current = null;
+      setMessage({
+        type: 'success',
+        text: editingActivity
+          ? 'Kegiatan berhasil diperbarui dan diajukan ulang.'
+          : 'Kegiatan berhasil dilaporkan.',
+      });
 
       resetForm();
       fetchActivities();
     } catch (err) {
       console.error('Error submitting activity:', err);
-      setMessage({ type: 'error', text: 'Gagal menyimpan kegiatan. Silakan coba lagi.' });
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Gagal menyimpan kegiatan. Silakan coba lagi.',
+      });
     } finally {
       isSubmittingRef.current = false;
       setSubmitting(false);
@@ -2849,24 +2785,53 @@ function ActivitiesContent() {
                               </Select>
                             </div>
 
-                            {/* Shift Type Dropdown */}
+                            {/* Server-derived pay type */}
                             <div className="md:col-span-4">
-                              <Select
-                                value={val.shiftType}
-                                onValueChange={(v: string | null) => v && handleSelectShiftType(post.id, v)}
-                                disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
-                              >
-                                <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
-                                  <SelectItem value="Harian" className="text-sm py-2 pl-3">Harian (Rp12.500)</SelectItem>
-                                  <SelectItem value="Jumat & Libur" className="text-sm py-2 pl-3">Jumat & Libur (Rp25.000)</SelectItem>
-                                  <SelectItem value="Lembur Sendiri" className="text-sm py-2 pl-3">Lembur Sendiri (Rp30.000)</SelectItem>
-                                  <SelectItem value="Lembur Cover" className="text-sm py-2 pl-3">Lembur Cover (Rp50.000)</SelectItem>
-                                </SelectContent>
-                              </Select>
+                              <div className="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 h-10 flex items-center">
+                                {val.shiftType} ({val.shiftType === 'Lembur Cover'
+                                  ? 'Rp50.000'
+                                  : val.shiftType === 'Jumat & Libur'
+                                    ? 'Rp25.000'
+                                    : 'Rp12.500'})
+                              </div>
                             </div>
+                            {val.shiftType === 'Lembur Cover' && (
+                              <>
+                                <div className="md:col-span-6">
+                                  <Select
+                                    value={val.coveredEmployeeId || 'none'}
+                                    onValueChange={(value: string | null) =>
+                                      handleCoverDetail(post.id, 'coveredEmployeeId', value === 'none' || value === null ? '' : value)}
+                                    disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                                  >
+                                    <SelectTrigger className="w-full h-10 rounded-lg bg-amber-50 border-amber-200 text-sm font-bold">
+                                      <span>
+                                        {groupEmployees.find(emp => emp.id === val.coveredEmployeeId)?.name ||
+                                          '-- Pilih anggota yang digantikan --'}
+                                      </span>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="none">-- Pilih anggota --</SelectItem>
+                                      {groupEmployees
+                                        .filter(emp => !assignedEmployeeIds.includes(emp.id))
+                                        .map(emp => (
+                                          <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="md:col-span-6">
+                                  <Input
+                                    value={val.overtimeReason || ''}
+                                    onChange={event =>
+                                      handleCoverDetail(post.id, 'overtimeReason', event.target.value)}
+                                    disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                                    placeholder="Alasan cover / referensi ketidakhadiran"
+                                    className="h-10 rounded-lg bg-amber-50 border-amber-200"
+                                  />
+                                </div>
+                              </>
+                            )}
                           </div>
                         );
                       })}
@@ -2939,36 +2904,15 @@ function ActivitiesContent() {
                                     </SelectItem>
                                   ))}
                                 </SelectGroup>
-                                <SelectSeparator className="my-1" />
-                                <SelectGroup>
-                                  <SelectLabel className="text-xs font-black text-slate-400 px-2 py-1.5 bg-slate-50">Satpam Regu Lain (Lembur Cover)</SelectLabel>
-                                  {externalEmployees.filter(emp => !Object.values(postAssignments).map(a => a.employeeId).includes(emp.id)).map(emp => (
-                                    <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
-                                      {emp.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectGroup>
                               </SelectContent>
                             </Select>
                           </div>
 
-                          {/* Shift Type Dropdown */}
+                          {/* Fixed overtime type */}
                           <div className="md:col-span-3">
-                            <Select
-                              value={extraShiftType}
-                              onValueChange={(v: string | null) => v && setExtraShiftType(v)}
-                              disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
-                            >
-                              <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
-                                <SelectItem value="Harian" className="text-sm py-2 pl-3">Harian (Rp12.500)</SelectItem>
-                                <SelectItem value="Jumat & Libur" className="text-sm py-2 pl-3">Jumat & Libur (Rp25.000)</SelectItem>
-                                <SelectItem value="Lembur Sendiri" className="text-sm py-2 pl-3">Lembur Sendiri (Rp30.000)</SelectItem>
-                                <SelectItem value="Lembur Cover" className="text-sm py-2 pl-3">Lembur Cover (Rp50.000)</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <div className="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 h-10 flex items-center">
+                              Lembur Sendiri (Rp30.000)
+                            </div>
                           </div>
 
                           {/* Cancel/Remove Button */}
@@ -2983,12 +2927,22 @@ function ActivitiesContent() {
                                   setExtraPostName('');
                                   setExtraEmployeeId('');
                                   setExtraShiftType('Lembur Sendiri');
+                                  setExtraOvertimeReason('');
                                 }}
                                 className="text-slate-400 hover:text-red-500 transition-colors p-1"
                               >
                                 <X className="w-5 h-5" />
                               </Button>
                             )}
+                          </div>
+                          <div className="md:col-span-12">
+                            <Input
+                              value={extraOvertimeReason}
+                              onChange={event => setExtraOvertimeReason(event.target.value)}
+                              disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                              placeholder="Alasan/otorisasi Lembur Sendiri (minimal 8 karakter)"
+                              className="h-10 rounded-lg bg-indigo-50/50 border-indigo-200"
+                            />
                           </div>
                         </div>
                       )}
@@ -3616,7 +3570,8 @@ function ActivitiesContent() {
                                   // Calculate if it qualifies for Uang Makan
                                   const [sh, sm] = activity.timeStart.split(':').map(Number);
                                   const [eh, em] = activity.timeEnd.split(':').map(Number);
-                                  const minutes = (eh * 60 + em) - (sh * 60 + sm);
+                                  let minutes = (eh * 60 + em) - (sh * 60 + sm);
+                                  if (minutes < 0) minutes += 24 * 60;
                                   const halfHours = Math.round(minutes / 30);
                                   const qualifies = halfHours > 4 && activity.activityType !== 'Buang Sampah' && activity.activityName !== 'Buang Sampah';
 

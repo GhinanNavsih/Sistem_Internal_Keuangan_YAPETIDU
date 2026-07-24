@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import {
@@ -89,16 +89,14 @@ import { db } from '@/lib/firebase';
 import {
   collection,
   getDocs,
-  doc,
-  updateDoc,
   query,
   where,
-  serverTimestamp,
-  writeBatch,
   onSnapshot,
 } from 'firebase/firestore';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { syncActivityToPayslip } from '@/utils/payslipSync';
+import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -272,8 +270,8 @@ function calculateDefaultFee(
 
   if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return 0;
 
-  const minutes = (eh * 60 + em) - (sh * 60 + sm);
-  if (minutes < 0) return 0;
+  let minutes = (eh * 60 + em) - (sh * 60 + sm);
+  if (minutes < 0) minutes += 24 * 60;
 
   const halfHours = Math.round(minutes / 30);
 
@@ -320,11 +318,22 @@ const CLEANING_CATEGORIES = ['KEBERSIHAN', 'KEBERSIHAN_IC', 'TEKNISI', 'SOPIR', 
 
 export default function ActivityReviewPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { profile, user } = useAuth();
 
   // ── Period ──
-  const [month, setMonth] = useState(new Date().getMonth() + 1);
-  const [year, setYear] = useState(new Date().getFullYear());
+  const requestedMonth = Number(searchParams.get('month'));
+  const requestedYear = Number(searchParams.get('year'));
+  const [month, setMonth] = useState(
+    requestedMonth >= 1 && requestedMonth <= 12
+      ? requestedMonth
+      : new Date().getMonth() + 1,
+  );
+  const [year, setYear] = useState(
+    requestedYear >= 2020 && requestedYear <= 2100
+      ? requestedYear
+      : new Date().getFullYear(),
+  );
 
   // Enforce no future periods
   useEffect(() => {
@@ -725,68 +734,45 @@ export default function ActivityReviewPage() {
     if (!auditActivity || !auditCalc || !user) return;
     setActionLoading(true);
     try {
-      const actualFuelFee = auditCalc.baselineBBM + auditFuelDelta;
-      const preToll = auditActivity.preAuthorizedToll ?? 0;
-      const actualTollFee = preToll + auditTollDelta;
-
-      await updateDoc(doc(db, 'ActivityReports', auditActivity.id), {
-        status: 'approved',
-        fee: auditCalc.upahBersih,
-        totalOperationalCost: auditCalc.operationalCost,
-        upahBersih: auditCalc.upahBersih,
-        distanceKm: auditDistanceKm,
-        durationHours: auditDurationHours,
-        fuelFee: actualFuelFee,
-        extraFuelCost: auditFuelDelta,
-        tollParkingFee: actualTollFee,
-        extraTollCost: auditTollDelta,
-        extraMealAllowance: auditMealDelta,
-        reimburseDelta: auditCalc.totalReimburseDelta,
-        vehicleType: auditVehicleType,
-        vehicleRate: auditCalc.rate,
-        baseOperationalCost: auditCalc.baselineBBM,
-        isOvernight: auditIsOvernight,
-        points: auditPoints,
-        tripType: auditDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
-        reviewedAt: serverTimestamp(),
-        reviewedBy: user.uid,
+      await authenticatedJson('/api/pekarya/activities/review', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('driver_review'),
+          action: 'approve_driver',
+          reason: 'Audit dan persetujuan perjalanan oleh Kepala SatKer',
+          items: [{
+            reportId: auditActivity.id,
+            driverReview: {
+              distanceKm: auditDistanceKm,
+              durationHours: auditDurationHours,
+              fuelDelta: auditFuelDelta,
+              tollDelta: auditTollDelta,
+              mealDelta: auditMealDelta,
+              vehicleType: auditVehicleType,
+              isOvernight: auditIsOvernight,
+              points: auditPoints,
+            },
+          }],
+        }),
       });
-
-      if (auditActivity.journeyId) {
-        await updateDoc(doc(db, 'DriverJourneys', auditActivity.journeyId), {
-          status: 'completed',
-          fee: auditCalc.operationalCost,
-          totalOperationalCost: auditCalc.operationalCost,
-          upahBersih: auditCalc.upahBersih,
-          newTotalDistanceKm: auditDistanceKm,
-          newTotalDurationHours: auditDurationHours,
-          fuelFee: actualFuelFee,
-          extraFuelCost: auditFuelDelta,
-          tollParkingFee: actualTollFee,
-          extraTollCost: auditTollDelta,
-          extraMealAllowance: auditMealDelta,
-          reimburseDelta: auditCalc.totalReimburseDelta,
-          vehicleName: auditVehicleType,
-          vehicleRate: auditCalc.rate,
-          baseOperationalCost: auditCalc.baselineBBM,
-          isOvernight: auditIsOvernight,
-          points: auditPoints,
-          reviewedAt: serverTimestamp(),
-          reviewedBy: user.uid,
-        });
-      }
 
       setSuccessMsg(`Laporan perjalanan dinas ${auditActivity.employeeName} berhasil diaudit dan disetujui.`);
       setAuditActivity(null);
       fetchActivities();
       try {
-        await syncActivityToPayslip(db, auditActivity.employeeId, auditActivity.period);
+        await syncActivityToPayslip(
+          db,
+          auditActivity.employeeId,
+          pekaryaPayrollPeriodForDate(auditActivity.activityDate),
+        );
       } catch (syncErr) {
         console.error('Error syncing payslip in handleApproveSopirAudit:', syncErr);
       }
     } catch (err) {
       console.error('Error approving driver audit:', err);
-      setErrorMsg('Gagal menyetujui laporan perjalanan dinas.');
+      setErrorMsg(
+        err instanceof Error ? err.message : 'Gagal menyetujui laporan perjalanan dinas.',
+      );
     } finally {
       setActionLoading(false);
     }
@@ -1036,12 +1022,18 @@ export default function ActivityReviewPage() {
     isActionLoadingRef.current = true;
     setActionLoading(true);
     try {
-      await updateDoc(doc(db, 'ActivityReports', activity.id), {
-        status: 'approved',
-        fee: feeVal,
-        hasUangMakan: !!rowUangMakan[activity.id],
-        reviewedAt: serverTimestamp(),
-        reviewedBy: user.uid,
+      await authenticatedJson('/api/pekarya/activities/review', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('activity_approve'),
+          action: 'approve',
+          reason: 'Persetujuan kegiatan oleh Kepala SatKer',
+          items: [{
+            reportId: activity.id,
+            fee: feeVal,
+            hasUangMakan: !!rowUangMakan[activity.id],
+          }],
+        }),
       });
       setSuccessMsg(`Kegiatan "${activity.activityName}" oleh ${activity.employeeName} berhasil disetujui dengan fee ${fmtRp(feeVal)}.`);
 
@@ -1059,13 +1051,17 @@ export default function ActivityReviewPage() {
 
       fetchActivities();
       try {
-        await syncActivityToPayslip(db, activity.employeeId, activity.period);
+        await syncActivityToPayslip(
+          db,
+          activity.employeeId,
+          pekaryaPayrollPeriodForDate(activity.activityDate),
+        );
       } catch (syncErr) {
         console.error('Error syncing payslip in handleApproveRow:', syncErr);
       }
     } catch (err) {
       console.error('Error approving activity:', err);
-      setErrorMsg('Gagal menyetujui kegiatan.');
+      setErrorMsg(err instanceof Error ? err.message : 'Gagal menyetujui kegiatan.');
     } finally {
       isActionLoadingRef.current = false;
       setActionLoading(false);
@@ -1079,36 +1075,36 @@ export default function ActivityReviewPage() {
     isActionLoadingRef.current = true;
     setActionLoading(true);
     try {
-      await updateDoc(doc(db, 'ActivityReports', declineTarget.id), {
-        status: 'declined',
-        fee: 0,
-        upahBersih: 0,
-        declineReason: declineReason.trim() || '',
-        reviewedAt: serverTimestamp(),
-        reviewedBy: user.uid,
-      });
-
-      if (declineTarget.journeyId) {
-        await updateDoc(doc(db, 'DriverJourneys', declineTarget.journeyId), {
-          status: 'declined',
-          upahBersih: 0,
-          declineReason: declineReason.trim() || '',
-          reviewedAt: serverTimestamp(),
-          reviewedBy: user.uid,
-        });
+      const reason = declineReason.trim();
+      if (reason.length < 8) {
+        setErrorMsg('Alasan penolakan wajib minimal 8 karakter.');
+        return;
       }
+      await authenticatedJson('/api/pekarya/activities/review', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('activity_decline'),
+          action: 'decline',
+          reason,
+          items: [{ reportId: declineTarget.id, reason }],
+        }),
+      });
       setSuccessMsg(`Kegiatan "${declineTarget.activityName}" oleh ${declineTarget.employeeName} telah ditolak.`);
       setDeclineTarget(null);
       setDeclineReason('');
       fetchActivities();
       try {
-        await syncActivityToPayslip(db, declineTarget.employeeId, declineTarget.period);
+        await syncActivityToPayslip(
+          db,
+          declineTarget.employeeId,
+          pekaryaPayrollPeriodForDate(declineTarget.activityDate),
+        );
       } catch (syncErr) {
         console.error('Error syncing payslip in handleDecline:', syncErr);
       }
     } catch (err) {
       console.error('Error declining activity:', err);
-      setErrorMsg('Gagal menolak kegiatan.');
+      setErrorMsg(err instanceof Error ? err.message : 'Gagal menolak kegiatan.');
     } finally {
       isActionLoadingRef.current = false;
       setActionLoading(false);
@@ -1146,18 +1142,19 @@ export default function ActivityReviewPage() {
     isActionLoadingRef.current = true;
     setActionLoading(true);
     try {
-      const batch = writeBatch(db);
-      updates.forEach(upd => {
-        const ref = doc(db, 'ActivityReports', upd.id);
-        batch.update(ref, {
-          status: 'approved',
-          fee: upd.fee,
-          hasUangMakan: !!rowUangMakan[upd.id],
-          reviewedAt: serverTimestamp(),
-          reviewedBy: user.uid,
-        });
+      await authenticatedJson('/api/pekarya/activities/review', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('activities_approve'),
+          action: 'approve',
+          reason: 'Persetujuan massal kegiatan oleh Kepala SatKer',
+          items: updates.map((update) => ({
+            reportId: update.id,
+            fee: update.fee,
+            hasUangMakan: !!rowUangMakan[update.id],
+          })),
+        }),
       });
-      await batch.commit();
       setSuccessMsg(`${updates.length} kegiatan berhasil disetujui.`);
 
       // Clear row fees for approved activities
@@ -1177,8 +1174,10 @@ export default function ActivityReviewPage() {
         const uniqueKeys = new Set<string>();
         updates.forEach(upd => {
           const act = activities.find(a => a.id === upd.id);
-          if (act && act.employeeId && act.period) {
-            uniqueKeys.add(`${act.employeeId}::${act.period}`);
+          if (act && act.employeeId && act.activityDate) {
+            uniqueKeys.add(
+              `${act.employeeId}::${pekaryaPayrollPeriodForDate(act.activityDate)}`,
+            );
           }
         });
 
@@ -1193,7 +1192,9 @@ export default function ActivityReviewPage() {
       }
     } catch (err) {
       console.error('Error bulk approving activities:', err);
-      setErrorMsg('Gagal menyetujui kegiatan secara massal.');
+      setErrorMsg(
+        err instanceof Error ? err.message : 'Gagal menyetujui kegiatan secara massal.',
+      );
     } finally {
       isActionLoadingRef.current = false;
       setActionLoading(false);
@@ -1208,18 +1209,18 @@ export default function ActivityReviewPage() {
     isActionLoadingRef.current = true;
     setActionLoading(true);
     try {
-      const batch = writeBatch(db);
-      selectedIds.forEach(id => {
-        const ref = doc(db, 'ActivityReports', id);
-        batch.update(ref, {
-          status: 'declined',
-          fee: 0,
-          declineReason: 'Ditolak secara massal oleh Kepala SatKer.',
-          reviewedAt: serverTimestamp(),
-          reviewedBy: user.uid,
-        });
+      await authenticatedJson('/api/pekarya/activities/review', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('activities_decline'),
+          action: 'decline',
+          reason: 'Ditolak secara massal oleh Kepala SatKer.',
+          items: Array.from(selectedIds).map((reportId) => ({
+            reportId,
+            reason: 'Ditolak secara massal oleh Kepala SatKer.',
+          })),
+        }),
       });
-      await batch.commit();
       setSuccessMsg(`${selectedIds.size} kegiatan berhasil ditolak.`);
       setSelectedIds(new Set());
       fetchActivities();
@@ -1227,8 +1228,10 @@ export default function ActivityReviewPage() {
         const uniqueKeys = new Set<string>();
         selectedIds.forEach(id => {
           const act = activities.find(a => a.id === id);
-          if (act && act.employeeId && act.period) {
-            uniqueKeys.add(`${act.employeeId}::${act.period}`);
+          if (act && act.employeeId && act.activityDate) {
+            uniqueKeys.add(
+              `${act.employeeId}::${pekaryaPayrollPeriodForDate(act.activityDate)}`,
+            );
           }
         });
 
@@ -1243,7 +1246,9 @@ export default function ActivityReviewPage() {
       }
     } catch (err) {
       console.error('Error bulk declining:', err);
-      setErrorMsg('Gagal menolak kegiatan secara massal.');
+      setErrorMsg(
+        err instanceof Error ? err.message : 'Gagal menolak kegiatan secara massal.',
+      );
     } finally {
       isActionLoadingRef.current = false;
       setActionLoading(false);
@@ -1637,7 +1642,8 @@ export default function ActivityReviewPage() {
                               (() => {
                                 const [sh, sm] = activity.timeStart.split(':').map(Number);
                                 const [eh, em] = activity.timeEnd.split(':').map(Number);
-                                const minutes = (eh * 60 + em) - (sh * 60 + sm);
+                                let minutes = (eh * 60 + em) - (sh * 60 + sm);
+                                if (minutes < 0) minutes += 24 * 60;
                                 const halfHours = Math.round(minutes / 30);
                                 const qualifies = halfHours > 4 && activity.activityType !== 'Buang Sampah' && activity.activityName !== 'Buang Sampah';
 

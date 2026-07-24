@@ -37,6 +37,7 @@ import {
   serverTimestamp,
   deleteField,
 } from 'firebase/firestore';
+import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 
 const loadGoogleMapsScript = (callback: () => void) => {
   if (typeof window === 'undefined') return;
@@ -364,7 +365,7 @@ const DestinationImageBanner = ({
 };
 
 function JourneyReportContent() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const journeyIdParam = searchParams.get('id');
@@ -509,6 +510,8 @@ function JourneyReportContent() {
     setIsCalculatingExtraRoute(true);
     setExtraRouteError('');
     try {
+      if (!user) throw new Error('Sesi tidak ditemukan.');
+      const idToken = await user.getIdToken();
       const points = [
         activeReportingJourney.startPoint,
         activeReportingJourney.endPoint,
@@ -518,7 +521,10 @@ function JourneyReportContent() {
 
       const response = await fetch('/api/calculate-route', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({ points }),
       });
       const resData = await response.json();
@@ -881,58 +887,60 @@ function JourneyReportContent() {
       const baseDriverWage = calculatedDistanceKm * 300 + calculatedDurationHours * 5000 + premiumWeekend + premiumOvernight;
       const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
 
-      const journeyRef = doc(db, 'DriverJourneys', activeReportingJourney.id);
-      await updateDoc(journeyRef, {
-        status: 'completed',
-        fuelFee: fuelVal,
-        tollParkingFee: tollVal,
-        fuelReceiptUrl: formFuelReceiptUrls.join(','),
-        tollReceiptUrl: formTollReceiptUrls.join(','),
-        isOvernight: formIsOvernight,
-        activityDate: formDate,
-        timeStart: formTimeStart,
-        timeEnd: formTimeEnd,
-        completedAt: serverTimestamp(),
-        authorizedAt: activeReportingJourney.authorizedAt || activeReportingJourney.createdAt || null,
-        journeyDate: activeReportingJourney.journeyDate || activeReportingJourney.activityDate || null,
-        claimedAt: activeReportingJourney.claimedAt || null,
-        extraActivities,
-        extraDistanceKm,
-        extraOperationalCost,
-        extraFuelCost,
-        extraTollCost,
-        extraMealAllowance,
-        actualMealAllowance,
-        positiveReimburseDelta,
-        newTotalDistanceKm: calculatedDistanceKm,
-        newTotalDurationHours: calculatedDurationHours,
-        baseDriverWage,
-        upahBersih: finalUpahBersih,
-        reimburseDelta: finalReimburseDelta,
-        unspentCash,
-        remainingUnspentCash,
-        baseOperationalCost: baseCostVal,
-        preAuthorizedMeal,
-        preAuthorizedToll,
-        customDurationPP: preAuthorizedDurationPP,
-        totalPreAuthorizedAllowance,
-        totalActualSpent,
-        totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
-        vehicleRate: activeReportingJourney.vehicleRate || 1000,
-        componentJarak: calculatedDistanceKm * 300,
-        componentWaktu: calculatedDurationHours * 5000,
-        premiumOvernight: formIsOvernight ? 50000 : 0,
-        draftTimeStart: deleteField(),
-        draftTimeEnd: deleteField(),
-        draftIsOvernight: deleteField(),
-        draftFuelFee: deleteField(),
-        draftTollParkingFee: deleteField(),
-        draftFuelReceiptUrl: deleteField(),
-        draftTollReceiptUrl: deleteField(),
-        draftExtraActivities: deleteField(),
-        draftCalculatedDistanceKm: deleteField(),
-        draftCalculatedDurationHours: deleteField(),
-        updatedAt: serverTimestamp()
+      const extraLocs = extraActivities.filter(a => a.type === 'tambah_lokasi' && a.destination);
+      const extraLocsText = extraLocs.map(l => l.destination.split(',')[0]).join(' → ');
+
+      const routeText = ` (${activeReportingJourney.startPoint.split(',')[0]} → ${activeReportingJourney.endPoint}${extraLocsText ? ' → ' + extraLocsText : ''})`;
+      const finalActivityName = activeReportingJourney.activityName + routeText;
+
+      await authenticatedJson('/api/pekarya/activities', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('driver_activity_submit'),
+          reportId: activeReportingJourney.editingActivityDocId || undefined,
+          activityName: finalActivityName,
+          activityType: 'Lainnya',
+          activityDate: formDate,
+          timeStart: formTimeStart,
+          timeEnd: formTimeEnd,
+          driverData: {
+          tripType: calculatedDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
+          vehicleType: activeReportingJourney.vehicleName,
+          isOvernight: formIsOvernight,
+          fuelFee: fuelVal,
+          tollParkingFee: tollVal,
+          fuelReceiptUrl: formFuelReceiptUrls.join(','),
+          tollReceiptUrl: formTollReceiptUrls.join(','),
+          points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
+          distanceKm: calculatedDistanceKm,
+          durationHours: calculatedDurationHours,
+          journeyId: activeReportingJourney.id,
+          extraActivities,
+          extraDistanceKm,
+          extraOperationalCost,
+          extraFuelCost,
+          extraTollCost,
+          extraMealAllowance,
+          actualMealAllowance,
+          positiveReimburseDelta,
+          baseDriverWage,
+          upahBersih: finalUpahBersih,
+          reimburseDelta: finalReimburseDelta,
+          unspentCash,
+          remainingUnspentCash,
+          baseOperationalCost: baseCostVal,
+          preAuthorizedMeal,
+          preAuthorizedToll,
+          customDurationPP: preAuthorizedDurationPP,
+          totalPreAuthorizedAllowance,
+          totalActualSpent,
+          totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
+          vehicleRate: activeReportingJourney.vehicleRate || 1000,
+          componentJarak: calculatedDistanceKm * 300,
+          componentWaktu: calculatedDurationHours * 5000,
+          premiumOvernight: formIsOvernight ? 50000 : 0,
+          },
+        }),
       });
 
       router.replace('/employee/activities');

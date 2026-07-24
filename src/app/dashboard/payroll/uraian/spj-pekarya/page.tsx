@@ -19,10 +19,16 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  collection, getDocs, doc, setDoc, deleteDoc, getDoc, serverTimestamp, query, where, onSnapshot
+  collection, getDocs, query, where
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { MONTHS_ID } from '@/utils/rekapConfig';
+import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import { syncActivityToPayslip } from '@/utils/payslipSync';
+import {
+  sumApprovedActivitySpj,
+  sumApprovedEventSpj,
+} from '@/lib/payroll/pekaryaSpj';
 
 export default function SpjPekaryaPage() {
   const { profile } = useAuth();
@@ -60,6 +66,7 @@ export default function SpjPekaryaPage() {
 
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
+  const spjSaveRequestIdRef = useRef<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // ── Fetch Blue Collar Employees for SPJ ──
@@ -67,9 +74,14 @@ export default function SpjPekaryaPage() {
     const fetchBlueCollar = async () => {
       setLoadingBlueCollar(true);
       try {
+        if (!category) {
+          setBlueCollarEmployees([]);
+          return;
+        }
         const q = query(
           collection(db, 'Employees_BlueCollar'),
-          where('employment.status', '==', 'active')
+          where('employment.status', '==', 'active'),
+          where('employment.jobCategory', '==', category),
         );
         const snap = await getDocs(q);
         const list = snap.docs.map(d => {
@@ -88,24 +100,24 @@ export default function SpjPekaryaPage() {
       }
     };
     fetchBlueCollar();
-  }, []);
+  }, [category]);
 
   // ── Fetch Kegiatan SPJ Events & ActivityReports ──
   const fetchSpjEvents = useCallback(async () => {
     if (!category) return;
     setLoadingSpjEvents(true);
     try {
-      const q = query(
-        collection(db, 'KegiatanSpj'),
-        where('period', '==', periodToken)
+      const eventResult = await authenticatedJson<{
+        events: any[];
+        employees: { id: string; name: string }[];
+      }>(
+        `/api/pekarya/spj-events?period=${encodeURIComponent(periodToken)}&category=${encodeURIComponent(category)}`,
+        { method: 'GET' },
       );
-      
-      const snap = await getDocs(q);
-      const list = snap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
-      setSpjEvents(list);
+      setSpjEvents(eventResult.events);
+      setBlueCollarEmployees(
+        eventResult.employees.map((employee) => ({ ...employee, category })),
+      );
 
       // Also fetch approved ActivityReports for the same period
       try {
@@ -176,23 +188,21 @@ export default function SpjPekaryaPage() {
 
   // Helper: compute accumulated SPJ payout for an employee
   const getComputedSpj = useCallback((empId: string) => {
-    const kegiatanTotal = spjEvents.reduce((sum, evt) => {
-      const workerInfo = evt.eventWorkers?.[empId];
-      if (workerInfo) return sum + (workerInfo.payGiven || 0);
-      return sum;
-    }, 0);
-
-    const activityTotal = approvedActivityReports.reduce((sum, ar) => {
-      if (ar.employeeId === empId) return sum + (ar.fee || 0);
-      return sum;
-    }, 0);
+    const kegiatanTotal = sumApprovedEventSpj(
+      spjEvents,
+      empId,
+      category,
+      periodToken,
+    );
+    const activityTotal = sumApprovedActivitySpj(
+      approvedActivityReports,
+      empId,
+      category,
+      periodToken,
+    );
 
     return kegiatanTotal + activityTotal;
-  }, [spjEvents, approvedActivityReports]);
-
-  const sanitizeEventId = (name: string): string => {
-    return name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10);
-  };
+  }, [spjEvents, approvedActivityReports, category, periodToken]);
 
   const handleSaveSpjEvent = async () => {
     if (isSavingRef.current) return;
@@ -219,30 +229,38 @@ export default function SpjPekaryaPage() {
     isSavingRef.current = true;
     setSaving(true);
     try {
-      const eventSeg = sanitizeEventId(spjEventName);
-      const documentId = selectedSpjEventId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
-
-      let totalPayout = 0;
-      const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
-
-      activeWorkers.forEach(w => {
-        workersMap[w.employeeId] = {
-          employeeName: w.employeeName,
-          payGiven: spjEventFee,
-        };
-        totalPayout += spjEventFee;
+      const requestId =
+        spjSaveRequestIdRef.current || createFinancialRequestId('spj_event_save');
+      spjSaveRequestIdRef.current = requestId;
+      const existing = selectedSpjEventId
+        ? spjEvents.find((event) => event.id === selectedSpjEventId)
+        : null;
+      await authenticatedJson('/api/pekarya/spj-events', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId,
+          eventId: selectedSpjEventId || undefined,
+          period: periodToken,
+          jobCategory: category,
+          eventName: spjEventName,
+          eventFee: spjEventFee,
+          employeeIds: activeWorkers.map((worker) => worker.employeeId),
+          expectedRevision: existing?.revision,
+          reason: selectedSpjEventId
+            ? 'Pembaruan rincian kegiatan SPJ oleh Kepala SatKer'
+            : 'Pembuatan kegiatan SPJ oleh Kepala SatKer',
+        }),
       });
-
-      const payload = {
-        eventName: spjEventName,
-        period: periodToken,
-        totalPayout,
-        eventFee: spjEventFee,
-        eventWorkers: workersMap,
-        updatedAt: serverTimestamp(),
-      };
-
-      await setDoc(doc(db, 'KegiatanSpj', documentId), payload);
+      spjSaveRequestIdRef.current = null;
+      const affectedEmployees = new Set([
+        ...activeWorkers.map((worker) => worker.employeeId),
+        ...Object.keys(existing?.eventWorkers || {}),
+      ]);
+      await Promise.all(
+        Array.from(affectedEmployees).map((employeeId) =>
+          syncActivityToPayslip(db, employeeId, periodToken),
+        ),
+      );
       setMessage({ type: 'success', text: `Kegiatan SPJ "${spjEventName}" berhasil disimpan.` });
 
       setSelectedSpjEventId(null);
@@ -253,7 +271,10 @@ export default function SpjPekaryaPage() {
       fetchSpjEvents();
     } catch (err) {
       console.error('Error saving SPJ event:', err);
-      setMessage({ type: 'error', text: 'Gagal menyimpan Kegiatan SPJ.' });
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Gagal menyimpan Kegiatan SPJ.',
+      });
     } finally {
       isSavingRef.current = false;
       setSaving(false);
@@ -261,71 +282,15 @@ export default function SpjPekaryaPage() {
   };
 
   const handleDeleteSpjEvent = async (eventId: string) => {
-    if (isSavingRef.current) return;
-    if (!confirm('Apakah Anda yakin ingin menghapus kegiatan SPJ ini?')) return;
-    try {
-      isSavingRef.current = true;
-      setSaving(true);
-      await deleteDoc(doc(db, 'KegiatanSpj', eventId));
-      setMessage({ type: 'success', text: 'Kegiatan SPJ berhasil dihapus.' });
-      setSelectedSpjEventId(null);
-      setSpjEventName('');
-      setSpjEventFee(0);
-      setSpjWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
-      setMobileSpjView('list');
-      fetchSpjEvents();
-    } catch (err) {
-      console.error('Error deleting SPJ event:', err);
-      setMessage({ type: 'error', text: 'Gagal menghapus kegiatan SPJ.' });
-    } finally {
-      isSavingRef.current = false;
-      setSaving(false);
-    }
+    void eventId;
+    setMessage({
+      type: 'error',
+      text: 'Penghapusan kegiatan SPJ dinonaktifkan agar riwayat tetap utuh. Gunakan alur koreksi.',
+    });
   };
 
   const handleSpjAddRow = () => {
     setSpjWorkerRows(prev => [...prev, { employeeId: '', employeeName: '', payGiven: spjEventFee, searchText: '', showDropdown: false }]);
-  };
-
-  const handleSpjAutosave = async (currentRows = spjWorkerRows, currentEventName = spjEventName, activeId = selectedSpjEventId, currentFee = spjEventFee) => {
-    if (!currentEventName.trim()) return;
-    if (currentRows.some(w => w.isInvalid || (w.searchText && !w.employeeId))) return;
-    const activeWorkers = currentRows.filter(w => w.employeeId);
-    const ids = activeWorkers.map(w => w.employeeId);
-    if (new Set(ids).size !== ids.length) return;
-
-    try {
-      const eventSeg = sanitizeEventId(currentEventName);
-      const documentId = activeId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
-
-      let totalPayout = 0;
-      const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
-
-      activeWorkers.forEach(w => {
-        workersMap[w.employeeId] = {
-          employeeName: w.employeeName,
-          payGiven: currentFee,
-        };
-        totalPayout += currentFee;
-      });
-
-      const payload = {
-        eventName: currentEventName,
-        period: periodToken,
-        totalPayout,
-        eventFee: currentFee,
-        eventWorkers: workersMap,
-        updatedAt: serverTimestamp(),
-      };
-
-      await setDoc(doc(db, 'KegiatanSpj', documentId), payload);
-      if (!activeId) {
-        setSelectedSpjEventId(documentId);
-      }
-      fetchSpjEvents();
-    } catch (err) {
-      console.error('SPJ Autosave error:', err);
-    }
   };
 
   const fmtRp = (n: number) => 'Rp\u00a0' + Math.round(n).toLocaleString('id-ID');
@@ -354,6 +319,7 @@ export default function SpjPekaryaPage() {
                 <h3 className="font-bold text-slate-800 text-sm">Daftar Kegiatan SPJ</h3>
                 <Button
                   onClick={() => {
+                    spjSaveRequestIdRef.current = null;
                     setSelectedSpjEventId(null);
                     setSpjEventName('');
                     setSpjWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
@@ -381,6 +347,7 @@ export default function SpjPekaryaPage() {
                       <div
                         key={evt.id}
                         onClick={() => {
+                          spjSaveRequestIdRef.current = null;
                           setSelectedSpjEventId(evt.id);
                           setSpjEventName(evt.eventName);
                           setSpjEventFee(evt.eventFee || 0);
@@ -434,10 +401,7 @@ export default function SpjPekaryaPage() {
                     type="text"
                     placeholder="Contoh: Kerja Bakti Massal"
                     value={spjEventName}
-                    onChange={(e) => {
-                      setSpjEventName(e.target.value);
-                      handleSpjAutosave(spjWorkerRows, e.target.value, selectedSpjEventId, spjEventFee);
-                    }}
+                    onChange={(e) => setSpjEventName(e.target.value)}
                     className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 h-10"
                   />
                 </div>
@@ -454,7 +418,6 @@ export default function SpjPekaryaPage() {
                       const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0;
                       setSpjEventFee(val);
                       setSpjWorkerRows(prev => prev.map(r => ({ ...r, payGiven: val })));
-                      handleSpjAutosave(spjWorkerRows.map(r => ({ ...r, payGiven: val })), spjEventName, selectedSpjEventId, val);
                     }}
                     className="rounded-xl border-slate-200 font-bold text-slate-800 text-sm focus:border-indigo-500 text-right h-10"
                   />
@@ -522,12 +485,6 @@ export default function SpjPekaryaPage() {
                                       u[idx].showDropdown = false;
                                       return u;
                                     });
-                                    handleSpjAutosave(
-                                      spjWorkerRows.map((r, rIdx) => rIdx === idx ? { ...r, employeeId: emp.id, employeeName: emp.name, isInvalid: false } : r),
-                                      spjEventName,
-                                      selectedSpjEventId,
-                                      spjEventFee
-                                    );
                                   }}
                                   className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[11px] font-semibold text-slate-700 flex justify-between"
                                 >
@@ -545,7 +502,6 @@ export default function SpjPekaryaPage() {
                         onClick={() => {
                           const nextRows = spjWorkerRows.filter((_, i) => i !== idx);
                           setSpjWorkerRows(nextRows.length > 0 ? nextRows : [{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
-                          handleSpjAutosave(nextRows, spjEventName, selectedSpjEventId, spjEventFee);
                         }}
                         className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl h-9 w-9 p-0 flex items-center justify-center"
                       >

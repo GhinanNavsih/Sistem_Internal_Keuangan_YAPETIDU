@@ -1,10 +1,137 @@
-import { NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
+import { NextRequest, NextResponse } from 'next/server';
+import nodemailer, { SendMailOptions } from 'nodemailer';
+import admin, { adminDb } from '@/lib/firebase-admin';
+import { isTransferEligibleStatus } from '@/lib/payroll/domain';
+import { FINANCE_ROLES } from '@/lib/payroll/roles';
+import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
+import {
+  errorResponse,
+  HttpError,
+  requireAuthenticatedProfile,
+  requireRole,
+} from '@/lib/server/auth';
 
-export async function POST(request: Request) {
+export const dynamic = 'force-dynamic';
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+async function getPayrollEmployee(employeeId: string) {
+  for (const collectionName of ['Employees_BlueCollar', 'Employees_Loyalis']) {
+    const snapshot = await adminDb.collection(collectionName).doc(employeeId).get();
+    if (snapshot.exists) {
+      const data = snapshot.data()!;
+      return {
+        name: String(data.name || data.personal_info?.name || ''),
+        email: String(data.email || data.personal_info?.email || ''),
+      };
+    }
+  }
+  throw new HttpError(404, 'Data karyawan tidak ditemukan.');
+}
+
+function assertPdfBase64(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string' || value.length > 14_000_000) {
+    throw new HttpError(413, 'Lampiran PDF terlalu besar atau tidak valid.');
+  }
+  const buffer = Buffer.from(value, 'base64');
+  if (buffer.length > 10_000_000 || buffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
+    throw new HttpError(400, 'Lampiran wajib berupa PDF valid maksimal 10 MB.');
+  }
+  return value;
+}
+
+export async function POST(request: NextRequest) {
+  let deliveryRef: FirebaseFirestore.DocumentReference | null = null;
   try {
+    const actor = await requireAuthenticatedProfile(request);
+    requireRole(actor, FINANCE_ROLES);
     const body = await request.json();
-    const { email, employeeName, period, pdfBase64, textBreakdown } = body;
+    const employeeId = typeof body.employeeId === 'string' ? body.employeeId : '';
+    const dbPeriod = typeof body.dbPeriod === 'string' ? body.dbPeriod : '';
+    const requestId = typeof body.requestId === 'string' ? body.requestId : '';
+    if (
+      !/^[A-Za-z0-9_-]{1,128}$/.test(employeeId) ||
+      !/^\d{4}_\d{2}$/.test(dbPeriod) ||
+      !/^[A-Za-z0-9_-]{8,128}$/.test(requestId)
+    ) {
+      throw new HttpError(400, 'employeeId, dbPeriod, atau requestId tidak valid.');
+    }
+
+    const slipId = `${dbPeriod}_${employeeId}`;
+    const slipSnapshot = await adminDb.collection('PayrollSlipStates').doc(slipId).get();
+    if (!slipSnapshot.exists || !isTransferEligibleStatus(slipSnapshot.data()?.status)) {
+      throw new HttpError(409, 'Email hanya dapat dikirim untuk slip terkunci.');
+    }
+    const slip = slipSnapshot.data()!;
+    const employee = await getPayrollEmployee(employeeId);
+    if (!employee.email || !employee.name) {
+      throw new HttpError(409, 'Nama atau email resmi karyawan belum lengkap.');
+    }
+
+    const email = employee.email;
+    const employeeName = employee.name;
+    const period = dbPeriod.replace('_', '-');
+    const pdfBase64 = assertPdfBase64(body.pdfBase64);
+    if (!pdfBase64) {
+      throw new HttpError(400, 'Lampiran PDF slip final wajib disertakan.');
+    }
+    const totalEarnings = Number(slip.totalEarnings) || (slip.earnings || []).reduce(
+      (sum: number, item: { amount?: number }) => sum + Number(item.amount || 0),
+      0,
+    );
+    const totalDeductions = Number(slip.totalDeductions) || (slip.deductions || []).reduce(
+      (sum: number, item: { amount?: number }) => sum + Number(item.amount || 0),
+      0,
+    );
+    const netSalary = totalEarnings - totalDeductions;
+    const formatIDR = (amount: number) => `Rp${amount.toLocaleString('id-ID')}`;
+    const earningsText = (slip.earnings || [])
+      .map((item: { label?: string; amount?: number }) =>
+        `• ${String(item.label || '')}: ${formatIDR(Number(item.amount || 0))}`)
+      .join('\n');
+    const deductionsText = (slip.deductions || []).length
+      ? (slip.deductions || [])
+          .map((item: { label?: string; amount?: number }) =>
+            `• ${String(item.label || '')}: ${formatIDR(Number(item.amount || 0))}`)
+          .join('\n')
+      : '• Tidak ada potongan';
+    const textBreakdown =
+      `PENDAPATAN:\n${earningsText}\nTotal Pendapatan: ${formatIDR(totalEarnings)}\n\n` +
+      `POTONGAN:\n${deductionsText}\nTotal Potongan: ${formatIDR(totalDeductions)}\n\n` +
+      `GAJI BERSIH (Diterima): ${formatIDR(netSalary)}`;
+
+    deliveryRef = adminDb
+      .collection('PayrollDeliveryEvents')
+      .doc(`${slipId}__email__${requestId}`);
+    const claimed = await adminDb.runTransaction(async (transaction) => {
+      const deliverySnapshot = await transaction.get(deliveryRef!);
+      if (deliverySnapshot.data()?.status === 'sent') return false;
+      if (deliverySnapshot.data()?.status === 'sending') {
+        throw new HttpError(409, 'Permintaan pengiriman yang sama sedang diproses.');
+      }
+      transaction.set(deliveryRef!, {
+        slipId,
+        employeeId,
+        dbPeriod,
+        channel: 'email',
+        recipient: email,
+        status: 'sending',
+        requestedBy: actor.uid,
+        requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return true;
+    });
+    if (!claimed) {
+      return NextResponse.json({ success: true, idempotent: true });
+    }
 
     // Try to extract net salary from textBreakdown and spell it out
     let terbilangText = '';
@@ -18,19 +145,13 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!email) {
-      return NextResponse.json({ error: 'Email tujuan wajib diisi.' }, { status: 400 });
-    }
-
     const smtpUser = process.env.SMTP_USER || '';
     const smtpPass = process.env.SMTP_PASS || '';
 
     if (!smtpUser || !smtpPass) {
-      return NextResponse.json(
-        {
-          error: 'Konfigurasi SMTP Google (SMTP_USER dan SMTP_PASS) belum disetting di file .env.local.'
-        },
-        { status: 500 }
+      throw new HttpError(
+        500,
+        'Konfigurasi SMTP Google belum tersedia di lingkungan server.',
       );
     }
 
@@ -43,8 +164,10 @@ export async function POST(request: Request) {
       },
     });
 
-    const formattedPeriod = period ? period.toUpperCase() : '';
-    const filename = `Slip_Gaji_YAPETIDU_${employeeName.replace(/\s+/g, '_')}_${formattedPeriod.replace(/\s+/g, '_')}.pdf`;
+    const formattedPeriod = period.toUpperCase();
+    const safeEmployeeName = escapeHtml(employeeName);
+    const safeBreakdown = escapeHtml(textBreakdown);
+    const filename = `Slip_Gaji_YAPETIDU_${employeeId}_${dbPeriod}.pdf`;
 
     // Modern HTML template matching the premium theme
     const htmlContent = `
@@ -138,7 +261,7 @@ export async function POST(request: Request) {
           <div class="content">
             <div class="greeting" style="font-size: 15px; color: #1e293b; line-height: 1.5;">
               Kepada Yth.<br>
-              <strong>Bapak/Ibu ${employeeName}</strong>
+              <strong>Bapak/Ibu ${safeEmployeeName}</strong>
             </div>
             <div class="message" style="margin-top: 15px; font-size: 14px; line-height: 1.6; color: #475569;">
               Assalamualaikum wr. wb.<br><br>
@@ -148,7 +271,7 @@ export async function POST(request: Request) {
             
             ${textBreakdown ? `
               <div style="font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 10px;">Rincian Slip Gaji:</div>
-              <div class="breakdown-box">${textBreakdown}</div>
+              <div class="breakdown-box">${safeBreakdown}</div>
               ${terbilangText ? `
                 <div style="font-size: 13px; font-weight: bold; color: #4f46e5; margin-top: -20px; margin-bottom: 25px; font-style: italic;">
                   ${terbilangText}
@@ -170,7 +293,7 @@ export async function POST(request: Request) {
     `;
 
     // Define Mail options
-    const mailOptions: any = {
+    const mailOptions: SendMailOptions = {
       from: `"YAPETIDU Finance" <${smtpUser}>`,
       to: email,
       subject: `[SLIP GAJI] YAPETIDU - ${formattedPeriod} - ${employeeName}`,
@@ -199,12 +322,50 @@ export async function POST(request: Request) {
     }
 
     // Send Mail
-    await transporter.sendMail(mailOptions);
+    const sendResult = await transporter.sendMail(mailOptions);
+
+    const batch = adminDb.batch();
+    batch.update(deliveryRef, {
+      status: 'sent',
+      providerMessageId: sendResult.messageId || null,
+      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    batch.set(
+      adminDb.collection('PayrollSlipStates').doc(slipId),
+      {
+        emailSent: true,
+        emailSentAt: admin.firestore.FieldValue.serverTimestamp(),
+        emailSentBy: actor.uid,
+      },
+      { merge: true },
+    );
+    batch.create(
+      newFinancialAuditRef(),
+      buildFinancialAuditRecord(actor, {
+        action: 'PAYSLIP_EMAIL_SENT',
+        entityType: 'PayrollSlipState',
+        entityId: slipId,
+        reason: 'Pengiriman slip final ke email resmi karyawan',
+        requestId,
+        metadata: { recipient: email, providerMessageId: sendResult.messageId || null },
+      }),
+    );
+    await batch.commit();
 
     return NextResponse.json({ success: true, message: 'Email berhasil terkirim.' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('SMTP Mail error:', error);
-    return NextResponse.json({ error: error?.message || 'Gagal mengirim email.' }, { status: 500 });
+    if (deliveryRef) {
+      await deliveryRef.set(
+        {
+          status: 'failed',
+          failedAt: admin.firestore.FieldValue.serverTimestamp(),
+          error: error instanceof Error ? error.message.slice(0, 500) : 'Unknown error',
+        },
+        { merge: true },
+      ).catch(() => undefined);
+    }
+    return errorResponse(error);
   }
 }
 

@@ -836,22 +836,11 @@ export default function EmployeesPage() {
   };
 
   const handleDelete = async (employeeId: string) => {
-    if (isSavingRef.current) return;
-    if (!confirm('Hapus data karyawan ini?')) return;
-    try {
-      isSavingRef.current = true;
-      setLocalLoading(true);
-      await deleteDoc(doc(db, currentTab.collection, employeeId));
-      fetchEmployees();
-      setMessage({ type: 'success', text: 'Karyawan dihapus.' });
-      setTimeout(() => setMessage(null), 3000);
-    } catch (err) {
-      console.error('Error deleting employee:', err);
-      setMessage({ type: 'error', text: 'Gagal menghapus data.' });
-    } finally {
-      isSavingRef.current = false;
-      setLocalLoading(false);
-    }
+    void employeeId;
+    setMessage({
+      type: 'error',
+      text: 'Penghapusan karyawan dinonaktifkan agar riwayat payroll tetap utuh. Ubah status ke nonaktif.',
+    });
   };
 
   const handleConfirmChanges = async () => {

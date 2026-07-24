@@ -28,6 +28,8 @@ import {
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
 import { BlueCollarEmployee, UraianEntry, RekapColumn } from '@/types';
 import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
+import { PayrollStatus, isImmutablePayrollStatus } from '@/lib/payroll/domain';
+import { UserRole } from '@/lib/payroll/roles';
 import { 
   calculateTotalEarnings, 
   calculateTotalDeductions, 
@@ -36,7 +38,7 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────
 
-export type SlipStatus = 'draft' | 'locked';
+export type SlipStatus = PayrollStatus;
 
 export interface SlipState {
   status: SlipStatus;
@@ -44,6 +46,14 @@ export interface SlipState {
   deductions: PaySlipField[];
   generatedAt?: string;
   lockedAt?: string;
+  financeVerifiedAt?: string;
+  financeVerifiedBy?: string;
+  kbuApprovedAt?: string;
+  kbuApprovedBy?: string;
+  lockedBy?: string;
+  lockedSnapshotHash?: string;
+  paymentBatchId?: string;
+  bankReference?: string;
   emailSent?: boolean;
   emailSentAt?: string;
 }
@@ -57,9 +67,14 @@ interface PaySlipDialogProps {
   period: string; // e.g. "Mei 2026"
   slipState: SlipState | null;
   onSave: (employeeId: string, earnings: PaySlipField[], deductions: PaySlipField[]) => Promise<void>;
-  onLock: (employeeId: string, earnings: PaySlipField[], deductions: PaySlipField[]) => Promise<void>;
-  onUnlock: (employeeId: string) => Promise<void>;
+  onVerify: (employeeId: string, reason: string) => Promise<void>;
+  onApprove: (employeeId: string, reason: string) => Promise<void>;
+  onLock: (employeeId: string) => Promise<void>;
+  onCreatePayment: (employeeId: string, paymentBatchId: string, reason: string) => Promise<void>;
+  onMarkPaid: (employeeId: string, bankReference: string, reason: string) => Promise<void>;
+  onRequestCorrection: (employeeId: string, reason: string) => Promise<void>;
   onRefresh: (employeeId: string) => Promise<{ earnings: PaySlipField[]; deductions: PaySlipField[] }>;
+  actorRole?: UserRole;
   uraianEntry?: UraianEntry; // from UraianGaji collection
   activeTab?: string;
   vakasiTambahanSum?: number;
@@ -315,9 +330,14 @@ export default function PaySlipDialog({
   period,
   slipState,
   onSave,
+  onVerify,
+  onApprove,
   onLock,
-  onUnlock,
+  onCreatePayment,
+  onMarkPaid,
+  onRequestCorrection,
   onRefresh,
+  actorRole,
   uraianEntry,
   activeTab = 'blue',
   vakasiTambahanSum,
@@ -339,8 +359,8 @@ export default function PaySlipDialog({
   const [snapshotEarnings, setSnapshotEarnings] = useState<PaySlipField[]>([]);
   const [snapshotDeductions, setSnapshotDeductions] = useState<PaySlipField[]>([]);
 
-  // In-place lock state representation
-  const [localIsLocked, setLocalIsLocked] = useState(false);
+  const [localStatus, setLocalStatus] = useState<SlipStatus>('draft');
+  const localIsLocked = localStatus !== 'draft';
 
   // Refresh & diff comparison states
   const [compareOpen, setCompareOpen] = useState(false);
@@ -391,7 +411,7 @@ export default function PaySlipDialog({
     setSnapshotEarnings(JSON.parse(JSON.stringify(initEarnings)));
     setSnapshotDeductions(JSON.parse(JSON.stringify(initDeductions)));
     
-    setLocalIsLocked(slipState ? slipState.status === 'locked' : false);
+    setLocalStatus(slipState?.status || 'draft');
     setRefreshDiff(null);
     setCompareOpen(false);
     setFreshRecalculated(null);
@@ -534,23 +554,90 @@ export default function PaySlipDialog({
   const handleKunci = async () => {
     if (!employee) return;
     try {
-      await onLock(employee.employeeId || employee.id, earnings, deductions);
+      await onLock(employee.employeeId || employee.id);
       onOpenChange(false);
     } catch (err) {
       console.error("Gagal mengunci slip:", err);
     }
   };
 
-  const handleBuka = async () => {
+  const handleVerify = async () => {
     if (!employee) return;
-    const confirmUnlock = window.confirm("Apakah Anda yakin ingin membuka kunci slip gaji ini?");
-    if (!confirmUnlock) return;
+    const reason = window.prompt('Masukkan alasan/verifikasi Badan Keuangan (minimal 8 karakter):')?.trim() || '';
+    if (reason.length < 8) return;
     try {
-      await onUnlock(employee.employeeId || employee.id);
-      setLocalIsLocked(false);
+      await onVerify(employee.employeeId || employee.id, reason);
+      onOpenChange(false);
     } catch (err) {
-      console.error("Gagal membuka kunci:", err);
+      console.error("Gagal memverifikasi slip:", err);
     }
+  };
+
+  const handleApprove = async () => {
+    if (!employee) return;
+    const reason = window.prompt('Masukkan alasan pengesahan Kepala Biro Umum (minimal 8 karakter):')?.trim() || '';
+    if (reason.length < 8) return;
+    try {
+      await onApprove(employee.employeeId || employee.id, reason);
+      onOpenChange(false);
+    } catch (err) {
+      console.error("Gagal mengesahkan slip:", err);
+    }
+  };
+
+  const handleCorrectionRequest = async () => {
+    if (!employee) return;
+    const reason = window.prompt('Jelaskan koreksi yang diperlukan (minimal 8 karakter):')?.trim() || '';
+    if (reason.length < 8) return;
+    try {
+      await onRequestCorrection(employee.employeeId || employee.id, reason);
+      onOpenChange(false);
+    } catch (err) {
+      console.error("Gagal mengajukan koreksi:", err);
+    }
+  };
+
+  const handleCreatePayment = async () => {
+    if (!employee) return;
+    const paymentBatchId =
+      window.prompt('Masukkan ID batch pembayaran (minimal 8 karakter, huruf/angka/_/-):')
+        ?.trim() || '';
+    if (!/^[A-Za-z0-9_-]{8,128}$/.test(paymentBatchId)) return;
+    const reason =
+      window.prompt('Masukkan alasan pembuatan instruksi pembayaran (minimal 8 karakter):')
+        ?.trim() || '';
+    if (reason.length < 8) return;
+    try {
+      await onCreatePayment(employee.employeeId || employee.id, paymentBatchId, reason);
+      onOpenChange(false);
+    } catch (err) {
+      console.error('Gagal membuat instruksi pembayaran:', err);
+    }
+  };
+
+  const handleMarkPaid = async () => {
+    if (!employee) return;
+    const bankReference =
+      window.prompt('Masukkan referensi transaksi bank (minimal 6 karakter):')?.trim() || '';
+    if (bankReference.length < 6) return;
+    const reason =
+      window.prompt('Masukkan alasan/konfirmasi pembayaran (minimal 8 karakter):')?.trim() || '';
+    if (reason.length < 8) return;
+    try {
+      await onMarkPaid(employee.employeeId || employee.id, bankReference, reason);
+      onOpenChange(false);
+    } catch (err) {
+      console.error('Gagal mencatat pembayaran:', err);
+    }
+  };
+
+  const statusLabel: Record<SlipStatus, string> = {
+    draft: 'Draf',
+    finance_verified: 'Diverifikasi Keuangan',
+    kbu_approved: 'Disahkan KBU',
+    locked: 'Terkunci',
+    payment_created: 'Instruksi Bayar Dibuat',
+    paid: 'Dibayar',
   };
 
   if (!employee) return null;
@@ -568,9 +655,9 @@ export default function PaySlipDialog({
               <div>
                 <DialogTitle className="text-xl font-bold tracking-tight text-slate-800 flex items-center gap-2">
                   Tinjau Slip Gaji
-                  {localIsLocked && (
+                  {localStatus !== 'draft' && (
                     <span className="inline-flex items-center gap-1 text-xs font-semibold bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full">
-                      🔒 Terkunci
+                      🔒 {statusLabel[localStatus]}
                     </span>
                   )}
                 </DialogTitle>
@@ -786,15 +873,7 @@ export default function PaySlipDialog({
             </div>
 
             <div>
-              {localIsLocked ? (
-                <Button
-                  type="button"
-                  onClick={handleBuka}
-                  className="rounded-xl bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-200 px-6 cursor-pointer flex items-center gap-1.5 font-bold"
-                >
-                  🔓 Buka Kunci
-                </Button>
-              ) : (
+              {localStatus === 'draft' ? (
                 <div className="flex items-center gap-2">
                   <Button
                     type="button"
@@ -803,15 +882,68 @@ export default function PaySlipDialog({
                   >
                     Simpan Perubahan
                   </Button>
+                  {(actorRole === 'finance_verifier' || actorRole === 'super_admin') && (
+                    <Button
+                      type="button"
+                      onClick={handleVerify}
+                      className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 font-bold"
+                    >
+                      ✓ Verifikasi Keuangan
+                    </Button>
+                  )}
+                </div>
+              ) : localStatus === 'finance_verified' ? (
+                (actorRole === 'payroll_authorizer' || actorRole === 'super_admin') ? (
+                  <Button
+                    type="button"
+                    onClick={handleApprove}
+                    className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white px-6 font-bold"
+                  >
+                    ✓ Sahkan sebagai KBU
+                  </Button>
+                ) : <span className="text-xs text-slate-500">Menunggu pengesahan KBU</span>
+              ) : localStatus === 'kbu_approved' ? (
+                (actorRole === 'payroll_authorizer' || actorRole === 'super_admin') ? (
                   <Button
                     type="button"
                     onClick={handleKunci}
-                    className="rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-md shadow-red-200 px-6 cursor-pointer flex items-center gap-1.5 font-bold"
+                    className="rounded-xl bg-gradient-to-r from-red-500 to-rose-600 text-white px-6 font-bold"
                   >
-                    🔒 Kunci
+                    🔒 Kunci Snapshot Final
+                  </Button>
+                ) : <span className="text-xs text-slate-500">Menunggu penguncian KBU</span>
+              ) : isImmutablePayrollStatus(localStatus) ? (
+                <div className="flex items-center gap-2">
+                  {localStatus === 'locked' &&
+                    (actorRole === 'finance_verifier' || actorRole === 'super_admin') && (
+                      <Button
+                        type="button"
+                        onClick={handleCreatePayment}
+                        className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-6 font-bold"
+                      >
+                        Buat Instruksi Bayar
+                      </Button>
+                    )}
+                  {localStatus === 'payment_created' &&
+                    (actorRole === 'finance_verifier' || actorRole === 'super_admin') && (
+                      <Button
+                        type="button"
+                        onClick={handleMarkPaid}
+                        className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 font-bold"
+                      >
+                        Tandai Dibayar
+                      </Button>
+                    )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCorrectionRequest}
+                    className="rounded-xl border-amber-300 text-amber-700 px-6 font-bold"
+                  >
+                    Ajukan Koreksi
                   </Button>
                 </div>
-              )}
+              ) : null}
             </div>
           </DialogFooter>
         </DialogContent>

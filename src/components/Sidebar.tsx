@@ -28,7 +28,7 @@ export default function Sidebar() {
     setIsMobileOpen(false);
   }, [pathname]);
 
-  if (profile?.role !== 'super_admin') {
+  if (!profile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(profile.role)) {
     return null;
   }
 
@@ -76,7 +76,10 @@ export default function Sidebar() {
       path: '/dashboard/payroll/simpan-pinjam',
       icon: Banknote
     }
-  ];
+  ].filter(item => {
+    if (profile.role === 'super_admin') return true;
+    return item.path === '/dashboard/payroll';
+  });
 
   const getIsActive = (item: typeof menuItems[0]) => {
     if (item.exact) {
@@ -158,7 +161,11 @@ export default function Sidebar() {
                 {profile?.displayName || 'Administrator'}
               </p>
               <p className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md w-fit mt-1">
-                Super Admin
+                {profile.role === 'super_admin'
+                  ? 'Super Admin'
+                  : profile.role === 'finance_verifier'
+                    ? 'Badan Keuangan'
+                    : 'Kepala Biro Umum'}
               </p>
             </div>
           </div>
@@ -250,7 +257,11 @@ export default function Sidebar() {
                     {profile?.displayName || 'Administrator'}
                   </p>
                   <p className="text-[9px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md w-fit mt-0.5">
-                    Super Admin
+                    {profile.role === 'super_admin'
+                      ? 'Super Admin'
+                      : profile.role === 'finance_verifier'
+                        ? 'Badan Keuangan'
+                        : 'Kepala Biro Umum'}
                   </p>
                 </div>
               </div>

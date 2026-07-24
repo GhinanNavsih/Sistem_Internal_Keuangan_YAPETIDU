@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { auth, db, secondaryDb } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import {
   doc,
@@ -51,14 +51,11 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
-import { MONTHS_ID, REKAP_COLUMNS } from '@/utils/rekapConfig';
+import { MONTHS_ID } from '@/utils/rekapConfig';
 import {
   calculateYearsOfService,
-  calculateGapok,
-  matchFunctionalAllowance,
-  normalizeName,
-  MANUAL_OVERRIDES
 } from '@/utils/payrollLogic';
+import { isTransferEligibleStatus } from '@/lib/payroll/domain';
 
 interface PekaryaDocItem {
   id: string;
@@ -177,190 +174,6 @@ export default function EmployeePayslipPage() {
   const [isDefaultPeriodSet, setIsDefaultPeriodSet] = useState(false);
   const [showDoc, setShowDoc] = useState(false);
   const [koperasiLoansInfo, setKoperasiLoansInfo] = useState<any[]>([]);
-
-  const parseLoanDate = (dateVal: any): Date | null => {
-    if (!dateVal) return null;
-    if (dateVal.toDate && typeof dateVal.toDate === 'function') return dateVal.toDate();
-    if (dateVal.seconds) return new Date(dateVal.seconds * 1000);
-    if (typeof dateVal === 'string' || typeof dateVal === 'number') {
-      const d = new Date(dateVal);
-      if (!isNaN(d.getTime())) return d;
-    }
-    return null;
-  };
-
-  const resolveKoperasiLoansForEmployee = (
-    loanDocs: any[],
-    userDocs: any[],
-    employee: any,
-    targetMonth?: number,
-    targetYear?: number
-  ) => {
-    const allDocsMap = new Map<string, any>();
-    loanDocs.forEach(d => {
-      const data = typeof d.data === 'function' ? d.data() : d;
-      allDocsMap.set(d.id || data.id, { id: d.id || data.id, ...data });
-    });
-
-    const userMap = new Map<string, any>();
-    userDocs.forEach(d => {
-      const data = typeof d.data === 'function' ? d.data() : d;
-      if (d.id) userMap.set(d.id, data);
-      if (data.uid) userMap.set(data.uid, data);
-    });
-
-    const empName = employee?.personal_info?.name || employee?.name || profile?.displayName || '';
-    const normalizedEmpName = normalizeName(empName);
-
-    const cutoffDate = (targetMonth && targetYear)
-      ? new Date(targetYear, targetMonth, 0, 23, 59, 59, 999)
-      : null;
-
-    const filterHistoryUpToCutoff = (entries: any[]) => {
-      if (!cutoffDate || !Array.isArray(entries)) return entries || [];
-      return entries.filter(e => {
-        const ts = e.timestamp || e.createdAt || e.date;
-        const d = parseLoanDate(ts);
-        if (!d) return true;
-        return d.getTime() <= cutoffDate.getTime();
-      });
-    };
-
-    const matchedLoans: any[] = [];
-
-    allDocsMap.forEach((loan, loanId) => {
-      // 1. Check remaining debt > 0
-      if ((loan.sisaHutang || 0) <= 0) return;
-
-      // 2. Check status (normalize 'Pembayaran Cicilan' back to 'Disetujui dan Aktif')
-      let resolvedStatus = loan.status;
-      if (loan.history && Array.isArray(loan.history) && loan.history.length > 0) {
-        const sortedHistory = [...loan.history].sort((a, b) => {
-          const tA = (a.timestamp as any)?.toMillis ? (a.timestamp as any).toMillis() : (a.timestamp?.seconds ? a.timestamp.seconds * 1000 : 0);
-          const tB = (b.timestamp as any)?.toMillis ? (b.timestamp as any).toMillis() : (b.timestamp?.seconds ? b.timestamp.seconds * 1000 : 0);
-          return tB - tA;
-        });
-        if (sortedHistory[0]?.status) {
-          resolvedStatus = sortedHistory[0].status;
-        }
-      }
-      if (resolvedStatus === 'Pembayaran Cicilan') {
-        resolvedStatus = 'Disetujui dan Aktif';
-      }
-
-      if (resolvedStatus !== 'Disetujui dan Aktif') return;
-
-      // 3. Resolve borrower name from loan or user doc
-      const kopUser = userMap.get(loan.userId);
-      const borrowerName = loan.userData?.namaLengkap || kopUser?.nama || '';
-      const normalizedBorrowerName = normalizeName(borrowerName);
-
-      // 4. Matching logic (1:1 with simpan-pinjam/page.tsx):
-      let isMatch = false;
-      const loanUserId = loan.userId;
-      if (loanUserId) {
-        if (employee?.koperasiAuthUid && employee.koperasiAuthUid === loanUserId) isMatch = true;
-        else if (employee?.koperasiUserId && employee.koperasiUserId === loanUserId) isMatch = true;
-        else if (employee?.id && employee.id === loanUserId) isMatch = true;
-      }
-
-      if (!isMatch && normalizedBorrowerName && normalizedEmpName && normalizedBorrowerName === normalizedEmpName) {
-        isMatch = true;
-      }
-
-      if (!isMatch && borrowerName) {
-        const overrideName = MANUAL_OVERRIDES[borrowerName.trim()];
-        if (overrideName && (normalizeName(overrideName) === normalizedEmpName || overrideName === empName)) {
-          isMatch = true;
-        }
-      }
-
-      if (!isMatch) return;
-
-      // 5. Build composed history trail filtered by cutoffDate
-      const composedTrail: { loanId: string; loanLabel: string; entries: any[] }[] = [];
-      let currentId: string | undefined = loan.restructuredFromLoanId;
-      const visited = new Set<string>();
-      while (currentId && !visited.has(currentId)) {
-        visited.add(currentId);
-        const ancestor = allDocsMap.get(currentId);
-        if (ancestor) {
-          composedTrail.unshift({
-            loanId: ancestor.id,
-            loanLabel: `#${ancestor.id.substring(0, 8)}`,
-            entries: filterHistoryUpToCutoff(ancestor.history || []),
-          });
-          currentId = ancestor.restructuredFromLoanId;
-        } else {
-          break;
-        }
-      }
-
-      const filteredCurrentHistory = filterHistoryUpToCutoff(loan.history || []);
-      composedTrail.push({
-        loanId,
-        loanLabel: `#${loanId.substring(0, 8)} (Saat Ini)`,
-        entries: filteredCurrentHistory,
-      });
-
-      // 6. Compute metrics adjusted for period cutoff
-      const total = loan.jumlahPinjaman || 0;
-      const tenor = loan.tenor || 1;
-      const cicilan = loan.monthlyInstallment || Math.round(total / tenor);
-
-      let paidCount = 0;
-      if (cutoffDate) {
-        let paymentEntriesCount = 0;
-        composedTrail.forEach(segment => {
-          (segment.entries || []).forEach(e => {
-            if (e.status === 'Pembayaran Cicilan' || (e.notes && (e.notes.toLowerCase().includes('potongan cicilan') || e.notes.toLowerCase().includes('pembayaran')))) {
-              paymentEntriesCount++;
-            }
-          });
-        });
-
-        if (paymentEntriesCount > 0) {
-          paidCount = Math.min(tenor, paymentEntriesCount);
-        } else {
-          const approvalDate = parseLoanDate(loan.tanggalDisetujui || loan.disetujuiAt || loan.createdAt);
-          if (approvalDate && targetMonth && targetYear) {
-            const elapsed = Math.max(0, (targetYear - approvalDate.getFullYear()) * 12 + (targetMonth - (approvalDate.getMonth() + 1)) + 1);
-            paidCount = Math.min(tenor, elapsed);
-          } else {
-            const sisa = Math.max(0, loan.sisaHutang ?? 0);
-            const paid = Math.max(0, total - sisa);
-            paidCount = Math.min(tenor, Math.round(paid / Math.max(1, cicilan)));
-          }
-        }
-      } else {
-        const sisa = Math.max(0, loan.sisaHutang ?? 0);
-        const paid = Math.max(0, total - sisa);
-        paidCount = typeof loan.jumlahMenyicil === 'number'
-          ? loan.jumlahMenyicil
-          : Math.min(tenor, Math.round(paid / Math.max(1, cicilan)));
-      }
-
-      const paidAmount = paidCount * cicilan;
-      const sisa = Math.max(0, total - paidAmount);
-      const currentNum = Math.min(tenor, paidCount + 1);
-
-      matchedLoans.push({
-        id: loanId,
-        jumlahPinjaman: total,
-        tenor,
-        cicilan,
-        sisaHutang: sisa,
-        paidInstallments: paidCount,
-        currentInstallmentNum: currentNum,
-        tujuanPinjaman: loan.tujuanPinjaman || 'Pinjaman Koperasi UNIPDU',
-        tanggalDisetujui: parseLoanDate(loan.tanggalDisetujui || loan.disetujuiAt || loan.tanggalPengajuan || loan.createdAt || loan.tanggalPinjam || loan.tanggal),
-        history: filteredCurrentHistory,
-        composedTrail,
-      });
-    });
-
-    return matchedLoans;
-  };
 
   const formatLoanDate = (ts: any) => {
     if (!ts) return '-';
@@ -547,7 +360,7 @@ export default function EmployeePayslipPage() {
         const q = query(
           collection(db, 'PayrollSlipStates'),
           where('employeeId', '==', empId),
-          where('status', '==', 'locked')
+          where('status', 'in', ['confirmed', 'locked', 'payment_created', 'paid'])
         );
         const querySnapshot = await getDocs(q);
 
@@ -850,500 +663,45 @@ export default function EmployeePayslipPage() {
 
         setEmployeeData(employee);
 
-        // Always resolve active Koperasi loans & users using the exact 1:1 logic from simpan-pinjam/page.tsx
-        let matchedKoperasiLoans: any[] = [];
-        try {
-          const [loanSnap, userSnap] = await Promise.all([
-            getDocs(collection(secondaryDb, 'simpanPinjam')),
-            getDocs(collection(secondaryDb, 'users'))
-          ]);
-          matchedKoperasiLoans = resolveKoperasiLoansForEmployee(loanSnap.docs, userSnap.docs, employee, month, year);
-          setKoperasiLoansInfo(matchedKoperasiLoans);
-        } catch (e) {
-          console.error("Error resolving Koperasi loans:", e);
-          setKoperasiLoansInfo([]);
-        }
-
-        const koperasiDeductionAmount = matchedKoperasiLoans.reduce((sum, l) => sum + (l.cicilan || 0), 0);
+        // Only the employee's immutable final snapshot is loaded. Raw
+        // institution-wide attendance, vakasi, matrix, and cooperative
+        // collections are never downloaded to an employee browser.
+        setKoperasiLoansInfo([]);
 
         // 2. Check for saved slip in PayrollSlipStates (Format: {periodKey}_{linkedEmployeeId})
         const slipDocId = `${periodKey}_${empId}`;
         const slipRef = doc(db, 'PayrollSlipStates', slipDocId);
         const slipSnap = await getDoc(slipRef);
 
-        if (slipSnap.exists()) {
+        if (slipSnap.exists() && isTransferEligibleStatus(slipSnap.data()?.status)) {
           const slipData = slipSnap.data();
           setConfirmedSlip(slipData);
-          setIsConfirmed(slipData.status === 'locked');
+          setIsConfirmed(true);
           setCalculatedEarnings(slipData.earnings || []);
           setCalculatedDeductions(slipData.deductions || []);
 
-          if (isLoyalis) {
-            // Fetch presence info in background/parallel to show in guide
-            try {
-              const presenceSnap = await getDoc(doc(db, 'LoyalisPresence', periodKey));
-              if (presenceSnap.exists()) {
-                const pData = presenceSnap.data();
-                const empEntry = pData.entries?.[empId];
-                setPresenceInfo({
-                  workingDays: pData.workingDays || 25,
-                  expectedHours: pData.expectedHours || 6.5,
-                  absenceMinutes: empEntry?.absenceMinutes || 0,
-                  bonusDeduction: empEntry?.deduction || 0
-                });
-              } else {
-                setPresenceInfo({
-                  workingDays: 25,
-                  expectedHours: 6.5,
-                  absenceMinutes: 0,
-                  bonusDeduction: 0
-                });
-              }
-            } catch (e) {
-              console.error("Error fetching presence info for guide:", e);
-              setPresenceInfo({
-                workingDays: 25,
-                expectedHours: 6.5,
-                absenceMinutes: 0,
-                bonusDeduction: 0
-              });
-            }
-
-            // Fetch vakasi events in background/parallel to show in guide
-            try {
-              const vSnap = await getDocs(collection(db, 'VakasiTambahan'));
-              const events: { eventName: string; payGiven: number }[] = [];
-              vSnap.docs.forEach(d => {
-                const data = d.data();
-                if (data.period === periodToken && (!data.status || data.status === 'approved')) {
-                  const eventName = data.eventName || '';
-                  const worker = data.eventWorkers?.[empId];
-                  if (worker && worker.payGiven) {
-                    events.push({ eventName, payGiven: worker.payGiven });
-                  }
-                }
-              });
-              setVakasiEvents(events);
-            } catch (e) {
-              console.error("Error fetching vakasi events for guide:", e);
-              setVakasiEvents([]);
-            }
-
-            // Fetch kepangkatan matrix in background
-            try {
-              const kepConfigSnap = await getDoc(doc(db, 'SalaryMatrix_Kepangkatan', '_config'));
-              const activeKepVersion = kepConfigSnap.exists() ? (kepConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
-              const kepSnap = await getDocs(collection(db, 'SalaryMatrix_Kepangkatan', activeKepVersion, 'rows'));
-              const designations: Record<number, string> = {};
-              kepSnap.docs.forEach(d => {
-                const data = d.data();
-                const credit = Number(data.credit_score) || 0;
-                designations[credit] = data.designation || '';
-              });
-              setKepangkatanDesignations(designations);
-            } catch (e) {
-              console.error("Error fetching kepangkatan designations for guide:", e);
-              setKepangkatanDesignations({});
-            }
-          }
+          setPresenceInfo({
+            workingDays: 0,
+            expectedHours: 0,
+            absenceMinutes: 0,
+            bonusDeduction: 0,
+          });
+          setVakasiEvents([]);
+          setKepangkatanDesignations({});
 
           setLoading(false);
           return;
         }
 
-        if (!isLoyalis) {
-          // No locked slip for blue collar (honorer) -> calculate draft on the fly in real-time!
-          setConfirmedSlip(null);
-          setIsConfirmed(false);
-
-          // 1. Fetch approved ActivityReports for this employee & period
-          const activityQ = query(
-            collection(db, 'ActivityReports'),
-            where('employeeId', '==', empId),
-            where('period', '==', periodToken),
-            where('status', '==', 'approved')
-          );
-          const reportsSnap = await getDocs(activityQ);
-          const reports = reportsSnap.docs.map(d => d.data());
-
-          // 2. Fetch KegiatanSpj events for this period
-          let spjEventsTotal = 0;
-          try {
-            const spjQ = query(
-              collection(db, 'KegiatanSpj'),
-              where('period', '==', periodToken)
-            );
-            const spjSnap = await getDocs(spjQ);
-            spjSnap.docs.forEach(d => {
-              const data = d.data();
-              const workerInfo = data.eventWorkers?.[empId];
-              if (workerInfo) {
-                spjEventsTotal += workerInfo.payGiven || 0;
-              }
-            });
-          } catch (err) {
-            console.error('Error fetching KegiatanSpj for draft calculation:', err);
-          }
-
-          const jobCategory = employee?.employment?.jobCategory || '';
-          const earnings: PaySlipField[] = [];
-          const gapok = employee?.salaryProfile?.baseSalaryAmount || 0;
-
-          // Gaji Pokok
-          earnings.push({ label: 'Gaji Pokok', amount: gapok });
-
-          const activityTotal = reports.reduce((sum, r) => sum + (r.fee || 0), 0);
-          const totalSpj = spjEventsTotal + activityTotal;
-
-          if (jobCategory === 'SATPAM') {
-            let harianCount = 0;
-            let jumatCount = 0;
-            let lemburSendiriCount = 0;
-            let lemburCoverCount = 0;
-
-            reports.forEach(r => {
-              const shiftType = r.shiftType || '';
-              if (shiftType === 'Harian') harianCount++;
-              else if (shiftType === 'Jumat & Libur') jumatCount++;
-              else if (shiftType === 'Lembur Sendiri') lemburSendiriCount++;
-              else if (shiftType === 'Lembur Cover') lemburCoverCount++;
-            });
-
-            const columns = REKAP_COLUMNS['SATPAM'] || [];
-            columns.forEach(col => {
-              if (col.slipLabel) {
-                if (col.key === 'harian') earnings.push({ label: col.slipLabel, amount: harianCount * 12500 });
-                else if (col.key === 'jumatLibur') earnings.push({ label: col.slipLabel, amount: jumatCount * 25000 });
-                else if (col.key === 'lemburSendiri') earnings.push({ label: col.slipLabel, amount: lemburSendiriCount * 30000 });
-                else if (col.key === 'lemburCover') earnings.push({ label: col.slipLabel, amount: lemburCoverCount * 50000 });
-                else if (col.key === 'tunjanganJabatan') earnings.push({ label: col.slipLabel, amount: roleStr === 'ketua_shift_satpam' ? 100000 : 0 });
-                else if (col.key === 'spj') earnings.push({ label: col.slipLabel, amount: totalSpj });
-                else earnings.push({ label: col.slipLabel, amount: 0 });
-              }
-            });
-          } else {
-            // General honorer
-            const columns = REKAP_COLUMNS[jobCategory] || REKAP_COLUMNS.KEBERSIHAN;
-            columns.forEach(col => {
-              if (col.slipLabel) {
-                if (col.key === 'spj') {
-                  earnings.push({ label: col.slipLabel, amount: totalSpj });
-                } else {
-                  earnings.push({ label: col.slipLabel, amount: 0 });
-                }
-              }
-            });
-          }
-
-          // BPJS Allowance
-          if (employee?.bpjs?.allowanceAmount) {
-            earnings.push({ label: 'BPJS (Tunjangan)', amount: Math.round(employee.bpjs.allowanceAmount) });
-          }
-
-          // Tunjangan Beras
-          earnings.push({
-            label: 'Tunjangan Beras',
-            amount: employee?.salaryProfile?.tunjanganBeras ?? 0
-          });
-
-          // Deductions (Potongan)
-          const deductions: PaySlipField[] = [];
-          deductions.push({ label: 'KOPERASI ROCHMAD', amount: employee?.deductions?.koperasiRochmad || 0 });
-
-          const bpjsDeduction = employee?.bpjs?.deductionAmount || 0;
-          deductions.push({ label: 'BPJS', amount: bpjsDeduction });
-
-          const thtDeduction = employee?.tht?.deductionAmount || 0;
-          deductions.push({ label: 'TABUNGAN HARI TUA BNI SIMPONI', amount: thtDeduction });
-
-          const savingsDeduction = employee?.savings?.deductionAmount || 0;
-          deductions.push({ label: 'TABUNGAN', amount: savingsDeduction });
-
-          const zizDeduction = employee?.ziz?.deductionAmount || 0;
-          deductions.push({ label: 'ZAKAT INFAQ SODAQOH', amount: zizDeduction });
-          deductions.push({ label: 'REVISI GAJI', amount: 0 });
-
-          const pinluDeduction = employee?.pinlu?.deductionAmount || 0;
-          deductions.push({ label: 'PINLU/TAGIHAN', amount: pinluDeduction });
-
-          deductions.push({ label: 'PINJAMAN KOP. UNIPDU', amount: koperasiDeductionAmount });
-          deductions.push({ label: 'POTONGAN PRESENSI', amount: 0 });
-          deductions.push({ label: 'POTONGAN BONUS PRESENSI', amount: 0 });
-          deductions.push({ label: 'IURAN WAJIB KOP. UNIPDU', amount: 0 });
-
-          setCalculatedEarnings(earnings);
-          setCalculatedDeductions(deductions);
-          setLoading(false);
-          return;
-        }
-
-        // 3. Fallback: Dynamic calculation of draft payslip in real-time (Only for Loyalis)
-        // Fetch active Salary Matrix configs in parallel
-        // Fetch active Salary Matrix configs in parallel
-        const [
-          matrixWhiteConfigSnap,
-          fConfigSnap,
-          kepConfigSnap,
-          presenceSnap,
-          vakasiSnap,
-          loanSnapshot,
-          userSnapshot
-        ] = await Promise.all([
-          getDoc(doc(db, 'SalaryMatrix_WhiteCollar', '_config')),
-          getDoc(doc(db, 'SalaryMatrix_Functional', '_config')),
-          getDoc(doc(db, 'SalaryMatrix_Kepangkatan', '_config')),
-          getDoc(doc(db, 'LoyalisPresence', periodKey)),
-          getDocs(collection(db, 'VakasiTambahan')),
-          getDocs(collection(secondaryDb, 'simpanPinjam')),
-          getDocs(collection(secondaryDb, 'users'))
-        ]);
-
-        // Resolve active matrix versions
-        const activeWhiteVersion = matrixWhiteConfigSnap.exists() ? (matrixWhiteConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
-        const activeFunctionalVersion = fConfigSnap.exists() ? (fConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
-        const activeKepVersion = kepConfigSnap.exists() ? (kepConfigSnap.data()?.activeVersion || '2026_v1') : '2026_v1';
-
-        // Load active versions rows
-        const [matrixWhiteSnap, fSnap, kepSnap] = await Promise.all([
-          getDocs(collection(db, 'SalaryMatrix_WhiteCollar', activeWhiteVersion, 'rows')),
-          getDocs(collection(db, 'SalaryMatrix_Functional', activeFunctionalVersion, 'rows')),
-          getDocs(collection(db, 'SalaryMatrix_Kepangkatan', activeKepVersion, 'rows'))
-        ]);
-
-        // Process White Matrix
-        const matrixWhite: any = {};
-        matrixWhiteSnap.docs.forEach(d => {
-          const data = d.data();
-          const tahun = data.tahun;
-          const salaries = data.salaries || {};
-          Object.entries(salaries).forEach(([grade, amount]) => {
-            if (!matrixWhite[grade]) matrixWhite[grade] = {};
-            matrixWhite[grade][tahun] = amount as number;
-          });
-        });
-
-        // Process Functional Matrix
-        const fMatrix: Record<string, { base_value: number; functional_tiers: Record<string, number> }> = {};
-        fSnap.docs.forEach(fDoc => {
-          const data = fDoc.data();
-          fMatrix[fDoc.id] = {
-            base_value: data.base_value || 0,
-            functional_tiers: data.functional_tiers || {},
-          };
-        });
-
-        // Process Kepangkatan Matrix
-        const kepMatrix: Record<number, number> = {};
-        kepSnap.docs.forEach(d => {
-          const data = d.data();
-          const credit = Number(data.credit_score) || 0;
-          const allowance = Number(data.allowance) || 0;
-          kepMatrix[credit] = allowance;
-        });
-
-        const designations: Record<number, string> = {};
-        kepSnap.docs.forEach(d => {
-          const data = d.data();
-          const credit = Number(data.credit_score) || 0;
-          designations[credit] = data.designation || '';
-        });
-        setKepangkatanDesignations(designations);
-
-        // Calculate Gaji Pokok (Gapok)
-        const gapok = calculateGapok(employee, matrixWhite, targetDate);
-
-        // Calculate Tunjangan Fungsional
-        const edLevel = employee.academic_and_tier?.education_level;
-        const fTier = employee.academic_and_tier?.functional_tier;
-        const tunjFungsional = matchFunctionalAllowance(edLevel, fTier, fMatrix);
-
-        // Calculate Tunjangan Kepangkatan dynamically
-        const credit = Number(employee.kepangkatan?.cummulativeCredit) || 0;
-        const tunjKepangkatan = kepMatrix[credit] || 0;
-
-        // Calculate presence-based values
-        let presenceBonus = 0;
-        let presenceDeduction = 0;
-        let presensiEarning = 0;
-        let presensiDeduction = 0;
-
-        // 1. Resolve working days and expected hours (default to 25 / 6.5)
-        let workingDays = 25;
-        let expectedHours = 6.5;
-        if (presenceSnap.exists()) {
-          const pData = presenceSnap.data();
-          if (pData.workingDays) workingDays = pData.workingDays;
-          if (pData.expectedHours) expectedHours = pData.expectedHours;
-        }
-
-        // 2. Default to maximum possible earnings
-        presenceBonus = 250000;
-        presensiEarning = Math.round(workingDays * expectedHours * 1650);
-        presenceDeduction = 0;
-        presensiDeduction = 0;
-
-        // 3. Apply actual Excel attendance results if they are uploaded and entries exist
-        if (presenceSnap.exists()) {
-          const pData = presenceSnap.data();
-          if (pData.entries && Object.keys(pData.entries).length > 0) {
-            const empEntry = pData.entries[empId];
-            if (empEntry) {
-              presenceDeduction = empEntry.deduction || 0;
-              const absenceMinutes = empEntry.absenceMinutes || 0;
-              presensiDeduction = Math.round((absenceMinutes / 60) * 1650);
-            }
-          }
-        }
-
-        const draftAbsenceMinutes = presenceSnap.exists() && presenceSnap.data()?.entries?.[empId] ? (presenceSnap.data().entries[empId].absenceMinutes || 0) : 0;
-        const draftBonusDeduction = presenceSnap.exists() && presenceSnap.data()?.entries?.[empId] ? (presenceSnap.data().entries[empId].deduction || 0) : 0;
-        setPresenceInfo({
-          workingDays,
-          expectedHours,
-          absenceMinutes: draftAbsenceMinutes,
-          bonusDeduction: draftBonusDeduction
-        });
-
-        // Calculate Vakasi Tambahan
-        let vakasiTambahanSum = 0;
-        const vakasiEventsList: { eventName: string; payGiven: number }[] = [];
-        vakasiSnap.docs.forEach(d => {
-          const data = d.data();
-          if (data.period === periodToken && (!data.status || data.status === 'approved')) {
-            const eventName = data.eventName || '';
-            const worker = data.eventWorkers?.[empId];
-            if (worker && worker.payGiven) {
-              vakasiTambahanSum += worker.payGiven;
-              vakasiEventsList.push({
-                eventName,
-                payGiven: worker.payGiven
-              });
-            }
-          }
-        });
-
-        setVakasiEvents(vakasiEventsList);
-
-        // Koperasi loan deduction
-        const empName = employee.personal_info?.name || employee.name || '';
-        const koperasiDeduction = koperasiDeductionAmount;
-
-        // Koperasi Simpanan Wajib
-        let koperasiSaving = 0;
-        userSnapshot.docs.forEach(userDoc => {
-          const uData = userDoc.data();
-          const uName = uData.nama || '';
-          const uUid = uData.uid || userDoc.id;
-
-          const isUidMatch = (employee.koperasiUserId && employee.koperasiUserId === userDoc.id) || (employee.koperasiAuthUid && employee.koperasiAuthUid === uUid);
-          const isNameMatch = empName && normalizeName(uName) === normalizeName(empName);
-          const isOverrideMatch = empName && MANUAL_OVERRIDES[uName.trim()] === empName;
-
-          if (isUidMatch || isNameMatch || isOverrideMatch) {
-            const isApproved = uData.status === 'approved' || uData.membershipStatus === 'approved';
-            if (!isApproved) return;
-
-            const isYayasanSubsidy = uData.paymentStatus === 'Yayasan Subsidy';
-            koperasiSaving = isYayasanSubsidy ? 0 : 25000;
-          }
-        });
-
-        // Build Earnings (Penerimaan) list
-        const earnings: PaySlipField[] = [];
-        earnings.push({ label: 'Gaji Pokok', amount: gapok });
-
-        // Tunjangan Keluarga formula
-        const famMetrics = employee.family_allowance_metrics;
-        let spouseCount = 0, sd = 0, sltp = 0, slta = 0, pt = 0;
-        if (famMetrics) {
-          spouseCount = Number(famMetrics.spouse_count) || 0;
-          sd = Number(famMetrics.children_sd) || 0;
-          sltp = Number(famMetrics.children_sltp) || 0;
-          slta = Number(famMetrics.children_slta) || 0;
-          pt = Number(famMetrics.children_pt) || 0;
-        }
-        const familyPct = (spouseCount * 0.05) + (sd * 0.05) + (sltp * 0.075) + (slta * 0.1) + (pt * 0.125);
-        const tunjKeluarga = Math.round(gapok * familyPct);
-        earnings.push({ label: 'T. Keluarga', amount: tunjKeluarga });
-        earnings.push({ label: 'T. Fungsional', amount: tunjFungsional });
-
-        earnings.push({ label: 'Kepangkatan', amount: tunjKepangkatan });
-
-        const tInstruksional = employee.t_instruksional || 0;
-        earnings.push({ label: 'T. Instruksional', amount: tInstruksional });
-        earnings.push({ label: 'T. Hari Tua', amount: Math.round(gapok * 0.1) });
-
-        const bpjsTk = employee.bpjs?.t_bpjs_tk || 0;
-        earnings.push({ label: 'T. BPJS TK', amount: bpjsTk });
-
-        const bpjsKes = employee.bpjs?.t_bpjs_kes || 0;
-        earnings.push({ label: 'T. BPJS KES', amount: bpjsKes });
-
-        const tunjBeras = employee.salaryProfile?.tunjanganBeras || 0;
-        earnings.push({ label: 'BERAS', amount: tunjBeras });
-
-        earnings.push({ label: 'PRESENSI', amount: presensiEarning });
-        earnings.push({ label: 'BONUS PRESENSI', amount: presenceBonus });
-        earnings.push({ label: 'PIKET', amount: 0 });
-        earnings.push({ label: 'LEMBUR', amount: 0 });
-
-        // Struktural
-        const positions = employee.employment_profile?.structural_positions || [];
-        if (positions.length > 0) {
-          const sortedPos = [...positions].sort((a: any, b: any) => (Number(b.allowance) || 0) - (Number(a.allowance) || 0));
-          sortedPos.forEach((pos, idx) => {
-            const amt = Number(pos.allowance) || 0;
-            if (idx === 0) {
-              earnings.push({ label: `STRUKTURAL: ${pos.name}`, amount: amt });
-            } else {
-              const adjustedAmt = Math.round(amt / 2);
-              earnings.push({
-                label: `STRUKTURAL: ${pos.name} (50% dari Rp ${amt.toLocaleString('id-ID')})`,
-                amount: adjustedAmt,
-              });
-            }
-          });
-        } else {
-          const structuralRole = employee.employment_profile?.department_unit || employee.employment_profile?.job_role || 'Staf';
-          earnings.push({ label: `STRUKTURAL: ${structuralRole}`, amount: 0 });
-        }
-
-        // Vakasi Tambahan
-        if (vakasiEventsList.length > 0) {
-          vakasiEventsList.forEach(item => {
-            earnings.push({ label: item.eventName, amount: item.payGiven });
-          });
-        } else if (vakasiTambahanSum > 0) {
-          earnings.push({ label: 'Vakasi Tambahan', amount: vakasiTambahanSum });
-        }
-
-        // Build Deductions (Potongan) list
-        const deductions: PaySlipField[] = [];
-        deductions.push({ label: 'KOPERASI ROCHMAD', amount: employee.deductions?.koperasiRochmad || 0 });
-
-        const bpjsDeduction = employee.bpjs?.deductionAmount || 0;
-        deductions.push({ label: 'BPJS', amount: bpjsDeduction });
-
-        const thtDeduction = employee.tht?.deductionAmount || 0;
-        deductions.push({ label: 'TABUNGAN HARI TUA BNI SIMPONI', amount: thtDeduction });
-
-        const savingsDeduction = employee.savings?.deductionAmount || 0;
-        deductions.push({ label: 'TABUNGAN', amount: savingsDeduction });
-
-        const zizDeduction = employee.ziz?.deductionAmount || 0;
-        deductions.push({ label: 'ZAKAT INFAQ SODAQOH', amount: zizDeduction });
-        deductions.push({ label: 'REVISI GAJI', amount: 0 });
-
-        const pinluDeduction = employee.pinlu?.deductionAmount || 0;
-        deductions.push({ label: 'PINLU/TAGIHAN', amount: pinluDeduction });
-        deductions.push({ label: 'PINJAMAN KOP. UNIPDU', amount: koperasiDeduction });
-        deductions.push({ label: 'POTONGAN PRESENSI', amount: presensiDeduction });
-        deductions.push({ label: 'POTONGAN BONUS PRESENSI', amount: presenceDeduction });
-        deductions.push({ label: 'IURAN WAJIB KOP. UNIPDU', amount: koperasiSaving });
-
-        setCalculatedEarnings(earnings);
-        setCalculatedDeductions(deductions);
+        // Financial drafts are intentionally not exposed to employees. Every
+        // employee can only read the immutable slip published for them.
+        setConfirmedSlip(null);
+        setIsConfirmed(false);
+        setCalculatedEarnings([]);
+        setCalculatedDeductions([]);
         setLoading(false);
+        return;
+
       } catch (err: any) {
         console.error(`Error fetching/calculating payslip data (attempt ${attempt}):`, err);
         const isPermissionError = err?.code === 'permission-denied' || err?.message?.toLowerCase().includes('permission');

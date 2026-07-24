@@ -59,8 +59,8 @@ function ReactivateContent() {
     e.preventDefault();
     setFormError(null);
 
-    if (password.length < 6) {
-      setFormError('Kata sandi harus minimal 6 karakter.');
+    if (password.length < 10) {
+      setFormError('Kata sandi harus minimal 10 karakter.');
       return;
     }
 
@@ -172,7 +172,7 @@ function ReactivateContent() {
                     <Input
                       id="new-password"
                       type={showPassword ? 'text' : 'password'}
-                      placeholder="Minimal 6 karakter"
+                      placeholder="Minimal 10 karakter"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="pl-11 pr-10 h-11 rounded-xl border-slate-200 focus:border-indigo-500 focus:ring-indigo-500/20 bg-white dark:bg-slate-950"

@@ -37,10 +37,16 @@ import type {
   BlueCollarEmployee, UraianEntry, RekapColumn
 } from '@/types';
 import { generateRekapPresensiKebersihanyPdf } from '@/utils/generateRekapPresensiKebersihan';
+import { dedupeSatpamActivityReports } from '@/lib/payroll/domain';
+import { authenticatedJson } from '@/lib/payroll/client';
+import {
+  sumApprovedActivitySpj,
+  sumApprovedEventSpj,
+} from '@/lib/payroll/pekaryaSpj';
 
 export default function RekapPekaryaPage() {
   const router = useRouter();
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const searchParams = useSearchParams();
 
   // Read params from URL search parameters
@@ -197,16 +203,11 @@ export default function RekapPekaryaPage() {
     if (!category) return;
     try {
       const periodToken = `${year}-${String(month).padStart(2, '0')}`;
-      const q = query(
-        collection(db, 'KegiatanSpj'),
-        where('period', '==', periodToken)
+      const eventResult = await authenticatedJson<{ events: any[] }>(
+        `/api/pekarya/spj-events?period=${encodeURIComponent(periodToken)}&category=${encodeURIComponent(category)}`,
+        { method: 'GET' },
       );
-      const snap = await getDocs(q);
-      const list = snap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
-      setSpjEvents(list);
+      setSpjEvents(eventResult.events);
 
       // Also fetch approved ActivityReports for the same period
       try {
@@ -260,7 +261,9 @@ export default function RekapPekaryaPage() {
           return ar.activityDate >= startDateStr && ar.activityDate <= endDateStr;
         });
 
-        setApprovedActivityReports(filteredAr);
+        setApprovedActivityReports(
+          category === 'SATPAM' ? dedupeSatpamActivityReports(filteredAr) : filteredAr,
+        );
       } catch (arErr) {
         console.error('Error fetching ActivityReports:', arErr);
       }
@@ -275,23 +278,22 @@ export default function RekapPekaryaPage() {
 
   // Helper: compute accumulated SPJ payout for an employee
   const getComputedSpj = useCallback((empId: string) => {
-    const kegiatanTotal = spjEvents.reduce((sum, evt) => {
-      const workerInfo = evt.eventWorkers?.[empId];
-      if (workerInfo) {
-        return sum + (workerInfo.payGiven || 0);
-      }
-      return sum;
-    }, 0);
-
-    const activityTotal = approvedActivityReports.reduce((sum, ar) => {
-      if (ar.employeeId === empId) {
-        return sum + (ar.fee || 0);
-      }
-      return sum;
-    }, 0);
+    const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+    const kegiatanTotal = sumApprovedEventSpj(
+      spjEvents,
+      empId,
+      category,
+      periodToken,
+    );
+    const activityTotal = sumApprovedActivitySpj(
+      approvedActivityReports,
+      empId,
+      category,
+      periodToken,
+    );
 
     return kegiatanTotal + activityTotal;
-  }, [spjEvents, approvedActivityReports]);
+  }, [spjEvents, approvedActivityReports, category, month, year]);
 
   const getComputedSatpamShiftCount = useCallback((empId: string, shiftTypeKey: string) => {
     let targetShiftType = '';
@@ -502,7 +504,13 @@ export default function RekapPekaryaPage() {
       formData.append('file', blob, 'cropped.png');
       const baseCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
       formData.append('columns', JSON.stringify(baseCols.map(c => ({ key: c.key, label: c.label }))));
-      const res = await fetch('/api/parse-rekap', { method: 'POST', body: formData });
+      if (!user) throw new Error('Sesi tidak ditemukan.');
+      const token = await user.getIdToken();
+      const res = await fetch('/api/parse-rekap', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
       if (!res.ok) throw new Error('AI Scan failed');
       const { data } = await res.json();
       setLastScanResult(data);
@@ -560,7 +568,7 @@ export default function RekapPekaryaPage() {
       const rawValues = tableData[emp.employeeId] ?? {};
       const storedValues: Record<string, number> = {
         ...rawValues,
-        spj: rawValues.spj !== undefined ? rawValues.spj : getComputedSpj(emp.employeeId),
+        spj: getComputedSpj(emp.employeeId),
       };
       if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7))) {
         const satpamShiftKeys = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'];
@@ -679,7 +687,7 @@ export default function RekapPekaryaPage() {
       const fields = empCols.map(col => {
         let rawVal = rawValues[col.key] ?? 0;
         if (col.key === 'spj') {
-          rawVal = rawValues.spj !== undefined ? rawValues.spj : getComputedSpj(emp.employeeId);
+          rawVal = getComputedSpj(emp.employeeId);
         }
         if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'].includes(col.key)) {
           if (rawValues[col.key] === undefined) {
@@ -714,7 +722,7 @@ export default function RekapPekaryaPage() {
       const rawValues = tableData[emp.employeeId] ?? {};
       const computedValues: Record<string, number> = {
         ...rawValues,
-        spj: rawValues.spj !== undefined ? rawValues.spj : getComputedSpj(emp.employeeId),
+        spj: getComputedSpj(emp.employeeId),
       };
       if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7))) {
         const satpamShiftKeys = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'];
@@ -850,7 +858,7 @@ export default function RekapPekaryaPage() {
     <div className="space-y-6">
       {/* Global Action Bar */}
       <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-[20px] border border-slate-200/60 shadow-sm">
-        {['KEBERSIHAN', 'KEBERSIHAN_IC'].includes(category) && (
+        {category !== 'SATPAM' && SUPPORTED_CATEGORIES.includes(category) && (
           <Button
             onClick={() => router.push(`/dashboard/payroll/activity-review?month=${month}&year=${year}`)}
             variant="outline"
@@ -1076,7 +1084,7 @@ export default function RekapPekaryaPage() {
                           const isSpj = col.key === 'spj';
                           const isSatpamShift = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'].includes(col.key);
                           const isTunjanganJabatan = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && col.key === 'tunjanganJabatan';
-                          const cellValue = (isSpj && tableData[emp.employeeId]?.[col.key] === undefined)
+                          const cellValue = isSpj
                             ? (getComputedSpj(emp.employeeId) || 0)
                             : (isSatpamShift && tableData[emp.employeeId]?.[col.key] === undefined)
                               ? (getComputedSatpamShiftCount(emp.employeeId, col.key) || 0)
@@ -1094,6 +1102,8 @@ export default function RekapPekaryaPage() {
                                 type="text"
                                 value={cellValue}
                                 onChange={(e) => updateCell(emp.employeeId, col.key, e.target.value)}
+                                disabled={isSpj}
+                                title={isSpj ? 'SPJ dihitung otomatis dari kegiatan yang disetujui.' : undefined}
                                 className={`h-10 text-center font-bold transition-all ${isSpj || isSatpamShift || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
                                   ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
                                   : hasScanData

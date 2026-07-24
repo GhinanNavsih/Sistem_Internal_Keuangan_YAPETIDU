@@ -2,8 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { generatePaySlipPdf } from '@/utils/generatePaySlipPdf';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 
 export interface QueueItem {
   employeeId: string;
@@ -12,13 +11,7 @@ export interface QueueItem {
   slipData: any;
   status: 'pending' | 'success' | 'failed';
   error?: string;
-}
-
-interface BulkEmailJob {
-  period: string;
-  dbPeriod: string;
-  queue: QueueItem[];
-  status: 'sending' | 'paused' | 'done';
+  requestId?: string;
 }
 
 interface BulkEmailContextType {
@@ -59,34 +52,6 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
   
   const pausedRef = useRef<boolean>(false);
   const activeLoopRef = useRef<boolean>(false);
-
-  // Load active job from localStorage on mount
-  useEffect(() => {
-    const savedJobStr = localStorage.getItem('bulk_email_job');
-    if (savedJobStr) {
-      try {
-        const savedJob: BulkEmailJob = JSON.parse(savedJobStr);
-        if (savedJob && savedJob.queue && savedJob.queue.length > 0) {
-          setPeriod(savedJob.period);
-          setDbPeriod(savedJob.dbPeriod || '');
-          setQueue(savedJob.queue);
-          setShowBulkSnackbar(true);
-          
-          if (savedJob.status === 'sending') {
-            setJobStatus('sending');
-            pausedRef.current = false;
-          } else if (savedJob.status === 'paused') {
-            setJobStatus('paused');
-            pausedRef.current = true;
-          } else {
-            setJobStatus('done');
-          }
-        }
-      } catch (err) {
-        console.error('Failed to parse saved bulk email job from localStorage:', err);
-      }
-    }
-  }, []);
 
   // background loop trigger
   useEffect(() => {
@@ -160,47 +125,27 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
         textBreakdown += `GAJI BERSIH (Diterima): ${formatIDR(netSalary)}`;
 
         // Send API call
-        const response = await fetch('/api/payroll/send-email', {
+        item.requestId = item.requestId || createFinancialRequestId('bulk_email');
+        await authenticatedJson('/api/payroll/send-email', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
           body: JSON.stringify({
-            email: item.email,
-            employeeName: item.employeeName,
-            period: period,
+            employeeId: item.employeeId,
+            dbPeriod,
+            requestId: item.requestId,
             pdfBase64,
-            textBreakdown,
           }),
         });
 
-        if (!response.ok) {
-          const resData = await response.json().catch(() => ({}));
-          throw new Error(resData.error || `API failed (${response.status})`);
-        }
-
-        // Update item in state and localStorage
+        // Update the in-memory item. Salary payloads are never persisted in
+        // browser storage.
         item.status = 'success';
-
-        if (dbPeriod) {
-          try {
-            const realDocId = `${dbPeriod}_${item.employeeId}`;
-            const slipRef = doc(db, 'PayrollSlipStates', realDocId);
-            await setDoc(slipRef, {
-              emailSent: true,
-              emailSentAt: new Date().toISOString()
-            }, { merge: true });
-          } catch (fsErr) {
-            console.error('Failed to update emailSent status in Firestore:', fsErr);
-          }
-        }
       } catch (err: any) {
         console.error(`Failed sending bulk email to ${item.employeeName}:`, err);
         item.status = 'failed';
         item.error = err?.message || 'Gagal mengirim';
       }
 
-      // Save progress to local state & localStorage
+      // Save progress to local state only.
       const updatedQueue = [...currentQueue];
       updatedQueue[i] = { ...item };
       setQueue(updatedQueue);
@@ -208,13 +153,6 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
 
       const nextStatus = updatedQueue.every(q => q.status !== 'pending') ? 'done' : (pausedRef.current ? 'paused' : 'sending');
       
-      localStorage.setItem('bulk_email_job', JSON.stringify({
-        period,
-        dbPeriod,
-        queue: updatedQueue,
-        status: nextStatus
-      }));
-
       if (nextStatus === 'done') {
         setJobStatus('done');
         setCurrentBulkEmailAddress('');
@@ -242,36 +180,16 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
     setShowBulkSnackbar(true);
     setShowBulkDetailModal(false);
 
-    localStorage.setItem('bulk_email_job', JSON.stringify({
-      period: jobPeriod,
-      dbPeriod: jobDbPeriod,
-      queue: newQueue,
-      status: 'sending'
-    }));
   };
 
   const pauseBulkEmailJob = () => {
     pausedRef.current = true;
     setJobStatus('paused');
-    
-    localStorage.setItem('bulk_email_job', JSON.stringify({
-      period,
-      dbPeriod,
-      queue,
-      status: 'paused'
-    }));
   };
 
   const resumeBulkEmailJob = () => {
     pausedRef.current = false;
     setJobStatus('sending');
-    
-    localStorage.setItem('bulk_email_job', JSON.stringify({
-      period,
-      dbPeriod,
-      queue,
-      status: 'sending'
-    }));
   };
 
   const retryFailedEmails = () => {
@@ -285,17 +203,9 @@ export function BulkEmailProvider({ children }: { children: React.ReactNode }) {
     setJobStatus('sending');
     pausedRef.current = false;
     setShowBulkDetailModal(false);
-
-    localStorage.setItem('bulk_email_job', JSON.stringify({
-      period,
-      dbPeriod,
-      queue: updatedQueue,
-      status: 'sending'
-    }));
   };
 
   const dismissJob = () => {
-    localStorage.removeItem('bulk_email_job');
     setQueue([]);
     setPeriod('');
     setDbPeriod('');

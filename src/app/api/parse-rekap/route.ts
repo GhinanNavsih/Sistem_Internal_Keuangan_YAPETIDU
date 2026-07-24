@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import {
+  errorResponse,
+  HttpError,
+  requireAuthenticatedProfile,
+  requireRole,
+} from '@/lib/server/auth';
 
 export const maxDuration = 60; 
 
@@ -33,12 +39,21 @@ function getImageDimensions(buffer: Buffer) {
 
 export async function POST(req: NextRequest) {
   try {
+    const actor = await requireAuthenticatedProfile(req);
+    requireRole(actor, ['super_admin', 'finance_verifier', 'satker_head']);
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const columnsStr = formData.get('columns') as string | null;
 
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+    }
+    if (
+      file.size <= 0 ||
+      file.size > 10 * 1024 * 1024 ||
+      !['image/png', 'image/jpeg'].includes(file.type)
+    ) {
+      throw new HttpError(400, 'File wajib PNG/JPEG dan maksimal 10 MB.');
     }
 
     if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'YOUR_GEMINI_API_KEY_HERE') {
@@ -51,7 +66,23 @@ export async function POST(req: NextRequest) {
     const { width, height } = getImageDimensions(buffer);
     const base64Data = buffer.toString('base64');
     
-    const columns = columnsStr ? JSON.parse(columnsStr) : [];
+    const columns: Array<{ key: string; label: string }> = columnsStr
+      ? JSON.parse(columnsStr)
+      : [];
+    if (
+      !Array.isArray(columns) ||
+      columns.length > 50 ||
+      columns.some(
+        (column) =>
+          !column ||
+          typeof column.key !== 'string' ||
+          typeof column.label !== 'string' ||
+          column.key.length > 80 ||
+          column.label.length > 120,
+      )
+    ) {
+      throw new HttpError(400, 'Definisi kolom OCR tidak valid.');
+    }
     const columnNames = columns.map((c: any) => `'${c.label}' (key: ${c.key})`).join(', ');
 
     const prompt = `
@@ -158,6 +189,9 @@ Return ONLY the JSON object.
     });
 
   } catch (error: any) {
+    if (error instanceof HttpError) {
+      return errorResponse(error);
+    }
     console.error('OCR Error:', error);
     return NextResponse.json({
       error: error.message || 'Internal Error',

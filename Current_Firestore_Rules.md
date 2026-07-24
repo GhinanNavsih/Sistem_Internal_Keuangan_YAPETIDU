@@ -2,319 +2,322 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // ─── HELPER FUNCTIONS ────────────────────────────────────────────────────
-    
-    // Checks if the requester is authenticated
-    function isAuthenticated() {
+    function signedIn() {
       return request.auth != null;
     }
 
-    // Checks if the requester has a registered profile document in Firestore
     function hasProfile() {
-      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.disabled != true;
     }
 
-    // Retrieves the requester's profile data
-    function getUserData() {
+    function profile() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    // Checks if the requester is a Super Administrator (BAK)
+    function roleIs(role) {
+      return hasProfile() && profile().role == role;
+    }
+
     function isSuperAdmin() {
-      return hasProfile() && getUserData().role == 'super_admin';
+      return roleIs('super_admin');
     }
 
-    // Checks if the requester is an Employee Administrator
     function isEmployeeAdmin() {
-      return hasProfile() && getUserData().role == 'employee_admin';
+      return roleIs('employee_admin');
     }
 
-    // Retrieves the list of permitted SatKers (categories) for standard users
-    function getPermittedCategories() {
-      return getUserData().permittedCategories;
+    function isFinanceVerifier() {
+      return roleIs('finance_verifier');
     }
 
-    // ─── RULES ───────────────────────────────────────────────────────────────
+    function isPayrollAuthorizer() {
+      return roleIs('payroll_authorizer');
+    }
 
-    // 1. User Profiles
+    function isFinanceRole() {
+      return isSuperAdmin() || isFinanceVerifier() || isPayrollAuthorizer();
+    }
+
+    function isSatkerRole() {
+      return roleIs('satker_head') || roleIs('satker_head_loyalis');
+    }
+
+    function ownsEmployee(employeeId) {
+      return hasProfile() &&
+        profile().linkedEmployeeId is string &&
+        profile().linkedEmployeeId == employeeId;
+    }
+
+    function hasCategory(category) {
+      return hasProfile() &&
+        profile().permittedCategories is list &&
+        category in profile().permittedCategories;
+    }
+
+    function isFinalSlipStatus(status) {
+      return status in ['confirmed', 'locked', 'payment_created', 'paid'];
+    }
+
     match /users/{uid} {
-      // Any authenticated user can read their own profile to verify their role/permissions during login
-      allow read: if isAuthenticated() && (request.auth.uid == uid || isSuperAdmin());
-      // Only Super Admins can register, edit, or delete user accounts
-      allow write: if isSuperAdmin();
+      allow read: if signedIn() && (request.auth.uid == uid || isSuperAdmin());
+      allow create, update, delete: if false;
     }
 
-    // 2. Employees (Blue Collar)
+    // Employee documents contain bank and salary data. Employees can read only
+    // their own record. Ketua Shift receives a redacted directory from the API.
     match /Employees_BlueCollar/{employeeId} {
-      // Standard users can view the employee directory to populate category lists and select dropdowns
-      allow read: if isSuperAdmin() || isEmployeeAdmin() || hasProfile();
-      // Only Super Admins or Employee Admins can add or edit employee records
-      allow write: if isSuperAdmin() || isEmployeeAdmin();
+      allow read: if isFinanceRole() || isEmployeeAdmin() ||
+        (roleIs('satker_head') &&
+          hasCategory(resource.data.employment.jobCategory)) ||
+        ownsEmployee(employeeId);
+      allow create, update: if isSuperAdmin() || isEmployeeAdmin();
+      allow delete: if false;
     }
 
-    // 3. Employees (White Collar - Legacy)
     match /Employees_WhiteCollar/{employeeId} {
-      // Standard users can view the employee directory
-      allow read: if isSuperAdmin() || isEmployeeAdmin() || hasProfile();
-      // Only Super Admins or Employee Admins can add or edit employee records
-      allow write: if isSuperAdmin() || isEmployeeAdmin();
+      allow read: if isFinanceRole() || isEmployeeAdmin() || ownsEmployee(employeeId);
+      allow create, update: if isSuperAdmin() || isEmployeeAdmin();
+      allow delete: if false;
     }
 
-    // 3b. Employees (White Collar - Loyalis)
     match /Employees_Loyalis/{employeeId} {
-      // Standard users can view the employee directory
-      allow read: if isSuperAdmin() || isEmployeeAdmin() || hasProfile();
-      // Only Super Admins or Employee Admins can add or edit employee records
-      allow write: if isSuperAdmin() || isEmployeeAdmin();
+      allow read: if isFinanceRole() || isEmployeeAdmin() ||
+        roleIs('satker_head_loyalis') || ownsEmployee(employeeId);
+      allow create, update: if isSuperAdmin() || isEmployeeAdmin();
+      allow delete: if false;
     }
 
-    // 4. Salary Matrix — Blue Collar (Base Wages configuration)
     match /SalaryMatrix/{version} {
-      // Super Admins can manage, any profile user can read
-      allow read: if hasProfile();
-      allow write: if isSuperAdmin();
-      
+      allow read: if isFinanceRole() || isEmployeeAdmin() || isSatkerRole();
+      allow create, update: if isSuperAdmin();
+      allow delete: if false;
       match /rows/{rowId} {
-        allow read: if hasProfile();
-        allow write: if isSuperAdmin();
+        allow read: if isFinanceRole() || isEmployeeAdmin() || isSatkerRole();
+        allow create, update: if isSuperAdmin();
+        allow delete: if false;
       }
     }
 
-    // 4b. Salary Matrix — White Collar (Base Wages configuration)
     match /SalaryMatrix_WhiteCollar/{version} {
-      // Super Admins can manage, any profile user can read
-      allow read: if hasProfile();
-      allow write: if isSuperAdmin();
-      
+      allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+      allow create, update: if isSuperAdmin();
+      allow delete: if false;
       match /rows/{rowId} {
-        allow read: if hasProfile();
-        allow write: if isSuperAdmin();
+        allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+        allow create, update: if isSuperAdmin();
+        allow delete: if false;
       }
     }
 
-    // 4c. Salary Matrix — Functional (Workload and education allowance configuration)
     match /SalaryMatrix_Functional/{version} {
-      // Super Admins can manage, any profile user can read
-      allow read: if hasProfile();
-      allow write: if isSuperAdmin();
-      
+      allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+      allow create, update: if isSuperAdmin();
+      allow delete: if false;
       match /rows/{rowId} {
-        allow read: if hasProfile();
-        allow write: if isSuperAdmin();
+        allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+        allow create, update: if isSuperAdmin();
+        allow delete: if false;
       }
     }
 
-    // 4d. Salary Matrix — Kepangkatan (Credit score allowance configuration)
     match /SalaryMatrix_Kepangkatan/{version} {
-      // Super Admins can manage, any profile user can read
-      allow read: if hasProfile();
-      allow write: if isSuperAdmin();
-      
+      allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+      allow create, update: if isSuperAdmin();
+      allow delete: if false;
       match /rows/{rowId} {
-        allow read: if hasProfile();
-        allow write: if isSuperAdmin();
+        allow read: if isFinanceRole() || isEmployeeAdmin() || roleIs('satker_head_loyalis');
+        allow create, update: if isSuperAdmin();
+        allow delete: if false;
       }
     }
 
-    // 5. Uraian Gaji (Attendance and Presensi Rekap Entries)
+    // Rekap inputs remain editable only before payslip verification. Final
+    // payslips never inherit later changes because they contain a hashed snapshot.
     match /UraianGaji/{docId} {
-      // Standard users can only read presensi rekap for their assigned SatKers
-      allow read: if isSuperAdmin() || (
-        hasProfile() && 
-        (resource == null || resource.data.jobCategory in getPermittedCategories())
-      );
-      
-      // Standard users can only write (create/update) data for their assigned SatKers
-      allow write: if isSuperAdmin() || (
-        hasProfile() && 
+      allow read: if isFinanceRole() ||
+        (isSatkerRole() && hasCategory(resource.data.jobCategory));
+      allow create: if isFinanceVerifier() || isSuperAdmin() ||
+        (roleIs('satker_head') && hasCategory(request.resource.data.jobCategory));
+      allow update: if isFinanceVerifier() || isSuperAdmin() ||
         (
-          (request.resource != null && request.resource.data.jobCategory in getPermittedCategories()) ||
-          (resource != null && resource.data.jobCategory in getPermittedCategories())
-        )
-      );
+          roleIs('satker_head') &&
+          hasCategory(resource.data.jobCategory) &&
+          request.resource.data.jobCategory == resource.data.jobCategory &&
+          request.resource.data.period == resource.data.period
+        );
+      allow delete: if false;
     }
 
-    // 5b. Vakasi Tambahan (Variable Payout Event Entries for Loyalis)
     match /VakasiTambahan/{docId} {
-      // Authenticated users with a registered profile (Super Admin and SatKer Loyalis) can read and write variable payouts
-      allow read, write: if isSuperAdmin() || hasProfile();
+      allow read: if isFinanceRole() || roleIs('satker_head_loyalis');
+      allow create, update: if isFinanceVerifier() || isSuperAdmin() ||
+        roleIs('satker_head_loyalis');
+      allow delete: if false;
     }
 
-    // 5c. Payroll Slip States (Persisted verified states of employee payslips)
-    match /PayrollSlipStates/{docId} {
-      // Authenticated users with a registered profile can read and write payslip states
-      allow read, write: if isSuperAdmin() || hasProfile();
-    }
-
-    // 5d. Kegiatan SPJ (Variable Payout Event Entries for Blue Collar / Pekarya)
     match /KegiatanSpj/{docId} {
-      // Authenticated users with a registered profile can read and write variable payouts
-      allow read, write: if isSuperAdmin() || hasProfile();
+      allow read: if isFinanceRole() ||
+        (roleIs('satker_head') && hasCategory(resource.data.jobCategory));
+      // Financial event mutations are validated, audited, and made idempotent
+      // by /api/pekarya/spj-events.
+      allow create, update, delete: if false;
     }
 
-    // 5d2. Driver Journeys (Pre-Authorized voyages for Drivers)
+    match /PayrollSlipStates/{docId} {
+      allow read: if isFinanceRole() ||
+        (ownsEmployee(resource.data.employeeId) && isFinalSlipStatus(resource.data.status));
+      // All mutations go through /api/payroll/slips and Firebase Admin.
+      allow create, update, delete: if false;
+    }
+
+    match /PayrollPayments/{docId} {
+      allow read: if isFinanceRole();
+      allow write: if false;
+    }
+
+    match /PayrollCorrectionRequests/{docId} {
+      allow read: if isFinanceRole();
+      allow write: if false;
+    }
+
+    match /PayrollLedgerEntries/{docId} {
+      allow read: if isFinanceRole();
+      allow write: if false;
+    }
+
+    match /FinancialAuditLogs/{docId} {
+      allow read: if isFinanceRole();
+      allow write: if false;
+    }
+
+    match /FinancialIdempotencyKeys/{docId} {
+      allow read, write: if false;
+    }
+
+    match /PayrollDeliveryEvents/{docId} {
+      allow read: if isFinanceRole();
+      allow write: if false;
+    }
+
+    match /PayrollPeriods/{period} {
+      allow read: if isFinanceRole();
+      allow write: if false;
+    }
+
+    match /PayrollHolidayCalendars/{year} {
+      allow read: if isFinanceRole();
+      allow write: if false;
+    }
+
+    match /ShiftOccurrences/{occurrenceId} {
+      allow read: if isFinanceRole() ||
+        (roleIs('ketua_shift_satpam') &&
+          resource.data.ketuaShiftId == profile().linkedEmployeeId);
+      allow write: if false;
+    }
+
+    match /GuardDutyIndexes/{indexId} {
+      allow read: if isFinanceRole();
+      allow write: if false;
+    }
+
     match /DriverJourneys/{journeyId} {
-      // Authenticated users with a registered profile can read and write driver journeys
-      allow read, write: if isSuperAdmin() || hasProfile();
+      allow read: if isFinanceRole() ||
+        (roleIs('satker_head') && hasCategory('SOPIR')) ||
+        (resource.data.employeeId is string && ownsEmployee(resource.data.employeeId));
+      allow create, update: if isSuperAdmin() ||
+        (roleIs('satker_head') && hasCategory('SOPIR')) ||
+        (
+          request.resource.data.employeeId is string &&
+          ownsEmployee(request.resource.data.employeeId) &&
+          request.resource.data.status in ['available', 'claimed', 'submitted']
+        );
+      allow delete: if false;
     }
 
-    // 5e. Loyalis Presence (Calculated stratum presence inputs for Loyalis)
     match /LoyalisPresence/{docId} {
-      // Authenticated users with a registered profile (Super Admin and SatKer Loyalis) can read and write presence calculations
-      allow read, write: if isSuperAdmin() || hasProfile();
+      allow read: if isFinanceRole() || roleIs('satker_head_loyalis') ||
+        roleIs('loyalis_presence_admin');
+      allow create, update: if isFinanceVerifier() || isSuperAdmin() ||
+        roleIs('loyalis_presence_admin');
+      allow delete: if false;
     }
 
-    // 5f. Pelaporan Kegiatan (Activity Reports for Loyalis)
     match /PelaporanKegiatan/{docId} {
-      // Authenticated users with a registered profile (Super Admin and SatKer Loyalis) can read and write
-      allow read, write: if isSuperAdmin() || hasProfile();
+      allow read: if isFinanceRole() || roleIs('satker_head_loyalis');
+      allow create, update: if isFinanceVerifier() || isSuperAdmin() ||
+        roleIs('satker_head_loyalis');
+      allow delete: if false;
     }
 
-    // 6. EmpEditLog (Employee Edit / Change Audit Logs)
     match /EmpEditLog/{docId} {
-      // Only Super Admins can view change logs
-      allow read: if isSuperAdmin();
-      // Super Admins or Employee Admins can write logs
-      allow write: if isSuperAdmin() || isEmployeeAdmin();
+      allow read: if isSuperAdmin() || isEmployeeAdmin();
+      allow create: if isSuperAdmin() || isEmployeeAdmin();
+      allow update, delete: if false;
     }
 
-    // 7. Activity Reports (Daily Activity submissions for Honorer)
     match /ActivityReports/{reportId} {
-      // Super Admins can read all.
-      // SatKer Heads can read if the report is in their permitted job categories.
-      // Honorer employees and Ketua Shifts can read their own reported activities.
-      // Ketua Shifts can also read reports they submitted for their regu.
-      allow read: if isSuperAdmin() || (
-        hasProfile() && (
-          (resource.data.jobCategory in getPermittedCategories()) ||
-          ((getUserData().role == 'honorer' || getUserData().role == 'ketua_shift_satpam') && resource.data.employeeId == getUserData().linkedEmployeeId) ||
-          (getUserData().role == 'ketua_shift_satpam' && resource.data.ketuaShiftId == getUserData().linkedEmployeeId)
-        )
-      );
+      allow read: if isFinanceRole() ||
+        (roleIs('satker_head') && hasCategory(resource.data.jobCategory)) ||
+        ownsEmployee(resource.data.employeeId) ||
+        (
+          roleIs('ketua_shift_satpam') &&
+          resource.data.ketuaShiftId == profile().linkedEmployeeId
+        );
 
-      // Honorer employees and Ketua Shifts can create a report for themselves.
-      // Ketua Shifts can also create reports for guards in their regu (jobCategory 'SATPAM' with valid shift rates).
-      allow create: if isSuperAdmin() || (
-        hasProfile() && (
-          (
-            (getUserData().role == 'honorer' || getUserData().role == 'ketua_shift_satpam') && 
-            request.resource.data.employeeId == getUserData().linkedEmployeeId &&
-            request.resource.data.status == 'pending' &&
-            (request.resource.data.fee == 0 || request.resource.data.jobCategory == 'SOPIR')
-          ) || (
-            getUserData().role == 'ketua_shift_satpam' &&
-            request.resource.data.jobCategory == 'SATPAM' &&
-            request.resource.data.ketuaShiftId == getUserData().linkedEmployeeId &&
-            (
-              (request.resource.data.status in ['pending', 'approved'] && request.resource.data.fee in [0, 12500, 25000, 30000, 50000])
-            )
-          )
-        )
-      );
-
-      // Super Admins can update all.
-      // SatKer Heads can approve (assign fee) or decline reports for their category.
-      // Honorer employees and Ketua Shifts can edit/resubmit their own pending or declined reports.
-      allow update: if isSuperAdmin() || (
-        hasProfile() && (
-          (
-            getUserData().role == 'satker_head' &&
-            resource.data.jobCategory in getPermittedCategories() &&
-            request.resource.data.jobCategory == resource.data.jobCategory &&
-            request.resource.data.employeeId == resource.data.employeeId &&
-            request.resource.data.activityName == resource.data.activityName &&
-            request.resource.data.activityDate == resource.data.activityDate &&
-            request.resource.data.timeStart == resource.data.timeStart &&
-            request.resource.data.timeEnd == resource.data.timeEnd &&
-            (request.resource.data.status == 'approved' || request.resource.data.status == 'declined')
-          ) ||
-          (
-            (getUserData().role == 'honorer' || getUserData().role == 'ketua_shift_satpam') &&
-            resource.data.employeeId == getUserData().linkedEmployeeId &&
-            (resource.data.status == 'pending' || resource.data.status == 'declined') &&
-            request.resource.data.employeeId == getUserData().linkedEmployeeId &&
-            request.resource.data.status == 'pending' &&
-            (request.resource.data.fee == 0 || request.resource.data.jobCategory == 'SOPIR')
-          )
-        )
-      );
-
-      // Only Super Admins can delete reports.
-      allow delete: if isSuperAdmin();
+      // Submission/resubmission and SatKer review are server-only so employee
+      // identity, category, period, fee, status, and audit data cannot be forged.
+      allow create, update, delete: if false;
     }
 
-    // 7b. Loyalis Presence Corrections
-    match /LoyalisPresenceCorrections/{reqId} {
-      // Super Admins, PJ Presensi, or the specific Employee can read requests
-      allow read: if isSuperAdmin() || (
-        hasProfile() && (
-          getUserData().role == 'loyalis_presence_admin' ||
-          (getUserData().role == 'loyalis' && resource.data.employeeId == getUserData().linkedEmployeeId)
-        )
-      );
-
-      // Employees can create a new request for themselves in pending status
-      allow create: if isSuperAdmin() || (
-        hasProfile() &&
-        getUserData().role == 'loyalis' &&
-        request.resource.data.employeeId == getUserData().linkedEmployeeId &&
-        request.resource.data.status == 'pending'
-      );
-
-      // Updates can be made by Super Admins, PJ Presensi (approving/rejecting pending),
-      // or the Employee themselves if the request is still pending or rejected
-      allow update: if isSuperAdmin() || (
-        hasProfile() && (
-          // Admin approving/rejecting a pending request
-          (getUserData().role == 'loyalis_presence_admin' && resource.data.status == 'pending') ||
-          // Employee editing their own pending/rejected request and resetting status to pending
-          (
-            getUserData().role == 'loyalis' &&
-            resource.data.employeeId == getUserData().linkedEmployeeId &&
-            (resource.data.status == 'pending' || resource.data.status == 'rejected') &&
-            request.resource.data.employeeId == getUserData().linkedEmployeeId &&
-            request.resource.data.status == 'pending'
-          )
-        )
-      );
-
-      // Employees can delete their own pending or rejected requests, and Super Admins can delete any
-      allow delete: if isSuperAdmin() || (
-        hasProfile() &&
-        getUserData().role == 'loyalis' &&
-        resource.data.employeeId == getUserData().linkedEmployeeId &&
-        (resource.data.status == 'pending' || resource.data.status == 'rejected')
-      );
+    match /PekaryaActivityIndexes/{indexId} {
+      allow read, write: if false;
     }
 
-    // 8. Predefined Structural Positions configuration
+    match /LoyalisPresenceCorrections/{requestId} {
+      allow read: if isFinanceRole() || roleIs('loyalis_presence_admin') ||
+        ownsEmployee(resource.data.employeeId);
+      allow create: if roleIs('loyalis') &&
+        ownsEmployee(request.resource.data.employeeId) &&
+        request.resource.data.status == 'pending';
+      allow update: if
+        (
+          roleIs('loyalis_presence_admin') &&
+          resource.data.status == 'pending' &&
+          request.resource.data.status in ['approved', 'rejected']
+        ) ||
+        (
+          ownsEmployee(resource.data.employeeId) &&
+          resource.data.status in ['pending', 'rejected'] &&
+          request.resource.data.employeeId == resource.data.employeeId &&
+          request.resource.data.status == 'pending'
+        );
+      allow delete: if false;
+    }
+
     match /JabatanStruktural/{docId} {
-      // Any authenticated user with a profile can read the structural positions list
-      allow read: if isSuperAdmin() || isEmployeeAdmin() || hasProfile();
-      // Only Super Admins can edit or manage the structural positions master data
-      allow write: if isSuperAdmin();
+      allow read: if isFinanceRole() || isEmployeeAdmin();
+      allow create, update: if isSuperAdmin();
+      allow delete: if false;
     }
 
-    // 9. Settings and configurations (e.g. department lists)
     match /Settings/{docId} {
-      // Any authenticated user with a profile can read the settings documents
-      allow read: if hasProfile();
-      // Only Super Admins or Employee Admins can create or update settings
-      allow create, update: if (isSuperAdmin() || isEmployeeAdmin()) &&
-                            (docId != 'departments' || (
-                              request.resource.data.keys().hasOnly(['list']) &&
-                              request.resource.data.list is list &&
-                              request.resource.data.list.size() <= 100
-                            ));
-      // Only Super Admins can delete settings documents
-      allow delete: if isSuperAdmin();
+      allow read: if isFinanceRole() || isEmployeeAdmin() || isSatkerRole() ||
+        roleIs('loyalis_presence_admin');
+      allow create, update: if isSuperAdmin() || isEmployeeAdmin();
+      allow delete: if false;
     }
 
-    // 10. Satpam Shift Teams configuration
     match /SatpamShiftTeams/{teamId} {
-      allow read: if isSuperAdmin() || hasProfile();
-      allow write: if isSuperAdmin();
+      allow read: if isFinanceRole();
+      allow write: if false;
+    }
+
+    // Everything not explicitly listed is denied.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -1,10 +1,15 @@
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
+import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 
 /**
  * Generates the payslip PDF in memory and uploads it to Firebase Storage,
  * returning the public download URL.
  */
-export async function uploadPaySlipPdf(data: PaySlipData): Promise<string> {
+export async function uploadPaySlipPdf(
+  data: PaySlipData,
+  employeeId: string,
+  dbPeriod: string,
+): Promise<string> {
   // Generate the PDF in-memory (saveToFile = false)
   const doc = generatePaySlipPdf(data, false);
   const pdfBlob = doc.output('blob');
@@ -22,29 +27,23 @@ export async function uploadPaySlipPdf(data: PaySlipData): Promise<string> {
   const pdfBase64 = await base64Promise;
 
   // Call our secure server-side upload API to bypass browser CORS preflight rules
-  const response = await fetch('/api/payroll/upload-pdf', {
+  const result = await authenticatedJson<{ success: boolean; pdfUrl?: string; error?: string }>(
+    '/api/payroll/upload-pdf',
+    {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify({
       pdfBase64,
-      employeeName: data.employeeName,
-      period: data.period,
+      employeeId,
+      dbPeriod,
+      requestId: createFinancialRequestId('pdf'),
     }),
   });
 
-  if (!response.ok) {
-    const errJson = await response.json().catch(() => ({}));
-    throw new Error(errJson.error || 'Gagal mengunggah PDF ke server.');
+  if (!result.success || !result.pdfUrl) {
+    throw new Error(result.error || 'Server tidak mengembalikan URL PDF.');
   }
 
-  const resJson = await response.json();
-  if (!resJson.success || !resJson.pdfUrl) {
-    throw new Error(resJson.error || 'Server tidak mengembalikan URL PDF.');
-  }
-
-  return resJson.pdfUrl;
+  return result.pdfUrl;
 }
 
 

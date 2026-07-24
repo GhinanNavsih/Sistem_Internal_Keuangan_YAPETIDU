@@ -1,0 +1,428 @@
+import { createHash } from 'node:crypto';
+import { NextRequest } from 'next/server';
+import admin, { adminDb } from '@/lib/firebase-admin';
+import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
+import {
+  activityDurationMinutes,
+  approvedActivitySpjAmount,
+  pekaryaPayrollPeriodForDate,
+} from '@/lib/payroll/pekaryaSpj';
+import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
+import {
+  errorResponse,
+  HttpError,
+  requireAuthenticatedProfile,
+  requireRole,
+} from '@/lib/server/auth';
+
+export const dynamic = 'force-dynamic';
+
+type ReviewAction = 'approve' | 'decline' | 'approve_driver';
+
+interface ReviewItem {
+  reportId: string;
+  fee?: number;
+  hasUangMakan?: boolean;
+  reason?: string;
+  driverReview?: {
+    distanceKm: number;
+    durationHours: number;
+    fuelDelta: number;
+    tollDelta: number;
+    mealDelta: number;
+    vehicleType: string;
+    isOvernight: boolean;
+    points: string[];
+  };
+}
+
+interface ReviewCommand {
+  requestId: string;
+  action: ReviewAction;
+  items: ReviewItem[];
+  reason: string;
+}
+
+function parseMoney(value: unknown, name: string, allowZero = true): number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < (allowZero ? 0 : 1) ||
+    value > 100_000_000
+  ) {
+    throw new HttpError(400, `${name} tidak valid.`);
+  }
+  return value;
+}
+
+function parseCommand(raw: unknown): ReviewCommand {
+  if (!raw || typeof raw !== 'object') throw new HttpError(400, 'Perintah review tidak valid.');
+  const value = raw as Partial<ReviewCommand>;
+  if (typeof value.requestId !== 'string') throw new HttpError(400, 'requestId wajib diisi.');
+  try {
+    assertRequestId(value.requestId);
+  } catch (error) {
+    throw new HttpError(400, error instanceof Error ? error.message : 'requestId tidak valid.');
+  }
+  if (!value.action || !['approve', 'decline', 'approve_driver'].includes(value.action)) {
+    throw new HttpError(400, 'Aksi review tidak valid.');
+  }
+  if (!Array.isArray(value.items) || value.items.length < 1 || value.items.length > 50) {
+    throw new HttpError(400, 'Review harus memuat 1 sampai 50 laporan.');
+  }
+  const reason = typeof value.reason === 'string' ? value.reason.trim() : '';
+  if (reason.length < 8 || reason.length > 500) {
+    throw new HttpError(400, 'Alasan review wajib diisi antara 8 dan 500 karakter.');
+  }
+  const items = value.items.map((item) => {
+    if (
+      !item ||
+      typeof item !== 'object' ||
+      typeof item.reportId !== 'string' ||
+      !/^[A-Za-z0-9_-]{1,180}$/.test(item.reportId)
+    ) {
+      throw new HttpError(400, 'ID laporan review tidak valid.');
+    }
+    if (value.action === 'approve') parseMoney(item.fee, 'Nominal SPJ', false);
+    return item;
+  });
+  if (new Set(items.map((item) => item.reportId)).size !== items.length) {
+    throw new HttpError(400, 'Laporan review tidak boleh duplikat.');
+  }
+  return { requestId: value.requestId, action: value.action, items, reason };
+}
+
+function validateDriverReview(value: ReviewItem['driverReview']) {
+  if (!value) throw new HttpError(400, 'Rincian audit Sopir wajib diisi.');
+  if (
+    !Number.isFinite(value.distanceKm) ||
+    value.distanceKm <= 0 ||
+    value.distanceKm > 10_000 ||
+    !Number.isFinite(value.durationHours) ||
+    value.durationHours <= 0 ||
+    value.durationHours > 72
+  ) {
+    throw new HttpError(400, 'Jarak atau durasi audit Sopir tidak valid.');
+  }
+  for (const [label, number] of [
+    ['selisih BBM', value.fuelDelta],
+    ['selisih tol', value.tollDelta],
+    ['selisih makan', value.mealDelta],
+  ] as const) {
+    if (!Number.isFinite(number) || number < -100_000_000 || number > 100_000_000) {
+      throw new HttpError(400, `Nilai ${label} tidak valid.`);
+    }
+  }
+  if (
+    typeof value.vehicleType !== 'string' ||
+    value.vehicleType.length < 2 ||
+    value.vehicleType.length > 80 ||
+    !Array.isArray(value.points) ||
+    value.points.length < 2 ||
+    value.points.length > 30 ||
+    value.points.some((point) => typeof point !== 'string' || point.length > 300)
+  ) {
+    throw new HttpError(400, 'Kendaraan atau rute audit Sopir tidak valid.');
+  }
+  return value;
+}
+
+function vehicleRate(vehicle: string): number {
+  const rates: Record<string, number> = {
+    Bis: 2500,
+    Elf: 1350,
+    'Kijang LGX': 1200,
+    'Innova Hitam': 1250,
+    'Innova Matic': 1450,
+    Suzuki: 1000,
+    'Suzuki XL7': 1000,
+    Ndalem: 0,
+  };
+  return rates[vehicle] ?? 1000;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const actor = await requireAuthenticatedProfile(request);
+    requireRole(actor, ['super_admin', 'satker_head']);
+    const command = parseCommand(await request.json());
+    const requestHash = createHash('sha256').update(JSON.stringify(command)).digest('hex');
+
+    const result = await adminDb.runTransaction(async (transaction) => {
+      const idempotencyRef = adminDb
+        .collection('FinancialIdempotencyKeys')
+        .doc(`${actor.uid}__${command.requestId}`);
+      const reportRefs = command.items.map((item) =>
+        adminDb.collection('ActivityReports').doc(item.reportId),
+      );
+      const [idempotencySnapshot, ...reportSnapshots] = await Promise.all([
+        transaction.get(idempotencyRef),
+        ...reportRefs.map((ref) => transaction.get(ref)),
+      ]);
+      if (idempotencySnapshot.exists) {
+        const previous = idempotencySnapshot.data()!;
+        if (previous.requestHash !== requestHash) {
+          throw new HttpError(409, 'requestId sudah digunakan untuk review berbeda.');
+        }
+        return { reviewed: previous.reviewedCount, idempotent: true };
+      }
+
+      const reports = reportSnapshots.map((snapshot, index) => {
+        if (!snapshot.exists) {
+          throw new HttpError(404, `Laporan ${command.items[index].reportId} tidak ditemukan.`);
+        }
+        return snapshot.data()!;
+      });
+      const reportPeriods = reports.map((report) => {
+        if (typeof report.payrollPeriod === 'string') return report.payrollPeriod;
+        if (typeof report.activityDate !== 'string') {
+          throw new HttpError(409, 'Tanggal kegiatan historis tidak valid.');
+        }
+        return pekaryaPayrollPeriodForDate(report.activityDate);
+      });
+      const periodRefs = reportPeriods.map((period) =>
+        adminDb.collection('PayrollPeriods').doc(period),
+      );
+      const slipRefs = reports.map((report, index) =>
+        adminDb
+          .collection('PayrollSlipStates')
+          .doc(`${reportPeriods[index].replace('-', '_')}_${report.employeeId}`),
+      );
+      const employeeRefs = reports.map((report) =>
+        adminDb.collection('Employees_BlueCollar').doc(String(report.employeeId || '')),
+      );
+      const journeyRefs = reports.map((report) =>
+        report.journeyId ? adminDb.collection('DriverJourneys').doc(report.journeyId) : null,
+      );
+      const secondarySnapshots = await Promise.all([
+        ...periodRefs.map((ref) => transaction.get(ref)),
+        ...slipRefs.map((ref) => transaction.get(ref)),
+        ...employeeRefs.map((ref) => transaction.get(ref)),
+        ...journeyRefs.map((ref) => (ref ? transaction.get(ref) : Promise.resolve(null))),
+      ]);
+      const periodSnapshots = secondarySnapshots.slice(0, reports.length);
+      const slipSnapshots = secondarySnapshots.slice(reports.length, reports.length * 2);
+      const employeeSnapshots = secondarySnapshots.slice(
+        reports.length * 2,
+        reports.length * 3,
+      );
+      const journeySnapshots = secondarySnapshots.slice(reports.length * 3);
+
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      reports.forEach((before, index) => {
+        const item = command.items[index];
+        const category = String(before.jobCategory || '');
+        if (category === 'SATPAM') {
+          throw new HttpError(409, 'Shift Satpam memakai alur verifikasi khusus.');
+        }
+        if (
+          actor.role === 'satker_head' &&
+          !actor.permittedCategories.includes(category)
+        ) {
+          throw new HttpError(403, `Anda tidak memiliki akses kategori ${category}.`);
+        }
+        if (before.status !== 'pending') {
+          throw new HttpError(409, `Laporan ${item.reportId} sudah pernah direview.`);
+        }
+        const employee = employeeSnapshots[index]?.data();
+        if (
+          !employeeSnapshots[index]?.exists ||
+          employee?.employment?.status !== 'active' ||
+          employee?.employment?.jobCategory !== category
+        ) {
+          throw new HttpError(409, 'Data pegawai tidak aktif atau kategori laporan tidak cocok.');
+        }
+        if (!periodSnapshots[index]?.exists || periodSnapshots[index]?.data()?.attendanceStatus !== 'open') {
+          throw new HttpError(409, 'Periode payroll belum dibuka atau sudah ditutup.');
+        }
+        if (slipSnapshots[index]?.exists && isImmutablePayrollStatus(slipSnapshots[index]?.data()?.status)) {
+          throw new HttpError(409, 'Slip pegawai sudah dikunci; gunakan alur koreksi.');
+        }
+
+        let after: Record<string, unknown>;
+        if (command.action === 'decline') {
+          after = {
+            ...before,
+            status: 'declined',
+            fee: 0,
+            upahBersih: 0,
+            declineReason: item.reason?.trim() || command.reason,
+            reviewedAt: now,
+            reviewedBy: actor.uid,
+            reviewedByRole: actor.role,
+            reviewRevision: Number(before.reviewRevision || 0) + 1,
+          };
+        } else if (command.action === 'approve_driver') {
+          if (category !== 'SOPIR') {
+            throw new HttpError(409, 'Audit Sopir hanya berlaku untuk kategori SOPIR.');
+          }
+          const review = validateDriverReview(item.driverReview);
+          const rate = vehicleRate(review.vehicleType);
+          const baseOperationalCost =
+            typeof before.baseOperationalCost === 'number'
+              ? before.baseOperationalCost
+              : Math.ceil(review.distanceKm * rate);
+          const upahBersih =
+            Math.ceil(review.distanceKm * 300) +
+            Math.ceil(review.durationHours * 5000) +
+            (review.isOvernight ? 50_000 : 0);
+          const positiveDelta =
+            review.fuelDelta + review.tollDelta + review.mealDelta +
+            Number(before.extraOperationalCost || 0);
+          const reimburseDelta = Math.max(0, positiveDelta - Number(before.unspentCash || 0));
+          const totalOperationalCost = Math.max(
+            0,
+            Math.ceil(
+              Number(before.totalOperationalCost || baseOperationalCost) +
+                positiveDelta -
+                Number(before.unspentCash || 0),
+            ),
+          );
+          after = {
+            ...before,
+            status: 'approved',
+            fee: upahBersih,
+            upahBersih,
+            totalOperationalCost,
+            distanceKm: review.distanceKm,
+            durationHours: review.durationHours,
+            fuelFee: Math.max(0, baseOperationalCost + review.fuelDelta),
+            extraFuelCost: review.fuelDelta,
+            tollParkingFee: Math.max(
+              0,
+              Number(before.preAuthorizedToll || 0) + review.tollDelta,
+            ),
+            extraTollCost: review.tollDelta,
+            extraMealAllowance: review.mealDelta,
+            reimburseDelta,
+            vehicleType: review.vehicleType,
+            vehicleRate: rate,
+            baseOperationalCost,
+            isOvernight: review.isOvernight,
+            points: review.points,
+            tripType: review.distanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
+            declineReason: '',
+            reviewedAt: now,
+            reviewedBy: actor.uid,
+            reviewedByRole: actor.role,
+            reviewRevision: Number(before.reviewRevision || 0) + 1,
+          };
+        } else {
+          if (category === 'SOPIR') {
+            throw new HttpError(409, 'Laporan SOPIR wajib memakai audit perjalanan.');
+          }
+          if (before.activityType !== 'Buang Sampah') {
+            try {
+              activityDurationMinutes(String(before.timeStart || ''), String(before.timeEnd || ''));
+            } catch (error) {
+              throw new HttpError(
+                409,
+                error instanceof Error ? error.message : 'Durasi laporan tidak valid.',
+              );
+            }
+          }
+          const fee = parseMoney(item.fee, 'Nominal SPJ', false);
+          after = {
+            ...before,
+            status: 'approved',
+            fee,
+            upahBersih: 0,
+            hasUangMakan: Boolean(item.hasUangMakan),
+            declineReason: '',
+            reviewedAt: now,
+            reviewedBy: actor.uid,
+            reviewedByRole: actor.role,
+            reviewRevision: Number(before.reviewRevision || 0) + 1,
+          };
+        }
+
+        after = { ...after, payrollPeriod: reportPeriods[index] };
+        transaction.set(reportRefs[index], after);
+        const amount = approvedActivitySpjAmount(after);
+        if (amount > 0) {
+          const ledgerRef = adminDb
+            .collection('PayrollLedgerEntries')
+            .doc(`SPJ_ACTIVITY__${item.reportId}`);
+          transaction.create(ledgerRef, {
+            employeeId: before.employeeId,
+            jobCategory: category,
+            period: reportPeriods[index],
+            sourceType: 'ActivityReport',
+            sourceId: item.reportId,
+            earningCode: 'SPJ',
+            amount,
+            status: 'active',
+            approvedAt: now,
+            approvedBy: actor.uid,
+            schemaVersion: 1,
+          });
+        }
+        const journeySnapshot = journeySnapshots[index];
+        if (before.journeyId && journeyRefs[index] && journeySnapshot?.exists) {
+          const driverReviewUpdate =
+            command.action === 'approve_driver'
+              ? {
+                  totalOperationalCost: after.totalOperationalCost || 0,
+                  newTotalDistanceKm: after.distanceKm || 0,
+                  newTotalDurationHours: after.durationHours || 0,
+                  fuelFee: after.fuelFee || 0,
+                  extraFuelCost: after.extraFuelCost || 0,
+                  tollParkingFee: after.tollParkingFee || 0,
+                  extraTollCost: after.extraTollCost || 0,
+                  extraMealAllowance: after.extraMealAllowance || 0,
+                  reimburseDelta: after.reimburseDelta || 0,
+                  vehicleName: after.vehicleType || '',
+                  vehicleRate: after.vehicleRate || 0,
+                  baseOperationalCost: after.baseOperationalCost || 0,
+                  isOvernight: after.isOvernight || false,
+                  points: after.points || [],
+                }
+              : {};
+          transaction.update(journeyRefs[index]!, {
+            ...driverReviewUpdate,
+            status: command.action === 'decline' ? 'declined' : 'completed',
+            fee: command.action === 'decline' ? 0 : (after.totalOperationalCost || 0),
+            upahBersih: command.action === 'decline' ? 0 : (after.upahBersih || 0),
+            declineReason: command.action === 'decline' ? after.declineReason : '',
+            reviewedAt: now,
+            reviewedBy: actor.uid,
+            updatedAt: now,
+          });
+        }
+        transaction.create(
+          newFinancialAuditRef(),
+          buildFinancialAuditRecord(actor, {
+            action:
+              command.action === 'decline'
+                ? 'PEKARYA_ACTIVITY_DECLINED'
+                : 'PEKARYA_ACTIVITY_APPROVED',
+            entityType: 'ActivityReport',
+            entityId: item.reportId,
+            reason: item.reason?.trim() || command.reason,
+            requestId: command.requestId,
+            before,
+            after,
+            metadata: {
+              employeeId: before.employeeId,
+              jobCategory: category,
+              period: reportPeriods[index],
+            },
+          }),
+        );
+      });
+
+      transaction.create(idempotencyRef, {
+        requestHash,
+        entityId: command.items.map((item) => item.reportId).join(','),
+        resultingStatus: command.action === 'decline' ? 'declined' : 'approved',
+        reviewedCount: command.items.length,
+        createdAt: now,
+      });
+      return { reviewed: command.items.length, idempotent: false };
+    });
+
+    return Response.json(result);
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
