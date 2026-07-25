@@ -715,7 +715,7 @@ function JourneyReportContent() {
           // Journey document does not exist — clean up any orphan ActivityReports
           try {
             await authenticatedJson(`/api/pekarya/activities?journeyId=${encodeURIComponent(targetId)}`, { method: 'DELETE' });
-          } catch (e) {}
+          } catch (e) { }
           router.replace('/employee/activities');
         }
       } catch (e) {
@@ -2171,8 +2171,8 @@ function JourneyReportContent() {
             {(() => {
               const preAuthorizedTollVal = activeReportingJourney
                 ? (activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
-                    ? Number(activeReportingJourney.preAuthorizedToll)
-                    : (activeReportingJourney.status === 'claimed' ? Number(activeReportingJourney.tollParkingFee || 0) : 0))
+                  ? Number(activeReportingJourney.preAuthorizedToll)
+                  : (activeReportingJourney.status === 'claimed' ? Number(activeReportingJourney.tollParkingFee || 0) : 0))
                 : 0;
               return (
                 <div className="space-y-2">
@@ -2399,7 +2399,7 @@ function JourneyReportContent() {
                 )}
                 {extraMealAllowance > 0 && (
                   <div className="flex justify-between text-slate-900 font-extrabold">
-                    <span>Kelebihan Uang Makan (Delta)</span>
+                    <span>Kekurangan Uang Makan (Delta)</span>
                     <span className="font-black text-blue-700">+{fmtRp(Math.ceil(extraMealAllowance))}</span>
                   </div>
                 )}
@@ -2513,11 +2513,10 @@ function JourneyReportContent() {
 
           {/* Toast / Validation Alert placed above submit buttons */}
           {message && (
-            <div className={`flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-xs sm:text-sm font-semibold shadow-sm border ${
-              message.type === 'success'
+            <div className={`flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-xs sm:text-sm font-semibold shadow-sm border ${message.type === 'success'
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
                 : 'bg-rose-50 border-rose-200 text-rose-900'
-            }`}>
+              }`}>
               <span className="text-base leading-none">
                 {message.type === 'success' ? '✓' : '⚠️'}
               </span>
