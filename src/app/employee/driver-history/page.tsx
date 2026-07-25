@@ -23,15 +23,32 @@ import {
   CalendarDays,
   ArrowLeft,
   Pencil,
+  Trash2,
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { db } from '@/lib/firebase';
 import {
   collection,
   query,
   where,
   onSnapshot,
+  doc,
+  getDoc,
+  deleteDoc,
+  updateDoc,
+  deleteField,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { MONTHS_ID } from '@/utils/rekapConfig';
+import { calculateDriverNetWage } from '@/lib/payroll/driverJourney';
+import { authenticatedJson } from '@/lib/payroll/client';
 import {
   Select,
   SelectContent,
@@ -65,6 +82,9 @@ interface ActivityReport {
   distanceKm?: number;
   durationHours?: number;
   upahBersih?: number;
+  submittedFeeEstimate?: number;
+  baseDriverWage?: number;
+  journeyId?: string;
   extraMealAllowance?: number;
   extraFuelCost?: number;
   fuelReceiptUrl?: string;
@@ -143,6 +163,32 @@ function DriverHistoryContent() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'declined'>('all');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [targetDeleteActivity, setTargetDeleteActivity] = useState<ActivityReport | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleConfirmDeleteActivity = async () => {
+    if (!targetDeleteActivity || isDeleting) return;
+
+    setIsDeleting(true);
+    try {
+      await authenticatedJson(
+        `/api/pekarya/activities?reportId=${encodeURIComponent(targetDeleteActivity.id)}${targetDeleteActivity.journeyId ? `&journeyId=${encodeURIComponent(targetDeleteActivity.journeyId)}` : ''}`,
+        { method: 'DELETE' }
+      );
+
+      if (typeof window !== 'undefined' && targetDeleteActivity.journeyId) {
+        localStorage.removeItem(`journey_draft_${targetDeleteActivity.journeyId}`);
+      }
+
+      setMessage({ type: 'success', text: 'Laporan perjalanan berhasil dihapus.' });
+      setTargetDeleteActivity(null);
+    } catch (err: any) {
+      console.error('Error deleting activity report:', err);
+      setMessage({ type: 'error', text: err.message || 'Gagal menghapus laporan perjalanan.' });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const periodToken = useMemo(() => `${year}-${String(month).padStart(2, '0')}`, [year, month]);
   const userJobCategory = profile?.permittedCategories?.[0] || '';
@@ -465,22 +511,41 @@ function DriverHistoryContent() {
                         </div>
                         <div>
                           <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Upah Bersih</span>
-                          <span className="text-xs font-black text-emerald-600">{fmtRp(activity.upahBersih || 0)}</span>
+                          <span className="text-xs font-black text-emerald-600">
+                            {fmtRp(
+                              activity.status === 'approved'
+                                ? (activity.upahBersih || 0)
+                                : (activity.submittedFeeEstimate ?? activity.baseDriverWage ?? calculateDriverNetWage(activity.distanceKm || 0, activity.durationHours || 0, activity.nightCount || 0))
+                            )}
+                          </span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-1.5">
                         {(activity.status === 'pending' || activity.status === 'declined') && (
-                          <Link href={`/employee/activities?editReportId=${activity.id}`}>
+                          <>
                             <Button
                               variant="outline"
                               size="sm"
-                              className="rounded-lg border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-7 px-2.5 gap-1 cursor-pointer"
+                              onClick={() => setTargetDeleteActivity(activity)}
+                              className="rounded-lg border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs h-7 px-2.5 gap-1 cursor-pointer"
+                              title="Hapus Laporan Perjalanan"
                             >
-                              <Pencil className="w-3 h-3 text-indigo-600" />
-                              <span>Edit</span>
+                              <Trash2 className="w-3 h-3 text-rose-500" />
+                              <span>Hapus</span>
                             </Button>
-                          </Link>
+
+                            <Link href={activity.journeyId ? `/employee/activities/journey-report?id=${activity.journeyId}&editReportId=${activity.id}` : `/employee/activities?editReportId=${activity.id}`}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="rounded-lg border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-7 px-2.5 gap-1 cursor-pointer"
+                              >
+                                <Pencil className="w-3 h-3 text-indigo-600" />
+                                <span>Edit</span>
+                              </Button>
+                            </Link>
+                          </>
                         )}
                       </div>
                     </div>
@@ -491,6 +556,40 @@ function DriverHistoryContent() {
           </div>
         )}
       </div>
+
+      {/* ── Delete Confirmation Dialog ─────────────────────────── */}
+      <Dialog open={Boolean(targetDeleteActivity)} onOpenChange={(open) => !open && setTargetDeleteActivity(null)}>
+        <DialogContent className="rounded-3xl max-w-sm p-6 bg-white shadow-2xl border-none">
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-rose-500" />
+              Hapus Laporan Perjalanan?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 leading-relaxed">
+              Laporan perjalanan <strong className="text-slate-800">{targetDeleteActivity?.activityName}</strong> akan dihapus secara permanen dari sistem.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex items-center gap-2 mt-4">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setTargetDeleteActivity(null)}
+              disabled={isDeleting}
+              className="flex-1 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmDeleteActivity}
+              disabled={isDeleting}
+              className="flex-1 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5 cursor-pointer"
+            >
+              {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Ya, Hapus'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

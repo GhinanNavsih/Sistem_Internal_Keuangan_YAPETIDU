@@ -7,6 +7,11 @@ import { db, secondaryDb } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { useAuth } from '@/lib/AuthContext';
 import { normalizeName, MANUAL_OVERRIDES } from '../../../../utils/payrollLogic';
+import {
+  composeKoperasiLoanHistoryTrail,
+  koperasiMonthlyInstallment,
+  resolveKoperasiLoanStatus,
+} from '@/lib/payroll/koperasiLoan';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -241,24 +246,8 @@ export default function SimpanPinjamReviewPage() {
         }
       }
 
-      // Resolve status based on the latest history status entry
-      let resolvedStatus = loan.status;
-      if (loan.history && Array.isArray(loan.history) && loan.history.length > 0) {
-        const sortedHistory = [...loan.history].sort((a, b) => {
-          const tA = (a.timestamp as any)?.toMillis ? (a.timestamp as any).toMillis() : (a.timestamp?.seconds ? a.timestamp.seconds * 1000 : 0);
-          const tB = (b.timestamp as any)?.toMillis ? (b.timestamp as any).toMillis() : (b.timestamp?.seconds ? b.timestamp.seconds * 1000 : 0);
-          return tB - tA; // Latest first
-        });
-        if (sortedHistory[0]?.status) {
-          resolvedStatus = sortedHistory[0].status;
-        }
-      }
-
-      // "Pembayaran Cicilan" is an installment log entry, not a state transition.
-      // Normalize it back to "Disetujui dan Aktif" to match DashboardDataContext behavior.
-      if (resolvedStatus === 'Pembayaran Cicilan') {
-        resolvedStatus = 'Disetujui dan Aktif';
-      }
+      // Resolve status through the shared pipeline used by employee payslips.
+      const resolvedStatus = resolveKoperasiLoanStatus(loan);
 
       // Identify warnings / anomalies
       const warnings: string[] = [];
@@ -281,7 +270,7 @@ export default function SimpanPinjamReviewPage() {
         warnings.push('Anomaly: Status is pending restructuring, but missing reference to the target loan (restructuredToLoanId).');
       }
 
-      const monthlyInstallment = Math.round(loan.jumlahPinjaman / loan.tenor);
+      const monthlyInstallment = koperasiMonthlyInstallment(loan);
 
       return {
         ...loan,
@@ -409,34 +398,11 @@ export default function SimpanPinjamReviewPage() {
 
   // Compose full ancestry history trail by walking the restructuredFromLoanId chain
   const getComposedHistoryTrail = (loan: ProcessedLoan): { loanId: string; loanLabel: string; entries: LoanHistory[] }[] => {
-    const segments: { loanId: string; loanLabel: string; entries: LoanHistory[] }[] = [];
-
-    // Walk back through the ancestry chain
-    let currentId: string | undefined = loan.restructuredFromLoanId;
-    const visited = new Set<string>();
-    while (currentId && !visited.has(currentId)) {
-      visited.add(currentId);
-      const ancestor = processedLoans.find(l => l.id === currentId);
-      if (ancestor) {
-        segments.unshift({
-          loanId: ancestor.id,
-          loanLabel: `#${ancestor.id.substring(0, 8)}`,
-          entries: ancestor.history || [],
-        });
-        currentId = ancestor.restructuredFromLoanId;
-      } else {
-        break;
-      }
-    }
-
-    // Add the current loan's history at the end
-    segments.push({
-      loanId: loan.id,
-      loanLabel: `#${loan.id.substring(0, 8)} (Saat Ini)`,
-      entries: loan.history || [],
-    });
-
-    return segments;
+    return composeKoperasiLoanHistoryTrail(loan, processedLoans) as {
+      loanId: string;
+      loanLabel: string;
+      entries: LoanHistory[];
+    }[];
   };
 
   return (

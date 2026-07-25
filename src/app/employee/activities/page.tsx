@@ -55,6 +55,7 @@ import {
 } from 'lucide-react';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getTodayDateString } from '@/lib/payroll/driverPiket';
 import {
   collection,
   getDocs,
@@ -93,21 +94,55 @@ import {
 
 const loadGoogleMapsScript = (callback: () => void) => {
   if (typeof window === 'undefined') return;
-  if ((window as any).google) {
+  const g = (window as any).google;
+  if (g && g.maps && g.maps.Map) {
     callback();
     return;
   }
-  const existingScript = document.getElementById('googleMapsScript');
+
+  const onScriptLoad = async () => {
+    const googleObj = (window as any).google;
+    if (googleObj && googleObj.maps && googleObj.maps.importLibrary) {
+      try {
+        const [mapsLib, placesLib, geocodingLib, markerLib] = await Promise.all([
+          googleObj.maps.importLibrary('maps'),
+          googleObj.maps.importLibrary('places'),
+          googleObj.maps.importLibrary('geocoding'),
+          googleObj.maps.importLibrary('marker'),
+        ]);
+        if (mapsLib) Object.assign(googleObj.maps, mapsLib);
+        if (geocodingLib) Object.assign(googleObj.maps, geocodingLib);
+        if (markerLib) Object.assign(googleObj.maps, markerLib);
+        if (placesLib) {
+          googleObj.maps.places = googleObj.maps.places || {};
+          Object.assign(googleObj.maps.places, placesLib);
+        }
+      } catch (e) {
+        console.error('Error importing Google Maps libraries:', e);
+      }
+    }
+    callback();
+  };
+
+  const existingScript = document.getElementById('googleMapsScript') as HTMLScriptElement | null;
   if (existingScript) {
-    existingScript.addEventListener('load', callback);
+    if (existingScript.dataset.loaded === 'true') {
+      onScriptLoad();
+    } else {
+      existingScript.addEventListener('load', onScriptLoad);
+    }
     return;
   }
+
   const script = document.createElement('script');
   script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}&libraries=places`;
   script.id = 'googleMapsScript';
   script.async = true;
   script.defer = true;
-  script.addEventListener('load', callback);
+  script.addEventListener('load', async () => {
+    script.dataset.loaded = 'true';
+    await onScriptLoad();
+  });
   document.head.appendChild(script);
 };
 
@@ -644,6 +679,8 @@ function ActivitiesContent() {
   const [formPoints, setFormPoints] = useState<string[]>(['Pool Unipdu', '']);
   const [calculatedDistanceKm, setCalculatedDistanceKm] = useState<number>(0);
   const [calculatedDurationHours, setCalculatedDurationHours] = useState<number>(0);
+  const [outboundDistanceKm, setOutboundDistanceKm] = useState<number | null>(null);
+  const [outboundDurationHours, setOutboundDurationHours] = useState<number | null>(null);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
   const [routeError, setRouteError] = useState<string>('');
   const [routeCalculatedPoints, setRouteCalculatedPoints] = useState<string[]>([]);
@@ -671,6 +708,194 @@ function ActivitiesContent() {
   const [isClaiming, setIsClaiming] = useState<boolean>(false);
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const [isSavingDraft, setIsSavingDraft] = useState<boolean>(false);
+
+  // ── Piket Active & Self-Creation States ──
+  const [isPiketActiveToday, setIsPiketActiveToday] = useState(false);
+  const [activePiketStationName, setActivePiketStationName] = useState<string>('');
+  const [showSelfPiketSpjModal, setShowSelfPiketSpjModal] = useState(false);
+  const [selfPiketActivityName, setSelfPiketActivityName] = useState('');
+  const [selfPiketStartPoint, setSelfPiketStartPoint] = useState('UNIPDU Jombang, Jawa Timur');
+  const [selfPiketEndPoint, setSelfPiketEndPoint] = useState('');
+  const [creatingPiketSpj, setCreatingPiketSpj] = useState(false);
+
+  // Self Piket SPJ calculation states
+  const [selfPiketCalcDistance, setSelfPiketCalcDistance] = useState<number | null>(null);
+  const [selfPiketCalcDuration, setSelfPiketCalcDuration] = useState<number | null>(null);
+  const [selfPiketCalculating, setSelfPiketCalculating] = useState(false);
+  const [selfPiketCalcError, setSelfPiketCalcError] = useState('');
+  const [selfPiketTollFee, setSelfPiketTollFee] = useState<string>('');
+  const [mapTargetMode, setMapTargetMode] = useState<'piketStart' | 'piketEnd' | 'extra' | null>(null);
+  const lastSelfPiketCalculatedRef = useRef<{ start: string; end: string }>({ start: '', end: '' });
+
+  // Real-time listener to check if current driver has an active piket schedule today
+  useEffect(() => {
+    if (!isSopir || !profile?.linkedEmployeeId) return;
+
+    const todayStr = getTodayDateString('Asia/Jakarta');
+    const qPiket = query(
+      collection(db, 'DriverPiketSchedules'),
+      where('date', '==', todayStr),
+      where('driverId', '==', profile.linkedEmployeeId)
+    );
+
+    const unsubPiket = onSnapshot(
+      qPiket,
+      (snap) => {
+        if (!snap.empty) {
+          setIsPiketActiveToday(true);
+          const data: any = snap.docs[0].data();
+          setActivePiketStationName(data.stationName || '');
+        } else {
+          setIsPiketActiveToday(false);
+          setActivePiketStationName('');
+        }
+      },
+      (err) => {
+        console.error('Error listening to driver piket schedule today:', err);
+      }
+    );
+
+    return () => unsubPiket();
+  }, [isSopir, profile?.linkedEmployeeId]);
+
+  // Route calculation effect for self piket SPJ modal
+  useEffect(() => {
+    if (!showSelfPiketSpjModal || !selfPiketStartPoint || !selfPiketEndPoint) {
+      setSelfPiketCalcDistance(null);
+      setSelfPiketCalcDuration(null);
+      return;
+    }
+
+    if (
+      lastSelfPiketCalculatedRef.current.start === selfPiketStartPoint &&
+      lastSelfPiketCalculatedRef.current.end === selfPiketEndPoint &&
+      selfPiketCalcDistance !== null
+    ) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      const calculateRoute = async () => {
+        setSelfPiketCalculating(true);
+        setSelfPiketCalcError('');
+        try {
+          if (!user) throw new Error('Sesi tidak ditemukan.');
+          const idToken = await user.getIdToken();
+          const response = await fetch('/api/calculate-route', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ points: [selfPiketStartPoint, selfPiketEndPoint] }),
+          });
+          const data = await response.json();
+
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Gagal menghitung rute.');
+          }
+
+          setSelfPiketCalcDistance(data.distanceKm);
+          setSelfPiketCalcDuration(data.durationHours);
+          lastSelfPiketCalculatedRef.current = { start: selfPiketStartPoint, end: selfPiketEndPoint };
+        } catch (err: any) {
+          console.error(err);
+          setSelfPiketCalcError(err.message || 'Terjadi kesalahan jaringan.');
+        } finally {
+          setSelfPiketCalculating(false);
+        }
+      };
+
+      calculateRoute();
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [showSelfPiketSpjModal, selfPiketStartPoint, selfPiketEndPoint, user]);
+
+  const handleCreateSelfPiketSpj = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selfPiketActivityName.trim() || !selfPiketEndPoint.trim()) {
+      alert('Mohon lengkapi nama kegiatan dan tujuan perjalanan.');
+      return;
+    }
+    if (!profile?.linkedEmployeeId) {
+      alert('Profil Anda belum terhubung ke data Pegawai.');
+      return;
+    }
+    if (myClaimedJourneys.length > 0) {
+      alert('Anda masih memiliki tugas perjalanan aktif yang belum selesai dilaporkan. Selesaikan laporan perjalanan terlebih dahulu.');
+      return;
+    }
+
+    setCreatingPiketSpj(true);
+    try {
+      const todayStr = getTodayDateString('Asia/Jakarta');
+      const dateSanitized = todayStr.replace(/-/g, '');
+      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const journeyId = `JRN-PIKET-${dateSanitized}-${randomSuffix}`;
+      const year = parseInt(todayStr.split('-')[0], 10);
+      const month = parseInt(todayStr.split('-')[1], 10);
+      const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+
+      const dist = selfPiketCalcDistance || 0;
+      const dur = selfPiketCalcDuration || 0;
+      const durPP = dur * 2;
+
+      const compJarak = Math.ceil(dist * 2 * 300);
+      const compWaktu = Math.ceil(durPP * 5000);
+      const estBaseWage = compJarak + compWaktu;
+      const estMaxWage = Math.ceil(estBaseWage * 1.25);
+      const tollFeeVal = selfPiketTollFee ? parseInt(selfPiketTollFee.replace(/\D/g, ''), 10) || 0 : 0;
+
+      await setDoc(doc(db, 'DriverJourneys', journeyId), {
+        id: journeyId,
+        activityName: selfPiketActivityName.trim(),
+        activityDate: todayStr,
+        journeyDate: todayStr,
+        startPoint: selfPiketStartPoint.trim(),
+        endPoint: selfPiketEndPoint.trim(),
+        vehicleName: 'Ndalem',
+        vehicleRate: 0,
+        distanceKm: dist,
+        totalDistanceKm: dist * 2,
+        durationHours: dur,
+        customDurationPP: durPP,
+        baseOperationalCost: 0,
+        mealAllowance: 0,
+        tollParkingFee: tollFeeVal,
+        totalOperationalCost: tollFeeVal,
+        estimatedComponentJarak: compJarak,
+        estimatedComponentWaktu: compWaktu,
+        estimatedBaseDriverWage: estBaseWage,
+        estimatedMaxDriverWage: estMaxWage,
+        employeeId: profile.linkedEmployeeId,
+        employeeName: profile.displayName || 'Driver',
+        claimedBy: profile.uid,
+        claimedByName: profile.displayName || 'Driver',
+        claimedAt: serverTimestamp(),
+        status: 'claimed',
+        isSelfCreatedPiketSpj: true,
+        createdAt: serverTimestamp(),
+        authorizedAt: serverTimestamp(),
+        createdBy: profile.uid,
+        period: periodToken,
+      });
+
+      setShowSelfPiketSpjModal(false);
+      setSelfPiketActivityName('');
+      setSelfPiketEndPoint('');
+      setSelfPiketCalcDistance(null);
+      setSelfPiketCalcDuration(null);
+      setSelfPiketTollFee('');
+      lastSelfPiketCalculatedRef.current = { start: '', end: '' };
+      router.push(`/employee/activities/journey-report?id=${journeyId}`);
+    } catch (err: any) {
+      console.error('Error creating self piket SPJ:', err);
+      alert('Gagal membuat SPJ piket. Coba lagi.');
+    } finally {
+      setCreatingPiketSpj(false);
+    }
+  };
 
   // Reset states and initialize original distance/duration when reporting journey changes
   useEffect(() => {
@@ -900,6 +1125,8 @@ function ActivitiesContent() {
     if (extraLocs.length === 0) {
       setCalculatedDistanceKm((activeReportingJourney.distanceKm || 0) * 2);
       setCalculatedDurationHours((activeReportingJourney.durationHours || 0) * 2);
+      setOutboundDistanceKm(null);
+      setOutboundDurationHours(null);
       return;
     }
 
@@ -930,6 +1157,13 @@ function ActivitiesContent() {
 
       setCalculatedDistanceKm(resData.distanceKm);
       setCalculatedDurationHours(resData.durationHours);
+
+      if (resData.legs && resData.legs.length > 0) {
+        const leg0Dist = parseLegDistance(resData.legs[0].distanceText) || resData.legs[0].distanceKm || 0;
+        const leg0Dur = resData.legs[0].durationHours || 0;
+        setOutboundDistanceKm(leg0Dist);
+        setOutboundDurationHours(leg0Dur);
+      }
 
       // Map leg details back to the extraActivities state
       const updated = [...list];
@@ -984,11 +1218,15 @@ function ActivitiesContent() {
     return activeReportingJourney.endPoint;
   };
 
-  const getReturnLegDetails = () => {
-    if (!activeReportingJourney) return { distanceText: '', legCost: 0, distanceKm: 0, durationHours: 0 };
+  const getOutboundLegDetails = () => {
+    if (!activeReportingJourney) return { distanceKm: 0, durationHours: 0 };
+    if (outboundDistanceKm !== null && outboundDistanceKm > 0) {
+      return {
+        distanceKm: outboundDistanceKm,
+        durationHours: outboundDurationHours || 0,
+      };
+    }
 
-    const d0 = activeReportingJourney.distanceKm || 0;
-    const dur0 = activeReportingJourney.durationHours || 0;
     let extraSum = 0;
     let extraDurSum = 0;
     extraActivities.forEach(act => {
@@ -998,8 +1236,40 @@ function ActivitiesContent() {
       }
     });
 
-    const returnDist = Math.max(0, calculatedDistanceKm - d0 - extraSum);
-    const returnDur = Math.max(0, calculatedDurationHours - dur0 - extraDurSum);
+    const baseDist = activeReportingJourney.distanceKm || 0;
+    const baseDur = activeReportingJourney.durationHours || 0;
+    const totalDist = activeReportingJourney.totalDistanceKm || (baseDist * 2);
+
+    if (baseDist > 0 && (Math.abs(baseDist - totalDist) < 1 || baseDist >= calculatedDistanceKm - 0.5)) {
+      const halfDist = Math.max(0, (calculatedDistanceKm - extraSum) / 2);
+      const halfDur = Math.max(0, (calculatedDurationHours - extraDurSum) / 2);
+      return {
+        distanceKm: halfDist,
+        durationHours: halfDur,
+      };
+    }
+
+    return {
+      distanceKm: baseDist,
+      durationHours: baseDur,
+    };
+  };
+
+  const getReturnLegDetails = () => {
+    if (!activeReportingJourney) return { distanceText: '', legCost: 0, distanceKm: 0, durationHours: 0 };
+
+    const outbound = getOutboundLegDetails();
+    let extraSum = 0;
+    let extraDurSum = 0;
+    extraActivities.forEach(act => {
+      if (act.type === 'tambah_lokasi' && act.distanceKm) {
+        extraSum += act.distanceKm;
+        extraDurSum += act.durationHours || 0;
+      }
+    });
+
+    const returnDist = Math.max(0, calculatedDistanceKm - outbound.distanceKm - extraSum);
+    const returnDur = Math.max(0, calculatedDurationHours - outbound.durationHours - extraDurSum);
     const returnCost = returnDist * (activeReportingJourney.vehicleRate || 0);
 
     return {
@@ -1069,6 +1339,24 @@ function ActivitiesContent() {
   };
 
   const handleConfirmMapLocation = async () => {
+    if (mapTargetMode === 'piketStart') {
+      setSelfPiketStartPoint(mapAddress);
+      setSelfPiketCalcDistance(null);
+      lastSelfPiketCalculatedRef.current = { start: '', end: '' };
+      setShowMapSelector(false);
+      setMapTargetMode(null);
+      return;
+    }
+
+    if (mapTargetMode === 'piketEnd') {
+      setSelfPiketEndPoint(mapAddress);
+      setSelfPiketCalcDistance(null);
+      lastSelfPiketCalculatedRef.current = { start: '', end: '' };
+      setShowMapSelector(false);
+      setMapTargetMode(null);
+      return;
+    }
+
     if (mapTargetIndex === null) return;
     const updated = [...extraActivities];
     updated[mapTargetIndex] = {
@@ -1250,8 +1538,10 @@ function ActivitiesContent() {
   // Auto-redirect driver to dedicated /employee/activities/journey-report if an active claimed journey exists
   useEffect(() => {
     if (isSopir && myClaimedJourneys.length > 0) {
-      const activeJourney = myClaimedJourneys[0];
-      router.push(`/employee/activities/journey-report?id=${activeJourney.id}`);
+      const activeJourney = myClaimedJourneys.find((j: any) => j.status === 'claimed');
+      if (activeJourney) {
+        router.push(`/employee/activities/journey-report?id=${activeJourney.id}`);
+      }
     }
   }, [isSopir, myClaimedJourneys, router]);
 
@@ -1718,52 +2008,52 @@ function ActivitiesContent() {
       await authenticatedJson('/api/pekarya/activities', {
         method: 'POST',
         body: JSON.stringify({
-        requestId: createFinancialRequestId('driver_activity_submit'),
-        reportId: activeReportingJourney.editingActivityDocId || undefined,
-        activityName: finalActivityName,
-        activityType: 'Lainnya',
-        activityDate: formDate,
-        timeStart: formTimeStart,
-        timeEnd: formTimeEnd,
-        driverData: {
-          nightCount: effectiveNightCount,
-          dateStart: formDate,
-          dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
-          isMultiDay: formIsMultiDay,
-          fuelFee: fuelVal,
-          tollParkingFee: tollVal,
-          fuelReceiptUrl: formFuelReceiptUrls.join(','),
-          tollReceiptUrl: formTollReceiptUrls.join(','),
-          points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
-          distanceKm: calculatedDistanceKm,
-          durationHours: calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
-          journeyId: activeReportingJourney.id,
-          extraActivities,
-          extraDistanceKm,
-          extraOperationalCost,
-          extraFuelCost,
-          extraTollCost,
-          extraMealAllowance,
-          actualMealAllowance,
-          positiveReimburseDelta,
-          baseDriverWage,
-          upahBersih: finalUpahBersih,
-          reimburseDelta: finalReimburseDelta,
-          unspentCash,
-          remainingUnspentCash,
-          baseOperationalCost: baseCostVal,
-          preAuthorizedMeal,
-          preAuthorizedToll,
-          customDurationPP: preAuthorizedDurationPP,
-          totalPreAuthorizedAllowance,
-          totalActualSpent,
-          totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
-          vehicleRate: activeReportingJourney.vehicleRate ?? 1000,
-          componentJarak: calculatedDistanceKm * 300,
-          componentWaktu: calculatedDurationHours * 5000,
-          nightPremium,
-        },
-      }),
+          requestId: createFinancialRequestId('driver_activity_submit'),
+          reportId: activeReportingJourney.editingActivityDocId || undefined,
+          activityName: finalActivityName,
+          activityType: 'Lainnya',
+          activityDate: formDate,
+          timeStart: formTimeStart,
+          timeEnd: formTimeEnd,
+          driverData: {
+            nightCount: effectiveNightCount,
+            dateStart: formDate,
+            dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+            isMultiDay: formIsMultiDay,
+            fuelFee: fuelVal,
+            tollParkingFee: tollVal,
+            fuelReceiptUrl: formFuelReceiptUrls.join(','),
+            tollReceiptUrl: formTollReceiptUrls.join(','),
+            points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
+            distanceKm: calculatedDistanceKm,
+            durationHours: calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
+            journeyId: activeReportingJourney.id,
+            extraActivities,
+            extraDistanceKm,
+            extraOperationalCost,
+            extraFuelCost,
+            extraTollCost,
+            extraMealAllowance,
+            actualMealAllowance,
+            positiveReimburseDelta,
+            baseDriverWage,
+            upahBersih: finalUpahBersih,
+            reimburseDelta: finalReimburseDelta,
+            unspentCash,
+            remainingUnspentCash,
+            baseOperationalCost: baseCostVal,
+            preAuthorizedMeal,
+            preAuthorizedToll,
+            customDurationPP: preAuthorizedDurationPP,
+            totalPreAuthorizedAllowance,
+            totalActualSpent,
+            totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
+            vehicleRate: activeReportingJourney.vehicleRate ?? 1000,
+            componentJarak: calculatedDistanceKm * 300,
+            componentWaktu: calculatedDurationHours * 5000,
+            nightPremium,
+          },
+        }),
       });
 
       setMessage({ type: 'success', text: activeReportingJourney.editingActivityDocId ? 'Laporan perjalanan berhasil diperbarui.' : 'Perjalanan dinas berhasil dilaporkan.' });
@@ -1833,7 +2123,7 @@ function ActivitiesContent() {
       const defaultShiftTypeForDate = getDefaultShiftTypeForDate(satpamReportDate);
 
       if (!snap.empty) {
-          const newAssignments: Record<string, SatpamPostAssignment> = {
+        const newAssignments: Record<string, SatpamPostAssignment> = {
           'Pos 1': { employeeId: '', shiftType: defaultShiftTypeForDate },
           'Pos 2': { employeeId: '', shiftType: defaultShiftTypeForDate },
           'Pos 3': { employeeId: '', shiftType: defaultShiftTypeForDate },
@@ -3018,6 +3308,50 @@ function ActivitiesContent() {
         {/* ── Driver Journeys Panel (Sopir only) ───────────────────────── */}
         {isSopir && (
           <div className="space-y-4">
+            {/* Active Piket Banner & Self-Creation Button */}
+            {isPiketActiveToday ? (
+              <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white rounded-2xl p-4 sm:p-5 shadow-sm space-y-3 relative overflow-hidden">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-full text-emerald-100 flex items-center gap-1.5 w-fit">
+                      <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping" />
+                      Jadwal Piket Aktif Hari Ini {activePiketStationName ? `• Stasiun: ${activePiketStationName}` : ''}
+                    </span>
+                    <h3 className="text-sm sm:text-base font-extrabold mt-1.5 text-white">
+                      Anda Bertugas Piket Hari Ini!
+                    </h3>
+                    <p className="text-xs text-emerald-100/90 mt-0.5">
+                      Karena jadwal piket Anda aktif hari ini, Anda dapat membuat SPJ (Surat Perintah Jalan) sendiri khusus kendaraan <strong>Ndalem</strong>.
+                    </p>
+                    {myClaimedJourneys.length > 0 && (
+                      <p className="text-[11px] font-bold text-amber-200 mt-1 flex items-center gap-1.5 bg-amber-950/40 p-2.5 rounded-xl border border-amber-400/30">
+                        <AlertCircle className="w-4 h-4 text-amber-300 shrink-0" />
+                        Anda memiliki perjalanan aktif yang sedang berjalan. Selesaikan laporan perjalanan tersebut terlebih dahulu untuk dapat membuat SPJ Piket baru.
+                      </p>
+                    )}
+                  </div>
+
+                  <Button
+                    disabled={myClaimedJourneys.length > 0}
+                    onClick={() => setShowSelfPiketSpjModal(true)}
+                    className="shrink-0 rounded-xl bg-white text-emerald-900 hover:bg-emerald-50 font-extrabold text-xs h-10 px-4 gap-2 cursor-pointer shadow-md border-none disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4 text-emerald-700" />
+                    Buat SPJ Piket (Ndalem)
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-100 border border-slate-200 text-slate-600 rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span>
+                    Pembuatan SPJ mandiri hanya aktif pada hari jadwal piket Anda.
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* 1. Bucket Top: Horizontal Carousel for Assigned Tasks */}
             {myAssignedJourneys.length > 0 && (
               <div className="space-y-2">
@@ -4571,6 +4905,256 @@ function ActivitiesContent() {
               </Button>
             </DialogFooter>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog for Self-Creating Piket SPJ (Rich Otorisasi SPJ Modal - Ndalem locked, No Operational Cost Calculation) */}
+      <Dialog open={showSelfPiketSpjModal} onOpenChange={setShowSelfPiketSpjModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl p-6 sm:p-7">
+          <DialogHeader className="border-b border-slate-100 pb-4">
+            <DialogTitle className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2">
+              <Compass className="w-5 h-5 text-emerald-600 animate-spin-slow" />
+              Otorisasi SPJ Piket Mandiri (Ndalem)
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateSelfPiketSpj} className="space-y-4 pt-2">
+            {myClaimedJourneys.length > 0 && (
+              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl text-xs font-semibold flex items-center gap-2.5 animate-in fade-in duration-200">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Anda masih memiliki tugas perjalanan aktif yang belum selesai dilaporkan. Selesaikan laporan perjalanan aktif terlebih dahulu sebelum membuat SPJ Piket baru.</span>
+              </div>
+            )}
+            {/* Nama Kegiatan & Tanggal Perjalanan */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="md:col-span-2 space-y-1.5">
+                <Label htmlFor="selfPiketActivityName" className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  Nama Kegiatan / Keperluan
+                </Label>
+                <Input
+                  id="selfPiketActivityName"
+                  placeholder="Contoh: Mengantar Gus Ufik ke Surabaya"
+                  value={selfPiketActivityName}
+                  onChange={(e) => setSelfPiketActivityName(e.target.value)}
+                  required
+                  className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs sm:text-sm h-10 px-3 font-semibold"
+                />
+              </div>
+
+              <div className="md:col-span-1 space-y-1.5">
+                <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  Tanggal Perjalanan
+                </Label>
+                <Input
+                  type="date"
+                  value={getTodayDateString('Asia/Jakarta')}
+                  disabled
+                  className="rounded-xl border-slate-200 bg-slate-50 font-bold text-xs h-10 px-3 cursor-not-allowed"
+                />
+              </div>
+            </div>
+
+            {/* Titik Mulai (Origin) & Tujuan Utama (Destination) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  Titik Awal (Origin)
+                </Label>
+                {!selfPiketStartPoint ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setMapTargetMode('piketStart');
+                      setMapSearchText('');
+                      setMapAddress('');
+                      setMapAddressImage(null);
+                      setShowMapSelector(true);
+                    }}
+                    className="w-full rounded-xl border border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/30 hover:bg-emerald-50/50 text-emerald-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
+                  >
+                    <MapPin className="w-4 h-4" />
+                    Pilih Titik Awal di Peta
+                  </Button>
+                ) : (
+                  <div className="p-3 bg-emerald-50/40 border border-emerald-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2 overflow-hidden text-xs text-emerald-950 font-semibold flex-1">
+                      <MapPin className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
+                      <span className="truncate" title={selfPiketStartPoint}>{selfPiketStartPoint}</span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setMapTargetMode('piketStart');
+                        setMapSearchText(selfPiketStartPoint);
+                        setMapAddress(selfPiketStartPoint);
+                        setMapAddressImage(null);
+                        setShowMapSelector(true);
+                      }}
+                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
+                    >
+                      Ubah
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  Tujuan Utama (Destination)
+                </Label>
+                {!selfPiketEndPoint ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setMapTargetMode('piketEnd');
+                      setMapSearchText('');
+                      setMapAddress('');
+                      setMapAddressImage(null);
+                      setShowMapSelector(true);
+                    }}
+                    className="w-full rounded-xl border border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/30 hover:bg-emerald-50/50 text-emerald-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
+                  >
+                    <MapPin className="w-4 h-4" />
+                    Pilih Lokasi Tujuan di Peta
+                  </Button>
+                ) : (
+                  <div className="p-3 bg-emerald-50/40 border border-emerald-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2 overflow-hidden text-xs text-emerald-950 font-semibold flex-1">
+                      <MapPin className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
+                      <span className="truncate" title={selfPiketEndPoint}>{selfPiketEndPoint}</span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setMapTargetMode('piketEnd');
+                        setMapSearchText(selfPiketEndPoint);
+                        setMapAddress(selfPiketEndPoint);
+                        setMapAddressImage(null);
+                        setShowMapSelector(true);
+                      }}
+                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
+                    >
+                      Ubah
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Kendaraan */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                Jenis Kendaraan
+              </Label>
+              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 text-xs font-extrabold flex items-center justify-between h-10">
+                <span className="flex items-center gap-2">
+                  <Car className="w-4 h-4 text-amber-600 shrink-0" />
+                  Ndalem — Tanpa Uang Jalan Operasional
+                </span>
+                <Badge className="bg-amber-200 text-amber-950 border-none text-[9px] font-black shrink-0">Terkunci</Badge>
+              </div>
+            </div>
+
+            {/* Calculation Loader */}
+            {selfPiketCalculating && (
+              <div className="flex items-center justify-center p-3 text-xs text-emerald-700 font-bold bg-emerald-50/60 rounded-xl border border-emerald-200/60 animate-in fade-in duration-200">
+                <Loader2 className="w-4 h-4 animate-spin mr-2 text-emerald-600" />
+                Mengevaluasi rute & durasi Google Maps...
+              </div>
+            )}
+
+            {/* Calculation Errors */}
+            {selfPiketCalcError && (
+              <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-semibold flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{selfPiketCalcError}</span>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    lastSelfPiketCalculatedRef.current = { start: '', end: '' };
+                    setSelfPiketCalcDistance(null);
+                  }}
+                  className="text-[10px] font-bold bg-rose-600 hover:bg-rose-700 text-white h-7 px-2.5 rounded-lg shrink-0 cursor-pointer"
+                >
+                  Coba Lagi
+                </Button>
+              </div>
+            )}
+
+            {/* Calculation Summary Preview (WITHOUT Operational Cost Calculation) */}
+            {selfPiketCalcDistance !== null && (
+              <div className="p-4 bg-gradient-to-br from-emerald-50/80 to-teal-50/50 border border-emerald-200/80 rounded-2xl space-y-3 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2">
+                  <span className="text-[10px] font-black text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Compass className="w-3.5 h-3.5 text-emerald-600" />
+                    Rincian Perjalanan & Estimasi Upah Sopir
+                  </span>
+                  <Badge className="bg-emerald-200/80 text-emerald-950 border-none text-[9px] font-black">
+                    Piket Mandiri
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-slate-700 text-xs font-semibold">
+                  <div className="bg-white p-2.5 rounded-xl border border-emerald-100 shadow-xs">
+                    <span className="block text-[9px] text-slate-400 font-extrabold uppercase">Jarak Tempuh PP</span>
+                    <span className="text-xs sm:text-sm font-black text-emerald-900">{(selfPiketCalcDistance * 2).toFixed(1)} km</span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-emerald-100 shadow-xs">
+                    <span className="block text-[9px] text-slate-400 font-extrabold uppercase">Estimasi Waktu Tempuh PP</span>
+                    <span className="text-xs sm:text-sm font-black text-emerald-900">
+                      {((selfPiketCalcDuration || 0) * 2).toFixed(1)} Jam
+                    </span>
+                  </div>
+                </div>
+
+                {(() => {
+                  const durPP = (selfPiketCalcDuration || 0) * 2;
+                  const compJarak = Math.ceil(selfPiketCalcDistance * 2 * 300);
+                  const compWaktu = Math.ceil(durPP * 5000);
+                  const baseWage = compJarak + compWaktu;
+                  const maxWage = Math.ceil(baseWage * 1.25);
+
+                  return (
+                    <div className="bg-white p-3 rounded-xl border border-emerald-200/80 space-y-1.5 shadow-xs">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-extrabold text-slate-700">Estimasi Upah Bersih Sopir:</span>
+                        <span className="text-xs sm:text-sm font-black text-emerald-700">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">
+                        <span>Komponen Jarak ({fmtRp(compJarak)}) + Komponen Waktu ({fmtRp(compWaktu)})</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            <DialogFooter className="pt-3 border-t border-slate-100 gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowSelfPiketSpjModal(false)}
+                className="rounded-xl font-bold text-slate-500 text-xs px-4 cursor-pointer hover:bg-slate-100"
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                disabled={creatingPiketSpj || selfPiketCalculating || !selfPiketEndPoint.trim() || myClaimedJourneys.length > 0}
+                className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs px-6 h-10 gap-2 shadow-md shadow-emerald-200 cursor-pointer disabled:opacity-50"
+              >
+                {creatingPiketSpj ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                Otorisasi & Mulai Perjalanan
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

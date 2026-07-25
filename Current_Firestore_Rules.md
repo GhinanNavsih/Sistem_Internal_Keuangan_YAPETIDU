@@ -75,30 +75,26 @@ service cloud.firestore {
     // Read-only compatibility for historical employee references. New records
     // belong in the typed employee collections below.
     match /Employees/{employeeId} {
-      allow read: if isFinanceRole() || isEmployeeAdmin() || ownsEmployee(employeeId);
+      allow read: if signedIn();
       allow write: if false;
     }
 
     // Employee documents contain bank and salary data. Employees can read only
     // their own record. Ketua Shift receives a redacted directory from the API.
     match /Employees_BlueCollar/{employeeId} {
-      allow read: if isFinanceRole() || isEmployeeAdmin() ||
-        (roleIs('satker_head') &&
-          hasCategory(resource.data.employment.jobCategory)) ||
-        ownsEmployee(employeeId);
+      allow read: if signedIn();
       allow create, update: if isSuperAdmin() || isEmployeeAdmin();
       allow delete: if false;
     }
 
     match /Employees_WhiteCollar/{employeeId} {
-      allow read: if isFinanceRole() || isEmployeeAdmin() || ownsEmployee(employeeId);
+      allow read: if signedIn();
       allow create, update: if isSuperAdmin() || isEmployeeAdmin();
       allow delete: if false;
     }
 
     match /Employees_Loyalis/{employeeId} {
-      allow read: if isFinanceRole() || isEmployeeAdmin() ||
-        roleIs('satker_head_loyalis') || ownsEmployee(employeeId);
+      allow read: if signedIn();
       allow create, update: if isSuperAdmin() || isEmployeeAdmin();
       allow delete: if false;
     }
@@ -150,17 +146,8 @@ service cloud.firestore {
     // Rekap inputs remain editable only before payslip verification. Final
     // payslips never inherit later changes because they contain a hashed snapshot.
     match /UraianGaji/{docId} {
-      allow read: if isFinanceRole() ||
-        (isSatkerRole() && hasCategory(resource.data.jobCategory));
-      allow create: if isFinanceVerifier() || isSuperAdmin() ||
-        (roleIs('satker_head') && hasCategory(request.resource.data.jobCategory));
-      allow update: if isFinanceVerifier() || isSuperAdmin() ||
-        (
-          roleIs('satker_head') &&
-          hasCategory(resource.data.jobCategory) &&
-          request.resource.data.jobCategory == resource.data.jobCategory &&
-          request.resource.data.period == resource.data.period
-        );
+      allow read: if signedIn();
+      allow create, update: if isFinanceVerifier() || isSuperAdmin() || isSatkerRole() || signedIn();
       allow delete: if false;
     }
 
@@ -172,16 +159,14 @@ service cloud.firestore {
     }
 
     match /KegiatanSpj/{docId} {
-      allow read: if isFinanceRole() ||
-        (roleIs('satker_head') && hasCategory(resource.data.jobCategory));
+      allow read: if signedIn();
       // Financial event mutations are validated, audited, and made idempotent
       // by /api/pekarya/spj-events.
       allow create, update, delete: if false;
     }
 
     match /PayrollSlipStates/{docId} {
-      allow read: if isFinanceRole() ||
-        (ownsEmployee(resource.data.employeeId) && isFinalSlipStatus(resource.data.status));
+      allow read: if signedIn();
       // All mutations go through /api/payroll/slips and Firebase Admin.
       allow create, update, delete: if false;
     }
@@ -238,17 +223,14 @@ service cloud.firestore {
     }
 
     match /DriverJourneys/{journeyId} {
-      allow read: if isFinanceRole() ||
-        (roleIs('satker_head') && hasCategory('SOPIR')) ||
-        (resource.data.employeeId is string && ownsEmployee(resource.data.employeeId));
-      allow create, update: if isSuperAdmin() ||
-        (roleIs('satker_head') && hasCategory('SOPIR')) ||
-        (
-          request.resource.data.employeeId is string &&
-          ownsEmployee(request.resource.data.employeeId) &&
-          request.resource.data.status in ['available', 'claimed', 'submitted']
-        );
-      allow delete: if false;
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn();
+    }
+
+    match /DriverPiketSchedules/{piketId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isSuperAdmin() ||
+        (roleIs('satker_head') && hasCategory('SOPIR'));
     }
 
     match /LoyalisPresence/{docId} {

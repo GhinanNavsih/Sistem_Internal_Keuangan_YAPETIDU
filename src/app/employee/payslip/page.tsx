@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { auth, db } from '@/lib/firebase';
+import { auth, db, secondaryDb } from '@/lib/firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import {
   doc,
@@ -10,7 +10,7 @@ import {
   getDocs,
   collection,
   query,
-  where
+  where,
 } from 'firebase/firestore';
 import {
   Card,
@@ -51,7 +51,16 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
-import { MONTHS_ID } from '@/utils/rekapConfig';
+import { MONTHS_ID, REKAP_COLUMNS } from '@/utils/rekapConfig';
+import { sumApprovedActivitySpj } from '@/lib/payroll/pekaryaSpj';
+import {
+  composeKoperasiLoanHistoryTrail,
+  koperasiProjectedPaidInstallments,
+  koperasiProjectedRemainingBalance,
+  projectKoperasiLoanForPeriod,
+  resolveKoperasiLoanStatus,
+  selectKoperasiLineageHeads,
+} from '@/lib/payroll/koperasiLoan';
 import {
   calculateYearsOfService,
 } from '@/utils/payrollLogic';
@@ -110,6 +119,83 @@ function terbilang(n: number): string {
   const cleaned = spell(n);
   if (!cleaned) return "Nol";
   return cleaned.split(" ").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
+
+/**
+ * Employee payslips may be rendered before a finance-owned slip snapshot has
+ * been published.  Keep all fallback values numeric and deterministic so a
+ * malformed/null Firestore value cannot turn the entire slip into NaN.
+ */
+function money(value: unknown): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.round(numeric) : 0;
+}
+
+function dateFromFirestoreValue(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof (value as any)?.toDate === 'function') {
+    const date = (value as any).toDate();
+    return date instanceof Date && !Number.isNaN(date.getTime()) ? date : null;
+  }
+  if (typeof (value as any)?.seconds === 'number') {
+    const date = new Date(Number((value as any).seconds) * 1000);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+}
+
+function timestampMillis(value: unknown): number {
+  return dateFromFirestoreValue(value)?.getTime() ?? 0;
+}
+
+function isLoanActiveForPeriod(loan: any, periodDate: Date): boolean {
+  if (money(loan?.sisaHutang) <= 0 || !Array.isArray(loan?.history) || loan.history.length === 0) {
+    return false;
+  }
+
+  const history = [...loan.history].sort(
+    (a: any, b: any) => timestampMillis(b?.timestamp) - timestampMillis(a?.timestamp),
+  );
+  const activeStatus = resolveKoperasiLoanStatus(loan) === 'Disetujui dan Aktif';
+  if (!activeStatus) return false;
+
+  const activationDate =
+    dateFromFirestoreValue(loan.tanggalDisetujui) ||
+    dateFromFirestoreValue(history[0]?.timestamp);
+  if (!activationDate) return false;
+
+  const targetPeriod = periodDate.getFullYear() * 12 + periodDate.getMonth();
+  const activationPeriod = activationDate.getFullYear() * 12 + activationDate.getMonth();
+  return activationPeriod <= targetPeriod;
+}
+
+function normalizeSlipFields(fields: unknown): PaySlipField[] {
+  if (!Array.isArray(fields)) return [];
+  return fields
+    .filter((field: any) => field && typeof field.label === 'string')
+    .map((field: any) => ({ label: field.label, amount: money(field.amount) }));
+}
+
+function mergeSlipFields(fallback: PaySlipField[], saved: unknown): PaySlipField[] {
+  const merged = [...fallback];
+  for (const field of normalizeSlipFields(saved)) {
+    const index = merged.findIndex(
+      (candidate) => candidate.label.trim().toUpperCase() === field.label.trim().toUpperCase(),
+    );
+    if (index >= 0) {
+      // A draft generated before an approval/profile update often contains
+      // zero placeholders.  Do not let those placeholders hide a now-known
+      // positive source value (e.g. BPJS, rice allowance, or approved SPJ).
+      if (field.amount > 0 || merged[index].amount <= 0) merged[index] = field;
+    }
+    else merged.push(field);
+  }
+  return merged;
 }
 
 
@@ -431,6 +517,10 @@ export default function EmployeePayslipPage() {
   }, [profile?.linkedEmployeeId, isDefaultPeriodSet]);
 
   const targetDate = useMemo(() => new Date(year, month - 1, 1), [year, month]);
+  const periodEndDate = useMemo(
+    () => new Date(year, month, 0, 23, 59, 59, 999),
+    [year, month],
+  );
   const periodText = useMemo(() => `${MONTHS_ID[month - 1]} ${year}`, [month, year]);
 
   // Format for PayrollSlipStates document ID: YYYY_MM
@@ -619,11 +709,16 @@ export default function EmployeePayslipPage() {
     if (!profile?.linkedEmployeeId) return;
     if (!isDefaultPeriodSet) return;
 
+    let cancelled = false;
     const fetchPayslipData = async (attempt = 1) => {
       try {
+        if (cancelled) return;
         setLoading(true);
+        setEmployeeData(null);
         setConfirmedSlip(null);
         setIsConfirmed(false);
+        setCalculatedEarnings([]);
+        setCalculatedDeductions([]);
 
         const empId = profile.linkedEmployeeId as string;
         const roleStr = profile?.role as string;
@@ -640,8 +735,10 @@ export default function EmployeePayslipPage() {
 
         if (!empSnap.exists()) {
           console.error(`Employee document ${empId} not found in Employees_Loyalis or Employees_BlueCollar`);
-          setEmployeeData(null);
-          setLoading(false);
+          if (!cancelled) {
+            setEmployeeData(null);
+            setLoading(false);
+          }
           return;
         }
 
@@ -663,22 +760,143 @@ export default function EmployeePayslipPage() {
 
         setEmployeeData(employee);
 
-        // Only the employee's immutable final snapshot is loaded. Raw
-        // institution-wide attendance, vakasi, matrix, and cooperative
-        // collections are never downloaded to an employee browser.
-        setKoperasiLoansInfo([]);
+        // A final PayrollSlipStates snapshot remains authoritative.  When it
+        // does not exist yet (the normal state while Finance is preparing a
+        // period), build a read-only employee draft from the employee's own
+        // profile, approved activity reports, and their own cooperative data.
+        // All queries below are scoped to this employee and never expose an
+        // institution-wide payroll collection to the browser.
+        const activityPromise = isLoyalis
+          ? Promise.resolve(null)
+          : getDocs(query(
+            collection(db, 'ActivityReports'),
+            where('employeeId', '==', empId),
+          )).catch((error) => {
+            console.warn('Unable to load approved activity reports for payslip draft:', error);
+            return null;
+          });
 
-        // 2. Check for saved slip in PayrollSlipStates (Format: {periodKey}_{linkedEmployeeId})
+        const loanPromise = employee.koperasiAuthUid
+          ? getDocs(query(
+            collection(secondaryDb, 'simpanPinjam'),
+            where('userId', '==', employee.koperasiAuthUid),
+          )).catch((error) => {
+            console.warn('Unable to load cooperative loan data for payslip draft:', error);
+            return null;
+          })
+          : Promise.resolve(null);
+
+        const memberPromise = employee.koperasiAuthUid
+          ? getDocs(query(
+            collection(secondaryDb, 'users'),
+            where('uid', '==', employee.koperasiAuthUid),
+          )).catch((error) => {
+            console.warn('Unable to load cooperative membership data for payslip draft:', error);
+            return null;
+          })
+          : Promise.resolve(null);
+
+        const [activitySnapshot, loanSnapshot, memberSnapshot] = await Promise.all([
+          activityPromise,
+          loanPromise,
+          memberPromise,
+        ]);
+        if (cancelled) return;
+
+        const activityReports = activitySnapshot?.docs.map((activityDoc) => ({
+          id: activityDoc.id,
+          ...activityDoc.data(),
+        })) || [];
+        const jobCategory = String(employee.employment?.jobCategory || 'PEKARYA').toUpperCase();
+        const approvedSpj = sumApprovedActivitySpj(
+          activityReports,
+          empId,
+          jobCategory,
+          periodToken,
+        );
+
+        const rawCooperativeLoans = (loanSnapshot?.docs || [])
+          .map((loanDoc) => ({ id: loanDoc.id, ...loanDoc.data() as any }));
+        const periodLoans = rawCooperativeLoans
+          .map((loan) => projectKoperasiLoanForPeriod(loan, periodEndDate))
+          .filter((loan): loan is NonNullable<typeof loan> => Boolean(loan));
+        const processedCooperativeLoans = periodLoans
+          .filter((loan) => money(loan.sisaHutang) > 0)
+          .map((loan) => ({
+            ...loan,
+            // Use the same full restructuring ancestry trail as Audit
+            // Simpan Pinjam, limited to the selected period cutoff.
+            composedTrail: composeKoperasiLoanHistoryTrail(loan, periodLoans, periodEndDate),
+          }));
+        const activeLoans = processedCooperativeLoans.filter((loan) => isLoanActiveForPeriod(loan, targetDate));
+        const koperasiDeduction = activeLoans.reduce((total, loan) => total + money(loan.cicilan), 0);
+        // Keep the head of each restructuring lineage for the timeline.  Its
+        // composedTrail still contains every ancestor, matching the Audit
+        // modal without rendering the same old loan twice.  The deduction
+        // itself still follows the active-loan payroll policy above.
+        const timelineLoans = selectKoperasiLineageHeads(processedCooperativeLoans);
+        setKoperasiLoansInfo(timelineLoans);
+
+        const memberData = memberSnapshot?.docs[0]?.data() as any;
+        const memberApproved = memberData?.status === 'approved' || memberData?.membershipStatus === 'approved';
+        const koperasiSaving = memberApproved && memberData?.paymentStatus !== 'Yayasan Subsidy'
+          ? money(memberData?.iuranWajib) || 25000
+          : 0;
+
+        const fallbackEarnings: PaySlipField[] = [];
+        const fallbackDeductions: PaySlipField[] = [];
+
+        if (!isLoyalis) {
+          fallbackEarnings.push({
+            label: 'Gaji Pokok',
+            amount: money(employee.salaryProfile?.baseSalaryAmount),
+          });
+
+          const columns = REKAP_COLUMNS[jobCategory] || REKAP_COLUMNS.PEKARYA;
+          for (const column of columns) {
+            if (!column.slipLabel) continue;
+            fallbackEarnings.push({
+              label: column.slipLabel,
+              amount: column.key === 'spj' ? approvedSpj : 0,
+            });
+          }
+
+          fallbackEarnings.push({
+            label: 'BPJS (Tunjangan)',
+            amount: money(employee.bpjs?.allowanceAmount),
+          });
+          fallbackEarnings.push({
+            label: 'Tunjangan Beras',
+            amount: money(employee.salaryProfile?.tunjanganBeras),
+          });
+
+          fallbackDeductions.push(
+            { label: 'Koperasi Rochmad', amount: money(employee.deductions?.koperasiRochmad) },
+            { label: 'BPJS', amount: money(employee.bpjs?.deductionAmount) },
+            { label: 'Tabungan Hari Tua BNI Simponi', amount: money(employee.tht?.deductionAmount) },
+            { label: 'Tabungan', amount: money(employee.savings?.deductionAmount) },
+            { label: 'Zakat Infaq Sodaqoh', amount: money(employee.ziz?.deductionAmount) },
+            { label: 'Revisi Gaji', amount: 0 },
+            { label: 'Pinlu/Tagihan', amount: money(employee.pinlu?.deductionAmount) },
+            { label: 'Pinjaman Kop. UNIPDU', amount: koperasiDeduction },
+            { label: 'Potongan Presensi', amount: 0 },
+            { label: 'Potongan Bonus Presensi', amount: 0 },
+            { label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving },
+          );
+        }
+
+        // Check for saved slip in PayrollSlipStates (Format: {periodKey}_{linkedEmployeeId})
         const slipDocId = `${periodKey}_${empId}`;
         const slipRef = doc(db, 'PayrollSlipStates', slipDocId);
         const slipSnap = await getDoc(slipRef);
+        if (cancelled) return;
 
         if (slipSnap.exists() && isTransferEligibleStatus(slipSnap.data()?.status)) {
           const slipData = slipSnap.data();
           setConfirmedSlip(slipData);
           setIsConfirmed(true);
-          setCalculatedEarnings(slipData.earnings || []);
-          setCalculatedDeductions(slipData.deductions || []);
+          setCalculatedEarnings(normalizeSlipFields(slipData.earnings));
+          setCalculatedDeductions(normalizeSlipFields(slipData.deductions));
 
           setPresenceInfo({
             workingDays: 0,
@@ -693,12 +911,24 @@ export default function EmployeePayslipPage() {
           return;
         }
 
-        // Financial drafts are intentionally not exposed to employees. Every
-        // employee can only read the immutable slip published for them.
+        // Draft/verification records are visible to the employee as a
+        // read-only preview.  Saved rows win over calculated rows, while any
+        // missing mandatory profile rows are filled from the scoped fallback
+        // above.  This is what keeps an unfinalized July slip from rendering
+        // as an empty Rp 0 document.
+        const savedSlip = slipSnap.exists() ? slipSnap.data() : null;
         setConfirmedSlip(null);
         setIsConfirmed(false);
-        setCalculatedEarnings([]);
-        setCalculatedDeductions([]);
+        setCalculatedEarnings(mergeSlipFields(fallbackEarnings, savedSlip?.earnings));
+        setCalculatedDeductions(mergeSlipFields(fallbackDeductions, savedSlip?.deductions));
+        setPresenceInfo({
+          workingDays: 0,
+          expectedHours: 0,
+          absenceMinutes: 0,
+          bonusDeduction: 0,
+        });
+        setVakasiEvents([]);
+        setKepangkatanDesignations({});
         setLoading(false);
         return;
 
@@ -706,15 +936,28 @@ export default function EmployeePayslipPage() {
         console.error(`Error fetching/calculating payslip data (attempt ${attempt}):`, err);
         const isPermissionError = err?.code === 'permission-denied' || err?.message?.toLowerCase().includes('permission');
         if (isPermissionError && attempt < 3) {
-          setTimeout(() => fetchPayslipData(attempt + 1), 600);
-        } else {
+          setTimeout(() => {
+            if (!cancelled) fetchPayslipData(attempt + 1);
+          }, 600);
+        } else if (!cancelled) {
           setLoading(false);
         }
       }
     };
 
     fetchPayslipData();
-  }, [profile?.linkedEmployeeId, periodKey, periodToken, isDefaultPeriodSet]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    profile?.linkedEmployeeId,
+    profile?.role,
+    periodKey,
+    periodToken,
+    periodEndDate,
+    targetDate,
+    isDefaultPeriodSet,
+  ]);
 
   // Compiled earnings & deductions based on finalized status
   const earnings = useMemo(() => {
@@ -844,7 +1087,13 @@ export default function EmployeePayslipPage() {
   ], []);
 
   const activeDeductionDocs = useMemo(() => {
-    const activeFields = deductions.filter((d: PaySlipField) => d.amount && d.amount > 0);
+    const hasLoanTimeline = koperasiLoansInfo.length > 0;
+    const activeFields = deductions.filter((d: PaySlipField) => {
+      if (d.amount && d.amount > 0) return true;
+      // Show an authoritative pending/restructured timeline even when the
+      // current payroll policy correctly produces a Rp 0 deduction.
+      return hasLoanTimeline && d.label.trim().toUpperCase().includes('PINJAMAN KOP');
+    });
     return activeFields.map((field: PaySlipField) => {
       const fieldUpper = field.label.trim().toUpperCase();
       const docDef = allDeductionDocs.find(doc =>
@@ -869,7 +1118,7 @@ export default function EmployeePayslipPage() {
         amount: field.amount,
       };
     });
-  }, [deductions, allDeductionDocs]);
+  }, [deductions, allDeductionDocs, koperasiLoansInfo]);
 
   const userVariables = useMemo(() => {
     if (!employeeData) return null;
@@ -937,14 +1186,20 @@ export default function EmployeePayslipPage() {
     };
   }, [employeeData, targetDate, earnings, deductions, kepangkatanDesignations]);
 
-  const DocRow = ({ label, value, highlight }: { label: string; value: React.ReactNode; highlight?: boolean }) => {
+  const DocRow = ({ label, value, highlight, tone = 'positive' }: {
+    label: string;
+    value: React.ReactNode;
+    highlight?: boolean;
+    tone?: 'positive' | 'negative';
+  }) => {
+    const valueColor = tone === 'negative' ? 'text-rose-600' : 'text-emerald-600';
     return (
       <>
         <div className={`pr-4 font-semibold text-xs sm:text-sm ${highlight ? 'text-indigo-600 font-bold' : 'text-slate-500'}`}>
           {label}
         </div>
         <div className="text-center text-indigo-600 font-bold text-xs sm:text-sm">:</div>
-        <div className={`pl-2 text-xs sm:text-sm ${highlight ? 'text-emerald-600 font-extrabold' : 'text-slate-800 font-bold'}`}>
+        <div className={`pl-2 text-xs sm:text-sm ${highlight ? `${valueColor} font-extrabold` : 'text-slate-800 font-bold'}`}>
           {value}
         </div>
       </>
@@ -954,7 +1209,7 @@ export default function EmployeePayslipPage() {
   // Client-side PDF trigger
   const handleDownloadPdf = () => {
     if (!employeeData || !isConfirmed) return;
-    const isLoyalis = profile?.role !== 'honorer';
+    const isLoyalis = profile?.role !== 'honorer' && profile?.role !== 'ketua_shift_satpam';
     const slipData: PaySlipData = {
       employeeName: employeeData.personal_info?.name || profile?.displayName || 'Karyawan',
       employeeNo: 1, // Placeholder
@@ -1234,7 +1489,9 @@ export default function EmployeePayslipPage() {
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">PERIODE SLIP</span>
                     <span className="text-sm font-bold text-indigo-600 block">{periodText.toUpperCase()}</span>
                     <span className="text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full inline-block">
-                      STAF {employeeData.employment_profile?.department_unit || 'LOYALIS'}
+                      {profile?.role === 'loyalis'
+                        ? `STAF ${employeeData.employment_profile?.department_unit || 'LOYALIS'}`
+                        : `VAKASI ${employeeData.employment?.jobCategory || 'PEKARYA'}`}
                     </span>
                   </div>
                 </div>
@@ -1605,7 +1862,7 @@ export default function EmployeePayslipPage() {
                               {item.id !== 'pinjaman_kop' && !item.fieldLabel.toUpperCase().includes('PINJAMAN KOP') && (
                                 <div className="mt-3.5 ml-0 w-full bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 animate-in fade-in duration-200">
                                   <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                    <DocRow label={item.fieldLabel} value={formatIDR(item.amount)} highlight />
+                                    <DocRow label={item.fieldLabel} value={formatIDR(item.amount)} highlight tone="negative" />
                                   </div>
                                 </div>
                               )}
@@ -1615,63 +1872,27 @@ export default function EmployeePayslipPage() {
                                 <div className="mt-3.5 ml-0 w-full bg-[#f8fafc] border border-slate-200/50 rounded-2xl p-4.5 sm:p-5 space-y-4 animate-in fade-in duration-200">
                                   {/* Primary Deduction Row */}
                                   <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
-                                    <DocRow label={item.fieldLabel} value={formatIDR(item.amount)} highlight />
+                                    <DocRow label={item.fieldLabel} value={formatIDR(item.amount)} highlight tone="negative" />
                                   </div>
 
                                   {/* Integrated Loan Timeline & History Trail */}
                                   {(() => {
-                                    const fallbackApprovalDate = new Date(year, Math.max(0, month - 1 - 6), 10, 9, 30);
-                                    const fallbackCurrentPayDate = new Date(year, month - 1, 25, 14, 0);
+                                    const loansToRender = koperasiLoansInfo || [];
 
-                                    const fallbackLoan = {
-                                      id: 'KOP-PAYROLL',
-                                      jumlahPinjaman: item.amount * 12,
-                                      tenor: 12,
-                                      cicilan: item.amount,
-                                      sisaHutang: item.amount * 6,
-                                      paidInstallments: 6,
-                                      currentInstallmentNum: 7,
-                                      tujuanPinjaman: 'Pinjaman Koperasi UNIPDU',
-                                      status: 'Disetujui dan Aktif',
-                                      tanggalDisetujui: fallbackApprovalDate,
-                                      history: [
-                                        {
-                                          status: 'Disetujui dan Aktif',
-                                          timestamp: fallbackApprovalDate,
-                                          notes: 'Pengajuan pinjaman terdaftar aktif pada database Koperasi UNIPDU'
-                                        },
-                                        {
-                                          status: 'Pembayaran Cicilan',
-                                          timestamp: fallbackCurrentPayDate,
-                                          notes: `Potongan cicilan gaji otomatis periode ${month}/${year} sebesar ${formatIDR(item.amount)}`
-                                        }
-                                      ],
-                                      composedTrail: [
-                                        {
-                                          loanId: 'KOP-PAYROLL',
-                                          loanLabel: 'Pinjaman Koperasi UNIPDU',
-                                          entries: [
-                                            {
-                                              status: 'Disetujui dan Aktif',
-                                              timestamp: fallbackApprovalDate,
-                                              notes: 'Pengajuan pinjaman terdaftar aktif pada database Koperasi UNIPDU'
-                                            },
-                                            {
-                                              status: 'Pembayaran Cicilan',
-                                              timestamp: fallbackCurrentPayDate,
-                                              notes: `Potongan cicilan gaji otomatis periode ${month}/${year} sebesar ${formatIDR(item.amount)}`
-                                            }
-                                          ]
-                                        }
-                                      ]
-                                    };
-
-                                    const loansToRender = (koperasiLoansInfo && koperasiLoansInfo.length > 0)
-                                      ? koperasiLoansInfo
-                                      : [fallbackLoan];
+                                    if (loansToRender.length === 0) {
+                                      return (
+                                        <div className="pt-3.5 border-t border-slate-200/60 text-xs text-slate-400 italic">
+                                          Data pinjaman koperasi belum dapat ditemukan pada database Koperasi UNIPDU.
+                                        </div>
+                                      );
+                                    }
 
                                     return loansToRender.map((loan, lIdx) => {
-                                      const percentPaid = Math.min(100, Math.max(0, Math.round(((loan.jumlahPinjaman - loan.sisaHutang) / (loan.jumlahPinjaman || 1)) * 100)));
+                                      const projectedPaidInstallments = koperasiProjectedPaidInstallments(loan);
+                                      const percentPaid = loan.tenor > 0
+                                        ? Math.min(100, Math.max(0, Math.round((projectedPaidInstallments / loan.tenor) * 100)))
+                                        : 0;
+                                      const projectedRemainingBalance = koperasiProjectedRemainingBalance(loan);
                                       const trailSegments = loan.composedTrail || [
                                         {
                                           loanId: loan.id || 'loan-current',
@@ -1691,11 +1912,16 @@ export default function EmployeePayslipPage() {
                                               </div>
                                               <div>
                                                 <h5 className="text-xs sm:text-sm font-bold text-slate-800">
-                                                  Program Pinjaman: {loan.tujuanPinjaman}
+                                                  Program Pinjaman: {loan.tujuanPinjaman || 'Pinjaman Koperasi UNIPDU'}
                                                 </h5>
                                                 {loan.tanggalDisetujui && (
                                                   <p className="text-[10px] text-slate-400">
                                                     Disetujui: {formatLoanDate(loan.tanggalDisetujui)}
+                                                  </p>
+                                                )}
+                                                {loan.status && (
+                                                  <p className="text-[10px] font-semibold text-indigo-500">
+                                                    Status: {loan.status}
                                                   </p>
                                                 )}
                                               </div>
@@ -1712,7 +1938,7 @@ export default function EmployeePayslipPage() {
                                               <span className="font-bold text-slate-800">{formatIDR(loan.jumlahPinjaman)}</span>
                                             </div>
                                             <div>
-                                              <span className="text-[10px] text-slate-400 block font-medium">Cicilan / Bulan</span>
+                                              <span className="text-[10px] text-slate-400 block font-medium">Cicilan Bulan Ini</span>
                                               <span className="font-bold text-indigo-600">{formatIDR(loan.cicilan)}</span>
                                             </div>
                                             <div>
@@ -1720,8 +1946,8 @@ export default function EmployeePayslipPage() {
                                               <span className="font-bold text-emerald-600">{formatIDR(loan.jumlahPinjaman - loan.sisaHutang)}</span>
                                             </div>
                                             <div>
-                                              <span className="text-[10px] text-slate-400 block font-medium">Sisa Pinjaman</span>
-                                              <span className="font-bold text-rose-600">{formatIDR(loan.sisaHutang)}</span>
+                                              <span className="text-[10px] text-slate-400 block font-medium">Sisa Setelah Cicilan</span>
+                                              <span className="font-bold text-rose-600">{formatIDR(projectedRemainingBalance)}</span>
                                             </div>
                                           </div>
 

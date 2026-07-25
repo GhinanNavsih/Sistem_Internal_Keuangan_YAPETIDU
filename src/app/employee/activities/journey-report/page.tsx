@@ -2,9 +2,18 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { ImageExifViewer } from '@/components/ImageExifViewer';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,8 +42,13 @@ import {
   doc,
   getDoc,
   updateDoc,
+  deleteDoc,
   serverTimestamp,
   deleteField,
+  collection,
+  query,
+  where,
+  getDocs,
 } from 'firebase/firestore';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import {
@@ -45,25 +59,60 @@ import {
   calculateJourneyDateTimeTimings,
   getShortTripMealWageComponent,
   getMealAllowanceForDuration,
+  getMealTierCount,
 } from '@/lib/payroll/driverJourney';
 
 const loadGoogleMapsScript = (callback: () => void) => {
   if (typeof window === 'undefined') return;
-  if ((window as any).google) {
+  const g = (window as any).google;
+  if (g && g.maps && g.maps.Map) {
     callback();
     return;
   }
-  const existingScript = document.getElementById('googleMapsScript');
+
+  const onScriptLoad = async () => {
+    const googleObj = (window as any).google;
+    if (googleObj && googleObj.maps && googleObj.maps.importLibrary) {
+      try {
+        const [mapsLib, placesLib, geocodingLib, markerLib] = await Promise.all([
+          googleObj.maps.importLibrary('maps'),
+          googleObj.maps.importLibrary('places'),
+          googleObj.maps.importLibrary('geocoding'),
+          googleObj.maps.importLibrary('marker'),
+        ]);
+        if (mapsLib) Object.assign(googleObj.maps, mapsLib);
+        if (geocodingLib) Object.assign(googleObj.maps, geocodingLib);
+        if (markerLib) Object.assign(googleObj.maps, markerLib);
+        if (placesLib) {
+          googleObj.maps.places = googleObj.maps.places || {};
+          Object.assign(googleObj.maps.places, placesLib);
+        }
+      } catch (e) {
+        console.error('Error importing Google Maps libraries:', e);
+      }
+    }
+    callback();
+  };
+
+  const existingScript = document.getElementById('googleMapsScript') as HTMLScriptElement | null;
   if (existingScript) {
-    existingScript.addEventListener('load', callback);
+    if (existingScript.dataset.loaded === 'true') {
+      onScriptLoad();
+    } else {
+      existingScript.addEventListener('load', onScriptLoad);
+    }
     return;
   }
+
   const script = document.createElement('script');
   script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}&libraries=places`;
   script.id = 'googleMapsScript';
   script.async = true;
   script.defer = true;
-  script.addEventListener('load', callback);
+  script.addEventListener('load', async () => {
+    script.dataset.loaded = 'true';
+    await onScriptLoad();
+  });
   document.head.appendChild(script);
 };
 
@@ -353,16 +402,16 @@ const DestinationImageBanner = ({
   if (loading) {
     return (
       <div className="w-full h-36 bg-slate-100 flex items-center justify-center animate-pulse">
-        <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+        <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
       </div>
     );
   }
 
   if (!imgUrl) {
     return (
-      <div className="w-full h-36 bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center relative overflow-hidden">
-        <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#4f46e5_1px,transparent_1px)] [background-size:16px_16px]" />
-        <Compass className="w-10 h-10 text-indigo-400/50 relative z-10" />
+      <div className="w-full h-36 bg-gradient-to-br from-blue-100 to-slate-100 flex items-center justify-center relative overflow-hidden">
+        <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#2563eb_1px,transparent_1px)] [background-size:16px_16px]" />
+        <Compass className="w-10 h-10 text-blue-400/50 relative z-10" />
       </div>
     );
   }
@@ -381,10 +430,11 @@ const DestinationImageBanner = ({
 };
 
 function JourneyReportContent() {
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const journeyIdParam = searchParams.get('id');
+  const editReportIdParam = searchParams.get('editReportId');
 
   const fuelFileInputRef = useRef<HTMLInputElement>(null);
   const tollFileInputRef = useRef<HTMLInputElement>(null);
@@ -423,27 +473,32 @@ function JourneyReportContent() {
   const [formIsMultiDay, setFormIsMultiDay] = useState(false);
   const [formDateEnd, setFormDateEnd] = useState('');
   const [formNightCount, setFormNightCount] = useState<number>(0);
+  const [formNdalemMealMoneyFee, setFormNdalemMealMoneyFee] = useState<string>('');
   const [formFuelFee, setFormFuelFee] = useState('');
   const [formTollParkingFee, setFormTollParkingFee] = useState('');
   const [formFuelReceiptUrls, setFormFuelReceiptUrls] = useState<string[]>([]);
   const [formTollReceiptUrls, setFormTollReceiptUrls] = useState<string[]>([]);
   const [uploadingFuelReceipt, setUploadingFuelReceipt] = useState(false);
   const [uploadingTollReceipt, setUploadingTollReceipt] = useState(false);
+  const [selectedExifImage, setSelectedExifImage] = useState<{ url: string; title: string } | null>(null);
 
   const [extraActivities, setExtraActivities] = useState<any[]>([]);
   const [calculatedDistanceKm, setCalculatedDistanceKm] = useState(0);
   const [calculatedDurationHours, setCalculatedDurationHours] = useState(0);
+  const [outboundDistanceKm, setOutboundDistanceKm] = useState<number | null>(null);
+  const [outboundDurationHours, setOutboundDurationHours] = useState<number | null>(null);
   const [isCalculatingExtraRoute, setIsCalculatingExtraRoute] = useState(false);
   const [extraRouteError, setExtraRouteError] = useState('');
 
   const isInvalidSingleDayTime = useMemo(() => {
-    if (formIsMultiDay) return false;
+    const isMultiDayJourney = formIsMultiDay || (Boolean(formDateEnd) && formDateEnd > formDate);
+    if (isMultiDayJourney) return false;
     if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(formTimeStart)) return false;
     if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(formTimeEnd)) return false;
     const startMins = parseInt(formTimeStart.split(':')[0], 10) * 60 + parseInt(formTimeStart.split(':')[1], 10);
     const endMins = parseInt(formTimeEnd.split(':')[0], 10) * 60 + parseInt(formTimeEnd.split(':')[1], 10);
     return endMins <= startMins;
-  }, [formIsMultiDay, formTimeStart, formTimeEnd]);
+  }, [formIsMultiDay, formDate, formDateEnd, formTimeStart, formTimeEnd]);
 
   // Map selector modal
   const [showMapSelector, setShowMapSelector] = useState(false);
@@ -456,19 +511,28 @@ function JourneyReportContent() {
   const markerRef = useRef<any>(null);
   const mapElementRef = useRef<HTMLDivElement | null>(null);
 
-  // Load journey data
+  const isDraftLoadedRef = useRef(false);
+
+  // Load journey data & restore draft
   useEffect(() => {
+    if (authLoading) return;
     if (!profile?.linkedEmployeeId || !isSopir) {
       setLoading(false);
       return;
     }
+    const linkedEmployeeId = profile.linkedEmployeeId;
 
     const fetchJourney = async () => {
       setLoading(true);
       try {
         let targetId = journeyIdParam;
         if (!targetId) {
-          const res = await fetch(`/api/driver-journeys?driverId=${profile.linkedEmployeeId}`);
+          if (!user) throw new Error('Sesi tidak ditemukan.');
+          const idToken = await user.getIdToken();
+          const res = await fetch(`/api/driver-journeys?driverId=${encodeURIComponent(linkedEmployeeId)}`, {
+            headers: { Authorization: `Bearer ${idToken}` },
+            cache: 'no-store',
+          });
           if (res.ok) {
             const data = await res.json();
             const claimed = (data.journeys || []).find((j: any) => j.status === 'claimed');
@@ -485,40 +549,129 @@ function JourneyReportContent() {
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
-          const data: any = { id: docSnap.id, ...docSnap.data() };
-          setActiveReportingJourney(data);
-          const initialDate = data.journeyDate || data.activityDate || new Date().toISOString().split('T')[0];
+          let reportData: any = { id: docSnap.id, ...docSnap.data() };
+          const isExplicitEdit = Boolean(editReportIdParam);
+          if (editReportIdParam) {
+            reportData.editingActivityDocId = editReportIdParam;
+            try {
+              const actSnap = await getDoc(doc(db, 'ActivityReports', editReportIdParam));
+              if (actSnap.exists()) {
+                reportData = { ...reportData, ...actSnap.data(), editingActivityDocId: editReportIdParam };
+              }
+            } catch (e) {
+              console.error('Error fetching ActivityReport doc for edit:', e);
+            }
+          }
+
+          if (reportData.status !== 'claimed' && !isExplicitEdit) {
+            try {
+              if (reportData.status !== 'submitted') {
+                await authenticatedJson(`/api/pekarya/activities?journeyId=${encodeURIComponent(targetId)}`, { method: 'DELETE' });
+              }
+            } catch (e) {}
+            router.replace('/employee/activities');
+            return;
+          }
+          setActiveReportingJourney(reportData);
+
+          // Check for local storage auto-saved draft
+          const localDraftKey = `journey_draft_${targetId}`;
+          let localDraft: any = null;
+          try {
+            const raw = typeof window !== 'undefined' ? localStorage.getItem(localDraftKey) : null;
+            if (raw) localDraft = JSON.parse(raw);
+          } catch (e) {
+            console.error('Error parsing local draft:', e);
+          }
+
+          const initialDate = localDraft?.formDate ?? reportData.activityDate ?? reportData.dateStart ?? reportData.journeyDate ?? getTodayISO();
           setFormDate(initialDate);
-          setFormDateEnd(data.draftDateEnd || initialDate);
-          setFormIsMultiDay(data.draftIsMultiDay || (data.draftNightCount && data.draftNightCount > 0) || false);
-          setExtraActivities(data.draftExtraActivities || []);
-          setFormTimeStart(data.draftTimeStart || '');
-          setFormTimeEnd(data.draftTimeEnd || '');
-          setFormFuelFee(data.draftFuelFee ? Number(data.draftFuelFee).toLocaleString('id-ID') : '');
-          setFormTollParkingFee(data.draftTollParkingFee ? Number(data.draftTollParkingFee).toLocaleString('id-ID') : '');
 
-          const rawFuel = data.draftFuelReceiptUrl || data.fuelReceiptUrl || '';
-          setFormFuelReceiptUrls(rawFuel ? rawFuel.split(',').filter(Boolean) : []);
+          const initialDateEnd = localDraft?.formDateEnd ?? reportData.draftDateEnd ?? reportData.dateEnd ?? initialDate;
+          setFormDateEnd(initialDateEnd);
 
-          const rawToll = data.draftTollReceiptUrl || data.tollReceiptUrl || '';
-          setFormTollReceiptUrls(rawToll ? rawToll.split(',').filter(Boolean) : []);
+          const initialIsMultiDay = localDraft?.formIsMultiDay ?? reportData.draftIsMultiDay ?? reportData.isMultiDay ?? ((reportData.nightCount && reportData.nightCount > 0) || (reportData.draftNightCount && reportData.draftNightCount > 0) || false);
+          setFormIsMultiDay(initialIsMultiDay);
 
-          setFormNightCount(
-            Number.isSafeInteger(data.draftNightCount) && data.draftNightCount >= 0
-              ? data.draftNightCount
-              : 0,
+          const initialExtraLocs = localDraft?.extraActivities ?? reportData.draftExtraActivities ?? reportData.extraActivities ?? [];
+          setExtraActivities(initialExtraLocs);
+
+          const initialTimeStart = localDraft?.formTimeStart ?? reportData.draftTimeStart ?? reportData.timeStart ?? '';
+          setFormTimeStart(initialTimeStart);
+
+          const initialTimeEnd = localDraft?.formTimeEnd ?? reportData.draftTimeEnd ?? reportData.timeEnd ?? '';
+          setFormTimeEnd(initialTimeEnd);
+
+          const rawFuelVal = localDraft?.formFuelFee !== undefined
+            ? localDraft.formFuelFee
+            : (reportData.draftFuelFee !== undefined && reportData.draftFuelFee !== null
+              ? (reportData.draftFuelFee ? Number(reportData.draftFuelFee).toLocaleString('id-ID') : '')
+              : (reportData.fuelFee !== undefined && reportData.fuelFee !== null ? (reportData.fuelFee ? Number(reportData.fuelFee).toLocaleString('id-ID') : '') : ''));
+          setFormFuelFee(rawFuelVal);
+
+          const rawTollVal = localDraft?.formTollParkingFee !== undefined
+            ? localDraft.formTollParkingFee
+            : (reportData.draftTollParkingFee !== undefined && reportData.draftTollParkingFee !== null
+              ? (reportData.draftTollParkingFee ? Number(reportData.draftTollParkingFee).toLocaleString('id-ID') : '')
+              : (reportData.tollParkingFee !== undefined && reportData.tollParkingFee !== null ? (reportData.tollParkingFee ? Number(reportData.tollParkingFee).toLocaleString('id-ID') : '') : ''));
+          setFormTollParkingFee(rawTollVal);
+
+          const rawFuelUrls = reportData.draftFuelReceiptUrl || reportData.fuelReceiptUrl || '';
+          setFormFuelReceiptUrls(
+            Array.isArray(localDraft?.formFuelReceiptUrls)
+              ? localDraft.formFuelReceiptUrls
+              : (rawFuelUrls ? (typeof rawFuelUrls === 'string' ? rawFuelUrls.split(',').filter(Boolean) : rawFuelUrls) : [])
           );
-          setCalculatedDistanceKm(
-            data.draftCalculatedDistanceKm !== undefined
-              ? data.draftCalculatedDistanceKm
-              : (data.distanceKm || 0) * 2
+
+          const rawTollUrls = reportData.draftTollReceiptUrl || reportData.tollReceiptUrl || '';
+          setFormTollReceiptUrls(
+            Array.isArray(localDraft?.formTollReceiptUrls)
+              ? localDraft.formTollReceiptUrls
+              : (rawTollUrls ? (typeof rawTollUrls === 'string' ? rawTollUrls.split(',').filter(Boolean) : rawTollUrls) : [])
           );
-          setCalculatedDurationHours(
-            data.draftCalculatedDurationHours !== undefined
-              ? data.draftCalculatedDurationHours
-              : (data.durationHours || 0) * 2
+
+          const initialNightCount = localDraft?.formNightCount !== undefined
+            ? localDraft.formNightCount
+            : (Number.isSafeInteger(reportData.draftNightCount) && reportData.draftNightCount >= 0
+              ? reportData.draftNightCount
+              : (Number.isSafeInteger(reportData.nightCount) && reportData.nightCount >= 0 ? reportData.nightCount : 0));
+          setFormNightCount(initialNightCount);
+
+          const rawNdalemMoney = localDraft?.formNdalemMealMoneyFee !== undefined
+            ? localDraft.formNdalemMealMoneyFee
+            : (reportData.draftNdalemMealMoneyReceived !== undefined && reportData.draftNdalemMealMoneyReceived !== null
+              ? reportData.draftNdalemMealMoneyReceived
+              : (reportData.ndalemMealMoneyReceived !== undefined && reportData.ndalemMealMoneyReceived !== null ? reportData.ndalemMealMoneyReceived : ''));
+          setFormNdalemMealMoneyFee(
+            rawNdalemMoney !== undefined && rawNdalemMoney !== ''
+              ? (typeof rawNdalemMoney === 'string' ? rawNdalemMoney : Number(rawNdalemMoney).toLocaleString('id-ID'))
+              : ''
           );
+
+          const initialDist = localDraft?.calculatedDistanceKm !== undefined
+            ? localDraft.calculatedDistanceKm
+            : (reportData.draftCalculatedDistanceKm !== undefined
+              ? reportData.draftCalculatedDistanceKm
+              : (reportData.distanceKm ? reportData.distanceKm : (reportData.submittedDistanceKm ? reportData.submittedDistanceKm : 0)));
+          setCalculatedDistanceKm(initialDist > 0 ? initialDist : (reportData.distanceKm || 0) * 2);
+
+          const initialDur = localDraft?.calculatedDurationHours !== undefined
+            ? localDraft.calculatedDurationHours
+            : (reportData.draftCalculatedDurationHours !== undefined
+              ? reportData.draftCalculatedDurationHours
+              : (reportData.durationHours ? reportData.durationHours : (reportData.submittedDurationHours ? reportData.submittedDurationHours : 0)));
+          setCalculatedDurationHours(initialDur > 0 ? initialDur : (reportData.durationHours || 0) * 2);
+          setOutboundDistanceKm(localDraft?.outboundDistanceKm ?? null);
+          setOutboundDurationHours(localDraft?.outboundDurationHours ?? null);
+
+          setTimeout(() => {
+            isDraftLoadedRef.current = true;
+          }, 100);
         } else {
+          // Journey document does not exist — clean up any orphan ActivityReports
+          try {
+            await authenticatedJson(`/api/pekarya/activities?journeyId=${encodeURIComponent(targetId)}`, { method: 'DELETE' });
+          } catch (e) {}
           router.replace('/employee/activities');
         }
       } catch (e) {
@@ -530,14 +683,17 @@ function JourneyReportContent() {
     };
 
     fetchJourney();
-  }, [journeyIdParam, profile?.linkedEmployeeId, isSopir, router]);
+  }, [journeyIdParam, profile?.linkedEmployeeId, isSopir, authLoading, router, user]);
 
-  const recalculateRouteChain = async (list: any[]) => {
+  const recalculateRouteChain = async (list: any[], overrideEndPoint?: string) => {
     if (!activeReportingJourney) return;
+    const currentEndPoint = overrideEndPoint || activeReportingJourney.endPoint;
     const extraLocs = list.filter(a => a.type === 'tambah_lokasi' && a.destination);
-    if (extraLocs.length === 0) {
+    if (extraLocs.length === 0 && !overrideEndPoint) {
       setCalculatedDistanceKm((activeReportingJourney.distanceKm || 0) * 2);
       setCalculatedDurationHours((activeReportingJourney.durationHours || 0) * 2);
+      setOutboundDistanceKm(null);
+      setOutboundDurationHours(null);
       return;
     }
 
@@ -548,7 +704,7 @@ function JourneyReportContent() {
       const idToken = await user.getIdToken();
       const points = [
         activeReportingJourney.startPoint,
-        activeReportingJourney.endPoint,
+        currentEndPoint,
         ...extraLocs.map(l => l.destination),
         activeReportingJourney.startPoint
       ];
@@ -563,11 +719,18 @@ function JourneyReportContent() {
       });
       const resData = await response.json();
       if (!response.ok || !resData.success) {
-        throw new Error(resData.error || 'Gagal menghitung rute tambahan.');
+        throw new Error(resData.error || 'Gagal menghitung rute.');
       }
 
       setCalculatedDistanceKm(resData.distanceKm);
       setCalculatedDurationHours(resData.durationHours);
+
+      if (resData.legs && resData.legs.length > 0) {
+        const leg0Dist = parseLegDistance(resData.legs[0].distanceText) || resData.legs[0].distanceKm || 0;
+        const leg0Dur = resData.legs[0].durationHours || 0;
+        setOutboundDistanceKm(leg0Dist);
+        setOutboundDurationHours(leg0Dur);
+      }
 
       const updated = [...list];
       let locCounter = 0;
@@ -605,7 +768,7 @@ function JourneyReportContent() {
 
     } catch (err: any) {
       console.error(err);
-      setExtraRouteError(err.message || 'Terjadi kesalahan saat menghitung rute tambahan.');
+      setExtraRouteError(err.message || 'Terjadi kesalahan saat menghitung rute.');
     } finally {
       setIsCalculatingExtraRoute(false);
     }
@@ -621,10 +784,15 @@ function JourneyReportContent() {
     return activeReportingJourney.endPoint;
   };
 
-  const getReturnLegDetails = () => {
-    if (!activeReportingJourney) return { distanceText: '', legCost: 0, distanceKm: 0, durationHours: 0 };
-    const d0 = activeReportingJourney.distanceKm || 0;
-    const dur0 = activeReportingJourney.durationHours || 0;
+  const getOutboundLegDetails = () => {
+    if (!activeReportingJourney) return { distanceKm: 0, durationHours: 0 };
+    if (outboundDistanceKm !== null && outboundDistanceKm > 0) {
+      return {
+        distanceKm: outboundDistanceKm,
+        durationHours: outboundDurationHours || 0,
+      };
+    }
+
     let extraSum = 0;
     let extraDurSum = 0;
     extraActivities.forEach(act => {
@@ -634,8 +802,40 @@ function JourneyReportContent() {
       }
     });
 
-    const returnDist = Math.max(0, calculatedDistanceKm - d0 - extraSum);
-    const returnDur = Math.max(0, calculatedDurationHours - dur0 - extraDurSum);
+    const baseDist = activeReportingJourney.distanceKm || 0;
+    const baseDur = activeReportingJourney.durationHours || 0;
+    const totalDist = activeReportingJourney.totalDistanceKm || (baseDist * 2);
+
+    if (baseDist > 0 && (Math.abs(baseDist - totalDist) < 1 || baseDist >= calculatedDistanceKm - 0.5)) {
+      const halfDist = Math.max(0, (calculatedDistanceKm - extraSum) / 2);
+      const halfDur = Math.max(0, (calculatedDurationHours - extraDurSum) / 2);
+      return {
+        distanceKm: halfDist,
+        durationHours: halfDur,
+      };
+    }
+
+    return {
+      distanceKm: baseDist,
+      durationHours: baseDur,
+    };
+  };
+
+  const getReturnLegDetails = () => {
+    if (!activeReportingJourney) return { distanceText: '', legCost: 0, distanceKm: 0, durationHours: 0 };
+
+    const outbound = getOutboundLegDetails();
+    let extraSum = 0;
+    let extraDurSum = 0;
+    extraActivities.forEach(act => {
+      if (act.type === 'tambah_lokasi' && act.distanceKm) {
+        extraSum += act.distanceKm;
+        extraDurSum += act.durationHours || 0;
+      }
+    });
+
+    const returnDist = Math.max(0, calculatedDistanceKm - outbound.distanceKm - extraSum);
+    const returnDur = Math.max(0, calculatedDurationHours - outbound.durationHours - extraDurSum);
     const returnCost = returnDist * (activeReportingJourney.vehicleRate || 0);
 
     return {
@@ -646,17 +846,66 @@ function JourneyReportContent() {
     };
   };
 
+  // Auto-save form progress to localStorage synchronously on any state change
+  useEffect(() => {
+    if (!activeReportingJourney || !isDraftLoadedRef.current) return;
+    const localDraftKey = `journey_draft_${activeReportingJourney.id}`;
+    const draftPayload = {
+      formDate,
+      formDateEnd,
+      formIsMultiDay,
+      formTimeStart,
+      formTimeEnd,
+      formNightCount,
+      formNdalemMealMoneyFee,
+      formFuelFee,
+      formTollParkingFee,
+      formFuelReceiptUrls,
+      formTollReceiptUrls,
+      extraActivities,
+      calculatedDistanceKm,
+      calculatedDurationHours,
+      updatedAt: Date.now(),
+    };
+    try {
+      localStorage.setItem(localDraftKey, JSON.stringify(draftPayload));
+    } catch (e) {
+      console.error('Failed to save draft to localStorage:', e);
+    }
+  }, [
+    activeReportingJourney?.id,
+    formDate,
+    formDateEnd,
+    formIsMultiDay,
+    formTimeStart,
+    formTimeEnd,
+    formNightCount,
+    formNdalemMealMoneyFee,
+    formFuelFee,
+    formTollParkingFee,
+    formFuelReceiptUrls,
+    formTollReceiptUrls,
+    extraActivities,
+    calculatedDistanceKm,
+    calculatedDurationHours,
+  ]);
+
   const handleSaveDraft = async () => {
     if (!activeReportingJourney) return;
     setIsSavingDraft(true);
     try {
       const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
       const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
+      const ndalemMealMoneyVal = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
       const journeyRef = doc(db, 'DriverJourneys', activeReportingJourney.id);
       await updateDoc(journeyRef, {
+        draftDate: formDate,
+        draftDateEnd: formDateEnd,
+        draftIsMultiDay: formIsMultiDay,
         draftTimeStart: formTimeStart,
         draftTimeEnd: formTimeEnd,
         draftNightCount: formNightCount,
+        draftNdalemMealMoneyReceived: ndalemMealMoneyVal,
         draftFuelFee: fuelVal,
         draftTollParkingFee: tollVal,
         draftFuelReceiptUrl: formFuelReceiptUrls.join(','),
@@ -666,6 +915,27 @@ function JourneyReportContent() {
         draftCalculatedDurationHours: calculatedDurationHours,
         updatedAt: serverTimestamp()
       });
+
+      // Also ensure localStorage is synced
+      const localDraftKey = `journey_draft_${activeReportingJourney.id}`;
+      localStorage.setItem(localDraftKey, JSON.stringify({
+        formDate,
+        formDateEnd,
+        formIsMultiDay,
+        formTimeStart,
+        formTimeEnd,
+        formNightCount,
+        formNdalemMealMoneyFee,
+        formFuelFee,
+        formTollParkingFee,
+        formFuelReceiptUrls,
+        formTollReceiptUrls,
+        extraActivities,
+        calculatedDistanceKm,
+        calculatedDurationHours,
+        updatedAt: Date.now(),
+      }));
+
       setMessage({ type: 'success', text: 'Draft laporan berhasil disimpan.' });
     } catch (err) {
       console.error('Error saving draft:', err);
@@ -698,6 +968,18 @@ function JourneyReportContent() {
   };
 
   const handleConfirmMapLocation = async () => {
+    if (mapTargetIndex === -1) {
+      const newEndPoint = mapAddress;
+      setActiveReportingJourney((prev: any) => ({
+        ...prev,
+        endPoint: newEndPoint
+      }));
+      setShowMapSelector(false);
+      setMapTargetIndex(null);
+      await recalculateRouteChain(extraActivities, newEndPoint);
+      return;
+    }
+
     if (mapTargetIndex === null) return;
     const updated = [...extraActivities];
     updated[mapTargetIndex] = {
@@ -792,41 +1074,42 @@ function JourneyReportContent() {
     }
   };
 
-  const handleCancelClaim = async () => {
+  const [showCancelModal, setShowCancelModal] = useState(false);
+
+  const isSelfCreatedJourney = useMemo(() => {
+    return Boolean(
+      activeReportingJourney?.isSelfCreatedPiketSpj ||
+      activeReportingJourney?.vehicleName === 'Ndalem' ||
+      (typeof activeReportingJourney?.id === 'string' && activeReportingJourney.id.startsWith('JRN-PIKET-'))
+    );
+  }, [activeReportingJourney]);
+
+  const handleOpenCancelModal = () => {
+    setShowCancelModal(true);
+  };
+
+  const handleConfirmCancelClaim = async () => {
     if (!activeReportingJourney || isCancelling) return;
-    if (!confirm('Apakah Anda yakin ingin membatalkan klaim perjalanan ini? Perjalanan akan dikembalikan ke Pool.')) {
-      return;
-    }
 
     setIsCancelling(true);
     skipSaveDraftRef.current = true;
     try {
-      const journeyRef = doc(db, 'DriverJourneys', activeReportingJourney.id);
-      await updateDoc(journeyRef, {
-        status: 'unassigned',
-        employeeId: deleteField(),
-        employeeName: deleteField(),
-        claimedBy: deleteField(),
-        claimedByName: deleteField(),
-        claimedAt: deleteField(),
-        draftTimeStart: deleteField(),
-        draftTimeEnd: deleteField(),
-        draftNightCount: deleteField(),
-        draftFuelFee: deleteField(),
-        draftTollParkingFee: deleteField(),
-        draftFuelReceiptUrl: deleteField(),
-        draftTollReceiptUrl: deleteField(),
-        draftExtraActivities: deleteField(),
-        draftCalculatedDistanceKm: deleteField(),
-        draftCalculatedDurationHours: deleteField(),
-        updatedAt: serverTimestamp()
-      });
+      await authenticatedJson(
+        `/api/pekarya/activities?journeyId=${encodeURIComponent(activeReportingJourney.id)}${activeReportingJourney.activityDocId ? `&reportId=${encodeURIComponent(activeReportingJourney.activityDocId)}` : ''}`,
+        { method: 'DELETE' }
+      );
+
+      if (typeof window !== 'undefined' && activeReportingJourney?.id) {
+        localStorage.removeItem(`journey_draft_${activeReportingJourney.id}`);
+      }
+      setShowCancelModal(false);
       router.replace('/employee/activities');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error cancelling journey claim:', err);
-      setMessage({ type: 'error', text: 'Gagal membatalkan klaim perjalanan.' });
+      setMessage({ type: 'error', text: err.message || 'Gagal membatalkan klaim perjalanan.' });
       setIsCancelling(false);
       skipSaveDraftRef.current = false;
+      setShowCancelModal(false);
     }
   };
 
@@ -857,6 +1140,14 @@ function JourneyReportContent() {
       skipSaveDraftRef.current = false;
       return;
     }
+    const checkTimings = calculateJourneyDateTimeTimings({
+      dateStart: formDate,
+      timeStart: formTimeStart,
+      dateEnd: (formIsMultiDay || (formDateEnd && formDateEnd > formDate)) ? (formDateEnd || formDate) : formDate,
+      timeEnd: formTimeEnd,
+      isMultiDay: formIsMultiDay || (Boolean(formDateEnd) && formDateEnd > formDate),
+    });
+
     if (isInvalidSingleDayTime) {
       setMessage({
         type: 'error',
@@ -867,8 +1158,9 @@ function JourneyReportContent() {
       skipSaveDraftRef.current = false;
       return;
     }
-    if (calculateElapsedHours(formTimeStart, formTimeEnd, formNightCount) <= 0) {
-      setMessage({ type: 'error', text: 'Jam tiba dan jumlah malam tidak membentuk durasi perjalanan yang valid.' });
+
+    if (checkTimings.durationHours <= 0) {
+      setMessage({ type: 'error', text: 'Jam tiba dan tanggal tidak membentuk durasi perjalanan yang valid.' });
       isSubmittingRef.current = false;
       setSubmitting(false);
       skipSaveDraftRef.current = false;
@@ -903,12 +1195,15 @@ function JourneyReportContent() {
       const preAuthorizedMeal = isNdalem
         ? 0
         : (activeReportingJourney.mealAllowance !== undefined && activeReportingJourney.mealAllowance !== null && activeReportingJourney.mealAllowance > 0
-            ? activeReportingJourney.mealAllowance
-            : getMealAllowanceForDuration(preAuthorizedDurationPP));
+          ? activeReportingJourney.mealAllowance
+          : getMealAllowanceForDuration(preAuthorizedDurationPP));
 
-      const baseCostVal = activeReportingJourney.baseOperationalCost ||
-        ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0) - (activeReportingJourney.tollParkingFee || 0));
-      const preAuthorizedToll = activeReportingJourney.tollParkingFee || 0;
+      const preAuthorizedToll = activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
+        ? Number(activeReportingJourney.preAuthorizedToll)
+        : (activeReportingJourney.status === 'claimed' ? Number(activeReportingJourney.tollParkingFee || 0) : 0);
+      const baseCostVal = activeReportingJourney.baseOperationalCost !== undefined && activeReportingJourney.baseOperationalCost !== null
+        ? Number(activeReportingJourney.baseOperationalCost)
+        : Math.max(0, (activeReportingJourney.totalOperationalCost || 0) - preAuthorizedMeal - preAuthorizedToll);
       const totalPreAuthorizedAllowance = baseCostVal + preAuthorizedToll;
 
       const totalActualSpent = fuelVal + tollVal;
@@ -923,11 +1218,13 @@ function JourneyReportContent() {
       const effectiveNightCount = formIsMultiDay ? timings.nightCount : formNightCount;
       const elapsedHours = timings.durationHours > 0 ? timings.durationHours : calculateElapsedHours(formTimeStart, formTimeEnd, effectiveNightCount);
 
+      const ndalemMealMoneyVal = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
       const actualMealAllowance = getMealAllowanceForDuration(
         elapsedHours,
         activeReportingJourney.vehicleName,
+        ndalemMealMoneyVal,
       );
-      const extraMealAllowance = isNdalem ? 0 : Math.max(0, actualMealAllowance - preAuthorizedMeal);
+      const extraMealAllowance = isNdalem ? actualMealAllowance : Math.max(0, actualMealAllowance - preAuthorizedMeal);
 
       const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
       const extraTollCost = Math.max(0, tollVal - preAuthorizedToll);
@@ -968,49 +1265,52 @@ function JourneyReportContent() {
           timeStart: formTimeStart,
           timeEnd: formTimeEnd,
           driverData: {
-          tripType: calculatedDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
-          vehicleType: activeReportingJourney.vehicleName,
-          nightCount: effectiveNightCount,
-          dateStart: formDate,
-          dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
-          isMultiDay: formIsMultiDay,
-          fuelFee: fuelVal,
-          tollParkingFee: tollVal,
-          fuelReceiptUrl: formFuelReceiptUrls.join(','),
-          tollReceiptUrl: formTollReceiptUrls.join(','),
-          points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
-          distanceKm: calculatedDistanceKm,
-          durationHours: calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
-          journeyId: activeReportingJourney.id,
-          extraActivities,
-          extraDistanceKm,
-          extraOperationalCost,
-          extraFuelCost,
-          extraTollCost,
-          extraMealAllowance,
-          actualMealAllowance,
-          positiveReimburseDelta,
-          baseDriverWage,
-          upahBersih: finalUpahBersih,
-          reimburseDelta: finalReimburseDelta,
-          unspentCash,
-          remainingUnspentCash,
-          baseOperationalCost: baseCostVal,
-          preAuthorizedMeal,
-          preAuthorizedToll,
-          customDurationPP: preAuthorizedDurationPP,
-          totalPreAuthorizedAllowance,
-          totalActualSpent,
-          totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
-          vehicleRate: activeReportingJourney.vehicleRate ?? 1000,
-          componentJarak: calculatedDistanceKm * 300,
-          componentWaktu: calculatedDurationHours * 5000,
-          nightPremium,
+            tripType: calculatedDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
+            vehicleType: activeReportingJourney.vehicleName,
+            nightCount: effectiveNightCount,
+            dateStart: formDate,
+            dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+            isMultiDay: formIsMultiDay,
+            fuelFee: fuelVal,
+            tollParkingFee: tollVal,
+            fuelReceiptUrl: formFuelReceiptUrls.join(','),
+            tollReceiptUrl: formTollReceiptUrls.join(','),
+            points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
+            distanceKm: calculatedDistanceKm,
+            durationHours: calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
+            journeyId: activeReportingJourney.id,
+            extraActivities,
+            extraDistanceKm,
+            extraOperationalCost,
+            extraFuelCost,
+            extraTollCost,
+            extraMealAllowance,
+            ndalemMealMoneyReceived: isNdalem ? (formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0) : 0,
+            positiveReimburseDelta,
+            baseDriverWage,
+            upahBersih: finalUpahBersih,
+            reimburseDelta: finalReimburseDelta,
+            unspentCash,
+            remainingUnspentCash,
+            baseOperationalCost: baseCostVal,
+            preAuthorizedMeal,
+            preAuthorizedToll,
+            customDurationPP: preAuthorizedDurationPP,
+            totalPreAuthorizedAllowance,
+            totalActualSpent,
+            totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
+            vehicleRate: activeReportingJourney.vehicleRate ?? 1000,
+            componentJarak: calculatedDistanceKm * 300,
+            componentWaktu: calculatedDurationHours * 5000,
+            nightPremium,
           },
         }),
       });
 
-      router.replace('/employee/activities');
+      if (typeof window !== 'undefined' && activeReportingJourney?.id) {
+        localStorage.removeItem(`journey_draft_${activeReportingJourney.id}`);
+      }
+      router.replace('/employee/driver-history');
     } catch (err: any) {
       console.error('Error submitting journey report:', err);
       setMessage({ type: 'error', text: err.message || 'Gagal mengirim laporan perjalanan.' });
@@ -1140,7 +1440,7 @@ function JourneyReportContent() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-2" />
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-2" />
         <span className="text-sm font-medium text-slate-500 ml-2">Memuat Laporan Perjalanan...</span>
       </div>
     );
@@ -1153,7 +1453,7 @@ function JourneyReportContent() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-24 text-slate-800 relative">
       {/* ── Top Header Bar ─────────────────────────────────────────────── */}
-      <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 sticky top-0 z-30 shadow-md">
+      <div className="bg-gradient-to-r from-blue-600 to-blue-700 sticky top-0 z-30 shadow-md">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2 text-white font-extrabold text-base sm:text-lg">
             <CheckCircle2 className="w-5 h-5 text-white" />
@@ -1189,18 +1489,8 @@ function JourneyReportContent() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-4">
-        {/* Toast Alert */}
-        {message && (
-          <div className="flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-xs sm:text-sm font-semibold shadow-md border bg-white border-slate-200">
-            <span className={message.type === 'success' ? 'text-emerald-500' : 'text-rose-500'}>
-              {message.type === 'success' ? '✓' : '⚠️'}
-            </span>
-            <span className="text-slate-700">{message.text}</span>
-          </div>
-        )}
-
         <form onSubmit={handleCompleteJourneySubmit} className="space-y-5">
-          
+
           {/* Header Banner & Trip Specifications */}
           <div className="space-y-3">
             <div className="rounded-2xl overflow-hidden shadow-xs">
@@ -1210,12 +1500,12 @@ function JourneyReportContent() {
                 onColorExtracted={handleColorExtracted}
               />
             </div>
-            <div className="text-xs font-bold text-slate-900 px-1">
+            <div className="text-xs font-extrabold text-slate-900 px-1">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <div>Keperluan: <strong className="text-black font-extrabold">{activeReportingJourney.activityName}</strong></div>
-                <div className="text-slate-300">•</div>
+                <div className="text-slate-900 font-black">•</div>
                 <div>Kendaraan: <strong className="text-black font-extrabold">{activeReportingJourney.vehicleName}</strong></div>
-                <div className="text-slate-300">•</div>
+                <div className="text-slate-900 font-black">•</div>
                 <div>
                   Tanggal: <strong className="text-black font-extrabold">
                     {(() => {
@@ -1230,375 +1520,396 @@ function JourneyReportContent() {
 
           {/* Line Separator 1: Unified Route Timeline Section */}
           {(() => {
-            const d0 = activeReportingJourney.distanceKm || 0;
-            const wage0 = (d0 * 300) + ((activeReportingJourney.durationHours || 0) * 5000);
+            const outbound = getOutboundLegDetails();
+            const d0 = outbound.distanceKm;
+            const dur0 = outbound.durationHours;
+            const wage0 = (d0 * 300) + (dur0 * 5000);
 
             return (
               <div className="border-t border-slate-200/70 pt-5 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-indigo-700 uppercase tracking-wider">
-                      <Compass className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
-                      Rute Perjalanan (Timeline)
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-black text-blue-700 text-sm">
+                    <Compass className="w-4 h-4 text-blue-600 animate-pulse" />
+                    Rute Perjalanan (Timeline)
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddLocation}
+                    className="h-6 px-2 text-[9px] font-bold border-blue-200 text-blue-700 hover:bg-blue-50 rounded-md cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    + Tambah Lokasi
+                  </Button>
+                </div>
+
+                <div className="relative pl-6 space-y-4">
+                  <div className="absolute left-[9px] top-2 bottom-2 w-0.5 border-l-2 border-dashed border-blue-200" />
+
+                  {/* Node 0: Start */}
+                  <div className="relative flex items-start gap-2.5 text-xs">
+                    <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
+                    <div className="space-y-0.5 min-w-0">
+                      <span className="text-[9px] text-blue-700 font-black block">Titik Keberangkatan</span>
+                      <div className="font-extrabold text-black truncate" title={activeReportingJourney.startPoint}>
+                        🏫 {activeReportingJourney.startPoint.split(',')[0]}
+                      </div>
+                      <div className="text-[9px] text-slate-800 font-bold">
+                        Jarak Leg: <span className="text-emerald-700 font-extrabold">{d0.toFixed(1)} km</span> (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil(wage0))}</span>)
+                      </div>
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleAddLocation}
-                      className="h-6 px-2 text-[9px] font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-md cursor-pointer whitespace-nowrap shrink-0"
-                    >
-                      + Tambah Lokasi
-                    </Button>
                   </div>
 
-                  <div className="relative pl-6 space-y-4">
-                    <div className="absolute left-[9px] top-2 bottom-2 w-0.5 border-l-2 border-dashed border-indigo-200" />
-
-                    {/* Node 0: Start */}
-                    <div className="relative flex items-start gap-2.5 text-xs">
-                      <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-indigo-600 border-2 border-white shadow-sm" />
-                      <div className="space-y-0.5 min-w-0">
-                        <span className="text-[8px] uppercase tracking-wider text-blue-600 font-extrabold block">Titik Keberangkatan</span>
-                        <div className="font-extrabold text-black truncate" title={activeReportingJourney.startPoint}>
-                          🏫 {activeReportingJourney.startPoint.split(',')[0]}
-                        </div>
-                        <div className="text-[9px] text-slate-800 font-bold">
-                          Jarak Leg: {d0.toFixed(1)} km (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil(wage0))}</span>)
-                        </div>
+                  {/* Node 1: Main Destination */}
+                  <div className="relative flex items-center justify-between gap-3 text-xs">
+                    <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <span className="text-[9px] text-blue-700 font-black block">Tujuan Utama</span>
+                      <div className="font-extrabold text-black truncate" title={activeReportingJourney.endPoint}>
+                        🎯 {activeReportingJourney.endPoint}
                       </div>
                     </div>
+                    {isSelfCreatedJourney && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setMapTargetIndex(-1);
+                          setMapSearchText(activeReportingJourney.endPoint || '');
+                          setMapAddress(activeReportingJourney.endPoint || '');
+                          setShowMapSelector(true);
+                        }}
+                        className="text-[10px] font-bold text-blue-700 hover:text-blue-800 bg-white border border-slate-200 px-2.5 h-7 rounded-lg cursor-pointer shrink-0"
+                      >
+                        Ubah
+                      </Button>
+                    )}
+                  </div>
 
-                    {/* Node 1: Main Destination */}
-                    <div className="relative flex items-start gap-2.5 text-xs">
-                      <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-indigo-600 border-2 border-white shadow-sm" />
-                      <div className="space-y-0.5 min-w-0">
-                        <span className="text-[8px] uppercase tracking-wider text-blue-600 font-extrabold block">Tujuan Utama</span>
-                        <div className="font-extrabold text-black truncate" title={activeReportingJourney.endPoint}>
-                          🎯 {activeReportingJourney.endPoint}
-                        </div>
-                      </div>
-                    </div>
+                  {/* Extra Location Nodes */}
+                  {extraActivities.map((act, index) => {
+                    if (act.type !== 'tambah_lokasi') return null;
+                    return (
+                      <div key={index} className="relative flex items-center justify-between gap-3 text-xs pl-0.5">
+                        <div className="absolute -left-[20px] top-[5px] w-3 h-3 rounded-full bg-teal-500 border-2 border-white shadow-sm" />
 
-                    {/* Extra Location Nodes */}
-                    {extraActivities.map((act, index) => {
-                      if (act.type !== 'tambah_lokasi') return null;
-                      return (
-                        <div key={index} className="relative flex items-center justify-between gap-3 text-xs pl-0.5">
-                          <div className="absolute -left-[20px] top-[5px] w-3 h-3 rounded-full bg-teal-500 border-2 border-white shadow-sm" />
-
-                          <div className="flex-1 min-w-0 space-y-1">
-                            {act.destination ? (
-                              <div className="space-y-0.5">
-                                <span className="text-[8px] uppercase tracking-wider text-teal-700 font-extrabold block">Tujuan Tambahan</span>
-                                <div className="text-xs font-black text-black truncate" title={act.destination}>
-                                  📍 {act.destination.split(',')[0]}
+                        <div className="flex-1 min-w-0 space-y-1">
+                          {act.destination ? (
+                            <div className="space-y-0.5">
+                              <span className="text-[9px] text-teal-700 font-black block">Tujuan Tambahan</span>
+                              <div className="text-xs font-black text-black truncate" title={act.destination}>
+                                📍 {act.destination.split(',')[0]}
+                              </div>
+                              {act.distanceText && act.distanceKm !== undefined && (
+                                <div className="text-[9px] text-slate-800 font-bold">
+                                  Jarak Leg: <span className="text-emerald-700 font-extrabold">{act.distanceText}</span> (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil((act.distanceKm * 300) + ((act.durationHours || 0) * 5000)))}</span>)
                                 </div>
-                                {act.distanceText && act.distanceKm !== undefined && (
-                                  <div className="text-[9px] text-slate-800 font-bold">
-                                    Jarak Leg: {act.distanceText} (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil((act.distanceKm * 300) + ((act.durationHours || 0) * 5000)))}</span>)
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="text-xs font-bold text-slate-700 italic">
-                                Belum memilih lokasi
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-1 shrink-0">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              onClick={() => {
-                                setMapTargetIndex(index);
-                                setMapSearchText(act.destination || '');
-                                setMapAddress(act.destination || '');
-                                setShowMapSelector(true);
-                              }}
-                              className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white border border-slate-200 px-2.5 h-7 rounded-lg cursor-pointer"
-                            >
-                              {act.destination ? 'Ubah' : 'Pilih'}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              onClick={() => handleRemoveExtraActivity(index)}
-                              className="h-7 w-7 p-0 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-xs font-bold text-slate-700 italic">
+                              Belum memilih lokasi
+                            </div>
+                          )}
                         </div>
-                      );
-                    })}
 
-                    {/* Final Node: Return to Start */}
-                    <div className="relative flex items-start gap-2.5 text-xs">
-                      <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-indigo-600 border-2 border-white shadow-sm" />
-                      <div className="space-y-0.5 min-w-0">
-                        <span className="text-[8px] uppercase tracking-wider text-blue-600 font-extrabold block">Titik Kepulangan</span>
-                        <div className="font-extrabold text-black truncate" title={activeReportingJourney.startPoint}>
-                          🏫 {activeReportingJourney.startPoint.split(',')[0]}
-                        </div>
-                        <div className="text-[9px] text-slate-800 font-bold">
-                          Jarak Leg: {returnLeg.distanceText} (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil((returnLeg.distanceKm * 300) + ((returnLeg.durationHours || 0) * 5000)))}</span>)
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => {
+                              setMapTargetIndex(index);
+                              setMapSearchText(act.destination || '');
+                              setMapAddress(act.destination || '');
+                              setShowMapSelector(true);
+                            }}
+                            className="text-[10px] font-bold text-blue-700 hover:text-blue-800 bg-white border border-slate-200 px-2.5 h-7 rounded-lg cursor-pointer"
+                          >
+                            {act.destination ? 'Ubah' : 'Pilih'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => handleRemoveExtraActivity(index)}
+                            className="h-7 w-7 p-0 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       </div>
-                    </div>
+                    );
+                  })}
 
+                  {/* Final Node: Return to Start */}
+                  <div className="relative flex items-start gap-2.5 text-xs">
+                    <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
+                    <div className="space-y-0.5 min-w-0">
+                      <span className="text-[9px] text-blue-700 font-black block">Titik Kepulangan</span>
+                      <div className="font-extrabold text-black truncate" title={activeReportingJourney.startPoint}>
+                        🏫 {activeReportingJourney.startPoint.split(',')[0]}
+                      </div>
+                      <div className="text-[9px] text-slate-800 font-bold">
+                        Jarak Leg: <span className="text-emerald-700 font-extrabold">{returnLeg.distanceText}</span> (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil((returnLeg.distanceKm * 300) + ((returnLeg.durationHours || 0) * 5000)))}</span>)
+                      </div>
+                    </div>
                   </div>
+
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Line Separator 2: Input Data & Pengeluaran Operasional Section */}
+          <div className="border-t border-slate-200/70 pt-5 space-y-4">
+            {/* Toggle Lintas Hari / Menginap Above Time Controls */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-blue-50/60 border border-blue-100">
+              <div className="flex items-center gap-2">
+                <input
+                  id="toggleMultiDay"
+                  type="checkbox"
+                  checked={formIsMultiDay}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setFormIsMultiDay(checked);
+                    if (!checked) {
+                      setFormDateEnd('');
+                    } else {
+                      const startMins = parseInt((formTimeStart || '00:00').split(':')[0], 10) * 60 + parseInt((formTimeStart || '00:00').split(':')[1], 10);
+                      const endMins = parseInt((formTimeEnd || '00:00').split(':')[0], 10) * 60 + parseInt((formTimeEnd || '00:00').split(':')[1], 10);
+                      if (endMins <= startMins || !formDateEnd || formDateEnd === formDate) {
+                        setFormDateEnd(getNextDayISO(formDate || getTodayISO()));
+                      }
+                    }
+                  }}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <Label htmlFor="toggleMultiDay" className="text-xs font-black text-slate-900 cursor-pointer select-none">
+                  Perjalanan Lintas Hari / Menginap
+                </Label>
+              </div>
+              <span className="text-[10px] font-bold text-blue-700">
+                {formIsMultiDay ? 'Multi-Hari Active' : 'Hari yang sama'}
+              </span>
+            </div>
+
+            {!formIsMultiDay ? (
+              /* 1-Row Layout for Single-Day Trip */
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="journeyTimeStart" className="text-xs font-black text-slate-900">
+                      Jam Berangkat
+                    </Label>
+                    <Input
+                      id="journeyTimeStart"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={5}
+                      placeholder="JJ:MM"
+                      value={formTimeStart}
+                      onChange={(e) => {
+                        let val = e.target.value.replace(/[^0-9]/g, '');
+                        if (val.length > 4) val = val.slice(0, 4);
+                        if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
+                        if (val.length >= 2) {
+                          const hours = parseInt(val.slice(0, 2), 10);
+                          if (hours > 23) val = '23' + val.slice(2);
+                        }
+                        if (val.length === 4) {
+                          const minutes = parseInt(val.slice(2, 4), 10);
+                          if (minutes > 59) val = val.slice(0, 2) + '59';
+                        }
+                        if (val.length > 2) {
+                          setFormTimeStart(`${val.slice(0, 2)}:${val.slice(2)}`);
+                        } else {
+                          setFormTimeStart(val);
+                        }
+                      }}
+                      onBlur={(e) => setFormTimeStart(padTime(e.target.value))}
+                      className="rounded-xl border-slate-300 focus:border-blue-500 text-sm h-10 px-3 font-semibold text-slate-900"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="journeyTimeEnd" className="text-xs font-black text-slate-900">
+                      Jam Tiba / Selesai
+                    </Label>
+                    <Input
+                      id="journeyTimeEnd"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={5}
+                      placeholder="JJ:MM"
+                      value={formTimeEnd}
+                      onChange={(e) => {
+                        let val = e.target.value.replace(/[^0-9]/g, '');
+                        if (val.length > 4) val = val.slice(0, 4);
+                        if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
+                        if (val.length >= 2) {
+                          const hours = parseInt(val.slice(0, 2), 10);
+                          if (hours > 23) val = '23' + val.slice(2);
+                        }
+                        if (val.length === 4) {
+                          const minutes = parseInt(val.slice(2, 4), 10);
+                          if (minutes > 59) val = val.slice(0, 2) + '59';
+                        }
+                        if (val.length > 2) {
+                          setFormTimeEnd(`${val.slice(0, 2)}:${val.slice(2)}`);
+                        } else {
+                          setFormTimeEnd(val);
+                        }
+                      }}
+                      onBlur={(e) => setFormTimeEnd(padTime(e.target.value))}
+                      className={`rounded-xl text-sm h-10 px-3 font-semibold transition-colors ${isInvalidSingleDayTime
+                        ? 'border-rose-400 focus:border-rose-500 bg-rose-50/30 text-rose-900'
+                        : 'border-slate-300 focus:border-blue-500 text-slate-900'
+                        }`}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {isInvalidSingleDayTime && (
+                  <div className="p-2.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 mt-2 animate-in fade-in duration-200">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>
+                      Jam tiba ({formTimeEnd}) tidak boleh sebelum atau sama dengan jam berangkat ({formTimeStart}) pada perjalanan hari yang sama. Silakan centang <strong>Perjalanan Lintas Hari / Menginap</strong> jika perjalanan melintasi tengah malam.
+                    </span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* 2-Row Layout for Multi-Day / Overnight Trip */
+              <div className="space-y-3 animate-in fade-in duration-200">
+                {/* Row 1: Departure Date & Time */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="dateStartInput" className="text-xs font-black text-slate-900">
+                      Tanggal Berangkat
+                    </Label>
+                    <Input
+                      id="dateStartInput"
+                      type="date"
+                      value={formDate}
+                      onChange={(e) => setFormDate(e.target.value)}
+                      className="rounded-xl border-slate-200 focus:border-blue-400 text-xs font-semibold text-slate-900 h-10 px-2.5"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="timeStartMulti" className="text-xs font-black text-slate-900">
+                      Jam Berangkat
+                    </Label>
+                    <Input
+                      id="timeStartMulti"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={5}
+                      placeholder="JJ:MM"
+                      value={formTimeStart}
+                      onChange={(e) => {
+                        let val = e.target.value.replace(/[^0-9]/g, '');
+                        if (val.length > 4) val = val.slice(0, 4);
+                        if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
+                        if (val.length >= 2) {
+                          const hours = parseInt(val.slice(0, 2), 10);
+                          if (hours > 23) val = '23' + val.slice(2);
+                        }
+                        if (val.length === 4) {
+                          const minutes = parseInt(val.slice(2, 4), 10);
+                          if (minutes > 59) val = val.slice(0, 2) + '59';
+                        }
+                        if (val.length > 2) {
+                          setFormTimeStart(`${val.slice(0, 2)}:${val.slice(2)}`);
+                        } else {
+                          setFormTimeStart(val);
+                        }
+                      }}
+                      onBlur={(e) => setFormTimeStart(padTime(e.target.value))}
+                      className="rounded-xl border-slate-200 focus:border-blue-400 text-xs font-semibold text-slate-900 h-10 px-3"
+                    />
+                  </div>
+                </div>
+
+                {/* Row 2: Arrival Date & Time */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="dateEndInput" className="text-xs font-black text-slate-900">
+                      Tanggal Tiba / Selesai
+                    </Label>
+                    <Input
+                      id="dateEndInput"
+                      type="date"
+                      value={formDateEnd || formDate}
+                      onChange={(e) => setFormDateEnd(e.target.value)}
+                      className="rounded-xl border-slate-200 focus:border-blue-400 text-xs font-semibold text-slate-900 h-10 px-2.5"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="timeEndMulti" className="text-xs font-black text-slate-900">
+                      Jam Tiba / Selesai
+                    </Label>
+                    <Input
+                      id="timeEndMulti"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={5}
+                      placeholder="JJ:MM"
+                      value={formTimeEnd}
+                      onChange={(e) => {
+                        let val = e.target.value.replace(/[^0-9]/g, '');
+                        if (val.length > 4) val = val.slice(0, 4);
+                        if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
+                        if (val.length >= 2) {
+                          const hours = parseInt(val.slice(0, 2), 10);
+                          if (hours > 23) val = '23' + val.slice(2);
+                        }
+                        if (val.length === 4) {
+                          const minutes = parseInt(val.slice(2, 4), 10);
+                          if (minutes > 59) val = val.slice(0, 2) + '59';
+                        }
+                        if (val.length > 2) {
+                          setFormTimeEnd(`${val.slice(0, 2)}:${val.slice(2)}`);
+                        } else {
+                          setFormTimeEnd(val);
+                        }
+                      }}
+                      onBlur={(e) => setFormTimeEnd(padTime(e.target.value))}
+                      className="rounded-xl border-slate-200 focus:border-blue-400 text-xs font-semibold text-slate-900 h-10 px-3"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {(() => {
+              const timings = calculateJourneyDateTimeTimings({
+                dateStart: formDate,
+                timeStart: formTimeStart,
+                dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+                timeEnd: formTimeEnd,
+                isMultiDay: formIsMultiDay,
+              });
+              const effectiveNights = timings.nightCount > 0 ? timings.nightCount : formNightCount;
+              const isNextDayArriveBefore5AM = (formDateEnd && formDateEnd > formDate) && parseInt(formTimeEnd.split(':')[0], 10) < 5;
+
+              return (
+                <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5 pt-1">
+                  <span>💡 Durasi Terhitung:</span>
+                  <span className="text-emerald-700 font-extrabold">
+                    {timings.durationHours > 0 ? timings.durationHours.toFixed(1) : '0'} Jam{' '}
+                    {isNextDayArriveBefore5AM && effectiveNights === 0
+                      ? '(Tanpa Menginap - Tiba sebelum 05:00)'
+                      : `(${effectiveNights} Malam)`}
+                  </span>
                 </div>
               );
             })()}
 
-          {/* Line Separator 2: Input Data & Pengeluaran Operasional Section */}
-          <div className="border-t border-slate-200/70 pt-5 space-y-4">
-              {/* Toggle Lintas Hari / Menginap Above Time Controls */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-indigo-50/60 border border-indigo-100">
-                <div className="flex items-center gap-2">
-                  <input
-                    id="toggleMultiDay"
-                    type="checkbox"
-                    checked={formIsMultiDay}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      setFormIsMultiDay(checked);
-                      if (!checked) {
-                        setFormDateEnd('');
-                      } else {
-                        const startMins = parseInt((formTimeStart || '00:00').split(':')[0], 10) * 60 + parseInt((formTimeStart || '00:00').split(':')[1], 10);
-                        const endMins = parseInt((formTimeEnd || '00:00').split(':')[0], 10) * 60 + parseInt((formTimeEnd || '00:00').split(':')[1], 10);
-                        if (endMins <= startMins || !formDateEnd || formDateEnd === formDate) {
-                          setFormDateEnd(getNextDayISO(formDate || getTodayISO()));
-                        }
-                      }
-                    }}
-                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                  />
-                  <Label htmlFor="toggleMultiDay" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
-                    Perjalanan Lintas Hari / Menginap
-                  </Label>
-                </div>
-                <span className="text-[10px] font-semibold text-indigo-600">
-                  {formIsMultiDay ? 'Multi-Hari Active' : 'Hari yang sama'}
-                </span>
-              </div>
-
-              {!formIsMultiDay ? (
-                /* 1-Row Layout for Single-Day Trip */
-                <div className="space-y-2">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="journeyTimeStart" className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                        Jam Berangkat
-                      </Label>
-                      <Input
-                        id="journeyTimeStart"
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={5}
-                        placeholder="JJ:MM"
-                        value={formTimeStart}
-                        onChange={(e) => {
-                          let val = e.target.value.replace(/[^0-9]/g, '');
-                          if (val.length > 4) val = val.slice(0, 4);
-                          if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
-                          if (val.length >= 2) {
-                            const hours = parseInt(val.slice(0, 2), 10);
-                            if (hours > 23) val = '23' + val.slice(2);
-                          }
-                          if (val.length === 4) {
-                            const minutes = parseInt(val.slice(2, 4), 10);
-                            if (minutes > 59) val = val.slice(0, 2) + '59';
-                          }
-                          if (val.length > 2) {
-                            setFormTimeStart(`${val.slice(0, 2)}:${val.slice(2)}`);
-                          } else {
-                            setFormTimeStart(val);
-                          }
-                        }}
-                        onBlur={(e) => setFormTimeStart(padTime(e.target.value))}
-                        className="rounded-xl border-slate-300 focus:border-indigo-500 text-sm h-10 px-3 font-semibold text-slate-900"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="journeyTimeEnd" className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                        Jam Tiba / Selesai
-                      </Label>
-                      <Input
-                        id="journeyTimeEnd"
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={5}
-                        placeholder="JJ:MM"
-                        value={formTimeEnd}
-                        onChange={(e) => {
-                          let val = e.target.value.replace(/[^0-9]/g, '');
-                          if (val.length > 4) val = val.slice(0, 4);
-                          if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
-                          if (val.length >= 2) {
-                            const hours = parseInt(val.slice(0, 2), 10);
-                            if (hours > 23) val = '23' + val.slice(2);
-                          }
-                          if (val.length === 4) {
-                            const minutes = parseInt(val.slice(2, 4), 10);
-                            if (minutes > 59) val = val.slice(0, 2) + '59';
-                          }
-                          if (val.length > 2) {
-                            setFormTimeEnd(`${val.slice(0, 2)}:${val.slice(2)}`);
-                          } else {
-                            setFormTimeEnd(val);
-                          }
-                        }}
-                        onBlur={(e) => setFormTimeEnd(padTime(e.target.value))}
-                        className={`rounded-xl text-sm h-10 px-3 font-semibold transition-colors ${
-                          isInvalidSingleDayTime
-                            ? 'border-rose-400 focus:border-rose-500 bg-rose-50/30 text-rose-900'
-                            : 'border-slate-300 focus:border-indigo-500 text-slate-900'
-                        }`}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  {isInvalidSingleDayTime && (
-                    <div className="p-2.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 mt-2 animate-in fade-in duration-200">
-                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                      <span>
-                        Jam tiba ({formTimeEnd}) tidak boleh sebelum atau sama dengan jam berangkat ({formTimeStart}) pada perjalanan hari yang sama. Silakan centang <strong>Perjalanan Lintas Hari / Menginap</strong> jika perjalanan melintasi tengah malam.
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                /* 2-Row Layout for Multi-Day / Overnight Trip */
-                <div className="space-y-3 animate-in fade-in duration-200">
-                  {/* Row 1: Departure Date & Time */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="dateStartInput" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        Tanggal Berangkat
-                      </Label>
-                      <Input
-                        id="dateStartInput"
-                        type="date"
-                        value={formDate}
-                        onChange={(e) => setFormDate(e.target.value)}
-                        className="rounded-xl border-slate-200 focus:border-indigo-400 text-xs h-10 px-2.5"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="timeStartMulti" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        Jam Berangkat
-                      </Label>
-                      <Input
-                        id="timeStartMulti"
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={5}
-                        placeholder="JJ:MM"
-                        value={formTimeStart}
-                        onChange={(e) => {
-                          let val = e.target.value.replace(/[^0-9]/g, '');
-                          if (val.length > 4) val = val.slice(0, 4);
-                          if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
-                          if (val.length >= 2) {
-                            const hours = parseInt(val.slice(0, 2), 10);
-                            if (hours > 23) val = '23' + val.slice(2);
-                          }
-                          if (val.length === 4) {
-                            const minutes = parseInt(val.slice(2, 4), 10);
-                            if (minutes > 59) val = val.slice(0, 2) + '59';
-                          }
-                          if (val.length > 2) {
-                            setFormTimeStart(`${val.slice(0, 2)}:${val.slice(2)}`);
-                          } else {
-                            setFormTimeStart(val);
-                          }
-                        }}
-                        onBlur={(e) => setFormTimeStart(padTime(e.target.value))}
-                        className="rounded-xl border-slate-200 focus:border-indigo-400 text-xs h-10 px-3"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Row 2: Arrival Date & Time */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="dateEndInput" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        Tanggal Tiba / Selesai
-                      </Label>
-                      <Input
-                        id="dateEndInput"
-                        type="date"
-                        value={formDateEnd || formDate}
-                        onChange={(e) => setFormDateEnd(e.target.value)}
-                        className="rounded-xl border-slate-200 focus:border-indigo-400 text-xs h-10 px-2.5"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="timeEndMulti" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        Jam Tiba / Selesai
-                      </Label>
-                      <Input
-                        id="timeEndMulti"
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={5}
-                        placeholder="JJ:MM"
-                        value={formTimeEnd}
-                        onChange={(e) => {
-                          let val = e.target.value.replace(/[^0-9]/g, '');
-                          if (val.length > 4) val = val.slice(0, 4);
-                          if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
-                          if (val.length >= 2) {
-                            const hours = parseInt(val.slice(0, 2), 10);
-                            if (hours > 23) val = '23' + val.slice(2);
-                          }
-                          if (val.length === 4) {
-                            const minutes = parseInt(val.slice(2, 4), 10);
-                            if (minutes > 59) val = val.slice(0, 2) + '59';
-                          }
-                          if (val.length > 2) {
-                            setFormTimeEnd(`${val.slice(0, 2)}:${val.slice(2)}`);
-                          } else {
-                            setFormTimeEnd(val);
-                          }
-                        }}
-                        onBlur={(e) => setFormTimeEnd(padTime(e.target.value))}
-                        className="rounded-xl border-slate-200 focus:border-indigo-400 text-xs h-10 px-3"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {(() => {
-                const timings = calculateJourneyDateTimeTimings({
-                  dateStart: formDate,
-                  timeStart: formTimeStart,
-                  dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
-                  timeEnd: formTimeEnd,
-                  isMultiDay: formIsMultiDay,
-                });
-                const effectiveNights = formIsMultiDay ? timings.nightCount : formNightCount;
-                return (
-                  <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5 pt-1">
-                    <span>💡 Durasi Terhitung:</span>
-                    <span className="text-indigo-700 font-extrabold">
-                      {timings.durationHours > 0 ? timings.durationHours.toFixed(1) : '0'} Jam ({effectiveNights} Malam)
-                    </span>
-                  </div>
-                );
-              })()}
-
             {/* Loader for API Recalculation */}
             {isCalculatingExtraRoute && (
-              <div className="flex items-center justify-center p-2 text-[10px] text-indigo-600 font-bold bg-indigo-50/50 rounded-lg border border-indigo-100/50 mt-2">
-                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5 text-indigo-600" />
+              <div className="flex items-center justify-center p-2 text-[10px] text-blue-600 font-bold bg-blue-50/50 rounded-lg border border-blue-100/50 mt-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5 text-blue-600" />
                 Menghitung rute tambahan...
               </div>
             )}
@@ -1610,24 +1921,77 @@ function JourneyReportContent() {
               </div>
             )}
 
-            {/* Reimburse BBM Row */}
+            {/* Ndalem Meal Evaluation Form Fields (Uncarded) */}
             {activeReportingJourney.vehicleName === 'Ndalem' ? (
-              <div className="p-3.5 bg-amber-50/60 border border-amber-100/60 rounded-2xl text-[11px] font-bold text-amber-800 leading-relaxed flex items-start gap-2.5">
-                <span className="text-base leading-none">ℹ️</span>
-                <span>Perjalanan Ndalem: Pengeluaran bensin & uang makan ditanggung oleh Ndalem. Tidak ada reimbursement bensin/uang makan dari kantor.</span>
-              </div>
+              (() => {
+                const timings = calculateJourneyDateTimeTimings({
+                  dateStart: formDate,
+                  timeStart: formTimeStart,
+                  dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+                  timeEnd: formTimeEnd,
+                  isMultiDay: formIsMultiDay,
+                });
+                const effectiveNightCount = formIsMultiDay ? timings.nightCount : formNightCount;
+                const elapsedHours = timings.durationHours > 0 ? timings.durationHours : calculateElapsedHours(formTimeStart, formTimeEnd, effectiveNightCount);
+                const totalHakUangMakan = getMealAllowanceForDuration(elapsedHours, 'Suzuki XL7');
+                const qtyHakMakan = Math.round(totalHakUangMakan / 20000);
+                const ndalemMealMoneyVal = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
+                const unpaidDeltaRp = Math.max(0, totalHakUangMakan - ndalemMealMoneyVal);
+
+                return (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="ndalemMealMoney" className="text-xs font-black text-slate-900 flex items-center justify-between">
+                        <span>Uang Diberikan Selama Perjalanan</span>
+                        <span className="text-slate-900 font-bold normal-case">
+                          (Hak {qtyHakMakan}x Makan: <strong className="text-emerald-700 font-black">{fmtRp(totalHakUangMakan)}</strong>)
+                        </span>
+                      </Label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-blue-700">Rp</span>
+                        <Input
+                          id="ndalemMealMoney"
+                          placeholder="0"
+                          value={formNdalemMealMoneyFee}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            setFormNdalemMealMoneyFee(val ? Number(val).toLocaleString('id-ID') : '');
+                          }}
+                          className="pl-8 rounded-xl border-slate-200 focus:border-blue-400 focus:ring-blue-400/20 text-xs font-bold text-blue-700 h-10 w-full"
+                        />
+                      </div>
+                    </div>
+
+                    {unpaidDeltaRp > 0 ? (
+                      <div className="p-3 bg-blue-50 border border-blue-200/80 rounded-xl text-xs font-bold text-blue-900 flex items-center justify-between">
+                        <span>Kekurangan Uang Makan:</span>
+                        <span className="text-sm font-black text-blue-700">+{fmtRp(unpaidDeltaRp)}</span>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-blue-50 border border-blue-200/80 rounded-xl text-xs font-bold text-blue-900 flex items-center justify-between">
+                        <span>Uang Makan Ndalem Terpenuhi:</span>
+                        <span className="text-xs font-black text-blue-700">Tidak ada selisih (Rp0)</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
             ) : (
               (() => {
-                const baseCostVal = activeReportingJourney.baseOperationalCost ||
-                  ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0) - (activeReportingJourney.tollParkingFee || 0));
+                const preAuthorizedToll = activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
+                  ? Number(activeReportingJourney.preAuthorizedToll)
+                  : (activeReportingJourney.status === 'claimed' ? Number(activeReportingJourney.tollParkingFee || 0) : 0);
+                const baseCostVal = activeReportingJourney.baseOperationalCost !== undefined && activeReportingJourney.baseOperationalCost !== null
+                  ? Number(activeReportingJourney.baseOperationalCost)
+                  : Math.max(0, (activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0) - preAuthorizedToll);
                 return (
                   <div className="space-y-2">
-                    <Label htmlFor="journeyFuel" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <Label htmlFor="journeyFuel" className="text-xs font-black text-slate-900">
                       BBM Terbeli <span className="text-blue-600 font-extrabold normal-case tracking-normal">({`Jatah: ${fmtRp(Math.ceil(baseCostVal))}`})</span>
                     </Label>
                     <div className="flex gap-2 items-end">
                       <div className="flex-1 relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-blue-700">Rp</span>
                         <Input
                           id="journeyFuel"
                           placeholder="0"
@@ -1636,7 +2000,7 @@ function JourneyReportContent() {
                             const val = e.target.value.replace(/\D/g, '');
                             setFormFuelFee(val ? Number(val).toLocaleString('id-ID') : '');
                           }}
-                          className="pl-8 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs h-10 w-full"
+                          className="pl-8 rounded-xl border-slate-200 focus:border-blue-400 focus:ring-blue-400/20 text-xs font-bold text-blue-700 h-10 w-full"
                         />
                       </div>
                       <div className="shrink-0 w-28 sm:w-32">
@@ -1655,21 +2019,21 @@ function JourneyReportContent() {
                           type="button"
                           onClick={() => fuelFileInputRef.current?.click()}
                           disabled={uploadingFuelReceipt}
-                          className={`w-full rounded-xl text-[11px] sm:text-xs font-bold h-10 px-2 flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${formFuelReceiptUrls.length > 0
-                            ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
-                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 shadow-sm'
+                          className={`w-full rounded-xl text-[11px] sm:text-xs font-extrabold h-10 px-2 flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${formFuelReceiptUrls.length > 0
+                            ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-900 border-slate-200 shadow-sm'
                             }`}
                         >
                           {uploadingFuelReceipt ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto text-slate-500" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto text-slate-900" />
                           ) : formFuelReceiptUrls.length > 0 ? (
                             <>
-                              <Plus className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              <Plus className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                               <span className="truncate">Tambah Bukti</span>
                             </>
                           ) : (
                             <>
-                              <Upload className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              <Upload className="w-3.5 h-3.5 text-slate-900 shrink-0" />
                               <span className="truncate">Upload Bukti</span>
                             </>
                           )}
@@ -1680,22 +2044,21 @@ function JourneyReportContent() {
                     {formFuelReceiptUrls.length > 0 && (
                       <div className="space-y-1.5 pt-1">
                         {formFuelReceiptUrls.map((url, index) => (
-                          <div key={index} className="flex items-center justify-between gap-2 p-2 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px]">
-                            <div className="flex items-center gap-1.5 truncate font-bold text-emerald-800">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <div key={index} className="flex items-center justify-between gap-2 p-2 bg-blue-50/80 border border-blue-200 rounded-xl text-[11px]">
+                            <div className="flex items-center gap-1.5 truncate font-bold text-blue-800">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                               <span className="truncate">
                                 Bukti BBM {formFuelReceiptUrls.length > 1 ? `#${index + 1}` : 'terunggah'}
                               </span>
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
-                              <a
-                                href={url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-sm transition-colors"
+                              <button
+                                type="button"
+                                onClick={() => setSelectedExifImage({ url, title: `Bukti BBM ${formFuelReceiptUrls.length > 1 ? `#${index + 1}` : ''}` })}
+                                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                               >
-                                <Eye className="w-3 h-3" /> Lihat
-                              </a>
+                                <Eye className="w-3 h-3" /> Audit & Metadata
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => setFormFuelReceiptUrls(prev => prev.filter((_, i) => i !== index))}
@@ -1716,15 +2079,19 @@ function JourneyReportContent() {
 
             {/* Tol & Parkir Row */}
             {(() => {
-              const preAuthorizedTollVal = activeReportingJourney ? (activeReportingJourney.tollParkingFee || 0) : 0;
+              const preAuthorizedTollVal = activeReportingJourney
+                ? (activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
+                    ? Number(activeReportingJourney.preAuthorizedToll)
+                    : (activeReportingJourney.status === 'claimed' ? Number(activeReportingJourney.tollParkingFee || 0) : 0))
+                : 0;
               return (
                 <div className="space-y-2">
-                  <Label htmlFor="journeyToll" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  <Label htmlFor="journeyToll" className="text-xs font-black text-slate-900">
                     Tol & Parkir Terbayar <span className="text-blue-600 font-extrabold normal-case tracking-normal">({`Jatah: ${fmtRp(Math.ceil(preAuthorizedTollVal))}`})</span>
                   </Label>
                   <div className="flex gap-2 items-end">
                     <div className="flex-1 relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-blue-700">Rp</span>
                       <Input
                         id="journeyToll"
                         placeholder="0"
@@ -1733,7 +2100,7 @@ function JourneyReportContent() {
                           const val = e.target.value.replace(/\D/g, '');
                           setFormTollParkingFee(val ? Number(val).toLocaleString('id-ID') : '');
                         }}
-                        className="pl-8 rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-xs h-10 w-full"
+                        className="pl-8 rounded-xl border-slate-200 focus:border-blue-400 focus:ring-blue-400/20 text-xs font-bold text-blue-700 h-10 w-full"
                       />
                     </div>
                     <div className="shrink-0 w-28 sm:w-32">
@@ -1753,7 +2120,7 @@ function JourneyReportContent() {
                         onClick={() => tollFileInputRef.current?.click()}
                         disabled={uploadingTollReceipt}
                         className={`w-full rounded-xl text-[11px] sm:text-xs font-bold h-10 px-2 flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${formTollReceiptUrls.length > 0
-                          ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                          ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200'
                           : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 shadow-sm'
                           }`}
                       >
@@ -1761,7 +2128,7 @@ function JourneyReportContent() {
                           <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto text-slate-500" />
                         ) : formTollReceiptUrls.length > 0 ? (
                           <>
-                            <Plus className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                            <Plus className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                             <span className="truncate">Tambah Bukti</span>
                           </>
                         ) : (
@@ -1777,22 +2144,21 @@ function JourneyReportContent() {
                   {formTollReceiptUrls.length > 0 && (
                     <div className="space-y-1.5 pt-1">
                       {formTollReceiptUrls.map((url, index) => (
-                        <div key={index} className="flex items-center justify-between gap-2 p-2 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px]">
-                          <div className="flex items-center gap-1.5 truncate font-bold text-emerald-800">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <div key={index} className="flex items-center justify-between gap-2 p-2 bg-blue-50/80 border border-blue-200 rounded-xl text-[11px]">
+                          <div className="flex items-center gap-1.5 truncate font-bold text-blue-800">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                             <span className="truncate">
                               Bukti Tol & Parkir {formTollReceiptUrls.length > 1 ? `#${index + 1}` : 'terunggah'}
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <a
-                              href={url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-sm transition-colors"
+                            <button
+                              type="button"
+                              onClick={() => setSelectedExifImage({ url, title: `Bukti Tol & Parkir ${formTollReceiptUrls.length > 1 ? `#${index + 1}` : ''}` })}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                             >
-                              <Eye className="w-3 h-3" /> Lihat
-                            </a>
+                              <Eye className="w-3 h-3" /> Audit & Metadata
+                            </button>
                             <button
                               type="button"
                               onClick={() => setFormTollReceiptUrls(prev => prev.filter((_, i) => i !== index))}
@@ -1809,287 +2175,314 @@ function JourneyReportContent() {
                 </div>
               );
             })()}
-            </div>
+          </div>
 
-            {/* Rincian Biaya Laporan & Table Delta Breakdown Card */}
-            {(() => {
-              const isNdalem = activeReportingJourney.vehicleName === 'Ndalem';
-              const originalTotalDist = (activeReportingJourney.distanceKm || 0) * 2;
-              const extraDistanceKm = Math.max(0, calculatedDistanceKm - originalTotalDist);
-              const extraOperationalCost = 0; // Extra mileage is compensated via Upah Bersih Sopir (distance component), not automatic cash reimbursement without receipts
+          {/* Rincian Biaya Laporan & Table Delta Breakdown Card */}
+          {(() => {
+            const isNdalem = activeReportingJourney.vehicleName === 'Ndalem';
+            const originalTotalDist = (activeReportingJourney.distanceKm || 0) * 2;
+            const extraDistanceKm = Math.max(0, calculatedDistanceKm - originalTotalDist);
+            const extraOperationalCost = 0; // Extra mileage is compensated via Upah Bersih Sopir (distance component), not automatic cash reimbursement without receipts
 
-              const originalMealAllowance = activeReportingJourney.mealAllowance || 0;
-              const tableTimings = calculateJourneyDateTimeTimings({
-                dateStart: formDate,
-                timeStart: formTimeStart,
-                dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
-                timeEnd: formTimeEnd,
-                isMultiDay: formIsMultiDay,
-              });
-              const effectiveTableNights = formIsMultiDay ? tableTimings.nightCount : formNightCount;
-              const elapsedHours = tableTimings.durationHours > 0 ? tableTimings.durationHours : calculateElapsedHours(
-                formTimeStart,
-                formTimeEnd,
-                effectiveTableNights,
-              );
-              const actualMealAllowance =
-                elapsedHours > 0
-                  ? getMealAllowanceForDuration(
-                      elapsedHours,
-                      activeReportingJourney.vehicleName,
-                    )
-                  : originalMealAllowance;
-              const extraMealAllowance = isNdalem ? 0 : Math.max(0, actualMealAllowance - originalMealAllowance);
+            const originalMealAllowance = activeReportingJourney.mealAllowance || 0;
+            const tableTimings = calculateJourneyDateTimeTimings({
+              dateStart: formDate,
+              timeStart: formTimeStart,
+              dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+              timeEnd: formTimeEnd,
+              isMultiDay: formIsMultiDay,
+            });
+            const effectiveTableNights = tableTimings.nightCount > 0 ? tableTimings.nightCount : formNightCount;
+            const elapsedHours = tableTimings.durationHours > 0 ? tableTimings.durationHours : calculateElapsedHours(
+              formTimeStart,
+              formTimeEnd,
+              effectiveTableNights,
+            );
+            const ndalemMealMoneyVal = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
+            const actualMealAllowance =
+              elapsedHours > 0
+                ? getMealAllowanceForDuration(
+                  elapsedHours,
+                  activeReportingJourney.vehicleName,
+                  ndalemMealMoneyVal,
+                )
+                : originalMealAllowance;
+            const extraMealAllowance = isNdalem ? actualMealAllowance : Math.max(0, actualMealAllowance - originalMealAllowance);
 
-              const baseCostVal = activeReportingJourney.baseOperationalCost ||
-                ((activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0) - (activeReportingJourney.tollParkingFee || 0));
+            const preAuthorizedTollInCalc = activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
+              ? Number(activeReportingJourney.preAuthorizedToll)
+              : (activeReportingJourney.status === 'claimed' ? Number(activeReportingJourney.tollParkingFee || 0) : 0);
 
-              const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
-              const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
+            const baseCostVal = activeReportingJourney.baseOperationalCost !== undefined && activeReportingJourney.baseOperationalCost !== null
+              ? Number(activeReportingJourney.baseOperationalCost)
+              : Math.max(0, (activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0) - preAuthorizedTollInCalc);
 
-              const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
+            const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
+            const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
 
-              return (
-                <div className="border-t border-slate-200/70 pt-5 text-slate-600 text-xs space-y-2 font-medium">
-                  <span className="text-xs font-black text-indigo-700 uppercase tracking-wider block mb-1.5">
-                    Kalkulasi Penyesuaian & Biaya Akhir
-                  </span>
-                  {(() => {
-                    const getStratumLabel = (hours: number): string => {
-                      if (hours <= 0) return '—';
-                      const days = Math.floor(hours / 24);
-                      const remainder = hours % 24;
-                      return days > 0
-                        ? `${days} hari + ${remainder.toFixed(1)} jam`
-                        : `${remainder.toFixed(1)} jam`;
-                    };
+            const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
 
-                    const preAuthorizedDurationPP = activeReportingJourney.customDurationPP || (activeReportingJourney.durationHours ? activeReportingJourney.durationHours * 2 : 0);
-                    const preAuthorizedMeal = isNdalem
-                      ? 0
-                      : (activeReportingJourney.mealAllowance !== undefined && activeReportingJourney.mealAllowance !== null && activeReportingJourney.mealAllowance > 0
-                          ? activeReportingJourney.mealAllowance
-                          : getMealAllowanceForDuration(preAuthorizedDurationPP));
+            return (
+              <div className="border-t border-slate-200/70 pt-5 text-slate-900 text-xs space-y-2 font-bold">
+                <span className="font-black text-blue-700 text-sm block mb-1.5">
+                  Kalkulasi Penyesuaian & Biaya Akhir
+                </span>
+                {(() => {
+                  const getStratumLabel = (hours: number): string => {
+                    if (hours <= 0) return '—';
+                    const days = Math.floor(hours / 24);
+                    const remainder = hours % 24;
+                    return days > 0
+                      ? `${days} hari + ${remainder.toFixed(1)} jam`
+                      : `${remainder.toFixed(1)} jam`;
+                  };
 
-                    const plotStrata = getStratumLabel(preAuthorizedDurationPP);
-                    const actualStrata = getStratumLabel(elapsedHours);
+                  const preAuthorizedDurationPP = activeReportingJourney.customDurationPP || (activeReportingJourney.durationHours ? activeReportingJourney.durationHours * 2 : 0);
+                  const preAuthorizedMeal = isNdalem
+                    ? 0
+                    : (activeReportingJourney.mealAllowance !== undefined && activeReportingJourney.mealAllowance !== null && activeReportingJourney.mealAllowance > 0
+                      ? activeReportingJourney.mealAllowance
+                      : getMealAllowanceForDuration(preAuthorizedDurationPP));
 
+                  const plotStrata = getStratumLabel(preAuthorizedDurationPP);
+                  const actualStrata = getStratumLabel(elapsedHours);
+
+                  return (
+                    <div className="overflow-x-auto py-2">
+                      <table className="w-full text-[10px] text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-200 text-black font-extrabold text-[9px]">
+                            <th className="pb-1.5 font-black text-black">Aspek</th>
+                            <th className="pb-1.5 font-black text-center text-black">Plotingan</th>
+                            <th className="pb-1.5 font-black text-center text-black">Aktual</th>
+                            <th className="pb-1.5 font-black text-right text-black">Delta</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-black font-extrabold">
+                          <tr>
+                            <td className="py-2 text-black font-extrabold">Jarak</td>
+                            <td className="py-2 text-center font-extrabold text-emerald-700">{originalTotalDist.toFixed(1)} km</td>
+                            <td className="py-2 text-center font-black text-emerald-700">{calculatedDistanceKm.toFixed(1)} km</td>
+                            <td className="py-2 text-right font-black text-emerald-700">
+                              {extraDistanceKm > 0 ? (
+                                <span>+{extraDistanceKm.toFixed(1)} km</span>
+                              ) : (
+                                <span className="text-black font-extrabold">—</span>
+                              )}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 text-black font-extrabold">BBM</td>
+                            <td className="py-2 text-center font-extrabold text-blue-700"><span>{fmtRp(Math.ceil(baseCostVal))}</span></td>
+                            <td className="py-2 text-center font-black text-blue-700">{fmtRp(Math.ceil(fuelVal))}</td>
+                            <td className="py-2 text-right font-black text-blue-700">
+                              {extraFuelCost > 0 ? (
+                                <span>+{fmtRp(Math.ceil(extraFuelCost))}</span>
+                              ) : (
+                                <span className="text-black font-extrabold">—</span>
+                              )}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-2 text-black font-extrabold">Uang Makan</td>
+                            <td className="py-2 text-center font-extrabold text-blue-700">{plotStrata}</td>
+                            <td className="py-2 text-center font-black text-blue-700">{actualStrata}</td>
+                            <td className="py-2 text-right font-black text-blue-700">
+                              {extraMealAllowance > 0 ? (
+                                <span>+{fmtRp(Math.ceil(extraMealAllowance))}</span>
+                              ) : (
+                                <span className="text-black font-extrabold">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
+
+                {extraFuelCost > 0 && (
+                  <div className="flex justify-between text-slate-900 font-extrabold">
+                    <span>Kelebihan BBM (Delta)</span>
+                    <span className="font-black text-blue-700">+{fmtRp(Math.ceil(extraFuelCost))}</span>
+                  </div>
+                )}
+                {extraMealAllowance > 0 && (
+                  <div className="flex justify-between text-slate-900 font-extrabold">
+                    <span>Kelebihan Uang Makan (Delta)</span>
+                    <span className="font-black text-blue-700">+{fmtRp(Math.ceil(extraMealAllowance))}</span>
+                  </div>
+                )}
+                {(() => {
+                  const preAuthorizedToll = activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
+                    ? Number(activeReportingJourney.preAuthorizedToll)
+                    : (activeReportingJourney.status === 'claimed' ? Number(activeReportingJourney.tollParkingFee || 0) : 0);
+                  const extraToll = tollVal - preAuthorizedToll;
+                  if (extraToll > 0) {
                     return (
-                      <div className="overflow-x-auto py-2">
-                        <table className="w-full text-[10px] text-left border-collapse">
-                          <thead>
-                            <tr className="border-b border-slate-200 text-slate-800 font-extrabold uppercase tracking-wider text-[8px]">
-                              <th className="pb-1.5 font-bold">Aspek</th>
-                              <th className="pb-1.5 font-bold text-center">Plotingan</th>
-                              <th className="pb-1.5 font-bold text-center">Aktual</th>
-                              <th className="pb-1.5 font-bold text-right">Delta</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 text-slate-900 font-bold">
-                            <tr>
-                              <td className="py-2 text-slate-900 font-bold">Jarak</td>
-                              <td className="py-2 text-center font-bold text-slate-900">{originalTotalDist.toFixed(1)} km</td>
-                              <td className="py-2 text-center font-extrabold text-indigo-700">{calculatedDistanceKm.toFixed(1)} km</td>
-                              <td className="py-2 text-right font-black text-indigo-700">
-                                {extraDistanceKm > 0 ? (
-                                  <span>+{extraDistanceKm.toFixed(1)} km</span>
-                                ) : (
-                                  <span className="text-slate-400">—</span>
-                                )}
-                              </td>
-                            </tr>
-                            <tr>
-                              <td className="py-2 text-slate-900 font-bold">BBM</td>
-                              <td className="py-2 text-center font-bold text-slate-900"><span className="text-blue-700 font-extrabold">{fmtRp(Math.ceil(baseCostVal))}</span></td>
-                              <td className="py-2 text-center font-extrabold text-blue-700">{fmtRp(Math.ceil(fuelVal))}</td>
-                              <td className="py-2 text-right font-black text-blue-700">
-                                {extraFuelCost > 0 ? (
-                                  <span>+{fmtRp(Math.ceil(extraFuelCost))}</span>
-                                ) : (
-                                  <span className="text-slate-400">—</span>
-                                )}
-                              </td>
-                            </tr>
-                            <tr>
-                              <td className="py-2 text-slate-900 font-bold">Uang Makan</td>
-                              <td className="py-2 text-center font-bold text-slate-900">{plotStrata}</td>
-                              <td className="py-2 text-center font-extrabold text-indigo-700">{actualStrata}</td>
-                              <td className="py-2 text-right font-black text-blue-700">
-                                {extraMealAllowance > 0 ? (
-                                  <span>+{fmtRp(Math.ceil(extraMealAllowance))}</span>
-                                ) : (
-                                  <span className="text-slate-400">—</span>
-                                )}
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
+                      <div className="flex justify-between text-slate-900 font-extrabold">
+                        <span>{preAuthorizedToll > 0 ? 'Kelebihan Tol & Parkir (Delta)' : 'Reimburse Tol & Parkir'}</span>
+                        <span className="font-black text-blue-700">+{fmtRp(Math.ceil(extraToll))}</span>
                       </div>
                     );
-                  })()}
+                  }
+                  return null;
+                })()}
+                {(() => {
+                  const preAuthorizedDurationPP = activeReportingJourney.customDurationPP || (activeReportingJourney.durationHours ? activeReportingJourney.durationHours * 2 : 0);
+                  const preAuthorizedMeal = isNdalem
+                    ? 0
+                    : (activeReportingJourney.mealAllowance !== undefined && activeReportingJourney.mealAllowance !== null && activeReportingJourney.mealAllowance > 0
+                      ? activeReportingJourney.mealAllowance
+                      : getMealAllowanceForDuration(preAuthorizedDurationPP));
 
-                  {extraFuelCost > 0 && (
-                    <div className="flex justify-between text-slate-500">
-                      <span>Kelebihan BBM (Delta)</span>
-                      <span className="font-bold text-blue-600">+{fmtRp(Math.ceil(extraFuelCost))}</span>
-                    </div>
-                  )}
-                  {extraMealAllowance > 0 && (
-                    <div className="flex justify-between text-slate-500">
-                      <span>Kelebihan Uang Makan (Delta)</span>
-                      <span className="font-bold text-blue-600">+{fmtRp(Math.ceil(extraMealAllowance))}</span>
-                    </div>
-                  )}
-                  {(() => {
-                    const preAuthorizedToll = activeReportingJourney.tollParkingFee || 0;
-                    const extraToll = tollVal - preAuthorizedToll;
-                    if (extraToll > 0) {
-                      return (
-                        <div className="flex justify-between text-slate-500">
-                          <span>{preAuthorizedToll > 0 ? 'Kelebihan Tol & Parkir (Delta)' : 'Reimburse Tol & Parkir'}</span>
-                          <span className="font-bold text-blue-600">+{fmtRp(Math.ceil(extraToll))}</span>
+                  const preAuthorizedToll = activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
+                    ? Number(activeReportingJourney.preAuthorizedToll)
+                    : (activeReportingJourney.status === 'claimed' ? Number(activeReportingJourney.tollParkingFee || 0) : 0);
+                  const totalPreAuthorizedAllowance = baseCostVal + preAuthorizedToll;
+                  const totalActualSpent = fuelVal + tollVal;
+
+                  const extraTollCost = Math.max(0, tollVal - preAuthorizedToll);
+                  const positiveReimburseDelta = extraMealAllowance + extraFuelCost + extraTollCost + extraOperationalCost;
+                  const unspentCash = Math.max(0, totalPreAuthorizedAllowance - totalActualSpent);
+
+                  const finalReimburseDelta = Math.max(0, positiveReimburseDelta - unspentCash);
+                  const remainingUnspentCash = Math.max(0, unspentCash - positiveReimburseDelta);
+
+                  const baseDriverWage = calculateDriverNetWage(
+                    calculatedDistanceKm,
+                    calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
+                    effectiveTableNights,
+                  );
+                  const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
+
+                  return (
+                    <>
+                      <div className="py-2 border-y border-blue-200/50 flex justify-between font-black text-blue-700 text-sm">
+                        <span>Total Reimburse (Delta)</span>
+                        <span>{fmtRp(Math.ceil(finalReimburseDelta))}</span>
+                      </div>
+                      {unspentCash > 0 && (
+                        <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
+                          <span>• Penghematan Uang Jalan Operasional</span>
+                          <span className="text-blue-700 font-extrabold">-{fmtRp(Math.ceil(unspentCash))}</span>
                         </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                  {(() => {
-                    const preAuthorizedDurationPP = activeReportingJourney.customDurationPP || (activeReportingJourney.durationHours ? activeReportingJourney.durationHours * 2 : 0);
-                    const preAuthorizedMeal = isNdalem
-                      ? 0
-                      : (activeReportingJourney.mealAllowance !== undefined && activeReportingJourney.mealAllowance !== null && activeReportingJourney.mealAllowance > 0
-                          ? activeReportingJourney.mealAllowance
-                          : getMealAllowanceForDuration(preAuthorizedDurationPP));
+                      )}
 
-                    const preAuthorizedToll = activeReportingJourney.tollParkingFee || 0;
-                    const totalPreAuthorizedAllowance = baseCostVal + preAuthorizedToll;
-                    const totalActualSpent = fuelVal + tollVal;
-
-                    const extraTollCost = Math.max(0, tollVal - preAuthorizedToll);
-                    const positiveReimburseDelta = extraMealAllowance + extraFuelCost + extraTollCost + extraOperationalCost;
-                    const unspentCash = Math.max(0, totalPreAuthorizedAllowance - totalActualSpent);
-
-                    const finalReimburseDelta = Math.max(0, positiveReimburseDelta - unspentCash);
-                    const remainingUnspentCash = Math.max(0, unspentCash - positiveReimburseDelta);
-
-                    const baseDriverWage = calculateDriverNetWage(
-                      calculatedDistanceKm,
-                      calculatedDurationHours,
-                      formNightCount,
-                    );
-                    const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
-
-                    return (
-                      <>
-                        <div className="py-2 border-y border-blue-200/50 flex justify-between font-black text-blue-700 text-sm">
-                          <span>Total Reimburse (Delta)</span>
-                          <span>{fmtRp(Math.ceil(finalReimburseDelta))}</span>
-                        </div>
-                        {unspentCash > 0 && (
-                          <div className="flex justify-between text-slate-800 text-[10px] font-bold pl-2">
-                            <span>• Penghematan Uang Jalan Operasional</span>
-                            <span className="text-amber-600 font-bold">-{fmtRp(Math.ceil(unspentCash))}</span>
-                          </div>
-                        )}
-
-                        <div className="flex justify-between text-slate-800 text-[10px] font-bold pl-2">
-                          <span>• Komponen Jarak ({calculatedDistanceKm.toFixed(1)} km)</span>
-                          <span>{fmtRp(Math.ceil(calculatedDistanceKm * 300))}</span>
-                        </div>
-                        {(() => {
-                          const activeHours = calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours;
-                          const shortTripMeal = getShortTripMealWageComponent(activeHours);
-                          return (
-                            <>
-                              <div className="flex justify-between text-slate-800 text-[10px] font-bold pl-2">
-                                <span>• Komponen Waktu ({activeHours.toFixed(1)} jam)</span>
-                                <span>{fmtRp(Math.ceil(activeHours * 5000))}</span>
+                      <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
+                        <span>• Komponen Jarak ({calculatedDistanceKm.toFixed(1)} km)</span>
+                        <span className="text-emerald-700 font-black">{fmtRp(Math.ceil(calculatedDistanceKm * 300))}</span>
+                      </div>
+                      {(() => {
+                        const activeHours = calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours;
+                        const shortTripMeal = getShortTripMealWageComponent(activeHours);
+                        return (
+                          <>
+                            <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
+                              <span>• Komponen Waktu ({activeHours.toFixed(1)} jam)</span>
+                              <span className="text-emerald-700 font-black">{fmtRp(Math.ceil(activeHours * 5000))}</span>
+                            </div>
+                            {shortTripMeal > 0 && (
+                              <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
+                                <span>• Uang Makan Perjalanan (≤ 2 Jam)</span>
+                                <span className="text-emerald-700 font-black">+{fmtRp(shortTripMeal)}</span>
                               </div>
-                              {shortTripMeal > 0 && (
-                                <div className="flex justify-between text-slate-800 text-[10px] font-bold pl-2">
-                                  <span>• Uang Makan Perjalanan (≤ 2 Jam)</span>
-                                  <span>+{fmtRp(shortTripMeal)}</span>
-                                </div>
-                              )}
-                              <div className="flex justify-between text-slate-800 text-[10px] font-bold pl-2">
-                                <span>• Durasi Kalender</span>
-                                <span>
-                                  {activeHours.toFixed(1)} jam / {journeyDayCount(activeHours)} hari
-                                </span>
-                              </div>
-                            </>
-                          );
-                        })()}
-                        {formNightCount > 0 && (
-                          <div className="flex justify-between text-slate-800 text-[10px] font-bold pl-2">
-                            <span>• Premium Malam ({formNightCount} × Rp50.000)</span>
-                            <span>{fmtRp(calculateNightPremium(formNightCount))}</span>
-                          </div>
-                        )}
-                        {remainingUnspentCash > 0 && (
-                          <div className="flex justify-between text-amber-600 text-[10px] font-bold pl-2">
-                            <span>• Potongan Sisa Kas Operasional (ke Upah Bersih)</span>
-                            <span>-{fmtRp(Math.ceil(remainingUnspentCash))}</span>
-                          </div>
-                        )}
-
-                        <div className="py-2 border-y border-emerald-200/50 flex justify-between font-black text-emerald-700 text-sm">
-                          <span>Upah Bersih Sopir</span>
-                          <span>{fmtRp(Math.ceil(finalUpahBersih))}</span>
+                            )}
+                            <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
+                              <span>• Durasi Kalender</span>
+                              <span className="text-emerald-700 font-extrabold">
+                                {activeHours.toFixed(1)} jam / {journeyDayCount(activeHours)} hari
+                              </span>
+                            </div>
+                          </>
+                        );
+                      })()}
+                      {effectiveTableNights > 0 && (
+                        <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
+                          <span>• Insentif Menginap / Premium Malam ({effectiveTableNights} × Rp50.000)</span>
+                          <span className="text-emerald-700 font-black">+{fmtRp(calculateNightPremium(effectiveTableNights))}</span>
                         </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              );
-            })()}
+                      )}
+                      {remainingUnspentCash > 0 && (
+                        <div className="flex justify-between text-blue-700 text-[10px] font-bold pl-2">
+                          <span>• Potongan Sisa Kas Operasional (ke Upah Bersih)</span>
+                          <span className="font-extrabold">-{fmtRp(Math.ceil(remainingUnspentCash))}</span>
+                        </div>
+                      )}
 
-            {/* Bottom Form Actions */}
-            <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                      <div className="py-2 border-y border-emerald-200/50 flex justify-between font-black text-emerald-700 text-sm">
+                        <span>Upah Bersih Sopir</span>
+                        <span>{fmtRp(Math.ceil(finalUpahBersih))}</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            );
+          })()}
+
+          {/* Toast / Validation Alert placed above submit buttons */}
+          {message && (
+            <div className={`flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-xs sm:text-sm font-semibold shadow-sm border ${
+              message.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : 'bg-rose-50 border-rose-200 text-rose-900'
+            }`}>
+              <span className="text-base leading-none">
+                {message.type === 'success' ? '✓' : '⚠️'}
+              </span>
+              <span className="font-bold">{message.text}</span>
+            </div>
+          )}
+
+          <div className="pt-2 flex flex-col sm:flex-row gap-2">
+            <Button
+              type="button"
+              onClick={handleOpenCancelModal}
+              disabled={isCancelling || submitting}
+              variant="outline"
+              className="w-full sm:w-auto rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs h-10 px-4 cursor-pointer"
+              title={isSelfCreatedJourney ? "Membatalkan dan menghapus SPJ Mandiri secara permanen" : "Kembalikan perjalanan ke Pool"}
+            >
+              {isCancelling ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : (
+                isSelfCreatedJourney ? <Trash2 className="w-4 h-4 mr-1 text-rose-500" /> : <XCircle className="w-4 h-4 mr-1 text-rose-500" />
+              )}
+              <span>{isSelfCreatedJourney ? 'Hapus & Batalkan Perjalanan' : 'Batalkan Klaim Perjalanan'}</span>
+            </Button>
+
+            <div className="flex gap-2 flex-1 justify-end">
               <Button
                 type="button"
-                onClick={handleCancelClaim}
-                disabled={isCancelling || submitting}
+                onClick={handleSaveDraft}
+                disabled={isSavingDraft || submitting}
                 variant="outline"
-                className="w-full sm:w-auto rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs h-10 px-4 cursor-pointer"
+                className="flex-1 sm:flex-initial rounded-xl border-slate-200 text-slate-900 hover:bg-slate-50 font-bold text-xs h-10 px-4 cursor-pointer"
               >
-                {isCancelling ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <XCircle className="w-4 h-4 mr-1 text-rose-500" />}
-                <span>Batalkan Klaim Perjalanan</span>
+                {isSavingDraft ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Save className="w-4 h-4 mr-1 text-slate-900" />}
+                <span>Simpan Draft</span>
               </Button>
 
-              <div className="flex gap-2 flex-1 justify-end">
-                <Button
-                  type="button"
-                  onClick={handleSaveDraft}
-                  disabled={isSavingDraft || submitting}
-                  variant="outline"
-                  className="flex-1 sm:flex-initial rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs h-10 px-4 cursor-pointer"
-                >
-                  {isSavingDraft ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Save className="w-4 h-4 mr-1 text-slate-500" />}
-                  <span>Simpan Draft</span>
-                </Button>
-
-                <Button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex-1 sm:flex-initial rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm h-10 px-5 cursor-pointer shadow-md shadow-indigo-100 border-none"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                      <span>Mengirim...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4 mr-1.5" />
-                      <span>Ya, Kirim Laporan</span>
-                    </>
-                  )}
-                </Button>
-              </div>
+              <Button
+                type="submit"
+                disabled={submitting}
+                className="flex-1 sm:flex-initial rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm h-10 px-5 cursor-pointer shadow-md shadow-blue-100 border-none"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    <span>Mengirim...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-1.5" />
+                    <span>Ya, Kirim Laporan</span>
+                  </>
+                )}
+              </Button>
             </div>
+          </div>
 
-          </form>
+        </form>
 
         {/* Map Location Selector Modal */}
         {showMapSelector && (
@@ -2100,14 +2493,14 @@ function JourneyReportContent() {
                   <h3 className="text-base font-extrabold text-slate-900">Pilih Lokasi Tambahan</h3>
                   <button
                     onClick={() => setShowMapSelector(false)}
-                    className="text-slate-400 hover:text-slate-700 p-1 rounded-full hover:bg-slate-100"
+                    className="text-slate-900 hover:text-black p-1 rounded-full hover:bg-slate-100"
                   >
                     <XCircle className="w-5 h-5" />
                   </button>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-xs font-bold text-slate-700">Cari Nama Tempat / Alamat</Label>
+                  <Label className="text-xs font-black text-slate-900">Cari Nama Tempat / Alamat</Label>
                   <div className="relative">
                     <Input
                       ref={(el) => {
@@ -2117,9 +2510,9 @@ function JourneyReportContent() {
                       value={mapSearchText}
                       onChange={(e) => setMapSearchText(e.target.value)}
                       placeholder="Contoh: Rest Area KM 57, Unair Kampus C..."
-                      className="rounded-xl border-slate-200 pl-9 text-xs font-medium h-10"
+                      className="rounded-xl border-slate-200 pl-9 text-xs font-bold text-slate-900 h-10"
                     />
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                    <Search className="w-4 h-4 text-slate-900 absolute left-3 top-3" />
                   </div>
                 </div>
 
@@ -2131,8 +2524,8 @@ function JourneyReportContent() {
                 />
 
                 <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200/60 text-xs">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block mb-0.5">Alamat Terpilih:</span>
-                  <p className="font-extrabold text-slate-800">{mapAddress || 'Geser pin atau cari tempat'}</p>
+                  <span className="text-[10px] font-black text-slate-900 block mb-0.5">Alamat Terpilih:</span>
+                  <p className="font-extrabold text-black">{mapAddress || 'Geser pin atau cari tempat'}</p>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">
@@ -2140,7 +2533,7 @@ function JourneyReportContent() {
                     type="button"
                     variant="outline"
                     onClick={() => setShowMapSelector(false)}
-                    className="rounded-xl border-slate-200 text-xs font-bold h-10"
+                    className="rounded-xl border-slate-200 text-xs font-bold text-slate-900 h-10"
                   >
                     Batal
                   </Button>
@@ -2148,7 +2541,7 @@ function JourneyReportContent() {
                     type="button"
                     onClick={handleConfirmMapLocation}
                     disabled={!mapAddress}
-                    className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 px-4"
+                    className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-10 px-4"
                   >
                     Gunakan Lokasi Ini
                   </Button>
@@ -2156,6 +2549,78 @@ function JourneyReportContent() {
               </CardContent>
             </Card>
           </div>
+        )}
+
+        {/* Custom Cancellation Confirmation Dialog Modal */}
+        <Dialog open={showCancelModal} onOpenChange={setShowCancelModal}>
+          <DialogContent className="max-w-md rounded-3xl p-6 bg-white border border-slate-100 shadow-2xl">
+            <DialogHeader className="space-y-2">
+              <DialogTitle className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                {isSelfCreatedJourney ? (
+                  <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center shrink-0">
+                    <Trash2 className="w-4 h-4 text-rose-600" />
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                  </div>
+                )}
+                <span>{isSelfCreatedJourney ? 'Konfirmasi Hapus & Batal Perjalanan' : 'Konfirmasi Batal Klaim'}</span>
+              </DialogTitle>
+              <DialogDescription render={<div />} className="text-xs text-slate-900 font-bold leading-relaxed pt-1">
+                {isSelfCreatedJourney ? (
+                  <div className="p-3.5 bg-rose-50/80 border border-rose-200/80 rounded-2xl space-y-1.5 text-rose-950 font-semibold text-xs">
+                    <div className="font-extrabold text-rose-900 flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      Catatan SPJ Piket Mandiri (Ndalem):
+                    </div>
+                    <div className="text-rose-900 text-[11.5px] leading-normal">
+                      Perjalanan ini diotorisasi mandiri oleh Anda. Jika Anda membatalkan, perjalanan ini akan <strong>dihapus secara permanen</strong> dan <strong>tidak akan dimasukkan ke Pool</strong> sopir lain.
+                    </div>
+                  </div>
+                ) : (
+                  <span>Apakah Anda yakin ingin membatalkan klaim perjalanan ini? Perjalanan akan dikembalikan ke Pool agar dapat diambil oleh sopir lain.</span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+
+            <DialogFooter className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowCancelModal(false)}
+                disabled={isCancelling}
+                className="rounded-xl font-bold text-slate-900 hover:bg-slate-100 text-xs h-10 px-4 cursor-pointer"
+              >
+                Tutup / Kembali
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmCancelClaim}
+                disabled={isCancelling}
+                className={`rounded-xl font-bold text-xs h-10 px-5 gap-1.5 cursor-pointer shadow-md ${isSelfCreatedJourney
+                  ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-200'
+                  : 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200'
+                  }`}
+              >
+                {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+                  isSelfCreatedJourney ? <Trash2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />
+                )}
+                <span>{isSelfCreatedJourney ? 'Ya, Hapus & Batalkan' : 'Ya, Batalkan Klaim'}</span>
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Image EXIF Metadata Viewer Modal */}
+        {selectedExifImage && (
+          <ImageExifViewer
+            imageUrl={selectedExifImage.url}
+            title={selectedExifImage.title}
+            activityDate={formDate}
+            isOpen={Boolean(selectedExifImage)}
+            onClose={() => setSelectedExifImage(null)}
+          />
         )}
 
       </div>
@@ -2168,7 +2633,7 @@ export default function JourneyReportPage() {
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center bg-slate-50">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
       }
     >

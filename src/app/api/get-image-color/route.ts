@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!res.ok) {
-      return NextResponse.json({ error: 'Failed to fetch image' }, { status: res.status });
+      return NextResponse.json({ error: 'Failed to fetch image', fallback: true }, { status: 200 });
     }
 
     const contentType = res.headers.get('content-type') || '';

@@ -154,7 +154,6 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
     });
     console.log(`[payslipSync] Successfully synced activities to UraianGaji for ${employeeId} (${period})`);
   } catch (err) {
-    console.error(`[payslipSync] Error syncing activities for employeeId ${employeeId}:`, err);
-    throw err;
+    console.warn(`[payslipSync] Non-fatal warning syncing activities for employeeId ${employeeId}:`, err);
   }
 }

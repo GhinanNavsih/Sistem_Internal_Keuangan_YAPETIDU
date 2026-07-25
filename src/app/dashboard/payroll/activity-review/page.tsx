@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
+import { ImageExifViewer } from '@/components/ImageExifViewer';
 import {
   Card,
   CardContent,
@@ -68,21 +69,55 @@ import {
 
 const loadGoogleMapsScript = (callback: () => void) => {
   if (typeof window === 'undefined') return;
-  if ((window as any).google) {
+  const g = (window as any).google;
+  if (g && g.maps && g.maps.Map) {
     callback();
     return;
   }
-  const existingScript = document.getElementById('googleMapsScript');
+
+  const onScriptLoad = async () => {
+    const googleObj = (window as any).google;
+    if (googleObj && googleObj.maps && googleObj.maps.importLibrary) {
+      try {
+        const [mapsLib, placesLib, geocodingLib, markerLib] = await Promise.all([
+          googleObj.maps.importLibrary('maps'),
+          googleObj.maps.importLibrary('places'),
+          googleObj.maps.importLibrary('geocoding'),
+          googleObj.maps.importLibrary('marker'),
+        ]);
+        if (mapsLib) Object.assign(googleObj.maps, mapsLib);
+        if (geocodingLib) Object.assign(googleObj.maps, geocodingLib);
+        if (markerLib) Object.assign(googleObj.maps, markerLib);
+        if (placesLib) {
+          googleObj.maps.places = googleObj.maps.places || {};
+          Object.assign(googleObj.maps.places, placesLib);
+        }
+      } catch (e) {
+        console.error('Error importing Google Maps libraries:', e);
+      }
+    }
+    callback();
+  };
+
+  const existingScript = document.getElementById('googleMapsScript') as HTMLScriptElement | null;
   if (existingScript) {
-    existingScript.addEventListener('load', callback);
+    if (existingScript.dataset.loaded === 'true') {
+      onScriptLoad();
+    } else {
+      existingScript.addEventListener('load', onScriptLoad);
+    }
     return;
   }
+
   const script = document.createElement('script');
   script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}&libraries=places`;
   script.id = 'googleMapsScript';
   script.async = true;
   script.defer = true;
-  script.addEventListener('load', callback);
+  script.addEventListener('load', async () => {
+    script.dataset.loaded = 'true';
+    await onScriptLoad();
+  });
   document.head.appendChild(script);
 };
 import { db } from '@/lib/firebase';
@@ -144,6 +179,7 @@ interface ActivityReport {
   extraDistanceKm?: number;
   extraOperationalCost?: number;
   actualMealAllowance?: number;
+  ndalemMealMoneyReceived?: number;
   positiveReimburseDelta?: number;
   extraActivities?: any[];
   vehicleRate?: number;
@@ -158,6 +194,7 @@ interface ActivityReport {
   unspentCash?: number;
   remainingUnspentCash?: number;
   baseDriverWage?: number;
+  submittedFeeEstimate?: number;
   componentJarak?: number;
   componentWaktu?: number;
   nightPremium?: number;
@@ -340,6 +377,7 @@ export default function ActivityReviewPage() {
   const [auditPoints, setAuditPoints] = useState<string[]>([]);
   const [isManualDistanceOverride, setIsManualDistanceOverride] = useState<boolean>(false);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
+  const [selectedExifImage, setSelectedExifImage] = useState<{ url: string; title: string } | null>(null);
 
   // Google Maps Location Picker Modal state
   const [showMapSelector, setShowMapSelector] = useState(false);
@@ -647,8 +685,15 @@ export default function ActivityReviewPage() {
     } catch {
       actualJourneyDurationHours = 0;
     }
-    const actualMeal = getMealAllowanceForHours(actualJourneyDurationHours);
-    const deltaMeal = Math.max(0, actualMeal - baselineMeal);
+    const ndalemMealMoney = auditActivity.ndalemMealMoneyReceived ?? 0;
+    const actualMeal = getMealAllowanceForDuration(
+      actualJourneyDurationHours,
+      auditVehicleType,
+      ndalemMealMoney,
+    );
+    const deltaMeal = auditVehicleType === 'Ndalem'
+      ? actualMeal
+      : Math.max(0, actualMeal - baselineMeal);
     const extraOps = 0; // Mileage distance is compensated via componentJarak in upahBersih, not cash reimbursement
 
     const componentJarak = Math.ceil(auditDistanceKm * 300);
@@ -1567,7 +1612,11 @@ export default function ActivityReviewPage() {
                             {activity.jobCategory === 'SOPIR' ? (
                               <div className="flex flex-col">
                                 <span className="text-sm font-black text-emerald-600">
-                                  {fmtRp(activity.upahBersih || 0)}
+                                  {fmtRp(
+                                    activity.status === 'approved'
+                                      ? (activity.upahBersih || 0)
+                                      : (activity.submittedFeeEstimate ?? activity.baseDriverWage ?? calculateDriverNetWage(activity.distanceKm || 0, activity.durationHours || 0, activity.nightCount || 0))
+                                  )}
                                 </span>
                                 {(activity.reimburseDelta || 0) > 0 && (
                                   <span className="text-[10px] text-blue-600 font-bold">
@@ -1913,22 +1962,21 @@ export default function ActivityReviewPage() {
                     )}
                   </div>
 
-                  {/* Receipt Attachments */}
+                  {/* Receipt Attachments with EXIF Audit Viewer */}
                   {(auditActivity.fuelReceiptUrl || auditActivity.tollReceiptUrl) && (
                     <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200/60">
                       {auditActivity.fuelReceiptUrl && (
                         <div className="flex flex-wrap gap-1.5 items-center">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Bukti BBM:</span>
                           {auditActivity.fuelReceiptUrl.split(',').filter(Boolean).map((url, idx, arr) => (
-                            <a
+                            <button
                               key={idx}
-                              href={url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[10px] font-extrabold text-emerald-700 hover:text-emerald-900 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs"
+                              type="button"
+                              onClick={() => setSelectedExifImage({ url, title: `Bukti BBM ${arr.length > 1 ? `#${idx + 1}` : ''}` })}
+                              className="text-[10px] font-extrabold text-emerald-800 hover:bg-emerald-100 bg-emerald-50 border border-emerald-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                             >
-                              📄 Lihat Bukti BBM {arr.length > 1 ? `#${idx + 1}` : ''}
-                            </a>
+                              🔍 Audit Metadata & Foto BBM {arr.length > 1 ? `#${idx + 1}` : ''}
+                            </button>
                           ))}
                         </div>
                       )}
@@ -1936,15 +1984,14 @@ export default function ActivityReviewPage() {
                         <div className="flex flex-wrap gap-1.5 items-center">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Bukti Tol & Parkir:</span>
                           {auditActivity.tollReceiptUrl.split(',').filter(Boolean).map((url, idx, arr) => (
-                            <a
+                            <button
                               key={idx}
-                              href={url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[10px] font-extrabold text-indigo-700 hover:text-indigo-900 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs"
+                              type="button"
+                              onClick={() => setSelectedExifImage({ url, title: `Bukti Tol & Parkir ${arr.length > 1 ? `#${idx + 1}` : ''}` })}
+                              className="text-[10px] font-extrabold text-indigo-800 hover:bg-indigo-100 bg-indigo-50 border border-indigo-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                             >
-                              📄 Lihat Bukti Tol {arr.length > 1 ? `#${idx + 1}` : ''}
-                            </a>
+                              🔍 Audit Metadata & Foto Tol {arr.length > 1 ? `#${idx + 1}` : ''}
+                            </button>
                           ))}
                         </div>
                       )}
@@ -2467,6 +2514,17 @@ export default function ActivityReviewPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* EXIF Metadata Audit Modal for Kepala SatKer */}
+      {selectedExifImage && (
+        <ImageExifViewer
+          imageUrl={selectedExifImage.url}
+          title={selectedExifImage.title}
+          activityDate={auditActivity?.activityDate}
+          isOpen={Boolean(selectedExifImage)}
+          onClose={() => setSelectedExifImage(null)}
+        />
+      )}
     </div>
   );
 }

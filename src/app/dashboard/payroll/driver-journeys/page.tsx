@@ -46,8 +46,13 @@ import {
   Pencil,
   Calendar,
   XCircle,
+  CalendarDays,
+  UserCheck,
+  Users,
+  Check,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
+import { DriverPiketSchedule, PIKET_STATIONS, PiketStationKey } from '@/lib/payroll/driverPiket';
 import {
   collection,
   query,
@@ -116,21 +121,55 @@ function getJourneyDate(j: any): string {
 
 const loadGoogleMapsScript = (callback: () => void) => {
   if (typeof window === 'undefined') return;
-  if ((window as any).google) {
+  const g = (window as any).google;
+  if (g && g.maps && g.maps.Map) {
     callback();
     return;
   }
-  const existingScript = document.getElementById('googleMapsScript');
+
+  const onScriptLoad = async () => {
+    const googleObj = (window as any).google;
+    if (googleObj && googleObj.maps && googleObj.maps.importLibrary) {
+      try {
+        const [mapsLib, placesLib, geocodingLib, markerLib] = await Promise.all([
+          googleObj.maps.importLibrary('maps'),
+          googleObj.maps.importLibrary('places'),
+          googleObj.maps.importLibrary('geocoding'),
+          googleObj.maps.importLibrary('marker'),
+        ]);
+        if (mapsLib) Object.assign(googleObj.maps, mapsLib);
+        if (geocodingLib) Object.assign(googleObj.maps, geocodingLib);
+        if (markerLib) Object.assign(googleObj.maps, markerLib);
+        if (placesLib) {
+          googleObj.maps.places = googleObj.maps.places || {};
+          Object.assign(googleObj.maps.places, placesLib);
+        }
+      } catch (e) {
+        console.error('Error importing Google Maps libraries:', e);
+      }
+    }
+    callback();
+  };
+
+  const existingScript = document.getElementById('googleMapsScript') as HTMLScriptElement | null;
   if (existingScript) {
-    existingScript.addEventListener('load', callback);
+    if (existingScript.dataset.loaded === 'true') {
+      onScriptLoad();
+    } else {
+      existingScript.addEventListener('load', onScriptLoad);
+    }
     return;
   }
+
   const script = document.createElement('script');
   script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}&libraries=places`;
   script.id = 'googleMapsScript';
   script.async = true;
   script.defer = true;
-  script.addEventListener('load', callback);
+  script.addEventListener('load', async () => {
+    script.dataset.loaded = 'true';
+    await onScriptLoad();
+  });
   document.head.appendChild(script);
 };
 
@@ -164,6 +203,79 @@ function DriverJourneysContent() {
   // Driver Assignment States
   const [drivers, setDrivers] = useState<any[]>([]);
   const [assignedDriverId, setAssignedDriverId] = useState<string>('');
+
+  // Piket Schedule States
+  const [activeTab, setActiveTab] = useState<'journeys' | 'piket'>('journeys');
+  const [piketSchedules, setPiketSchedules] = useState<DriverPiketSchedule[]>([]);
+  const [selectedPiketDate, setSelectedPiketDate] = useState<string | null>(null);
+  const [showPiketDialog, setShowPiketDialog] = useState(false);
+  const [savingPiket, setSavingPiket] = useState(false);
+
+  // Real-time listener for Driver Piket Schedules in current period
+  useEffect(() => {
+    const q = query(
+      collection(db, 'DriverPiketSchedules'),
+      where('period', '==', periodToken)
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as DriverPiketSchedule));
+        setPiketSchedules(list);
+      },
+      (err) => {
+        console.error('Error fetching driver piket schedules:', err);
+      }
+    );
+    return () => unsub();
+  }, [periodToken]);
+
+  const daysInMonth = useMemo(() => {
+    return new Date(year, month, 0).getDate();
+  }, [year, month]);
+
+  const firstDayOffset = useMemo(() => {
+    const day = new Date(year, month - 1, 1).getDay();
+    return (day + 6) % 7; // Monday = 0, ..., Sunday = 6
+  }, [year, month]);
+
+  const getScheduleForStation = (dateStr: string, stationKey: PiketStationKey, fallbackIdx: number) => {
+    const byKey = piketSchedules.find((s) => s.date === dateStr && s.stationKey === stationKey);
+    if (byKey) return byKey;
+    const unkeyed = piketSchedules.filter((s) => s.date === dateStr && !s.stationKey);
+    return unkeyed[fallbackIdx] || null;
+  };
+
+  const assignDriverToStation = async (stationKey: PiketStationKey, stationName: string, driverId: string) => {
+    if (!selectedPiketDate) return;
+    setSavingPiket(true);
+    try {
+      const docId = `PIKET-${selectedPiketDate}-${stationKey}`;
+      const docRef = doc(db, 'DriverPiketSchedules', docId);
+
+      if (!driverId || driverId === 'unassigned') {
+        await deleteDoc(docRef);
+      } else {
+        const selectedDriver = drivers.find((d) => d.id === driverId);
+        await setDoc(docRef, {
+          id: docId,
+          period: periodToken,
+          date: selectedPiketDate,
+          stationKey,
+          stationName,
+          driverId,
+          driverName: selectedDriver?.name || selectedDriver?.displayName || 'Driver',
+          assignedBy: profile?.displayName || profile?.email || 'Kepala SatKer',
+          createdAt: serverTimestamp(),
+        });
+      }
+    } catch (err) {
+      console.error('Error assigning driver to piket station:', err);
+      setMessage({ type: 'error', text: 'Gagal memperbarui jadwal piket.' });
+    } finally {
+      setSavingPiket(false);
+    }
+  };
 
   useEffect(() => {
     const fetchDrivers = async () => {
@@ -663,24 +775,52 @@ function DriverJourneysContent() {
         </div>
       )}
 
-      {/* List Table */}
-      <Card className="border-slate-200/60 shadow-sm rounded-2xl overflow-hidden bg-white">
-        <CardHeader className="border-b border-slate-100 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <CardTitle className="text-sm font-extrabold text-slate-800">Daftar Perjalanan</CardTitle>
-            <CardDescription className="text-xs mt-0.5">Total {filteredJourneys.length} perjalanan dalam periode ini.</CardDescription>
-          </div>
+      {/* Tab Switcher */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+        <button
+          onClick={() => setActiveTab('journeys')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+            activeTab === 'journeys'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Compass className="w-4 h-4" />
+          Daftar Perjalanan SPJ ({filteredJourneys.length})
+        </button>
 
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <Input
-              placeholder="Cari kegiatan/tujuan/driver..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-9 rounded-xl text-xs bg-slate-50 border-slate-200 focus:bg-white transition-all"
-            />
-          </div>
-        </CardHeader>
+        <button
+          onClick={() => setActiveTab('piket')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+            activeTab === 'piket'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <CalendarDays className="w-4 h-4" />
+          Jadwal Piket Sopir ({piketSchedules.length} Shift)
+        </button>
+      </div>
+
+      {activeTab === 'journeys' ? (
+        /* List Table */
+        <Card className="border-slate-200/60 shadow-sm rounded-2xl overflow-hidden bg-white">
+          <CardHeader className="border-b border-slate-100 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-sm font-extrabold text-slate-800">Daftar Perjalanan</CardTitle>
+              <CardDescription className="text-xs mt-0.5">Total {filteredJourneys.length} perjalanan dalam periode ini.</CardDescription>
+            </div>
+
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                placeholder="Cari kegiatan/tujuan/driver..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 rounded-xl text-xs bg-slate-50 border-slate-200 focus:bg-white transition-all"
+              />
+            </div>
+          </CardHeader>
 
         <CardContent className="p-0">
           {loading ? (
@@ -847,6 +987,179 @@ function DriverJourneysContent() {
           )}
         </CardContent>
       </Card>
+      ) : (
+        /* Piket Calendar Card */
+        <Card className="border-slate-200/60 shadow-sm rounded-2xl overflow-hidden bg-white">
+          <CardHeader className="border-b border-slate-100 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
+                <CalendarDays className="w-4.5 h-4.5 text-indigo-600" />
+                Jadwal Standby / Piket Sopir ({periodToken})
+              </CardTitle>
+              <CardDescription className="text-xs mt-0.5">
+                Klik pada tanggal di bawah untuk menentukan sopir piket yang bertugas. Driver yang memiliki piket aktif dapat membuat SPJ sendiri (Ndalem).
+              </CardDescription>
+            </div>
+          </CardHeader>
+
+          <CardContent className="p-4 sm:p-6 space-y-4">
+            {/* Calendar Grid Header */}
+            <div className="grid grid-cols-7 gap-2 text-center text-xs font-bold text-slate-500 pb-2 border-b border-slate-100">
+              <div>Senin</div>
+              <div>Selasa</div>
+              <div>Rabu</div>
+              <div>Kamis</div>
+              <div>Jumat</div>
+              <div>Sabtu</div>
+              <div>Minggu</div>
+            </div>
+
+            {/* Calendar Days Grid */}
+            <div className="grid grid-cols-7 gap-2">
+              {/* Blank leading offset cells */}
+              {Array.from({ length: firstDayOffset }).map((_, idx) => (
+                <div key={`offset-${idx}`} className="h-24 sm:h-28 rounded-xl bg-slate-50/50 border border-dashed border-slate-100" />
+              ))}
+
+              {/* Day cells */}
+              {Array.from({ length: daysInMonth }).map((_, idx) => {
+                const dayNum = idx + 1;
+                const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+                const assigned = piketSchedules.filter((s) => s.date === dateStr);
+                const isToday = new Date().toISOString().slice(0, 10) === dateStr;
+
+                return (
+                  <div
+                    key={dateStr}
+                    onClick={() => {
+                      setSelectedPiketDate(dateStr);
+                      setShowPiketDialog(true);
+                    }}
+                    className={`min-h-[145px] sm:min-h-[165px] rounded-xl border p-2 flex flex-col justify-between transition-all cursor-pointer group hover:border-indigo-400 hover:shadow-md ${
+                      isToday
+                        ? 'bg-indigo-50/50 border-indigo-300 ring-2 ring-indigo-500/20'
+                        : assigned.length > 0
+                        ? 'bg-white border-slate-200'
+                        : 'bg-slate-50/70 border-slate-100 hover:bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-1 mb-1">
+                      <span className={`text-xs font-black ${isToday ? 'text-indigo-600' : 'text-slate-700'}`}>
+                        {dayNum}
+                      </span>
+                      {assigned.length > 0 ? (
+                        <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-200 text-[9px] font-extrabold px-1.5 py-0">
+                          {assigned.length}/5 Piket
+                        </Badge>
+                      ) : (
+                        <span className="text-[9px] text-slate-300 font-semibold">Kosong</span>
+                      )}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-1 scrollbar-none">
+                      {PIKET_STATIONS.map((station, sIdx) => {
+                        const sched = getScheduleForStation(dateStr, station.key, sIdx);
+                        return (
+                          <div
+                            key={station.key}
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border flex items-center justify-between gap-1 transition-all ${
+                              sched
+                                ? 'bg-emerald-50 text-emerald-900 border-emerald-200/80 shadow-xs'
+                                : 'bg-slate-50/60 text-slate-400 border-slate-100 hover:bg-slate-100/80'
+                            }`}
+                            title={sched ? `${station.name}: ${sched.driverName}` : `${station.name}: Belum Ditugaskan`}
+                          >
+                            <span className="truncate text-[9px] font-black text-slate-500 uppercase tracking-tight w-14 shrink-0">
+                              {station.name}
+                            </span>
+                            <span className={`truncate text-[10px] font-bold ${sched ? 'text-emerald-800' : 'text-slate-300 font-normal italic'}`}>
+                              {sched ? sched.driverName : '—'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="text-[9px] font-extrabold text-indigo-600 group-hover:opacity-100 transition-opacity flex items-center gap-1 justify-end pt-1 border-t border-slate-100">
+                      <span>+ Atur Piket</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Dialog for Assigning Drivers to 5 Piket Stations on Selected Date */}
+      <Dialog open={showPiketDialog} onOpenChange={setShowPiketDialog}>
+        <DialogContent className="max-w-lg rounded-3xl p-6 sm:p-7">
+          <DialogHeader className="border-b border-slate-100 pb-3">
+            <DialogTitle className="text-base font-black text-slate-800 flex items-center gap-2">
+              <CalendarDays className="w-5 h-5 text-indigo-600" />
+              Kelola 5 Stasiun Piket ({selectedPiketDate ? formatIndonesianDate(selectedPiketDate) : ''})
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 mt-0.5">
+              Tentukan sopir bertugas pada setiap stasiun piket untuk tanggal ini.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 my-3">
+            {PIKET_STATIONS.map((station, sIdx) => {
+              const currentSched = selectedPiketDate ? getScheduleForStation(selectedPiketDate, station.key, sIdx) : null;
+              const selectedDriverId = currentSched?.driverId || 'unassigned';
+
+              return (
+                <div
+                  key={station.key}
+                  className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-xs shrink-0">
+                      <Compass className="w-4 h-4 text-indigo-600" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-slate-800">{station.name}</div>
+                      <div className="text-[10px] text-slate-400 font-semibold">Stasiun Standby Sopir</div>
+                    </div>
+                  </div>
+
+                  <Select
+                    value={selectedDriverId}
+                    disabled={savingPiket}
+                    onValueChange={(val: string | null) => {
+                      assignDriverToStation(station.key, station.name, val || 'unassigned');
+                    }}
+                  >
+                    <SelectTrigger className="w-full sm:w-[210px] h-9 text-xs font-bold bg-white rounded-xl border border-slate-200">
+                      <SelectValue placeholder="-- Pilih Sopir --" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                      <SelectItem value="unassigned" className="text-xs text-slate-400 italic">
+                        -- Belum Ditugaskan --
+                      </SelectItem>
+                      {drivers.map((d) => (
+                        <SelectItem key={d.id} value={d.id} className="text-xs font-bold">
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            })}
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-slate-100">
+            <Button
+              onClick={() => setShowPiketDialog(false)}
+              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-10 cursor-pointer"
+            >
+              Selesai & Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Creation Modal */}
       <Dialog open={showAddForm} onOpenChange={(open) => {

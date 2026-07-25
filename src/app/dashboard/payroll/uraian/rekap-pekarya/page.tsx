@@ -43,6 +43,7 @@ import {
   sumApprovedActivitySpj,
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
+import { DriverPiketSchedule, countDriverPiketInPeriod } from '@/lib/payroll/driverPiket';
 
 export default function RekapPekaryaPage() {
   const router = useRouter();
@@ -311,6 +312,13 @@ export default function RekapPekaryaPage() {
     ).length;
   }, [approvedActivityReports]);
 
+  const [driverPiketSchedules, setDriverPiketSchedules] = useState<DriverPiketSchedule[]>([]);
+
+  const getComputedSopirPiketCount = useCallback((empId: string) => {
+    const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+    return countDriverPiketInPeriod(empId, periodToken, driverPiketSchedules);
+  }, [year, month, driverPiketSchedules]);
+
   // ── File states ──
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -343,6 +351,17 @@ export default function RekapPekaryaPage() {
         const teamsSnap = await getDocs(collection(db, 'SatpamShiftTeams'));
         const ids = new Set(teamsSnap.docs.map(d => d.data().ketuaShiftId).filter(Boolean) as string[]);
         setKetuaShiftIds(ids);
+
+        if (category === 'SOPIR') {
+          const piketPeriod = `${year}-${String(month).padStart(2, '0')}`;
+          const piketQ = query(
+            collection(db, 'DriverPiketSchedules'),
+            where('period', '==', piketPeriod)
+          );
+          const piketSnap = await getDocs(piketQ);
+          const piketList = piketSnap.docs.map(d => ({ id: d.id, ...d.data() } as DriverPiketSchedule));
+          setDriverPiketSchedules(piketList);
+        }
 
         const q2 = query(collection(db, 'Employees_BlueCollar'), where('employment.status', '==', 'active'), where('employment.jobCategory', '==', category));
         const empSnap = await getDocs(q2);
@@ -581,6 +600,9 @@ export default function RekapPekaryaPage() {
           storedValues.tunjanganJabatan = ketuaShiftIds.has(emp.employeeId) ? 100000 : 0;
         }
       }
+      if (category === 'SOPIR' && storedValues.piket === undefined) {
+        storedValues.piket = getComputedSopirPiketCount(emp.employeeId);
+      }
       const storedCounts: Record<string, number> = {};
       const empCols = [...(REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN), ...customColumns];
       empCols.forEach(col => {
@@ -699,6 +721,9 @@ export default function RekapPekaryaPage() {
             rawVal = ketuaShiftIds.has(emp.employeeId) ? 100000 : 0;
           }
         }
+        if (category === 'SOPIR' && col.key === 'piket' && rawValues[col.key] === undefined) {
+          rawVal = getComputedSopirPiketCount(emp.employeeId);
+        }
         if (rawVal === 0) return { col, count: 0, value: 0, isDual: false };
         const isDual = (DUAL_MAP_KEYS as readonly string[]).includes(col.key) && !!col.multiplier;
         if (isDual && col.multiplier) {
@@ -734,6 +759,9 @@ export default function RekapPekaryaPage() {
         if (computedValues.tunjanganJabatan === undefined) {
           computedValues.tunjanganJabatan = ketuaShiftIds.has(emp.employeeId) ? 100000 : 0;
         }
+      }
+      if (category === 'SOPIR' && computedValues.piket === undefined) {
+        computedValues.piket = getComputedSopirPiketCount(emp.employeeId);
       }
       const computedCounts: Record<string, number> = {};
       const baseCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
@@ -1084,13 +1112,16 @@ export default function RekapPekaryaPage() {
                           const isSpj = col.key === 'spj';
                           const isSatpamShift = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'].includes(col.key);
                           const isTunjanganJabatan = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && col.key === 'tunjanganJabatan';
+                          const isSopirPiket = category === 'SOPIR' && col.key === 'piket';
                           const cellValue = isSpj
                             ? (getComputedSpj(emp.employeeId) || 0)
                             : (isSatpamShift && tableData[emp.employeeId]?.[col.key] === undefined)
                               ? (getComputedSatpamShiftCount(emp.employeeId, col.key) || 0)
                               : (isTunjanganJabatan && tableData[emp.employeeId]?.[col.key] === undefined)
                                 ? (ketuaShiftIds.has(emp.employeeId) ? 100000 : 0)
-                                : (tableData[emp.employeeId]?.[col.key] ?? '');
+                                : (isSopirPiket && tableData[emp.employeeId]?.[col.key] === undefined)
+                                  ? (getComputedSopirPiketCount(emp.employeeId) || 0)
+                                  : (tableData[emp.employeeId]?.[col.key] ?? '');
                           return (
                             <td
                               key={col.key}
@@ -1104,7 +1135,7 @@ export default function RekapPekaryaPage() {
                                 onChange={(e) => updateCell(emp.employeeId, col.key, e.target.value)}
                                 disabled={isSpj}
                                 title={isSpj ? 'SPJ dihitung otomatis dari kegiatan yang disetujui.' : undefined}
-                                className={`h-10 text-center font-bold transition-all ${isSpj || isSatpamShift || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
+                                className={`h-10 text-center font-bold transition-all ${isSpj || isSatpamShift || isSopirPiket || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
                                   ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
                                   : hasScanData
                                     ? 'rounded-xl border-slate-400 bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'

@@ -398,7 +398,11 @@ export async function POST(request: NextRequest) {
                 journeyBefore.mealAllowance > 0
               ? journeyBefore.mealAllowance
               : getMealAllowanceForDuration(authorizedDurationHours, vehicleType);
-        const preAuthorizedToll = Number(journeyBefore.tollParkingFee || 0);
+        const preAuthorizedToll = Number(
+          journeyBefore.preAuthorizedToll !== undefined && journeyBefore.preAuthorizedToll !== null
+            ? journeyBefore.preAuthorizedToll
+            : (journeyBefore.status === 'claimed' ? journeyBefore.tollParkingFee || 0 : 0)
+        );
         const baseOperationalCost =
           typeof journeyBefore.baseOperationalCost === 'number'
             ? journeyBefore.baseOperationalCost
@@ -410,13 +414,18 @@ export async function POST(request: NextRequest) {
               );
         const fuelFee = Number(driverData.fuelFee || 0);
         const tollParkingFee = Number(driverData.tollParkingFee || 0);
-        const actualMealAllowance = Number(driverData.actualMealAllowance || 0);
+        const ndalemMealMoneyReceived = Number(driverData.ndalemMealMoneyReceived ?? 0);
+        const actualMealAllowance = getMealAllowanceForDuration(
+          Number(driverData.durationHours || 0),
+          vehicleType,
+          ndalemMealMoneyReceived,
+        );
         const extraFuelCost =
           vehicleType === 'Ndalem' ? 0 : Math.max(0, fuelFee - baseOperationalCost);
         const extraTollCost = Math.max(0, tollParkingFee - preAuthorizedToll);
         const extraMealAllowance =
           vehicleType === 'Ndalem'
-            ? 0
+            ? actualMealAllowance
             : Math.max(0, actualMealAllowance - preAuthorizedMeal);
         const positiveReimburseDelta =
           extraFuelCost + extraTollCost + extraMealAllowance;
@@ -559,6 +568,126 @@ export async function POST(request: NextRequest) {
     });
 
     return Response.json(result, { status: 201 });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const actor = await requireAuthenticatedProfile(request);
+    const { searchParams } = new URL(request.url);
+    const reportId = searchParams.get('reportId');
+    const journeyIdParam = searchParams.get('journeyId');
+
+    if (!reportId && !journeyIdParam) {
+      throw new HttpError(400, 'Parameter reportId atau journeyId harus diisi.');
+    }
+
+    const employeeId = actor.linkedEmployeeId;
+    if (!employeeId) {
+      throw new HttpError(403, 'Profil Anda belum terhubung dengan data pegawai.');
+    }
+
+    const result = await adminDb.runTransaction(async (transaction) => {
+      // ── READ PHASE ──
+      let targetReportRef: FirebaseFirestore.DocumentReference | null = null;
+      let reportData: FirebaseFirestore.DocumentData | null = null;
+
+      if (reportId) {
+        targetReportRef = adminDb.collection('ActivityReports').doc(reportId);
+        const reportSnap = await transaction.get(targetReportRef);
+        if (reportSnap.exists) {
+          reportData = reportSnap.data()!;
+        }
+      }
+
+      if (!reportData && journeyIdParam) {
+        const arQuery = adminDb.collection('ActivityReports').where('journeyId', '==', journeyIdParam);
+        const arSnap = await transaction.get(arQuery);
+        if (!arSnap.empty) {
+          targetReportRef = arSnap.docs[0].ref;
+          reportData = arSnap.docs[0].data();
+        }
+      }
+
+      if (reportData && targetReportRef) {
+        if (reportData.employeeId !== employeeId) {
+          throw new HttpError(403, 'Laporan kegiatan ini bukan milik Anda.');
+        }
+        if (isImmutablePayrollStatus(reportData.status)) {
+          throw new HttpError(409, 'Laporan yang telah disetujui tidak dapat dihapus.');
+        }
+      }
+
+      const targetJourneyId = journeyIdParam || (reportData ? reportData.journeyId : null);
+      let jRef: FirebaseFirestore.DocumentReference | null = null;
+      let jData: FirebaseFirestore.DocumentData | null = null;
+
+      if (targetJourneyId) {
+        jRef = adminDb.collection('DriverJourneys').doc(targetJourneyId);
+        const jSnap = await transaction.get(jRef);
+        if (jSnap.exists) {
+          jData = jSnap.data()!;
+        }
+      }
+
+      // ── WRITE PHASE ──
+      if (reportData && targetReportRef) {
+        transaction.delete(targetReportRef);
+        const indexRef = adminDb.collection('ActivityReportsIndex').doc(targetReportRef.id);
+        transaction.delete(indexRef);
+      }
+
+      if (jData && jRef && targetJourneyId) {
+        const owns = jData.employeeId === employeeId || jData.claimedBy === actor.uid || jData.assignedTo === employeeId;
+        if (owns) {
+          const isSelfCreated = jData.isSelfCreatedPiketSpj || targetJourneyId.startsWith('JRN-PIKET-') || jData.vehicleName === 'Ndalem';
+          if (isSelfCreated) {
+            transaction.delete(jRef);
+          } else {
+            transaction.update(jRef, {
+              status: 'unassigned',
+              activityDocId: admin.firestore.FieldValue.delete(),
+              employeeId: admin.firestore.FieldValue.delete(),
+              employeeName: admin.firestore.FieldValue.delete(),
+              claimedBy: admin.firestore.FieldValue.delete(),
+              claimedByName: admin.firestore.FieldValue.delete(),
+              claimedAt: admin.firestore.FieldValue.delete(),
+              draftTimeStart: admin.firestore.FieldValue.delete(),
+              draftTimeEnd: admin.firestore.FieldValue.delete(),
+              draftNightCount: admin.firestore.FieldValue.delete(),
+              draftFuelFee: admin.firestore.FieldValue.delete(),
+              draftTollParkingFee: admin.firestore.FieldValue.delete(),
+              draftFuelReceiptUrl: admin.firestore.FieldValue.delete(),
+              draftTollReceiptUrl: admin.firestore.FieldValue.delete(),
+              draftExtraActivities: admin.firestore.FieldValue.delete(),
+              draftCalculatedDistanceKm: admin.firestore.FieldValue.delete(),
+              draftCalculatedDurationHours: admin.firestore.FieldValue.delete(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      }
+
+      transaction.create(
+        newFinancialAuditRef(),
+        buildFinancialAuditRecord(actor, {
+          action: 'PEKARYA_ACTIVITY_DELETED',
+          entityType: 'ActivityReport',
+          entityId: reportId || targetJourneyId || 'deleted_report',
+          reason: 'Penghapusan/pembatalan laporan kegiatan Pekarya/Sopir',
+          requestId: `del_${Date.now()}`,
+          before: reportData || null,
+          after: null,
+          metadata: { targetJourneyId },
+        }),
+      );
+
+      return { success: true, message: 'Laporan berhasil dihapus.' };
+    });
+
+    return Response.json(result, { status: 200 });
   } catch (error) {
     return errorResponse(error);
   }

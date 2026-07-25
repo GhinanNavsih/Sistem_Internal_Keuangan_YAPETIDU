@@ -13,7 +13,13 @@ service firebase.storage {
     }
 
     function hasActiveProfile() {
-      return signedIn() && profile().disabled != true;
+      // Some historical profiles predate the disabled flag. Treat a missing
+      // flag as enabled while still denying explicitly disabled accounts.
+      return signedIn() &&
+        firestore.exists(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ) &&
+        profile().get('disabled', false) == false;
     }
 
     function roleIs(role) {
@@ -60,19 +66,25 @@ service firebase.storage {
     }
 
     match /receipts/{journeyId}/{filename} {
+      function journeyExists() {
+        return firestore.exists(
+          /databases/(default)/documents/DriverJourneys/$(journeyId)
+        );
+      }
+
       function journey() {
         return firestore.get(
           /databases/(default)/documents/DriverJourneys/$(journeyId)
         ).data;
       }
-      allow read: if isFinance() || roleIs('satker_head') ||
-        (hasActiveProfile() && journey().employeeId == profile().linkedEmployeeId);
+      allow read: if journeyExists() &&
+        (isFinance() || roleIs('satker_head') ||
+          (hasActiveProfile() && journey().get('employeeId', '') == profile().get('linkedEmployeeId', '')));
       allow create, update: if
-        (
-          isFinance() ||
+        journeyExists() &&
+        (isFinance() ||
           roleIs('satker_head') ||
-          (hasActiveProfile() && journey().employeeId == profile().linkedEmployeeId)
-        ) &&
+          (hasActiveProfile() && journey().get('employeeId', '') == profile().get('linkedEmployeeId', ''))) &&
         request.resource.size < 5 * 1024 * 1024 &&
         request.resource.contentType.matches('image/.*');
       allow delete: if false;

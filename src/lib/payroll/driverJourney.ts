@@ -15,11 +15,31 @@ export function assertNightCount(value: unknown): asserts value is number {
   }
 }
 
+export function getMealTierCount(hours: number): number {
+  if (!Number.isFinite(hours) || hours <= 0) return 0;
+  const cleanHours = Math.round(hours * 1000) / 1000;
+  const fullDays = Math.floor(cleanHours / 24);
+  const remainingHours = Math.round((cleanHours % 24) * 1000) / 1000;
+  const fullDayMeals = fullDays * 3;
+
+  if (remainingHours <= 2) return fullDayMeals;
+  if (remainingHours <= 6) return fullDayMeals + 1;
+  if (remainingHours <= 12) return fullDayMeals + 2;
+  return fullDayMeals + 3;
+}
+
+export function getNdalemUnpaidMealAllowance(
+  hours: number,
+  ndalemMealMoneyProvided: number = 0,
+): number {
+  return getMealAllowanceForDuration(hours, 'Ndalem', ndalemMealMoneyProvided);
+}
+
 export function getMealAllowanceForDuration(
   hours: number,
   vehicleName?: string,
+  ndalemMealMoneyProvided?: number,
 ): number {
-  if (vehicleName === 'Ndalem') return 0;
   if (!Number.isFinite(hours) || hours <= 0) return 0;
 
   // Round to 3 decimal places to prevent floating point drift (e.g., 2.0000000000000004)
@@ -28,11 +48,18 @@ export function getMealAllowanceForDuration(
   const remainingHours = Math.round((cleanHours % 24) * 1000) / 1000;
   const fullDayAllowance = fullDays * DAILY_MEAL_ALLOWANCE;
 
-  // Journeys 2 hours or under (<= 2h) receive 0 meal allowance reimbursement (duration is compensated via Upah Bersih duration rate).
-  if (remainingHours <= 2) return fullDayAllowance;
-  if (remainingHours <= 6) return fullDayAllowance + 20_000;
-  if (remainingHours <= 12) return fullDayAllowance + 40_000;
-  return fullDayAllowance + 60_000;
+  let totalRights = 0;
+  if (remainingHours <= 2) totalRights = fullDayAllowance;
+  else if (remainingHours <= 6) totalRights = fullDayAllowance + 20_000;
+  else if (remainingHours <= 12) totalRights = fullDayAllowance + 40_000;
+  else totalRights = fullDayAllowance + 60_000;
+
+  if (vehicleName === 'Ndalem') {
+    const moneyReceived = Math.max(0, ndalemMealMoneyProvided ?? 0);
+    return Math.max(0, totalRights - moneyReceived);
+  }
+
+  return totalRights;
 }
 
 export function calculateNightPremium(nightCount: number): number {
@@ -88,10 +115,13 @@ export function calculateJourneyElapsedHours(
   nightCount: number,
 ): number {
   assertNightCount(nightCount);
-  const elapsedMinutes =
+  let elapsedMinutes =
     timeToMinutes(timeEnd) -
     timeToMinutes(timeStart) +
     nightCount * 24 * 60;
+  if (elapsedMinutes <= 0 && timeToMinutes(timeEnd) < timeToMinutes(timeStart)) {
+    elapsedMinutes += 24 * 60;
+  }
   if (elapsedMinutes <= 0) {
     throw new Error('Waktu tiba harus setelah waktu berangkat.');
   }
@@ -117,7 +147,7 @@ export function calculateJourneyDateTimeTimings(
   input: JourneyDateTimeInput,
 ): JourneyDateTimeResult {
   const { dateStart, timeStart, timeEnd, isMultiDay } = input;
-  const dateEnd = isMultiDay && input.dateEnd ? input.dateEnd : dateStart;
+  const dateEnd = input.dateEnd && input.dateEnd > dateStart ? input.dateEnd : (isMultiDay && input.dateEnd ? input.dateEnd : dateStart);
 
   if (!dateStart || !timeStart || !timeEnd) {
     return { durationHours: 0, nightCount: 0, dateStart: dateStart || '', dateEnd };
@@ -132,7 +162,7 @@ export function calculateJourneyDateTimeTimings(
 
   let diffMs = endMs - startMs;
 
-  if (!isMultiDay && diffMs < 0) {
+  if (diffMs < 0) {
     return { durationHours: 0, nightCount: 0, dateStart, dateEnd };
   }
 
@@ -145,7 +175,14 @@ export function calculateJourneyDateTimeTimings(
     Math.round((endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24)),
   );
 
-  const nightCount = isMultiDay ? calendarDaysDiff : 0;
+  let nightCount = 0;
+  if (calendarDaysDiff > 0) {
+    const endHour = parseInt(timeEnd.split(':')[0], 10);
+    const arrivesBefore5AM = !isNaN(endHour) && endHour < 5;
+    nightCount = Math.max(0, calendarDaysDiff - (arrivesBefore5AM ? 1 : 0));
+  } else if (isMultiDay) {
+    nightCount = calendarDaysDiff;
+  }
 
   return {
     durationHours,

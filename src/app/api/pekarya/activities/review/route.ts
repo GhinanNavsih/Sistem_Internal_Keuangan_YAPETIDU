@@ -315,11 +315,16 @@ export async function POST(request: NextRequest) {
               error instanceof Error ? error.message : 'Durasi perjalanan tidak valid.',
             );
           }
+          const ndalemMealMoney = Number(before.ndalemMealMoneyReceived ?? 0);
           const actualMealAllowance = getMealAllowanceForDuration(
             actualJourneyDurationHours,
             review.vehicleType,
+            ndalemMealMoney,
           );
-          const mealDelta = Math.max(0, actualMealAllowance - preAuthorizedMeal);
+          const mealDelta =
+            review.vehicleType === 'Ndalem'
+              ? actualMealAllowance
+              : Math.max(0, actualMealAllowance - preAuthorizedMeal);
           const preAuthorizedToll =
             typeof authorizedJourney?.tollParkingFee === 'number'
               ? authorizedJourney.tollParkingFee
