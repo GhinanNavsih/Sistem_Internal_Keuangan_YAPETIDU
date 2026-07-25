@@ -60,6 +60,16 @@ function fmtRp(val: number): string {
   return 'Rp' + Math.round(val || 0).toLocaleString('id-ID');
 }
 
+function dateOnlyFromValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    const timestamp = value as { toDate?: () => Date; seconds?: number };
+    const date = timestamp.toDate?.() || (typeof timestamp.seconds === 'number' ? new Date(timestamp.seconds * 1000) : null);
+    if (date && !Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+  }
+  return '';
+}
+
 interface CompletedJourney {
   id: string;
   activityName: string;
@@ -123,7 +133,7 @@ function JourneyDashboardContent() {
         const d = docSnap.data();
         if (d.status === 'completed' || d.status === 'approved') {
           seenIds.add(docSnap.id);
-          const jDate = d.journeyDate || d.activityDate || d.createdAt || '';
+          const jDate = dateOnlyFromValue(d.journeyDate || d.activityDate || d.createdAt);
           journeyList.push({
             id: docSnap.id,
             activityName: d.activityName || d.purpose || 'Perjalanan Dinas',

@@ -86,7 +86,10 @@ service firebase.storage {
           roleIs('satker_head') ||
           (hasActiveProfile() && journey().get('employeeId', '') == profile().get('linkedEmployeeId', ''))) &&
         request.resource.size < 5 * 1024 * 1024 &&
-        request.resource.contentType.matches('image/.*');
+        (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType == 'application/pdf'
+        );
       allow delete: if false;
     }
 

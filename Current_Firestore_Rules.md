@@ -147,7 +147,7 @@ service cloud.firestore {
     // payslips never inherit later changes because they contain a hashed snapshot.
     match /UraianGaji/{docId} {
       allow read: if signedIn();
-      allow create, update: if isFinanceVerifier() || isSuperAdmin() || isSatkerRole() || signedIn();
+      allow create, update: if isFinanceVerifier() || isSuperAdmin() || isSatkerRole();
       allow delete: if false;
     }
 
@@ -223,8 +223,24 @@ service cloud.firestore {
     }
 
     match /DriverJourneys/{journeyId} {
-      allow read: if signedIn();
-      allow create, update, delete: if signedIn();
+      // Journey mutations are server-only. The API re-checks role, ownership,
+      // payroll period, and the journey state inside Admin-SDK transactions.
+      function canReadDriverJourney() {
+        return isFinanceRole() ||
+          (roleIs('satker_head') && hasCategory('SOPIR')) ||
+          (
+            roleIs('honorer') &&
+            hasCategory('SOPIR') &&
+            (
+              ownsEmployee(resource.data.get('employeeId', '')) ||
+              ownsEmployee(resource.data.get('assignedTo', '')) ||
+              resource.data.get('status', '') in ['unassigned', 'open']
+            )
+          );
+      }
+
+      allow read: if canReadDriverJourney();
+      allow create, update, delete: if false;
     }
 
     match /DriverPiketSchedules/{piketId} {

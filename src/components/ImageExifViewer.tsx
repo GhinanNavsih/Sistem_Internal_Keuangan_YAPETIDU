@@ -68,7 +68,7 @@ export function ImageExifViewer({
 
   if (!isOpen) return null;
 
-  const isPdf = imageUrl.toLowerCase().endsWith('.pdf');
+  const isPdf = /\.pdf(?:[?#]|$)/i.test(imageUrl);
 
   // Check date matching
   let dateMatchStatus: 'match' | 'mismatch' | 'unknown' = 'unknown';

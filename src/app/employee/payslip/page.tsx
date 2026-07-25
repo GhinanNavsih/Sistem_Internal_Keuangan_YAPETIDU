@@ -11,6 +11,7 @@ import {
   collection,
   query,
   where,
+  onSnapshot,
 } from 'firebase/firestore';
 import {
   Card,
@@ -766,12 +767,13 @@ export default function EmployeePayslipPage() {
         // profile, approved activity reports, and their own cooperative data.
         // All queries below are scoped to this employee and never expose an
         // institution-wide payroll collection to the browser.
+        const activityQuery = query(
+          collection(db, 'ActivityReports'),
+          where('employeeId', '==', empId),
+        );
         const activityPromise = isLoyalis
           ? Promise.resolve(null)
-          : getDocs(query(
-            collection(db, 'ActivityReports'),
-            where('employeeId', '==', empId),
-          )).catch((error) => {
+          : getDocs(activityQuery).catch((error) => {
             console.warn('Unable to load approved activity reports for payslip draft:', error);
             return null;
           });
@@ -945,9 +947,24 @@ export default function EmployeePayslipPage() {
       }
     };
 
+    let unsubscribeActivity: (() => void) | undefined;
+    if (profile?.role === 'honorer' && profile.linkedEmployeeId) {
+      const activityQuery = query(
+        collection(db, 'ActivityReports'),
+        where('employeeId', '==', profile.linkedEmployeeId),
+      );
+      unsubscribeActivity = onSnapshot(
+        activityQuery,
+        () => {
+          if (!cancelled) fetchPayslipData();
+        },
+        (error) => console.warn('Unable to watch activity reports for payslip draft:', error),
+      );
+    }
     fetchPayslipData();
     return () => {
       cancelled = true;
+      unsubscribeActivity?.();
     };
   }, [
     profile?.linkedEmployeeId,

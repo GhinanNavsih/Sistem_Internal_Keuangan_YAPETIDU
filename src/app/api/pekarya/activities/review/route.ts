@@ -124,7 +124,7 @@ function validateDriverReview(value: ReviewItem['driverReview']) {
     ['selisih tol', value.tollDelta],
     ['selisih makan', value.mealDelta],
   ] as const) {
-    if (!Number.isFinite(number) || number < -100_000_000 || number > 100_000_000) {
+    if (!Number.isFinite(number) || number < 0 || number > 100_000_000) {
       throw new HttpError(400, `Nilai ${label} tidak valid.`);
     }
   }
@@ -330,8 +330,10 @@ export async function POST(request: NextRequest) {
               ? authorizedJourney.tollParkingFee
               : Number(before.preAuthorizedToll || 0);
           const totalPreAuthorizedAllowance = baseOperationalCost + preAuthorizedToll;
+          const actualFuel = Math.max(0, baseOperationalCost + review.fuelDelta);
+          const actualToll = Math.max(0, preAuthorizedToll + review.tollDelta);
           const totalActualSpent =
-            Number(before.fuelFee || 0) + Number(before.tollParkingFee || 0);
+            actualFuel + actualToll;
           const unspentCash = Math.max(
             0,
             totalPreAuthorizedAllowance - totalActualSpent,
@@ -359,12 +361,9 @@ export async function POST(request: NextRequest) {
             totalOperationalCost,
             distanceKm: review.distanceKm,
             durationHours: review.durationHours,
-            fuelFee: Math.max(0, baseOperationalCost + review.fuelDelta),
+            fuelFee: actualFuel,
             extraFuelCost: review.fuelDelta,
-            tollParkingFee: Math.max(
-              0,
-              preAuthorizedToll + review.tollDelta,
-            ),
+            tollParkingFee: actualToll,
             extraTollCost: review.tollDelta,
             preAuthorizedMeal,
             preAuthorizedToll,

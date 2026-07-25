@@ -53,6 +53,8 @@ import {
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { DriverPiketSchedule, PIKET_STATIONS, PiketStationKey } from '@/lib/payroll/driverPiket';
+import { getMealAllowanceForDuration } from '@/lib/payroll/driverJourney';
+import { authenticatedJson } from '@/lib/payroll/client';
 import {
   collection,
   query,
@@ -322,18 +324,9 @@ function DriverJourneysContent() {
 
   // Dynamic preview calculations for meal allowance (Option 2: Flat Rate based on Duration)
   const totalDurationPP = inputDuration !== null ? inputDuration : (calcDuration ? calcDuration * 2 : 0);
-  let dynamicMealAllowance = 0;
-  if (selectedVehicle !== 'Ndalem') {
-    if (totalDurationPP > 0 && totalDurationPP < 2) {
-      dynamicMealAllowance = 5000;
-    } else if (totalDurationPP >= 2 && totalDurationPP <= 6) {
-      dynamicMealAllowance = 20000;
-    } else if (totalDurationPP > 6 && totalDurationPP <= 12) {
-      dynamicMealAllowance = 40000;
-    } else if (totalDurationPP > 12) {
-      dynamicMealAllowance = 60000;
-    }
-  }
+  const dynamicMealAllowance = selectedVehicle === 'Ndalem'
+    ? 0
+    : getMealAllowanceForDuration(totalDurationPP, selectedVehicle);
 
   const initMap = (element: HTMLDivElement) => {
     loadGoogleMapsScript(() => {
@@ -592,11 +585,7 @@ function DriverJourneysContent() {
 
     setSaving(true);
     try {
-      const rate = VEHICLE_RATES[selectedVehicle];
-      const baseCost = calcDistance * 2 * rate; // PP
-      const mealAllowance = dynamicMealAllowance;
       const tollFeeVal = tollFee ? parseInt(tollFee.replace(/\D/g, ''), 10) || 0 : 0;
-      const totalCost = baseCost + mealAllowance + tollFeeVal;
 
       let journeyId = editingJourneyId;
       if (!journeyId) {
@@ -606,54 +595,27 @@ function DriverJourneysContent() {
         journeyId = `JRN-${dateSanitized}-${randomSuffix}`;
       }
 
-      const selectedDriver = drivers.find(d => d.id === assignedDriverId);
-      const assignedToName = selectedDriver ? selectedDriver.name : null;
-
-      const existingJourney = journeys.find(j => j.id === editingJourneyId);
-      let targetStatus = existingJourney?.status || 'unassigned';
-      if (!editingJourneyId || existingJourney?.status === 'unassigned' || existingJourney?.status === 'assigned') {
-        targetStatus = assignedDriverId ? 'assigned' : 'unassigned';
-      }
-
       const durPP = totalDurationPP;
-      const compJarak = Math.ceil(calcDistance * 2 * 300);
-      const compWaktu = Math.ceil(durPP * 5000);
-      const estBaseWage = compJarak + compWaktu;
-      const estMaxWage = Math.ceil(estBaseWage * 1.25);
 
-      await setDoc(doc(db, 'DriverJourneys', journeyId), {
-        activityName: activityName.trim(),
-        activityDate: activityDate,
-        journeyDate: activityDate,
-        startPoint: startPoint.trim(),
-        endPoint: endPoint.trim(),
-        vehicleName: selectedVehicle,
-        vehicleRate: rate,
-        distanceKm: calcDistance,
-        totalDistanceKm: calcDistance * 2,
-        durationHours: calcDuration || 0,
-        customDurationPP: durPP,
-        baseOperationalCost: baseCost,
-        mealAllowance: mealAllowance,
-        tollParkingFee: tollFeeVal,
-        totalOperationalCost: totalCost,
-        estimatedComponentJarak: compJarak,
-        estimatedComponentWaktu: compWaktu,
-        estimatedBaseDriverWage: estBaseWage,
-        estimatedMaxDriverWage: estMaxWage,
-        destinationImageUrl: mapAddressImage || null,
-        assignedTo: assignedDriverId || null,
-        assignedToName: assignedToName || null,
-        status: targetStatus,
-        ...(!editingJourneyId ? {
-          createdAt: serverTimestamp(),
-          authorizedAt: serverTimestamp(),
-          createdBy: profile?.uid || 'system',
+      await authenticatedJson('/api/driver-journeys', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'authorize',
+          journeyId,
           period: periodToken,
-        } : {
-          updatedAt: serverTimestamp(),
-        })
-      }, { merge: true });
+          activityName: activityName.trim(),
+          activityDate,
+          startPoint: startPoint.trim(),
+          endPoint: endPoint.trim(),
+          vehicleName: selectedVehicle,
+          distanceKm: calcDistance,
+          durationHours: calcDuration,
+          customDurationPP: durPP,
+          tollParkingFee: tollFeeVal,
+          destinationImageUrl: mapAddressImage || null,
+          assignedTo: assignedDriverId || null,
+        }),
+      });
 
       setMessage({
         type: 'success',

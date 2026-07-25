@@ -707,11 +707,11 @@ export default function ActivityReviewPage() {
     );
 
     const positiveDelta = deltaFuel + deltaToll + deltaMeal + extraOps;
-    const unspentCash = auditActivity.unspentCash || 0;
-    const totalReimburseDelta = Math.max(0, positiveDelta - unspentCash);
-
     const actualFuel = baselineBBM + deltaFuel;
     const actualToll = baselineToll + deltaToll;
+    const totalActualSpent = actualFuel + actualToll;
+    const unspentCash = Math.max(0, baselineBBM + baselineToll - totalActualSpent);
+    const totalReimburseDelta = Math.max(0, positiveDelta - unspentCash);
 
     const initialTotalOps = auditActivity.totalOperationalCost || (baselineBBM + baselineMeal + baselineToll);
     const operationalCost = Math.ceil(initialTotalOps + positiveDelta - unspentCash);

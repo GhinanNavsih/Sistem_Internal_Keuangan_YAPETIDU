@@ -4,6 +4,22 @@ export const DRIVER_DURATION_RATE = 5_000;
 export const DAILY_MEAL_ALLOWANCE = 60_000;
 export const MAX_NIGHT_COUNT = 365;
 
+export const DRIVER_VEHICLE_RATES = Object.freeze({
+  Bis: 2_500,
+  Elf: 1_350,
+  'Kijang LGX': 1_200,
+  'Innova Hitam': 1_250,
+  'Innova Matic': 1_450,
+  'Suzuki XL7': 1_000,
+  Ndalem: 0,
+} as const);
+
+export type DriverVehicleName = keyof typeof DRIVER_VEHICLE_RATES;
+
+export function getDriverVehicleRate(vehicleName: string): number {
+  return DRIVER_VEHICLE_RATES[vehicleName as DriverVehicleName] ?? 1_000;
+}
+
 export function assertNightCount(value: unknown): asserts value is number {
   if (
     typeof value !== 'number' ||
@@ -160,7 +176,7 @@ export function calculateJourneyDateTimeTimings(
     return { durationHours: 0, nightCount: 0, dateStart, dateEnd };
   }
 
-  let diffMs = endMs - startMs;
+  const diffMs = endMs - startMs;
 
   if (diffMs < 0) {
     return { durationHours: 0, nightCount: 0, dateStart, dateEnd };
@@ -191,4 +207,3 @@ export function calculateJourneyDateTimeTimings(
     dateEnd,
   };
 }
-

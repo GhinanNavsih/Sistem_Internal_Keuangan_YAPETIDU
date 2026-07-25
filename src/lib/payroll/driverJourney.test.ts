@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  DRIVER_VEHICLE_RATES,
   calculateDriverNetWage,
   calculateJourneyElapsedHours,
   calculateJourneyDateTimeTimings,
@@ -8,6 +9,12 @@ import {
   getMealAllowanceForDuration,
   journeyDayCount,
 } from './driverJourney';
+
+test('vehicle rates stay centralized for authorization and review calculations', () => {
+  assert.equal(DRIVER_VEHICLE_RATES.Bis, 2_500);
+  assert.equal(DRIVER_VEHICLE_RATES['Suzuki XL7'], 1_000);
+  assert.equal(DRIVER_VEHICLE_RATES.Ndalem, 0);
+});
 
 test('meal allowance supports 24-hour cycles and partial-day strata', () => {
   assert.equal(getMealAllowanceForDuration(0), 0);
