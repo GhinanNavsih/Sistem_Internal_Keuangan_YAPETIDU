@@ -80,6 +80,7 @@ import {
   getMealAllowanceForDuration as calculateMealAllowanceForDuration,
   getShortTripMealWageComponent,
 } from '@/lib/payroll/driverJourney';
+import { parseImageExif } from '@/lib/exif';
 import {
   Select,
   SelectContent,
@@ -1788,6 +1789,17 @@ function ActivitiesContent() {
     }
 
     try {
+      if (file.type.startsWith('image/')) {
+        const exif = await parseImageExif(file);
+        if (exif.latitude === undefined || exif.longitude === undefined) {
+          setMessage({
+            type: 'error',
+            text: `Foto ${isBbm ? 'BBM' : 'Tol & Parkir'} ditolak: Berkas foto wajib memuat data lokasi GPS. Wajib aktifkan "Tag Lokasi" / "Save location info" di pengaturan Kamera HP Anda, lalu ambil foto ulang.`,
+          });
+          return;
+        }
+      }
+
       const processedFile = await compressImage(file);
       const extension = processedFile.name.split('.').pop() || 'jpg';
       const fileRef = ref(storage, `receipts/${activeReportingJourney.id}/${type}_${Date.now()}.${extension}`);
