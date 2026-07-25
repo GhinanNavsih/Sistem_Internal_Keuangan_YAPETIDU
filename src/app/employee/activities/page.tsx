@@ -78,6 +78,7 @@ import {
   calculateNightPremium,
   calculateJourneyDateTimeTimings,
   getMealAllowanceForDuration as calculateMealAllowanceForDuration,
+  getShortTripMealWageComponent,
 } from '@/lib/payroll/driverJourney';
 import {
   Select,
@@ -4972,7 +4973,7 @@ function ActivitiesContent() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                  Titik Awal (Origin)
+                  Titik Awal
                 </Label>
                 {!selfPiketStartPoint ? (
                   <Button
@@ -5016,7 +5017,7 @@ function ActivitiesContent() {
 
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                  Tujuan Utama (Destination)
+                  Tujuan Utama
                 </Label>
                 {!selfPiketEndPoint ? (
                   <Button
@@ -5132,7 +5133,8 @@ function ActivitiesContent() {
                   const durPP = (selfPiketCalcDuration || 0) * 2;
                   const compJarak = Math.ceil(selfPiketCalcDistance * 2 * 300);
                   const compWaktu = Math.ceil(durPP * 5000);
-                  const baseWage = compJarak + compWaktu;
+                  const shortTripMeal = getShortTripMealWageComponent(durPP);
+                  const baseWage = compJarak + compWaktu + shortTripMeal;
                   const maxWage = Math.ceil(baseWage * 1.25);
 
                   return (
@@ -5141,8 +5143,11 @@ function ActivitiesContent() {
                         <span className="font-extrabold text-slate-700">Estimasi Upah Bersih Sopir:</span>
                         <span className="text-xs sm:text-sm font-black text-emerald-700">{fmtRp(baseWage)} - {fmtRp(maxWage)}</span>
                       </div>
-                      <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">
-                        <span>Komponen Jarak ({fmtRp(compJarak)}) + Komponen Waktu ({fmtRp(compWaktu)})</span>
+                      <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100 font-semibold">
+                        <span>
+                          Komponen Jarak ({fmtRp(compJarak)}) + Komponen Waktu ({fmtRp(compWaktu)})
+                          {shortTripMeal > 0 ? ` + Uang Makan (≤2 Jam: ${fmtRp(shortTripMeal)})` : ''}
+                        </span>
                       </div>
                     </div>
                   );
