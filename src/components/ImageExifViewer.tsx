@@ -81,7 +81,7 @@ export function ImageExifViewer({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className={`${showMetadata ? 'max-w-5xl' : 'max-w-2xl'} bg-white rounded-3xl shadow-2xl border-none p-0 overflow-hidden max-h-[90vh] flex flex-col`}>
+      <DialogContent className={`${showMetadata ? 'w-[94vw] max-w-5xl sm:max-w-5xl md:max-w-5xl' : 'w-[90vw] max-w-xl sm:max-w-xl'} bg-white rounded-3xl shadow-2xl border-none p-0 overflow-hidden max-h-[90vh] flex flex-col`}>
         <DialogHeader className="p-4 sm:p-5 border-b border-slate-100 flex flex-row items-center justify-between space-y-0 shrink-0">
           <div>
             <DialogTitle className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -105,7 +105,7 @@ export function ImageExifViewer({
                   <FileImage className="w-4 h-4 text-blue-600" />
                   <span>Berkas Bukti Transaksi</span>
                 </h4>
-                <div className="bg-slate-950 rounded-2xl overflow-hidden flex items-center justify-center min-h-[300px] max-h-[460px] relative shadow-inner border border-slate-800">
+                <div className="bg-slate-950 rounded-2xl overflow-hidden flex items-center justify-center min-h-[320px] max-h-[480px] relative shadow-inner border border-slate-800 p-2">
                   {isPdf ? (
                     <iframe src={imageUrl} className="w-full h-[420px] border-none" title="Dokumen PDF" />
                   ) : (
@@ -113,7 +113,7 @@ export function ImageExifViewer({
                     <img
                       src={imageUrl}
                       alt={title}
-                      className="max-h-[440px] w-auto max-w-full object-contain mx-auto p-2"
+                      className="max-h-[450px] w-auto max-w-full object-contain mx-auto rounded-lg shadow-md"
                     />
                   )}
                 </div>
@@ -127,7 +127,7 @@ export function ImageExifViewer({
                 </h4>
 
                 {loading ? (
-                  <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center gap-2.5 text-xs font-bold text-slate-600 min-h-[200px]">
+                  <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center gap-2.5 text-xs font-bold text-slate-600 min-h-[220px]">
                     <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
                     <span>Mengekstrak EXIF metadata dari gambar...</span>
                   </div>
@@ -135,13 +135,13 @@ export function ImageExifViewer({
                   <div className="space-y-3.5">
                     {/* Date Verification Alert Badge */}
                     {dateMatchStatus === 'match' && (
-                      <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5 text-xs font-bold text-emerald-800">
+                      <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5 text-xs font-bold text-emerald-800 shadow-xs">
                         <ShieldCheck className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
                         <span>✓ Foto diambil pada tanggal yang sesuai dengan SPJ ({activityDate})</span>
                       </div>
                     )}
                     {dateMatchStatus === 'mismatch' && (
-                      <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs font-bold text-amber-900">
+                      <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs font-bold text-amber-900 shadow-xs">
                         <AlertTriangle className="w-4.5 h-4.5 text-amber-600 shrink-0 mt-0.5" />
                         <div>
                           <p className="font-extrabold">⚠️ Perhatian: Tanggal Foto Berbeda dari Tanggal SPJ</p>
@@ -152,15 +152,15 @@ export function ImageExifViewer({
                       </div>
                     )}
 
-                    {/* Metadata Details Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    {/* Metadata Details Cards Stack */}
+                    <div className="space-y-3 text-xs">
                       {/* Timestamp */}
                       <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
                         <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
-                          <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                          <Calendar className="w-4 h-4 text-blue-600" />
                           <span>Waktu Pengambilan Foto</span>
                         </div>
-                        <p className="font-extrabold text-slate-900">
+                        <p className="font-extrabold text-slate-900 text-sm">
                           {exif.formattedDate || 'Tidak Tercatat'}
                         </p>
                       </div>
@@ -168,23 +168,23 @@ export function ImageExifViewer({
                       {/* Device Info */}
                       <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
                         <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
-                          <Smartphone className="w-3.5 h-3.5 text-purple-600" />
+                          <Smartphone className="w-4 h-4 text-purple-600" />
                           <span>Perangkat Kamera</span>
                         </div>
-                        <p className="font-extrabold text-slate-900 truncate">
+                        <p className="font-extrabold text-slate-900 text-sm">
                           {exif.make || exif.model ? `${exif.make || ''} ${exif.model || ''}`.trim() : 'Perangkat Tidak Dikenal'}
                         </p>
                       </div>
 
                       {/* GPS Coordinates */}
                       {exif.latitude !== undefined && exif.longitude !== undefined ? (
-                        <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl space-y-1 sm:col-span-2 flex items-center justify-between">
+                        <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl space-y-1 flex items-center justify-between">
                           <div>
                             <div className="flex items-center gap-1.5 font-bold text-blue-700 text-[11px]">
-                              <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                              <MapPin className="w-4 h-4 text-blue-600" />
                               <span>Lokasi Koordinat GPS Foto</span>
                             </div>
-                            <p className="font-extrabold text-blue-950 mt-0.5">
+                            <p className="font-extrabold text-blue-950 text-sm mt-0.5">
                               {exif.latitude.toFixed(6)}, {exif.longitude.toFixed(6)}
                             </p>
                           </div>
@@ -193,17 +193,17 @@ export function ImageExifViewer({
                               href={exif.googleMapsUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center gap-1 shadow-sm transition-colors"
+                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors shrink-0 ml-3"
                             >
                               <span>Buka Map</span>
-                              <ExternalLink className="w-3 h-3" />
+                              <ExternalLink className="w-3.5 h-3.5" />
                             </a>
                           )}
                         </div>
                       ) : (
-                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1 sm:col-span-2">
+                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
                           <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
-                            <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                            <MapPin className="w-4 h-4 text-slate-400" />
                             <span>Lokasi GPS Foto</span>
                           </div>
                           <p className="text-[11px] font-semibold text-slate-500">
