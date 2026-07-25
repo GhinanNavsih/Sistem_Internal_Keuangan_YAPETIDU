@@ -2139,7 +2139,7 @@ function JourneyReportContent() {
                                 onClick={() => setSelectedExifImage({ url, title: `Bukti BBM ${formFuelReceiptUrls.length > 1 ? `#${index + 1}` : ''}` })}
                                 className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                               >
-                                <Eye className="w-3 h-3" /> Audit & Metadata
+                                <Eye className="w-3 h-3" /> Lihat Foto
                               </button>
                               <button
                                 type="button"
@@ -2239,7 +2239,7 @@ function JourneyReportContent() {
                               onClick={() => setSelectedExifImage({ url, title: `Bukti Tol & Parkir ${formTollReceiptUrls.length > 1 ? `#${index + 1}` : ''}` })}
                               className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                             >
-                              <Eye className="w-3 h-3" /> Audit & Metadata
+                              <Eye className="w-3 h-3" /> Lihat Foto
                             </button>
                             <button
                               type="button"
@@ -2702,6 +2702,7 @@ function JourneyReportContent() {
             activityDate={formDate}
             isOpen={Boolean(selectedExifImage)}
             onClose={() => setSelectedExifImage(null)}
+            showMetadata={false}
           />
         )}
 

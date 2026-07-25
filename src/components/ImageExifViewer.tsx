@@ -28,6 +28,7 @@ interface ImageExifViewerProps {
   activityDate?: string;
   isOpen: boolean;
   onClose: () => void;
+  showMetadata?: boolean;
 }
 
 export function ImageExifViewer({
@@ -36,12 +37,13 @@ export function ImageExifViewer({
   activityDate,
   isOpen,
   onClose,
+  showMetadata = true,
 }: ImageExifViewerProps) {
   const [loading, setLoading] = useState(true);
   const [exif, setExif] = useState<ImageExifInsights | null>(null);
 
   useEffect(() => {
-    if (!isOpen || !imageUrl) return;
+    if (!isOpen || !imageUrl || !showMetadata) return;
 
     let isMounted = true;
     setLoading(true);
@@ -64,7 +66,7 @@ export function ImageExifViewer({
     return () => {
       isMounted = false;
     };
-  }, [imageUrl, isOpen]);
+  }, [imageUrl, isOpen, showMetadata]);
 
   if (!isOpen) return null;
 
@@ -84,10 +86,12 @@ export function ImageExifViewer({
           <div>
             <DialogTitle className="text-base font-extrabold text-slate-900 flex items-center gap-2">
               <FileImage className="w-5 h-5 text-blue-600" />
-              <span>Audit Metadata & Gambar ({title})</span>
+              <span>{showMetadata ? `Audit Metadata & Gambar (${title})` : `Pratinjau Foto (${title})`}</span>
             </DialogTitle>
             <p className="text-xs font-medium text-slate-500 mt-0.5">
-              Metadata EXIF diekstrak langsung dari berkas asli
+              {showMetadata
+                ? 'Metadata EXIF diekstrak langsung dari berkas asli'
+                : 'Pratinjau berkas bukti transaksi yang diunggah'}
             </p>
           </div>
         </DialogHeader>
@@ -107,8 +111,9 @@ export function ImageExifViewer({
             )}
           </div>
 
-          {/* EXIF Metadata Audit Insights Box */}
-          <div className="space-y-3">
+          {/* EXIF Metadata Audit Insights Box (Only for Auditors) */}
+          {showMetadata && (
+            <div className="space-y-3">
             <h4 className="text-xs font-black text-slate-900 tracking-wide uppercase flex items-center gap-1.5">
               <span>Auditing Insight Metadata (EXIF)</span>
             </h4>
@@ -202,6 +207,7 @@ export function ImageExifViewer({
               </div>
             )}
           </div>
+          )}
         </div>
 
         <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
