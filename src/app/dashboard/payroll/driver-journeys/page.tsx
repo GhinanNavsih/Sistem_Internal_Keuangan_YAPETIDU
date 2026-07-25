@@ -741,11 +741,10 @@ function DriverJourneysContent() {
       <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
         <button
           onClick={() => setActiveTab('journeys')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-            activeTab === 'journeys'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${activeTab === 'journeys'
+            ? 'bg-indigo-600 text-white shadow-sm'
+            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
         >
           <Compass className="w-4 h-4" />
           Daftar Perjalanan SPJ ({filteredJourneys.length})
@@ -753,11 +752,10 @@ function DriverJourneysContent() {
 
         <button
           onClick={() => setActiveTab('piket')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-            activeTab === 'piket'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${activeTab === 'piket'
+            ? 'bg-indigo-600 text-white shadow-sm'
+            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
         >
           <CalendarDays className="w-4 h-4" />
           Jadwal Piket Sopir ({piketSchedules.length} Shift)
@@ -784,171 +782,171 @@ function DriverJourneysContent() {
             </div>
           </CardHeader>
 
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center p-12 gap-2.5">
-              <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
-              <p className="text-xs text-slate-400 font-bold">Memuat data rute perjalanan...</p>
-            </div>
-          ) : filteredJourneys.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-12 text-center">
-              <Compass className="w-12 h-12 text-slate-200 mb-2" />
-              <h3 className="text-sm font-bold text-slate-700">Belum Ada Perjalanan</h3>
-              <p className="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">
-                Belum ada rute terotorisasi yang dibuat pada periode ini. Klik tombol "Buat Perjalanan Baru" di atas untuk memulai.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader className="bg-slate-50">
-                  <TableRow className="border-slate-100">
-                    <TableHead className="text-xs font-bold text-slate-500 pl-6">Kegiatan & Rute</TableHead>
-                    <TableHead className="text-xs font-bold text-slate-500">Kendaraan</TableHead>
-                    <TableHead className="text-xs font-bold text-slate-500">Jarak PP</TableHead>
-                    <TableHead className="text-xs font-bold text-slate-500">Biaya Operasional</TableHead>
-                    <TableHead className="text-xs font-bold text-slate-500">Estimasi Upah Sopir</TableHead>
-                    <TableHead className="text-xs font-bold text-slate-500">Status / Driver</TableHead>
-                    <TableHead className="text-xs font-bold text-slate-500 text-right pr-6">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {groupedJourneys.map((group) => (
-                    <React.Fragment key={group.dateKey}>
-                      {/* Visual Group Subheading */}
-                      <TableRow className="bg-slate-50/70 hover:bg-slate-50/70 border-slate-100/70 select-none">
-                        <TableCell colSpan={7} className="pl-6 py-2">
-                          <div className="flex items-center gap-1.5 text-indigo-700">
-                            <Calendar className="w-3.5 h-3.5 shrink-0" />
-                            <span className="text-[10px] font-extrabold uppercase tracking-wider">
-                              {formatIndonesianDate(group.dateKey)}
-                            </span>
-                            <span className="text-[9px] font-bold text-slate-400 tracking-normal normal-case">
-                              ({group.journeys.length} perjalanan)
-                            </span>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-
-                      {group.journeys.map((j) => (
-                        <TableRow key={j.id} className="hover:bg-slate-50/50 border-slate-100 transition-colors">
-                          <TableCell className="pl-6 py-4">
-                            <div className="font-bold text-slate-800 text-xs sm:text-sm">{j.activityName}</div>
-                            <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500 font-semibold">
-                              <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                              <span className="truncate max-w-[150px]" title={j.startPoint}>{j.startPoint.split(',')[0]}</span>
-                              <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
-                              <span className="truncate max-w-[150px] font-extrabold text-slate-700" title={j.endPoint}>{j.endPoint}</span>
+          <CardContent className="p-0">
+            {loading ? (
+              <div className="flex flex-col items-center justify-center p-12 gap-2.5">
+                <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+                <p className="text-xs text-slate-400 font-bold">Memuat data rute perjalanan...</p>
+              </div>
+            ) : filteredJourneys.length === 0 ? (
+              <div className="flex flex-col items-center justify-center p-12 text-center">
+                <Compass className="w-12 h-12 text-slate-200 mb-2" />
+                <h3 className="text-sm font-bold text-slate-700">Belum Ada Perjalanan</h3>
+                <p className="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">
+                  Belum ada rute terotorisasi yang dibuat pada periode ini. Klik tombol "Buat Perjalanan Baru" di atas untuk memulai.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-slate-50">
+                    <TableRow className="border-slate-100">
+                      <TableHead className="text-xs font-bold text-slate-500 pl-6">Kegiatan & Rute</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-500">Kendaraan</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-500">Jarak PP</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-500">Biaya Operasional</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-500">Estimasi Upah Sopir</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-500">Status / Driver</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-500 text-right pr-6">Aksi</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groupedJourneys.map((group) => (
+                      <React.Fragment key={group.dateKey}>
+                        {/* Visual Group Subheading */}
+                        <TableRow className="bg-slate-50/70 hover:bg-slate-50/70 border-slate-100/70 select-none">
+                          <TableCell colSpan={7} className="pl-6 py-2">
+                            <div className="flex items-center gap-1.5 text-indigo-700">
+                              <Calendar className="w-3.5 h-3.5 shrink-0" />
+                              <span className="text-[10px] font-extrabold uppercase tracking-wider">
+                                {formatIndonesianDate(group.dateKey)}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-400 tracking-normal normal-case">
+                                ({group.journeys.length} perjalanan)
+                              </span>
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1.5 font-bold text-slate-700 text-xs">
-                              <Car className="w-4 h-4 text-slate-400 shrink-0" />
-                              {j.vehicleName}
-                            </div>
-                            <div className="text-[10px] text-slate-400 font-semibold">{fmtRp(j.vehicleRate)}/km</div>
-                          </TableCell>
-                          <TableCell className="font-bold text-slate-700 text-xs">
-                            {j.distanceKm * 2} km
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-black text-indigo-600 text-xs sm:text-sm">{fmtRp(j.totalOperationalCost)}</div>
-                            <div className="text-[9px] text-slate-400 font-bold leading-tight">
-                              Makan: {fmtRp(j.mealAllowance)}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-black text-emerald-600 text-xs sm:text-sm">
-                              {j.status === 'completed' ? (
-                                <span>{fmtRp(j.upahBersih || ((j.newTotalDistanceKm || j.distanceKm * 2) * 300 + (j.newTotalDurationHours || (j.durationHours || 0) * 2) * 5000))}</span>
-                              ) : (
-                                <span>
-                                  {fmtRp((j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000))} - {fmtRp(((j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000)) * 1.25)}
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {j.status === 'unassigned' && (
-                              <Badge className="bg-slate-100 text-slate-500 border border-slate-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
-                                Belum Ditugaskan
-                              </Badge>
-                            )}
-                            {j.status === 'assigned' && (
-                              <div className="space-y-1">
-                                <Badge className="bg-purple-50 text-purple-700 border border-purple-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
-                                  Ditugaskan
-                                </Badge>
-                                <div className="text-[10px] font-bold text-slate-600 block">{j.assignedToName || 'Sopir'}</div>
-                              </div>
-                            )}
-                            {j.status === 'claimed' && (
-                              <div className="space-y-1">
-                                <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
-                                  Aktif Jalan
-                                </Badge>
-                                <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
-                              </div>
-                            )}
-                            {j.status === 'completed' && (
-                              <div className="space-y-1">
-                                <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
-                                  Selesai
-                                </Badge>
-                                <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right pr-6">
-                            {j.status === 'unassigned' ? (
-                              <div className="flex items-center justify-end gap-1.5">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    setEditingJourneyId(j.id);
-                                    setActivityName(j.activityName);
-                                    setActivityDate(getJourneyDate(j));
-                                    setStartPoint(j.startPoint);
-                                    setEndPoint(j.endPoint);
-                                    setSelectedVehicle(j.vehicleName);
-                                    setCalcDistance(j.distanceKm);
-                                    setCalcDuration(j.durationHours);
-                                    setInputDuration(j.customDurationPP || (j.durationHours ? j.durationHours * 2 : 0));
-                                    setTollFee(j.tollParkingFee ? String(j.tollParkingFee) : '');
-                                    setAssignedDriverId(j.assignedTo || '');
-                                    lastCalculatedRef.current = { start: j.startPoint, end: j.endPoint };
-                                    setShowAddForm(true);
-                                  }}
-                                  className="h-8 w-8 p-0 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl cursor-pointer"
-                                  title="Edit Perjalanan"
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDeleteJourney(j.id)}
-                                  className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl cursor-pointer"
-                                  title="Hapus Perjalanan"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <span className="text-[10px] font-semibold text-slate-300 select-none">—</span>
-                            )}
                           </TableCell>
                         </TableRow>
-                      ))}
-                    </React.Fragment>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+
+                        {group.journeys.map((j) => (
+                          <TableRow key={j.id} className="hover:bg-slate-50/50 border-slate-100 transition-colors">
+                            <TableCell className="pl-6 py-4">
+                              <div className="font-bold text-slate-800 text-xs sm:text-sm">{j.activityName}</div>
+                              <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500 font-semibold">
+                                <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                <span className="truncate max-w-[150px]" title={j.startPoint}>{j.startPoint.split(',')[0]}</span>
+                                <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
+                                <span className="truncate max-w-[150px] font-extrabold text-slate-700" title={j.endPoint}>{j.endPoint}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1.5 font-bold text-slate-700 text-xs">
+                                <Car className="w-4 h-4 text-slate-400 shrink-0" />
+                                {j.vehicleName}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-semibold">{fmtRp(j.vehicleRate)}/km</div>
+                            </TableCell>
+                            <TableCell className="font-bold text-slate-700 text-xs">
+                              {j.distanceKm * 2} km
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-black text-indigo-600 text-xs sm:text-sm">{fmtRp(j.totalOperationalCost)}</div>
+                              <div className="text-[9px] text-slate-400 font-bold leading-tight">
+                                Makan: {fmtRp(j.mealAllowance)}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-black text-emerald-600 text-xs sm:text-sm">
+                                {j.status === 'completed' ? (
+                                  <span>{fmtRp(j.upahBersih || ((j.newTotalDistanceKm || j.distanceKm * 2) * 300 + (j.newTotalDurationHours || (j.durationHours || 0) * 2) * 5000))}</span>
+                                ) : (
+                                  <span>
+                                    {fmtRp((j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000))} - {fmtRp(((j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000)) * 1.25)}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {j.status === 'unassigned' && (
+                                <Badge className="bg-slate-100 text-slate-500 border border-slate-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                  Belum Ditugaskan
+                                </Badge>
+                              )}
+                              {j.status === 'assigned' && (
+                                <div className="space-y-1">
+                                  <Badge className="bg-purple-50 text-purple-700 border border-purple-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                    Ditugaskan
+                                  </Badge>
+                                  <div className="text-[10px] font-bold text-slate-600 block">{j.assignedToName || 'Sopir'}</div>
+                                </div>
+                              )}
+                              {j.status === 'claimed' && (
+                                <div className="space-y-1">
+                                  <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                    Aktif Jalan
+                                  </Badge>
+                                  <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
+                                </div>
+                              )}
+                              {j.status === 'completed' && (
+                                <div className="space-y-1">
+                                  <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                    Selesai
+                                  </Badge>
+                                  <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right pr-6">
+                              {j.status === 'unassigned' ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingJourneyId(j.id);
+                                      setActivityName(j.activityName);
+                                      setActivityDate(getJourneyDate(j));
+                                      setStartPoint(j.startPoint);
+                                      setEndPoint(j.endPoint);
+                                      setSelectedVehicle(j.vehicleName);
+                                      setCalcDistance(j.distanceKm);
+                                      setCalcDuration(j.durationHours);
+                                      setInputDuration(j.customDurationPP || (j.durationHours ? j.durationHours * 2 : 0));
+                                      setTollFee(j.tollParkingFee ? String(j.tollParkingFee) : '');
+                                      setAssignedDriverId(j.assignedTo || '');
+                                      lastCalculatedRef.current = { start: j.startPoint, end: j.endPoint };
+                                      setShowAddForm(true);
+                                    }}
+                                    className="h-8 w-8 p-0 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl cursor-pointer"
+                                    title="Edit Perjalanan"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDeleteJourney(j.id)}
+                                    className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl cursor-pointer"
+                                    title="Hapus Perjalanan"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] font-semibold text-slate-300 select-none">—</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </React.Fragment>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       ) : (
         /* Piket Calendar Card */
         <Card className="border-slate-200/60 shadow-sm rounded-2xl overflow-hidden bg-white">
@@ -997,13 +995,12 @@ function DriverJourneysContent() {
                       setSelectedPiketDate(dateStr);
                       setShowPiketDialog(true);
                     }}
-                    className={`min-h-[145px] sm:min-h-[165px] rounded-xl border p-2 flex flex-col justify-between transition-all cursor-pointer group hover:border-indigo-400 hover:shadow-md ${
-                      isToday
-                        ? 'bg-indigo-50/50 border-indigo-300 ring-2 ring-indigo-500/20'
-                        : assigned.length > 0
+                    className={`min-h-[145px] sm:min-h-[165px] rounded-xl border p-2 flex flex-col justify-between transition-all cursor-pointer group hover:border-indigo-400 hover:shadow-md ${isToday
+                      ? 'bg-indigo-50/50 border-indigo-300 ring-2 ring-indigo-500/20'
+                      : assigned.length > 0
                         ? 'bg-white border-slate-200'
                         : 'bg-slate-50/70 border-slate-100 hover:bg-white'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between border-b border-slate-100 pb-1 mb-1">
                       <span className={`text-xs font-black ${isToday ? 'text-indigo-600' : 'text-slate-700'}`}>
@@ -1024,11 +1021,10 @@ function DriverJourneysContent() {
                         return (
                           <div
                             key={station.key}
-                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border flex items-center justify-between gap-1 transition-all ${
-                              sched
-                                ? 'bg-emerald-50 text-emerald-900 border-emerald-200/80 shadow-xs'
-                                : 'bg-slate-50/60 text-slate-400 border-slate-100 hover:bg-slate-100/80'
-                            }`}
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border flex items-center justify-between gap-1 transition-all ${sched
+                              ? 'bg-emerald-50 text-emerald-900 border-emerald-200/80 shadow-xs'
+                              : 'bg-slate-50/60 text-slate-400 border-slate-100 hover:bg-slate-100/80'
+                              }`}
                             title={sched ? `${station.name}: ${sched.driverName}` : `${station.name}: Belum Ditugaskan`}
                           >
                             <span className="truncate text-[9px] font-black text-slate-500 uppercase tracking-tight w-14 shrink-0">
@@ -1239,7 +1235,7 @@ function DriverJourneysContent() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Titik Awal (Origin)
+                  Titik Awal
                 </Label>
                 {!startPoint ? (
                   <Button
@@ -1283,7 +1279,7 @@ function DriverJourneysContent() {
 
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Tujuan Utama (Destination)
+                  Tujuan Utama
                 </Label>
                 {!endPoint ? (
                   <Button
