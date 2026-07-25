@@ -41,10 +41,6 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
   doc,
   getDoc,
-  updateDoc,
-  deleteDoc,
-  serverTimestamp,
-  deleteField,
   collection,
   query,
   where,
@@ -440,6 +436,8 @@ function JourneyReportContent() {
   const tollFileInputRef = useRef<HTMLInputElement>(null);
   const isSubmittingRef = useRef(false);
   const skipSaveDraftRef = useRef(false);
+  const skipJourneyLoadRef = useRef(false);
+  const journeyLoadAttemptRef = useRef<string | null>(null);
 
   const userJobCategory = profile?.permittedCategories?.[0] || '';
   const isSopir = userJobCategory === 'SOPIR';
@@ -489,6 +487,7 @@ function JourneyReportContent() {
   const [outboundDurationHours, setOutboundDurationHours] = useState<number | null>(null);
   const [isCalculatingExtraRoute, setIsCalculatingExtraRoute] = useState(false);
   const [extraRouteError, setExtraRouteError] = useState('');
+  const [routeHydrationKey, setRouteHydrationKey] = useState<string | null>(null);
 
   const isInvalidSingleDayTime = useMemo(() => {
     const isMultiDayJourney = formIsMultiDay || (Boolean(formDateEnd) && formDateEnd > formDate);
@@ -512,6 +511,8 @@ function JourneyReportContent() {
   const mapElementRef = useRef<HTMLDivElement | null>(null);
 
   const isDraftLoadedRef = useRef(false);
+  const routeHydratedJourneyRef = useRef<string | null>(null);
+  const routeCalculationRequestRef = useRef(0);
 
   // Load journey data & restore draft
   useEffect(() => {
@@ -521,8 +522,17 @@ function JourneyReportContent() {
       return;
     }
     const linkedEmployeeId = profile.linkedEmployeeId;
+    const journeyLoadKey = [
+      linkedEmployeeId,
+      journeyIdParam || 'active-journey',
+      editReportIdParam || '',
+    ].join(':');
+    if (journeyLoadAttemptRef.current === journeyLoadKey) return;
+    journeyLoadAttemptRef.current = journeyLoadKey;
+    let cancelled = false;
 
     const fetchJourney = async () => {
+      if (cancelled || skipJourneyLoadRef.current) return;
       setLoading(true);
       try {
         let targetId = journeyIdParam;
@@ -540,16 +550,30 @@ function JourneyReportContent() {
           }
         }
 
+        if (cancelled || skipJourneyLoadRef.current) return;
+
         if (!targetId) {
           router.replace('/employee/activities');
           return;
         }
 
-        const docRef = doc(db, 'DriverJourneys', targetId);
-        const docSnap = await getDoc(docRef);
+        const cancelledJourneyId = typeof window !== 'undefined'
+          ? sessionStorage.getItem('cancelled_driver_journey_id')
+          : null;
+        if (cancelledJourneyId === targetId) {
+          skipJourneyLoadRef.current = true;
+          router.replace('/employee/activities');
+          return;
+        }
 
-        if (docSnap.exists()) {
-          let reportData: any = { id: docSnap.id, ...docSnap.data() };
+        const journeyResult = await authenticatedJson<{ journey: any }>(
+          `/api/driver-journeys?journeyId=${encodeURIComponent(targetId)}`,
+        );
+
+        if (cancelled || skipJourneyLoadRef.current) return;
+
+        if (journeyResult.journey) {
+          let reportData: any = journeyResult.journey;
           const isExplicitEdit = Boolean(editReportIdParam);
           if (editReportIdParam) {
             reportData.editingActivityDocId = editReportIdParam;
@@ -564,11 +588,8 @@ function JourneyReportContent() {
           }
 
           if (reportData.status !== 'claimed' && !isExplicitEdit) {
-            try {
-              if (reportData.status !== 'submitted') {
-                await authenticatedJson(`/api/pekarya/activities?journeyId=${encodeURIComponent(targetId)}`, { method: 'DELETE' });
-              }
-            } catch (e) {}
+            // A direct link to an assigned or already-submitted journey must
+            // never mutate the assignment as a side effect of loading the form.
             router.replace('/employee/activities');
             return;
           }
@@ -648,21 +669,34 @@ function JourneyReportContent() {
               : ''
           );
 
-          const initialDist = localDraft?.calculatedDistanceKm !== undefined
-            ? localDraft.calculatedDistanceKm
-            : (reportData.draftCalculatedDistanceKm !== undefined
-              ? reportData.draftCalculatedDistanceKm
-              : (reportData.distanceKm ? reportData.distanceKm : (reportData.submittedDistanceKm ? reportData.submittedDistanceKm : 0)));
-          setCalculatedDistanceKm(initialDist > 0 ? initialDist : (reportData.distanceKm || 0) * 2);
-
-          const initialDur = localDraft?.calculatedDurationHours !== undefined
-            ? localDraft.calculatedDurationHours
-            : (reportData.draftCalculatedDurationHours !== undefined
-              ? reportData.draftCalculatedDurationHours
-              : (reportData.durationHours ? reportData.durationHours : (reportData.submittedDurationHours ? reportData.submittedDurationHours : 0)));
-          setCalculatedDurationHours(initialDur > 0 ? initialDur : (reportData.durationHours || 0) * 2);
+          const baseRoundTripDistance = Number(reportData.totalDistanceKm) > 0
+            ? Number(reportData.totalDistanceKm)
+            : Math.max(0, Number(reportData.distanceKm || 0) * 2);
+          const baseRoundTripDuration = Number(reportData.customDurationPP) > 0
+            ? Number(reportData.customDurationPP)
+            : Math.max(0, Number(reportData.durationHours || 0) * 2);
+          const hasExtraLocations = initialExtraLocs.some(
+            (location: any) => location?.type === 'tambah_lokasi' && Boolean(location?.destination),
+          );
+          const storedCalculatedDistance = localDraft?.calculatedDistanceKm ?? reportData.draftCalculatedDistanceKm;
+          const storedCalculatedDuration = localDraft?.calculatedDurationHours ?? reportData.draftCalculatedDurationHours;
+          const submittedDistance = Number(reportData.submittedDistanceKm || 0);
+          const submittedDuration = Number(reportData.submittedDurationHours || 0);
+          const initialDist = isExplicitEdit && submittedDistance > 0
+            ? submittedDistance
+            : hasExtraLocations && Number(storedCalculatedDistance) > 0
+              ? Number(storedCalculatedDistance)
+              : baseRoundTripDistance;
+          const initialDur = isExplicitEdit && submittedDuration > 0
+            ? submittedDuration
+            : hasExtraLocations && Number(storedCalculatedDuration) > 0
+              ? Number(storedCalculatedDuration)
+              : baseRoundTripDuration;
+          setCalculatedDistanceKm(initialDist);
+          setCalculatedDurationHours(initialDur);
           setOutboundDistanceKm(localDraft?.outboundDistanceKm ?? null);
           setOutboundDurationHours(localDraft?.outboundDurationHours ?? null);
+          setRouteHydrationKey(targetId);
 
           setTimeout(() => {
             isDraftLoadedRef.current = true;
@@ -675,25 +709,39 @@ function JourneyReportContent() {
           router.replace('/employee/activities');
         }
       } catch (e) {
+        if (cancelled || skipJourneyLoadRef.current) return;
+        if (e instanceof Error && e.message.includes('Perjalanan dinas tidak ditemukan')) {
+          skipJourneyLoadRef.current = true;
+          router.replace('/employee/activities');
+          return;
+        }
         console.error('Error loading journey:', e);
         router.replace('/employee/activities');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchJourney();
+    return () => {
+      cancelled = true;
+      if (journeyLoadAttemptRef.current === journeyLoadKey) {
+        journeyLoadAttemptRef.current = null;
+      }
+    };
   }, [journeyIdParam, profile?.linkedEmployeeId, isSopir, authLoading, router, user]);
 
-  const recalculateRouteChain = async (list: any[], overrideEndPoint?: string) => {
+  const recalculateRouteChain = useCallback(async (list: any[], overrideEndPoint?: string, forceRouteCalculation = false) => {
     if (!activeReportingJourney) return;
+    const requestId = ++routeCalculationRequestRef.current;
     const currentEndPoint = overrideEndPoint || activeReportingJourney.endPoint;
     const extraLocs = list.filter(a => a.type === 'tambah_lokasi' && a.destination);
-    if (extraLocs.length === 0 && !overrideEndPoint) {
+    if (extraLocs.length === 0 && !overrideEndPoint && !forceRouteCalculation) {
       setCalculatedDistanceKm((activeReportingJourney.distanceKm || 0) * 2);
       setCalculatedDurationHours((activeReportingJourney.durationHours || 0) * 2);
       setOutboundDistanceKm(null);
       setOutboundDurationHours(null);
+      setIsCalculatingExtraRoute(false);
       return;
     }
 
@@ -721,6 +769,7 @@ function JourneyReportContent() {
       if (!response.ok || !resData.success) {
         throw new Error(resData.error || 'Gagal menghitung rute.');
       }
+      if (requestId !== routeCalculationRequestRef.current) return;
 
       setCalculatedDistanceKm(resData.distanceKm);
       setCalculatedDurationHours(resData.durationHours);
@@ -767,12 +816,30 @@ function JourneyReportContent() {
       setExtraActivities(updated);
 
     } catch (err: any) {
+      if (requestId !== routeCalculationRequestRef.current) return;
       console.error(err);
       setExtraRouteError(err.message || 'Terjadi kesalahan saat menghitung rute.');
     } finally {
-      setIsCalculatingExtraRoute(false);
+      if (requestId === routeCalculationRequestRef.current) {
+        setIsCalculatingExtraRoute(false);
+      }
     }
-  };
+  }, [activeReportingJourney, user]);
+
+  // Rebuild the complete start → destination → ... → start route as soon as
+  // the journey report is hydrated. Previously this only happened after the
+  // main destination was reconfirmed in the location modal.
+  useEffect(() => {
+    if (
+      !routeHydrationKey ||
+      !activeReportingJourney ||
+      activeReportingJourney.id !== routeHydrationKey
+    ) return;
+    if (routeHydratedJourneyRef.current === routeHydrationKey) return;
+    routeHydratedJourneyRef.current = routeHydrationKey;
+
+    void recalculateRouteChain(extraActivities, undefined, true);
+  }, [routeHydrationKey, activeReportingJourney?.id, extraActivities, recalculateRouteChain]);
 
   const getOriginForLocationIndex = (index: number): string => {
     if (!activeReportingJourney) return '';
@@ -897,23 +964,29 @@ function JourneyReportContent() {
       const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
       const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
       const ndalemMealMoneyVal = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
-      const journeyRef = doc(db, 'DriverJourneys', activeReportingJourney.id);
-      await updateDoc(journeyRef, {
-        draftDate: formDate,
-        draftDateEnd: formDateEnd,
-        draftIsMultiDay: formIsMultiDay,
-        draftTimeStart: formTimeStart,
-        draftTimeEnd: formTimeEnd,
-        draftNightCount: formNightCount,
-        draftNdalemMealMoneyReceived: ndalemMealMoneyVal,
-        draftFuelFee: fuelVal,
-        draftTollParkingFee: tollVal,
-        draftFuelReceiptUrl: formFuelReceiptUrls.join(','),
-        draftTollReceiptUrl: formTollReceiptUrls.join(','),
-        draftExtraActivities: extraActivities,
-        draftCalculatedDistanceKm: calculatedDistanceKm,
-        draftCalculatedDurationHours: calculatedDurationHours,
-        updatedAt: serverTimestamp()
+      await authenticatedJson('/api/driver-journeys', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'save_draft',
+          journeyId: activeReportingJourney.id,
+          draft: {
+            date: formDate,
+            dateEnd: formDateEnd,
+            isMultiDay: formIsMultiDay,
+            timeStart: formTimeStart,
+            timeEnd: formTimeEnd,
+            nightCount: formNightCount,
+            ndalemMealMoneyReceived: ndalemMealMoneyVal,
+            fuelFee: fuelVal,
+            tollParkingFee: tollVal,
+            fuelReceiptUrl: formFuelReceiptUrls.join(','),
+            tollReceiptUrl: formTollReceiptUrls.join(','),
+            extraActivities,
+            calculatedDistanceKm,
+            calculatedDurationHours,
+            endPoint: activeReportingJourney.endPoint,
+          },
+        }),
       });
 
       // Also ensure localStorage is synced
@@ -1079,7 +1152,6 @@ function JourneyReportContent() {
   const isSelfCreatedJourney = useMemo(() => {
     return Boolean(
       activeReportingJourney?.isSelfCreatedPiketSpj ||
-      activeReportingJourney?.vehicleName === 'Ndalem' ||
       (typeof activeReportingJourney?.id === 'string' && activeReportingJourney.id.startsWith('JRN-PIKET-'))
     );
   }, [activeReportingJourney]);
@@ -1093,6 +1165,7 @@ function JourneyReportContent() {
 
     setIsCancelling(true);
     skipSaveDraftRef.current = true;
+    skipJourneyLoadRef.current = true;
     try {
       await authenticatedJson(
         `/api/pekarya/activities?journeyId=${encodeURIComponent(activeReportingJourney.id)}${activeReportingJourney.activityDocId ? `&reportId=${encodeURIComponent(activeReportingJourney.activityDocId)}` : ''}`,
@@ -1101,14 +1174,18 @@ function JourneyReportContent() {
 
       if (typeof window !== 'undefined' && activeReportingJourney?.id) {
         localStorage.removeItem(`journey_draft_${activeReportingJourney.id}`);
+        sessionStorage.setItem('cancelled_driver_journey_id', activeReportingJourney.id);
+        sessionStorage.setItem('cancelled_driver_journey_at', String(Date.now()));
       }
       setShowCancelModal(false);
+      setActiveReportingJourney(null);
       router.replace('/employee/activities');
     } catch (err: any) {
       console.error('Error cancelling journey claim:', err);
       setMessage({ type: 'error', text: err.message || 'Gagal membatalkan klaim perjalanan.' });
       setIsCancelling(false);
       skipSaveDraftRef.current = false;
+      skipJourneyLoadRef.current = false;
       setShowCancelModal(false);
     }
   };
@@ -1276,6 +1353,7 @@ function JourneyReportContent() {
             fuelReceiptUrl: formFuelReceiptUrls.join(','),
             tollReceiptUrl: formTollReceiptUrls.join(','),
             points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
+            reportedEndPoint: activeReportingJourney.endPoint,
             distanceKm: calculatedDistanceKm,
             durationHours: calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
             journeyId: activeReportingJourney.id,
@@ -1910,7 +1988,7 @@ function JourneyReportContent() {
             {isCalculatingExtraRoute && (
               <div className="flex items-center justify-center p-2 text-[10px] text-blue-600 font-bold bg-blue-50/50 rounded-lg border border-blue-100/50 mt-2">
                 <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5 text-blue-600" />
-                Menghitung rute tambahan...
+                Menghitung rute perjalanan...
               </div>
             )}
 
