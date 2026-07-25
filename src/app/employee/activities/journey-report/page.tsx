@@ -1076,58 +1076,8 @@ function JourneyReportContent() {
   };
 
   const compressImage = (file: File): Promise<File> => {
-    return new Promise((resolve) => {
-      if (!file.type.startsWith('image/')) {
-        resolve(file);
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          const maxDim = 1200;
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
-            }
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            canvas.toBlob(
-              (blob) => {
-                if (blob) {
-                  const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.jpg'), {
-                    type: 'image/jpeg',
-                    lastModified: Date.now(),
-                  });
-                  resolve(compressedFile);
-                } else {
-                  resolve(file);
-                }
-              },
-              'image/jpeg',
-              0.75
-            );
-          } else {
-            resolve(file);
-          }
-        };
-        img.onerror = () => resolve(file);
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = () => resolve(file);
-      reader.readAsDataURL(file);
-    });
+    // Preserve original file intact to retain EXIF metadata (creation timestamp, GPS coordinates, device model) for auditing.
+    return Promise.resolve(file);
   };
 
   const handleUploadReceipt = async (file: File, type: 'bbm' | 'toll') => {

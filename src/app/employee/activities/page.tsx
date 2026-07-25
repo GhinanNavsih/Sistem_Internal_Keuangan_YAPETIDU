@@ -1774,77 +1774,8 @@ function ActivitiesContent() {
   };
 
   const compressImage = (file: File): Promise<File> => {
-    if (!file.type.startsWith('image/')) return Promise.resolve(file);
-    const ONE_MB = 1024 * 1024; // 1 MB limit
-
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          let maxDimension = 1920;
-          let quality = 0.85;
-
-          const getBlob = (curWidth: number, curHeight: number, curQuality: number): Promise<Blob | null> => {
-            const canvas = document.createElement('canvas');
-            canvas.width = curWidth;
-            canvas.height = curHeight;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return Promise.resolve(null);
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, curWidth, curHeight);
-            ctx.drawImage(img, 0, 0, curWidth, curHeight);
-            return new Promise((res) => canvas.toBlob(res, 'image/jpeg', curQuality));
-          };
-
-          const attemptCompression = async () => {
-            let width = img.width;
-            let height = img.height;
-
-            if (width > height) {
-              if (width > maxDimension) {
-                height = Math.round((height * maxDimension) / width);
-                width = maxDimension;
-              }
-            } else {
-              if (height > maxDimension) {
-                width = Math.round((width * maxDimension) / height);
-                height = maxDimension;
-              }
-            }
-
-            let blob = await getBlob(width, height, quality);
-
-            // Iteratively scale down quality/dimensions until size <= 1MB
-            let attempts = 0;
-            while (blob && blob.size > ONE_MB && attempts < 6) {
-              attempts++;
-              quality -= 0.12;
-              if (quality < 0.4) {
-                quality = 0.6;
-                width = Math.round(width * 0.8);
-                height = Math.round(height * 0.8);
-              }
-              blob = await getBlob(width, height, Math.max(0.35, quality));
-            }
-
-            if (!blob) return resolve(file);
-
-            const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
-              type: 'image/jpeg',
-              lastModified: Date.now(),
-            });
-            resolve(compressedFile);
-          };
-
-          attemptCompression();
-        };
-        img.onerror = () => resolve(file);
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = () => resolve(file);
-      reader.readAsDataURL(file);
-    });
+    // Preserve original file intact to retain EXIF metadata (creation timestamp, GPS coordinates, device model) for auditing.
+    return Promise.resolve(file);
   };
 
   const handleUploadReceipt = async (file: File, type: 'bbm' | 'toll') => {
