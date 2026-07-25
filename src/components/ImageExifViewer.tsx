@@ -169,7 +169,7 @@ export function ImageExifViewer({
                   </div>
 
                   {/* GPS Coordinates */}
-                  {exif.latitude !== undefined && exif.longitude !== undefined && (
+                  {exif.latitude !== undefined && exif.longitude !== undefined ? (
                     <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl space-y-1 sm:col-span-2 flex items-center justify-between">
                       <div>
                         <div className="flex items-center gap-1.5 font-bold text-blue-700 text-[11px]">
@@ -191,6 +191,16 @@ export function ImageExifViewer({
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       )}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1 sm:col-span-2">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Lokasi GPS Foto</span>
+                      </div>
+                      <p className="text-[11px] font-semibold text-slate-500">
+                        Tidak tersimpan di file. Aktifkan &quot;Tag Lokasi / Save Location Info&quot; pada aplikasi Kamera HP agar lokasi GPS tersimpan otomatis saat foto diambil.
+                      </p>
                     </div>
                   )}
                 </div>

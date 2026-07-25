@@ -15,6 +15,47 @@ export interface ImageExifInsights {
   hasExif: boolean;
 }
 
+function parseGpsCoordinate(tag: any): number | undefined {
+  if (!tag) return undefined;
+
+  if (typeof tag.value === 'number' && !isNaN(tag.value)) return tag.value;
+  if (typeof tag.description === 'number' && !isNaN(tag.description)) return tag.description;
+
+  if (Array.isArray(tag.value) && tag.value.length > 0) {
+    if (Array.isArray(tag.value[0])) {
+      const d = tag.value[0][0] / (tag.value[0][1] || 1);
+      const m = tag.value[1] ? tag.value[1][0] / (tag.value[1][1] || 1) : 0;
+      const s = tag.value[2] ? tag.value[2][0] / (tag.value[2][1] || 1) : 0;
+      if (!isNaN(d) && !isNaN(m) && !isNaN(s)) {
+        return d + m / 60 + s / 3600;
+      }
+    }
+    if (typeof tag.value[0] === 'number') {
+      const d = tag.value[0];
+      const m = typeof tag.value[1] === 'number' ? tag.value[1] : 0;
+      const s = typeof tag.value[2] === 'number' ? tag.value[2] : 0;
+      if (!isNaN(d) && !isNaN(m) && !isNaN(s)) {
+        return d + m / 60 + s / 3600;
+      }
+    }
+  }
+
+  if (typeof tag.description === 'string') {
+    const directFloat = parseFloat(tag.description);
+    if (!isNaN(directFloat) && directFloat !== 0) return directFloat;
+
+    const dmsMatch = tag.description.match(/(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)/);
+    if (dmsMatch) {
+      const [, d, m, s] = dmsMatch.map(Number);
+      if (!isNaN(d) && !isNaN(m) && !isNaN(s)) {
+        return d + m / 60 + s / 3600;
+      }
+    }
+  }
+
+  return undefined;
+}
+
 export async function parseImageExif(fileOrUrl: File | ArrayBuffer | string): Promise<ImageExifInsights> {
   try {
     let tags: any = {};
@@ -43,7 +84,6 @@ export async function parseImageExif(fileOrUrl: File | ArrayBuffer | string): Pr
         const buffer = await res.arrayBuffer();
         try {
           tags = ExifReader.load(buffer, { expanded: true });
-          // Flatten tags if expanded object returned
           if (tags.exif || tags.gps || tags.xmp || tags.file || tags.png) {
             tags = {
               ...tags.exif,
@@ -143,21 +183,25 @@ export async function parseImageExif(fileOrUrl: File | ArrayBuffer | string): Pr
     let longitude: number | undefined = undefined;
     let googleMapsUrl: string | undefined = undefined;
 
-    if (tags['GPSLatitude']?.description !== undefined && tags['GPSLongitude']?.description !== undefined) {
-      latitude = Number(tags['GPSLatitude'].description);
-      longitude = Number(tags['GPSLongitude'].description);
+    const latTag = tags['GPSLatitude'] || tags['Latitude'] || tags['gpsLatitude'];
+    const lngTag = tags['GPSLongitude'] || tags['Longitude'] || tags['gpsLongitude'];
+    const latRefTag = tags['GPSLatitudeRef'] || tags['LatitudeRef'] || tags['gpsLatitudeRef'];
+    const lngRefTag = tags['GPSLongitudeRef'] || tags['LongitudeRef'] || tags['gpsLongitudeRef'];
 
-      const latRef = tags['GPSLatitudeRef']?.value?.[0] || tags['GPSLatitudeRef']?.description;
-      const lngRef = tags['GPSLongitudeRef']?.value?.[0] || tags['GPSLongitudeRef']?.description;
+    let parsedLat = parseGpsCoordinate(latTag);
+    let parsedLng = parseGpsCoordinate(lngTag);
 
-      if (latRef && String(latRef).toUpperCase().startsWith('S') && latitude > 0) latitude = -latitude;
-      if (lngRef && String(lngRef).toUpperCase().startsWith('W') && longitude > 0) longitude = -longitude;
+    if (parsedLat !== undefined && parsedLng !== undefined) {
+      const latRef = String(latRefTag?.value?.[0] || latRefTag?.value || latRefTag?.description || '').toUpperCase();
+      const lngRef = String(lngRefTag?.value?.[0] || lngRefTag?.value || lngRefTag?.description || '').toUpperCase();
 
-      if (!isNaN(latitude) && !isNaN(longitude) && (latitude !== 0 || longitude !== 0)) {
-        googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
-      } else {
-        latitude = undefined;
-        longitude = undefined;
+      if ((latRef.startsWith('S') || latRef.includes('SOUTH')) && parsedLat > 0) parsedLat = -parsedLat;
+      if ((lngRef.startsWith('W') || lngRef.includes('WEST')) && parsedLng > 0) parsedLng = -parsedLng;
+
+      if (!isNaN(parsedLat) && !isNaN(parsedLng) && (parsedLat !== 0 || parsedLng !== 0)) {
+        latitude = parsedLat;
+        longitude = parsedLng;
+        googleMapsUrl = `https://www.google.com/maps?q=${parsedLat.toFixed(6)},${parsedLng.toFixed(6)}`;
       }
     }
 
