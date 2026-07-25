@@ -81,7 +81,7 @@ export function ImageExifViewer({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-3xl bg-white rounded-3xl shadow-2xl border-none p-0 overflow-hidden max-h-[90vh] flex flex-col">
+      <DialogContent className={`${showMetadata ? 'max-w-5xl' : 'max-w-2xl'} bg-white rounded-3xl shadow-2xl border-none p-0 overflow-hidden max-h-[90vh] flex flex-col`}>
         <DialogHeader className="p-4 sm:p-5 border-b border-slate-100 flex flex-row items-center justify-between space-y-0 shrink-0">
           <div>
             <DialogTitle className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -96,127 +96,149 @@ export function ImageExifViewer({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
-          {/* Main Image / Document Preview */}
-          <div className="bg-slate-900 rounded-2xl overflow-hidden flex items-center justify-center min-h-[220px] max-h-[400px] relative shadow-inner">
-            {isPdf ? (
-              <iframe src={imageUrl} className="w-full h-[350px] border-none" title="Dokumen PDF" />
-            ) : (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={imageUrl}
-                alt={title}
-                className="max-h-[380px] w-auto max-w-full object-contain mx-auto"
-              />
-            )}
-          </div>
-
-          {/* EXIF Metadata Audit Insights Box (Only for Auditors) */}
-          {showMetadata && (
-            <div className="space-y-3">
-            <h4 className="text-xs font-black text-slate-900 tracking-wide uppercase flex items-center gap-1.5">
-              <span>Auditing Insight Metadata (EXIF)</span>
-            </h4>
-
-            {loading ? (
-              <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold text-slate-600">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                <span>Mengekstrak EXIF metadata dari gambar...</span>
-              </div>
-            ) : exif && exif.hasExif ? (
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          {showMetadata ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              {/* Left Column: Image / Document Preview */}
               <div className="space-y-3">
-                {/* Date Verification Alert Badge */}
-                {dateMatchStatus === 'match' && (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5 text-xs font-bold text-emerald-800">
-                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>✓ Foto diambil pada tanggal yang sesuai dengan SPJ ({activityDate})</span>
-                  </div>
-                )}
-                {dateMatchStatus === 'mismatch' && (
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs font-bold text-amber-900">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-extrabold">⚠️ Perhatian: Tanggal Foto Berbeda dari Tanggal SPJ</p>
-                      <p className="text-[11px] font-medium text-amber-800 mt-0.5">
-                        Foto diambil pada <strong>{exif.formattedDate}</strong>, sedangkan SPJ tercatat tanggal <strong>{activityDate}</strong>.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Metadata Details Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  {/* Timestamp */}
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
-                      <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Waktu Pengambilan Foto</span>
-                    </div>
-                    <p className="font-extrabold text-slate-900">
-                      {exif.formattedDate || 'Tidak Tercatat'}
-                    </p>
-                  </div>
-
-                  {/* Device Info */}
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
-                      <Smartphone className="w-3.5 h-3.5 text-purple-600" />
-                      <span>Perangkat Kamera</span>
-                    </div>
-                    <p className="font-extrabold text-slate-900 truncate">
-                      {exif.make || exif.model ? `${exif.make || ''} ${exif.model || ''}`.trim() : 'Perangkat Tidak Dikenal'}
-                    </p>
-                  </div>
-
-                  {/* GPS Coordinates */}
-                  {exif.latitude !== undefined && exif.longitude !== undefined ? (
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl space-y-1 sm:col-span-2 flex items-center justify-between">
-                      <div>
-                        <div className="flex items-center gap-1.5 font-bold text-blue-700 text-[11px]">
-                          <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                          <span>Lokasi Koordinat GPS Foto</span>
-                        </div>
-                        <p className="font-extrabold text-blue-950 mt-0.5">
-                          {exif.latitude.toFixed(6)}, {exif.longitude.toFixed(6)}
-                        </p>
-                      </div>
-                      {exif.googleMapsUrl && (
-                        <a
-                          href={exif.googleMapsUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center gap-1 shadow-sm transition-colors"
-                        >
-                          <span>Buka Map</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      )}
-                    </div>
+                <h4 className="text-xs font-black text-slate-900 tracking-wide uppercase flex items-center gap-1.5">
+                  <FileImage className="w-4 h-4 text-blue-600" />
+                  <span>Berkas Bukti Transaksi</span>
+                </h4>
+                <div className="bg-slate-950 rounded-2xl overflow-hidden flex items-center justify-center min-h-[300px] max-h-[460px] relative shadow-inner border border-slate-800">
+                  {isPdf ? (
+                    <iframe src={imageUrl} className="w-full h-[420px] border-none" title="Dokumen PDF" />
                   ) : (
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1 sm:col-span-2">
-                      <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Lokasi GPS Foto</span>
-                      </div>
-                      <p className="text-[11px] font-semibold text-slate-500">
-                        Tidak tersimpan di file. Aktifkan &quot;Tag Lokasi / Save Location Info&quot; pada aplikasi Kamera HP agar lokasi GPS tersimpan otomatis saat foto diambil.
-                      </p>
-                    </div>
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={imageUrl}
+                      alt={title}
+                      className="max-h-[440px] w-auto max-w-full object-contain mx-auto p-2"
+                    />
                   )}
                 </div>
               </div>
-            ) : (
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-start gap-2.5 text-xs text-slate-600 font-medium">
-                <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-extrabold text-slate-800">Tidak ada metadata EXIF dalam berkas ini</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Hal ini wajar jika gambar dikirim via WhatsApp/kompresi pesan, hasil screenshot, atau fitur privasi lokasi perangkat dinonaktifkan.
-                  </p>
-                </div>
+
+              {/* Right Column: EXIF Metadata Audit Insights */}
+              <div className="space-y-4">
+                <h4 className="text-xs font-black text-slate-900 tracking-wide uppercase flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>Auditing Insight Metadata (EXIF)</span>
+                </h4>
+
+                {loading ? (
+                  <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center gap-2.5 text-xs font-bold text-slate-600 min-h-[200px]">
+                    <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                    <span>Mengekstrak EXIF metadata dari gambar...</span>
+                  </div>
+                ) : exif && exif.hasExif ? (
+                  <div className="space-y-3.5">
+                    {/* Date Verification Alert Badge */}
+                    {dateMatchStatus === 'match' && (
+                      <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5 text-xs font-bold text-emerald-800">
+                        <ShieldCheck className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
+                        <span>✓ Foto diambil pada tanggal yang sesuai dengan SPJ ({activityDate})</span>
+                      </div>
+                    )}
+                    {dateMatchStatus === 'mismatch' && (
+                      <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs font-bold text-amber-900">
+                        <AlertTriangle className="w-4.5 h-4.5 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-extrabold">⚠️ Perhatian: Tanggal Foto Berbeda dari Tanggal SPJ</p>
+                          <p className="text-[11px] font-medium text-amber-800 mt-0.5">
+                            Foto diambil pada <strong>{exif.formattedDate}</strong>, sedangkan SPJ tercatat tanggal <strong>{activityDate}</strong>.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Metadata Details Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      {/* Timestamp */}
+                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
+                          <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Waktu Pengambilan Foto</span>
+                        </div>
+                        <p className="font-extrabold text-slate-900">
+                          {exif.formattedDate || 'Tidak Tercatat'}
+                        </p>
+                      </div>
+
+                      {/* Device Info */}
+                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
+                          <Smartphone className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Perangkat Kamera</span>
+                        </div>
+                        <p className="font-extrabold text-slate-900 truncate">
+                          {exif.make || exif.model ? `${exif.make || ''} ${exif.model || ''}`.trim() : 'Perangkat Tidak Dikenal'}
+                        </p>
+                      </div>
+
+                      {/* GPS Coordinates */}
+                      {exif.latitude !== undefined && exif.longitude !== undefined ? (
+                        <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl space-y-1 sm:col-span-2 flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-1.5 font-bold text-blue-700 text-[11px]">
+                              <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                              <span>Lokasi Koordinat GPS Foto</span>
+                            </div>
+                            <p className="font-extrabold text-blue-950 mt-0.5">
+                              {exif.latitude.toFixed(6)}, {exif.longitude.toFixed(6)}
+                            </p>
+                          </div>
+                          {exif.googleMapsUrl && (
+                            <a
+                              href={exif.googleMapsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center gap-1 shadow-sm transition-colors"
+                            >
+                              <span>Buka Map</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1 sm:col-span-2">
+                          <div className="flex items-center gap-1.5 font-bold text-slate-500 text-[11px]">
+                            <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                            <span>Lokasi GPS Foto</span>
+                          </div>
+                          <p className="text-[11px] font-semibold text-slate-500">
+                            Tidak tersimpan di file. Aktifkan &quot;Tag Lokasi / Save Location Info&quot; pada aplikasi Kamera HP agar lokasi GPS tersimpan otomatis saat foto diambil.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-start gap-2.5 text-xs text-slate-600 font-medium">
+                    <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-extrabold text-slate-800">Tidak ada metadata EXIF dalam berkas ini</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Hal ini wajar jika gambar dikirim via WhatsApp/kompresi pesan, hasil screenshot, atau fitur privasi lokasi perangkat dinonaktifkan.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="bg-slate-900 rounded-2xl overflow-hidden flex items-center justify-center min-h-[250px] max-h-[480px] relative shadow-inner">
+              {isPdf ? (
+                <iframe src={imageUrl} className="w-full h-[450px] border-none" title="Dokumen PDF" />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={imageUrl}
+                  alt={title}
+                  className="max-h-[460px] w-auto max-w-full object-contain mx-auto"
+                />
+              )}
+            </div>
           )}
         </div>
 
