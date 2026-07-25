@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import {
   CheckCircle2,
+  CalendarDays,
   Pencil,
   AlertCircle,
   Globe,
@@ -250,6 +251,34 @@ export default function PayrollValidationDashboard() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRow | null>(null);
 
+  // ─── Open Period Modal State ─────────────────────────────────────
+  const [showOpenPeriodModal, setShowOpenPeriodModal] = useState(false);
+  const [selectedHolidays, setSelectedHolidays] = useState<Set<string>>(new Set());
+  const [isSubmittingModal, setIsSubmittingModal] = useState(false);
+
+  const modalYear = targetDate.getFullYear();
+  const modalMonth = targetDate.getMonth(); // 0-indexed
+  const modalDaysInMonth = new Date(modalYear, modalMonth + 1, 0).getDate();
+  const modalStartOffset = (new Date(modalYear, modalMonth, 1).getDay() + 6) % 7; // Monday-first grid
+
+  // Pre-select all Fridays whenever modal opens
+  useEffect(() => {
+    if (showOpenPeriodModal) {
+      const yearStr = String(modalYear);
+      const monthStr = String(modalMonth + 1).padStart(2, '0');
+      const initialHolidays = new Set<string>();
+
+      for (let day = 1; day <= modalDaysInMonth; day++) {
+        const dateObj = new Date(modalYear, modalMonth, day);
+        if (dateObj.getDay() === 5) { // 5 = Friday
+          const dayStr = String(day).padStart(2, '0');
+          initialHolidays.add(`${yearStr}-${monthStr}-${dayStr}`);
+        }
+      }
+      setSelectedHolidays(initialHolidays);
+    }
+  }, [showOpenPeriodModal, modalYear, modalMonth, modalDaysInMonth]);
+
   useEffect(() => {
     if (!profile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(profile.role)) {
       return;
@@ -273,70 +302,65 @@ export default function PayrollValidationDashboard() {
   }, [profile, targetDate]);
 
   const handleSetAttendancePeriod = async (attendanceStatus: 'open' | 'closed') => {
-    const reason =
-      window.prompt(
-        attendanceStatus === 'open'
-          ? 'Alasan membuka periode kehadiran (minimal 8 karakter):'
-          : 'Alasan menutup periode kehadiran secara permanen (minimal 8 karakter):',
-      )?.trim() || '';
-    if (reason.length < 8) return;
+    if (attendanceStatus === 'open') {
+      setShowOpenPeriodModal(true);
+      return;
+    }
+
     const period = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+    if (!window.confirm(`Apakah Anda yakin ingin menutup periode ${period} secara permanen?`)) return;
+
     try {
       await authenticatedJson('/api/payroll/periods', {
         method: 'POST',
-        body: JSON.stringify({ period, attendanceStatus, reason }),
+        body: JSON.stringify({ period, attendanceStatus: 'closed' }),
       });
-      setAttendancePeriodStatus(attendanceStatus);
+      setAttendancePeriodStatus('closed');
       setNotification({
         show: true,
         type: 'success',
-        message:
-          attendanceStatus === 'open'
-            ? `Periode ${period} dibuka.`
-            : `Periode ${period} ditutup permanen; verifikasi payroll kini dapat dimulai.`,
+        message: `Periode ${period} ditutup permanen; verifikasi payroll kini dapat dimulai.`,
       });
     } catch (error: any) {
       setNotification({
         show: true,
         type: 'error',
-        message: error.message || 'Gagal memperbarui periode.',
+        message: error.message || 'Gagal menutup periode.',
       });
     }
   };
 
-  const handleConfigureHolidayCalendar = async () => {
-    const year = String(targetDate.getFullYear());
-    const rawDates =
-      window.prompt(
-        `Tanggal libur nasional ${year}, pisahkan dengan koma (YYYY-MM-DD). Kosongkan jika tidak ada:`,
-      ) ?? '';
-    const version =
-      window.prompt(`Versi kalender libur ${year} (contoh: ID-${year}-V1):`)?.trim() || '';
-    const reason =
-      window.prompt('Alasan konfigurasi kalender (minimal 8 karakter):')?.trim() || '';
-    if (version.length < 4 || reason.length < 8) return;
-    const dates = rawDates
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
+  const handleConfirmOpenPeriod = async () => {
+    setIsSubmittingModal(true);
+    const period = `${modalYear}-${String(modalMonth + 1).padStart(2, '0')}`;
     try {
-      await authenticatedJson('/api/payroll/holiday-calendars', {
+      await authenticatedJson('/api/payroll/periods', {
         method: 'POST',
-        body: JSON.stringify({ year, version, dates, reason }),
+        body: JSON.stringify({
+          period,
+          attendanceStatus: 'open',
+          holidays: Array.from(selectedHolidays),
+        }),
       });
+      setAttendancePeriodStatus('open');
+      setShowOpenPeriodModal(false);
       setNotification({
         show: true,
         type: 'success',
-        message: `Kalender libur ${year} versi ${version} tersimpan dengan audit log.`,
+        message: `Periode ${period} berhasil dibuka dengan ${selectedHolidays.size} tanggal merah.`,
       });
     } catch (error: any) {
       setNotification({
         show: true,
         type: 'error',
-        message: error.message || 'Gagal menyimpan kalender libur.',
+        message: error.message || 'Gagal membuka periode.',
       });
+    } finally {
+      setIsSubmittingModal(false);
     }
   };
+
+
 
   const [legalitasDialogOpen, setLegalitasDialogOpen] = useState(false);
   const [cetakPayrollDialogOpen, setCetakPayrollDialogOpen] = useState(false);
@@ -2669,16 +2693,6 @@ export default function PayrollValidationDashboard() {
                             {attendancePeriodStatus === 'open' ? 'Tutup Permanen' : 'Buka Periode'}
                           </Button>
                         )}
-                      {profile?.role === 'super_admin' && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-7 rounded-lg px-2 text-[11px]"
-                          onClick={handleConfigureHolidayCalendar}
-                        >
-                          Kalender Libur
-                        </Button>
-                      )}
                     </div>
                   </div>
                   <div>
@@ -3735,6 +3749,175 @@ export default function PayrollValidationDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Full-Screen Open Period Calendar Modal */}
+      {showOpenPeriodModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="px-6 py-5 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-white/10 rounded-2xl border border-white/20">
+                  <CalendarDays className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-black tracking-tight">Konfigurasi Tanggal Merah & Buka Periode</h2>
+                  <p className="text-xs text-indigo-100 font-medium mt-0.5">
+                    {targetDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOpenPeriodModal(false)}
+                className="p-2 hover:bg-white/20 rounded-xl transition-colors text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body Content */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              {/* Live Metrics Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-slate-200/70 text-slate-700">
+                    <CalendarDays className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider">Total Hari</div>
+                    <div className="text-lg font-black text-slate-800">{modalDaysInMonth} Hari</div>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/70 flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-emerald-100 text-emerald-700">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-extrabold uppercase text-emerald-600 tracking-wider">Hari Kerja</div>
+                    <div className="text-lg font-black text-emerald-900">{modalDaysInMonth - selectedHolidays.size} Hari</div>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-rose-50/80 border border-rose-200/70 flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-rose-100 text-rose-700">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-extrabold uppercase text-rose-600 tracking-wider">Tanggal Merah</div>
+                    <div className="text-lg font-black text-rose-900">{selectedHolidays.size} Hari</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Info Banner */}
+              <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200/80 text-xs font-semibold text-amber-900 flex items-start gap-2.5">
+                <span className="text-base leading-none">💡</span>
+                <span>
+                  Setiap hari <strong>Jumat</strong> telah otomatis ditandai sebagai Tanggal Merah (Hari Libur). Klik pada tanggal mana pun di kalender untuk menambahkan atau mengurangi Tanggal Merah.
+                </span>
+              </div>
+
+              {/* Interactive Calendar Grid */}
+              <div className="space-y-2">
+                {/* Day Headers (Senin - Minggu) */}
+                <div className="grid grid-cols-7 gap-2 text-center text-xs font-black text-slate-600 uppercase tracking-wider">
+                  <span>Sen</span>
+                  <span>Sel</span>
+                  <span>Rab</span>
+                  <span>Kam</span>
+                  <span className="text-rose-600">Jum</span>
+                  <span>Sab</span>
+                  <span className="text-rose-600">Min</span>
+                </div>
+
+                {/* Calendar Day Tiles */}
+                <div className="grid grid-cols-7 gap-2">
+                  {/* Empty Offset Tiles */}
+                  {Array.from({ length: modalStartOffset }).map((_, i) => (
+                    <div key={`offset-${i}`} className="h-14 sm:h-16 rounded-2xl bg-slate-50/50 border border-slate-100/50" />
+                  ))}
+
+                  {/* Actual Day Tiles */}
+                  {Array.from({ length: modalDaysInMonth }).map((_, i) => {
+                    const dayNum = i + 1;
+                    const dateStr = `${modalYear}-${String(modalMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+                    const isFriday = new Date(modalYear, modalMonth, dayNum).getDay() === 5;
+                    const isSunday = new Date(modalYear, modalMonth, dayNum).getDay() === 0;
+                    const isHoliday = selectedHolidays.has(dateStr);
+
+                    return (
+                      <button
+                        key={dateStr}
+                        type="button"
+                        onClick={() => {
+                          setSelectedHolidays(prev => {
+                            const next = new Set(prev);
+                            if (next.has(dateStr)) {
+                              next.delete(dateStr);
+                            } else {
+                              next.add(dateStr);
+                            }
+                            return next;
+                          });
+                        }}
+                        className={`h-14 sm:h-16 rounded-2xl p-2 flex flex-col justify-between items-start transition-all cursor-pointer border text-left relative overflow-hidden group select-none ${
+                          isHoliday
+                            ? 'bg-rose-500 text-white border-rose-600 shadow-sm hover:bg-rose-600'
+                            : 'bg-white text-slate-800 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className="font-extrabold text-sm sm:text-base">{dayNum}</span>
+                          {isHoliday && (
+                            <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-white/20 text-white">
+                              {isFriday ? 'Jumat' : 'Libur'}
+                            </span>
+                          )}
+                        </div>
+                        <span className={`text-[9px] font-bold ${isHoliday ? 'text-rose-100' : isSunday || isFriday ? 'text-rose-500' : 'text-slate-400'}`}>
+                          {isHoliday ? 'Tanggal Merah' : 'Hari Kerja'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowOpenPeriodModal(false)}
+                className="rounded-xl font-bold text-xs h-10 px-4 cursor-pointer"
+              >
+                Batal
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmOpenPeriod}
+                disabled={isSubmittingModal}
+                className="rounded-xl font-bold text-xs h-10 px-5 bg-indigo-600 hover:bg-indigo-700 text-white gap-2 cursor-pointer shadow-md"
+              >
+                {isSubmittingModal ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span>Memproses...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                    <span>Simpan & Buka Periode</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

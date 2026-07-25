@@ -10,7 +10,7 @@ import {
   User,
 } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
-import { doc, getDoc, getDocFromCache } from 'firebase/firestore';
+import { doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
 import { UserRole } from '@/lib/payroll/roles';
 
 export interface UserProfile {
@@ -38,7 +38,7 @@ async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const docRef = doc(db, 'users', uid);
 
   try {
-    const serverPromise = getDoc(docRef);
+    const serverPromise = getDocFromServer(docRef);
     
     // Race server getDoc against a 3-second timeout to prevent infinite loading state
     const timeoutPromise = new Promise<null>((resolve) =>
@@ -76,6 +76,16 @@ async function getUserProfile(uid: string): Promise<UserProfile | null> {
     return null;
   } catch (err) {
     console.error("Error fetching user profile:", err);
+    const errorCode =
+      typeof err === 'object' && err !== null && 'code' in err
+        ? String(err.code)
+        : '';
+    // A permission failure cannot be repaired by reading the same protected
+    // document from cache. Avoid a second misleading Firebase error and fail
+    // closed so a stale privileged profile is never accepted.
+    if (errorCode === 'permission-denied' || errorCode === 'firestore/permission-denied') {
+      return null;
+    }
     try {
       const cacheSnap = await getDocFromCache(docRef);
       if (cacheSnap.exists()) {

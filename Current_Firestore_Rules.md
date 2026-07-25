@@ -9,7 +9,10 @@ service cloud.firestore {
     function hasProfile() {
       return signedIn() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.disabled != true;
+        // Existing profiles may predate the disabled flag. Map.get keeps those
+        // accounts enabled while still failing closed when disabled is true.
+        get(/databases/$(database)/documents/users/$(request.auth.uid))
+          .data.get('disabled', false) == false;
     }
 
     function profile() {
@@ -61,8 +64,19 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isSuperAdmin());
+      // Profile bootstrap must not depend on hasProfile(), otherwise the first
+      // profile read after Firebase Authentication becomes circular. A user can
+      // fetch only their own document; listing profiles remains super-admin only.
+      allow get: if signedIn() && (request.auth.uid == uid || isSuperAdmin());
+      allow list: if isSuperAdmin();
       allow create, update, delete: if false;
+    }
+
+    // Read-only compatibility for historical employee references. New records
+    // belong in the typed employee collections below.
+    match /Employees/{employeeId} {
+      allow read: if isFinanceRole() || isEmployeeAdmin() || ownsEmployee(employeeId);
+      allow write: if false;
     }
 
     // Employee documents contain bank and salary data. Employees can read only

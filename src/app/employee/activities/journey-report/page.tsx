@@ -8,7 +8,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Loader2,
   ArrowLeft,
@@ -38,6 +37,15 @@ import {
   deleteField,
 } from 'firebase/firestore';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import {
+  calculateDriverNetWage,
+  calculateJourneyElapsedHours,
+  calculateNightPremium,
+  journeyDayCount,
+  calculateJourneyDateTimeTimings,
+  getShortTripMealWageComponent,
+  getMealAllowanceForDuration,
+} from '@/lib/payroll/driverJourney';
 
 const loadGoogleMapsScript = (callback: () => void) => {
   if (typeof window === 'undefined') return;
@@ -68,6 +76,17 @@ function getTodayISO(): string {
   return d.toISOString().split('T')[0];
 }
 
+function getNextDayISO(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`);
+  if (isNaN(d.getTime())) return dateStr;
+  d.setDate(d.getDate() + 1);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function parseLegDistance(text: string): number {
   if (!text) return 0;
   const num = parseFloat(text.replace(/,/g, ''));
@@ -78,21 +97,15 @@ function parseLegDistance(text: string): number {
   return num;
 }
 
-function getMealAllowanceForDuration(hours: number): number {
-  if (hours > 0 && hours < 2) return 5000;
-  if (hours >= 2 && hours <= 6) return 20000;
-  if (hours > 6 && hours <= 12) return 40000;
-  if (hours > 12) return 60000;
-  return 0;
-}
 
-function calculateElapsedHours(start: string, end: string): number {
+
+function calculateElapsedHours(start: string, end: string, nightCount: number): number {
   if (!start || !end) return 0;
-  const [hStart, mStart] = start.split(':').map(Number);
-  const [hEnd, mEnd] = end.split(':').map(Number);
-  let diffMinutes = (hEnd * 60 + mEnd) - (hStart * 60 + mStart);
-  if (diffMinutes < 0) diffMinutes += 24 * 60;
-  return diffMinutes / 60;
+  try {
+    return calculateJourneyElapsedHours(start, end, nightCount);
+  } catch {
+    return 0;
+  }
 }
 
 function padTime(time: string): string {
@@ -159,10 +172,13 @@ const getDominantColorFromImage = async (imgUrl: string): Promise<{ hex: string;
     }
 
     return new Promise((resolve) => {
-      const img = new Image();
+      // If we don't have a converted dataUrl, skip canvas extraction safely to prevent CORS console warnings
       if (!sourceUrl.startsWith('data:')) {
-        img.crossOrigin = 'anonymous';
+        resolve(null);
+        return;
       }
+
+      const img = new Image();
       img.onload = () => {
         try {
           const canvas = document.createElement('canvas');
@@ -402,9 +418,11 @@ function JourneyReportContent() {
 
   // Form states
   const [formDate, setFormDate] = useState('');
-  const [formTimeStart, setFormTimeStart] = useState('08:00');
-  const [formTimeEnd, setFormTimeEnd] = useState('17:00');
-  const [formIsOvernight, setFormIsOvernight] = useState(false);
+  const [formTimeStart, setFormTimeStart] = useState('');
+  const [formTimeEnd, setFormTimeEnd] = useState('');
+  const [formIsMultiDay, setFormIsMultiDay] = useState(false);
+  const [formDateEnd, setFormDateEnd] = useState('');
+  const [formNightCount, setFormNightCount] = useState<number>(0);
   const [formFuelFee, setFormFuelFee] = useState('');
   const [formTollParkingFee, setFormTollParkingFee] = useState('');
   const [formFuelReceiptUrls, setFormFuelReceiptUrls] = useState<string[]>([]);
@@ -417,6 +435,15 @@ function JourneyReportContent() {
   const [calculatedDurationHours, setCalculatedDurationHours] = useState(0);
   const [isCalculatingExtraRoute, setIsCalculatingExtraRoute] = useState(false);
   const [extraRouteError, setExtraRouteError] = useState('');
+
+  const isInvalidSingleDayTime = useMemo(() => {
+    if (formIsMultiDay) return false;
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(formTimeStart)) return false;
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(formTimeEnd)) return false;
+    const startMins = parseInt(formTimeStart.split(':')[0], 10) * 60 + parseInt(formTimeStart.split(':')[1], 10);
+    const endMins = parseInt(formTimeEnd.split(':')[0], 10) * 60 + parseInt(formTimeEnd.split(':')[1], 10);
+    return endMins <= startMins;
+  }, [formIsMultiDay, formTimeStart, formTimeEnd]);
 
   // Map selector modal
   const [showMapSelector, setShowMapSelector] = useState(false);
@@ -460,10 +487,13 @@ function JourneyReportContent() {
         if (docSnap.exists()) {
           const data: any = { id: docSnap.id, ...docSnap.data() };
           setActiveReportingJourney(data);
-          setFormDate(data.journeyDate || data.activityDate || new Date().toISOString().split('T')[0]);
+          const initialDate = data.journeyDate || data.activityDate || new Date().toISOString().split('T')[0];
+          setFormDate(initialDate);
+          setFormDateEnd(data.draftDateEnd || initialDate);
+          setFormIsMultiDay(data.draftIsMultiDay || (data.draftNightCount && data.draftNightCount > 0) || false);
           setExtraActivities(data.draftExtraActivities || []);
-          setFormTimeStart(data.draftTimeStart || '08:00');
-          setFormTimeEnd(data.draftTimeEnd || '17:00');
+          setFormTimeStart(data.draftTimeStart || '');
+          setFormTimeEnd(data.draftTimeEnd || '');
           setFormFuelFee(data.draftFuelFee ? Number(data.draftFuelFee).toLocaleString('id-ID') : '');
           setFormTollParkingFee(data.draftTollParkingFee ? Number(data.draftTollParkingFee).toLocaleString('id-ID') : '');
 
@@ -473,7 +503,11 @@ function JourneyReportContent() {
           const rawToll = data.draftTollReceiptUrl || data.tollReceiptUrl || '';
           setFormTollReceiptUrls(rawToll ? rawToll.split(',').filter(Boolean) : []);
 
-          setFormIsOvernight(data.draftIsOvernight || false);
+          setFormNightCount(
+            Number.isSafeInteger(data.draftNightCount) && data.draftNightCount >= 0
+              ? data.draftNightCount
+              : 0,
+          );
           setCalculatedDistanceKm(
             data.draftCalculatedDistanceKm !== undefined
               ? data.draftCalculatedDistanceKm
@@ -622,7 +656,7 @@ function JourneyReportContent() {
       await updateDoc(journeyRef, {
         draftTimeStart: formTimeStart,
         draftTimeEnd: formTimeEnd,
-        draftIsOvernight: formIsOvernight,
+        draftNightCount: formNightCount,
         draftFuelFee: fuelVal,
         draftTollParkingFee: tollVal,
         draftFuelReceiptUrl: formFuelReceiptUrls.join(','),
@@ -777,7 +811,7 @@ function JourneyReportContent() {
         claimedAt: deleteField(),
         draftTimeStart: deleteField(),
         draftTimeEnd: deleteField(),
-        draftIsOvernight: deleteField(),
+        draftNightCount: deleteField(),
         draftFuelFee: deleteField(),
         draftTollParkingFee: deleteField(),
         draftFuelReceiptUrl: deleteField(),
@@ -817,14 +851,24 @@ function JourneyReportContent() {
     }
     const timeRegex = /^([0-9]{2}):([0-9]{2})$/;
     if (!formTimeStart || !formTimeEnd || !timeRegex.test(formTimeStart) || !timeRegex.test(formTimeEnd)) {
-      setMessage({ type: 'error', text: 'Format waktu berangkat dan tiba harus HH:MM (contoh: 08:00).' });
+      setMessage({ type: 'error', text: 'Format waktu berangkat dan tiba harus JJ:MM (contoh: 08:00).' });
       isSubmittingRef.current = false;
       setSubmitting(false);
       skipSaveDraftRef.current = false;
       return;
     }
-    if (!formIsOvernight && formTimeEnd <= formTimeStart) {
-      setMessage({ type: 'error', text: 'Waktu selesai harus lebih dari waktu mulai (centang "Tambahan Menginap" jika perjalanan lintas hari).' });
+    if (isInvalidSingleDayTime) {
+      setMessage({
+        type: 'error',
+        text: `Jam tiba (${formTimeEnd}) tidak boleh sebelum atau sama dengan jam berangkat (${formTimeStart}) pada perjalanan hari yang sama. Silakan centang "Perjalanan Lintas Hari / Menginap" jika perjalanan melintasi tengah malam.`,
+      });
+      isSubmittingRef.current = false;
+      setSubmitting(false);
+      skipSaveDraftRef.current = false;
+      return;
+    }
+    if (calculateElapsedHours(formTimeStart, formTimeEnd, formNightCount) <= 0) {
+      setMessage({ type: 'error', text: 'Jam tiba dan jumlah malam tidak membentuk durasi perjalanan yang valid.' });
       isSubmittingRef.current = false;
       setSubmitting(false);
       skipSaveDraftRef.current = false;
@@ -853,7 +897,7 @@ function JourneyReportContent() {
       const isNdalem = activeReportingJourney.vehicleName === 'Ndalem';
       const originalTotalDist = (activeReportingJourney.distanceKm || 0) * 2;
       const extraDistanceKm = Math.max(0, calculatedDistanceKm - originalTotalDist);
-      const extraOperationalCost = Math.ceil(extraDistanceKm * (activeReportingJourney.vehicleRate || 0));
+      const extraOperationalCost = 0; // Extra mileage is compensated via Upah Bersih Sopir (distance component), not automatic cash reimbursement without receipts
 
       const preAuthorizedDurationPP = activeReportingJourney.customDurationPP || (activeReportingJourney.durationHours ? activeReportingJourney.durationHours * 2 : 0);
       const preAuthorizedMeal = isNdalem
@@ -869,8 +913,20 @@ function JourneyReportContent() {
 
       const totalActualSpent = fuelVal + tollVal;
 
-      const elapsedHours = (formTimeStart && formTimeEnd) ? calculateElapsedHours(formTimeStart, formTimeEnd) : 0;
-      const actualMealAllowance = isNdalem ? 0 : getMealAllowanceForDuration(elapsedHours);
+      const timings = calculateJourneyDateTimeTimings({
+        dateStart: formDate,
+        timeStart: formTimeStart,
+        dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+        timeEnd: formTimeEnd,
+        isMultiDay: formIsMultiDay,
+      });
+      const effectiveNightCount = formIsMultiDay ? timings.nightCount : formNightCount;
+      const elapsedHours = timings.durationHours > 0 ? timings.durationHours : calculateElapsedHours(formTimeStart, formTimeEnd, effectiveNightCount);
+
+      const actualMealAllowance = getMealAllowanceForDuration(
+        elapsedHours,
+        activeReportingJourney.vehicleName,
+      );
       const extraMealAllowance = isNdalem ? 0 : Math.max(0, actualMealAllowance - preAuthorizedMeal);
 
       const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
@@ -882,16 +938,24 @@ function JourneyReportContent() {
       const finalReimburseDelta = Math.max(0, positiveReimburseDelta - unspentCash);
       const remainingUnspentCash = Math.max(0, unspentCash - positiveReimburseDelta);
 
-      const premiumWeekend = 0;
-      const premiumOvernight = formIsOvernight ? 50000 : 0;
-      const baseDriverWage = calculatedDistanceKm * 300 + calculatedDurationHours * 5000 + premiumWeekend + premiumOvernight;
+      const nightPremium = calculateNightPremium(effectiveNightCount);
+      const baseDriverWage = calculateDriverNetWage(
+        calculatedDistanceKm,
+        calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
+        effectiveNightCount,
+      );
       const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
 
       const extraLocs = extraActivities.filter(a => a.type === 'tambah_lokasi' && a.destination);
       const extraLocsText = extraLocs.map(l => l.destination.split(',')[0]).join(' → ');
 
-      const routeText = ` (${activeReportingJourney.startPoint.split(',')[0]} → ${activeReportingJourney.endPoint}${extraLocsText ? ' → ' + extraLocsText : ''})`;
-      const finalActivityName = activeReportingJourney.activityName + routeText;
+      const startShort = (activeReportingJourney.startPoint || '').split(',')[0].trim();
+      const endShort = (activeReportingJourney.endPoint || '').split(',')[0].trim();
+      const routeText = ` (${startShort} → ${endShort}${extraLocsText ? ' → ' + extraLocsText : ''})`;
+      let finalActivityName = ((activeReportingJourney.activityName || 'Perjalanan Sopir') + routeText).trim();
+      if (finalActivityName.length > 180) {
+        finalActivityName = finalActivityName.slice(0, 177) + '...';
+      }
 
       await authenticatedJson('/api/pekarya/activities', {
         method: 'POST',
@@ -906,14 +970,17 @@ function JourneyReportContent() {
           driverData: {
           tripType: calculatedDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
           vehicleType: activeReportingJourney.vehicleName,
-          isOvernight: formIsOvernight,
+          nightCount: effectiveNightCount,
+          dateStart: formDate,
+          dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+          isMultiDay: formIsMultiDay,
           fuelFee: fuelVal,
           tollParkingFee: tollVal,
           fuelReceiptUrl: formFuelReceiptUrls.join(','),
           tollReceiptUrl: formTollReceiptUrls.join(','),
           points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
           distanceKm: calculatedDistanceKm,
-          durationHours: calculatedDurationHours,
+          durationHours: calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
           journeyId: activeReportingJourney.id,
           extraActivities,
           extraDistanceKm,
@@ -935,10 +1002,10 @@ function JourneyReportContent() {
           totalPreAuthorizedAllowance,
           totalActualSpent,
           totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
-          vehicleRate: activeReportingJourney.vehicleRate || 1000,
+          vehicleRate: activeReportingJourney.vehicleRate ?? 1000,
           componentJarak: calculatedDistanceKm * 300,
           componentWaktu: calculatedDurationHours * 5000,
-          premiumOvernight: formIsOvernight ? 50000 : 0,
+          nightPremium,
           },
         }),
       });
@@ -1084,7 +1151,7 @@ function JourneyReportContent() {
   const returnLeg = getReturnLegDetails();
 
   return (
-    <div className="min-h-screen font-sans pb-24 text-slate-800 relative transition-all duration-700" style={pageBgStyle}>
+    <div className="min-h-screen bg-slate-50 font-sans pb-24 text-slate-800 relative">
       {/* ── Top Header Bar ─────────────────────────────────────────────── */}
       <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 sticky top-0 z-30 shadow-md">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -1132,23 +1199,25 @@ function JourneyReportContent() {
           </div>
         )}
 
-        <form onSubmit={handleCompleteJourneySubmit} className="space-y-4">
+        <form onSubmit={handleCompleteJourneySubmit} className="space-y-5">
           
-          {/* Keperluan, Kendaraan & Tanggal Header Card with Destination Banner */}
-          <div className="rounded-2xl bg-white border border-slate-200/80 shadow-xs overflow-hidden">
-            <DestinationImageBanner
-              destination={activeReportingJourney.endPoint}
-              cachedUrl={activeReportingJourney.destinationImageUrl}
-              onColorExtracted={handleColorExtracted}
-            />
-            <div className="p-4 sm:p-5 text-xs font-semibold text-slate-500">
+          {/* Header Banner & Trip Specifications */}
+          <div className="space-y-3">
+            <div className="rounded-2xl overflow-hidden shadow-xs">
+              <DestinationImageBanner
+                destination={activeReportingJourney.endPoint}
+                cachedUrl={activeReportingJourney.destinationImageUrl}
+                onColorExtracted={handleColorExtracted}
+              />
+            </div>
+            <div className="text-xs font-bold text-slate-900 px-1">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <div>Keperluan: <strong className="text-slate-700 font-extrabold">{activeReportingJourney.activityName}</strong></div>
+                <div>Keperluan: <strong className="text-black font-extrabold">{activeReportingJourney.activityName}</strong></div>
                 <div className="text-slate-300">•</div>
-                <div>Kendaraan: <strong className="text-slate-700 font-extrabold">{activeReportingJourney.vehicleName}</strong></div>
+                <div>Kendaraan: <strong className="text-black font-extrabold">{activeReportingJourney.vehicleName}</strong></div>
                 <div className="text-slate-300">•</div>
                 <div>
-                  Tanggal: <strong className="text-slate-700 font-extrabold">
+                  Tanggal: <strong className="text-black font-extrabold">
                     {(() => {
                       const d = formDate || activeReportingJourney.activityDate || getTodayISO();
                       return new Date(d.includes('T') ? d : `${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -1159,13 +1228,13 @@ function JourneyReportContent() {
             </div>
           </div>
 
-            {/* Unified Route Timeline Card */}
-            {(() => {
-              const d0 = activeReportingJourney.distanceKm || 0;
-              const wage0 = (d0 * 300) + ((activeReportingJourney.durationHours || 0) * 5000);
+          {/* Line Separator 1: Unified Route Timeline Section */}
+          {(() => {
+            const d0 = activeReportingJourney.distanceKm || 0;
+            const wage0 = (d0 * 300) + ((activeReportingJourney.durationHours || 0) * 5000);
 
-              return (
-              <div className="p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+            return (
+              <div className="border-t border-slate-200/70 pt-5 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-indigo-700 uppercase tracking-wider">
                       <Compass className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
@@ -1189,12 +1258,12 @@ function JourneyReportContent() {
                     <div className="relative flex items-start gap-2.5 text-xs">
                       <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-indigo-600 border-2 border-white shadow-sm" />
                       <div className="space-y-0.5 min-w-0">
-                        <span className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block">Titik Keberangkatan</span>
-                        <div className="font-extrabold text-slate-700 truncate" title={activeReportingJourney.startPoint}>
+                        <span className="text-[8px] uppercase tracking-wider text-blue-600 font-extrabold block">Titik Keberangkatan</span>
+                        <div className="font-extrabold text-black truncate" title={activeReportingJourney.startPoint}>
                           🏫 {activeReportingJourney.startPoint.split(',')[0]}
                         </div>
-                        <div className="text-[9px] text-slate-400 font-medium">
-                          Jarak Leg: {d0.toFixed(1)} km (Upah Bersih: <span className="text-emerald-600 font-bold">{fmtRp(Math.ceil(wage0))}</span>)
+                        <div className="text-[9px] text-slate-800 font-bold">
+                          Jarak Leg: {d0.toFixed(1)} km (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil(wage0))}</span>)
                         </div>
                       </div>
                     </div>
@@ -1203,8 +1272,8 @@ function JourneyReportContent() {
                     <div className="relative flex items-start gap-2.5 text-xs">
                       <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-indigo-600 border-2 border-white shadow-sm" />
                       <div className="space-y-0.5 min-w-0">
-                        <span className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block">Tujuan Utama</span>
-                        <div className="font-extrabold text-slate-700 truncate" title={activeReportingJourney.endPoint}>
+                        <span className="text-[8px] uppercase tracking-wider text-blue-600 font-extrabold block">Tujuan Utama</span>
+                        <div className="font-extrabold text-black truncate" title={activeReportingJourney.endPoint}>
                           🎯 {activeReportingJourney.endPoint}
                         </div>
                       </div>
@@ -1220,18 +1289,18 @@ function JourneyReportContent() {
                           <div className="flex-1 min-w-0 space-y-1">
                             {act.destination ? (
                               <div className="space-y-0.5">
-                                <span className="text-[8px] uppercase tracking-wider text-teal-600 font-bold block">Tujuan Tambahan</span>
-                                <div className="text-xs font-black text-slate-700 truncate" title={act.destination}>
+                                <span className="text-[8px] uppercase tracking-wider text-teal-700 font-extrabold block">Tujuan Tambahan</span>
+                                <div className="text-xs font-black text-black truncate" title={act.destination}>
                                   📍 {act.destination.split(',')[0]}
                                 </div>
                                 {act.distanceText && act.distanceKm !== undefined && (
-                                  <div className="text-[9px] text-slate-400 font-medium">
-                                    Jarak Leg: {act.distanceText} (Upah Bersih: <span className="text-emerald-600 font-bold">{fmtRp(Math.ceil((act.distanceKm * 300) + ((act.durationHours || 0) * 5000)))}</span>)
+                                  <div className="text-[9px] text-slate-800 font-bold">
+                                    Jarak Leg: {act.distanceText} (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil((act.distanceKm * 300) + ((act.durationHours || 0) * 5000)))}</span>)
                                   </div>
                                 )}
                               </div>
                             ) : (
-                              <div className="text-xs font-semibold text-slate-400 italic">
+                              <div className="text-xs font-bold text-slate-700 italic">
                                 Belum memilih lokasi
                               </div>
                             )}
@@ -1255,7 +1324,7 @@ function JourneyReportContent() {
                               type="button"
                               variant="ghost"
                               onClick={() => handleRemoveExtraActivity(index)}
-                              className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                              className="h-7 w-7 p-0 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -1268,12 +1337,12 @@ function JourneyReportContent() {
                     <div className="relative flex items-start gap-2.5 text-xs">
                       <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-indigo-600 border-2 border-white shadow-sm" />
                       <div className="space-y-0.5 min-w-0">
-                        <span className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block">Titik Kepulangan</span>
-                        <div className="font-extrabold text-slate-700 truncate" title={activeReportingJourney.startPoint}>
+                        <span className="text-[8px] uppercase tracking-wider text-blue-600 font-extrabold block">Titik Kepulangan</span>
+                        <div className="font-extrabold text-black truncate" title={activeReportingJourney.startPoint}>
                           🏫 {activeReportingJourney.startPoint.split(',')[0]}
                         </div>
-                        <div className="text-[9px] text-slate-400 font-medium">
-                          Jarak Leg: {returnLeg.distanceText} (Upah Bersih: <span className="text-emerald-600 font-bold">{fmtRp(Math.ceil((returnLeg.distanceKm * 300) + ((returnLeg.durationHours || 0) * 5000)))}</span>)
+                        <div className="text-[9px] text-slate-800 font-bold">
+                          Jarak Leg: {returnLeg.distanceText} (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil((returnLeg.distanceKm * 300) + ((returnLeg.durationHours || 0) * 5000)))}</span>)
                         </div>
                       </div>
                     </div>
@@ -1283,80 +1352,248 @@ function JourneyReportContent() {
               );
             })()}
 
-            {/* Input Data & Pengeluaran Operasional Card */}
-            <div className="p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
-              {/* Jam Berangkat / Tiba */}
-              <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="journeyTimeStart" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Jam Berangkat
-                </Label>
-                <Input
-                  id="journeyTimeStart"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={5}
-                  placeholder="HH:MM"
-                  value={formTimeStart}
-                  onChange={(e) => {
-                    let val = e.target.value.replace(/[^0-9]/g, '');
-                    if (val.length > 4) val = val.slice(0, 4);
-                    if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
-                    if (val.length >= 2) {
-                      const hours = parseInt(val.slice(0, 2), 10);
-                      if (hours > 23) val = '23' + val.slice(2);
-                    }
-                    if (val.length === 4) {
-                      const minutes = parseInt(val.slice(2, 4), 10);
-                      if (minutes > 59) val = val.slice(0, 2) + '59';
-                    }
-                    if (val.length > 2) {
-                      setFormTimeStart(`${val.slice(0, 2)}:${val.slice(2)}`);
-                    } else {
-                      setFormTimeStart(val);
-                    }
-                  }}
-                  onBlur={(e) => setFormTimeStart(padTime(e.target.value))}
-                  className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
-                  required
-                />
+          {/* Line Separator 2: Input Data & Pengeluaran Operasional Section */}
+          <div className="border-t border-slate-200/70 pt-5 space-y-4">
+              {/* Toggle Lintas Hari / Menginap Above Time Controls */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-indigo-50/60 border border-indigo-100">
+                <div className="flex items-center gap-2">
+                  <input
+                    id="toggleMultiDay"
+                    type="checkbox"
+                    checked={formIsMultiDay}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setFormIsMultiDay(checked);
+                      if (!checked) {
+                        setFormDateEnd('');
+                      } else {
+                        const startMins = parseInt((formTimeStart || '00:00').split(':')[0], 10) * 60 + parseInt((formTimeStart || '00:00').split(':')[1], 10);
+                        const endMins = parseInt((formTimeEnd || '00:00').split(':')[0], 10) * 60 + parseInt((formTimeEnd || '00:00').split(':')[1], 10);
+                        if (endMins <= startMins || !formDateEnd || formDateEnd === formDate) {
+                          setFormDateEnd(getNextDayISO(formDate || getTodayISO()));
+                        }
+                      }
+                    }}
+                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <Label htmlFor="toggleMultiDay" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                    Perjalanan Lintas Hari / Menginap
+                  </Label>
+                </div>
+                <span className="text-[10px] font-semibold text-indigo-600">
+                  {formIsMultiDay ? 'Multi-Hari Active' : 'Hari yang sama'}
+                </span>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="journeyTimeEnd" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Jam Tiba / Selesai
-                </Label>
-                <Input
-                  id="journeyTimeEnd"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={5}
-                  placeholder="HH:MM"
-                  value={formTimeEnd}
-                  onChange={(e) => {
-                    let val = e.target.value.replace(/[^0-9]/g, '');
-                    if (val.length > 4) val = val.slice(0, 4);
-                    if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
-                    if (val.length >= 2) {
-                      const hours = parseInt(val.slice(0, 2), 10);
-                      if (hours > 23) val = '23' + val.slice(2);
-                    }
-                    if (val.length === 4) {
-                      const minutes = parseInt(val.slice(2, 4), 10);
-                      if (minutes > 59) val = val.slice(0, 2) + '59';
-                    }
-                    if (val.length > 2) {
-                      setFormTimeEnd(`${val.slice(0, 2)}:${val.slice(2)}`);
-                    } else {
-                      setFormTimeEnd(val);
-                    }
-                  }}
-                  onBlur={(e) => setFormTimeEnd(padTime(e.target.value))}
-                  className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
-                  required
-                />
-              </div>
-            </div>
+              {!formIsMultiDay ? (
+                /* 1-Row Layout for Single-Day Trip */
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="journeyTimeStart" className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                        Jam Berangkat
+                      </Label>
+                      <Input
+                        id="journeyTimeStart"
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={5}
+                        placeholder="JJ:MM"
+                        value={formTimeStart}
+                        onChange={(e) => {
+                          let val = e.target.value.replace(/[^0-9]/g, '');
+                          if (val.length > 4) val = val.slice(0, 4);
+                          if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
+                          if (val.length >= 2) {
+                            const hours = parseInt(val.slice(0, 2), 10);
+                            if (hours > 23) val = '23' + val.slice(2);
+                          }
+                          if (val.length === 4) {
+                            const minutes = parseInt(val.slice(2, 4), 10);
+                            if (minutes > 59) val = val.slice(0, 2) + '59';
+                          }
+                          if (val.length > 2) {
+                            setFormTimeStart(`${val.slice(0, 2)}:${val.slice(2)}`);
+                          } else {
+                            setFormTimeStart(val);
+                          }
+                        }}
+                        onBlur={(e) => setFormTimeStart(padTime(e.target.value))}
+                        className="rounded-xl border-slate-300 focus:border-indigo-500 text-sm h-10 px-3 font-semibold text-slate-900"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="journeyTimeEnd" className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                        Jam Tiba / Selesai
+                      </Label>
+                      <Input
+                        id="journeyTimeEnd"
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={5}
+                        placeholder="JJ:MM"
+                        value={formTimeEnd}
+                        onChange={(e) => {
+                          let val = e.target.value.replace(/[^0-9]/g, '');
+                          if (val.length > 4) val = val.slice(0, 4);
+                          if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
+                          if (val.length >= 2) {
+                            const hours = parseInt(val.slice(0, 2), 10);
+                            if (hours > 23) val = '23' + val.slice(2);
+                          }
+                          if (val.length === 4) {
+                            const minutes = parseInt(val.slice(2, 4), 10);
+                            if (minutes > 59) val = val.slice(0, 2) + '59';
+                          }
+                          if (val.length > 2) {
+                            setFormTimeEnd(`${val.slice(0, 2)}:${val.slice(2)}`);
+                          } else {
+                            setFormTimeEnd(val);
+                          }
+                        }}
+                        onBlur={(e) => setFormTimeEnd(padTime(e.target.value))}
+                        className={`rounded-xl text-sm h-10 px-3 font-semibold transition-colors ${
+                          isInvalidSingleDayTime
+                            ? 'border-rose-400 focus:border-rose-500 bg-rose-50/30 text-rose-900'
+                            : 'border-slate-300 focus:border-indigo-500 text-slate-900'
+                        }`}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {isInvalidSingleDayTime && (
+                    <div className="p-2.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 mt-2 animate-in fade-in duration-200">
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>
+                        Jam tiba ({formTimeEnd}) tidak boleh sebelum atau sama dengan jam berangkat ({formTimeStart}) pada perjalanan hari yang sama. Silakan centang <strong>Perjalanan Lintas Hari / Menginap</strong> jika perjalanan melintasi tengah malam.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* 2-Row Layout for Multi-Day / Overnight Trip */
+                <div className="space-y-3 animate-in fade-in duration-200">
+                  {/* Row 1: Departure Date & Time */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="dateStartInput" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Tanggal Berangkat
+                      </Label>
+                      <Input
+                        id="dateStartInput"
+                        type="date"
+                        value={formDate}
+                        onChange={(e) => setFormDate(e.target.value)}
+                        className="rounded-xl border-slate-200 focus:border-indigo-400 text-xs h-10 px-2.5"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="timeStartMulti" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Jam Berangkat
+                      </Label>
+                      <Input
+                        id="timeStartMulti"
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={5}
+                        placeholder="JJ:MM"
+                        value={formTimeStart}
+                        onChange={(e) => {
+                          let val = e.target.value.replace(/[^0-9]/g, '');
+                          if (val.length > 4) val = val.slice(0, 4);
+                          if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
+                          if (val.length >= 2) {
+                            const hours = parseInt(val.slice(0, 2), 10);
+                            if (hours > 23) val = '23' + val.slice(2);
+                          }
+                          if (val.length === 4) {
+                            const minutes = parseInt(val.slice(2, 4), 10);
+                            if (minutes > 59) val = val.slice(0, 2) + '59';
+                          }
+                          if (val.length > 2) {
+                            setFormTimeStart(`${val.slice(0, 2)}:${val.slice(2)}`);
+                          } else {
+                            setFormTimeStart(val);
+                          }
+                        }}
+                        onBlur={(e) => setFormTimeStart(padTime(e.target.value))}
+                        className="rounded-xl border-slate-200 focus:border-indigo-400 text-xs h-10 px-3"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Row 2: Arrival Date & Time */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="dateEndInput" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Tanggal Tiba / Selesai
+                      </Label>
+                      <Input
+                        id="dateEndInput"
+                        type="date"
+                        value={formDateEnd || formDate}
+                        onChange={(e) => setFormDateEnd(e.target.value)}
+                        className="rounded-xl border-slate-200 focus:border-indigo-400 text-xs h-10 px-2.5"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="timeEndMulti" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Jam Tiba / Selesai
+                      </Label>
+                      <Input
+                        id="timeEndMulti"
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={5}
+                        placeholder="JJ:MM"
+                        value={formTimeEnd}
+                        onChange={(e) => {
+                          let val = e.target.value.replace(/[^0-9]/g, '');
+                          if (val.length > 4) val = val.slice(0, 4);
+                          if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
+                          if (val.length >= 2) {
+                            const hours = parseInt(val.slice(0, 2), 10);
+                            if (hours > 23) val = '23' + val.slice(2);
+                          }
+                          if (val.length === 4) {
+                            const minutes = parseInt(val.slice(2, 4), 10);
+                            if (minutes > 59) val = val.slice(0, 2) + '59';
+                          }
+                          if (val.length > 2) {
+                            setFormTimeEnd(`${val.slice(0, 2)}:${val.slice(2)}`);
+                          } else {
+                            setFormTimeEnd(val);
+                          }
+                        }}
+                        onBlur={(e) => setFormTimeEnd(padTime(e.target.value))}
+                        className="rounded-xl border-slate-200 focus:border-indigo-400 text-xs h-10 px-3"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {(() => {
+                const timings = calculateJourneyDateTimeTimings({
+                  dateStart: formDate,
+                  timeStart: formTimeStart,
+                  dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+                  timeEnd: formTimeEnd,
+                  isMultiDay: formIsMultiDay,
+                });
+                const effectiveNights = formIsMultiDay ? timings.nightCount : formNightCount;
+                return (
+                  <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5 pt-1">
+                    <span>💡 Durasi Terhitung:</span>
+                    <span className="text-indigo-700 font-extrabold">
+                      {timings.durationHours > 0 ? timings.durationHours.toFixed(1) : '0'} Jam ({effectiveNights} Malam)
+                    </span>
+                  </div>
+                );
+              })()}
 
             {/* Loader for API Recalculation */}
             {isCalculatingExtraRoute && (
@@ -1579,11 +1816,29 @@ function JourneyReportContent() {
               const isNdalem = activeReportingJourney.vehicleName === 'Ndalem';
               const originalTotalDist = (activeReportingJourney.distanceKm || 0) * 2;
               const extraDistanceKm = Math.max(0, calculatedDistanceKm - originalTotalDist);
-              const extraOperationalCost = Math.ceil(extraDistanceKm * (activeReportingJourney.vehicleRate || 0));
+              const extraOperationalCost = 0; // Extra mileage is compensated via Upah Bersih Sopir (distance component), not automatic cash reimbursement without receipts
 
               const originalMealAllowance = activeReportingJourney.mealAllowance || 0;
-              const elapsedHours = (formTimeStart && formTimeEnd) ? calculateElapsedHours(formTimeStart, formTimeEnd) : 0;
-              const actualMealAllowance = isNdalem ? 0 : ((formTimeStart && formTimeEnd) ? getMealAllowanceForDuration(elapsedHours) : originalMealAllowance);
+              const tableTimings = calculateJourneyDateTimeTimings({
+                dateStart: formDate,
+                timeStart: formTimeStart,
+                dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+                timeEnd: formTimeEnd,
+                isMultiDay: formIsMultiDay,
+              });
+              const effectiveTableNights = formIsMultiDay ? tableTimings.nightCount : formNightCount;
+              const elapsedHours = tableTimings.durationHours > 0 ? tableTimings.durationHours : calculateElapsedHours(
+                formTimeStart,
+                formTimeEnd,
+                effectiveTableNights,
+              );
+              const actualMealAllowance =
+                elapsedHours > 0
+                  ? getMealAllowanceForDuration(
+                      elapsedHours,
+                      activeReportingJourney.vehicleName,
+                    )
+                  : originalMealAllowance;
               const extraMealAllowance = isNdalem ? 0 : Math.max(0, actualMealAllowance - originalMealAllowance);
 
               const baseCostVal = activeReportingJourney.baseOperationalCost ||
@@ -1595,21 +1850,18 @@ function JourneyReportContent() {
               const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
 
               return (
-                <div className="p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/80 shadow-xs text-slate-600 text-xs space-y-2 font-medium">
-                  <span className="text-[9px] font-bold text-indigo-800 uppercase tracking-wider block mb-1">
+                <div className="border-t border-slate-200/70 pt-5 text-slate-600 text-xs space-y-2 font-medium">
+                  <span className="text-xs font-black text-indigo-700 uppercase tracking-wider block mb-1.5">
                     Kalkulasi Penyesuaian & Biaya Akhir
                   </span>
                   {(() => {
-                    const getStratumLabel = (allowance: number, hours: number): string => {
-                      if (allowance === 5000) return '<2';
-                      if (allowance === 20000) return '2 - 6';
-                      if (allowance === 40000) return '6 - 12';
-                      if (allowance === 60000) return '>12';
-                      if (hours > 0 && hours < 2) return '<2';
-                      if (hours >= 2 && hours <= 6) return '2 - 6';
-                      if (hours > 6 && hours <= 12) return '6 - 12';
-                      if (hours > 12) return '>12';
-                      return '<2';
+                    const getStratumLabel = (hours: number): string => {
+                      if (hours <= 0) return '—';
+                      const days = Math.floor(hours / 24);
+                      const remainder = hours % 24;
+                      return days > 0
+                        ? `${days} hari + ${remainder.toFixed(1)} jam`
+                        : `${remainder.toFixed(1)} jam`;
                     };
 
                     const preAuthorizedDurationPP = activeReportingJourney.customDurationPP || (activeReportingJourney.durationHours ? activeReportingJourney.durationHours * 2 : 0);
@@ -1619,54 +1871,54 @@ function JourneyReportContent() {
                           ? activeReportingJourney.mealAllowance
                           : getMealAllowanceForDuration(preAuthorizedDurationPP));
 
-                    const plotStrata = getStratumLabel(preAuthorizedMeal, preAuthorizedDurationPP);
-                    const actualStrata = getStratumLabel(actualMealAllowance, elapsedHours);
+                    const plotStrata = getStratumLabel(preAuthorizedDurationPP);
+                    const actualStrata = getStratumLabel(elapsedHours);
 
                     return (
-                      <div className="overflow-x-auto border border-indigo-100/50 rounded-xl bg-white p-2.5 my-2">
+                      <div className="overflow-x-auto py-2">
                         <table className="w-full text-[10px] text-left border-collapse">
                           <thead>
-                            <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[8px]">
+                            <tr className="border-b border-slate-200 text-slate-800 font-extrabold uppercase tracking-wider text-[8px]">
                               <th className="pb-1.5 font-bold">Aspek</th>
                               <th className="pb-1.5 font-bold text-center">Plotingan</th>
                               <th className="pb-1.5 font-bold text-center">Aktual</th>
                               <th className="pb-1.5 font-bold text-right">Delta</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-50 text-slate-600 font-semibold">
+                          <tbody className="divide-y divide-slate-100 text-slate-900 font-bold">
                             <tr>
-                              <td className="py-2 text-slate-500 font-bold">Jarak</td>
-                              <td className="py-2 text-center font-bold text-slate-700">{originalTotalDist.toFixed(1)} km</td>
-                              <td className="py-2 text-center font-bold text-indigo-600">{calculatedDistanceKm.toFixed(1)} km</td>
+                              <td className="py-2 text-slate-900 font-bold">Jarak</td>
+                              <td className="py-2 text-center font-bold text-slate-900">{originalTotalDist.toFixed(1)} km</td>
+                              <td className="py-2 text-center font-extrabold text-indigo-700">{calculatedDistanceKm.toFixed(1)} km</td>
                               <td className="py-2 text-right font-black text-indigo-700">
                                 {extraDistanceKm > 0 ? (
                                   <span>+{extraDistanceKm.toFixed(1)} km</span>
                                 ) : (
-                                  <span className="text-slate-300">—</span>
+                                  <span className="text-slate-400">—</span>
                                 )}
                               </td>
                             </tr>
                             <tr>
-                              <td className="py-2 text-slate-500 font-bold">BBM</td>
-                              <td className="py-2 text-center font-bold text-slate-700"><span className="text-blue-600">{fmtRp(Math.ceil(baseCostVal))}</span></td>
-                              <td className="py-2 text-center font-bold text-blue-600">{fmtRp(Math.ceil(fuelVal))}</td>
+                              <td className="py-2 text-slate-900 font-bold">BBM</td>
+                              <td className="py-2 text-center font-bold text-slate-900"><span className="text-blue-700 font-extrabold">{fmtRp(Math.ceil(baseCostVal))}</span></td>
+                              <td className="py-2 text-center font-extrabold text-blue-700">{fmtRp(Math.ceil(fuelVal))}</td>
                               <td className="py-2 text-right font-black text-blue-700">
                                 {extraFuelCost > 0 ? (
                                   <span>+{fmtRp(Math.ceil(extraFuelCost))}</span>
                                 ) : (
-                                  <span className="text-slate-300">—</span>
+                                  <span className="text-slate-400">—</span>
                                 )}
                               </td>
                             </tr>
                             <tr>
-                              <td className="py-2 text-slate-500 font-bold">Uang Makan</td>
-                              <td className="py-2 text-center font-bold text-slate-700">{plotStrata}</td>
-                              <td className="py-2 text-center font-bold text-indigo-600">{actualStrata}</td>
+                              <td className="py-2 text-slate-900 font-bold">Uang Makan</td>
+                              <td className="py-2 text-center font-bold text-slate-900">{plotStrata}</td>
+                              <td className="py-2 text-center font-extrabold text-indigo-700">{actualStrata}</td>
                               <td className="py-2 text-right font-black text-blue-700">
                                 {extraMealAllowance > 0 ? (
                                   <span>+{fmtRp(Math.ceil(extraMealAllowance))}</span>
                                 ) : (
-                                  <span className="text-slate-300">—</span>
+                                  <span className="text-slate-400">—</span>
                                 )}
                               </td>
                             </tr>
@@ -1720,38 +1972,58 @@ function JourneyReportContent() {
                     const finalReimburseDelta = Math.max(0, positiveReimburseDelta - unspentCash);
                     const remainingUnspentCash = Math.max(0, unspentCash - positiveReimburseDelta);
 
-                    const baseDriverWage = calculatedDistanceKm * 300 + calculatedDurationHours * 5000 + (formIsOvernight ? 50000 : 0);
+                    const baseDriverWage = calculateDriverNetWage(
+                      calculatedDistanceKm,
+                      calculatedDurationHours,
+                      formNightCount,
+                    );
                     const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
 
                     return (
                       <>
-                        <div className="pt-2 border-t border-blue-200/50 flex justify-between font-black text-blue-600 text-sm">
+                        <div className="py-2 border-y border-blue-200/50 flex justify-between font-black text-blue-700 text-sm">
                           <span>Total Reimburse (Delta)</span>
                           <span>{fmtRp(Math.ceil(finalReimburseDelta))}</span>
                         </div>
                         {unspentCash > 0 && (
-                          <div className="flex justify-between text-slate-400 text-[10px] font-semibold pl-2">
+                          <div className="flex justify-between text-slate-800 text-[10px] font-bold pl-2">
                             <span>• Penghematan Uang Jalan Operasional</span>
                             <span className="text-amber-600 font-bold">-{fmtRp(Math.ceil(unspentCash))}</span>
                           </div>
                         )}
 
-                        <div className="pt-1.5 border-t border-emerald-200/50 flex justify-between font-black text-emerald-700 text-xs">
-                          <span>Upah Bersih Sopir</span>
-                          <span>{fmtRp(Math.ceil(finalUpahBersih))}</span>
-                        </div>
-                        <div className="flex justify-between text-slate-400 text-[10px] font-semibold pl-2">
+                        <div className="flex justify-between text-slate-800 text-[10px] font-bold pl-2">
                           <span>• Komponen Jarak ({calculatedDistanceKm.toFixed(1)} km)</span>
                           <span>{fmtRp(Math.ceil(calculatedDistanceKm * 300))}</span>
                         </div>
-                        <div className="flex justify-between text-slate-400 text-[10px] font-semibold pl-2">
-                          <span>• Komponen Waktu ({calculatedDurationHours.toFixed(1)} jam)</span>
-                          <span>{fmtRp(Math.ceil(calculatedDurationHours * 5000))}</span>
-                        </div>
-                        {formIsOvernight && (
-                          <div className="flex justify-between text-slate-400 text-[10px] font-semibold pl-2">
-                            <span>• Tambahan Menginap (Inap Dinas)</span>
-                            <span>{fmtRp(50000)}</span>
+                        {(() => {
+                          const activeHours = calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours;
+                          const shortTripMeal = getShortTripMealWageComponent(activeHours);
+                          return (
+                            <>
+                              <div className="flex justify-between text-slate-800 text-[10px] font-bold pl-2">
+                                <span>• Komponen Waktu ({activeHours.toFixed(1)} jam)</span>
+                                <span>{fmtRp(Math.ceil(activeHours * 5000))}</span>
+                              </div>
+                              {shortTripMeal > 0 && (
+                                <div className="flex justify-between text-slate-800 text-[10px] font-bold pl-2">
+                                  <span>• Uang Makan Perjalanan (≤ 2 Jam)</span>
+                                  <span>+{fmtRp(shortTripMeal)}</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between text-slate-800 text-[10px] font-bold pl-2">
+                                <span>• Durasi Kalender</span>
+                                <span>
+                                  {activeHours.toFixed(1)} jam / {journeyDayCount(activeHours)} hari
+                                </span>
+                              </div>
+                            </>
+                          );
+                        })()}
+                        {formNightCount > 0 && (
+                          <div className="flex justify-between text-slate-800 text-[10px] font-bold pl-2">
+                            <span>• Premium Malam ({formNightCount} × Rp50.000)</span>
+                            <span>{fmtRp(calculateNightPremium(formNightCount))}</span>
                           </div>
                         )}
                         {remainingUnspentCash > 0 && (
@@ -1760,6 +2032,11 @@ function JourneyReportContent() {
                             <span>-{fmtRp(Math.ceil(remainingUnspentCash))}</span>
                           </div>
                         )}
+
+                        <div className="py-2 border-y border-emerald-200/50 flex justify-between font-black text-emerald-700 text-sm">
+                          <span>Upah Bersih Sopir</span>
+                          <span>{fmtRp(Math.ceil(finalUpahBersih))}</span>
+                        </div>
                       </>
                     );
                   })()}

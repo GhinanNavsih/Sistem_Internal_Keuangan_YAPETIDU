@@ -19,16 +19,21 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const period = typeof body.period === 'string' ? body.period : '';
     const attendanceStatus = body.attendanceStatus as AttendanceStatus;
-    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    const holidays = Array.isArray(body.holidays)
+      ? body.holidays.filter((h: any) => typeof h === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(h))
+      : [];
+    const reason =
+      typeof body.reason === 'string' && body.reason.trim().length > 0
+        ? body.reason.trim()
+        : (attendanceStatus === 'open'
+            ? `Membuka periode ${period} dengan ${holidays.length} tanggal merah`
+            : `Menutup periode ${period}`);
 
     if (!/^\d{4}-\d{2}$/.test(period)) {
       throw new HttpError(400, 'Periode wajib menggunakan format YYYY-MM.');
     }
     if (!['open', 'closed'].includes(attendanceStatus)) {
       throw new HttpError(400, 'Status periode tidak valid.');
-    }
-    if (reason.length < 8 || reason.length > 500) {
-      throw new HttpError(400, 'Alasan wajib diisi antara 8 dan 500 karakter.');
     }
 
     const result = await adminDb.runTransaction(async (transaction) => {
@@ -50,21 +55,32 @@ export async function POST(request: NextRequest) {
           'Periode yang sudah ditutup tidak dapat dibuka kembali; gunakan proses koreksi.',
         );
       }
-      if (attendanceStatus === 'open' && !calendarSnapshot.exists) {
-        throw new HttpError(
-          409,
-          `Kalender hari libur ${period.slice(0, 4)} wajib dikonfigurasi sebelum periode dibuka.`,
-        );
-      }
+
+      // Sync calendar snapshot or create auto-version if calendar doesn't exist yet
+      const year = period.slice(0, 4);
+      const calData = calendarSnapshot.exists ? calendarSnapshot.data()! : { version: `ID-${year}-V1`, dates: [] };
+      const existingDates: string[] = Array.isArray(calData.dates) ? calData.dates : [];
+      const mergedDates = Array.from(new Set([...existingDates, ...holidays])).sort();
+
+      transaction.set(
+        calendarRef,
+        {
+          year,
+          version: calData.version || `ID-${year}-V1`,
+          dates: mergedDates,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedBy: actor.uid,
+        },
+        { merge: true },
+      );
+
       const after = {
         period,
         attendanceStatus,
+        holidays,
         datePolicy: 'shift_start_date',
         timeZone: 'Asia/Jakarta',
-        holidayCalendarVersion:
-          before?.holidayCalendarVersion ||
-          calendarSnapshot.data()?.version ||
-          null,
+        holidayCalendarVersion: calData.version || `ID-${year}-V1`,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedBy: actor.uid,
         schemaVersion: 1,

@@ -3,6 +3,13 @@ import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
 import {
+  assertNightCount,
+  calculateDriverNetWage,
+  calculateJourneyElapsedHours,
+  calculateNightPremium,
+  getMealAllowanceForDuration,
+} from '@/lib/payroll/driverJourney';
+import {
   activityDurationMinutes,
   assertPekaryaActivityType,
   isPekaryaJobCategory,
@@ -34,7 +41,10 @@ const SAFE_REPORT_ID = /^[A-Za-z0-9_-]{1,180}$/;
 const ALLOWED_DRIVER_FIELDS = [
   'tripType',
   'vehicleType',
-  'isOvernight',
+  'nightCount',
+  'isMultiDay',
+  'dateStart',
+  'dateEnd',
   'fuelFee',
   'tollParkingFee',
   'fuelReceiptUrl',
@@ -66,7 +76,7 @@ const ALLOWED_DRIVER_FIELDS = [
   'vehicleRate',
   'componentJarak',
   'componentWaktu',
-  'premiumOvernight',
+  'nightPremium',
 ] as const;
 
 function parseCommand(raw: unknown): SubmitActivityCommand {
@@ -85,10 +95,13 @@ function parseCommand(raw: unknown): SubmitActivityCommand {
   if (value.reportId && !SAFE_REPORT_ID.test(value.reportId)) {
     throw new HttpError(400, 'ID laporan tidak valid.');
   }
-  const activityName =
+  let activityName =
     typeof value.activityName === 'string' ? value.activityName.normalize('NFKC').trim() : '';
-  if (activityName.length < 2 || activityName.length > 180) {
-    throw new HttpError(400, 'Nama kegiatan wajib diisi antara 2 dan 180 karakter.');
+  if (activityName.length > 180) {
+    activityName = activityName.slice(0, 177) + '...';
+  }
+  if (activityName.length < 2) {
+    throw new HttpError(400, 'Nama kegiatan wajib diisi minimal 2 karakter.');
   }
   try {
     assertPekaryaActivityType(value.activityType);
@@ -129,7 +142,7 @@ function sanitizeDriverData(
   category: string,
 ): Record<string, unknown> {
   if (category !== 'SOPIR') return {};
-  if (!value) return {};
+  if (!value) throw new HttpError(400, 'Rincian perjalanan Sopir wajib diisi.');
   const result: Record<string, unknown> = {};
   for (const key of ALLOWED_DRIVER_FIELDS) {
     if (value[key] !== undefined) result[key] = value[key];
@@ -157,7 +170,7 @@ function sanitizeDriverData(
     'totalOperationalCost',
     'componentJarak',
     'componentWaktu',
-    'premiumOvernight',
+    'nightPremium',
   ];
   for (const key of boundedMoneyFields) {
     const number = result[key];
@@ -180,6 +193,14 @@ function sanitizeDriverData(
       throw new HttpError(400, `Nilai ${key} tidak valid.`);
     }
   }
+  try {
+    assertNightCount(result.nightCount);
+  } catch (error) {
+    throw new HttpError(
+      400,
+      error instanceof Error ? error.message : 'Jumlah malam tidak valid.',
+    );
+  }
   if (result.points !== undefined) {
     if (
       !Array.isArray(result.points) ||
@@ -196,6 +217,18 @@ function sanitizeDriverData(
   ) {
     throw new HttpError(400, 'ID perjalanan tidak valid.');
   }
+
+  const distanceKm = typeof result.distanceKm === 'number' ? result.distanceKm : 0;
+  const durationHours = typeof result.durationHours === 'number' ? result.durationHours : 0;
+  result.componentJarak = Math.ceil(distanceKm * 300);
+  result.componentWaktu = Math.ceil(durationHours * 5_000);
+  result.nightPremium = calculateNightPremium(result.nightCount);
+  result.baseDriverWage = calculateDriverNetWage(
+    distanceKm,
+    durationHours,
+    result.nightCount,
+  );
+  result.upahBersih = result.baseDriverWage;
   return result;
 }
 
@@ -215,10 +248,8 @@ export async function POST(request: NextRequest) {
       throw new HttpError(400, 'Waktu mulai wajib menggunakan format HH:MM.');
     }
     if (command.activityType !== 'Buang Sampah') {
-      try {
-        activityDurationMinutes(command.timeStart, command.timeEnd || '');
-      } catch (error) {
-        throw new HttpError(400, error instanceof Error ? error.message : 'Durasi tidak valid.');
+      if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(command.timeEnd || '')) {
+        throw new HttpError(400, 'Waktu selesai wajib menggunakan format HH:MM.');
       }
     } else if (command.timeEnd) {
       throw new HttpError(400, 'Kegiatan Buang Sampah tidak menggunakan waktu selesai.');
@@ -276,6 +307,16 @@ export async function POST(request: NextRequest) {
       ) {
         throw new HttpError(409, 'Pegawai tidak aktif atau kategori tidak mendukung laporan ini.');
       }
+      if (jobCategory !== 'SOPIR' && command.activityType !== 'Buang Sampah') {
+        try {
+          activityDurationMinutes(command.timeStart, command.timeEnd || '');
+        } catch (error) {
+          throw new HttpError(
+            400,
+            error instanceof Error ? error.message : 'Durasi tidak valid.',
+          );
+        }
+      }
       if (!periodSnapshot.exists || periodSnapshot.data()?.attendanceStatus !== 'open') {
         throw new HttpError(409, 'Periode payroll belum dibuka atau sudah ditutup.');
       }
@@ -298,6 +339,36 @@ export async function POST(request: NextRequest) {
       }
 
       const driverData = sanitizeDriverData(command.driverData, jobCategory);
+      if (jobCategory === 'SOPIR') {
+        try {
+          const actualJourneyDurationHours = calculateJourneyElapsedHours(
+            command.timeStart,
+            command.timeEnd || '',
+            driverData.nightCount as number,
+          );
+          const vehicleType =
+            typeof driverData.vehicleType === 'string' ? driverData.vehicleType : '';
+          const actualMealAllowance = getMealAllowanceForDuration(
+            actualJourneyDurationHours,
+            vehicleType,
+          );
+          const preAuthorizedMeal =
+            typeof driverData.preAuthorizedMeal === 'number'
+              ? driverData.preAuthorizedMeal
+              : 0;
+          driverData.actualJourneyDurationHours = actualJourneyDurationHours;
+          driverData.actualMealAllowance = actualMealAllowance;
+          driverData.extraMealAllowance = Math.max(
+            0,
+            actualMealAllowance - preAuthorizedMeal,
+          );
+        } catch (error) {
+          throw new HttpError(
+            400,
+            error instanceof Error ? error.message : 'Durasi perjalanan tidak valid.',
+          );
+        }
+      }
       const journeyId = typeof driverData.journeyId === 'string' ? driverData.journeyId : null;
       let journeyRef: FirebaseFirestore.DocumentReference | null = null;
       let journeyBefore: FirebaseFirestore.DocumentData | null = null;
@@ -314,6 +385,65 @@ export async function POST(request: NextRequest) {
         if (!ownsJourney || !['claimed', 'submitted', 'completed'].includes(journeyBefore.status)) {
           throw new HttpError(409, 'Perjalanan dinas tidak dimiliki oleh pegawai ini.');
         }
+        const vehicleType =
+          typeof driverData.vehicleType === 'string' ? driverData.vehicleType : '';
+        const authorizedDurationHours = Number(
+          journeyBefore.customDurationPP ||
+            (journeyBefore.durationHours ? journeyBefore.durationHours * 2 : 0),
+        );
+        const preAuthorizedMeal =
+          vehicleType === 'Ndalem'
+            ? 0
+            : typeof journeyBefore.mealAllowance === 'number' &&
+                journeyBefore.mealAllowance > 0
+              ? journeyBefore.mealAllowance
+              : getMealAllowanceForDuration(authorizedDurationHours, vehicleType);
+        const preAuthorizedToll = Number(journeyBefore.tollParkingFee || 0);
+        const baseOperationalCost =
+          typeof journeyBefore.baseOperationalCost === 'number'
+            ? journeyBefore.baseOperationalCost
+            : Math.max(
+                0,
+                Number(journeyBefore.totalOperationalCost || 0) -
+                  preAuthorizedMeal -
+                  preAuthorizedToll,
+              );
+        const fuelFee = Number(driverData.fuelFee || 0);
+        const tollParkingFee = Number(driverData.tollParkingFee || 0);
+        const actualMealAllowance = Number(driverData.actualMealAllowance || 0);
+        const extraFuelCost =
+          vehicleType === 'Ndalem' ? 0 : Math.max(0, fuelFee - baseOperationalCost);
+        const extraTollCost = Math.max(0, tollParkingFee - preAuthorizedToll);
+        const extraMealAllowance =
+          vehicleType === 'Ndalem'
+            ? 0
+            : Math.max(0, actualMealAllowance - preAuthorizedMeal);
+        const positiveReimburseDelta =
+          extraFuelCost + extraTollCost + extraMealAllowance;
+        const totalPreAuthorizedAllowance = baseOperationalCost + preAuthorizedToll;
+        const totalActualSpent = fuelFee + tollParkingFee;
+        const unspentCash = Math.max(
+          0,
+          totalPreAuthorizedAllowance - totalActualSpent,
+        );
+
+        Object.assign(driverData, {
+          preAuthorizedMeal,
+          preAuthorizedToll,
+          customDurationPP: authorizedDurationHours,
+          baseOperationalCost,
+          extraFuelCost,
+          extraTollCost,
+          extraMealAllowance,
+          positiveReimburseDelta,
+          totalPreAuthorizedAllowance,
+          totalActualSpent,
+          unspentCash,
+          reimburseDelta: Math.max(0, positiveReimburseDelta - unspentCash),
+          remainingUnspentCash: Math.max(0, unspentCash - positiveReimburseDelta),
+          totalOperationalCost: Number(journeyBefore.totalOperationalCost || 0),
+          vehicleRate: Number(journeyBefore.vehicleRate || 0),
+        });
       }
 
       const now = admin.firestore.FieldValue.serverTimestamp();
@@ -330,7 +460,9 @@ export async function POST(request: NextRequest) {
         timeEnd: command.activityType === 'Buang Sampah' ? '' : command.timeEnd,
         crossesMidnight:
           command.activityType !== 'Buang Sampah' &&
-          Boolean(command.timeEnd && command.timeEnd < command.timeStart),
+          (jobCategory === 'SOPIR'
+            ? Number(driverData.nightCount || 0) > 0
+            : Boolean(command.timeEnd && command.timeEnd < command.timeStart)),
         status: 'pending',
         fee: 0,
         declineReason: '',
@@ -394,7 +526,7 @@ export async function POST(request: NextRequest) {
           updatedAt: now,
           draftTimeStart: admin.firestore.FieldValue.delete(),
           draftTimeEnd: admin.firestore.FieldValue.delete(),
-          draftIsOvernight: admin.firestore.FieldValue.delete(),
+          draftNightCount: admin.firestore.FieldValue.delete(),
           draftFuelFee: admin.firestore.FieldValue.delete(),
           draftTollParkingFee: admin.firestore.FieldValue.delete(),
           draftFuelReceiptUrl: admin.firestore.FieldValue.delete(),

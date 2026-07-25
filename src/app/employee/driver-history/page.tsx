@@ -58,7 +58,7 @@ interface ActivityReport {
   // Driver specific
   vehicleType?: string;
   tripType?: string;
-  isOvernight?: boolean;
+  nightCount?: number;
   fuelFee?: number;
   tollParkingFee?: number;
   points?: string[];

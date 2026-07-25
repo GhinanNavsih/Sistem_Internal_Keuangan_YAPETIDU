@@ -75,6 +75,12 @@ import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import { SatpamPostId } from '@/lib/payroll/domain';
 import {
+  calculateDriverNetWage,
+  calculateJourneyElapsedHours,
+  calculateNightPremium,
+  calculateJourneyDateTimeTimings,
+} from '@/lib/payroll/driverJourney';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -128,7 +134,7 @@ interface ActivityReport {
   // SOPIR specific fields
   tripType?: 'Dalam Kota' | 'Luar Kota';
   vehicleType?: 'Mobil Kecil' | 'Bus/Truk' | string;
-  isOvernight?: boolean;
+  nightCount?: number;
   fuelFee?: number;
   tollParkingFee?: number;
   points?: string[];
@@ -160,7 +166,7 @@ interface ActivityReport {
   baseDriverWage?: number;
   componentJarak?: number;
   componentWaktu?: number;
-  premiumOvernight?: number;
+  nightPremium?: number;
   authorizedAt?: any;
   journeyDate?: string;
   claimedAt?: any;
@@ -357,55 +363,31 @@ function isWeekend(dateStr: string): boolean {
 }
 
 function calculateSopirDefaultFee(
-  tripType?: 'Dalam Kota' | 'Luar Kota',
-  vehicleType?: string,
-  isOvernight?: boolean,
-  activityDate?: string,
-  fuelFee?: number,
-  tollParkingFee?: number,
+  _tripType?: 'Dalam Kota' | 'Luar Kota',
+  _vehicleType?: string,
+  nightCount = 0,
+  _activityDate?: string,
+  _fuelFee?: number,
+  _tollParkingFee?: number,
   distanceKm?: number,
   durationHours?: number
 ): number {
-  let fee = 0;
-  // Base rates
-  if (vehicleType === 'Bus/Truk') {
-    fee = 50000;
-  } else if (vehicleType === 'Ndalem') {
-    fee = 0;
-  } else { // default 'Mobil Kecil'
-    fee = 30000;
-  }
-
-  // Distance Rate (Rp1.000/km)
-  if (distanceKm && distanceKm > 0) {
-    fee += vehicleType === 'Ndalem' ? 0 : distanceKm * 1000;
-  }
-
-  // Duration Rate (Rp5.000/hour)
-  if (durationHours && durationHours > 0) {
-    fee += durationHours * 5000;
-  }
-
-  // Overnight allowance
-  if (isOvernight) {
-    fee += 50000;
-  }
-
-  // Weekend premium removed
-
-  // Operational reimbursements
-  if (fuelFee && fuelFee > 0 && vehicleType !== 'Ndalem') {
-    fee += fuelFee;
-  }
-  if (tollParkingFee && tollParkingFee > 0) {
-    fee += tollParkingFee;
-  }
-
-  return fee;
+  return calculateDriverNetWage(distanceKm || 0, durationHours || 0, nightCount);
 }
 
 function fmtRp(val: number): string {
   return 'Rp' + val.toLocaleString('id-ID');
+}
+
+function getNextDayISO(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`);
+  if (isNaN(d.getTime())) return dateStr;
+  d.setDate(d.getDate() + 1);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function padTime(time: string): string {
@@ -648,7 +630,9 @@ function ActivitiesContent() {
   // ── SOPIR specific form states ──
   const [formTripType, setFormTripType] = useState<'Dalam Kota' | 'Luar Kota'>('Dalam Kota');
   const [formVehicleType, setFormVehicleType] = useState<string>('Mobil Kecil');
-  const [formIsOvernight, setFormIsOvernight] = useState<boolean>(false);
+  const [formIsMultiDay, setFormIsMultiDay] = useState<boolean>(false);
+  const [formDateEnd, setFormDateEnd] = useState<string>('');
+  const [formNightCount, setFormNightCount] = useState<number>(0);
   const [formFuelFee, setFormFuelFee] = useState<string>('');
   const [formTollParkingFee, setFormTollParkingFee] = useState<string>('');
   const [formFuelReceiptUrls, setFormFuelReceiptUrls] = useState<string[]>([]);
@@ -700,7 +684,12 @@ function ActivitiesContent() {
       setFormFuelReceiptUrls(rawFuel ? rawFuel.split(',').filter(Boolean) : []);
       const rawToll = activeReportingJourney.draftTollReceiptUrl || activeReportingJourney.tollReceiptUrl || '';
       setFormTollReceiptUrls(rawToll ? rawToll.split(',').filter(Boolean) : []);
-      setFormIsOvernight(activeReportingJourney.draftIsOvernight || false);
+      setFormNightCount(
+        Number.isSafeInteger(activeReportingJourney.draftNightCount) &&
+          activeReportingJourney.draftNightCount >= 0
+          ? activeReportingJourney.draftNightCount
+          : 0,
+      );
       setCalculatedDistanceKm(
         activeReportingJourney.draftCalculatedDistanceKm !== undefined
           ? activeReportingJourney.draftCalculatedDistanceKm
@@ -1021,24 +1010,24 @@ function ActivitiesContent() {
     };
   };
 
-  const getMealAllowanceForDuration = (hours: number): number => {
-    if (hours > 0 && hours < 2) return 5000;
-    if (hours >= 2 && hours <= 6) return 20000;
-    if (hours > 6 && hours <= 12) return 40000;
-    if (hours > 12) return 60000;
-    return 0;
+  const getMealAllowanceForDuration = (hours: number, vehicleName?: string): number => {
+    if (vehicleName === 'Ndalem' || !Number.isFinite(hours) || hours <= 0) return 0;
+    const fullDayAllowance = Math.floor(hours / 24) * 60_000;
+    const remainingHours = hours % 24;
+    if (remainingHours === 0) return fullDayAllowance;
+    if (remainingHours < 2) return fullDayAllowance + 5_000;
+    if (remainingHours <= 6) return fullDayAllowance + 20_000;
+    if (remainingHours <= 12) return fullDayAllowance + 40_000;
+    return fullDayAllowance + 60_000;
   };
 
-  const calculateElapsedHours = (start: string, end: string): number => {
+  const calculateElapsedHours = (start: string, end: string, nightCount: number): number => {
     if (!start || !end) return 0;
-    const [hStart, mStart] = start.split(':').map(Number);
-    const [hEnd, mEnd] = end.split(':').map(Number);
-
-    let diffMinutes = (hEnd * 60 + mEnd) - (hStart * 60 + mStart);
-    if (diffMinutes < 0) {
-      diffMinutes += 24 * 60;
+    try {
+      return calculateJourneyElapsedHours(start, end, nightCount);
+    } catch {
+      return 0;
     }
-    return diffMinutes / 60;
   };
 
   const handleSaveDraft = async (journeyId: string) => {
@@ -1049,7 +1038,7 @@ function ActivitiesContent() {
       await updateDoc(journeyRef, {
         draftTimeStart: formTimeStart,
         draftTimeEnd: formTimeEnd,
-        draftIsOvernight: formIsOvernight,
+        draftNightCount: formNightCount,
         draftFuelFee: fuelVal,
         draftTollParkingFee: tollVal,
         draftFuelReceiptUrl: formFuelReceiptUrls.join(','),
@@ -1294,7 +1283,7 @@ function ActivitiesContent() {
     setFormTimeEnd('');
     setFormTripType('Dalam Kota');
     setFormVehicleType('Mobil Kecil');
-    setFormIsOvernight(false);
+    setFormNightCount(0);
     setFormFuelFee('');
     setFormTollParkingFee('');
     setFormFuelReceiptUrls([]);
@@ -1348,7 +1337,7 @@ function ActivitiesContent() {
     // SOPIR fields prefill
     setFormTripType(activity.tripType || 'Dalam Kota');
     setFormVehicleType(activity.vehicleType || 'Mobil Kecil');
-    setFormIsOvernight(!!activity.isOvernight);
+    setFormNightCount(activity.nightCount || 0);
     setFormFuelFee(activity.fuelFee ? String(activity.fuelFee) : '');
     setFormTollParkingFee(activity.tollParkingFee ? String(activity.tollParkingFee) : '');
     setFormPoints(activity.points || ['Pool Unipdu', '']);
@@ -1619,21 +1608,21 @@ function ActivitiesContent() {
       return;
     }
     if (!timeRegex.test(formTimeStart)) {
-      setMessage({ type: 'error', text: 'Format waktu berangkat harus HH:MM (contoh: 08:00).' });
+      setMessage({ type: 'error', text: 'Format waktu berangkat harus JJ:MM (contoh: 08:00).' });
       isSubmittingRef.current = false;
       setSubmitting(false);
       skipSaveDraftRef.current = false;
       return;
     }
     if (!timeRegex.test(formTimeEnd)) {
-      setMessage({ type: 'error', text: 'Format waktu tiba harus HH:MM (contoh: 17:00).' });
+      setMessage({ type: 'error', text: 'Format waktu tiba harus JJ:MM (contoh: 17:00).' });
       isSubmittingRef.current = false;
       setSubmitting(false);
       skipSaveDraftRef.current = false;
       return;
     }
-    if (!formIsOvernight && formTimeEnd <= formTimeStart) {
-      setMessage({ type: 'error', text: 'Waktu selesai harus lebih dari waktu mulai (centang "Tambahan Menginap" jika perjalanan lintas hari).' });
+    if (calculateElapsedHours(formTimeStart, formTimeEnd, formNightCount) <= 0) {
+      setMessage({ type: 'error', text: 'Jam tiba dan jumlah malam tidak membentuk durasi perjalanan yang valid.' });
       isSubmittingRef.current = false;
       setSubmitting(false);
       skipSaveDraftRef.current = false;
@@ -1663,7 +1652,7 @@ function ActivitiesContent() {
       const isNdalem = activeReportingJourney.vehicleName === 'Ndalem';
       const originalTotalDist = (activeReportingJourney.distanceKm || 0) * 2;
       const extraDistanceKm = Math.max(0, calculatedDistanceKm - originalTotalDist);
-      const extraOperationalCost = Math.ceil(extraDistanceKm * (activeReportingJourney.vehicleRate || 0));
+      const extraOperationalCost = 0; // Extra mileage is compensated via Upah Bersih Sopir (distance component), not automatic cash reimbursement without receipts
 
       const preAuthorizedDurationPP = activeReportingJourney.customDurationPP || (activeReportingJourney.durationHours ? activeReportingJourney.durationHours * 2 : 0);
       const preAuthorizedMeal = isNdalem
@@ -1679,8 +1668,23 @@ function ActivitiesContent() {
 
       const totalActualSpent = fuelVal + tollVal;
 
-      const elapsedHours = (formTimeStart && formTimeEnd) ? calculateElapsedHours(formTimeStart, formTimeEnd) : 0;
-      const actualMealAllowance = isNdalem ? 0 : getMealAllowanceForDuration(elapsedHours);
+      const timings = calculateJourneyDateTimeTimings({
+        dateStart: formDate,
+        timeStart: formTimeStart,
+        dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+        timeEnd: formTimeEnd,
+        isMultiDay: formIsMultiDay,
+      });
+      const effectiveNightCount = formIsMultiDay ? timings.nightCount : formNightCount;
+      const elapsedHours = timings.durationHours > 0 ? timings.durationHours : calculateElapsedHours(
+        formTimeStart,
+        formTimeEnd,
+        effectiveNightCount,
+      );
+      const actualMealAllowance = getMealAllowanceForDuration(
+        elapsedHours,
+        activeReportingJourney.vehicleName,
+      );
       const extraMealAllowance = isNdalem ? 0 : Math.max(0, actualMealAllowance - preAuthorizedMeal);
 
       const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
@@ -1697,9 +1701,12 @@ function ActivitiesContent() {
       const remainingUnspentCash = Math.max(0, unspentCash - positiveReimburseDelta);
 
       // Driver Base Wage & Final Net Wage
-      const premiumWeekend = 0;
-      const premiumOvernight = formIsOvernight ? 50000 : 0;
-      const baseDriverWage = calculatedDistanceKm * 300 + calculatedDurationHours * 5000 + premiumWeekend + premiumOvernight;
+      const nightPremium = calculateNightPremium(effectiveNightCount);
+      const baseDriverWage = calculateDriverNetWage(
+        calculatedDistanceKm,
+        calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
+        effectiveNightCount,
+      );
       const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
 
       const extraLocs = extraActivities.filter(a => a.type === 'tambah_lokasi' && a.destination);
@@ -1719,16 +1726,17 @@ function ActivitiesContent() {
         timeStart: formTimeStart,
         timeEnd: formTimeEnd,
         driverData: {
-          tripType: calculatedDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
-          vehicleType: activeReportingJourney.vehicleName,
-          isOvernight: formIsOvernight,
+          nightCount: effectiveNightCount,
+          dateStart: formDate,
+          dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+          isMultiDay: formIsMultiDay,
           fuelFee: fuelVal,
           tollParkingFee: tollVal,
           fuelReceiptUrl: formFuelReceiptUrls.join(','),
           tollReceiptUrl: formTollReceiptUrls.join(','),
           points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
           distanceKm: calculatedDistanceKm,
-          durationHours: calculatedDurationHours,
+          durationHours: calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
           journeyId: activeReportingJourney.id,
           extraActivities,
           extraDistanceKm,
@@ -1750,10 +1758,10 @@ function ActivitiesContent() {
           totalPreAuthorizedAllowance,
           totalActualSpent,
           totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
-          vehicleRate: activeReportingJourney.vehicleRate || 1000,
+          vehicleRate: activeReportingJourney.vehicleRate ?? 1000,
           componentJarak: calculatedDistanceKm * 300,
           componentWaktu: calculatedDurationHours * 5000,
-          premiumOvernight: formIsOvernight ? 50000 : 0,
+          nightPremium,
         },
       }),
       });
@@ -2193,7 +2201,7 @@ function ActivitiesContent() {
       return;
     }
     if (!timeRegex.test(formTimeStart)) {
-      setMessage({ type: 'error', text: 'Format waktu mulai harus HH:MM (contoh: 08:00).' });
+      setMessage({ type: 'error', text: 'Format waktu mulai harus JJ:MM (contoh: 08:00).' });
       return;
     }
     if (!isBuangSampah) {
@@ -2226,7 +2234,7 @@ function ActivitiesContent() {
     const driverFields = isSopir ? {
       tripType: formTripType,
       vehicleType: formVehicleType,
-      isOvernight: formIsOvernight,
+      nightCount: formNightCount,
       fuelFee: formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0,
       tollParkingFee: formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0,
       fuelReceiptUrl: formFuelReceiptUrls.join(','),
@@ -3414,8 +3422,8 @@ function ActivitiesContent() {
                                   </div>
                                 ) : null}
                                 <div className="flex justify-between">
-                                  <span className="font-semibold text-slate-400">Menginap (Overnight):</span>
-                                  <span className="font-bold text-slate-700">{activity.isOvernight ? 'Ya' : 'Tidak'}</span>
+                                  <span className="font-semibold text-slate-400">Jumlah Malam:</span>
+                                  <span className="font-bold text-slate-700">{activity.nightCount || 0} malam</span>
                                 </div>
                                 {((activity.fuelFee && activity.fuelFee > 0) || (activity.tollParkingFee && activity.tollParkingFee > 0)) && (
                                   <div className="pt-1.5 border-t border-slate-200/60 mt-1.5 space-y-1">
@@ -3542,7 +3550,7 @@ function ActivitiesContent() {
                                   const est = calculateSopirDefaultFee(
                                     activity.tripType,
                                     activity.vehicleType,
-                                    activity.isOvernight,
+                                    activity.nightCount,
                                     activity.activityDate,
                                     activity.fuelFee,
                                     activity.tollParkingFee
@@ -3895,7 +3903,7 @@ function ActivitiesContent() {
                         {fmtRp(calculateSopirDefaultFee(
                           formTripType,
                           formVehicleType,
-                          formIsOvernight,
+                          formNightCount,
                           formDate,
                           formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0,
                           formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0,
@@ -3953,18 +3961,158 @@ function ActivitiesContent() {
                   </div>
                 </div>
 
-                {/* Menginap Checkbox */}
-                <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-100">
-                  <Checkbox
-                    id="isOvernight"
-                    checked={formIsOvernight}
-                    onCheckedChange={(checked) => setFormIsOvernight(!!checked)}
-                    className="rounded border-slate-300 data-[state=checked]:bg-teal-600 data-[state=checked]:border-teal-600"
-                  />
-                  <Label htmlFor="isOvernight" className="text-xs font-bold text-slate-600 cursor-pointer select-none">
-                    Perjalanan Menginap (Overnight)
-                  </Label>
+                {/* Toggle Lintas Hari / Menginap Above Time Controls */}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-teal-50/60 border border-teal-100">
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="toggleMultiDayApp"
+                      type="checkbox"
+                      checked={formIsMultiDay}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setFormIsMultiDay(checked);
+                        if (!checked) {
+                          setFormDateEnd('');
+                        } else {
+                          const startMins = parseInt((formTimeStart || '00:00').split(':')[0], 10) * 60 + parseInt((formTimeStart || '00:00').split(':')[1], 10);
+                          const endMins = parseInt((formTimeEnd || '00:00').split(':')[0], 10) * 60 + parseInt((formTimeEnd || '00:00').split(':')[1], 10);
+                          if (endMins <= startMins || !formDateEnd || formDateEnd === formDate) {
+                            setFormDateEnd(getNextDayISO(formDate || new Date().toISOString().split('T')[0]));
+                          }
+                        }
+                      }}
+                      className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 cursor-pointer"
+                    />
+                    <Label htmlFor="toggleMultiDayApp" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                      Perjalanan Lintas Hari / Menginap
+                    </Label>
+                  </div>
+                  <span className="text-[10px] font-semibold text-teal-700">
+                    {formIsMultiDay ? 'Multi-Hari Active' : 'Hari yang sama'}
+                  </span>
                 </div>
+
+                {formIsMultiDay && (
+                  /* 2-Row Layout for Multi-Day / Overnight Trip */
+                  <div className="space-y-3 animate-in fade-in duration-200">
+                    {/* Row 1: Departure Date & Time */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="appDateStartInput" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Tanggal Berangkat
+                        </Label>
+                        <Input
+                          id="appDateStartInput"
+                          type="date"
+                          value={formDate}
+                          onChange={(e) => setFormDate(e.target.value)}
+                          className="rounded-xl border-slate-200 focus:border-teal-400 text-xs h-9 px-2.5 bg-white"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="appTimeStartMulti" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Jam Berangkat
+                        </Label>
+                        <Input
+                          id="appTimeStartMulti"
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={5}
+                          placeholder="JJ:MM"
+                          value={formTimeStart}
+                          onChange={(e) => {
+                            let val = e.target.value.replace(/[^0-9]/g, '');
+                            if (val.length > 4) val = val.slice(0, 4);
+                            if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
+                            if (val.length >= 2) {
+                              const hours = parseInt(val.slice(0, 2), 10);
+                              if (hours > 23) val = '23' + val.slice(2);
+                            }
+                            if (val.length === 4) {
+                              const minutes = parseInt(val.slice(2, 4), 10);
+                              if (minutes > 59) val = val.slice(0, 2) + '59';
+                            }
+                            if (val.length > 2) {
+                              setFormTimeStart(`${val.slice(0, 2)}:${val.slice(2)}`);
+                            } else {
+                              setFormTimeStart(val);
+                            }
+                          }}
+                          onBlur={(e) => setFormTimeStart(padTime(e.target.value))}
+                          className="rounded-xl border-slate-200 focus:border-teal-400 text-xs h-9 px-3 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Row 2: Arrival Date & Time */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="appDateEndInput" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Tanggal Tiba / Selesai
+                        </Label>
+                        <Input
+                          id="appDateEndInput"
+                          type="date"
+                          value={formDateEnd || formDate}
+                          onChange={(e) => setFormDateEnd(e.target.value)}
+                          className="rounded-xl border-slate-200 focus:border-teal-400 text-xs h-9 px-2.5 bg-white"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="appTimeEndMulti" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Jam Tiba / Selesai
+                        </Label>
+                        <Input
+                          id="appTimeEndMulti"
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={5}
+                          placeholder="JJ:MM"
+                          value={formTimeEnd}
+                          onChange={(e) => {
+                            let val = e.target.value.replace(/[^0-9]/g, '');
+                            if (val.length > 4) val = val.slice(0, 4);
+                            if (val.length === 1 && parseInt(val, 10) > 2) val = `0${val}`;
+                            if (val.length >= 2) {
+                              const hours = parseInt(val.slice(0, 2), 10);
+                              if (hours > 23) val = '23' + val.slice(2);
+                            }
+                            if (val.length === 4) {
+                              const minutes = parseInt(val.slice(2, 4), 10);
+                              if (minutes > 59) val = val.slice(0, 2) + '59';
+                            }
+                            if (val.length > 2) {
+                              setFormTimeEnd(`${val.slice(0, 2)}:${val.slice(2)}`);
+                            } else {
+                              setFormTimeEnd(val);
+                            }
+                          }}
+                          onBlur={(e) => setFormTimeEnd(padTime(e.target.value))}
+                          className="rounded-xl border-slate-200 focus:border-teal-400 text-xs h-9 px-3 bg-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {(() => {
+                  const timings = calculateJourneyDateTimeTimings({
+                    dateStart: formDate,
+                    timeStart: formTimeStart,
+                    dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+                    timeEnd: formTimeEnd,
+                    isMultiDay: formIsMultiDay,
+                  });
+                  const effectiveNights = formIsMultiDay ? timings.nightCount : formNightCount;
+                  return (
+                    <div className="text-xs font-bold text-slate-600 flex items-center gap-1.5 pt-1">
+                      <span>💡 Durasi Terhitung:</span>
+                      <span className="text-teal-700 font-extrabold">
+                        {timings.durationHours > 0 ? timings.durationHours.toFixed(1) : '0'} Jam ({effectiveNights} Malam)
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 <div className="grid grid-cols-2 gap-3">
                   {/* Biaya BBM */}
@@ -4060,7 +4208,7 @@ function ActivitiesContent() {
                     type="text"
                     inputMode="numeric"
                     maxLength={5}
-                    placeholder="HH:MM"
+                    placeholder="JJ:MM"
                     value={formTimeStart}
                     onChange={(e) => {
                       let val = e.target.value.replace(/[^0-9]/g, '');
@@ -4102,7 +4250,7 @@ function ActivitiesContent() {
                       type="text"
                       inputMode="numeric"
                       maxLength={5}
-                      placeholder="HH:MM"
+                      placeholder="JJ:MM"
                       value={formTimeEnd}
                       onChange={(e) => {
                         let val = e.target.value.replace(/[^0-9]/g, '');

@@ -561,12 +561,16 @@ export default function PaySlipDialog({
     }
   };
 
+  // ─── Inline Modal States ──────────────────────────────────────
+  const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
+  const [correctionReasonInput, setCorrectionReasonInput] = useState('');
+  const [paidModalOpen, setPaidModalOpen] = useState(false);
+  const [bankRefInput, setBankRefInput] = useState('');
+
   const handleVerify = async () => {
     if (!employee) return;
-    const reason = window.prompt('Masukkan alasan/verifikasi Badan Keuangan (minimal 8 karakter):')?.trim() || '';
-    if (reason.length < 8) return;
     try {
-      await onVerify(employee.employeeId || employee.id, reason);
+      await onVerify(employee.employeeId || employee.id, 'Verifikasi slip gaji oleh Badan Keuangan');
       onOpenChange(false);
     } catch (err) {
       console.error("Gagal memverifikasi slip:", err);
@@ -575,56 +579,37 @@ export default function PaySlipDialog({
 
   const handleApprove = async () => {
     if (!employee) return;
-    const reason = window.prompt('Masukkan alasan pengesahan Kepala Biro Umum (minimal 8 karakter):')?.trim() || '';
-    if (reason.length < 8) return;
     try {
-      await onApprove(employee.employeeId || employee.id, reason);
+      await onApprove(employee.employeeId || employee.id, 'Pengesahan slip gaji oleh Kepala Biro Umum');
       onOpenChange(false);
     } catch (err) {
       console.error("Gagal mengesahkan slip:", err);
     }
   };
 
-  const handleCorrectionRequest = async () => {
+  const handleConfirmCorrectionRequest = async () => {
     if (!employee) return;
-    const reason = window.prompt('Jelaskan koreksi yang diperlukan (minimal 8 karakter):')?.trim() || '';
-    if (reason.length < 8) return;
+    const reason = correctionReasonInput.trim() || 'Pengajuan koreksi slip gaji';
     try {
       await onRequestCorrection(employee.employeeId || employee.id, reason);
+      setCorrectionModalOpen(false);
       onOpenChange(false);
     } catch (err) {
       console.error("Gagal mengajukan koreksi:", err);
     }
   };
 
-  const handleCreatePayment = async () => {
+  const handleConfirmMarkPaid = async () => {
     if (!employee) return;
-    const paymentBatchId =
-      window.prompt('Masukkan ID batch pembayaran (minimal 8 karakter, huruf/angka/_/-):')
-        ?.trim() || '';
-    if (!/^[A-Za-z0-9_-]{8,128}$/.test(paymentBatchId)) return;
-    const reason =
-      window.prompt('Masukkan alasan pembuatan instruksi pembayaran (minimal 8 karakter):')
-        ?.trim() || '';
-    if (reason.length < 8) return;
+    const refStr = bankRefInput.trim() || `TR-${Date.now().toString(36).toUpperCase()}`;
+    const autoBatchId = `PAY-${period.replace(/\s+/g, '-')}-${Date.now().toString(36).toUpperCase()}`;
     try {
-      await onCreatePayment(employee.employeeId || employee.id, paymentBatchId, reason);
-      onOpenChange(false);
-    } catch (err) {
-      console.error('Gagal membuat instruksi pembayaran:', err);
-    }
-  };
-
-  const handleMarkPaid = async () => {
-    if (!employee) return;
-    const bankReference =
-      window.prompt('Masukkan referensi transaksi bank (minimal 6 karakter):')?.trim() || '';
-    if (bankReference.length < 6) return;
-    const reason =
-      window.prompt('Masukkan alasan/konfirmasi pembayaran (minimal 8 karakter):')?.trim() || '';
-    if (reason.length < 8) return;
-    try {
-      await onMarkPaid(employee.employeeId || employee.id, bankReference, reason);
+      // Create payment instruction automatically behind the scenes if not created yet
+      if (localStatus === 'locked' && onCreatePayment) {
+        await onCreatePayment(employee.employeeId || employee.id, autoBatchId, 'Instruksi pembayaran otomatis');
+      }
+      await onMarkPaid(employee.employeeId || employee.id, refStr, 'Pembayaran gaji terkonfirmasi');
+      setPaidModalOpen(false);
       onOpenChange(false);
     } catch (err) {
       console.error('Gagal mencatat pembayaran:', err);
@@ -914,37 +899,119 @@ export default function PaySlipDialog({
                 ) : <span className="text-xs text-slate-500">Menunggu penguncian KBU</span>
               ) : isImmutablePayrollStatus(localStatus) ? (
                 <div className="flex items-center gap-2">
-                  {localStatus === 'locked' &&
-                    (actorRole === 'finance_verifier' || actorRole === 'super_admin') && (
-                      <Button
-                        type="button"
-                        onClick={handleCreatePayment}
-                        className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-6 font-bold"
-                      >
-                        Buat Instruksi Bayar
-                      </Button>
-                    )}
-                  {localStatus === 'payment_created' &&
-                    (actorRole === 'finance_verifier' || actorRole === 'super_admin') && (
-                      <Button
-                        type="button"
-                        onClick={handleMarkPaid}
-                        className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 font-bold"
-                      >
-                        Tandai Dibayar
-                      </Button>
-                    )}
+                  {localStatus !== 'paid' && (actorRole === 'finance_verifier' || actorRole === 'super_admin') && (
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        setBankRefInput(`TR-${Date.now().toString(36).toUpperCase()}`);
+                        setPaidModalOpen(true);
+                      }}
+                      className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 font-bold cursor-pointer"
+                    >
+                      ✓ Tandai Dibayar
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={handleCorrectionRequest}
-                    className="rounded-xl border-amber-300 text-amber-700 px-6 font-bold"
+                    onClick={() => {
+                      setCorrectionReasonInput('');
+                      setCorrectionModalOpen(true);
+                    }}
+                    className="rounded-xl border-amber-300 text-amber-700 hover:bg-amber-50 px-6 font-bold cursor-pointer"
                   >
                     Ajukan Koreksi
                   </Button>
                 </div>
               ) : null}
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Modal Ajukan Koreksi ─────────────────────────────────── */}
+      <Dialog open={correctionModalOpen} onOpenChange={setCorrectionModalOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl p-6 bg-white border border-slate-100 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-500" />
+              Ajukan Koreksi Slip Gaji
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 mt-1">
+              Slip ini sudah terkunci. Berikan catatan/alasan koreksi untuk dicatat pada Financial Audit Log.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-3 space-y-2">
+            <Label className="text-xs font-bold text-slate-700">Alasan / Catatan Koreksi</Label>
+            <textarea
+              rows={3}
+              value={correctionReasonInput}
+              onChange={(e) => setCorrectionReasonInput(e.target.value)}
+              placeholder="Contoh: Koreksi nomor rekening bank atau penyesuaian insentif tambahan..."
+              className="w-full text-xs font-semibold p-3 rounded-xl border border-slate-200 focus:border-amber-500 outline-none resize-none bg-slate-50/50"
+            />
+          </div>
+
+          <DialogFooter className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCorrectionModalOpen(false)}
+              className="rounded-xl text-xs font-bold h-9 px-4 cursor-pointer"
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmCorrectionRequest}
+              className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold h-9 px-5 cursor-pointer"
+            >
+              Kirim Pengajuan Koreksi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Modal Konfirmasi Tandai Dibayar ──────────────────────── */}
+      <Dialog open={paidModalOpen} onOpenChange={setPaidModalOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl p-6 bg-white border border-slate-100 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              Konfirmasi Pembayaran Gaji
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 mt-1">
+              Konfirmasi bahwa gaji sebesar <strong className="text-emerald-700">{calculateNetSalary(totalEarnings, totalDeductions).toLocaleString('id-ID')}</strong> telah berhasil ditransfer.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-3 space-y-2">
+            <Label className="text-xs font-bold text-slate-700">Referensi Transaksi Bank</Label>
+            <Input
+              value={bankRefInput}
+              onChange={(e) => setBankRefInput(e.target.value)}
+              placeholder="Contoh: TR-20260724-889A"
+              className="text-xs font-semibold h-10 rounded-xl bg-slate-50/50 border-slate-200"
+            />
+          </div>
+
+          <DialogFooter className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPaidModalOpen(false)}
+              className="rounded-xl text-xs font-bold h-9 px-4 cursor-pointer"
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmMarkPaid}
+              className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-9 px-5 cursor-pointer"
+            >
+              Konfirmasi Dibayar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

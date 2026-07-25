@@ -3,6 +3,13 @@ import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
 import {
+  assertNightCount,
+  calculateDriverNetWage,
+  calculateJourneyElapsedHours,
+  calculateNightPremium,
+  getMealAllowanceForDuration,
+} from '@/lib/payroll/driverJourney';
+import {
   activityDurationMinutes,
   approvedActivitySpjAmount,
   pekaryaPayrollPeriodForDate,
@@ -31,7 +38,7 @@ interface ReviewItem {
     tollDelta: number;
     mealDelta: number;
     vehicleType: string;
-    isOvernight: boolean;
+    nightCount: number;
     points: string[];
   };
 }
@@ -100,9 +107,17 @@ function validateDriverReview(value: ReviewItem['driverReview']) {
     value.distanceKm > 10_000 ||
     !Number.isFinite(value.durationHours) ||
     value.durationHours <= 0 ||
-    value.durationHours > 72
+    value.durationHours > 10_000
   ) {
     throw new HttpError(400, 'Jarak atau durasi audit Sopir tidak valid.');
+  }
+  try {
+    assertNightCount(value.nightCount);
+  } catch (error) {
+    throw new HttpError(
+      400,
+      error instanceof Error ? error.message : 'Jumlah malam tidak valid.',
+    );
   }
   for (const [label, number] of [
     ['selisih BBM', value.fuelDelta],
@@ -257,25 +272,78 @@ export async function POST(request: NextRequest) {
             throw new HttpError(409, 'Audit Sopir hanya berlaku untuk kategori SOPIR.');
           }
           const review = validateDriverReview(item.driverReview);
+          const authorizedJourney = journeySnapshots[index]?.data();
           const rate = vehicleRate(review.vehicleType);
           const baseOperationalCost =
-            typeof before.baseOperationalCost === 'number'
-              ? before.baseOperationalCost
+            typeof authorizedJourney?.baseOperationalCost === 'number'
+              ? authorizedJourney.baseOperationalCost
+              : typeof before.baseOperationalCost === 'number'
+                ? before.baseOperationalCost
               : Math.ceil(review.distanceKm * rate);
-          const upahBersih =
-            Math.ceil(review.distanceKm * 300) +
-            Math.ceil(review.durationHours * 5000) +
-            (review.isOvernight ? 50_000 : 0);
+          const upahBersih = calculateDriverNetWage(
+            review.distanceKm,
+            review.durationHours,
+            review.nightCount,
+          );
+          const preAuthorizedMeal =
+            review.vehicleType === 'Ndalem'
+              ? 0
+              : typeof authorizedJourney?.mealAllowance === 'number' &&
+                  authorizedJourney.mealAllowance > 0
+                ? authorizedJourney.mealAllowance
+                : typeof before.preAuthorizedMeal === 'number' &&
+                    before.preAuthorizedMeal > 0
+                  ? before.preAuthorizedMeal
+                : getMealAllowanceForDuration(
+                    Number(
+                      authorizedJourney?.customDurationPP ||
+                        before.customDurationPP ||
+                        0,
+                    ),
+                    review.vehicleType,
+                  );
+          let actualJourneyDurationHours: number;
+          try {
+            actualJourneyDurationHours = calculateJourneyElapsedHours(
+              String(before.timeStart || ''),
+              String(before.timeEnd || ''),
+              review.nightCount,
+            );
+          } catch (error) {
+            throw new HttpError(
+              409,
+              error instanceof Error ? error.message : 'Durasi perjalanan tidak valid.',
+            );
+          }
+          const actualMealAllowance = getMealAllowanceForDuration(
+            actualJourneyDurationHours,
+            review.vehicleType,
+          );
+          const mealDelta = Math.max(0, actualMealAllowance - preAuthorizedMeal);
+          const preAuthorizedToll =
+            typeof authorizedJourney?.tollParkingFee === 'number'
+              ? authorizedJourney.tollParkingFee
+              : Number(before.preAuthorizedToll || 0);
+          const totalPreAuthorizedAllowance = baseOperationalCost + preAuthorizedToll;
+          const totalActualSpent =
+            Number(before.fuelFee || 0) + Number(before.tollParkingFee || 0);
+          const unspentCash = Math.max(
+            0,
+            totalPreAuthorizedAllowance - totalActualSpent,
+          );
           const positiveDelta =
-            review.fuelDelta + review.tollDelta + review.mealDelta +
-            Number(before.extraOperationalCost || 0);
-          const reimburseDelta = Math.max(0, positiveDelta - Number(before.unspentCash || 0));
+            review.fuelDelta + review.tollDelta + mealDelta;
+          const reimburseDelta = Math.max(0, positiveDelta - unspentCash);
           const totalOperationalCost = Math.max(
             0,
             Math.ceil(
-              Number(before.totalOperationalCost || baseOperationalCost) +
+              Number(
+                authorizedJourney?.totalOperationalCost ||
+                  before.totalOperationalCost ||
+                  baseOperationalCost,
+              ) +
                 positiveDelta -
-                Number(before.unspentCash || 0),
+                unspentCash,
             ),
           );
           after = {
@@ -290,15 +358,23 @@ export async function POST(request: NextRequest) {
             extraFuelCost: review.fuelDelta,
             tollParkingFee: Math.max(
               0,
-              Number(before.preAuthorizedToll || 0) + review.tollDelta,
+              preAuthorizedToll + review.tollDelta,
             ),
             extraTollCost: review.tollDelta,
-            extraMealAllowance: review.mealDelta,
+            preAuthorizedMeal,
+            preAuthorizedToll,
+            totalPreAuthorizedAllowance,
+            totalActualSpent,
+            unspentCash,
+            actualJourneyDurationHours,
+            actualMealAllowance,
+            extraMealAllowance: mealDelta,
             reimburseDelta,
             vehicleType: review.vehicleType,
             vehicleRate: rate,
             baseOperationalCost,
-            isOvernight: review.isOvernight,
+            nightCount: review.nightCount,
+            nightPremium: calculateNightPremium(review.nightCount),
             points: review.points,
             tripType: review.distanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
             declineReason: '',
@@ -374,7 +450,8 @@ export async function POST(request: NextRequest) {
                   vehicleName: after.vehicleType || '',
                   vehicleRate: after.vehicleRate || 0,
                   baseOperationalCost: after.baseOperationalCost || 0,
-                  isOvernight: after.isOvernight || false,
+                  nightCount: after.nightCount ?? 0,
+                  nightPremium: after.nightPremium || 0,
                   points: after.points || [],
                 }
               : {};

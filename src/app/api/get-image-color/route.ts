@@ -13,19 +13,24 @@ export async function GET(request: NextRequest) {
     const bucket =
       process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
       'internal-bak.firebasestorage.app';
+
+    const allowedHostnames = [
+      'firebasestorage.googleapis.com',
+      'storage.googleapis.com',
+      'maps.googleapis.com',
+      'lh3.googleusercontent.com',
+      'maps.gstatic.com',
+      bucket,
+    ];
+
     const allowed =
       parsedUrl.protocol === 'https:' &&
       (
-        (
-          parsedUrl.hostname === 'firebasestorage.googleapis.com' &&
-          parsedUrl.pathname.startsWith(`/v0/b/${bucket}/o/`)
-        ) ||
-        (
-          parsedUrl.hostname === 'storage.googleapis.com' &&
-          parsedUrl.pathname.startsWith(`/${bucket}/`)
-        ) ||
-        parsedUrl.hostname === bucket
+        allowedHostnames.includes(parsedUrl.hostname) ||
+        parsedUrl.hostname.endsWith('.googleusercontent.com') ||
+        parsedUrl.hostname.endsWith('.gstatic.com')
       );
+
     if (!allowed) {
       return NextResponse.json({ error: 'Image host is not allowed' }, { status: 400 });
     }

@@ -76,7 +76,7 @@ interface CompletedJourney {
   fuelFee?: number;
   tollParkingFee?: number;
   reimburseDelta?: number;
-  isOvernight?: boolean;
+  nightCount?: number;
   points?: string[];
   status: string;
 }
@@ -139,7 +139,7 @@ function JourneyDashboardContent() {
             fuelFee: d.fuelFee || 0,
             tollParkingFee: d.tollParkingFee || 0,
             reimburseDelta: d.reimburseDelta || 0,
-            isOvernight: !!d.isOvernight,
+            nightCount: Number(d.nightCount || 0),
             points: d.points || [],
             status: d.status,
           });
@@ -167,7 +167,7 @@ function JourneyDashboardContent() {
               fuelFee: rd.fuelFee || 0,
               tollParkingFee: rd.tollParkingFee || 0,
               reimburseDelta: rd.reimburseDelta || 0,
-              isOvernight: !!rd.isOvernight,
+              nightCount: Number(rd.nightCount || 0),
               points: rd.points || [],
               status: rd.status,
             });
@@ -225,7 +225,7 @@ function JourneyDashboardContent() {
       totalDurationHours: number;
       totalFuelCost: number;
       totalSPJCost: number;
-      overnightTrips: number;
+      totalNights: number;
     }> = {};
 
     filteredJourneys.forEach((j) => {
@@ -238,7 +238,7 @@ function JourneyDashboardContent() {
           totalDurationHours: 0,
           totalFuelCost: 0,
           totalSPJCost: 0,
-          overnightTrips: 0,
+          totalNights: 0,
         };
       }
       map[vName].trips += 1;
@@ -246,7 +246,7 @@ function JourneyDashboardContent() {
       map[vName].totalDurationHours += j.durationHours || 0;
       map[vName].totalFuelCost += j.fuelFee || 0;
       map[vName].totalSPJCost += j.operationalCost || 0;
-      if (j.isOvernight) map[vName].overnightTrips += 1;
+      map[vName].totalNights += j.nightCount || 0;
     });
 
     const list = Object.values(map);
@@ -264,7 +264,7 @@ function JourneyDashboardContent() {
       totalDurationHours: number;
       totalUpahBersih: number;
       totalReimburse: number;
-      overnightTrips: number;
+      totalNights: number;
     }> = {};
 
     filteredJourneys.forEach((j) => {
@@ -279,7 +279,7 @@ function JourneyDashboardContent() {
           totalDurationHours: 0,
           totalUpahBersih: 0,
           totalReimburse: 0,
-          overnightTrips: 0,
+          totalNights: 0,
         };
       }
       map[dId].trips += 1;
@@ -287,7 +287,7 @@ function JourneyDashboardContent() {
       map[dId].totalDurationHours += j.durationHours || 0;
       map[dId].totalUpahBersih += j.upahBersih || 0;
       map[dId].totalReimburse += j.reimburseDelta || 0;
-      if (j.isOvernight) map[dId].overnightTrips += 1;
+      map[dId].totalNights += j.nightCount || 0;
     });
 
     const list = Object.values(map);
@@ -463,9 +463,9 @@ function JourneyDashboardContent() {
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-2">
                         <span className="font-extrabold text-slate-800 text-sm">{car.vehicleName}</span>
-                        {car.overnightTrips > 0 && (
+                        {car.totalNights > 0 && (
                           <Badge className="bg-purple-100 text-purple-700 border-purple-200 text-[9px] font-bold px-2 py-0.5">
-                            {car.overnightTrips}x Menginap
+                            {car.totalNights} malam
                           </Badge>
                         )}
                       </div>

@@ -97,6 +97,13 @@ import { MONTHS_ID } from '@/utils/rekapConfig';
 import { syncActivityToPayslip } from '@/utils/payslipSync';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
+import {
+  calculateDriverNetWage,
+  calculateJourneyElapsedHours,
+  calculateNightPremium,
+  getMealAllowanceForDuration,
+  journeyDayCount,
+} from '@/lib/payroll/driverJourney';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -120,8 +127,8 @@ interface ActivityReport {
   reviewedBy?: string;
   // SOPIR specific fields
   tripType?: 'Dalam Kota' | 'Luar Kota';
-  vehicleType?: 'Mobil Kecil' | 'Bus/Truk';
-  isOvernight?: boolean;
+  vehicleType?: string;
+  nightCount?: number;
   fuelFee?: number;
   tollParkingFee?: number;
   points?: string[];
@@ -153,7 +160,7 @@ interface ActivityReport {
   baseDriverWage?: number;
   componentJarak?: number;
   componentWaktu?: number;
-  premiumOvernight?: number;
+  nightPremium?: number;
   customDurationPP?: number;
   startPoint?: string;
   endPoint?: string;
@@ -169,61 +176,16 @@ function isWeekend(dateStr: string): boolean {
 }
 
 function calculateSopirDefaultFee(
-  tripType?: string,
-  vehicleType?: string,
-  isOvernight?: boolean,
-  activityDate?: string,
-  fuelFee?: number,
-  tollParkingFee?: number,
+  _tripType?: string,
+  _vehicleType?: string,
+  nightCount = 0,
+  _activityDate?: string,
+  _fuelFee?: number,
+  _tollParkingFee?: number,
   distanceKm?: number,
   durationHours?: number
 ): number {
-  const VEHICLE_RATES: Record<string, number> = {
-    'Bis': 2500,
-    'Elf': 1350,
-    'Kijang LGX': 1200,
-    'Innova Hitam': 1250,
-    'Innova Matic': 1450,
-    'Suzuki': 1000,
-    'Suzuki XL7': 1000,
-    'Ndalem': 0,
-  };
-
-  let fee = 0;
-
-  if (distanceKm && distanceKm > 0) {
-    // New Google Maps route journey calculation:
-    // distanceKm is already the PP (round-trip) value from the activity report
-    const rate = vehicleType === 'Ndalem' ? 0 : (VEHICLE_RATES[vehicleType || 'Suzuki'] || 1000);
-    const baseCost = distanceKm * rate;
-    fee = vehicleType === 'Ndalem' ? 0 : baseCost * 1.20; // Includes 20% meal allowance
-  } else {
-    // Legacy fallback (no distance recorded)
-    if (vehicleType === 'Bus/Truk' || vehicleType === 'Bis') {
-      fee = 50000;
-    } else if (vehicleType === 'Ndalem') {
-      fee = 0;
-    } else {
-      fee = 30000;
-    }
-  }
-
-  // Overnight allowance (+Rp50.000)
-  if (isOvernight) {
-    fee += 50000;
-  }
-
-  // Weekend premium removed
-
-  // Actual reimbursements
-  if (fuelFee && fuelFee > 0) {
-    fee += fuelFee;
-  }
-  if (tollParkingFee && tollParkingFee > 0) {
-    fee += tollParkingFee;
-  }
-
-  return Math.round(fee);
+  return calculateDriverNetWage(distanceKm || 0, durationHours || 0, nightCount);
 }
 
 function fmtRp(val: number): string {
@@ -237,8 +199,8 @@ function calculateDefaultFee(
   activityName?: string,
   jobCategory?: string,
   tripType?: 'Dalam Kota' | 'Luar Kota',
-  vehicleType?: 'Mobil Kecil' | 'Bus/Truk',
-  isOvernight?: boolean,
+  vehicleType?: string,
+  nightCount?: number,
   activityDate?: string,
   fuelFee?: number,
   tollParkingFee?: number,
@@ -249,7 +211,7 @@ function calculateDefaultFee(
     return calculateSopirDefaultFee(
       tripType,
       vehicleType,
-      isOvernight,
+      nightCount,
       activityDate,
       fuelFee,
       tollParkingFee,
@@ -373,9 +335,8 @@ export default function ActivityReviewPage() {
   const [auditAuthorizedDurationPP, setAuditAuthorizedDurationPP] = useState<number>(0);
   const [auditFuelDelta, setAuditFuelDelta] = useState<number>(0);
   const [auditTollDelta, setAuditTollDelta] = useState<number>(0);
-  const [auditMealDelta, setAuditMealDelta] = useState<number>(0);
   const [auditVehicleType, setAuditVehicleType] = useState<string>('Suzuki XL7');
-  const [auditIsOvernight, setAuditIsOvernight] = useState<boolean>(false);
+  const [auditNightCount, setAuditNightCount] = useState<number>(0);
   const [auditPoints, setAuditPoints] = useState<string[]>([]);
   const [isManualDistanceOverride, setIsManualDistanceOverride] = useState<boolean>(false);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
@@ -608,7 +569,7 @@ export default function ActivityReviewPage() {
     setAuditDurationHours(durHrs);
     setAuditAuthorizedDurationPP(authDurPP);
     setAuditVehicleType(vType);
-    setAuditIsOvernight(!!activity.isOvernight);
+    setAuditNightCount(activity.nightCount || 0);
 
     const pts = activity.points && activity.points.length > 0
       ? activity.points
@@ -632,14 +593,8 @@ export default function ActivityReviewPage() {
       ? activity.extraTollCost
       : Math.max(0, (activity.tollParkingFee || 0) - preToll);
 
-    // 3. Uang Makan Delta: Use saved extraMealAllowance if available; otherwise 0
-    const mealDelta = activity.extraMealAllowance !== undefined && activity.extraMealAllowance !== null
-      ? activity.extraMealAllowance
-      : 0;
-
     setAuditFuelDelta(fuelDelta);
     setAuditTollDelta(tollDelta);
-    setAuditMealDelta(mealDelta);
   };
 
   const getVehicleRate = (vType: string) => {
@@ -653,15 +608,11 @@ export default function ActivityReviewPage() {
       'Suzuki XL7': 1000,
       'Ndalem': 0,
     };
-    return VEHICLE_RATES[vType] || 1000;
+    return VEHICLE_RATES[vType] ?? 1000;
   };
 
   const getMealAllowanceForHours = (hours: number) => {
-    if (hours > 0 && hours < 2) return 5000;
-    if (hours >= 2 && hours <= 6) return 20000;
-    if (hours > 6 && hours <= 12) return 40000;
-    if (hours > 12) return 60000;
-    return 0;
+    return getMealAllowanceForDuration(hours, auditVehicleType);
   };
 
   const auditCalc = useMemo(() => {
@@ -686,21 +637,35 @@ export default function ActivityReviewPage() {
 
     const deltaFuel = auditVehicleType === 'Ndalem' ? 0 : auditFuelDelta;
     const deltaToll = auditTollDelta;
-    const deltaMeal = auditVehicleType === 'Ndalem' ? 0 : auditMealDelta;
-    const extraOps = auditActivity.extraOperationalCost || 0;
+    let actualJourneyDurationHours = 0;
+    try {
+      actualJourneyDurationHours = calculateJourneyElapsedHours(
+        auditActivity.timeStart,
+        auditActivity.timeEnd,
+        auditNightCount,
+      );
+    } catch {
+      actualJourneyDurationHours = 0;
+    }
+    const actualMeal = getMealAllowanceForHours(actualJourneyDurationHours);
+    const deltaMeal = Math.max(0, actualMeal - baselineMeal);
+    const extraOps = 0; // Mileage distance is compensated via componentJarak in upahBersih, not cash reimbursement
 
     const componentJarak = Math.ceil(auditDistanceKm * 300);
     const componentWaktu = Math.ceil(auditDurationHours * 5000);
     const premiumWeekend = 0;
-    const premiumOvernight = auditIsOvernight ? 50000 : 0;
-    const upahBersih = componentJarak + componentWaktu + premiumWeekend + premiumOvernight;
+    const nightPremium = calculateNightPremium(auditNightCount);
+    const upahBersih = calculateDriverNetWage(
+      auditDistanceKm,
+      auditDurationHours,
+      auditNightCount,
+    );
 
     const positiveDelta = deltaFuel + deltaToll + deltaMeal + extraOps;
     const unspentCash = auditActivity.unspentCash || 0;
     const totalReimburseDelta = Math.max(0, positiveDelta - unspentCash);
 
     const actualFuel = baselineBBM + deltaFuel;
-    const actualMeal = baselineMeal + deltaMeal;
     const actualToll = baselineToll + deltaToll;
 
     const initialTotalOps = auditActivity.totalOperationalCost || (baselineBBM + baselineMeal + baselineToll);
@@ -714,6 +679,7 @@ export default function ActivityReviewPage() {
       totalBaseline,
       actualFuel,
       actualMeal,
+      actualJourneyDurationHours,
       actualToll,
       deltaFuel,
       deltaToll,
@@ -724,11 +690,11 @@ export default function ActivityReviewPage() {
       componentJarak,
       componentWaktu,
       premiumWeekend,
-      premiumOvernight,
+      nightPremium,
       upahBersih,
       operationalCost,
     };
-  }, [auditActivity, auditDistanceKm, auditDurationHours, auditFuelDelta, auditTollDelta, auditMealDelta, auditVehicleType, auditIsOvernight]);
+  }, [auditActivity, auditDistanceKm, auditDurationHours, auditFuelDelta, auditTollDelta, auditVehicleType, auditNightCount, auditAuthorizedDurationPP]);
 
   const handleApproveSopirAudit = async () => {
     if (!auditActivity || !auditCalc || !user) return;
@@ -747,9 +713,9 @@ export default function ActivityReviewPage() {
               durationHours: auditDurationHours,
               fuelDelta: auditFuelDelta,
               tollDelta: auditTollDelta,
-              mealDelta: auditMealDelta,
+              mealDelta: auditCalc.deltaMeal,
               vehicleType: auditVehicleType,
-              isOvernight: auditIsOvernight,
+              nightCount: auditNightCount,
               points: auditPoints,
             },
           }],
@@ -885,7 +851,7 @@ export default function ActivityReviewPage() {
                 a.jobCategory,
                 a.tripType,
                 a.vehicleType,
-                a.isOvernight,
+                a.nightCount,
                 a.activityDate,
                 a.fuelFee,
                 a.tollParkingFee,
@@ -1560,9 +1526,9 @@ export default function ActivityReviewPage() {
                                       {activity.distanceKm} km ({activity.durationHours || 0} jam)
                                     </Badge>
                                   ) : null}
-                                  {activity.isOvernight && (
+                                  {activity.nightCount && (
                                     <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-amber-200 bg-amber-50 text-amber-700 font-bold">
-                                      Menginap
+                                      {activity.nightCount} malam
                                     </Badge>
                                   )}
                                   {activity.fuelFee && activity.fuelFee > 0 ? (
@@ -2067,10 +2033,10 @@ export default function ActivityReviewPage() {
                       <Input
                         type="number"
                         placeholder="Sesuai Anggaran"
-                        value={auditMealDelta || ''}
-                        onChange={(e) => setAuditMealDelta(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                        disabled={auditActivity.status !== 'pending' || actionLoading}
-                        className={`rounded-xl text-xs font-bold transition-all ${!auditMealDelta || auditMealDelta === 0
+                        value={auditCalc.deltaMeal || ''}
+                        readOnly
+                        disabled
+                        className={`rounded-xl text-xs font-bold transition-all ${auditCalc.deltaMeal === 0
                             ? 'bg-emerald-50/80 border-emerald-300 text-emerald-700 placeholder:text-emerald-600/70 focus:border-emerald-500 font-semibold'
                             : 'border-slate-200 focus:border-indigo-400 text-slate-800'
                           }`}
@@ -2116,18 +2082,48 @@ export default function ActivityReviewPage() {
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 pt-4">
-                      <input
-                        type="checkbox"
-                        id="auditIsOvernight"
-                        checked={auditIsOvernight}
-                        onChange={(e) => setAuditIsOvernight(e.target.checked)}
-                        disabled={auditActivity.status !== 'pending' || actionLoading}
-                        className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
-                      />
-                      <label htmlFor="auditIsOvernight" className="text-xs font-bold text-slate-600 select-none cursor-pointer">
-                        Menginap (Overnight)
-                      </label>
+                    <div className="space-y-1">
+                      <Label htmlFor="auditNightCount" className="text-[9.5px] font-bold text-slate-400 uppercase">
+                        Jumlah Malam
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 w-9 rounded-xl p-0 text-lg font-black"
+                          onClick={() => setAuditNightCount((count) => Math.max(0, count - 1))}
+                          disabled={auditActivity.status !== 'pending' || actionLoading || auditNightCount === 0}
+                        >
+                          −
+                        </Button>
+                        <Input
+                          id="auditNightCount"
+                          type="number"
+                          min={0}
+                          max={365}
+                          step={1}
+                          value={auditNightCount}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            setAuditNightCount(
+                              Number.isSafeInteger(value)
+                                ? Math.min(365, Math.max(0, value))
+                                : 0,
+                            );
+                          }}
+                          disabled={auditActivity.status !== 'pending' || actionLoading}
+                          className="h-9 w-16 rounded-xl bg-white text-center font-black"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 w-9 rounded-xl p-0 text-lg font-black"
+                          onClick={() => setAuditNightCount((count) => Math.min(365, count + 1))}
+                          disabled={auditActivity.status !== 'pending' || actionLoading || auditNightCount >= 365}
+                        >
+                          +
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2150,7 +2146,7 @@ export default function ActivityReviewPage() {
                     </div>
                   </div>
 
-                  {(auditCalc.premiumWeekend > 0 || auditCalc.premiumOvernight > 0) && (
+                  {(auditCalc.premiumWeekend > 0 || auditCalc.nightPremium > 0) && (
                     <div className="flex gap-3 pt-1">
                       {auditCalc.premiumWeekend > 0 && (
                         <div className="flex-1 flex justify-between bg-white p-2.5 rounded-xl border border-indigo-100/50">
@@ -2158,10 +2154,10 @@ export default function ActivityReviewPage() {
                           <span className="font-extrabold text-slate-800">+{fmtRp(auditCalc.premiumWeekend)}</span>
                         </div>
                       )}
-                      {auditCalc.premiumOvernight > 0 && (
+                      {auditCalc.nightPremium > 0 && (
                         <div className="flex-1 flex justify-between bg-white p-2.5 rounded-xl border border-indigo-100/50">
-                          <span>Overnight Premium</span>
-                          <span className="font-extrabold text-slate-800">+{fmtRp(auditCalc.premiumOvernight)}</span>
+                          <span>Premium Malam ({auditNightCount} × Rp50.000)</span>
+                          <span className="font-extrabold text-slate-800">+{fmtRp(auditCalc.nightPremium)}</span>
                         </div>
                       )}
                     </div>
@@ -2214,7 +2210,9 @@ export default function ActivityReviewPage() {
                           <td className="py-2.5 px-3.5 font-semibold text-slate-800">
                             Uang Makan Stratum
                             <span className="block text-[9px] text-slate-400 font-normal">
-                              Durasi {(auditAuthorizedDurationPP || auditDurationHours).toFixed(1).replace(/\.0$/, '')} jam
+                              Otorisasi {(auditAuthorizedDurationPP || auditDurationHours).toFixed(1).replace(/\.0$/, '')} jam;
+                              aktual {auditCalc.actualJourneyDurationHours.toFixed(1).replace(/\.0$/, '')} jam
+                              ({journeyDayCount(auditCalc.actualJourneyDurationHours)} hari)
                             </span>
                           </td>
                           <td className="py-2.5 px-3.5 text-right font-bold text-slate-600">{fmtRp(auditCalc.baselineMeal)}</td>
