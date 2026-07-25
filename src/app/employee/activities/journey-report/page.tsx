@@ -627,14 +627,14 @@ function JourneyReportContent() {
             ? localDraft.formFuelFee
             : (reportData.draftFuelFee !== undefined && reportData.draftFuelFee !== null
               ? (reportData.draftFuelFee ? Number(reportData.draftFuelFee).toLocaleString('id-ID') : '')
-              : (reportData.fuelFee !== undefined && reportData.fuelFee !== null ? (reportData.fuelFee ? Number(reportData.fuelFee).toLocaleString('id-ID') : '') : ''));
+              : (isExplicitEdit && reportData.fuelFee !== undefined && reportData.fuelFee !== null ? (reportData.fuelFee ? Number(reportData.fuelFee).toLocaleString('id-ID') : '') : ''));
           setFormFuelFee(rawFuelVal);
 
           const rawTollVal = localDraft?.formTollParkingFee !== undefined
             ? localDraft.formTollParkingFee
             : (reportData.draftTollParkingFee !== undefined && reportData.draftTollParkingFee !== null
               ? (reportData.draftTollParkingFee ? Number(reportData.draftTollParkingFee).toLocaleString('id-ID') : '')
-              : (reportData.tollParkingFee !== undefined && reportData.tollParkingFee !== null ? (reportData.tollParkingFee ? Number(reportData.tollParkingFee).toLocaleString('id-ID') : '') : ''));
+              : (isExplicitEdit && reportData.tollParkingFee !== undefined && reportData.tollParkingFee !== null ? (reportData.tollParkingFee ? Number(reportData.tollParkingFee).toLocaleString('id-ID') : '') : ''));
           setFormTollParkingFee(rawTollVal);
 
           const rawFuelUrls = reportData.draftFuelReceiptUrl || reportData.fuelReceiptUrl || '';
