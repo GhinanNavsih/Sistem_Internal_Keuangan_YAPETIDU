@@ -77,6 +77,8 @@ const ALLOWED_DRIVER_FIELDS = [
   'componentJarak',
   'componentWaktu',
   'nightPremium',
+  'reportedEndPoint',
+  'ndalemMealMoneyReceived',
 ] as const;
 
 function parseCommand(raw: unknown): SubmitActivityCommand {
@@ -171,6 +173,7 @@ function sanitizeDriverData(
     'componentJarak',
     'componentWaktu',
     'nightPremium',
+    'ndalemMealMoneyReceived',
   ];
   for (const key of boundedMoneyFields) {
     const number = result[key];
@@ -216,6 +219,12 @@ function sanitizeDriverData(
     (typeof result.journeyId !== 'string' || !SAFE_REPORT_ID.test(result.journeyId))
   ) {
     throw new HttpError(400, 'ID perjalanan tidak valid.');
+  }
+  if (
+    result.reportedEndPoint !== undefined &&
+    (typeof result.reportedEndPoint !== 'string' || !result.reportedEndPoint.trim() || result.reportedEndPoint.length > 300)
+  ) {
+    throw new HttpError(400, 'Tujuan perjalanan tidak valid.');
   }
 
   const distanceKm = typeof result.distanceKm === 'number' ? result.distanceKm : 0;
@@ -348,9 +357,11 @@ export async function POST(request: NextRequest) {
           );
           const vehicleType =
             typeof driverData.vehicleType === 'string' ? driverData.vehicleType : '';
+          const ndalemMealMoneyReceived = Number(driverData.ndalemMealMoneyReceived ?? 0);
           const actualMealAllowance = getMealAllowanceForDuration(
             actualJourneyDurationHours,
             vehicleType,
+            ndalemMealMoneyReceived,
           );
           const preAuthorizedMeal =
             typeof driverData.preAuthorizedMeal === 'number'
@@ -414,12 +425,7 @@ export async function POST(request: NextRequest) {
               );
         const fuelFee = Number(driverData.fuelFee || 0);
         const tollParkingFee = Number(driverData.tollParkingFee || 0);
-        const ndalemMealMoneyReceived = Number(driverData.ndalemMealMoneyReceived ?? 0);
-        const actualMealAllowance = getMealAllowanceForDuration(
-          Number(driverData.durationHours || 0),
-          vehicleType,
-          ndalemMealMoneyReceived,
-        );
+        const actualMealAllowance = Number(driverData.actualMealAllowance || 0);
         const extraFuelCost =
           vehicleType === 'Ndalem' ? 0 : Math.max(0, fuelFee - baseOperationalCost);
         const extraTollCost = Math.max(0, tollParkingFee - preAuthorizedToll);
@@ -511,11 +517,16 @@ export async function POST(request: NextRequest) {
           typeof journeyEvidence.vehicleType === 'string' ? journeyEvidence.vehicleType : '';
         const submittedTripType =
           typeof journeyEvidence.tripType === 'string' ? journeyEvidence.tripType : '';
+        const submittedEndPoint =
+          typeof journeyEvidence.reportedEndPoint === 'string'
+            ? journeyEvidence.reportedEndPoint.trim()
+            : '';
         delete journeyEvidence.distanceKm;
         delete journeyEvidence.durationHours;
         delete journeyEvidence.vehicleType;
         delete journeyEvidence.tripType;
-        transaction.update(journeyRef, {
+        delete journeyEvidence.reportedEndPoint;
+        const journeyUpdate: Record<string, unknown> = {
           ...journeyEvidence,
           status: 'submitted',
           period: payrollPeriod,
@@ -543,6 +554,11 @@ export async function POST(request: NextRequest) {
           draftExtraActivities: admin.firestore.FieldValue.delete(),
           draftCalculatedDistanceKm: admin.firestore.FieldValue.delete(),
           draftCalculatedDurationHours: admin.firestore.FieldValue.delete(),
+          draftEndPoint: admin.firestore.FieldValue.delete(),
+        };
+        if (submittedEndPoint) journeyUpdate.endPoint = submittedEndPoint;
+        transaction.update(journeyRef, {
+          ...journeyUpdate,
         });
       }
       transaction.create(
@@ -576,6 +592,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
+    requireRole(actor, ['honorer']);
     const { searchParams } = new URL(request.url);
     const reportId = searchParams.get('reportId');
     const journeyIdParam = searchParams.get('journeyId');
@@ -635,19 +652,31 @@ export async function DELETE(request: NextRequest) {
       // ── WRITE PHASE ──
       if (reportData && targetReportRef) {
         transaction.delete(targetReportRef);
-        const indexRef = adminDb.collection('ActivityReportsIndex').doc(targetReportRef.id);
-        transaction.delete(indexRef);
+        const safeEmployeeId = employeeId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 72);
+        const identity = [
+          safeEmployeeId,
+          String(reportData.activityDate || '').replaceAll('-', ''),
+          String(reportData.timeStart || '').replace(':', ''),
+          String(reportData.timeEnd || 'none').replace(':', ''),
+          normalizeActivityIdentityPart(String(reportData.activityName || '')),
+        ].join('__');
+        transaction.delete(adminDb.collection('PekaryaActivityIndexes').doc(identity));
+        // Remove the old collection entry as a compatibility cleanup for data
+        // written before the index collection was renamed.
+        transaction.delete(adminDb.collection('ActivityReportsIndex').doc(targetReportRef.id));
       }
 
       if (jData && jRef && targetJourneyId) {
         const owns = jData.employeeId === employeeId || jData.claimedBy === actor.uid || jData.assignedTo === employeeId;
         if (owns) {
-          const isSelfCreated = jData.isSelfCreatedPiketSpj || targetJourneyId.startsWith('JRN-PIKET-') || jData.vehicleName === 'Ndalem';
+          const isSelfCreated = Boolean(
+            jData.isSelfCreatedPiketSpj || targetJourneyId.startsWith('JRN-PIKET-'),
+          );
           if (isSelfCreated) {
             transaction.delete(jRef);
           } else {
             transaction.update(jRef, {
-              status: 'unassigned',
+              status: jData.assignedTo ? 'assigned' : 'unassigned',
               activityDocId: admin.firestore.FieldValue.delete(),
               employeeId: admin.firestore.FieldValue.delete(),
               employeeName: admin.firestore.FieldValue.delete(),
