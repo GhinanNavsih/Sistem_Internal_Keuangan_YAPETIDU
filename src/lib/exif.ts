@@ -17,7 +17,9 @@ export interface ImageExifInsights {
 
 export async function parseImageExif(fileOrUrl: File | ArrayBuffer | string): Promise<ImageExifInsights> {
   try {
-    let tags: any;
+    let tags: any = {};
+    let fallbackTimeMs: number | undefined = undefined;
+
     if (typeof fileOrUrl === 'string') {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -31,21 +33,75 @@ export async function parseImageExif(fileOrUrl: File | ArrayBuffer | string): Pr
         res = await fetch(fileOrUrl, { signal: controller.signal });
       }
       clearTimeout(timeoutId);
-      if (!res.ok) return { hasExif: false };
-      const buffer = await res.arrayBuffer();
-      tags = ExifReader.load(buffer);
+
+      if (res.ok) {
+        const lastModHeader = res.headers.get('last-modified');
+        if (lastModHeader) {
+          const parsedMs = Date.parse(lastModHeader);
+          if (!isNaN(parsedMs)) fallbackTimeMs = parsedMs;
+        }
+        const buffer = await res.arrayBuffer();
+        try {
+          tags = ExifReader.load(buffer, { expanded: true });
+          // Flatten tags if expanded object returned
+          if (tags.exif || tags.gps || tags.xmp || tags.file || tags.png) {
+            tags = {
+              ...tags.exif,
+              ...tags.gps,
+              ...tags.xmp,
+              ...tags.file,
+              ...tags.png,
+              ...tags.iptc,
+            };
+          }
+        } catch (e) {
+          tags = {};
+        }
+      }
     } else if (fileOrUrl instanceof File) {
-      tags = await ExifReader.load(fileOrUrl);
+      fallbackTimeMs = fileOrUrl.lastModified;
+      try {
+        tags = ExifReader.load(fileOrUrl, { expanded: true });
+        if (tags.exif || tags.gps || tags.xmp || tags.file || tags.png) {
+          tags = {
+            ...tags.exif,
+            ...tags.gps,
+            ...tags.xmp,
+            ...tags.file,
+            ...tags.png,
+            ...tags.iptc,
+          };
+        }
+      } catch (e) {
+        tags = {};
+      }
     } else {
-      tags = ExifReader.load(fileOrUrl);
+      try {
+        tags = ExifReader.load(fileOrUrl);
+      } catch (e) {
+        tags = {};
+      }
     }
 
-    const rawDate = tags['DateTimeOriginal']?.description || tags['DateTime']?.description || tags['CreateDate']?.description;
+    const rawDate =
+      tags['DateTimeOriginal']?.description ||
+      tags['DateTime']?.description ||
+      tags['CreateDate']?.description ||
+      tags['ModifyDate']?.description ||
+      tags['DateCreated']?.description ||
+      tags['DateTimeDigitized']?.description ||
+      tags['xmp:CreateDate']?.description ||
+      tags['xmp:ModifyDate']?.description ||
+      tags['PNG:Creation Time']?.description ||
+      tags['Creation Time']?.description ||
+      tags['date:create']?.description ||
+      tags['date:modify']?.description;
+
     let formattedDate: string | undefined = undefined;
     let isoDateString: string | undefined = undefined;
 
     if (rawDate) {
-      const match = String(rawDate).match(/^(\d{4})[:/-](\d{2})[:/-](\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+      const match = String(rawDate).match(/^(\d{4})[:/-](\d{2})[:/-](\d{2})[\sT]+(\d{2}):(\d{2}):(\d{2})/);
       if (match) {
         const [, year, month, day, hours, minutes, seconds] = match;
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -53,7 +109,33 @@ export async function parseImageExif(fileOrUrl: File | ArrayBuffer | string): Pr
         formattedDate = `${parseInt(day, 10)} ${monthNames[mIdx] || month} ${year}, ${hours}:${minutes}:${seconds}`;
         isoDateString = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
       } else {
-        formattedDate = String(rawDate);
+        const d = new Date(String(rawDate));
+        if (!isNaN(d.getTime())) {
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          const hours = String(d.getHours()).padStart(2, '0');
+          const minutes = String(d.getMinutes()).padStart(2, '0');
+          const seconds = String(d.getSeconds()).padStart(2, '0');
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+          formattedDate = `${parseInt(day, 10)} ${monthNames[d.getMonth()] || month} ${year}, ${hours}:${minutes}:${seconds}`;
+          isoDateString = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+        } else {
+          formattedDate = String(rawDate);
+        }
+      }
+    } else if (fallbackTimeMs) {
+      const d = new Date(fallbackTimeMs);
+      if (!isNaN(d.getTime())) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        const seconds = String(d.getSeconds()).padStart(2, '0');
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+        formattedDate = `${parseInt(day, 10)} ${monthNames[d.getMonth()] || month} ${year}, ${hours}:${minutes}:${seconds} (Waktu Berkas)`;
+        isoDateString = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
       }
     }
 
@@ -79,16 +161,27 @@ export async function parseImageExif(fileOrUrl: File | ArrayBuffer | string): Pr
       }
     }
 
-    const make = tags['Make']?.description;
-    const model = tags['Model']?.description;
-    const software = tags['Software']?.description;
+    const make = tags['Make']?.description || tags['tiff:Make']?.description;
+    const model = tags['Model']?.description || tags['tiff:Model']?.description;
+    const software =
+      tags['Software']?.description ||
+      tags['ProcessingSoftware']?.description ||
+      tags['HostComputer']?.description ||
+      tags['CreatorTool']?.description;
 
-    const hasExif = Boolean(rawDate || (latitude !== undefined && longitude !== undefined) || model || make);
+    const hasExif = Boolean(
+      rawDate ||
+      (latitude !== undefined && longitude !== undefined) ||
+      model ||
+      make ||
+      software ||
+      formattedDate
+    );
 
     return {
       url: typeof fileOrUrl === 'string' ? fileOrUrl : undefined,
       fileName: fileOrUrl instanceof File ? fileOrUrl.name : undefined,
-      dateTimeOriginal: rawDate ? String(rawDate) : undefined,
+      dateTimeOriginal: rawDate ? String(rawDate) : formattedDate,
       formattedDate,
       isoDateString,
       latitude,
