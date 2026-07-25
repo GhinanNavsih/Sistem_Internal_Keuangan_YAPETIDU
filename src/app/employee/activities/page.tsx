@@ -61,13 +61,10 @@ import {
   getDocs,
   getDoc,
   addDoc,
-  setDoc,
   doc,
-  updateDoc,
   query,
   where,
   orderBy,
-  serverTimestamp,
   Timestamp,
   onSnapshot,
 } from 'firebase/firestore';
@@ -80,6 +77,7 @@ import {
   calculateJourneyElapsedHours,
   calculateNightPremium,
   calculateJourneyDateTimeTimings,
+  getMealAllowanceForDuration as calculateMealAllowanceForDuration,
 } from '@/lib/payroll/driverJourney';
 import {
   Select,
@@ -814,7 +812,14 @@ function ActivitiesContent() {
 
   const handleCreateSelfPiketSpj = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selfPiketActivityName.trim() || !selfPiketEndPoint.trim()) {
+    if (
+      !selfPiketActivityName.trim() ||
+      !selfPiketEndPoint.trim() ||
+      selfPiketCalcDistance === null ||
+      selfPiketCalcDistance <= 0 ||
+      selfPiketCalcDuration === null ||
+      selfPiketCalcDuration <= 0
+    ) {
       alert('Mohon lengkapi nama kegiatan dan tujuan perjalanan.');
       return;
     }
@@ -829,56 +834,19 @@ function ActivitiesContent() {
 
     setCreatingPiketSpj(true);
     try {
-      const todayStr = getTodayDateString('Asia/Jakarta');
-      const dateSanitized = todayStr.replace(/-/g, '');
-      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-      const journeyId = `JRN-PIKET-${dateSanitized}-${randomSuffix}`;
-      const year = parseInt(todayStr.split('-')[0], 10);
-      const month = parseInt(todayStr.split('-')[1], 10);
-      const periodToken = `${year}-${String(month).padStart(2, '0')}`;
-
-      const dist = selfPiketCalcDistance || 0;
-      const dur = selfPiketCalcDuration || 0;
-      const durPP = dur * 2;
-
-      const compJarak = Math.ceil(dist * 2 * 300);
-      const compWaktu = Math.ceil(durPP * 5000);
-      const estBaseWage = compJarak + compWaktu;
-      const estMaxWage = Math.ceil(estBaseWage * 1.25);
       const tollFeeVal = selfPiketTollFee ? parseInt(selfPiketTollFee.replace(/\D/g, ''), 10) || 0 : 0;
 
-      await setDoc(doc(db, 'DriverJourneys', journeyId), {
-        id: journeyId,
-        activityName: selfPiketActivityName.trim(),
-        activityDate: todayStr,
-        journeyDate: todayStr,
-        startPoint: selfPiketStartPoint.trim(),
-        endPoint: selfPiketEndPoint.trim(),
-        vehicleName: 'Ndalem',
-        vehicleRate: 0,
-        distanceKm: dist,
-        totalDistanceKm: dist * 2,
-        durationHours: dur,
-        customDurationPP: durPP,
-        baseOperationalCost: 0,
-        mealAllowance: 0,
-        tollParkingFee: tollFeeVal,
-        totalOperationalCost: tollFeeVal,
-        estimatedComponentJarak: compJarak,
-        estimatedComponentWaktu: compWaktu,
-        estimatedBaseDriverWage: estBaseWage,
-        estimatedMaxDriverWage: estMaxWage,
-        employeeId: profile.linkedEmployeeId,
-        employeeName: profile.displayName || 'Driver',
-        claimedBy: profile.uid,
-        claimedByName: profile.displayName || 'Driver',
-        claimedAt: serverTimestamp(),
-        status: 'claimed',
-        isSelfCreatedPiketSpj: true,
-        createdAt: serverTimestamp(),
-        authorizedAt: serverTimestamp(),
-        createdBy: profile.uid,
-        period: periodToken,
+      const createdJourney = await authenticatedJson<{ journeyId: string }>('/api/driver-journeys', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'create_self',
+          activityName: selfPiketActivityName.trim(),
+          startPoint: selfPiketStartPoint.trim(),
+          endPoint: selfPiketEndPoint.trim(),
+          distanceKm: selfPiketCalcDistance,
+          durationHours: selfPiketCalcDuration,
+          tollParkingFee: tollFeeVal,
+        }),
       });
 
       setShowSelfPiketSpjModal(false);
@@ -888,7 +856,7 @@ function ActivitiesContent() {
       setSelfPiketCalcDuration(null);
       setSelfPiketTollFee('');
       lastSelfPiketCalculatedRef.current = { start: '', end: '' };
-      router.push(`/employee/activities/journey-report?id=${journeyId}`);
+      router.push(`/employee/activities/journey-report?id=${createdJourney.journeyId}`);
     } catch (err: any) {
       console.error('Error creating self piket SPJ:', err);
       alert('Gagal membuat SPJ piket. Coba lagi.');
@@ -1281,14 +1249,8 @@ function ActivitiesContent() {
   };
 
   const getMealAllowanceForDuration = (hours: number, vehicleName?: string): number => {
-    if (vehicleName === 'Ndalem' || !Number.isFinite(hours) || hours <= 0) return 0;
-    const fullDayAllowance = Math.floor(hours / 24) * 60_000;
-    const remainingHours = hours % 24;
-    if (remainingHours === 0) return fullDayAllowance;
-    if (remainingHours < 2) return fullDayAllowance + 5_000;
-    if (remainingHours <= 6) return fullDayAllowance + 20_000;
-    if (remainingHours <= 12) return fullDayAllowance + 40_000;
-    return fullDayAllowance + 60_000;
+    if (vehicleName === 'Ndalem') return 0;
+    return calculateMealAllowanceForDuration(hours, vehicleName);
   };
 
   const calculateElapsedHours = (start: string, end: string, nightCount: number): number => {
@@ -1304,19 +1266,24 @@ function ActivitiesContent() {
     try {
       const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
       const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
-      const journeyRef = doc(db, 'DriverJourneys', journeyId);
-      await updateDoc(journeyRef, {
-        draftTimeStart: formTimeStart,
-        draftTimeEnd: formTimeEnd,
-        draftNightCount: formNightCount,
-        draftFuelFee: fuelVal,
-        draftTollParkingFee: tollVal,
-        draftFuelReceiptUrl: formFuelReceiptUrls.join(','),
-        draftTollReceiptUrl: formTollReceiptUrls.join(','),
-        draftExtraActivities: extraActivities,
-        draftCalculatedDistanceKm: calculatedDistanceKm,
-        draftCalculatedDurationHours: calculatedDurationHours,
-        updatedAt: serverTimestamp()
+      await authenticatedJson('/api/driver-journeys', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'save_draft',
+          journeyId,
+          draft: {
+            timeStart: formTimeStart,
+            timeEnd: formTimeEnd,
+            nightCount: formNightCount,
+            fuelFee: fuelVal,
+            tollParkingFee: tollVal,
+            fuelReceiptUrl: formFuelReceiptUrls.join(','),
+            tollReceiptUrl: formTollReceiptUrls.join(','),
+            extraActivities,
+            calculatedDistanceKm,
+            calculatedDurationHours,
+          },
+        }),
       });
     } catch (err) {
       console.error('Error saving draft:', err);
@@ -1537,11 +1504,37 @@ function ActivitiesContent() {
 
   // Auto-redirect driver to dedicated /employee/activities/journey-report if an active claimed journey exists
   useEffect(() => {
-    if (isSopir && myClaimedJourneys.length > 0) {
-      const activeJourney = myClaimedJourneys.find((j: any) => j.status === 'claimed');
-      if (activeJourney) {
-        router.push(`/employee/activities/journey-report?id=${activeJourney.id}`);
-      }
+    if (!isSopir) return;
+
+    const cancelledJourneyId = typeof window !== 'undefined'
+      ? sessionStorage.getItem('cancelled_driver_journey_id')
+      : null;
+    const cancelledJourneyAt = typeof window !== 'undefined'
+      ? Number(sessionStorage.getItem('cancelled_driver_journey_at') || 0)
+      : 0;
+    const cancellationIsFresh = Boolean(
+      cancelledJourneyId &&
+      cancelledJourneyAt > 0 &&
+      Date.now() - cancelledJourneyAt < 10 * 60 * 1000,
+    );
+    if (cancelledJourneyId && !cancellationIsFresh) {
+      sessionStorage.removeItem('cancelled_driver_journey_id');
+      sessionStorage.removeItem('cancelled_driver_journey_at');
+    }
+
+    const activeJourney = myClaimedJourneys.find((j: any) => j.status === 'claimed');
+    if (cancellationIsFresh) {
+      // Keep the guard while the real-time listener settles. An empty snapshot
+      // is not proof that the deleted journey is gone permanently: a cached
+      // snapshot can briefly arrive afterward and otherwise cause a redirect
+      // loop back to the deleted report.
+      if (!activeJourney || activeJourney.id === cancelledJourneyId) return;
+      sessionStorage.removeItem('cancelled_driver_journey_id');
+      sessionStorage.removeItem('cancelled_driver_journey_at');
+    }
+
+    if (activeJourney) {
+      router.push(`/employee/activities/journey-report?id=${activeJourney.id}`);
     }
   }, [isSopir, myClaimedJourneys, router]);
 
@@ -1693,11 +1686,9 @@ function ActivitiesContent() {
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
     try {
-      await updateDoc(doc(db, 'DriverJourneys', journeyId), {
-        status: 'claimed',
-        employeeId: profile.linkedEmployeeId,
-        employeeName: profile.displayName || '',
-        claimedAt: serverTimestamp(),
+      await authenticatedJson('/api/driver-journeys', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'claim', journeyId }),
       });
       router.push(`/employee/activities/journey-report?id=${journeyId}`);
     } catch (err) {
@@ -1723,11 +1714,9 @@ function ActivitiesContent() {
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
     try {
-      await updateDoc(doc(db, 'DriverJourneys', journeyId), {
-        status: 'claimed',
-        employeeId: profile.linkedEmployeeId,
-        employeeName: profile.displayName || '',
-        claimedAt: serverTimestamp(),
+      await authenticatedJson('/api/driver-journeys', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'claim', journeyId }),
       });
       router.push(`/employee/activities/journey-report?id=${journeyId}`);
     } catch (err) {
@@ -1748,11 +1737,9 @@ function ActivitiesContent() {
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
     try {
-      await updateDoc(doc(db, 'DriverJourneys', journeyId), {
-        status: 'unassigned',
-        employeeId: null,
-        employeeName: null,
-        claimedAt: null,
+      await authenticatedJson('/api/driver-journeys', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'cancel_claim', journeyId }),
       });
       setMessage({ type: 'success', text: 'Klaim perjalanan berhasil dibatalkan.' });
     } catch (err) {
@@ -3470,7 +3457,12 @@ function ActivitiesContent() {
 
                       <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
                         <Button
-                          onClick={() => router.push(`/employee/activities/journey-report?id=${j.id}`)}
+                          onClick={() => {
+                            if (typeof window !== 'undefined') {
+                              sessionStorage.removeItem('cancelled_driver_journey_id');
+                            }
+                            router.push(`/employee/activities/journey-report?id=${j.id}`);
+                          }}
                           className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs sm:text-sm h-10.5 gap-2 cursor-pointer shadow-md shadow-indigo-100 transition-all border-none"
                         >
                           <CheckCircle2 className="w-4.5 h-4.5" />
@@ -5147,7 +5139,16 @@ function ActivitiesContent() {
               </Button>
               <Button
                 type="submit"
-                disabled={creatingPiketSpj || selfPiketCalculating || !selfPiketEndPoint.trim() || myClaimedJourneys.length > 0}
+                disabled={
+                  creatingPiketSpj ||
+                  selfPiketCalculating ||
+                  !selfPiketEndPoint.trim() ||
+                  selfPiketCalcDistance === null ||
+                  selfPiketCalcDistance <= 0 ||
+                  selfPiketCalcDuration === null ||
+                  selfPiketCalcDuration <= 0 ||
+                  myClaimedJourneys.length > 0
+                }
                 className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs px-6 h-10 gap-2 shadow-md shadow-emerald-200 cursor-pointer disabled:opacity-50"
               >
                 {creatingPiketSpj ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}

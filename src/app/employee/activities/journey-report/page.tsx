@@ -561,7 +561,11 @@ function JourneyReportContent() {
           ? sessionStorage.getItem('cancelled_driver_journey_id')
           : null;
         if (cancelledJourneyId === targetId) {
+          if (typeof window !== 'undefined') {
+            sessionStorage.removeItem('cancelled_driver_journey_id');
+          }
           skipJourneyLoadRef.current = true;
+          setLoading(false);
           router.replace('/employee/activities');
           return;
         }
