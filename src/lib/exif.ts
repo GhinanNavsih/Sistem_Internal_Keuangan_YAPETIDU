@@ -21,7 +21,15 @@ export async function parseImageExif(fileOrUrl: File | ArrayBuffer | string): Pr
     if (typeof fileOrUrl === 'string') {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
-      const res = await fetch(fileOrUrl, { signal: controller.signal });
+      let res: Response;
+      try {
+        res = await fetch(`/api/proxy-image?url=${encodeURIComponent(fileOrUrl)}`, { signal: controller.signal });
+        if (!res.ok) {
+          res = await fetch(fileOrUrl, { signal: controller.signal });
+        }
+      } catch (e) {
+        res = await fetch(fileOrUrl, { signal: controller.signal });
+      }
       clearTimeout(timeoutId);
       if (!res.ok) return { hasExif: false };
       const buffer = await res.arrayBuffer();
