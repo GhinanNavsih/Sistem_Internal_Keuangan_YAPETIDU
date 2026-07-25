@@ -1522,6 +1522,22 @@ function ActivitiesContent() {
       sessionStorage.removeItem('cancelled_driver_journey_at');
     }
 
+    const submittedJourneyId = typeof window !== 'undefined'
+      ? sessionStorage.getItem('submitted_driver_journey_id')
+      : null;
+    const submittedJourneyAt = typeof window !== 'undefined'
+      ? Number(sessionStorage.getItem('submitted_driver_journey_at') || 0)
+      : 0;
+    const submissionIsFresh = Boolean(
+      submittedJourneyId &&
+      submittedJourneyAt > 0 &&
+      Date.now() - submittedJourneyAt < 10 * 60 * 1000,
+    );
+    if (submittedJourneyId && !submissionIsFresh) {
+      sessionStorage.removeItem('submitted_driver_journey_id');
+      sessionStorage.removeItem('submitted_driver_journey_at');
+    }
+
     const activeJourney = myClaimedJourneys.find((j: any) => j.status === 'claimed');
     if (cancellationIsFresh) {
       // Keep the guard while the real-time listener settles. An empty snapshot
@@ -1531,6 +1547,12 @@ function ActivitiesContent() {
       if (!activeJourney || activeJourney.id === cancelledJourneyId) return;
       sessionStorage.removeItem('cancelled_driver_journey_id');
       sessionStorage.removeItem('cancelled_driver_journey_at');
+    }
+
+    if (submissionIsFresh) {
+      if (!activeJourney || activeJourney.id === submittedJourneyId) return;
+      sessionStorage.removeItem('submitted_driver_journey_id');
+      sessionStorage.removeItem('submitted_driver_journey_at');
     }
 
     if (activeJourney) {

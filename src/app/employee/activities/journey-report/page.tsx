@@ -594,6 +594,12 @@ function JourneyReportContent() {
           if (reportData.status !== 'claimed' && !isExplicitEdit) {
             // A direct link to an assigned or already-submitted journey must
             // never mutate the assignment as a side effect of loading the form.
+            if (typeof window !== 'undefined' && targetId) {
+              sessionStorage.setItem('submitted_driver_journey_id', targetId);
+              sessionStorage.setItem('submitted_driver_journey_at', String(Date.now()));
+            }
+            skipJourneyLoadRef.current = true;
+            setLoading(false);
             router.replace('/employee/activities');
             return;
           }
@@ -1391,6 +1397,8 @@ function JourneyReportContent() {
 
       if (typeof window !== 'undefined' && activeReportingJourney?.id) {
         localStorage.removeItem(`journey_draft_${activeReportingJourney.id}`);
+        sessionStorage.setItem('submitted_driver_journey_id', activeReportingJourney.id);
+        sessionStorage.setItem('submitted_driver_journey_at', String(Date.now()));
       }
       router.replace('/employee/driver-history');
     } catch (err: any) {
