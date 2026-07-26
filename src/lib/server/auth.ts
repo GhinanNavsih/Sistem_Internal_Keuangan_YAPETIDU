@@ -36,8 +36,9 @@ export async function requireAuthenticatedProfile(
 
   let decoded;
   try {
-    decoded = await adminAuth.verifyIdToken(token, true);
-  } catch {
+    decoded = await adminAuth.verifyIdToken(token);
+  } catch (err) {
+    console.error('verifyIdToken failed:', err);
     throw new HttpError(401, 'Sesi tidak valid atau sudah dicabut.');
   }
 
