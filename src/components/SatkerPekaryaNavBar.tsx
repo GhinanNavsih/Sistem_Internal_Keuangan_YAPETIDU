@@ -3,7 +3,7 @@
 import React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3 } from 'lucide-react';
+import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function SatkerPekaryaNavBar() {
@@ -12,8 +12,8 @@ export default function SatkerPekaryaNavBar() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Only show for satker_head (Pekarya)
-  if (profile?.role !== 'satker_head') return null;
+  // Only show for satker_head (Pekarya) or satker_head_loyalis
+  if (profile?.role !== 'satker_head' && profile?.role !== 'satker_head_loyalis') return null;
 
   const month = searchParams.get('month') || String(new Date().getMonth() + 1);
   const year = searchParams.get('year') || String(new Date().getFullYear());
@@ -21,85 +21,123 @@ export default function SatkerPekaryaNavBar() {
   const activityUrl = `/dashboard/payroll/activity-review?month=${month}&year=${year}`;
   const journeysUrl = `/dashboard/payroll/driver-journeys?month=${month}&year=${year}`;
   const dashboardUrl = `/dashboard/payroll/journey-dashboard?month=${month}&year=${year}`;
+  const vakasiUrl = `/dashboard/payroll/uraian/vakasi-loyalis?month=${month}&year=${year}`;
+  const pelaporanUrl = `/dashboard/payroll/uraian/pelaporan-kegiatan?month=${month}&year=${year}`;
 
   const isActivity = pathname.startsWith('/dashboard/payroll/activity-review');
-  const isUraian = pathname.startsWith('/dashboard/payroll/uraian');
   const isJourneys = pathname.startsWith('/dashboard/payroll/driver-journeys');
   const isDashboard = pathname.startsWith('/dashboard/payroll/journey-dashboard');
+  const isUraian = pathname.startsWith('/dashboard/payroll/uraian/rekap-pekarya') || (pathname.startsWith('/dashboard/payroll/uraian') && !pathname.includes('vakasi-loyalis') && !pathname.includes('pelaporan-kegiatan'));
+  const isVakasi = pathname.startsWith('/dashboard/payroll/uraian/vakasi-loyalis');
+  const isPelaporan = pathname.startsWith('/dashboard/payroll/uraian/pelaporan-kegiatan');
 
   const navBtnClass = (active: boolean) =>
-    `px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+    `px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap ${
       active
         ? 'bg-indigo-600 text-white shadow-sm'
-        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
     }`;
 
+  const defaultBrandRedirect = profile?.role === 'satker_head_loyalis' ? vakasiUrl : activityUrl;
+
   return (
-    <div className="flex items-center justify-between gap-4 w-full bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-2xl px-4 py-2.5 shadow-sm">
-      {/* Brand */}
-      <div className="flex items-center gap-2.5">
-        <img
-          src="/Logo YAPETIDU (Transparent bg).png"
-          alt="Logo"
-          className="w-7 h-7 object-contain"
-        />
-        <span className="text-sm font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent tracking-tight hidden sm:block">
-          YAPETIDU
-        </span>
-      </div>
-
-      {/* Navigation Tabs */}
-      <div className="flex bg-slate-100/80 p-1 rounded-xl gap-0.5 shadow-inner">
-        <button
-          onClick={() => router.push(activityUrl)}
-          className={navBtnClass(isActivity)}
+    <header className="sticky top-0 z-50 w-full bg-white/85 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between gap-4 w-full">
+        {/* Brand */}
+        <div
+          onClick={() => router.push(defaultBrandRedirect)}
+          className="flex items-center gap-2.5 cursor-pointer shrink-0"
         >
-          <ClipboardCheck className="w-4 h-4" />
-          Review Kegiatan
-        </button>
-        <button
-          onClick={() => router.push(journeysUrl)}
-          className={navBtnClass(isJourneys)}
-        >
-          <Compass className="w-4 h-4" />
-          Pre-Otorisasi
-        </button>
-        <button
-          onClick={() => router.push(dashboardUrl)}
-          className={navBtnClass(isDashboard)}
-        >
-          <BarChart3 className="w-4 h-4" />
-          Dashboard Perjalanan
-        </button>
-        <button
-          onClick={() => router.push(uraianUrl)}
-          className={navBtnClass(isUraian)}
-        >
-          <ScanLine className="w-4 h-4" />
-          Rekap Uraian
-        </button>
-      </div>
-
-      {/* User + Logout */}
-      <div className="flex items-center gap-3">
-        <div className="hidden sm:block text-right">
-          <p className="text-xs font-bold text-slate-700 leading-tight truncate max-w-[120px]">
-            {profile?.displayName || 'SatKer Pekarya'}
-          </p>
-          <p className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md w-fit mt-0.5 ml-auto">
-            Kepala SatKer Pekarya
-          </p>
+          <img
+            src="/Logo YAPETIDU (Transparent bg).png"
+            alt="Logo"
+            className="w-8 h-8 object-contain"
+          />
+          <div className="flex flex-col">
+            <span className="text-sm font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent tracking-tight leading-none">
+              YAPETIDU
+            </span>
+            <span className="text-[10px] font-semibold text-slate-400 leading-tight hidden sm:block">
+              Sistem Internal Keuangan
+            </span>
+          </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={logout}
-          className="rounded-xl text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Keluar</span>
-        </Button>
+
+        {/* Navigation Tabs */}
+        <div className="flex items-center bg-slate-100/90 p-1 rounded-xl gap-1 shadow-inner border border-slate-200/50 overflow-x-auto max-w-full scrollbar-none">
+          {profile?.role === 'satker_head_loyalis' ? (
+            <>
+              <button
+                onClick={() => router.push(vakasiUrl)}
+                className={navBtnClass(isVakasi)}
+              >
+                <Banknote className="w-4 h-4" />
+                <span>Vakasi Tambahan</span>
+              </button>
+              <button
+                onClick={() => router.push(pelaporanUrl)}
+                className={navBtnClass(isPelaporan)}
+              >
+                <ClipboardCheck className="w-4 h-4" />
+                <span>Pelaporan Kegiatan</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => router.push(activityUrl)}
+                className={navBtnClass(isActivity)}
+              >
+                <ClipboardCheck className="w-4 h-4" />
+                <span>Review Kegiatan</span>
+              </button>
+              <button
+                onClick={() => router.push(journeysUrl)}
+                className={navBtnClass(isJourneys)}
+              >
+                <Compass className="w-4 h-4" />
+                <span>Pre-Otorisasi</span>
+              </button>
+              <button
+                onClick={() => router.push(dashboardUrl)}
+                className={navBtnClass(isDashboard)}
+              >
+                <BarChart3 className="w-4 h-4" />
+                <span>Dashboard Perjalanan</span>
+              </button>
+              <button
+                onClick={() => router.push(uraianUrl)}
+                className={navBtnClass(isUraian)}
+              >
+                <ScanLine className="w-4 h-4" />
+                <span>Rekap Uraian</span>
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* User + Logout */}
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="hidden md:block text-right">
+            <p className="text-xs font-bold text-slate-700 leading-tight truncate max-w-[150px]">
+              {profile?.displayName || (profile?.role === 'satker_head_loyalis' ? 'SatKer Loyalis' : 'SatKer Pekarya')}
+            </p>
+            <p className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md w-fit mt-0.5 ml-auto border border-indigo-100">
+              {profile?.role === 'satker_head_loyalis' ? 'Kepala SatKer Loyalis' : 'Kepala SatKer Pekarya'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={logout}
+            className="rounded-xl text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 hover:border-rose-300 transition-all cursor-pointer flex items-center gap-1.5 shadow-sm font-semibold"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Keluar</span>
+          </Button>
+        </div>
       </div>
-    </div>
+    </header>
   );
 }
+

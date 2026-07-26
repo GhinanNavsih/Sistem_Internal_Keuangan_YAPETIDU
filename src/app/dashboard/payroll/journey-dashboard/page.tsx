@@ -312,11 +312,12 @@ function JourneyDashboardContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/20 to-slate-100 p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/20 to-slate-100">
       {/* ── Navigation Header Bar ────────────────────────────────────────── */}
       <SatkerPekaryaNavBar />
 
-      {/* ── Page Header + Period Controls ────────────────────────────────── */}
+      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        {/* ── Page Header + Period Controls ────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -647,6 +648,7 @@ function JourneyDashboardContent() {
           </div>
         )}
       </Card>
+      </div>
     </div>
   );
 }

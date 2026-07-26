@@ -14,10 +14,14 @@ export async function authenticatedJson<T>(
 ): Promise<T> {
   const user = auth.currentUser;
   if (!user) {
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
     throw new Error('Sesi pengguna tidak tersedia. Silakan masuk kembali.');
   }
-  const token = await user.getIdToken();
-  const response = await fetch(input, {
+
+  let token = await user.getIdToken();
+  let response = await fetch(input, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -25,10 +29,35 @@ export async function authenticatedJson<T>(
       ...(init.headers || {}),
     },
   });
+
+  // If 401, force token refresh and retry once
+  if (response.status === 401) {
+    try {
+      token = await user.getIdToken(true);
+      response = await fetch(input, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          ...(init.headers || {}),
+        },
+      });
+    } catch (refreshErr) {
+      console.warn('Failed to force refresh Firebase Auth token on 401:', refreshErr);
+    }
+  }
+
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 401) {
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login';
+      }
+      throw new Error(payload.error || 'Sesi tidak valid atau sudah kadaluarsa. Silakan masuk kembali.');
+    }
     throw new Error(payload.error || `Permintaan gagal (${response.status}).`);
   }
   return payload as T;
 }
+
 

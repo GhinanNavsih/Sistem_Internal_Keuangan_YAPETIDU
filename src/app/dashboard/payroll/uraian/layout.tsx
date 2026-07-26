@@ -187,19 +187,21 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
   const showCategorySelector = activeTab === 'presensi' || activeTab === 'kegiatan_spj';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 p-6 lg:p-8 pb-24 lg:pb-32 font-sans selection:bg-indigo-100 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans selection:bg-indigo-100 relative text-slate-800">
       {/* Subtle decorative blobs */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
-      <div className="max-w-[1600px] mx-auto space-y-8 relative z-10">
-        {/* Show full GlobalHeader only for super_admin; SatKer Pekarya gets its own nav bar */}
-        {profile.role === 'super_admin' ? (
-          <GlobalHeader />
-        ) : profile.role === 'satker_head' ? (
-          <Suspense fallback={null}>
-            <SatkerPekaryaNavBar />
-          </Suspense>
-        ) : null}
+
+      {/* Show full GlobalHeader only for super_admin; SatKer Pekarya/Loyalis gets its own top nav bar */}
+      {profile.role === 'super_admin' ? (
+        <GlobalHeader />
+      ) : (profile.role === 'satker_head' || profile.role === 'satker_head_loyalis') ? (
+        <Suspense fallback={null}>
+          <SatkerPekaryaNavBar />
+        </Suspense>
+      ) : null}
+
+      <div className="max-w-[1600px] mx-auto p-6 lg:p-8 pb-24 lg:pb-32 space-y-8 relative z-10">
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
@@ -307,7 +309,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               </Select>
             )}
 
-            {(profile?.role === 'satker_head' || profile?.role === 'satker_head_loyalis' || profile?.role === 'loyalis_presence_admin') && (
+            {profile?.role === 'loyalis_presence_admin' && (
               <Button
                 variant="outline"
                 onClick={logout}
@@ -320,11 +322,11 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* Tab Switcher */}
-        {profile && (
+        {/* Tab Switcher for Super Admin & other roles */}
+        {profile && profile.role !== 'satker_head' && profile.role !== 'satker_head_loyalis' && (
           <div className="flex flex-wrap items-center justify-between gap-4 w-full">
             <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60">
-              {(profile.role === 'satker_head' || profile.role === 'super_admin') && (
+              {profile.role === 'super_admin' && (
                 <button
                   onClick={() => router.push(`/dashboard/payroll/activity-review?month=${month}&year=${year}`)}
                   className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
@@ -352,7 +354,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                 </button>
               )}
 
-              {(profile.role === 'super_admin' || profile.role === 'satker_head_loyalis') && (
+              {profile.role === 'super_admin' && (
                 <>
                   <button
                     onClick={() => router.push(`/dashboard/payroll/uraian/vakasi-loyalis${getCleanParamsString('vakasi_loyalis')}`)}
