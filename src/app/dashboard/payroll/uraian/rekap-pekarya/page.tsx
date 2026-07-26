@@ -913,25 +913,32 @@ export default function RekapPekaryaPage() {
           <Plus className="w-4 h-4 text-indigo-500" />
           Tambah Kolom
         </Button>
+        <Button
+          onClick={handleSave}
+          disabled={saving || isLocked || !category || employees.length === 0}
+          className="rounded-xl px-6 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+          Simpan rekap
+        </Button>
         {isLocked ? (
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold shadow-xs">
-              <Lock className="w-4 h-4 text-amber-600" />
-              <span>Terkunci</span>
-            </div>
-            <Button
-              onClick={() => setIsLocked(false)}
-              variant="outline"
-              className="rounded-xl border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer"
-            >
-              <Unlock className="w-4 h-4 text-amber-600" />
-              Buka Kunci untuk Edit
-            </Button>
-          </div>
+          <Button
+            onClick={() => setIsLocked(false)}
+            variant="outline"
+            className="rounded-xl border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer"
+          >
+            <Unlock className="w-4 h-4 text-amber-600" />
+            Buka Kunci
+          </Button>
         ) : (
-          <Button onClick={handleSave} disabled={saving || !category || employees.length === 0} className="rounded-xl px-6 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2 cursor-pointer">
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-            Simpan rekap
+          <Button
+            onClick={() => setIsLocked(true)}
+            disabled={!category || employees.length === 0}
+            variant="outline"
+            className="rounded-xl border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 font-semibold transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Lock className="w-4 h-4 text-slate-500" />
+            Kunci
           </Button>
         )}
         {saved && (
