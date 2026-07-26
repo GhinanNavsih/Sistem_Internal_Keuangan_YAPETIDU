@@ -114,6 +114,8 @@ export interface UraianGajiDocument {
   workingDaysInMonth: number;
   entries: Record<string, UraianEntry>; // employeeId → entry
   customColumns?: RekapColumn[];
+  isLocked?: boolean;
+  status?: 'draft' | 'locked';
   createdAt?: any;
   updatedAt?: any;
 }
