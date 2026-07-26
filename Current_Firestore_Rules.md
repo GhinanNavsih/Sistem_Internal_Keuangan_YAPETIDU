@@ -264,6 +264,13 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /ProposalKegiatan/{docId} {
+      allow read: if isFinanceRole() || roleIs('satker_head_loyalis');
+      allow create, update: if isFinanceVerifier() || isSuperAdmin() ||
+        roleIs('satker_head_loyalis');
+      allow delete: if false;
+    }
+
     match /EmpEditLog/{docId} {
       allow read: if isSuperAdmin() || isEmployeeAdmin();
       allow create: if isSuperAdmin() || isEmployeeAdmin();

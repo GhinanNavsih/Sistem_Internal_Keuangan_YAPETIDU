@@ -3,7 +3,7 @@
 import React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote } from 'lucide-react';
+import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function SatkerPekaryaNavBar() {
@@ -22,13 +22,15 @@ export default function SatkerPekaryaNavBar() {
   const journeysUrl = `/dashboard/payroll/driver-journeys?month=${month}&year=${year}`;
   const dashboardUrl = `/dashboard/payroll/journey-dashboard?month=${month}&year=${year}`;
   const vakasiUrl = `/dashboard/payroll/uraian/vakasi-loyalis?month=${month}&year=${year}`;
+  const proposalUrl = `/dashboard/payroll/uraian/proposal-kegiatan?month=${month}&year=${year}`;
   const pelaporanUrl = `/dashboard/payroll/uraian/pelaporan-kegiatan?month=${month}&year=${year}`;
 
   const isActivity = pathname.startsWith('/dashboard/payroll/activity-review');
   const isJourneys = pathname.startsWith('/dashboard/payroll/driver-journeys');
   const isDashboard = pathname.startsWith('/dashboard/payroll/journey-dashboard');
-  const isUraian = pathname.startsWith('/dashboard/payroll/uraian/rekap-pekarya') || (pathname.startsWith('/dashboard/payroll/uraian') && !pathname.includes('vakasi-loyalis') && !pathname.includes('pelaporan-kegiatan'));
+  const isUraian = pathname.startsWith('/dashboard/payroll/uraian/rekap-pekarya') || (pathname.startsWith('/dashboard/payroll/uraian') && !pathname.includes('vakasi-loyalis') && !pathname.includes('pelaporan-kegiatan') && !pathname.includes('proposal-kegiatan'));
   const isVakasi = pathname.startsWith('/dashboard/payroll/uraian/vakasi-loyalis');
+  const isProposal = pathname.startsWith('/dashboard/payroll/uraian/proposal-kegiatan');
   const isPelaporan = pathname.startsWith('/dashboard/payroll/uraian/pelaporan-kegiatan');
 
   const navBtnClass = (active: boolean) =>
@@ -67,6 +69,13 @@ export default function SatkerPekaryaNavBar() {
         <div className="flex items-center bg-slate-100/90 p-1 rounded-xl gap-1 shadow-inner border border-slate-200/50 overflow-x-auto max-w-full scrollbar-none">
           {profile?.role === 'satker_head_loyalis' ? (
             <>
+              <button
+                onClick={() => router.push(proposalUrl)}
+                className={navBtnClass(isProposal)}
+              >
+                <FileText className="w-4 h-4" />
+                <span>Pengajuan Anggaran</span>
+              </button>
               <button
                 onClick={() => router.push(vakasiUrl)}
                 className={navBtnClass(isVakasi)}
