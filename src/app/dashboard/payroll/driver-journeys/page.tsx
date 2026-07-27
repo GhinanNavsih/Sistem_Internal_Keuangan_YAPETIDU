@@ -258,6 +258,18 @@ function DriverJourneysContent() {
       if (!driverId || driverId === 'unassigned') {
         await deleteDoc(docRef);
       } else {
+        // Prevent assigning a driver who is already picked in another station on this date
+        const conflict = piketSchedules.find(
+          (s) => s.date === selectedPiketDate && s.driverId === driverId && (s.stationKey ? s.stationKey !== stationKey : s.id !== docId)
+        );
+        if (conflict) {
+          setMessage({
+            type: 'error',
+            text: `Sopir ini sudah ditugaskan pada stasiun ${conflict.stationName || 'lain'} untuk tanggal ini.`
+          });
+          return;
+        }
+
         const selectedDriver = drivers.find((d) => d.id === driverId);
         const driverName = selectedDriver?.name || selectedDriver?.personal_info?.name || selectedDriver?.displayName || driverId;
         await setDoc(docRef, {
@@ -1079,6 +1091,17 @@ function DriverJourneysContent() {
               const currentSched = selectedPiketDate ? getScheduleForStation(selectedPiketDate, station.key, sIdx) : null;
               const selectedDriverId = currentSched?.driverId || 'unassigned';
 
+              // Get driver IDs assigned to other stations on the selected date
+              const assignedOtherDriverIds = selectedPiketDate
+                ? piketSchedules
+                    .filter((s) => {
+                      if (s.date !== selectedPiketDate || !s.driverId || s.driverId === 'unassigned') return false;
+                      if (s.stationKey) return s.stationKey !== station.key;
+                      return currentSched ? s.id !== currentSched.id : true;
+                    })
+                    .map((s) => s.driverId)
+                : [];
+
               return (
                 <div
                   key={station.key}
@@ -1116,9 +1139,15 @@ function DriverJourneysContent() {
                       </SelectItem>
                       {drivers.map((d) => {
                         const driverName = d.name || d.personal_info?.name || d.id;
+                        const isAssignedElsewhere = assignedOtherDriverIds.includes(d.id);
                         return (
-                          <SelectItem key={d.id} value={d.id} className="text-xs font-bold">
-                            {driverName}
+                          <SelectItem
+                            key={d.id}
+                            value={d.id}
+                            disabled={isAssignedElsewhere}
+                            className="text-xs font-bold"
+                          >
+                            {driverName}{isAssignedElsewhere ? ' (Sudah Ditugaskan)' : ''}
                           </SelectItem>
                         );
                       })}
