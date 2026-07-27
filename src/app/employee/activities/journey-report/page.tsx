@@ -620,10 +620,18 @@ function JourneyReportContent() {
           const initialDate = localDraft?.formDate ?? reportData.activityDate ?? reportData.dateStart ?? reportData.journeyDate ?? getTodayISO();
           setFormDate(initialDate);
 
-          const initialDateEnd = localDraft?.formDateEnd ?? reportData.draftDateEnd ?? reportData.dateEnd ?? initialDate;
+          const todayISO = getTodayISO();
+          const isOvernightOrMultiDay = initialDate < todayISO;
+
+          const initialDateEnd = localDraft?.formDateEnd ?? reportData.draftDateEnd ?? reportData.dateEnd ?? (isOvernightOrMultiDay ? todayISO : initialDate);
           setFormDateEnd(initialDateEnd);
 
-          const initialIsMultiDay = localDraft?.formIsMultiDay ?? reportData.draftIsMultiDay ?? reportData.isMultiDay ?? ((reportData.nightCount && reportData.nightCount > 0) || (reportData.draftNightCount && reportData.draftNightCount > 0) || false);
+          const initialIsMultiDay = localDraft?.formIsMultiDay ?? reportData.draftIsMultiDay ?? reportData.isMultiDay ?? (
+            isOvernightOrMultiDay ||
+            (reportData.nightCount && reportData.nightCount > 0) ||
+            (reportData.draftNightCount && reportData.draftNightCount > 0) ||
+            false
+          );
           setFormIsMultiDay(initialIsMultiDay);
 
           const initialExtraLocs = localDraft?.extraActivities ?? reportData.draftExtraActivities ?? reportData.extraActivities ?? [];

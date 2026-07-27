@@ -3285,11 +3285,13 @@ function ActivitiesContent() {
                 </div>
               </div>
             ) : (
-              <div className="bg-slate-100 border border-slate-200 text-slate-600 rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs">
+              <div className="bg-slate-100 border border-slate-200 text-slate-700 rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4 text-slate-400 shrink-0" />
+                  <CalendarDays className="w-4 h-4 text-slate-500 shrink-0" />
                   <span>
-                    Pembuatan SPJ mandiri hanya aktif pada hari jadwal piket Anda.
+                    {myClaimedJourneys.length > 0
+                      ? `Anda memiliki ${myClaimedJourneys.length} perjalanan aktif. Selesaikan laporan perjalanan Anda di bawah ini.`
+                      : 'Pembuatan SPJ mandiri hanya aktif pada hari jadwal piket Anda.'}
                   </span>
                 </div>
               </div>
