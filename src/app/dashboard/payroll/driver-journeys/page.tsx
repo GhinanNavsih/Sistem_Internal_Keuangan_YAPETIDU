@@ -259,6 +259,7 @@ function DriverJourneysContent() {
         await deleteDoc(docRef);
       } else {
         const selectedDriver = drivers.find((d) => d.id === driverId);
+        const driverName = selectedDriver?.name || selectedDriver?.personal_info?.name || selectedDriver?.displayName || driverId;
         await setDoc(docRef, {
           id: docId,
           period: periodToken,
@@ -266,7 +267,7 @@ function DriverJourneysContent() {
           stationKey,
           stationName,
           driverId,
-          driverName: selectedDriver?.name || selectedDriver?.displayName || 'Driver',
+          driverName,
           assignedBy: profile?.displayName || profile?.email || 'Kepala SatKer',
           createdAt: serverTimestamp(),
         });
@@ -288,7 +289,11 @@ function DriverJourneysContent() {
           where('employment.jobCategory', '==', 'SOPIR')
         );
         const snap = await getDocs(q);
-        const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        const list = snap.docs.map((d: any) => {
+          const data = d.data();
+          const name = data.personal_info?.name || data.name || data.displayName || d.id;
+          return { id: d.id, ...data, name };
+        });
         setDrivers(list);
       } catch (err) {
         console.error('Error fetching drivers:', err);
@@ -1032,7 +1037,13 @@ function DriverJourneysContent() {
                               {station.name}
                             </span>
                             <span className={`truncate text-[10px] font-bold ${sched ? 'text-emerald-800' : 'text-slate-300 font-normal italic'}`}>
-                              {sched ? sched.driverName : '—'}
+                              {(() => {
+                                if (!sched) return '—';
+                                const d = drivers.find((drv) => drv.id === sched.driverId);
+                                if (d?.name && d.name !== sched.driverId) return d.name;
+                                if (sched.driverName && !sched.driverName.startsWith('BC_')) return sched.driverName;
+                                return d?.name || sched.driverName || sched.driverId;
+                              })()}
                             </span>
                           </div>
                         );
@@ -1091,17 +1102,26 @@ function DriverJourneysContent() {
                     }}
                   >
                     <SelectTrigger className="w-full sm:w-[210px] h-9 text-xs font-bold bg-white rounded-xl border border-slate-200">
-                      <SelectValue placeholder="-- Pilih Sopir --" />
+                      <SelectValue placeholder="-- Pilih Sopir --">
+                        {(() => {
+                          if (selectedDriverId === 'unassigned') return '-- Belum Ditugaskan --';
+                          const selectedDriver = drivers.find((d) => d.id === selectedDriverId);
+                          return selectedDriver ? (selectedDriver.name || selectedDriver.personal_info?.name || selectedDriver.id) : selectedDriverId;
+                        })()}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
                       <SelectItem value="unassigned" className="text-xs text-slate-400 italic">
                         -- Belum Ditugaskan --
                       </SelectItem>
-                      {drivers.map((d) => (
-                        <SelectItem key={d.id} value={d.id} className="text-xs font-bold">
-                          {d.name}
-                        </SelectItem>
-                      ))}
+                      {drivers.map((d) => {
+                        const driverName = d.name || d.personal_info?.name || d.id;
+                        return (
+                          <SelectItem key={d.id} value={d.id} className="text-xs font-bold">
+                            {driverName}
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 </div>
