@@ -1137,20 +1137,16 @@ function DriverJourneysContent() {
                       <SelectItem value="unassigned" className="text-xs text-slate-400 italic">
                         -- Belum Ditugaskan --
                       </SelectItem>
-                      {drivers.map((d) => {
-                        const driverName = d.name || d.personal_info?.name || d.id;
-                        const isAssignedElsewhere = assignedOtherDriverIds.includes(d.id);
-                        return (
-                          <SelectItem
-                            key={d.id}
-                            value={d.id}
-                            disabled={isAssignedElsewhere}
-                            className="text-xs font-bold"
-                          >
-                            {driverName}{isAssignedElsewhere ? ' (Sudah Ditugaskan)' : ''}
-                          </SelectItem>
-                        );
-                      })}
+                      {drivers
+                        .filter((d) => !assignedOtherDriverIds.includes(d.id))
+                        .map((d) => {
+                          const driverName = d.name || d.personal_info?.name || d.id;
+                          return (
+                            <SelectItem key={d.id} value={d.id} className="text-xs font-bold">
+                              {driverName}
+                            </SelectItem>
+                          );
+                        })}
                     </SelectContent>
                   </Select>
                 </div>
