@@ -330,7 +330,7 @@ service cloud.firestore {
     }
 
     match /SatpamShiftTeams/{teamId} {
-      allow read: if isFinanceRole();
+      allow read: if isFinanceRole() || isEmployeeAdmin() || isSatkerRole();
       allow write: if false;
     }
 

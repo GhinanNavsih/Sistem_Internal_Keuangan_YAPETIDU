@@ -350,19 +350,27 @@ export default function RekapPekaryaPage() {
     const fetchData = async () => {
       setLoadingEmps(true);
       try {
-        const teamsSnap = await getDocs(collection(db, 'SatpamShiftTeams'));
-        const ids = new Set(teamsSnap.docs.map(d => d.data().ketuaShiftId).filter(Boolean) as string[]);
-        setKetuaShiftIds(ids);
+        try {
+          const teamsSnap = await getDocs(collection(db, 'SatpamShiftTeams'));
+          const ids = new Set(teamsSnap.docs.map(d => d.data().ketuaShiftId).filter(Boolean) as string[]);
+          setKetuaShiftIds(ids);
+        } catch (err) {
+          console.error('Error fetching Satpam shift teams:', err);
+        }
 
         if (category === 'SOPIR') {
-          const piketPeriod = `${year}-${String(month).padStart(2, '0')}`;
-          const piketQ = query(
-            collection(db, 'DriverPiketSchedules'),
-            where('period', '==', piketPeriod)
-          );
-          const piketSnap = await getDocs(piketQ);
-          const piketList = piketSnap.docs.map(d => ({ id: d.id, ...d.data() } as DriverPiketSchedule));
-          setDriverPiketSchedules(piketList);
+          try {
+            const piketPeriod = `${year}-${String(month).padStart(2, '0')}`;
+            const piketQ = query(
+              collection(db, 'DriverPiketSchedules'),
+              where('period', '==', piketPeriod)
+            );
+            const piketSnap = await getDocs(piketQ);
+            const piketList = piketSnap.docs.map(d => ({ id: d.id, ...d.data() } as DriverPiketSchedule));
+            setDriverPiketSchedules(piketList);
+          } catch (err) {
+            console.error('Error fetching driver piket schedules:', err);
+          }
         }
 
         const q2 = query(collection(db, 'Employees_BlueCollar'), where('employment.status', '==', 'active'), where('employment.jobCategory', '==', category));
