@@ -40,11 +40,14 @@ export interface PaySlipData {
 }
 
 function spell(n: number): string {
+  if (n == null || Number.isNaN(n)) return "";
+  if (n < 0) return "minus " + spell(Math.abs(n));
+  n = Math.floor(n);
   const angka = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
   let hasil = "";
 
   if (n < 12) {
-    hasil = angka[n];
+    hasil = angka[n] || "";
   } else if (n < 20) {
     hasil = spell(n - 10) + " belas";
   } else if (n < 100) {
@@ -63,7 +66,7 @@ function spell(n: number): string {
     hasil = spell(Math.floor(n / 1000000000)) + " milyar " + spell(n % 1000000000);
   }
 
-  return hasil.replace(/\s+/g, " ").trim();
+  return (hasil || "").replace(/\s+/g, " ").trim();
 }
 
 function terbilang(n: number): string {
