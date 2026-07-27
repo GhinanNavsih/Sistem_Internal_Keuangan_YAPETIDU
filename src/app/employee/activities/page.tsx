@@ -3243,7 +3243,7 @@ function ActivitiesContent() {
                                     ) : (
                                       <Camera className="w-3.5 h-3.5 text-slate-500" />
                                     )}
-                                    <span>{postPhotoUploading[post.id] ? 'Mengunggah...' : 'Ambil Foto Bukti Pos'}</span>
+                                    <span>{postPhotoUploading[post.id] ? 'Mengunggah...' : 'Ambil Foto Bukti Jaga'}</span>
                                   </Button>
                                 )
                               )}
