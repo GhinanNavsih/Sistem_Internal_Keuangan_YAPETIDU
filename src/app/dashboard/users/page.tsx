@@ -53,6 +53,7 @@ import {
   RefreshCw,
   Eye,
   EyeOff,
+  KeyRound,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
@@ -80,21 +81,65 @@ interface CleaningEmployee {
 interface DropdownEmployee {
   id: string;
   name: string;
-  type: 'Pekarya' | 'Loyalis' | 'Lainnya';
+  type?: 'Pekarya' | 'Loyalis' | 'Lainnya';
   detail?: string;
+  category?: string;
   email?: string;
 }
 
 export default function UserManagementPage() {
   const router = useRouter();
-  const { user, profile, loading: authLoading } = useAuth();
+  const {
+    user,
+    profile,
+    realProfile,
+    loading: authLoading,
+    startUiImpersonation,
+    startCustomTokenImpersonation,
+    isCustomTokenImpersonating,
+  } = useAuth();
+
+  const [impersonatingUid, setImpersonatingUid] = useState<string | null>(null);
+
+  const actualRole = realProfile?.role || profile?.role;
 
   // Redirect if not super admin (additional client guard beyond ProtectedRoute)
   useEffect(() => {
-    if (!authLoading && (!user || profile?.role !== 'super_admin')) {
+    if (!authLoading && (!user || (actualRole !== 'super_admin' && !isCustomTokenImpersonating))) {
       router.replace('/dashboard/payroll');
     }
-  }, [user, profile, authLoading, router]);
+  }, [user, profile, realProfile, actualRole, authLoading, isCustomTokenImpersonating, router]);
+
+  const handleCustomTokenLogin = async (targetUser: ManagedUser) => {
+    try {
+      setImpersonatingUid(targetUser.uid);
+      await startCustomTokenImpersonation(targetUser.uid);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Gagal melakukan impersonasi custom token.');
+    } finally {
+      setImpersonatingUid(null);
+    }
+  };
+
+  const handleStartUiImpersonation = (targetUser: ManagedUser) => {
+    startUiImpersonation(targetUser as any);
+    const roleStr = targetUser.role as string;
+    if (roleStr === 'honorer' || roleStr === 'ketua_shift_satpam') {
+      router.push('/employee/activities');
+    } else if (roleStr === 'loyalis') {
+      router.push('/employee/payslip');
+    } else if (roleStr === 'satker_head') {
+      router.push('/dashboard/payroll/activity-review');
+    } else if (roleStr === 'satker_head_loyalis') {
+      router.push('/dashboard/payroll/uraian');
+    } else if (roleStr === 'loyalis_presence_admin') {
+      router.push('/dashboard/payroll/uraian/presensi-loyalis-raw');
+    } else if (roleStr === 'employee_admin') {
+      router.push('/dashboard/employees');
+    } else {
+      router.push('/dashboard/payroll');
+    }
+  };
 
   // Page states
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -1040,6 +1085,54 @@ export default function UserManagementPage() {
           </Card>
         )}
 
+        {/* Super Admin Impersonation Feature Header Card */}
+        <Card className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-[24px] shadow-lg border-none p-6 relative overflow-hidden">
+          <div className="absolute right-0 top-0 translate-x-4 -translate-y-4 opacity-10 pointer-events-none">
+            <UserCog className="w-64 h-64 text-indigo-300" />
+          </div>
+          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="space-y-1.5 max-w-2xl">
+              <div className="flex items-center gap-2">
+                <Badge className="bg-amber-500/20 text-amber-300 border-amber-400/30 px-2.5 py-0.5 font-bold text-xs uppercase tracking-wider">
+                  Super Admin Feature
+                </Badge>
+                <Badge className="bg-rose-500/20 text-rose-300 border-rose-400/30 px-2.5 py-0.5 font-bold text-xs uppercase tracking-wider">
+                  Dual-Mode Active
+                </Badge>
+              </div>
+              <h3 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                <UserCog className="w-5 h-5 text-indigo-400" />
+                Impersonasi & Akses Pengguna ("View-As")
+              </h3>
+              <p className="text-slate-300 text-xs md:text-sm leading-relaxed">
+                Super Admin dapat mensimulasikan tampilan aplikasi (UI/UX) atau melakukan switch sesi penuh ke akun pegawai manapun (seperti <em>Miftakhul Arif</em> - Honorer, <em>Teguh Priyo Utomo</em> - Karyawan Loyalis, atau <em>Hj. Suspa Hariati</em> - Employee Admin) tanpa perlu mengisi password.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 bg-white/10 p-3.5 rounded-2xl backdrop-blur-md border border-white/10 shrink-0 text-xs">
+              <div className="flex items-center gap-2.5 text-amber-200">
+                <div className="w-7 h-7 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center shrink-0">
+                  <Eye className="w-4 h-4 text-amber-300" />
+                </div>
+                <div>
+                  <div className="font-bold text-white">1. Mode Preview UI (<Eye className="w-3 h-3 inline" />)</div>
+                  <div className="text-[11px] text-slate-300">Preview UI cepat tanpa ubah sesi auth.</div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 text-rose-200">
+                <div className="w-7 h-7 rounded-xl bg-rose-500/20 border border-rose-400/30 flex items-center justify-center shrink-0">
+                  <KeyRound className="w-4 h-4 text-rose-300" />
+                </div>
+                <div>
+                  <div className="font-bold text-white">2. Sesi Penuh (<KeyRound className="w-3 h-3 inline" />)</div>
+                  <div className="text-[11px] text-slate-300">Switch Firebase token resmi.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+
         {/* Users Table List */}
         <Card className="bg-white rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.02)] border-none overflow-hidden">
           <CardHeader className="p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1203,7 +1296,36 @@ export default function UserManagementPage() {
                             )}
                           </TableCell>
                           <TableCell className="text-right pr-8 py-4.5">
-                            <div className="flex justify-end gap-1.5">
+                            <div className="flex justify-end gap-1.5 items-center">
+                              {/* UI Preview Mode Button */}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                disabled={isMe || u.disabled}
+                                onClick={() => handleStartUiImpersonation(u)}
+                                title={`Preview UI/UX sebagai ${u.displayName || u.email}`}
+                                className="h-8 w-8 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 border border-amber-200/60 shadow-2xs transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+
+                              {/* Custom Token Real Session Button */}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                disabled={isMe || u.disabled || impersonatingUid === u.uid}
+                                onClick={() => handleCustomTokenLogin(u)}
+                                title={`Login Sesi Penuh via Custom Token sebagai ${u.displayName || u.email}`}
+                                className="h-8 w-8 rounded-lg text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200/60 shadow-2xs transition-all disabled:opacity-30 disabled:pointer-events-none"
+                              >
+                                {impersonatingUid === u.uid ? (
+                                  <Loader2 className="w-4 h-4 animate-spin text-rose-600" />
+                                ) : (
+                                  <KeyRound className="w-4 h-4" />
+                                )}
+                              </Button>
+
+                              {/* Edit User Button */}
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1212,6 +1334,8 @@ export default function UserManagementPage() {
                               >
                                 <Pencil className="w-4 h-4" />
                               </Button>
+
+                              {/* Disable Account Button */}
                               <Button
                                 variant="ghost"
                                 size="icon"

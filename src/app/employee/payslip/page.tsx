@@ -204,7 +204,8 @@ function mergeSlipFields(fallback: PaySlipField[], saved: unknown): PaySlipField
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function EmployeePayslipPage() {
-  const { profile, logout } = useAuth();
+  const { profile: rawProfile, activeProfile, logout } = useAuth();
+  const profile = activeProfile || rawProfile;
 
   const [resetLoading, setResetLoading] = useState(false);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
@@ -1955,12 +1956,12 @@ export default function EmployeePayslipPage() {
                                               <span className="font-bold text-slate-800">{formatIDR(loan.jumlahPinjaman)}</span>
                                             </div>
                                             <div>
-                                              <span className="text-[10px] text-slate-400 block font-medium">Cicilan Bulan Ini</span>
-                                              <span className="font-bold text-indigo-600">{formatIDR(loan.cicilan)}</span>
-                                            </div>
-                                            <div>
                                               <span className="text-[10px] text-slate-400 block font-medium">Sudah Terbayar</span>
                                               <span className="font-bold text-emerald-600">{formatIDR(loan.jumlahPinjaman - loan.sisaHutang)}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-[10px] text-slate-400 block font-medium">Cicilan Bulan Ini</span>
+                                              <span className="font-bold text-indigo-600">{formatIDR(loan.cicilan)}</span>
                                             </div>
                                             <div>
                                               <span className="text-[10px] text-slate-400 block font-medium">Sisa Setelah Cicilan</span>

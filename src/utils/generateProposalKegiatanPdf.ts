@@ -13,34 +13,7 @@ export interface RealisasiRow {
   uraian: string;
   rincianQty: string;
   rincianRate: number;
-  realisasi: number;
-}
-
-export interface VakasiRole {
-  name: string;
-  rate: number;
-}
-
-export interface VakasiPengujiRow {
-  employeeId: string;
-  employeeName: string;
-  roleQtys: Record<string, number>;
-}
-
-export interface KepanitiaaanPhase {
-  name: string;
-}
-
-export interface KepanitiaaanRow {
-  name: string;
-  employeeId?: string;
-  phaseAmounts: Record<string, number>;
-}
-
-export interface ReceiptRow {
-  itemName: string;
-  qty: number;
-  unitPrice: number;
+  realisasi?: number;
 }
 
 export interface ProposalKegiatanPdfData {
@@ -49,136 +22,267 @@ export interface ProposalKegiatanPdfData {
   departmentUnit?: string;
   queueNumber?: number;
   signatures: ProposalKegiatanSignature[];
-  realisasiEnabled?: boolean;
-  realisasiTitle?: string;
-  pemasukanRows?: Omit<RealisasiRow, 'type'>[];
+  pemasukanRows?: { uraian: string; rincianQty: string; rincianRate: number }[];
   yayasanPercentage?: number;
   unipduPercentage?: number;
   pengeluaranRows?: RealisasiRow[];
   kepanitiaaanPercentage?: number;
-  vakasiPengujiEnabled?: boolean;
-  vakasiPengujiTitle?: string;
-  vakasiRoles?: VakasiRole[];
-  vakasiPengujiRows?: VakasiPengujiRow[];
-  kepanitiaaanEnabled?: boolean;
-  kepanitiaaanTitle?: string;
-  kepanitiaaanPhases?: KepanitiaaanPhase[];
-  kepanitiaaanRows?: KepanitiaaanRow[];
-  receiptEnabled?: boolean;
-  receiptTitle?: string;
-  receiptRows?: ReceiptRow[];
+  realisasiTitle?: string;
 }
 
-const fmtRp = (n: number) => {
-  if (!n || isNaN(n)) return 'Rp 0';
-  return 'Rp ' + Math.round(n).toLocaleString('id-ID');
+const formatIDR = (amount: number): string => {
+  return 'Rp' + new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
 };
 
-export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData) {
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  });
+const parseQty = (q: string): number => {
+  if (!q) return 0;
+  const trimmed = q.trim();
+  const parts = trimmed.split(/[xX\*]/);
+  if (parts.length > 1) {
+    let product = 1;
+    for (const part of parts) {
+      const cleanPart = part.trim();
+      const match = cleanPart.match(/[\d\.]+/);
+      if (!match) continue;
+      let val = parseFloat(match[0]);
+      if (cleanPart.includes('%')) {
+        val = val / 100;
+      }
+      product *= val;
+    }
+    return product;
+  }
+  if (trimmed.endsWith('%')) {
+    const match = trimmed.match(/[\d\.]+/);
+    return match ? parseFloat(match[0]) / 100 : 0;
+  }
+  const match = trimmed.match(/[\d\.]+/);
+  return match ? parseFloat(match[0]) : 0;
+};
 
+function renderLetterhead(doc: jsPDF) {
   const pageWidth = doc.internal.pageSize.getWidth();
-  const marginLeft = 15;
-  const marginRight = 15;
-  const contentWidth = pageWidth - marginLeft - marginRight;
-  let currentY = 12;
-
-  // Header Logo & Institution Name
   if (LOGO_UNIPDU_BASE64) {
     try {
-      doc.addImage(LOGO_UNIPDU_BASE64, 'PNG', marginLeft, currentY, 18, 18);
+      doc.addImage(LOGO_UNIPDU_BASE64, 'PNG', 15, 10, 22, 22);
     } catch (e) {
-      console.warn('Logo Base64 failed', e);
+      console.warn('Logo failed:', e);
     }
   }
-
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
-  doc.setTextColor(15, 23, 42);
-  doc.text('YAYASAN KEPENGASUHAN DARUL ' + 'ULUM UNIPDU JOMBANG', marginLeft + 22, currentY + 6);
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(79, 70, 229);
-  doc.text('PROPOSAL ANGGARAN EVENT & KEGIATAN', marginLeft + 22, currentY + 12);
+  doc.text("UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM", 42, 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text("Pusat Pengisian Gaji & Administrasi Keuangan Kepegawaian", 42, 23);
+  doc.setFontSize(9);
+  doc.text("Jl. Unipdu, Kompleks Pondok Pesantren Darul 'Ulum, Peterongan, Jombang", 42, 28);
+  doc.setLineWidth(0.6);
+  doc.setDrawColor(0, 0, 0);
+  doc.line(15, 35, pageWidth - 15, 35);
+  doc.setLineWidth(0.2);
+  doc.line(15, 36, pageWidth - 15, 36);
+}
 
+function renderTitle(doc: jsPDF, title: string, startY: number): number {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  const splitTitle = doc.splitTextToSize(title.toUpperCase(), pageWidth - 40);
+  doc.text(splitTitle, pageWidth / 2, startY, { align: 'center' });
+  return startY + splitTitle.length * 5 + 4;
+}
+
+export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [210, 330] });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginSide = 15;
+  const tableWidth = pageWidth - 2 * marginSide;
+
+  renderLetterhead(doc);
+
+  let titleText = `PROPOSAL ANGGARAN KEGIATAN: ${(data.reportName || 'EVENT').toUpperCase()}`;
+  if (data.departmentUnit) {
+    titleText += `\nUNIT KERJA: ${data.departmentUnit.toUpperCase()} (${data.period})`;
+  } else {
+    titleText += ` (${data.period})`;
+  }
   if (data.queueNumber) {
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(100, 116, 139);
-    doc.text(`FIFO Queue #${data.queueNumber}`, pageWidth - marginRight - 30, currentY + 6);
+    titleText += `\n[ FIFO QUEUE #${data.queueNumber} ]`;
   }
 
-  currentY += 20;
-  doc.setLineWidth(0.5);
-  doc.setDrawColor(226, 232, 240);
-  doc.line(marginLeft, currentY, pageWidth - marginRight, currentY);
-  currentY += 6;
+  const tableStartY = renderTitle(doc, titleText, 43);
 
-  // Subtitle Event Name & Unit
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(30, 41, 59);
-  doc.text((data.reportName || 'PROPOSAL EVENT').toUpperCase(), marginLeft, currentY);
-  currentY += 5;
+  const headStyles = {
+    fillColor: [67, 56, 202] as [number, number, number],
+    textColor: [255, 255, 255] as [number, number, number],
+    lineWidth: 0.15,
+    lineColor: [0, 0, 0] as [number, number, number],
+    fontStyle: 'bold' as const,
+    fontSize: 8.5,
+  };
 
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100, 116, 139);
-  doc.text(`Unit Kerja: ${data.departmentUnit || 'UMUM'} | Periode: ${data.period}`, marginLeft, currentY);
-  currentY += 8;
+  const bodyStyles = {
+    fillColor: [255, 255, 255] as [number, number, number],
+    textColor: [0, 0, 0] as [number, number, number],
+    lineWidth: 0.15,
+    lineColor: [0, 0, 0] as [number, number, number],
+    fontSize: 8,
+  };
 
-  // Rencana Anggaran Pemasukan & Pengeluaran
-  if (data.realisasiEnabled !== false && data.pengeluaranRows && data.pengeluaranRows.length > 0) {
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(30, 41, 59);
-    doc.text(data.realisasiTitle || 'RENCANA ANGGARAN & ESTIMASI BIAYA', marginLeft, currentY);
-    currentY += 4;
+  const tableRows: any[] = [];
 
-    const tableBody: any[] = [];
-    data.pengeluaranRows.forEach((row, idx) => {
-      tableBody.push([
-        idx + 1,
+  // 1. Pemasukan
+  if (data.pemasukanRows && data.pemasukanRows.length > 0) {
+    tableRows.push([
+      { content: '', styles: { fontStyle: 'bold' as const } },
+      { content: 'PEMASUKAN (RENCANA PENDAPATAN)', colSpan: 3, styles: { fontStyle: 'bold' as const } },
+    ]);
+
+    let pIdx = 0;
+    data.pemasukanRows.forEach(row => {
+      pIdx++;
+      const anggaran = parseQty(row.rincianQty) * (row.rincianRate || 0);
+      const rincianStr = row.rincianQty && row.rincianRate > 0 ? `${row.rincianQty}  x  ${formatIDR(row.rincianRate)}` : row.rincianQty || '';
+      tableRows.push([
+        pIdx.toString(),
         row.uraian,
-        row.rincianQty || '-',
-        row.rincianRate ? fmtRp(row.rincianRate) : '-',
-        fmtRp(row.realisasi || 0),
+        rincianStr,
+        { content: formatIDR(anggaran), styles: { halign: 'right' as const } },
       ]);
     });
 
-    const totalEst = data.pengeluaranRows.reduce((sum, r) => sum + (r.realisasi || 0), 0);
+    const totalPemasukanAnggaran = data.pemasukanRows.reduce((sum, r) => sum + (parseQty(r.rincianQty) * (r.rincianRate || 0)), 0);
 
-    autoTable(doc, {
-      startY: currentY,
-      head: [['No', 'Uraian Pengeluaran', 'Rincian Vol', 'Tarif', 'Estimasi Biaya']],
-      body: tableBody,
-      foot: [['', 'TOTAL ESTIMASI ANGGARAN', '', '', fmtRp(totalEst)]],
-      theme: 'grid',
-      headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
-      footStyles: { fillColor: [243, 244, 246], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 8 },
-      bodyStyles: { fontSize: 8, textColor: [51, 65, 85] },
-      columnStyles: {
-        0: { cellWidth: 10, halign: 'center' },
-        1: { cellWidth: 'auto' },
-        2: { cellWidth: 30, halign: 'center' },
-        3: { cellWidth: 35, halign: 'right' },
-        4: { cellWidth: 40, halign: 'right' },
-      },
-      margin: { left: marginLeft, right: marginRight },
-    });
+    // 2. Dana Pengembangan Header
+    tableRows.push([
+      { content: '', styles: { fontStyle: 'bold' as const } },
+      { content: 'Dana Pengembangan', colSpan: 3, styles: { fontStyle: 'bold' as const } },
+    ]);
 
-    currentY = (doc as any).lastAutoTable.finalY + 8;
+    const yayasanPct = data.yayasanPercentage ?? 20;
+    const unipduPct = data.unipduPercentage ?? 20;
+    const yayasanAnggaran = totalPemasukanAnggaran * (yayasanPct / 100);
+    const unipduAnggaran = totalPemasukanAnggaran * (unipduPct / 100);
+
+    tableRows.push([
+      '',
+      'Yayasan',
+      `${yayasanPct}%  x  ${formatIDR(totalPemasukanAnggaran)}`,
+      { content: formatIDR(yayasanAnggaran), styles: { halign: 'right' as const } },
+    ]);
+    tableRows.push([
+      '',
+      'UNIPDU',
+      `${unipduPct}%  x  ${formatIDR(totalPemasukanAnggaran)}`,
+      { content: formatIDR(unipduAnggaran), styles: { halign: 'right' as const } },
+    ]);
+
+    // 3. Dana Operasional
+    const totalPengembanganAnggaran = yayasanAnggaran + unipduAnggaran;
+    const danaOperasionalAnggaran = totalPemasukanAnggaran - totalPengembanganAnggaran;
+
+    tableRows.push([
+      { content: '', styles: { fontStyle: 'bold' as const } },
+      { content: 'Dana Operasional (Batas Biaya)', styles: { fontStyle: 'bold' as const } },
+      '',
+      { content: formatIDR(danaOperasionalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const } },
+    ]);
+
+    // Blank row gap
+    tableRows.push([
+      { content: '', styles: { minCellHeight: 5 } },
+      { content: '', colSpan: 3, styles: { minCellHeight: 5 } },
+    ]);
   }
 
-  // Signatures
+  // 4. Pengeluaran
+  if (data.pengeluaranRows && data.pengeluaranRows.length > 0) {
+    tableRows.push([
+      { content: '', styles: { fontStyle: 'bold' as const } },
+      { content: 'PENGELUARAN (RENCANA BIAYA OPERASIONAL)', colSpan: 3, styles: { fontStyle: 'bold' as const } },
+    ]);
+
+    let oIdx = 0;
+    data.pengeluaranRows.forEach(row => {
+      if (row.type === 'group_header') {
+        tableRows.push([
+          { content: '', styles: { fontStyle: 'bold' as const } },
+          { content: row.uraian, colSpan: 3, styles: { fontStyle: 'bold' as const } },
+        ]);
+      } else {
+        oIdx++;
+        const anggaran = parseQty(row.rincianQty) * (row.rincianRate || 0);
+        const rincianStr = row.rincianQty && row.rincianRate > 0 ? `${row.rincianQty}  x  ${formatIDR(row.rincianRate)}` : row.rincianQty || '';
+        tableRows.push([
+          oIdx.toString(),
+          row.uraian,
+          rincianStr,
+          { content: formatIDR(anggaran), styles: { halign: 'right' as const } },
+        ]);
+      }
+    });
+
+    const expItems = data.pengeluaranRows.filter(r => r.type === 'item');
+    const jumlahAnggaran = expItems.reduce((sum, r) => sum + (parseQty(r.rincianQty) * (r.rincianRate || 0)), 0);
+    const kepPerc = (data.kepanitiaaanPercentage ?? 10) / 100;
+    const kepAnggaran = jumlahAnggaran * kepPerc;
+    const totalAnggaran = jumlahAnggaran + kepAnggaran;
+
+    const totalPemasukanAnggaran = (data.pemasukanRows || []).reduce((sum, r) => sum + (parseQty(r.rincianQty) * (r.rincianRate || 0)), 0);
+    const yayasanPct = data.yayasanPercentage ?? 20;
+    const unipduPct = data.unipduPercentage ?? 20;
+    const danaOperasionalAnggaran = totalPemasukanAnggaran - (totalPemasukanAnggaran * ((yayasanPct + unipduPct) / 100));
+    const sisaDanaOperasional = danaOperasionalAnggaran - totalAnggaran;
+
+    const summaryFill = [240, 244, 255] as [number, number, number];
+    tableRows.push(
+      [{ content: '', styles: { fillColor: summaryFill } }, { content: 'Jumlah Pengeluaran', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(jumlahAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
+      [{ content: '', styles: { fillColor: summaryFill } }, { content: `Kepanitiaan ${data.kepanitiaaanPercentage ?? 10}% Pengeluaran`, colSpan: 2, styles: { halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(kepAnggaran), styles: { halign: 'right' as const, fillColor: summaryFill } }],
+      [{ content: '', styles: { fillColor: summaryFill } }, { content: 'TOTAL PENGELUARAN', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }, { content: formatIDR(totalAnggaran), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }],
+    );
+
+    if (data.pemasukanRows && data.pemasukanRows.length > 0) {
+      tableRows.push([
+        { content: '', styles: { fillColor: summaryFill } },
+        { content: 'SISA DANA OPERASIONAL', colSpan: 2, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } },
+        { content: formatIDR(sisaDanaOperasional), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: summaryFill } }
+      ]);
+    }
+  }
+
+  autoTable(doc, {
+    startY: tableStartY,
+    margin: { left: marginSide, right: marginSide },
+    head: [['NO', 'URAIAN PENGELUARAN', 'RINCIAN', 'ESTIMASI ANGGARAN']],
+    body: tableRows,
+    theme: 'grid',
+    headStyles: { ...headStyles, halign: 'center' as const },
+    bodyStyles,
+    styles: { fontSize: 8, cellPadding: 1.2, lineColor: [0, 0, 0], lineWidth: 0.05 },
+    tableWidth,
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' as const },
+      1: { cellWidth: 80, halign: 'left' as const },
+      2: { cellWidth: 50, halign: 'right' as const },
+      3: { cellWidth: 40, halign: 'right' as const },
+    },
+  });
+
+  const finalY = (doc as any).lastAutoTable?.finalY || tableStartY + 20;
+
+  // Signatures (keeping exact original signature layout)
   if (data.signatures && data.signatures.length > 0) {
-    if (currentY > 230) {
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let currentY = finalY + 12;
+
+    if (currentY + 45 > pageHeight - 15) {
       doc.addPage();
-      currentY = 20;
+      renderLetterhead(doc);
+      currentY = 45;
     }
 
     doc.setFontSize(9);
@@ -186,10 +290,11 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData) {
     doc.setTextColor(71, 85, 105);
 
     const sigCount = data.signatures.length;
+    const contentWidth = pageWidth - 2 * marginSide;
     const colWidth = contentWidth / sigCount;
 
     data.signatures.forEach((sig, idx) => {
-      const sigX = marginLeft + idx * colWidth + colWidth / 2;
+      const sigX = marginSide + idx * colWidth + colWidth / 2;
       doc.text(sig.title || 'Mengetahui,', sigX, currentY, { align: 'center' });
       doc.text('Pimpinan / Pejabat Berwenang', sigX, currentY + 4, { align: 'center' });
       doc.text('(____________________)', sigX, currentY + 24, { align: 'center' });

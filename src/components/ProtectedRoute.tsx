@@ -6,10 +6,11 @@ import { useAuth } from '@/lib/AuthContext';
 import { Loader2 } from 'lucide-react';
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, activeProfile, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
+  const currentProfile = activeProfile || profile;
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -32,9 +33,14 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     if (!loading) {
       if (!user) {
         router.replace('/login');
-      } else if (profile) {
+      } else if (currentProfile) {
         // Enforce role-based route access
-        if (profile.role === 'satker_head') {
+        if (currentProfile.role === 'super_admin') {
+          // Super Admins without active UI preview shouldn't get stuck on employee-only pages
+          if (pathname.startsWith('/employee/')) {
+            router.replace('/dashboard/users');
+          }
+        } else if (currentProfile.role === 'satker_head') {
           // SatKer Heads are allowed to access /dashboard/payroll/uraian, /dashboard/payroll/activity-review, and /dashboard/payroll/driver-journeys
           if (
             pathname !== '/dashboard/payroll/activity-review' &&
@@ -44,39 +50,39 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
           ) {
             router.replace('/dashboard/payroll/activity-review');
           }
-        } else if (profile.role === 'satker_head_loyalis') {
+        } else if (currentProfile.role === 'satker_head_loyalis') {
           // SatKer Loyalis is ONLY allowed to access /dashboard/payroll/uraian (including sub-routes)
           if (!pathname.startsWith('/dashboard/payroll/uraian')) {
             router.replace('/dashboard/payroll/uraian');
           }
-        } else if (profile.role === 'employee_admin') {
+        } else if (currentProfile.role === 'employee_admin') {
           // Employee Admins are ONLY allowed to access /dashboard/employees
           if (pathname !== '/dashboard/employees') {
             router.replace('/dashboard/employees');
           }
-        } else if (profile.role === 'honorer') {
+        } else if (currentProfile.role === 'honorer') {
           // Honorer employees are ONLY allowed to access /employee/activities
           if (!pathname.startsWith('/employee/')) {
             router.replace('/employee/activities');
           }
-        } else if (profile.role === 'ketua_shift_satpam') {
-          if (pathname !== '/employee/activities') {
+        } else if (currentProfile.role === 'ketua_shift_satpam') {
+          if (!pathname.startsWith('/employee/')) {
             router.replace('/employee/activities');
           }
-        } else if (profile.role === 'payroll_authorizer') {
+        } else if (currentProfile.role === 'payroll_authorizer') {
           if (pathname !== '/dashboard/payroll') {
             router.replace('/dashboard/payroll');
           }
-        } else if (profile.role === 'finance_verifier') {
+        } else if (currentProfile.role === 'finance_verifier') {
           if (!pathname.startsWith('/dashboard/payroll')) {
             router.replace('/dashboard/payroll');
           }
-        } else if (profile.role === 'loyalis') {
+        } else if (currentProfile.role === 'loyalis') {
           // Loyalis employees can access payslip and presensi-correction
           if (pathname !== '/employee/payslip' && pathname !== '/employee/presensi-correction') {
             router.replace('/employee/payslip');
           }
-        } else if (profile.role === 'loyalis_presence_admin') {
+        } else if (currentProfile.role === 'loyalis_presence_admin') {
           // PJ Presensi Loyalis can access raw presence and presence-corrections
           if (pathname !== '/dashboard/payroll/uraian/presensi-loyalis-raw' && pathname !== '/dashboard/payroll/uraian/presence-corrections') {
             router.replace('/dashboard/payroll/uraian/presensi-loyalis-raw');
@@ -84,7 +90,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
         }
       }
     }
-  }, [user, profile, loading, router, pathname]);
+  }, [user, profile, currentProfile, loading, router, pathname]);
 
   if (loading) {
     return (

@@ -20,15 +20,17 @@ import {
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { logout, profile } = useAuth();
+  const { logout, profile, activeProfile } = useAuth();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  const currentProfile = activeProfile || profile;
 
   // Close mobile drawer on route change
   useEffect(() => {
     setIsMobileOpen(false);
   }, [pathname]);
 
-  if (!profile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(profile.role)) {
+  if (!currentProfile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(currentProfile.role)) {
     return null;
   }
 
@@ -77,7 +79,7 @@ export default function Sidebar() {
       icon: Banknote
     }
   ].filter(item => {
-    if (profile.role === 'super_admin') return true;
+    if (currentProfile.role === 'super_admin') return true;
     return item.path === '/dashboard/payroll';
   });
 
@@ -154,18 +156,20 @@ export default function Sidebar() {
         <div className="border-t border-slate-200/80 pt-4 mt-auto">
           <div className="flex items-center gap-3 mb-4 px-2">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-100 uppercase text-sm">
-              {profile?.displayName ? profile.displayName.substring(0, 2) : 'AD'}
+              {currentProfile?.displayName ? currentProfile.displayName.substring(0, 2) : 'AD'}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-slate-800 truncate leading-tight">
-                {profile?.displayName || 'Administrator'}
+                {currentProfile?.displayName || 'Administrator'}
               </p>
               <p className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md w-fit mt-1">
-                {profile.role === 'super_admin'
+                {currentProfile?.role === 'super_admin'
                   ? 'Super Admin'
-                  : profile.role === 'finance_verifier'
+                  : currentProfile?.role === 'finance_verifier'
                     ? 'Badan Keuangan'
-                    : 'Kepala Biro Umum'}
+                    : currentProfile?.role === 'payroll_authorizer'
+                      ? 'Kepala Biro Umum'
+                      : currentProfile?.role || 'Pengguna'}
               </p>
             </div>
           </div>
@@ -250,18 +254,20 @@ export default function Sidebar() {
             <div className="border-t border-slate-200/80 pt-4 mt-auto">
               <div className="flex items-center gap-3 mb-4 px-2">
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-100 uppercase text-xs">
-                  {profile?.displayName ? profile.displayName.substring(0, 2) : 'AD'}
+                  {currentProfile?.displayName ? currentProfile.displayName.substring(0, 2) : 'AD'}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-bold text-slate-800 truncate leading-tight">
-                    {profile?.displayName || 'Administrator'}
+                    {currentProfile?.displayName || 'Administrator'}
                   </p>
                   <p className="text-[9px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md w-fit mt-0.5">
-                    {profile.role === 'super_admin'
+                    {currentProfile?.role === 'super_admin'
                       ? 'Super Admin'
-                      : profile.role === 'finance_verifier'
+                      : currentProfile?.role === 'finance_verifier'
                         ? 'Badan Keuangan'
-                        : 'Kepala Biro Umum'}
+                        : currentProfile?.role === 'payroll_authorizer'
+                          ? 'Kepala Biro Umum'
+                          : currentProfile?.role || 'Pengguna'}
                   </p>
                 </div>
               </div>

@@ -146,7 +146,8 @@ function getStatusConfig(status?: string) {
 }
 
 function DriverHistoryContent() {
-  const { profile, logout } = useAuth();
+  const { profile: rawProfile, activeProfile, logout } = useAuth();
+  const profile = activeProfile || rawProfile;
   const router = useRouter();
   const searchParams = useSearchParams();
 

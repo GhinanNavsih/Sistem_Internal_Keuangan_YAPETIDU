@@ -591,7 +591,8 @@ const POSTS_CONFIG = [
 
 
 function ActivitiesContent() {
-  const { profile, logout, user } = useAuth();
+  const { profile: rawProfile, activeProfile, logout, user } = useAuth();
+  const profile = activeProfile || rawProfile;
   const router = useRouter();
   const searchParams = useSearchParams();
   const editReportIdParam = searchParams.get('editReportId');

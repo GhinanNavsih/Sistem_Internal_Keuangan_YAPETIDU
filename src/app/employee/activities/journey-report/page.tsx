@@ -427,7 +427,8 @@ const DestinationImageBanner = ({
 };
 
 function JourneyReportContent() {
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile: rawProfile, activeProfile, loading: authLoading } = useAuth();
+  const profile = activeProfile || rawProfile;
   const router = useRouter();
   const searchParams = useSearchParams();
   const journeyIdParam = searchParams.get('id');

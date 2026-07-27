@@ -73,6 +73,8 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
+  const [isDisabledAccount, setIsDisabledAccount] = useState(false);
+  const [reactivationLoading, setReactivationLoading] = useState(false);
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -94,19 +96,99 @@ export default function LoginPage() {
     }
   }, [user, profile, loading, router]);
 
+  // Real-time email check: automatically detects disabled accounts as the user inputs email
+  useEffect(() => {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !trimmedEmail.includes('@') || trimmedEmail.length < 5) {
+      setIsDisabledAccount(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(trimmedEmail)}`);
+        const data = await res.json();
+        if (data.disabled === true) {
+          setIsDisabledAccount(true);
+        } else {
+          setIsDisabledAccount(false);
+        }
+      } catch (e) {
+        console.warn('Failed to check email status:', e);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [email]);
+
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
     setError(null);
     setSuccessMessage(null);
+    setIsDisabledAccount(false);
     setSubmitting(true);
     try {
       await signInWithEmail(email, password);
       // Redirect is handled by the useEffect above once profile loads
     } catch (err: any) {
+      if (err?.code === 'auth/user-disabled') {
+        setIsDisabledAccount(true);
+      }
       setError(getAuthErrorMessage(err?.code ?? ''));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError(null);
+    setSuccessMessage(null);
+    setIsDisabledAccount(false);
+    setGoogleLoading(true);
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      if (err?.code === 'auth/user-disabled') {
+        setIsDisabledAccount(true);
+      }
+      setError(getAuthErrorMessage(err?.code ?? ''));
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleRequestReactivation = async () => {
+    const targetEmail = email.trim().toLowerCase();
+    if (!targetEmail) {
+      setError('Silakan masukkan email Anda terlebih dahulu pada kolom Email.');
+      return;
+    }
+
+    setReactivationLoading(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const res = await fetch('/api/auth/request-reactivation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal mengirimkan tautan reaktivasi.');
+      }
+
+      setSuccessMessage(
+        `Tautan reaktivasi telah dikirimkan ke ${targetEmail}. Silakan periksa pesan email Anda dan klik tautan untuk mengaktifkan kembali akun Anda.`
+      );
+      setIsDisabledAccount(false);
+    } catch (err: any) {
+      setError(err?.message || 'Gagal mengirimkan tautan reaktivasi.');
+    } finally {
+      setReactivationLoading(false);
     }
   };
 
@@ -137,19 +219,6 @@ export default function LoginPage() {
       }
     } finally {
       setForgotPasswordLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setError(null);
-    setGoogleLoading(true);
-    try {
-      await signInWithGoogle();
-      // Redirect is handled by the useEffect above once profile loads
-    } catch (err: any) {
-      setError(getAuthErrorMessage(err?.code ?? ''));
-    } finally {
-      setGoogleLoading(false);
     }
   };
 
@@ -260,27 +329,45 @@ export default function LoginPage() {
             Masuk dengan akun yang telah terdaftar untuk mengakses sistem.
           </p>
 
+          {/* Smart Reactivation Card for Disabled Accounts */}
+          {isDisabledAccount && (
+            <div className="mb-6 p-5 bg-gradient-to-br from-amber-50 via-orange-50 to-amber-100/50 border border-amber-300/80 rounded-2xl shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 space-y-3">
+              <div className="flex items-center gap-2.5 text-amber-900 font-bold text-sm">
+                <div className="w-7 h-7 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0">
+                  <Mail className="w-4 h-4 text-amber-700" />
+                </div>
+                <span>Akun Terdaftar Dalam Status Non-Aktif</span>
+              </div>
+              <p className="text-xs text-amber-800 leading-relaxed">
+                Email <strong>{email || 'akun ini'}</strong> terdaftar di Sistem namun saat ini dalam status ditangguhkan/non-aktif. Klik tombol di bawah untuk menerima tautan reaktivasi instan.
+              </p>
+              <Button
+                type="button"
+                onClick={handleRequestReactivation}
+                disabled={reactivationLoading}
+                className="w-full bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-bold rounded-2xl text-xs md:text-sm py-3.5 px-5 h-auto flex items-center justify-center gap-2.5 shadow-md shadow-amber-600/20 border border-amber-500/30 transition-all cursor-pointer leading-normal active:scale-[0.98] mt-1"
+              >
+                {reactivationLoading ? (
+                  <>
+                    <Loader2 className="w-4.5 h-4.5 animate-spin text-white shrink-0" />
+                    <span>Mengirim Tautan Reaktivasi...</span>
+                  </>
+                ) : (
+                  <>
+                    <Mail className="w-4.5 h-4.5 text-amber-100 shrink-0" />
+                    <span>Kirim Email Tautan Reaktivasi</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+
           {/* Error banner */}
-          {error && (
+          {error && !isDisabledAccount && (
             <div className="mb-6 flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-2xl animate-in fade-in slide-in-from-top-2 duration-300">
               <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
               <span className="text-sm text-red-700 font-medium leading-relaxed">
-                {error.includes('buka kotak masuk email Anda') ? (
-                  <>
-                    Akun Anda ditangguhkan sementara. Silakan{' '}
-                    <a
-                      href="https://mail.google.com/mail/u/0/#all"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline font-bold text-red-800 hover:text-red-950 transition-colors"
-                    >
-                      buka kotak masuk email Anda
-                    </a>{' '}
-                    dan klik tautan reaktivasi untuk mengaktifkan kembali akun Anda.
-                  </>
-                ) : (
-                  error
-                )}
+                {error}
               </span>
             </div>
           )}

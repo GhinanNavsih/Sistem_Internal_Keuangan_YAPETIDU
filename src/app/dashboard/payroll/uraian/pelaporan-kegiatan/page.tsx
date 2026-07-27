@@ -38,7 +38,7 @@ export default function PelaporanKegiatanPage() {
   // ── States ──
   const [pelaporanList, setPelaporanList] = useState<any[]>([]);
   const [loadingPelaporan, setLoadingPelaporan] = useState(false);
-  
+
   // Editor States
   const [selectedPelaporanId, setSelectedPelaporanId] = useState<string | null>(null);
   const [pelaporanReportName, setPelaporanReportName] = useState('');
@@ -70,7 +70,7 @@ export default function PelaporanKegiatanPage() {
     kepanitiaan: false,
     kwitansi: false
   });
-  
+
   const toggleSection = (key: string) => setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
 
   // Section 1: Realisasi Keuangan (Pemasukan, Pengembangan, Pengeluaran)
@@ -89,7 +89,7 @@ export default function PelaporanKegiatanPage() {
     rincianQty: string;
     rincianRate: number;
     realisasi: number;
-  }[]>([{ type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
+  }[]>([{ type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
   const [kepanitiaaanPercentage, setKepanitiaaanPercentage] = useState(10);
 
   // Section 2: Vakasi Penguji
@@ -228,7 +228,7 @@ export default function PelaporanKegiatanPage() {
     setPemasukanRows([{ uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
     setYayasanPercentage(20);
     setUnipduPercentage(20);
-    setPengeluaranRows([{ type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
+    setPengeluaranRows([{ type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
     setKepanitiaaanPercentage(10);
     setVakasiPengujiTitle('VAKASI PENGUJI ');
     setVakasiRoles([{ name: 'Ketua', rate: 200000 }, { name: 'Penguji', rate: 175000 }, { name: 'Sekretaris', rate: 125000 }]);
@@ -255,7 +255,7 @@ export default function PelaporanKegiatanPage() {
     setKepanitiaaanEnabled(rpt.kepanitiaaanEnabled !== false);
     setReceiptEnabled(rpt.receiptEnabled === true);
     setRealisasiTitle(rpt.realisasiTitle || 'REALISASI ');
-    
+
     let parsedPemasukan: any[] = [];
     let parsedPengeluaran: any[] = [];
     let parsedYayasanPct = 20;
@@ -405,7 +405,7 @@ export default function PelaporanKegiatanPage() {
     setSavingPelaporan(true);
     try {
       const docId = selectedPelaporanId || `${periodToken}_${pelaporanDept}_${Math.random().toString(36).substring(2, 8)}`;
-      
+
       const parseQty = (q: string): number => {
         if (!q) return 0;
         const trimmed = q.trim();
@@ -544,7 +544,7 @@ export default function PelaporanKegiatanPage() {
       setAutoSaveStatus('saving');
       try {
         const docId = selectedPelaporanId || `${periodToken}_${pelaporanDept}_${Math.random().toString(36).substring(2, 8)}`;
-        
+
         const parseQty = (q: string): number => {
           if (!q) return 0;
           const trimmed = q.trim();
@@ -855,7 +855,7 @@ export default function PelaporanKegiatanPage() {
 
           const kepanitiaaanAnggaran = jumlahPengeluaranAnggaran * (kepanitiaaanPercentage / 100);
           const kepanitiaaanRealisasi = jumlahPengeluaranAnggaran * (kepanitiaaanPercentage / 100);
-          
+
           const totalPengeluaranAnggaran = jumlahPengeluaranAnggaran + kepanitiaaanAnggaran;
           const totalPengeluaranRealisasi = jumlahPengeluaranRealisasi + kepanitiaaanRealisasi;
 
@@ -949,7 +949,7 @@ export default function PelaporanKegiatanPage() {
                   {/* PART B: DANA PENGEMBANGAN & DANA OPERASIONAL (AUTOMATIC) */}
                   <div className="bg-slate-50/55 border border-slate-150 rounded-2xl p-4 md:p-5 space-y-4">
                     <span className="text-xs font-bold text-slate-850 uppercase tracking-wider bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs block w-fit font-sans">2. Alokasi Dana Pengembangan & Operasional</span>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-200/60">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 font-sans">Dana Pengembangan Yayasan (%)</label>
@@ -1048,7 +1048,7 @@ export default function PelaporanKegiatanPage() {
                               <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
                                 <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{itemNum}</td>
                                 <td className="px-3 py-2"><Input type="text" placeholder="Uraian pengeluaran..." value={row.uraian} onChange={(e) => { const val = e.target.value; setPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 0)} data-table="pengeluaran" data-row={idx} data-col={0} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
-                                <td className="px-3 py-2"><Input type="text" placeholder="10 / 20%" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 1)} data-table="pengeluaran" data-row={idx} data-col={1} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
+                                <td className="px-3 py-2"><Input type="text" placeholder="Nilai / Presentase" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 1)} data-table="pengeluaran" data-row={idx} data-col={1} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
                                 <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 2)} data-table="pengeluaran" data-row={idx} data-col={2} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                 <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(anggaran)}</td>
                                 <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 3)} data-table="pengeluaran" data-row={idx} data-col={3} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
@@ -1452,11 +1452,10 @@ export default function PelaporanKegiatanPage() {
                             });
                           }, 200);
                         }}
-                        className={`rounded-lg text-xs h-8 w-full pr-8 font-bold transition-all ${
-                          sig.name
+                        className={`rounded-lg text-xs h-8 w-full pr-8 font-bold transition-all ${sig.name
                             ? 'bg-emerald-50/40 border-emerald-300 text-emerald-900 placeholder-emerald-400 focus:ring-emerald-100'
                             : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400 focus:ring-indigo-100'
-                        }`}
+                          }`}
                       />
                       {sig.name && (
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 absolute right-2.5 top-2" />
@@ -1487,11 +1486,10 @@ export default function PelaporanKegiatanPage() {
                                     return c;
                                   });
                                 }}
-                                className={`px-3 py-2 text-xs font-semibold cursor-pointer transition-colors text-left ${
-                                  empIdx === activePelaporanSuggestionIndex
+                                className={`px-3 py-2 text-xs font-semibold cursor-pointer transition-colors text-left ${empIdx === activePelaporanSuggestionIndex
                                     ? 'bg-indigo-50 text-indigo-600 font-bold'
                                     : 'hover:bg-indigo-50 hover:text-indigo-600 text-slate-900'
-                                }`}
+                                  }`}
                               >
                                 <p>{emp.name}</p>
                                 <p className="text-[9px] text-slate-400 mt-0.5">{emp.role} · {emp.id}</p>

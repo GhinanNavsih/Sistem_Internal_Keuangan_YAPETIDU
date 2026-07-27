@@ -48,7 +48,8 @@ import {
 import Link from 'next/link';
 
 export default function PresensiCorrectionPage() {
-  const { profile } = useAuth();
+  const { profile: rawProfile, activeProfile } = useAuth();
+  const profile = activeProfile || rawProfile;
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [requests, setRequests] = useState<any[]>([]);

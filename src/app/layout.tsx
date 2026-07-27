@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/AuthContext";
+import ImpersonationBanner from "@/components/ImpersonationBanner";
 import Script from "next/script";
 
 const inter = {
@@ -39,6 +40,7 @@ export default function RootLayout({
     <html lang="id" className={`${inter.variable} antialiased`}>
       <body className="font-sans min-h-screen bg-slate-50">
         <AuthProvider>
+          <ImpersonationBanner />
           {children}
         </AuthProvider>
         <Script id="register-sw" strategy="afterInteractive">
