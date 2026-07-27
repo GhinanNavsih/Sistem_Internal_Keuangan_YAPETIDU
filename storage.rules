@@ -101,7 +101,7 @@ service firebase.storage {
       allow read: if isFinance() || roleIs('satker_head') ||
         (hasActiveProfile() && profile().get('linkedEmployeeId', '') == ketuaShiftId);
       allow create, update: if
-        roleIs('ketua_shift_satpam') &&
+        hasActiveProfile() &&
         profile().get('linkedEmployeeId', '') == ketuaShiftId &&
         request.resource.size < 5 * 1024 * 1024 &&
         request.resource.contentType.matches('image/.*');
