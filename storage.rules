@@ -93,6 +93,21 @@ service firebase.storage {
       allow delete: if false;
     }
 
+    // Guard-post proof photos. Keyed by the uploading Ketua Shift because the
+    // photos are taken while the shift form is still a draft, before the
+    // ShiftOccurrence document exists. Kepala SatKer reads them to audit that
+    // the pictured guard matches the assignment before releasing the fees.
+    match /satpam_shifts/{ketuaShiftId}/{filename} {
+      allow read: if isFinance() || roleIs('satker_head') ||
+        (hasActiveProfile() && profile().get('linkedEmployeeId', '') == ketuaShiftId);
+      allow create, update: if
+        roleIs('ketua_shift_satpam') &&
+        profile().get('linkedEmployeeId', '') == ketuaShiftId &&
+        request.resource.size < 5 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+      allow delete: if false;
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

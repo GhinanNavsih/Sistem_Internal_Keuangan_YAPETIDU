@@ -39,14 +39,17 @@ export interface MoneyField {
 export interface SatpamPrimaryAssignmentInput {
   postId: SatpamPostId;
   employeeId: string;
+  shiftType?: SatpamPayType;
   coveredEmployeeId?: string;
   overtimeReason?: string;
+  photoUrl?: string;
 }
 
 export interface SatpamExtraAssignmentInput {
   postId: SatpamPostId;
   employeeId: string;
   overtimeReason: string;
+  photoUrl?: string;
 }
 
 export interface SubmitSatpamShiftInput {
@@ -112,6 +115,44 @@ export function assertRequestId(value: string): void {
   }
 }
 
+/**
+ * Storage prefix for guard-post proof photos. Keyed by the uploading Ketua
+ * Shift so Storage rules can verify ownership without the ShiftOccurrence
+ * document existing yet — photos are taken while the form is still a draft.
+ */
+export function satpamPhotoFolder(ketuaShiftId: string): string {
+  return `satpam_shifts/${safeDocumentPart(ketuaShiftId)}`;
+}
+
+/**
+ * Guard-post photos are optional, but any URL that is supplied must point at
+ * the submitting Ketua Shift's own Storage folder. This stops a forged payload
+ * from attaching an arbitrary remote image as evidence.
+ */
+export function assertSatpamPhotoUrl(value: string, ketuaShiftId: string): void {
+  if (typeof value !== 'string' || value.length > 1500) {
+    throw new Error('URL foto bukti tidak valid.');
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error('URL foto bukti tidak valid.');
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error('URL foto bukti wajib menggunakan HTTPS.');
+  }
+  if (!/(^|\.)googleapis\.com$/.test(parsed.hostname)) {
+    throw new Error('Foto bukti wajib diunggah ke Firebase Storage.');
+  }
+  // Firebase download URLs percent-encode the object path, e.g.
+  // /o/satpam_shifts%2FEMP001%2Fpos-1.jpg?alt=media&token=...
+  const objectPath = decodeURIComponent(parsed.pathname);
+  if (!objectPath.includes(`/o/${satpamPhotoFolder(ketuaShiftId)}/`)) {
+    throw new Error('Foto bukti berada di luar folder Ketua Shift ini.');
+  }
+}
+
 export function addCalendarDays(dateOnly: string, days: number): string {
   assertDateOnly(dateOnly);
   const [year, month, day] = dateOnly.split('-').map(Number);
@@ -129,9 +170,27 @@ export function isFridayDutyDate(dateOnly: string): boolean {
   return new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 5;
 }
 
+/**
+ * The single payroll-period rule for every Pekarya category, Satpam included:
+ * - through June 2026: the 26th of the previous month through the 25th,
+ * - July 2026 transition: 26 June through 31 July,
+ * - August 2026 onward: the plain calendar month.
+ *
+ * Payment always falls on the 5th of the month after the period closes.
+ *
+ * This lives in the base module so `pekaryaPayrollPeriodForDate` can delegate
+ * to it. Satpam previously sliced the calendar month here, which silently
+ * dropped duties on the 26th-31st out of the payroll window they belonged to.
+ */
 export function payrollPeriodForDutyDate(dateOnly: string): string {
   assertDateOnly(dateOnly);
-  return dateOnly.slice(0, 7);
+  if (dateOnly >= '2026-06-26' && dateOnly <= '2026-07-31') return '2026-07';
+  if (dateOnly >= '2026-08-01') return dateOnly.slice(0, 7);
+
+  const [year, month, day] = dateOnly.split('-').map(Number);
+  if (day <= 25) return `${year}-${String(month).padStart(2, '0')}`;
+  const next = new Date(Date.UTC(year, month, 1));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 export function getRegularSatpamPayType(

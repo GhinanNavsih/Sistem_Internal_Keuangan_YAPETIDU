@@ -1,4 +1,4 @@
-import { assertDateOnly } from './domain';
+import { payrollPeriodForDutyDate } from './domain';
 
 export const PEKARYA_JOB_CATEGORIES = [
   'SATPAM',
@@ -89,17 +89,11 @@ export function activityDurationMinutes(
  * - through June 2026: 26th through 25th,
  * - July 2026 transition: 26 June through 31 July,
  * - August 2026 onward: calendar month.
+ *
+ * Delegates to the base-module rule so Satpam and the other Pekarya categories
+ * can never bucket the same duty date into two different payroll periods.
  */
-export function pekaryaPayrollPeriodForDate(dateOnly: string): string {
-  assertDateOnly(dateOnly);
-  if (dateOnly >= '2026-06-26' && dateOnly <= '2026-07-31') return '2026-07';
-  if (dateOnly >= '2026-08-01') return dateOnly.slice(0, 7);
-
-  const [year, month, day] = dateOnly.split('-').map(Number);
-  if (day <= 25) return `${year}-${String(month).padStart(2, '0')}`;
-  const next = new Date(Date.UTC(year, month, 1));
-  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}`;
-}
+export const pekaryaPayrollPeriodForDate = payrollPeriodForDutyDate;
 
 export function pekaryaPayrollWindow(period: string): {
   startsOn: string;

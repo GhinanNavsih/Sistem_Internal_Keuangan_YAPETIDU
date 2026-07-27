@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  assertSatpamPhotoUrl,
   calculatePayrollTotals,
   dedupeSatpamActivityReports,
   getRegularSatpamPayType,
@@ -11,6 +12,7 @@ import {
   SATPAM_RATES,
   shiftOccurrenceId,
 } from './domain';
+import { pekaryaPayrollPeriodForDate } from './pekaryaSpj';
 
 test('Thursday night remains Thursday regular duty and ends Friday', () => {
   assert.equal(getRegularSatpamPayType('2026-07-23', new Set()), 'Harian');
@@ -95,4 +97,65 @@ test('negative net pay is rejected and transfer eligibility is locked-only', () 
   assert.equal(isTransferEligibleStatus('confirmed'), true);
   assert.equal(isTransferEligibleStatus('locked'), true);
   assert.equal(isTransferEligibleStatus('paid'), true);
+});
+
+test('Satpam duty dates use the same payroll periods as the other Pekarya', () => {
+  // Regression: Satpam used to slice the calendar month here, so duties on the
+  // 26th-31st were stamped with a period the payslip window never matched and
+  // the fee silently vanished from the slip.
+  assert.equal(payrollPeriodForDutyDate('2026-06-26'), '2026-07');
+  assert.equal(payrollPeriodForDutyDate('2026-06-30'), '2026-07');
+  assert.equal(payrollPeriodForDutyDate('2026-05-28'), '2026-06');
+  assert.equal(payrollPeriodForDutyDate('2026-06-25'), '2026-06');
+  // From August 2026 the period is the plain calendar month.
+  assert.equal(payrollPeriodForDutyDate('2026-08-01'), '2026-08');
+  assert.equal(payrollPeriodForDutyDate('2026-08-27'), '2026-08');
+  assert.equal(payrollPeriodForDutyDate('2026-08-31'), '2026-08');
+  assert.equal(payrollPeriodForDutyDate('2026-09-01'), '2026-09');
+
+  // The two entry points must stay identical; drift is what caused the bug.
+  for (const date of [
+    '2026-05-26', '2026-06-25', '2026-06-26', '2026-06-30',
+    '2026-07-31', '2026-08-01', '2026-08-27', '2026-09-30',
+  ]) {
+    assert.equal(payrollPeriodForDutyDate(date), pekaryaPayrollPeriodForDate(date));
+  }
+});
+
+test('guard post photo URLs must live in the submitting Ketua Shift folder', () => {
+  const valid =
+    'https://firebasestorage.googleapis.com/v0/b/bucket.appspot.com/o/' +
+    encodeURIComponent('satpam_shifts/EMP001/2026-07-28_Malam_Pos_1_123.jpg') +
+    '?alt=media&token=abc';
+  assert.doesNotThrow(() => assertSatpamPhotoUrl(valid, 'EMP001'));
+
+  // A photo belonging to another Ketua Shift cannot be claimed as evidence.
+  assert.throws(() => assertSatpamPhotoUrl(valid, 'EMP002'), /luar folder/);
+
+  // Arbitrary remote images and non-HTTPS URLs are refused outright.
+  assert.throws(
+    () => assertSatpamPhotoUrl('https://evil.example.com/fake.jpg', 'EMP001'),
+    /Firebase Storage/,
+  );
+  assert.throws(
+    () =>
+      assertSatpamPhotoUrl(
+        'http://firebasestorage.googleapis.com/v0/b/x/o/satpam_shifts%2FEMP001%2Fa.jpg',
+        'EMP001',
+      ),
+    /HTTPS/,
+  );
+  assert.throws(() => assertSatpamPhotoUrl('not-a-url', 'EMP001'), /tidak valid/);
+
+  // Another collection's folder must not pass just because the host matches.
+  assert.throws(
+    () =>
+      assertSatpamPhotoUrl(
+        'https://firebasestorage.googleapis.com/v0/b/x/o/' +
+          encodeURIComponent('receipts/JRN-1/toll.jpg') +
+          '?alt=media',
+        'EMP001',
+      ),
+    /luar folder/,
+  );
 });

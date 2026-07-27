@@ -5,6 +5,7 @@ import {
   activityReportId,
   assertDateOnly,
   assertRequestId,
+  assertSatpamPhotoUrl,
   getRegularSatpamPayType,
   getShiftIsoBounds,
   guardDutyIndexId,
@@ -32,7 +33,7 @@ function stableHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-function parseInput(raw: unknown): SubmitSatpamShiftInput {
+function parseInput(raw: unknown, ketuaShiftId: string): SubmitSatpamShiftInput {
   if (!raw || typeof raw !== 'object') {
     throw new HttpError(400, 'Payload shift tidak valid.');
   }
@@ -62,14 +63,33 @@ function parseInput(raw: unknown): SubmitSatpamShiftInput {
     ) {
       throw new HttpError(400, 'Data pos, petugas, atau alasan lembur tidak valid.');
     }
+    if (value.photoUrl !== undefined && value.photoUrl !== '') {
+      if (typeof value.photoUrl !== 'string') {
+        throw new HttpError(400, 'URL foto bukti tidak valid.');
+      }
+      try {
+        assertSatpamPhotoUrl(value.photoUrl, ketuaShiftId);
+      } catch (error) {
+        throw new HttpError(
+          400,
+          error instanceof Error ? error.message : 'URL foto bukti tidak valid.',
+        );
+      }
+    }
     return {
       postId: value.postId,
       employeeId: value.employeeId,
+      ...(typeof value.shiftType === 'string' && value.shiftType in SATPAM_RATES
+        ? { shiftType: value.shiftType as any }
+        : {}),
       ...(typeof value.coveredEmployeeId === 'string'
         ? { coveredEmployeeId: value.coveredEmployeeId }
         : {}),
       ...(typeof value.overtimeReason === 'string'
         ? { overtimeReason: value.overtimeReason }
+        : {}),
+      ...(typeof value.photoUrl === 'string' && value.photoUrl
+        ? { photoUrl: value.photoUrl }
         : {}),
     } as SubmitSatpamShiftInput['assignments'][number];
   });
@@ -88,10 +108,26 @@ function parseInput(raw: unknown): SubmitSatpamShiftInput {
     ) {
       throw new HttpError(400, 'Data Lembur Sendiri tidak valid.');
     }
+    if (extra.photoUrl !== undefined && extra.photoUrl !== '') {
+      if (typeof extra.photoUrl !== 'string') {
+        throw new HttpError(400, 'URL foto bukti tidak valid.');
+      }
+      try {
+        assertSatpamPhotoUrl(extra.photoUrl, ketuaShiftId);
+      } catch (error) {
+        throw new HttpError(
+          400,
+          error instanceof Error ? error.message : 'URL foto bukti tidak valid.',
+        );
+      }
+    }
     extraAssignment = {
       postId: extra.postId,
       employeeId: extra.employeeId,
       overtimeReason: extra.overtimeReason,
+      ...(typeof extra.photoUrl === 'string' && extra.photoUrl
+        ? { photoUrl: extra.photoUrl }
+        : {}),
     } as SubmitSatpamShiftInput['extraAssignment'];
   }
   return {
@@ -118,7 +154,7 @@ export async function POST(request: NextRequest) {
       throw new HttpError(409, 'Akun Ketua Shift belum terhubung ke data Satpam.');
     }
 
-    const input = parseInput(await request.json());
+    const input = parseInput(await request.json(), actor.linkedEmployeeId);
     const teamQuery = await adminDb
       .collection('SatpamShiftTeams')
       .where('ketuaShiftId', '==', actor.linkedEmployeeId)
@@ -223,7 +259,7 @@ export async function POST(request: NextRequest) {
       }
 
       const externalAssignments = input.assignments.filter(
-        (assignment) => !roster.includes(assignment.employeeId),
+        (assignment) => assignment.shiftType === 'Lembur Cover' || !roster.includes(assignment.employeeId),
       );
       const coveredIds = externalAssignments.map((assignment) => assignment.coveredEmployeeId || '');
       if (
@@ -329,7 +365,13 @@ export async function POST(request: NextRequest) {
         startsAt,
         endsAt,
         timeZone: 'Asia/Jakarta',
-        status: 'submitted',
+        // Shifts wait for a Kepala SatKer audit of the guard-post photos before
+        // any fee becomes payable. Historical occurrences kept 'submitted'.
+        status: 'pending_review',
+        reviewStatus: 'pending',
+        pendingAssignmentCount: input.assignments.length + (extra ? 1 : 0),
+        approvedAssignmentCount: 0,
+        declinedAssignmentCount: 0,
         requestId: input.requestId,
         requestHash,
         submittedByUid: actor.uid,
@@ -351,15 +393,22 @@ export async function POST(request: NextRequest) {
         payType: keyof typeof SATPAM_RATES;
         coveredEmployeeId: string | null;
         overtimeReason: string | null;
+        photoUrl: string | null;
       }> = input.assignments.map((assignment) => {
         const isCover = !roster.includes(assignment.employeeId);
+        const chosenType = assignment.shiftType && assignment.shiftType in SATPAM_RATES
+          ? assignment.shiftType
+          : (isCover ? ('Lembur Cover' as const) : regularPayType);
+
+        const isCoverType = isCover || chosenType === 'Lembur Cover';
         return {
           assignmentKey: assignment.postId,
           postId: assignment.postId,
           employeeId: assignment.employeeId,
-          payType: isCover ? ('Lembur Cover' as const) : regularPayType,
-          coveredEmployeeId: isCover ? assignment.coveredEmployeeId! : null,
-          overtimeReason: isCover ? assignment.overtimeReason!.trim() : null,
+          payType: chosenType,
+          coveredEmployeeId: isCoverType ? (assignment.coveredEmployeeId || null) : null,
+          overtimeReason: isCoverType ? (assignment.overtimeReason?.trim() || null) : null,
+          photoUrl: assignment.photoUrl || null,
         };
       });
       if (extra) {
@@ -370,6 +419,7 @@ export async function POST(request: NextRequest) {
           payType: 'Lembur Sendiri',
           coveredEmployeeId: null,
           overtimeReason: extra.overtimeReason.trim(),
+          photoUrl: extra.photoUrl || null,
         });
       }
 
@@ -383,7 +433,6 @@ export async function POST(request: NextRequest) {
           assignment.assignmentKey,
         );
         const reportRef = adminDb.collection('ActivityReports').doc(reportId);
-        const ledgerRef = adminDb.collection('PayrollLedgerEntries').doc(reportId);
         const fee = SATPAM_RATES[assignment.payType];
 
         transaction.create(reportRef, {
@@ -400,11 +449,16 @@ export async function POST(request: NextRequest) {
           timeEnd: shiftTimes.end,
           startsAt,
           endsAt,
-          status: 'approved',
+          // Awaits Kepala SatKer verification of the guard-post photo. Only an
+          // approved report is picked up by payslipSync, so nothing is payable
+          // until the audit passes.
+          status: 'pending',
           fee,
           shiftType: assignment.payType,
           assignmentKind: assignment.assignmentKey.startsWith('extra_') ? 'extra' : 'primary',
+          postId: post.id,
           postName: `${post.id}: ${post.name}`,
+          photoUrl: assignment.photoUrl,
           shiftName,
           coveredEmployeeId: assignment.coveredEmployeeId,
           overtimeReason: assignment.overtimeReason,
@@ -416,26 +470,7 @@ export async function POST(request: NextRequest) {
           holidayCalendarVersion:
             String(holidayData.version || SATPAM_HOLIDAY_CALENDAR_VERSION),
           submittedAt: createdAt,
-          approvedAt: createdAt,
-          approvedBy: 'server_policy',
           schemaVersion: 2,
-        });
-        transaction.create(ledgerRef, {
-          employeeId: assignment.employeeId,
-          payrollPeriod: period,
-          sourceType: 'satpam_shift',
-          sourceId: reportId,
-          sourceOccurrenceId: occurrenceId,
-          payType: assignment.payType,
-          amount: fee,
-          currency: 'IDR',
-          status: 'posted',
-          rateVersion: SATPAM_RATE_VERSION,
-          dutyDate: input.dutyDate,
-          startsAt,
-          endsAt,
-          createdAt,
-          schemaVersion: 1,
         });
         const dutyIndexRef = adminDb
           .collection('GuardDutyIndexes')
@@ -508,6 +543,8 @@ export async function POST(request: NextRequest) {
             dutyDate: input.dutyDate,
             shiftName,
             assignmentCount: assignmentRecords.length,
+            photoCount: assignmentRecords.filter((item) => item.photoUrl).length,
+            status: 'pending_review',
             rateVersion: SATPAM_RATE_VERSION,
           },
         }),

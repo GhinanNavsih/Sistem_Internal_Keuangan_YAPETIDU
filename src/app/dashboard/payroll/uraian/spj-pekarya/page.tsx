@@ -26,6 +26,7 @@ import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import { syncActivityToPayslip } from '@/utils/payslipSync';
 import {
+  pekaryaPayrollWindow,
   sumApprovedActivitySpj,
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
@@ -121,51 +122,29 @@ export default function SpjPekaryaPage() {
 
       // Also fetch approved ActivityReports for the same period
       try {
-        const prevMonthDate = new Date(year, month - 2, 26);
-        const currentMonthDate = new Date(year, month - 1, 25);
+        // Boundaries come from the shared rule (26th-25th through June 2026,
+        // 26 Jun-31 Jul for the transition, calendar month from August 2026)
+        // so this recap can never disagree with what lands on the payslip.
+        const { startsOn: startDateStr, endsOn: endDateStr, sourceMonths } =
+          pekaryaPayrollWindow(periodToken);
 
-        const formatDate = (d: Date) => {
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        };
-
-        let startDateStr = "";
-        let endDateStr = "";
-
-        if (year > 2026 || (year === 2026 && month > 7)) {
-          // Future: 1st to end of the month
-          startDateStr = `${year}-${String(month).padStart(2, '0')}-01`;
-          const lastDay = new Date(year, month, 0).getDate();
-          endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-        } else if (year === 2026 && month === 7) {
-          // Transition: 26 June to 30 July
-          startDateStr = "2026-06-26";
-          endDateStr = "2026-07-31";
-        } else {
-          // Past: 26th of prev month to 25th of current month
-          startDateStr = formatDate(prevMonthDate);
-          endDateStr = formatDate(currentMonthDate);
-        }
-        const prevMonthToken = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
-
-        const [arSnap1, arSnap2] = await Promise.all([
-          getDocs(query(
+        const arSnaps = await Promise.all(
+          sourceMonths.map(monthToken => getDocs(query(
             collection(db, 'ActivityReports'),
-            where('period', '==', prevMonthToken),
+            where('period', '==', monthToken),
             where('status', '==', 'approved'),
             where('jobCategory', '==', category),
-          )),
-          getDocs(query(
-            collection(db, 'ActivityReports'),
-            where('period', '==', periodToken),
-            where('status', '==', 'approved'),
-            where('jobCategory', '==', category),
-          ))
-        ]);
+          ))),
+        );
 
-        const allAr = [
-          ...arSnap1.docs.map(d => ({ id: d.id, ...d.data() })),
-          ...arSnap2.docs.map(d => ({ id: d.id, ...d.data() }))
-        ];
+        const seenArIds = new Set<string>();
+        const allAr = arSnaps
+          .flatMap(snap => snap.docs.map(d => ({ id: d.id, ...d.data() })))
+          .filter(doc => {
+            if (seenArIds.has(doc.id)) return false;
+            seenArIds.add(doc.id);
+            return true;
+          });
 
         const filteredAr = allAr.filter((ar: any) => {
           return ar.activityDate >= startDateStr && ar.activityDate <= endDateStr;
@@ -180,7 +159,7 @@ export default function SpjPekaryaPage() {
     } finally {
       setLoadingSpjEvents(false);
     }
-  }, [month, year, category, periodToken]);
+  }, [category, periodToken]);
 
   useEffect(() => {
     fetchSpjEvents();

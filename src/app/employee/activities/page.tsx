@@ -52,6 +52,7 @@ import {
   Target,
   Save,
   Upload,
+  Camera,
 } from 'lucide-react';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -71,7 +72,7 @@ import {
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
-import { SatpamPostId } from '@/lib/payroll/domain';
+import { SatpamPostId, SatpamPayType } from '@/lib/payroll/domain';
 import {
   calculateDriverNetWage,
   calculateJourneyElapsedHours,
@@ -81,6 +82,7 @@ import {
   getShortTripMealWageComponent,
 } from '@/lib/payroll/driverJourney';
 import { parseImageExif } from '@/lib/exif';
+import { ImageExifViewer } from '@/components/ImageExifViewer';
 import {
   Select,
   SelectContent,
@@ -222,6 +224,7 @@ interface SatpamPostAssignment {
   shiftType: string;
   coveredEmployeeId?: string;
   overtimeReason?: string;
+  photoUrl?: string;
 }
 
 const getPlacesSearchQuery = (endPoint: string): string => {
@@ -638,6 +641,11 @@ function ActivitiesContent() {
   const [loadingSubmittedSatpam, setLoadingSubmittedSatpam] = useState(false);
   const [isSatpamReportSubmitted, setIsSatpamReportSubmitted] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  // Guard-post proof photos, keyed by post id ('Pos 1'..'Pos 9', 'extra').
+  const [postPhotoUploading, setPostPhotoUploading] = useState<Record<string, boolean>>({});
+  const [extraPhotoUrl, setExtraPhotoUrl] = useState('');
+  const [satpamPreviewPhoto, setSatpamPreviewPhoto] = useState<{ url: string; title: string } | null>(null);
+  const postPhotoInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
 
   // ── Period ──
@@ -2082,6 +2090,7 @@ function ActivitiesContent() {
         let extraPName = '';
         let extraSType = 'Lembur Sendiri';
         let extraReason = '';
+        let extraPhoto = '';
 
         snap.docs.forEach((doc) => {
           const data = doc.data();
@@ -2097,6 +2106,7 @@ function ActivitiesContent() {
             }
             extraSType = data.shiftType || 'Lembur Sendiri';
             extraReason = data.overtimeReason || '';
+            extraPhoto = data.photoUrl || '';
           } else {
             const match = rawPostName.match(/^(Pos\s+\d+)/i);
             if (match) {
@@ -2110,6 +2120,7 @@ function ActivitiesContent() {
                     shiftType: data.shiftType || defaultShiftTypeForDate,
                     coveredEmployeeId: data.coveredEmployeeId || '',
                     overtimeReason: data.overtimeReason || '',
+                    photoUrl: data.photoUrl || '',
                   };
                 }
               }
@@ -2123,12 +2134,14 @@ function ActivitiesContent() {
           setExtraPostName(extraPName);
           setExtraShiftType(extraSType);
           setExtraOvertimeReason(extraReason);
+          setExtraPhotoUrl(extraPhoto);
           setIsExtraPostVisible(true);
         } else {
           setExtraEmployeeId('');
           setExtraPostName('');
           setExtraShiftType('Lembur Sendiri');
           setExtraOvertimeReason('');
+          setExtraPhotoUrl('');
           setIsExtraPostVisible(false);
         }
         setIsSatpamReportSubmitted(true);
@@ -2163,6 +2176,7 @@ function ActivitiesContent() {
                     : defaultShiftTypeForDate,
                   coveredEmployeeId: assignment.coveredEmployeeId || '',
                   overtimeReason: assignment.overtimeReason || '',
+                  photoUrl: assignment.photoUrl || '',
                 };
               }
               const pendingExtra = pending.payload.extraAssignment;
@@ -2170,6 +2184,7 @@ function ActivitiesContent() {
               setExtraPostName(pendingExtra?.postId || '');
               setExtraShiftType('Lembur Sendiri');
               setExtraOvertimeReason(pendingExtra?.overtimeReason || '');
+              setExtraPhotoUrl(pendingExtra?.photoUrl || '');
               setIsExtraPostVisible(Boolean(pendingExtra));
               satpamRequestIdsRef.current[
                 `${satpamReportDate}_${activeShift}`
@@ -2240,23 +2255,92 @@ function ActivitiesContent() {
     return isFriday(dateStr) ? 'Jumat & Libur' : 'Harian';
   };
 
+  const handleShiftTypeChange = (postId: string, shiftType: string) => {
+    setPostAssignments(prev => ({
+      ...prev,
+      [postId]: {
+        ...prev[postId],
+        shiftType,
+        ...(shiftType !== 'Lembur Cover' && {
+          coveredEmployeeId: '',
+          overtimeReason: '',
+        }),
+      }
+    }));
+  };
+
   const handleSelectGuard = (postId: string, employeeId: string) => {
     setPostAssignments(prev => {
       const isExternal = !groupEmployeeIds.includes(employeeId) && employeeId !== '';
       const defaultType = isExternal
         ? 'Lembur Cover'
-        : getDefaultShiftTypeForDate(satpamReportDate);
+        : (prev[postId]?.shiftType || getDefaultShiftTypeForDate(satpamReportDate));
 
       return {
         ...prev,
         [postId]: {
           employeeId,
           shiftType: defaultType,
-          coveredEmployeeId: '',
-          overtimeReason: '',
+          coveredEmployeeId: prev[postId]?.coveredEmployeeId || '',
+          overtimeReason: prev[postId]?.overtimeReason || '',
+          // Keep any photo already taken at this post; a mis-tap on the guard
+          // dropdown should not force the Ketua Shift back out to re-shoot it.
+          photoUrl: prev[postId]?.photoUrl || '',
         }
       };
     });
+  };
+
+  const handleUploadPostPhoto = async (postId: string, file: File) => {
+    if (!profile?.linkedEmployeeId) return;
+    if (!file.type.startsWith('image/')) {
+      setMessage({ type: 'error', text: 'Bukti pos harus berupa foto (JPG/PNG).' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage({ type: 'error', text: 'Ukuran foto maksimal 5 MB.' });
+      return;
+    }
+
+    setPostPhotoUploading(prev => ({ ...prev, [postId]: true }));
+    try {
+      // Upload the original bytes untouched. Any re-encode would strip the EXIF
+      // timestamp and GPS tags the Kepala SatKer audits the photo against.
+      const extension = file.name.split('.').pop() || 'jpg';
+      const safePost = postId.replace(/[^A-Za-z0-9_-]/g, '_');
+      const fileRef = ref(
+        storage,
+        `satpam_shifts/${profile.linkedEmployeeId}/${satpamReportDate}_${activeShift}_${safePost}_${Date.now()}.${extension}`,
+      );
+      await uploadBytes(fileRef, file);
+      const downloadUrl = await getDownloadURL(fileRef);
+
+      if (postId === 'extra') {
+        setExtraPhotoUrl(downloadUrl);
+      } else {
+        setPostAssignments(prev => ({
+          ...prev,
+          [postId]: { ...prev[postId], photoUrl: downloadUrl },
+        }));
+      }
+      setMessage({ type: 'success', text: `Foto bukti ${postId === 'extra' ? 'Lembur Sendiri' : postId} berhasil diunggah.` });
+    } catch (err) {
+      console.error('Error uploading guard post photo:', err);
+      setMessage({ type: 'error', text: `Gagal mengunggah foto ${postId}. Coba lagi.` });
+    } finally {
+      setPostPhotoUploading(prev => ({ ...prev, [postId]: false }));
+    }
+  };
+
+  const handleRemovePostPhoto = (postId: string) => {
+    if (postId === 'extra') {
+      setExtraPhotoUrl('');
+      return;
+    }
+    setPostAssignments(prev => ({
+      ...prev,
+      [postId]: { ...prev[postId], photoUrl: '' },
+    }));
   };
 
   const handleCoverDetail = (
@@ -2288,16 +2372,19 @@ function ActivitiesContent() {
         assignments: Object.entries(postAssignments).map(([postId, assignment]) => ({
           postId: postId as SatpamPostId,
           employeeId: assignment.employeeId,
+          shiftType: (assignment.shiftType || getDefaultShiftTypeForDate(satpamReportDate)) as SatpamPayType,
           ...(assignment.shiftType === 'Lembur Cover' && {
             coveredEmployeeId: assignment.coveredEmployeeId,
             overtimeReason: assignment.overtimeReason,
           }),
+          ...(assignment.photoUrl ? { photoUrl: assignment.photoUrl } : {}),
         })),
         ...(isExtraPostVisible && extraEmployeeId && extraPostName && {
           extraAssignment: {
             postId: extraPostName as SatpamPostId,
             employeeId: extraEmployeeId,
             overtimeReason: extraOvertimeReason,
+            ...(extraPhotoUrl ? { photoUrl: extraPhotoUrl } : {}),
           },
         }),
       };
@@ -2317,7 +2404,10 @@ function ActivitiesContent() {
         window.localStorage.removeItem(satpamPendingStorageKey);
       }
 
-      setMessage({ type: 'success', text: `Berhasil mengirim laporan shift ${activeShift} tanggal ${satpamReportDate}.` });
+      setMessage({
+        type: 'success',
+        text: `Laporan shift ${activeShift} tanggal ${satpamReportDate} terkirim dan menunggu audit Kepala SatKer.`,
+      });
 
       // Reset post selection
       const defaultShiftTypeForReset = getDefaultShiftTypeForDate(satpamReportDate);
@@ -2336,6 +2426,7 @@ function ActivitiesContent() {
       setExtraPostName('');
       setExtraShiftType('Lembur Sendiri');
       setExtraOvertimeReason('');
+      setExtraPhotoUrl('');
       setIsExtraPostVisible(false);
       fetchActivities();
     } catch (err) {
@@ -3026,15 +3117,33 @@ function ActivitiesContent() {
                               </Select>
                             </div>
 
-                            {/* Server-derived pay type */}
+                            {/* Shift / Pay Type Selection */}
                             <div className="md:col-span-4">
-                              <div className="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 h-10 flex items-center">
-                                {val.shiftType} ({val.shiftType === 'Lembur Cover'
-                                  ? 'Rp50.000'
-                                  : val.shiftType === 'Jumat & Libur'
-                                    ? 'Rp25.000'
-                                    : 'Rp12.500'})
-                              </div>
+                              <Select
+                                value={val.shiftType || getDefaultShiftTypeForDate(satpamReportDate)}
+                                onValueChange={(type: string | null) => {
+                                  if (type) handleShiftTypeChange(post.id, type);
+                                }}
+                                disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                              >
+                                <SelectTrigger className="w-full h-10 text-xs sm:text-sm font-extrabold text-slate-700 bg-white border border-slate-200 rounded-lg">
+                                  <SelectValue placeholder="Pilih Jenis Shift" />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
+                                  <SelectItem value="Harian" className="text-xs sm:text-sm font-bold">
+                                    Harian (Rp12.500)
+                                  </SelectItem>
+                                  <SelectItem value="Jumat & Libur" className="text-xs sm:text-sm font-bold">
+                                    Jumat & Libur (Rp25.000)
+                                  </SelectItem>
+                                  <SelectItem value="Lembur Sendiri" className="text-xs sm:text-sm font-bold">
+                                    Lembur Sendiri (Rp30.000)
+                                  </SelectItem>
+                                  <SelectItem value="Lembur Cover" className="text-xs sm:text-sm font-bold">
+                                    Lembur Cover (Rp50.000)
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
                             </div>
                             {val.shiftType === 'Lembur Cover' && (
                               <>
@@ -3073,6 +3182,66 @@ function ActivitiesContent() {
                                 </div>
                               </>
                             )}
+
+                            {/* Guard-post proof photo (optional, audited by Kepala SatKer) */}
+                            <div className="md:col-span-12">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                ref={el => { postPhotoInputRefs.current[post.id] = el; }}
+                                onChange={event => {
+                                  const file = event.target.files?.[0];
+                                  if (file) handleUploadPostPhoto(post.id, file);
+                                  event.target.value = '';
+                                }}
+                                className="hidden"
+                              />
+                              {val.photoUrl ? (
+                                <div className="flex items-center justify-between gap-2 p-2 bg-blue-50/80 border border-blue-200 rounded-xl text-[11px]">
+                                  <div className="flex items-center gap-1.5 truncate font-bold text-blue-800">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                    <span className="truncate">Foto bukti {post.id} terunggah</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSatpamPreviewPhoto({ url: val.photoUrl!, title: `${post.id} — ${post.name}` })}
+                                      className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                                    >
+                                      <Eye className="w-3 h-3" /> Lihat Foto
+                                    </button>
+                                    {!isSatpamReportSubmitted && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemovePostPhoto(post.id)}
+                                        className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                        title="Hapus Foto Ini"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                !isSatpamReportSubmitted && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={postPhotoUploading[post.id] || loadingSubmittedSatpam}
+                                    onClick={() => postPhotoInputRefs.current[post.id]?.click()}
+                                    className="w-full h-9 rounded-lg border-dashed border-slate-300 bg-slate-50/60 hover:bg-slate-100 text-[11px] font-bold text-slate-600 gap-1.5"
+                                  >
+                                    {postPhotoUploading[post.id] ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <Camera className="w-3.5 h-3.5 text-slate-500" />
+                                    )}
+                                    <span>{postPhotoUploading[post.id] ? 'Mengunggah...' : 'Ambil Foto Bukti Pos'}</span>
+                                  </Button>
+                                )
+                              )}
+                            </div>
                           </div>
                         );
                       })}
@@ -3169,6 +3338,7 @@ function ActivitiesContent() {
                                   setExtraEmployeeId('');
                                   setExtraShiftType('Lembur Sendiri');
                                   setExtraOvertimeReason('');
+                                  setExtraPhotoUrl('');
                                 }}
                                 className="text-slate-400 hover:text-red-500 transition-colors p-1"
                               >
@@ -3184,6 +3354,64 @@ function ActivitiesContent() {
                               placeholder="Alasan/otorisasi Lembur Sendiri (minimal 8 karakter)"
                               className="h-10 rounded-lg bg-indigo-50/50 border-indigo-200"
                             />
+                          </div>
+                          <div className="md:col-span-12">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              ref={el => { postPhotoInputRefs.current['extra'] = el; }}
+                              onChange={event => {
+                                const file = event.target.files?.[0];
+                                if (file) handleUploadPostPhoto('extra', file);
+                                event.target.value = '';
+                              }}
+                              className="hidden"
+                            />
+                            {extraPhotoUrl ? (
+                              <div className="flex items-center justify-between gap-2 p-2 bg-indigo-50 border border-indigo-200 rounded-xl text-[11px]">
+                                <div className="flex items-center gap-1.5 truncate font-bold text-indigo-800">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                  <span className="truncate">Foto bukti Lembur Sendiri terunggah</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSatpamPreviewPhoto({ url: extraPhotoUrl, title: 'Lembur Sendiri' })}
+                                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                                  >
+                                    <Eye className="w-3 h-3" /> Lihat Foto
+                                  </button>
+                                  {!isSatpamReportSubmitted && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemovePostPhoto('extra')}
+                                      className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                      title="Hapus Foto Ini"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              !isSatpamReportSubmitted && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  disabled={postPhotoUploading['extra'] || loadingSubmittedSatpam}
+                                  onClick={() => postPhotoInputRefs.current['extra']?.click()}
+                                  className="w-full h-9 rounded-lg border-dashed border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50 text-[11px] font-bold text-indigo-700 gap-1.5"
+                                >
+                                  {postPhotoUploading['extra'] ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Camera className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>{postPhotoUploading['extra'] ? 'Mengunggah...' : 'Ambil Foto Bukti (Opsional)'}</span>
+                                </Button>
+                              )
+                            )}
                           </div>
                         </div>
                       )}
@@ -5145,6 +5373,19 @@ function ActivitiesContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Guard-post photo preview. Metadata stays hidden here; the EXIF audit
+          view belongs to the Kepala SatKer, mirroring the driver receipt flow. */}
+      {satpamPreviewPhoto && (
+        <ImageExifViewer
+          imageUrl={satpamPreviewPhoto.url}
+          title={satpamPreviewPhoto.title}
+          activityDate={satpamReportDate}
+          isOpen={Boolean(satpamPreviewPhoto)}
+          onClose={() => setSatpamPreviewPhoto(null)}
+          showMetadata={false}
+        />
       )}
     </div>
   );

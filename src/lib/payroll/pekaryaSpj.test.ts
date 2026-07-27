@@ -17,6 +17,49 @@ test('maps legacy cutoff, July transition, and calendar periods', () => {
   assert.deepEqual(pekaryaPayrollWindow('2026-07').sourceMonths, ['2026-06', '2026-07']);
 });
 
+test('every payroll regime has matching period boundaries and windows', () => {
+  // Legacy 26th-25th, through June 2026.
+  assert.deepEqual(pekaryaPayrollWindow('2026-06'), {
+    startsOn: '2026-05-26',
+    endsOn: '2026-06-25',
+    sourceMonths: ['2026-05', '2026-06'],
+  });
+  // July 2026 is the one-off transition: 26 June through 31 July.
+  assert.deepEqual(pekaryaPayrollWindow('2026-07'), {
+    startsOn: '2026-06-26',
+    endsOn: '2026-07-31',
+    sourceMonths: ['2026-06', '2026-07'],
+  });
+  // August 2026 onward follows the Loyalis calendar month, including the
+  // 31-day, 30-day, February, and leap-February cases.
+  assert.deepEqual(pekaryaPayrollWindow('2026-08'), {
+    startsOn: '2026-08-01',
+    endsOn: '2026-08-31',
+    sourceMonths: ['2026-08'],
+  });
+  assert.equal(pekaryaPayrollWindow('2026-09').endsOn, '2026-09-30');
+  assert.equal(pekaryaPayrollWindow('2027-02').endsOn, '2027-02-28');
+  assert.equal(pekaryaPayrollWindow('2028-02').endsOn, '2028-02-29');
+
+  // A date must always fall inside the window of the period it maps to.
+  for (const date of [
+    '2026-05-26', '2026-06-25', '2026-06-26', '2026-06-30', '2026-07-01',
+    '2026-07-31', '2026-08-01', '2026-08-26', '2026-08-31', '2026-09-30',
+    '2027-02-28', '2028-02-29',
+  ]) {
+    const window = pekaryaPayrollWindow(pekaryaPayrollPeriodForDate(date));
+    assert.ok(
+      date >= window.startsOn && date <= window.endsOn,
+      `${date} fell outside the window of its own period`,
+    );
+  }
+
+  // No date may land in a July gap or be double-counted across the transition.
+  assert.equal(pekaryaPayrollPeriodForDate('2026-07-25'), '2026-07');
+  assert.equal(pekaryaPayrollPeriodForDate('2026-07-26'), '2026-07');
+  assert.equal(pekaryaPayrollPeriodForDate('2026-08-26'), '2026-08');
+});
+
 test('validates normal and cross-midnight activity duration', () => {
   assert.equal(activityDurationMinutes('08:00', '14:00'), 360);
   assert.equal(activityDurationMinutes('22:00', '02:00'), 240);

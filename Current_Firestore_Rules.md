@@ -210,8 +210,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Shift audit state (pending_review -> reviewed) is written only by
+    // /api/satpam/shifts/review through the Admin SDK, so the Kepala SatKer's
+    // verdict, the per-post fees, and the ledger postings cannot be forged.
     match /ShiftOccurrences/{occurrenceId} {
       allow read: if isFinanceRole() ||
+        (roleIs('satker_head') && hasCategory('SATPAM')) ||
         (roleIs('ketua_shift_satpam') &&
           resource.data.ketuaShiftId == profile().linkedEmployeeId);
       allow write: if false;

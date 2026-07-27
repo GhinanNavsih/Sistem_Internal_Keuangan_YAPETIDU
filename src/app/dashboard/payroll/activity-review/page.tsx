@@ -55,6 +55,8 @@ import {
   Users,
   CalendarDays,
   ClipboardCheck,
+  ShieldCheck,
+  Eye,
   ThumbsUp,
   ThumbsDown,
   RefreshCw,
@@ -201,6 +203,37 @@ interface ActivityReport {
   customDurationPP?: number;
   startPoint?: string;
   endPoint?: string;
+  // SATPAM specific fields
+  payrollPeriod?: string;
+  sourceOccurrenceId?: string;
+  shiftName?: string;
+  shiftType?: string;
+  postId?: string;
+  postName?: string;
+  photoUrl?: string | null;
+  dutyDate?: string;
+  ketuaShiftId?: string;
+  ketuaShiftName?: string;
+  assignmentKind?: 'primary' | 'extra';
+  coveredEmployeeId?: string | null;
+  overtimeReason?: string | null;
+  absenceKind?: string;
+}
+
+interface SatpamShiftGroup {
+  occurrenceId: string;
+  dutyDate: string;
+  shiftName: string;
+  ketuaShiftName: string;
+  /** Paid post assignments the Kepala SatKer must audit. */
+  assignments: ActivityReport[];
+  /** Rest-day / covered-absence rows, informational only (fee 0). */
+  offDuty: ActivityReport[];
+  pendingCount: number;
+  approvedCount: number;
+  declinedCount: number;
+  photoCount: number;
+  totalFee: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -377,7 +410,15 @@ export default function ActivityReviewPage() {
   const [auditPoints, setAuditPoints] = useState<string[]>([]);
   const [isManualDistanceOverride, setIsManualDistanceOverride] = useState<boolean>(false);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
-  const [selectedExifImage, setSelectedExifImage] = useState<{ url: string; title: string } | null>(null);
+  const [selectedExifImage, setSelectedExifImage] = useState<{ url: string; title: string; activityDate?: string } | null>(null);
+
+  // ── Satpam Shift Audit State ──
+  const [expandedShiftIds, setExpandedShiftIds] = useState<Set<string>>(new Set());
+  // Per-assignment verdicts, keyed by report id. Absent means "approve".
+  const [shiftDecisions, setShiftDecisions] = useState<Record<string, 'approve' | 'decline'>>({});
+  const [shiftDeclineReasons, setShiftDeclineReasons] = useState<Record<string, string>>({});
+  const [shiftReviewNotes, setShiftReviewNotes] = useState<Record<string, string>>({});
+  const [submittingShiftId, setSubmittingShiftId] = useState<string | null>(null);
 
   // Google Maps Location Picker Modal state
   const [showMapSelector, setShowMapSelector] = useState(false);
@@ -949,6 +990,78 @@ export default function ActivityReviewPage() {
     return filtered;
   }, [activities, statusFilter, searchQuery]);
 
+  // ── Satpam shift grouping ──
+  // Satpam reports are audited as a whole shift occurrence rather than as ten
+  // unrelated rows, so the Kepala SatKer can compare each post photo against
+  // the guard the Ketua Shift claims was standing there.
+  const satpamShiftGroups = useMemo(() => {
+    const groups = new Map<string, SatpamShiftGroup>();
+    filteredActivities.forEach((activity) => {
+      if (activity.jobCategory !== 'SATPAM') return;
+      const occurrenceId = activity.sourceOccurrenceId;
+      // Legacy Satpam rows predate shift occurrences; they fall through to the
+      // flat table so historical periods still render.
+      if (!occurrenceId) return;
+
+      let group = groups.get(occurrenceId);
+      if (!group) {
+        group = {
+          occurrenceId,
+          dutyDate: activity.dutyDate || activity.activityDate,
+          shiftName: activity.shiftName || '',
+          ketuaShiftName: activity.ketuaShiftName || '',
+          assignments: [],
+          offDuty: [],
+          pendingCount: 0,
+          approvedCount: 0,
+          declinedCount: 0,
+          photoCount: 0,
+          totalFee: 0,
+        };
+        groups.set(occurrenceId, group);
+      }
+
+      if (activity.shiftType === 'Off-Duty') {
+        group.offDuty.push(activity);
+        return;
+      }
+
+      group.assignments.push(activity);
+      if (activity.status === 'pending') group.pendingCount += 1;
+      if (activity.status === 'approved') {
+        group.approvedCount += 1;
+        group.totalFee += activity.fee || 0;
+      }
+      if (activity.status === 'declined') group.declinedCount += 1;
+      if (activity.photoUrl) group.photoCount += 1;
+    });
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        assignments: group.assignments.sort((a, b) =>
+          (a.postId || a.postName || '').localeCompare(b.postId || b.postName || '', undefined, {
+            numeric: true,
+          }),
+        ),
+      }))
+      .sort((a, b) => b.dutyDate.localeCompare(a.dutyDate) || a.shiftName.localeCompare(b.shiftName));
+  }, [filteredActivities]);
+
+  const groupedSatpamIds = useMemo(() => {
+    const ids = new Set<string>();
+    satpamShiftGroups.forEach((group) => {
+      group.assignments.forEach((item) => ids.add(item.id));
+      group.offDuty.forEach((item) => ids.add(item.id));
+    });
+    return ids;
+  }, [satpamShiftGroups]);
+
+  const ungroupedActivities = useMemo(
+    () => filteredActivities.filter((activity) => !groupedSatpamIds.has(activity.id)),
+    [filteredActivities, groupedSatpamIds],
+  );
+
   // ── Stats ──
   const stats = useMemo(() => {
     const pending = activities.filter(a => a.status === 'pending').length;
@@ -977,7 +1090,9 @@ export default function ActivityReviewPage() {
   }, [activities]);
 
   // ── Selection Handlers ──
-  const pendingInView = filteredActivities.filter(a => a.status === 'pending');
+  // Grouped Satpam shifts are audited through their own endpoint, so they must
+  // never be swept into the bulk pekarya review (which rejects SATPAM anyway).
+  const pendingInView = ungroupedActivities.filter(a => a.status === 'pending');
   const allPendingSelected = pendingInView.length > 0 && pendingInView.every(a => selectedIds.has(a.id));
 
   const toggleSelect = (id: string) => {
@@ -1209,6 +1324,112 @@ export default function ActivityReviewPage() {
     } finally {
       isActionLoadingRef.current = false;
       setActionLoading(false);
+    }
+  };
+
+  // ── Satpam Shift Audit Handlers ──
+  const toggleShiftExpanded = (occurrenceId: string) => {
+    setExpandedShiftIds(prev => {
+      const next = new Set(prev);
+      if (next.has(occurrenceId)) next.delete(occurrenceId);
+      else next.add(occurrenceId);
+      return next;
+    });
+  };
+
+  const setAssignmentVerdict = (reportId: string, verdict: 'approve' | 'decline') => {
+    setShiftDecisions(prev => ({ ...prev, [reportId]: verdict }));
+  };
+
+  const handleSubmitShiftReview = async (group: SatpamShiftGroup) => {
+    if (submittingShiftId || !user) return;
+
+    const pendingAssignments = group.assignments.filter(item => item.status === 'pending');
+    if (pendingAssignments.length === 0) return;
+
+    const note = (shiftReviewNotes[group.occurrenceId] || '').trim();
+    if (note.length < 8) {
+      setErrorMsg('Catatan audit shift wajib diisi minimal 8 karakter.');
+      return;
+    }
+
+    const decisions = pendingAssignments.map(item => {
+      const verdict = shiftDecisions[item.id] || 'approve';
+      return {
+        reportId: item.id,
+        action: verdict,
+        ...(verdict === 'decline'
+          ? { reason: (shiftDeclineReasons[item.id] || '').trim() }
+          : {}),
+      };
+    });
+
+    const missingReason = decisions.find(
+      decision => decision.action === 'decline' && (decision.reason || '').length < 8,
+    );
+    if (missingReason) {
+      const post = pendingAssignments.find(item => item.id === missingReason.reportId);
+      setErrorMsg(
+        `Alasan penolakan untuk ${post?.postId || post?.postName || 'pos'} wajib diisi minimal 8 karakter.`,
+      );
+      return;
+    }
+
+    setSubmittingShiftId(group.occurrenceId);
+    setErrorMsg('');
+    try {
+      await authenticatedJson('/api/satpam/shifts/review', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('satpam_shift_review'),
+          occurrenceId: group.occurrenceId,
+          reason: note,
+          decisions,
+        }),
+      });
+
+      const declinedTotal = decisions.filter(d => d.action === 'decline').length;
+      setSuccessMsg(
+        declinedTotal === 0
+          ? `Shift ${group.shiftName} ${group.dutyDate} disetujui sepenuhnya (${decisions.length} penugasan).`
+          : `Shift ${group.shiftName} ${group.dutyDate} diaudit: ${decisions.length - declinedTotal} disetujui, ${declinedTotal} ditolak.`,
+      );
+
+      setShiftReviewNotes(prev => {
+        const next = { ...prev };
+        delete next[group.occurrenceId];
+        return next;
+      });
+      fetchActivities();
+
+      // Refresh each affected guard's payslip so approved fees land immediately.
+      // Satpam periods come straight off the report: they use a calendar-month
+      // boundary, not the pekarya day-25 cutoff, so deriving the period here
+      // would sync the wrong month for duty dates after the 25th.
+      try {
+        const uniqueKeys = new Set<string>();
+        pendingAssignments.forEach(item => {
+          const dutyDate = item.dutyDate || item.activityDate || '';
+          const itemPeriod =
+            item.payrollPeriod || (dutyDate ? pekaryaPayrollPeriodForDate(dutyDate) : '');
+          if (item.employeeId && itemPeriod) {
+            uniqueKeys.add(`${item.employeeId}::${itemPeriod}`);
+          }
+        });
+        await Promise.all(
+          Array.from(uniqueKeys).map(async key => {
+            const [empId, per] = key.split('::');
+            await syncActivityToPayslip(db, empId, per);
+          }),
+        );
+      } catch (syncErr) {
+        console.error('Error syncing payslips after Satpam shift review:', syncErr);
+      }
+    } catch (err) {
+      console.error('Error reviewing Satpam shift:', err);
+      setErrorMsg(err instanceof Error ? err.message : 'Gagal mengaudit shift Satpam.');
+    } finally {
+      setSubmittingShiftId(null);
     }
   };
 
@@ -1530,7 +1751,270 @@ export default function ActivityReviewPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredActivities.map((activity) => {
+                    {/* ── Satpam shift occurrences: one expandable row per shift ── */}
+                    {satpamShiftGroups.map((group) => {
+                      const isExpanded = expandedShiftIds.has(group.occurrenceId);
+                      const isPending = group.pendingCount > 0;
+                      const isSubmitting = submittingShiftId === group.occurrenceId;
+                      const noteValue = shiftReviewNotes[group.occurrenceId] || '';
+                      const missingPhotos = group.assignments.length - group.photoCount;
+
+                      return (
+                        <React.Fragment key={group.occurrenceId}>
+                          <TableRow
+                            onClick={() => toggleShiftExpanded(group.occurrenceId)}
+                            className={`border-slate-100 cursor-pointer transition-colors ${
+                              isExpanded ? 'bg-indigo-50/50' : 'hover:bg-slate-50/60'
+                            }`}
+                          >
+                            <TableCell className="pl-4">
+                              <ChevronRight
+                                className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                              />
+                            </TableCell>
+                            <TableCell className="font-bold text-slate-800 text-sm py-3.5">
+                              <div className="flex items-center gap-2">
+                                <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                                <span>Shift {group.shiftName || '—'}</span>
+                              </div>
+                              <span className="block text-[10px] font-semibold text-slate-400 mt-0.5">
+                                Ketua: {group.ketuaShiftName || '—'}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-sm text-slate-700 font-medium">
+                              <span className="font-semibold">
+                                {group.assignments.length} penugasan pos
+                              </span>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[9px] px-1.5 py-0 h-4 font-bold ${
+                                    missingPhotos === 0
+                                      ? 'border-emerald-200 text-emerald-700 bg-emerald-50'
+                                      : 'border-amber-200 text-amber-700 bg-amber-50'
+                                  }`}
+                                >
+                                  {group.photoCount}/{group.assignments.length} berfoto
+                                </Badge>
+                                {group.offDuty.length > 0 && (
+                                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-slate-200 text-slate-500 font-medium">
+                                    {group.offDuty.length} libur
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-sm text-slate-600 font-medium">
+                              {group.dutyDate}
+                            </TableCell>
+                            <TableCell className="text-sm text-slate-500 font-medium">—</TableCell>
+                            <TableCell>
+                              {isPending ? (
+                                <Badge className="bg-amber-100 text-amber-800 border-none font-bold text-[10px]">
+                                  {group.pendingCount} Menunggu Audit
+                                </Badge>
+                              ) : group.declinedCount > 0 ? (
+                                <Badge className="bg-rose-100 text-rose-800 border-none font-bold text-[10px]">
+                                  {group.approvedCount} Disetujui · {group.declinedCount} Ditolak
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-emerald-100 text-emerald-800 border-none font-bold text-[10px]">
+                                  Disetujui
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="font-bold text-slate-800 text-sm">
+                              {fmtRp(group.totalFee)}
+                            </TableCell>
+                            <TableCell className="text-sm text-slate-400">—</TableCell>
+                            <TableCell className="text-right pr-6">
+                              <span className="text-[11px] font-bold text-indigo-600">
+                                {isExpanded ? 'Tutup' : 'Audit Shift'}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+
+                          {isExpanded && (
+                            <TableRow className="border-slate-100 hover:bg-transparent">
+                              <TableCell colSpan={9} className="bg-slate-50/70 p-4 sm:p-5">
+                                <div className="space-y-3">
+                                  <div className="flex items-center gap-2 text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                                    <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                                    <span>Audit Bukti Foto Per Pos</span>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                                    {group.assignments.map((item) => {
+                                      const verdict = shiftDecisions[item.id] || 'approve';
+                                      const rowPending = item.status === 'pending';
+                                      return (
+                                        <div
+                                          key={item.id}
+                                          className={`p-3 rounded-2xl border bg-white space-y-2.5 ${
+                                            rowPending && verdict === 'decline'
+                                              ? 'border-rose-200 ring-1 ring-rose-100'
+                                              : 'border-slate-200'
+                                          }`}
+                                        >
+                                          <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                                {item.postId || item.postName || 'Pos'}
+                                                {item.assignmentKind === 'extra' && ' · Lembur Sendiri'}
+                                              </p>
+                                              <p className="text-sm font-extrabold text-slate-900 truncate">
+                                                {item.employeeName}
+                                              </p>
+                                              <p className="text-[10px] font-semibold text-slate-500 mt-0.5">
+                                                {item.shiftType} · {fmtRp(item.fee || 0)}
+                                              </p>
+                                            </div>
+                                            {!rowPending && (
+                                              <Badge
+                                                className={`border-none font-bold text-[9px] shrink-0 ${
+                                                  item.status === 'approved'
+                                                    ? 'bg-emerald-100 text-emerald-800'
+                                                    : 'bg-rose-100 text-rose-800'
+                                                }`}
+                                              >
+                                                {item.status === 'approved' ? 'Disetujui' : 'Ditolak'}
+                                              </Badge>
+                                            )}
+                                          </div>
+
+                                          {item.overtimeReason && (
+                                            <p className="text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-relaxed">
+                                              Lembur: {item.overtimeReason}
+                                            </p>
+                                          )}
+
+                                          {item.photoUrl ? (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setSelectedExifImage({
+                                                  url: item.photoUrl!,
+                                                  title: `${item.postId || item.postName} — ${item.employeeName}`,
+                                                  activityDate: item.dutyDate || item.activityDate,
+                                                })
+                                              }
+                                              className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[11px] flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                                            >
+                                              <Eye className="w-3.5 h-3.5" /> Lihat &amp; Audit Metadata Foto
+                                            </button>
+                                          ) : (
+                                            <div className="w-full px-3 py-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl font-bold text-[11px] flex items-center justify-center gap-1.5">
+                                              <AlertTriangle className="w-3.5 h-3.5" /> Tanpa Bukti Foto
+                                            </div>
+                                          )}
+
+                                          {rowPending && (
+                                            <div className="space-y-2 pt-0.5">
+                                              <div className="grid grid-cols-2 gap-1.5">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setAssignmentVerdict(item.id, 'approve')}
+                                                  className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                                                    verdict === 'approve'
+                                                      ? 'bg-emerald-600 text-white border-emerald-600'
+                                                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                                  }`}
+                                                >
+                                                  Setujui
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setAssignmentVerdict(item.id, 'decline')}
+                                                  className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                                                    verdict === 'decline'
+                                                      ? 'bg-rose-600 text-white border-rose-600'
+                                                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                                  }`}
+                                                >
+                                                  Tolak
+                                                </button>
+                                              </div>
+                                              {verdict === 'decline' && (
+                                                <Input
+                                                  value={shiftDeclineReasons[item.id] || ''}
+                                                  onChange={(e) =>
+                                                    setShiftDeclineReasons(prev => ({
+                                                      ...prev,
+                                                      [item.id]: e.target.value,
+                                                    }))
+                                                  }
+                                                  placeholder="Alasan penolakan (min. 8 karakter)"
+                                                  className="h-8 rounded-lg text-[11px] bg-rose-50/60 border-rose-200"
+                                                />
+                                              )}
+                                            </div>
+                                          )}
+
+                                          {!rowPending && item.declineReason && (
+                                            <p className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5">
+                                              {item.declineReason}
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+
+                                  {group.offDuty.length > 0 && (
+                                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                        Libur / Digantikan:
+                                      </span>
+                                      {group.offDuty.map(item => (
+                                        <Badge
+                                          key={item.id}
+                                          variant="outline"
+                                          className="text-[9px] px-1.5 py-0 h-4 border-slate-200 text-slate-500 font-medium"
+                                        >
+                                          {item.employeeName}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {isPending && (
+                                    <div className="pt-1 space-y-2 border-t border-slate-200">
+                                      <Input
+                                        value={noteValue}
+                                        onChange={(e) =>
+                                          setShiftReviewNotes(prev => ({
+                                            ...prev,
+                                            [group.occurrenceId]: e.target.value,
+                                          }))
+                                        }
+                                        placeholder="Catatan audit shift (min. 8 karakter) — tercatat di log audit finansial"
+                                        className="h-9 rounded-xl text-xs bg-white border-slate-200 mt-2"
+                                      />
+                                      <Button
+                                        type="button"
+                                        disabled={isSubmitting}
+                                        onClick={() => handleSubmitShiftReview(group)}
+                                        className="w-full sm:w-auto rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-5 gap-1.5 cursor-pointer"
+                                      >
+                                        {isSubmitting ? (
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        ) : (
+                                          <ClipboardCheck className="w-3.5 h-3.5" />
+                                        )}
+                                        <span>
+                                          Simpan Audit ({group.pendingCount} penugasan)
+                                        </span>
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+
+                    {ungroupedActivities.map((activity) => {
                       const sc = getStatusConfig(activity.status);
                       const isSelected = selectedIds.has(activity.id);
 
@@ -2521,7 +3005,7 @@ export default function ActivityReviewPage() {
         <ImageExifViewer
           imageUrl={selectedExifImage.url}
           title={selectedExifImage.title}
-          activityDate={auditActivity?.activityDate}
+          activityDate={selectedExifImage.activityDate ?? auditActivity?.activityDate}
           isOpen={Boolean(selectedExifImage)}
           onClose={() => setSelectedExifImage(null)}
         />
