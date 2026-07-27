@@ -9,6 +9,7 @@ import {
   guardDutyIndexId,
   isTransferEligibleStatus,
   payrollPeriodForDutyDate,
+  resolveSatpamAssignmentPayType,
   SATPAM_RATES,
   shiftOccurrenceId,
 } from './domain';
@@ -120,6 +121,39 @@ test('Satpam duty dates use the same payroll periods as the other Pekarya', () =
   ]) {
     assert.equal(payrollPeriodForDutyDate(date), pekaryaPayrollPeriodForDate(date));
   }
+});
+
+test('a Ketua Shift cannot pick an arbitrary pay rate for a regular post', () => {
+  // Regression: the API used to trust any client-supplied shiftType that was
+  // a key of SATPAM_RATES, letting a Ketua Shift mark an ordinary Tuesday
+  // post as 'Jumat & Libur' or 'Lembur Cover' and get paid up to 4x the
+  // correct rate. Only 'Lembur Cover' (with a documented substitution) may
+  // ever override the server-computed regular rate.
+  assert.equal(resolveSatpamAssignmentPayType(undefined, false, 'Harian'), 'Harian');
+  assert.equal(
+    resolveSatpamAssignmentPayType('Jumat & Libur', false, 'Harian'),
+    'Harian',
+    'a claimed Friday/holiday rate on a regular day must be ignored',
+  );
+  assert.equal(
+    resolveSatpamAssignmentPayType('Lembur Sendiri', false, 'Harian'),
+    'Harian',
+    'Lembur Sendiri is only valid for the off-duty extra assignment, never a primary post',
+  );
+  assert.equal(
+    resolveSatpamAssignmentPayType('Off-Duty', false, 'Harian'),
+    'Harian',
+    'Off-Duty must never be assignable to a filled post',
+  );
+  assert.equal(
+    resolveSatpamAssignmentPayType('Lembur Cover', false, 'Harian'),
+    'Lembur Cover',
+    'an in-roster guard may still be marked as covering, with proof required upstream',
+  );
+  // An external (non-roster) guard is always paid the cover rate, regardless
+  // of what shiftType the client sends — their presence alone proves cover.
+  assert.equal(resolveSatpamAssignmentPayType('Harian', true, 'Harian'), 'Lembur Cover');
+  assert.equal(resolveSatpamAssignmentPayType(undefined, true, 'Jumat & Libur'), 'Lembur Cover');
 });
 
 test('guard post photo URLs must live in the submitting Ketua Shift folder', () => {

@@ -10,6 +10,7 @@ import {
   getShiftIsoBounds,
   guardDutyIndexId,
   payrollPeriodForDutyDate,
+  resolveSatpamAssignmentPayType,
   SATPAM_HOLIDAY_CALENDAR_VERSION,
   SATPAM_POSTS,
   SATPAM_RATES,
@@ -79,9 +80,12 @@ function parseInput(raw: unknown, ketuaShiftId: string): SubmitSatpamShiftInput 
     return {
       postId: value.postId,
       employeeId: value.employeeId,
-      ...(typeof value.shiftType === 'string' && value.shiftType in SATPAM_RATES
-        ? { shiftType: value.shiftType as any }
-        : {}),
+      // 'Lembur Cover' is the only pay type a client may assert for a primary
+      // post. Harian/Jumat & Libur are derived server-side from the real
+      // dutyDate + holiday calendar, and Lembur Sendiri/Off-Duty are not
+      // meaningful on a primary assignment — accepting any of those from the
+      // client would let a Ketua Shift pick their own pay rate.
+      ...(value.shiftType === 'Lembur Cover' ? { shiftType: 'Lembur Cover' as const } : {}),
       ...(typeof value.coveredEmployeeId === 'string'
         ? { coveredEmployeeId: value.coveredEmployeeId }
         : {}),
@@ -396,11 +400,12 @@ export async function POST(request: NextRequest) {
         photoUrl: string | null;
       }> = input.assignments.map((assignment) => {
         const isCover = !roster.includes(assignment.employeeId);
-        const chosenType = assignment.shiftType && assignment.shiftType in SATPAM_RATES
-          ? assignment.shiftType
-          : (isCover ? ('Lembur Cover' as const) : regularPayType);
-
-        const isCoverType = isCover || chosenType === 'Lembur Cover';
+        const chosenType = resolveSatpamAssignmentPayType(
+          assignment.shiftType,
+          isCover,
+          regularPayType,
+        );
+        const isCoverType = chosenType === 'Lembur Cover';
         return {
           assignmentKey: assignment.postId,
           postId: assignment.postId,

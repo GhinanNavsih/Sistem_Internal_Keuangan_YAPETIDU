@@ -202,6 +202,28 @@ export function getRegularSatpamPayType(
     : 'Harian';
 }
 
+/**
+ * Server-side authority for what a single post assignment actually gets paid.
+ * A Ketua Shift may only toggle between the guard's ordinary duty rate
+ * (`regularPayType`, itself derived from the real dutyDate + holiday calendar
+ * by `getRegularSatpamPayType`) and 'Lembur Cover' when a documented
+ * substitution is attached — never an arbitrary rate. `requestedShiftType`
+ * comes straight from client input and must be treated as untrusted: any
+ * value other than the literal string 'Lembur Cover' is ignored.
+ *
+ * `isExternalGuard` (the assignee is not one of this team's 10 roster
+ * members) always forces 'Lembur Cover' regardless of what was requested,
+ * since an external guard's presence is itself proof of a substitution.
+ */
+export function resolveSatpamAssignmentPayType(
+  requestedShiftType: string | undefined,
+  isExternalGuard: boolean,
+  regularPayType: 'Harian' | 'Jumat & Libur',
+): SatpamPayType {
+  const isCoverAssignment = isExternalGuard || requestedShiftType === 'Lembur Cover';
+  return isCoverAssignment ? 'Lembur Cover' : regularPayType;
+}
+
 export function getShiftIsoBounds(
   dutyDate: string,
   shiftName: SatpamShiftName,

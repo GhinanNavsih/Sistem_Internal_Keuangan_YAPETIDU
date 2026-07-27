@@ -2274,15 +2274,19 @@ function ActivitiesContent() {
       const isExternal = !groupEmployeeIds.includes(employeeId) && employeeId !== '';
       const defaultType = isExternal
         ? 'Lembur Cover'
-        : (prev[postId]?.shiftType || getDefaultShiftTypeForDate(satpamReportDate));
+        : getDefaultShiftTypeForDate(satpamReportDate);
 
       return {
         ...prev,
         [postId]: {
           employeeId,
           shiftType: defaultType,
-          coveredEmployeeId: prev[postId]?.coveredEmployeeId || '',
-          overtimeReason: prev[postId]?.overtimeReason || '',
+          // Always reset cover metadata on a guard swap. Carrying over a
+          // previous guard's 'Lembur Cover' + coveredEmployeeId would let a
+          // regular in-roster guard silently inherit the Rp50.000 cover rate
+          // meant for whoever was assigned to this post before.
+          coveredEmployeeId: '',
+          overtimeReason: '',
           // Keep any photo already taken at this post; a mis-tap on the guard
           // dropdown should not force the Ketua Shift back out to re-shoot it.
           photoUrl: prev[postId]?.photoUrl || '',
@@ -3117,10 +3121,18 @@ function ActivitiesContent() {
                               </Select>
                             </div>
 
-                            {/* Shift / Pay Type Selection */}
+                            {/* Shift / Pay Type Selection.
+                                Only two options are real: the guard's ordinary
+                                duty rate for this date (server-derived from the
+                                holiday calendar — never freely selectable,
+                                since neither Friday/holiday pay nor Lembur
+                                Sendiri can be claimed on an arbitrary day) and
+                                Lembur Cover, which requires naming who is being
+                                covered. Offering more than that would promise a
+                                rate the backend will never actually pay. */}
                             <div className="md:col-span-4">
                               <Select
-                                value={val.shiftType || getDefaultShiftTypeForDate(satpamReportDate)}
+                                value={val.shiftType === 'Lembur Cover' ? 'Lembur Cover' : defaultShiftTypeForRender}
                                 onValueChange={(type: string | null) => {
                                   if (type) handleShiftTypeChange(post.id, type);
                                 }}
@@ -3130,14 +3142,8 @@ function ActivitiesContent() {
                                   <SelectValue placeholder="Pilih Jenis Shift" />
                                 </SelectTrigger>
                                 <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
-                                  <SelectItem value="Harian" className="text-xs sm:text-sm font-bold">
-                                    Harian (Rp12.500)
-                                  </SelectItem>
-                                  <SelectItem value="Jumat & Libur" className="text-xs sm:text-sm font-bold">
-                                    Jumat & Libur (Rp25.000)
-                                  </SelectItem>
-                                  <SelectItem value="Lembur Sendiri" className="text-xs sm:text-sm font-bold">
-                                    Lembur Sendiri (Rp30.000)
+                                  <SelectItem value={defaultShiftTypeForRender} className="text-xs sm:text-sm font-bold">
+                                    {defaultShiftTypeForRender} ({defaultShiftTypeForRender === 'Jumat & Libur' ? 'Rp25.000' : 'Rp12.500'})
                                   </SelectItem>
                                   <SelectItem value="Lembur Cover" className="text-xs sm:text-sm font-bold">
                                     Lembur Cover (Rp50.000)
