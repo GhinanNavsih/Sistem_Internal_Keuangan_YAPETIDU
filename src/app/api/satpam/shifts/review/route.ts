@@ -52,8 +52,8 @@ function parseCommand(raw: unknown): ShiftReviewCommand {
     throw new HttpError(400, 'ID shift tidak valid.');
   }
   const reason = typeof value.reason === 'string' ? value.reason.trim() : '';
-  if (reason.length < 8 || reason.length > 500) {
-    throw new HttpError(400, 'Catatan audit wajib diisi antara 8 dan 500 karakter.');
+  if (reason.length > 500) {
+    throw new HttpError(400, 'Catatan audit maksimal 500 karakter.');
   }
   if (!Array.isArray(value.decisions) || value.decisions.length < 1 || value.decisions.length > 20) {
     throw new HttpError(400, 'Audit shift harus memuat 1 sampai 20 penugasan.');
@@ -69,13 +69,10 @@ function parseCommand(raw: unknown): ShiftReviewCommand {
       throw new HttpError(400, 'Keputusan audit penugasan tidak valid.');
     }
     const itemReason = typeof decision.reason === 'string' ? decision.reason.trim() : '';
-    if (decision.action === 'decline' && itemReason.length < 8) {
-      throw new HttpError(
-        400,
-        'Penugasan yang ditolak wajib menyertakan alasan minimal 8 karakter.',
-      );
+    if (decision.action === 'decline' && itemReason.length > 500) {
+      throw new HttpError(400, 'Alasan penolakan maksimal 500 karakter.');
     }
-    if (itemReason.length > 500) {
+    if (decision.action !== 'decline' && itemReason.length > 500) {
       throw new HttpError(400, 'Alasan penolakan maksimal 500 karakter.');
     }
     return { reportId: decision.reportId, action: decision.action, reason: itemReason };

@@ -1344,10 +1344,6 @@ export default function ActivityReviewPage() {
     setActionLoading(true);
     try {
       const reason = declineReason.trim();
-      if (reason.length < 8) {
-        setErrorMsg('Alasan penolakan wajib minimal 8 karakter.');
-        return;
-      }
       await authenticatedJson('/api/pekarya/activities/review', {
         method: 'POST',
         body: JSON.stringify({
@@ -1502,10 +1498,6 @@ export default function ActivityReviewPage() {
     if (pendingAssignments.length === 0) return;
 
     const note = (shiftReviewNotes[group.occurrenceId] || '').trim();
-    if (note.length < 8) {
-      setErrorMsg('Catatan audit shift wajib diisi minimal 8 karakter.');
-      return;
-    }
 
     const decisions = pendingAssignments.map(item => {
       const verdict = shiftDecisions[item.id] || 'approve';
@@ -1518,16 +1510,7 @@ export default function ActivityReviewPage() {
       };
     });
 
-    const missingReason = decisions.find(
-      decision => decision.action === 'decline' && (decision.reason || '').length < 8,
-    );
-    if (missingReason) {
-      const post = pendingAssignments.find(item => item.id === missingReason.reportId);
-      setErrorMsg(
-        `Alasan penolakan untuk ${post?.postId || post?.postName || 'pos'} wajib diisi minimal 8 karakter.`,
-      );
-      return;
-    }
+
 
     setSubmittingShiftId(group.occurrenceId);
     setErrorMsg('');
@@ -2124,7 +2107,7 @@ export default function ActivityReviewPage() {
                                                       [item.id]: e.target.value,
                                                     }))
                                                   }
-                                                  placeholder="Alasan penolakan (min. 8 karakter)"
+                                                  placeholder="Alasan penolakan (opsional)"
                                                   className="h-8 rounded-lg text-[11px] bg-rose-50/60 border-rose-200"
                                                 />
                                               )}
@@ -2168,7 +2151,7 @@ export default function ActivityReviewPage() {
                                               [group.occurrenceId]: e.target.value,
                                             }))
                                           }
-                                          placeholder="Catatan audit shift (min. 8 karakter) — tercatat di log audit finansial"
+                                          placeholder="Catatan audit shift (opsional) — tercatat di log audit finansial"
                                           className="h-10 rounded-xl text-xs bg-white border-slate-200 w-full"
                                         />
                                       </div>
