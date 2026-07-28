@@ -1072,6 +1072,7 @@ export default function VakasiLoyalisPage() {
             {/* List of Workers */}
             <div className="space-y-4 pt-2">
               <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">Daftar Penerima Vakasi</h4>
+              {/* Arrow key navigation handler for the table cells */}
               <div className="border border-slate-100 rounded-[20px] bg-slate-50/50 p-4 space-y-3">
                 {workerRows.map((row, idx) => (
                   <div key={idx} className="flex flex-col md:flex-row md:items-center gap-3">
@@ -1107,6 +1108,21 @@ export default function VakasiLoyalisPage() {
                               return updated;
                             });
                           }, 200);
+                        }}
+                        onKeyDown={(e) => {
+                          const cols = ['search-input', 'pay-input'];
+                          const col = 0;
+                          let targetRow = idx;
+                          let targetCol = col;
+                          if (e.key === 'ArrowUp') { targetRow = idx - 1; }
+                          else if (e.key === 'ArrowDown') { targetRow = idx + 1; }
+                          else if (e.key === 'ArrowRight') { targetCol = 1; }
+                          else if (e.key === 'ArrowLeft') { targetCol = 0; }
+                          else return;
+                          if (targetRow < 0 || targetRow >= workerRows.length) return;
+                          const targetId = `${cols[targetCol]}-${targetRow}`;
+                          const el = document.getElementById(targetId);
+                          if (el) { e.preventDefault(); el.focus(); }
                         }}
                         className="rounded-xl border-slate-200 font-semibold text-slate-800 text-xs h-9 bg-white"
                       />
@@ -1156,6 +1172,7 @@ export default function VakasiLoyalisPage() {
                     </div>
                     <div className="w-full md:w-48">
                       <Input
+                        id={`pay-input-${idx}`}
                         type="text"
                         inputMode="numeric"
                         pattern="[0-9]*"
@@ -1176,6 +1193,21 @@ export default function VakasiLoyalisPage() {
                             isEndOfMonth,
                             selectedDept
                           );
+                        }}
+                        onKeyDown={(e) => {
+                          const cols = ['search-input', 'pay-input'];
+                          const col = 1;
+                          let targetRow = idx;
+                          let targetCol = col;
+                          if (e.key === 'ArrowUp') { targetRow = idx - 1; }
+                          else if (e.key === 'ArrowDown') { targetRow = idx + 1; }
+                          else if (e.key === 'ArrowLeft') { targetCol = 0; }
+                          else if (e.key === 'ArrowRight') { targetCol = 1; }
+                          else return;
+                          if (targetRow < 0 || targetRow >= workerRows.length) return;
+                          const targetId = `${cols[targetCol]}-${targetRow}`;
+                          const el = document.getElementById(targetId);
+                          if (el) { e.preventDefault(); el.focus(); }
                         }}
                         className="rounded-xl border-slate-200 font-bold text-slate-800 text-xs h-9 bg-white text-right"
                       />

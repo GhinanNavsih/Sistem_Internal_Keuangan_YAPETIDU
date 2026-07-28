@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -55,12 +55,22 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const UI_IMPERSONATION_KEY = 'bak_ui_impersonated_user';
 const CUSTOM_TOKEN_SESSION_KEY = 'bak_custom_token_session';
 
+// Thrown when the user's profile document could not be determined due to a
+// transient issue (network/timeout/offline), as opposed to a confirmed absence.
+// Callers must NOT treat this the same as "no profile" (e.g. must not sign the user out).
+class ProfileFetchError extends Error {
+  constructor() {
+    super('PROFILE_FETCH_FAILED');
+    this.name = 'ProfileFetchError';
+  }
+}
+
 async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const docRef = doc(db, 'users', uid);
 
   try {
     const serverPromise = getDocFromServer(docRef);
-    
+
     // Race server getDoc against a 3-second timeout to prevent infinite loading state
     const timeoutPromise = new Promise<null>((resolve) =>
       setTimeout(() => resolve(null), 3000)
@@ -112,8 +122,10 @@ async function getUserProfile(uid: string): Promise<UserProfile | null> {
     } catch (cacheErr) {
       console.error("Cache fallback after error failed:", cacheErr);
     }
+    // Couldn't confirm the profile either way (e.g. offline, flaky mobile network).
+    // Signal this distinctly so the caller doesn't force a sign-out on a transient blip.
+    throw new ProfileFetchError();
   }
-  return null;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -122,6 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [impersonatedUiProfile, setImpersonatedUiProfile] = useState<UserProfile | null>(null);
   const [impersonationSessionInfo, setImpersonationSessionInfo] = useState<ImpersonationSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const authCallIdRef = useRef(0);
 
   // Restore stored impersonation state on mount
   useEffect(() => {
@@ -141,22 +154,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Firebase can fire this callback more than once in quick succession in
+      // production (e.g. token refresh, multi-tab persistence negotiation).
+      // Track the latest call so a slower, out-of-order resolution can't
+      // clobber state a newer call already settled.
+      const callId = ++authCallIdRef.current;
       if (firebaseUser) {
         try {
           const prof = await getUserProfile(firebaseUser.uid);
+          if (callId !== authCallIdRef.current) return;
           if (prof && prof.disabled !== true) {
             setUser(firebaseUser);
             setProfile(prof);
           } else {
+            // Profile confirmed missing or disabled — this is a real sign-out case.
             await signOut(auth);
             setUser(null);
             setProfile(null);
           }
         } catch (err) {
+          if (callId !== authCallIdRef.current) return;
+          // Couldn't confirm the profile due to a transient error (network/timeout).
+          // Don't force a sign-out on a blip — keep whatever state we already had.
           console.error("Error loading user profile on auth state change:", err);
-          await signOut(auth);
-          setUser(null);
-          setProfile(null);
         }
       } else {
         setUser(null);
@@ -164,7 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setImpersonatedUiProfile(null);
         sessionStorage.removeItem(UI_IMPERSONATION_KEY);
       }
-      setLoading(false);
+      if (callId === authCallIdRef.current) setLoading(false);
     });
     return () => unsubscribe();
   }, []);
