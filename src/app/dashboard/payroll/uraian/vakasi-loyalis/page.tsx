@@ -259,6 +259,7 @@ export default function VakasiLoyalisPage() {
       const result = await uploadReportFile(fileToUpload, periodToken, eventSeg);
       setReportFileUrl(result.url);
       setMessage({ type: 'success', text: `File "${result.name}" berhasil diunggah.` });
+      triggerAutosave(workerRows, eventName, selectedEventIdRef.current, isEndOfMonth, selectedDept, result.url, result.name);
     } catch (err) {
       console.error('Error uploading report file:', err);
       setMessage({ type: 'error', text: 'Gagal mengunggah file laporan.' });
@@ -376,6 +377,7 @@ export default function VakasiLoyalisPage() {
 
       await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
       setMessage({ type: 'success', text: `Kegiatan "${eventName}" berhasil disubmit untuk review.` });
+      setAutosaveMessage('');
 
       setSelectedEventId(documentId);
       setCurrentEventStatus('pending_review');
@@ -618,6 +620,7 @@ export default function VakasiLoyalisPage() {
       }
 
       setMessage({ type: 'success', text: `Event "${eventName}" berhasil disimpan.` });
+      setAutosaveMessage('');
       setSelectedEventId(documentId);
       setCurrentEventStatus(newStatus);
       setCurrentEventSubmittedBy(finalSubmittedBy);
@@ -652,14 +655,16 @@ export default function VakasiLoyalisPage() {
     currentEventName = eventName,
     activeId = selectedEventIdRef.current,
     currentIsEndOfMonth = isEndOfMonth,
-    currentDept = selectedDept
+    currentDept = selectedDept,
+    currentReportFileUrl = reportFileUrl,
+    currentReportFileName = reportFileName
   ) => {
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
     }
     if (isSavingRef.current) return;
     autosaveTimerRef.current = setTimeout(() => {
-      handleAutosave(currentRows, currentEventName, activeId, currentIsEndOfMonth, currentDept);
+      handleAutosave(currentRows, currentEventName, activeId, currentIsEndOfMonth, currentDept, currentReportFileUrl, currentReportFileName);
     }, 1000);
   };
 
@@ -668,17 +673,31 @@ export default function VakasiLoyalisPage() {
     currentEventName = eventName,
     activeId = selectedEventIdRef.current,
     currentIsEndOfMonth = isEndOfMonth,
-    currentDept = selectedDept
+    currentDept = selectedDept,
+    currentReportFileUrl = reportFileUrl,
+    currentReportFileName = reportFileName
   ) => {
     if (isSavingRef.current) return;
     if (!currentEventName.trim()) return;
     const activeWorkers = currentRows.filter(w => w.employeeId);
     const ids = activeWorkers.map(w => w.employeeId);
-    if (new Set(ids).size !== ids.length) return;
+    if (new Set(ids).size !== ids.length) {
+      setAutosaveMessage('Belum tersimpan otomatis: ada pegawai yang ganda dalam daftar.');
+      return;
+    }
 
+    setAutosaveMessage('Menyimpan otomatis...');
     try {
       const eventSeg = sanitizeEventId(currentEventName);
+      const isNewDocument = !activeId;
       const documentId = activeId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
+
+      // Claim the new document id synchronously (before the write resolves) so a
+      // second autosave firing while this one is still in flight reuses the same
+      // id instead of minting another random one for the same in-progress event.
+      if (isNewDocument) {
+        setSelectedEventId(documentId);
+      }
 
       let totalPayout = 0;
       const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
@@ -709,21 +728,23 @@ export default function VakasiLoyalisPage() {
         submittedByName: finalSubmittedByName,
         submittedByEmail: finalSubmittedByEmail,
       };
-      if (reportFileUrl) {
-        payload.reportFileUrl = reportFileUrl;
-        payload.reportFileName = reportFileName;
+      if (currentReportFileUrl) {
+        payload.reportFileUrl = currentReportFileUrl;
+        payload.reportFileName = currentReportFileName;
       }
 
       await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
-      if (!activeId) {
-        setSelectedEventId(documentId);
+      if (isNewDocument) {
         setCurrentEventStatus(isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'));
         setCurrentEventSubmittedBy(finalSubmittedBy);
         setCurrentEventSubmittedByName(finalSubmittedByName);
         setCurrentEventSubmittedByEmail(finalSubmittedByEmail);
       }
+      const now = new Date();
+      setAutosaveMessage(`Tersimpan otomatis pukul ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`);
     } catch (err) {
       console.error('Autosave error:', err);
+      setAutosaveMessage('Gagal menyimpan otomatis. Periksa koneksi Anda dan klik "Simpan Event".');
     }
   };
 
@@ -880,6 +901,7 @@ export default function VakasiLoyalisPage() {
                     setCurrentEventSubmittedBy(null);
                     setCurrentEventSubmittedByName(null);
                     setCurrentEventSubmittedByEmail(null);
+                    setAutosaveMessage('');
                   }}
                   size="sm"
                   className="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold flex items-center gap-1.5"
@@ -915,6 +937,7 @@ export default function VakasiLoyalisPage() {
                         setCurrentEventSubmittedByEmail(evt.submittedByEmail || null);
                         setReportFileUrl(evt.reportFileUrl || null);
                         setReportFileName(evt.reportFileName || null);
+                        setAutosaveMessage('');
 
                         const rows = Object.entries(evt.eventWorkers || {}).map(([id, w]: [string, any]) => ({
                           employeeId: id,
@@ -947,9 +970,16 @@ export default function VakasiLoyalisPage() {
         <div className="xl:col-span-8">
           <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
             <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-800 text-sm">
-                {selectedEventId ? 'Ubah Rincian Kegiatan' : 'Buat Rincian Kegiatan Baru'}
-              </h3>
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">
+                  {selectedEventId ? 'Ubah Rincian Kegiatan' : 'Buat Rincian Kegiatan Baru'}
+                </h3>
+                {!isReadOnly && autosaveMessage && (
+                  <p className={`text-[10px] font-medium mt-0.5 ${autosaveMessage.startsWith('Gagal') || autosaveMessage.startsWith('Belum') ? 'text-rose-500' : 'text-slate-400'}`}>
+                    {autosaveMessage}
+                  </p>
+                )}
+              </div>
               {selectedEventId && (
                 <div className="flex items-center gap-2">
                   {getStatusBadge(currentEventStatus || undefined)}
@@ -1084,10 +1114,15 @@ export default function VakasiLoyalisPage() {
                         <div className="absolute left-0 right-0 top-10 max-h-40 overflow-y-auto bg-white border border-slate-100 rounded-xl shadow-2xl z-50 divide-y divide-slate-50">
                           {(() => {
                             const search = (row.searchText || '').toLowerCase();
-                            const filtered = loyalisEmployees.filter(emp =>
-                              emp.name.toLowerCase().includes(search)
+                            const takenIds = new Set(
+                              workerRows
+                                .filter((r, rIdx) => rIdx !== idx && r.employeeId)
+                                .map(r => r.employeeId)
                             );
-                            if (filtered.length === 0) return <div className="p-3 text-[10px] text-slate-400">Pegawai tidak ditemukan</div>;
+                            const filtered = loyalisEmployees.filter(emp =>
+                              emp.name.toLowerCase().includes(search) && !takenIds.has(emp.id)
+                            );
+                            if (filtered.length === 0) return <div className="p-3 text-[10px] text-slate-400">Pegawai tidak ditemukan atau sudah ditambahkan pada baris lain</div>;
                             return filtered.map(emp => (
                               <button
                                 key={emp.id}
@@ -1194,7 +1229,16 @@ export default function VakasiLoyalisPage() {
                         <div className="flex gap-1.5">
                           <Button size="icon" variant="ghost" onClick={() => setLightboxUrl(reportFileUrl)} className="h-7 w-7 rounded-lg text-indigo-600"><Eye className="w-4 h-4" /></Button>
                           {!isReadOnly && (
-                            <Button size="icon" variant="ghost" onClick={() => { setReportFileUrl(null); setReportFileName(null); }} className="h-7 w-7 rounded-lg text-red-500"><Trash2 className="w-4 h-4" /></Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => {
+                                setReportFileUrl(null);
+                                setReportFileName(null);
+                                triggerAutosave(workerRows, eventName, selectedEventIdRef.current, isEndOfMonth, selectedDept, null, null);
+                              }}
+                              className="h-7 w-7 rounded-lg text-red-500"
+                            ><Trash2 className="w-4 h-4" /></Button>
                           )}
                         </div>
                       </div>
