@@ -2492,14 +2492,7 @@ function ActivitiesContent() {
       setMessage({ type: 'error', text: 'Nama pos tambahan harus diisi jika petugas tambahan dipilih.' });
       return;
     }
-    if (
-      isExtraPostVisible &&
-      extraEmployeeId &&
-      extraOvertimeReason.trim().length < 8
-    ) {
-      setMessage({ type: 'error', text: 'Alasan Lembur Sendiri wajib minimal 8 karakter.' });
-      return;
-    }
+
 
     // Intercept with confirmation modal if activeShift is Malam
     if (activeShift === 'Malam') {
@@ -3352,15 +3345,7 @@ function ActivitiesContent() {
                               </Button>
                             )}
                           </div>
-                          <div className="md:col-span-12">
-                            <Input
-                              value={extraOvertimeReason}
-                              onChange={event => setExtraOvertimeReason(event.target.value)}
-                              disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
-                              placeholder="Alasan/otorisasi Lembur Sendiri (minimal 8 karakter)"
-                              className="h-10 rounded-lg bg-indigo-50/50 border-indigo-200"
-                            />
-                          </div>
+
                           <div className="md:col-span-12">
                             <input
                               type="file"

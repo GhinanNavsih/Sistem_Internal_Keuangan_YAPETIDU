@@ -289,13 +289,11 @@ export async function POST(request: NextRequest) {
           !expectedPostIds.has(extra.postId) ||
           !roster.includes(extra.employeeId) ||
           assignedEmployeeIds.includes(extra.employeeId) ||
-          coveredIds.includes(extra.employeeId) ||
-          !extra.overtimeReason ||
-          extra.overtimeReason.trim().length < 8
+          coveredIds.includes(extra.employeeId)
         ) {
           throw new HttpError(
             400,
-            'Lembur Sendiri hanya untuk anggota regu yang sedang libur dengan alasan minimal 8 karakter.',
+            'Lembur Sendiri hanya untuk anggota regu yang sedang libur.',
           );
         }
       }
@@ -423,7 +421,7 @@ export async function POST(request: NextRequest) {
           employeeId: extra.employeeId,
           payType: 'Lembur Sendiri',
           coveredEmployeeId: null,
-          overtimeReason: extra.overtimeReason.trim(),
+          overtimeReason: extra.overtimeReason?.trim() || null,
           photoUrl: extra.photoUrl || null,
         });
       }

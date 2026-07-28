@@ -2065,11 +2065,6 @@ export default function ActivityReviewPage() {
                                               )}
                                             </div>
 
-                                            {item.overtimeReason && (
-                                              <p className="text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 leading-relaxed">
-                                                Lembur: {item.overtimeReason}
-                                              </p>
-                                            )}
 
                                             {/* Direct Inline Photo Preview with EXIF Pills */}
                                             {item.photoUrl ? (
