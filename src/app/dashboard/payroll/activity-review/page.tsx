@@ -67,6 +67,7 @@ import {
   Lock,
   Edit2,
   MapPin,
+  Maximize2,
 } from 'lucide-react';
 
 const loadGoogleMapsScript = (callback: () => void) => {
@@ -1341,6 +1342,18 @@ export default function ActivityReviewPage() {
     setShiftDecisions(prev => ({ ...prev, [reportId]: verdict }));
   };
 
+  const handleBulkSetShiftVerdict = (group: SatpamShiftGroup, verdict: 'approve' | 'decline') => {
+    setShiftDecisions(prev => {
+      const updated = { ...prev };
+      group.assignments.forEach(item => {
+        if (item.status === 'pending') {
+          updated[item.id] = verdict;
+        }
+      });
+      return updated;
+    });
+  };
+
   const handleSubmitShiftReview = async (group: SatpamShiftGroup) => {
     if (submittingShiftId || !user) return;
 
@@ -1836,101 +1849,156 @@ export default function ActivityReviewPage() {
                           {isExpanded && (
                             <TableRow className="border-slate-100 hover:bg-transparent">
                               <TableCell colSpan={9} className="bg-slate-50/70 p-4 sm:p-5">
-                                <div className="space-y-3">
-                                  <div className="flex items-center gap-2 text-[11px] font-black text-slate-500 uppercase tracking-wider">
-                                    <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                                    <span>Audit Bukti Foto Per Pos</span>
+                                <div className="space-y-3.5">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-1 border-b border-slate-200/80">
+                                    <div className="flex items-center gap-2 text-[11px] font-black text-slate-700 uppercase tracking-wider">
+                                      <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                                      <span>Audit Bukti Foto Per Pos ({group.assignments.length} Pos)</span>
+                                    </div>
+
+                                    {/* Bulk Action Buttons */}
+                                    {group.assignments.some(item => item.status === 'pending') && (
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleBulkSetShiftVerdict(group, 'approve')}
+                                          className="px-3 py-1.5 rounded-xl text-[10px] font-extrabold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                        >
+                                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Setujui Semua Pos
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleBulkSetShiftVerdict(group, 'decline')}
+                                          className="px-3 py-1.5 rounded-xl text-[10px] font-extrabold bg-rose-100 hover:bg-rose-200 text-rose-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                        >
+                                          <XCircle className="w-3.5 h-3.5 text-rose-600" /> Tolak Semua Pos
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
 
-                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                     {group.assignments.map((item) => {
                                       const verdict = shiftDecisions[item.id] || 'approve';
                                       const rowPending = item.status === 'pending';
                                       return (
                                         <div
                                           key={item.id}
-                                          className={`p-3 rounded-2xl border bg-white space-y-2.5 ${
+                                          className={`p-3 rounded-2xl border bg-white space-y-2.5 flex flex-col justify-between transition-all ${
                                             rowPending && verdict === 'decline'
-                                              ? 'border-rose-200 ring-1 ring-rose-100'
-                                              : 'border-slate-200'
+                                              ? 'border-rose-300 ring-2 ring-rose-100'
+                                              : rowPending && verdict === 'approve'
+                                                ? 'border-emerald-300 ring-1 ring-emerald-100/60'
+                                                : 'border-slate-200'
                                           }`}
                                         >
-                                          <div className="flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
-                                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                                                {item.postId || item.postName || 'Pos'}
-                                                {item.assignmentKind === 'extra' && ' · Lembur Sendiri'}
-                                              </p>
-                                              <p className="text-sm font-extrabold text-slate-900 truncate">
-                                                {item.employeeName}
-                                              </p>
-                                              <p className="text-[10px] font-semibold text-slate-500 mt-0.5">
-                                                {item.shiftType} · {fmtRp(item.fee || 0)}
-                                              </p>
+                                          <div className="space-y-2">
+                                            <div className="flex items-start justify-between gap-2">
+                                              <div className="min-w-0">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block truncate">
+                                                  {item.postId || item.postName || 'Pos'}
+                                                  {item.assignmentKind === 'extra' && ' · Lembur Sendiri'}
+                                                </span>
+                                                <h5 className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
+                                                  {item.employeeName}
+                                                </h5>
+                                                <p className="text-[10px] font-bold text-slate-500 mt-0.5">
+                                                  {item.shiftType} · {fmtRp(item.fee || 0)}
+                                                </p>
+                                              </div>
+                                              {!rowPending && (
+                                                <Badge
+                                                  className={`border-none font-bold text-[9px] shrink-0 ${
+                                                    item.status === 'approved'
+                                                      ? 'bg-emerald-100 text-emerald-800'
+                                                      : 'bg-rose-100 text-rose-800'
+                                                  }`}
+                                                >
+                                                  {item.status === 'approved' ? 'Disetujui' : 'Ditolak'}
+                                                </Badge>
+                                              )}
                                             </div>
-                                            {!rowPending && (
-                                              <Badge
-                                                className={`border-none font-bold text-[9px] shrink-0 ${
-                                                  item.status === 'approved'
-                                                    ? 'bg-emerald-100 text-emerald-800'
-                                                    : 'bg-rose-100 text-rose-800'
-                                                }`}
-                                              >
-                                                {item.status === 'approved' ? 'Disetujui' : 'Ditolak'}
-                                              </Badge>
+
+                                            {item.overtimeReason && (
+                                              <p className="text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 leading-relaxed">
+                                                Lembur: {item.overtimeReason}
+                                              </p>
+                                            )}
+
+                                            {/* Direct Inline Photo Preview */}
+                                            {item.photoUrl ? (
+                                              <div className="relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-900 aspect-[4/3]">
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img
+                                                  src={item.photoUrl}
+                                                  alt={`${item.postId || item.postName} — ${item.employeeName}`}
+                                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                                  loading="lazy"
+                                                />
+                                                {/* Hover Overlay with Metadata / Lightbox Button */}
+                                                <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-2">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      setSelectedExifImage({
+                                                        url: item.photoUrl!,
+                                                        title: `${item.postId || item.postName} — ${item.employeeName}`,
+                                                        activityDate: item.dutyDate || item.activityDate,
+                                                      })
+                                                    }
+                                                    className="px-2.5 py-1.5 bg-white/90 hover:bg-white text-slate-900 rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-md transition-all cursor-pointer backdrop-blur-xs"
+                                                  >
+                                                    <Eye className="w-3 h-3 text-indigo-600" /> Perbesar & EXIF
+                                                  </button>
+                                                </div>
+                                                {/* Quick EXIF badge */}
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    setSelectedExifImage({
+                                                      url: item.photoUrl!,
+                                                      title: `${item.postId || item.postName} — ${item.employeeName}`,
+                                                      activityDate: item.dutyDate || item.activityDate,
+                                                    })
+                                                  }
+                                                  className="absolute bottom-1.5 right-1.5 bg-slate-900/75 hover:bg-slate-900 text-white rounded-md text-[9px] font-bold px-1.5 py-0.5 flex items-center gap-1 cursor-pointer"
+                                                >
+                                                  <Maximize2 className="w-2.5 h-2.5" /> EXIF
+                                                </button>
+                                              </div>
+                                            ) : (
+                                              <div className="w-full aspect-[4/3] bg-amber-50 border border-amber-200 text-amber-800 rounded-xl font-bold text-[11px] flex flex-col items-center justify-center gap-1 p-3 text-center">
+                                                <AlertTriangle className="w-5 h-5 text-amber-600" />
+                                                <span>Tanpa Bukti Foto</span>
+                                              </div>
                                             )}
                                           </div>
 
-                                          {item.overtimeReason && (
-                                            <p className="text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-relaxed">
-                                              Lembur: {item.overtimeReason}
-                                            </p>
-                                          )}
-
-                                          {item.photoUrl ? (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                setSelectedExifImage({
-                                                  url: item.photoUrl!,
-                                                  title: `${item.postId || item.postName} — ${item.employeeName}`,
-                                                  activityDate: item.dutyDate || item.activityDate,
-                                                })
-                                              }
-                                              className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[11px] flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                                            >
-                                              <Eye className="w-3.5 h-3.5" /> Lihat &amp; Audit Metadata Foto
-                                            </button>
-                                          ) : (
-                                            <div className="w-full px-3 py-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl font-bold text-[11px] flex items-center justify-center gap-1.5">
-                                              <AlertTriangle className="w-3.5 h-3.5" /> Tanpa Bukti Foto
-                                            </div>
-                                          )}
-
+                                          {/* Verdict Toggle Controls */}
                                           {rowPending && (
-                                            <div className="space-y-2 pt-0.5">
+                                            <div className="space-y-2 pt-1">
                                               <div className="grid grid-cols-2 gap-1.5">
                                                 <button
                                                   type="button"
                                                   onClick={() => setAssignmentVerdict(item.id, 'approve')}
-                                                  className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                                                  className={`px-2 py-1.5 rounded-lg text-[11px] font-extrabold border transition-all cursor-pointer flex items-center justify-center gap-1 ${
                                                     verdict === 'approve'
-                                                      ? 'bg-emerald-600 text-white border-emerald-600'
+                                                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
                                                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                                                   }`}
                                                 >
-                                                  Setujui
+                                                  <CheckCircle2 className="w-3.5 h-3.5" /> Setujui
                                                 </button>
                                                 <button
                                                   type="button"
                                                   onClick={() => setAssignmentVerdict(item.id, 'decline')}
-                                                  className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                                                  className={`px-2 py-1.5 rounded-lg text-[11px] font-extrabold border transition-all cursor-pointer flex items-center justify-center gap-1 ${
                                                     verdict === 'decline'
-                                                      ? 'bg-rose-600 text-white border-rose-600'
+                                                      ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
                                                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                                                   }`}
                                                 >
-                                                  Tolak
+                                                  <XCircle className="w-3.5 h-3.5" /> Tolak
                                                 </button>
                                               </div>
                                               {verdict === 'decline' && (
