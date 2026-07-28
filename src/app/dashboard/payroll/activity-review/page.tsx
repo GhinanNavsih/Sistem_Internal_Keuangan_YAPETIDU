@@ -2016,8 +2016,7 @@ export default function ActivityReviewPage() {
                                               )}
                                             </div>
                                           )}
-
-                                          {!rowPending && item.declineReason && (
+                              {!rowPending && item.declineReason && (
                                             <p className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5">
                                               {item.declineReason}
                                             </p>
@@ -2045,18 +2044,20 @@ export default function ActivityReviewPage() {
                                   )}
 
                                   {isPending && (
-                                    <div className="pt-1 space-y-2 border-t border-slate-200">
-                                      <Input
-                                        value={noteValue}
-                                        onChange={(e) =>
-                                          setShiftReviewNotes(prev => ({
-                                            ...prev,
-                                            [group.occurrenceId]: e.target.value,
-                                          }))
-                                        }
-                                        placeholder="Catatan audit shift (min. 8 karakter) — tercatat di log audit finansial"
-                                        className="h-9 rounded-xl text-xs bg-white border-slate-200 mt-2"
-                                      />
+                                    <div className="pt-2 border-t border-slate-200/80 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                                      <div className="flex-1 min-w-0">
+                                        <Input
+                                          value={noteValue}
+                                          onChange={(e) =>
+                                            setShiftReviewNotes(prev => ({
+                                              ...prev,
+                                              [group.occurrenceId]: e.target.value,
+                                            }))
+                                          }
+                                          placeholder="Catatan audit shift (min. 8 karakter) — tercatat di log audit finansial"
+                                          className="h-10 rounded-xl text-xs bg-white border-slate-200 w-full"
+                                        />
+                                      </div>
                                       <Button
                                         type="button"
                                         disabled={isSubmitting}
