@@ -429,7 +429,7 @@ function InlinePhotoWithExif({
                   <Clock className="w-3 h-3 text-emerald-400 shrink-0" />
                 )}
                 <span className="truncate">
-                  {dateMismatch ? `⚠️ ${exif.formattedDate.split(',')[0]} (Beda Tgl)` : exif.formattedDate}
+                  {dateMismatch ? `${exif.formattedDate.split(',')[0]} (Beda Tgl)` : exif.formattedDate}
                 </span>
               </div>
             ) : (
