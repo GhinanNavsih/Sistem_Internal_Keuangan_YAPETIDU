@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
+import { parseImageExif, ImageExifInsights } from '@/lib/exif';
 import {
   Card,
   CardContent,
@@ -346,6 +347,146 @@ function getStatusConfig(status: string) {
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 const CLEANING_CATEGORIES = ['KEBERSIHAN', 'KEBERSIHAN_IC', 'TEKNISI', 'SOPIR', 'KEBERSIHAN_PONTI', 'SATPAM', 'PEKARYA', 'PONTI'];
+
+// ─── Inline Photo with EXIF Pill Overlay ──────────────────────────────────────
+
+function InlinePhotoWithExif({
+  photoUrl,
+  title,
+  activityDate,
+  onZoom,
+}: {
+  photoUrl: string;
+  title: string;
+  activityDate?: string;
+  onZoom: () => void;
+}) {
+  const [exif, setExif] = useState<ImageExifInsights | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    parseImageExif(photoUrl)
+      .then((data) => {
+        if (active) {
+          setExif(data);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setExif(null);
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [photoUrl]);
+
+  const dateMismatch = useMemo(() => {
+    if (!exif?.isoDateString || !activityDate) return false;
+    const photoYMD = exif.isoDateString.split('T')[0];
+    return photoYMD !== activityDate;
+  }, [exif?.isoDateString, activityDate]);
+
+  return (
+    <div className="relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-950 aspect-[4/3] shadow-xs">
+      {/* Photo Image */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={photoUrl}
+        alt={title}
+        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
+        onClick={onZoom}
+        loading="lazy"
+      />
+
+      {/* Semi-transparent Pill Overlay for Datetime & Location (Top Left) */}
+      <div className="absolute top-1.5 left-1.5 right-1.5 pointer-events-none flex flex-col gap-1 z-10">
+        {loading ? (
+          <div className="bg-slate-950/75 backdrop-blur-md px-2 py-1 rounded-lg border border-white/10 w-fit flex items-center gap-1.5">
+            <Loader2 className="w-2.5 h-2.5 text-indigo-300 animate-spin" />
+            <span className="text-[9px] font-bold text-slate-300">EXIF...</span>
+          </div>
+        ) : (
+          <div className="bg-slate-950/75 backdrop-blur-md p-1 rounded-xl border border-white/15 shadow-md flex flex-col gap-0.5 w-fit max-w-[98%]">
+            {/* Datetime Pill */}
+            {exif?.formattedDate ? (
+              <div
+                className={`flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md ${
+                  dateMismatch
+                    ? 'bg-amber-500/95 text-slate-950'
+                    : 'text-white'
+                }`}
+                title={dateMismatch ? `Tanggal foto (${exif.formattedDate}) beda dengan SPJ (${activityDate})` : exif.formattedDate}
+              >
+                {dateMismatch ? (
+                  <AlertTriangle className="w-2.5 h-2.5 text-slate-950 shrink-0" />
+                ) : (
+                  <Clock className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                )}
+                <span className="truncate">
+                  {dateMismatch ? `⚠️ ${exif.formattedDate.split(',')[0]} (Beda Tgl)` : exif.formattedDate}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-400 px-1 py-0.2">
+                <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                <span>Tanpa EXIF Jam</span>
+              </div>
+            )}
+
+            {/* GPS Location Pill */}
+            {exif?.latitude !== undefined && exif?.longitude !== undefined ? (
+              <a
+                href={exif.googleMapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="pointer-events-auto flex items-center gap-1 text-[9px] font-extrabold text-sky-300 hover:text-white bg-sky-950/60 hover:bg-sky-900/80 px-1.5 py-0.5 rounded-md border border-sky-400/20 transition-colors truncate"
+                title="Buka lokasi di Google Maps"
+              >
+                <MapPin className="w-2.5 h-2.5 text-sky-400 shrink-0" />
+                <span className="truncate">{exif.latitude.toFixed(4)}, {exif.longitude.toFixed(4)} ↗</span>
+              </a>
+            ) : (
+              <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-400 px-1 py-0.2">
+                <Compass className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                <span>Tanpa GPS</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Hover Zoom Overlay */}
+      <div
+        onClick={onZoom}
+        className="absolute inset-0 bg-slate-950/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-2 cursor-pointer z-20"
+      >
+        <button
+          type="button"
+          onClick={onZoom}
+          className="px-2.5 py-1.5 bg-white/95 hover:bg-white text-slate-900 rounded-lg font-extrabold text-[10px] flex items-center gap-1 shadow-md transition-all backdrop-blur-xs cursor-pointer"
+        >
+          <Eye className="w-3 h-3 text-indigo-600" /> Perbesar & EXIF Lengkap
+        </button>
+      </div>
+
+      {/* Quick Zoom Pill (Bottom Right) */}
+      <button
+        type="button"
+        onClick={onZoom}
+        className="absolute bottom-1.5 right-1.5 bg-slate-900/80 hover:bg-slate-950 text-white rounded-md text-[8.5px] font-extrabold px-1.5 py-0.5 flex items-center gap-1 cursor-pointer z-10 border border-white/10 shadow-xs"
+      >
+        <Maximize2 className="w-2.5 h-2.5 text-slate-300" /> Zoom
+      </button>
+    </div>
+  );
+}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -1925,47 +2066,20 @@ export default function ActivityReviewPage() {
                                               </p>
                                             )}
 
-                                            {/* Direct Inline Photo Preview */}
+                                            {/* Direct Inline Photo Preview with EXIF Pills */}
                                             {item.photoUrl ? (
-                                              <div className="relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-900 aspect-[4/3]">
-                                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                <img
-                                                  src={item.photoUrl}
-                                                  alt={`${item.postId || item.postName} — ${item.employeeName}`}
-                                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                                  loading="lazy"
-                                                />
-                                                {/* Hover Overlay with Metadata / Lightbox Button */}
-                                                <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-2">
-                                                  <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                      setSelectedExifImage({
-                                                        url: item.photoUrl!,
-                                                        title: `${item.postId || item.postName} — ${item.employeeName}`,
-                                                        activityDate: item.dutyDate || item.activityDate,
-                                                      })
-                                                    }
-                                                    className="px-2.5 py-1.5 bg-white/90 hover:bg-white text-slate-900 rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-md transition-all cursor-pointer backdrop-blur-xs"
-                                                  >
-                                                    <Eye className="w-3 h-3 text-indigo-600" /> Perbesar & EXIF
-                                                  </button>
-                                                </div>
-                                                {/* Quick EXIF badge */}
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    setSelectedExifImage({
-                                                      url: item.photoUrl!,
-                                                      title: `${item.postId || item.postName} — ${item.employeeName}`,
-                                                      activityDate: item.dutyDate || item.activityDate,
-                                                    })
-                                                  }
-                                                  className="absolute bottom-1.5 right-1.5 bg-slate-900/75 hover:bg-slate-900 text-white rounded-md text-[9px] font-bold px-1.5 py-0.5 flex items-center gap-1 cursor-pointer"
-                                                >
-                                                  <Maximize2 className="w-2.5 h-2.5" /> EXIF
-                                                </button>
-                                              </div>
+                                              <InlinePhotoWithExif
+                                                photoUrl={item.photoUrl}
+                                                title={`${item.postId || item.postName} — ${item.employeeName}`}
+                                                activityDate={item.dutyDate || item.activityDate}
+                                                onZoom={() =>
+                                                  setSelectedExifImage({
+                                                    url: item.photoUrl!,
+                                                    title: `${item.postId || item.postName} — ${item.employeeName}`,
+                                                    activityDate: item.dutyDate || item.activityDate,
+                                                  })
+                                                }
+                                              />
                                             ) : (
                                               <div className="w-full aspect-[4/3] bg-amber-50 border border-amber-200 text-amber-800 rounded-xl font-bold text-[11px] flex flex-col items-center justify-center gap-1 p-3 text-center">
                                                 <AlertTriangle className="w-5 h-5 text-amber-600" />
