@@ -404,36 +404,36 @@ function InlinePhotoWithExif({
         loading="lazy"
       />
 
-      {/* Semi-transparent Pill Overlay for Datetime & Location (Top Left) */}
-      <div className="absolute top-1.5 left-1.5 right-1.5 pointer-events-none flex flex-col gap-1 z-10">
+      {/* Semi-transparent Glass Pill Overlay for Datetime & Location (Top Left) */}
+      <div className="absolute top-2 left-2 right-2 pointer-events-none flex flex-col items-start gap-1 z-10 max-w-[95%]">
         {loading ? (
-          <div className="bg-slate-950/75 backdrop-blur-md px-2 py-1 rounded-lg border border-white/10 w-fit flex items-center gap-1.5">
+          <div className="bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/20 text-white font-semibold text-[9px] flex items-center gap-1.5 shadow-md">
             <Loader2 className="w-2.5 h-2.5 text-indigo-300 animate-spin" />
-            <span className="text-[9px] font-bold text-slate-300">EXIF...</span>
+            <span className="text-[9px] font-bold text-slate-200">EXIF...</span>
           </div>
         ) : (
-          <div className="bg-slate-950/75 backdrop-blur-md p-1 rounded-xl border border-white/15 shadow-md flex flex-col gap-0.5 w-fit max-w-[98%]">
+          <>
             {/* Datetime Pill */}
             {exif?.formattedDate ? (
               <div
-                className={`flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md ${
+                className={`flex items-center gap-1 text-[9.5px] px-2.5 py-0.5 rounded-full backdrop-blur-md border shadow-md ${
                   dateMismatch
-                    ? 'bg-amber-500/95 text-slate-950'
-                    : 'text-white'
+                    ? 'bg-amber-950/40 text-amber-200 border-amber-500/50 font-black'
+                    : 'bg-black/40 text-white border-white/25 font-bold'
                 }`}
                 title={dateMismatch ? `Tanggal foto (${exif.formattedDate}) beda dengan SPJ (${activityDate})` : exif.formattedDate}
               >
                 {dateMismatch ? (
-                  <AlertTriangle className="w-2.5 h-2.5 text-slate-950 shrink-0" />
+                  <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
                 ) : (
-                  <Clock className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                  <Clock className="w-3 h-3 text-emerald-400 shrink-0" />
                 )}
                 <span className="truncate">
                   {dateMismatch ? `⚠️ ${exif.formattedDate.split(',')[0]} (Beda Tgl)` : exif.formattedDate}
                 </span>
               </div>
             ) : (
-              <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-400 px-1 py-0.2">
+              <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-300 bg-black/35 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-full shadow-md">
                 <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                 <span>Tanpa EXIF Jam</span>
               </div>
@@ -446,19 +446,19 @@ function InlinePhotoWithExif({
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                className="pointer-events-auto flex items-center gap-1 text-[9px] font-extrabold text-sky-300 hover:text-white bg-sky-950/60 hover:bg-sky-900/80 px-1.5 py-0.5 rounded-md border border-sky-400/20 transition-colors truncate"
+                className="pointer-events-auto flex items-center gap-1 text-[9px] font-extrabold text-sky-300 hover:text-white bg-black/40 hover:bg-black/65 backdrop-blur-md border border-sky-400/35 px-2.5 py-0.5 rounded-full shadow-md transition-colors truncate max-w-full"
                 title="Buka lokasi di Google Maps"
               >
                 <MapPin className="w-2.5 h-2.5 text-sky-400 shrink-0" />
                 <span className="truncate">{exif.latitude.toFixed(4)}, {exif.longitude.toFixed(4)} ↗</span>
               </a>
             ) : (
-              <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-400 px-1 py-0.2">
+              <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-300 bg-black/35 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-full shadow-md">
                 <Compass className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                 <span>Tanpa GPS</span>
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
 
@@ -480,7 +480,7 @@ function InlinePhotoWithExif({
       <button
         type="button"
         onClick={onZoom}
-        className="absolute bottom-1.5 right-1.5 bg-slate-900/80 hover:bg-slate-950 text-white rounded-md text-[8.5px] font-extrabold px-1.5 py-0.5 flex items-center gap-1 cursor-pointer z-10 border border-white/10 shadow-xs"
+        className="absolute bottom-1.5 right-1.5 bg-black/40 hover:bg-black/70 backdrop-blur-md text-white rounded-full text-[8.5px] font-extrabold px-2 py-0.5 flex items-center gap-1 cursor-pointer z-10 border border-white/20 shadow-xs transition-colors"
       >
         <Maximize2 className="w-2.5 h-2.5 text-slate-300" /> Zoom
       </button>
