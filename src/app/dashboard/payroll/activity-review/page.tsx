@@ -1913,6 +1913,11 @@ export default function ActivityReviewPage() {
                       const noteValue = shiftReviewNotes[group.occurrenceId] || '';
                       const missingPhotos = group.assignments.length - group.photoCount;
 
+                      const displayShiftFee = group.assignments.reduce((sum, item) => {
+                        const verdict = item.status === 'pending' ? (shiftDecisions[item.id] || 'approve') : item.status;
+                        return verdict === 'approve' ? sum + (item.fee || 0) : sum;
+                      }, 0);
+
                       return (
                         <React.Fragment key={group.occurrenceId}>
                           <TableRow
@@ -1977,7 +1982,7 @@ export default function ActivityReviewPage() {
                               )}
                             </TableCell>
                             <TableCell className="font-bold text-slate-800 text-sm">
-                              {fmtRp(group.totalFee)}
+                              {fmtRp(displayShiftFee)}
                             </TableCell>
                             <TableCell className="text-sm text-slate-400">—</TableCell>
                             <TableCell className="text-right pr-6">
