@@ -3065,6 +3065,7 @@ function ActivitiesContent() {
                       <Input
                         id="satpamDate"
                         type="date"
+                        max={getTodayISO()}
                         value={satpamReportDate}
                         onChange={(e) => setSatpamReportDate(e.target.value)}
                         className="rounded-xl border-slate-200 focus:border-purple-400 focus:ring-purple-400/20 text-sm font-bold text-slate-700 bg-white"

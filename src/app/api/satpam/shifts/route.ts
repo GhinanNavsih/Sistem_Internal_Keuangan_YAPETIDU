@@ -204,6 +204,15 @@ function isActiveSatpam(data: FirebaseFirestore.DocumentData | undefined): boole
   );
 }
 
+function jakartaDateToday(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
@@ -213,6 +222,9 @@ export async function POST(request: NextRequest) {
     }
 
     const input = parseInput(await request.json(), actor.linkedEmployeeId);
+    if (input.dutyDate > jakartaDateToday()) {
+      throw new HttpError(400, 'Tanggal shift tidak boleh berada di masa depan.');
+    }
     const teamQuery = await adminDb
       .collection('SatpamShiftTeams')
       .where('ketuaShiftId', '==', actor.linkedEmployeeId)
