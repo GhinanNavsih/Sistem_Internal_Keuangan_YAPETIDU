@@ -71,6 +71,7 @@ import {
   Edit2,
   MapPin,
   Maximize2,
+  Camera,
 } from 'lucide-react';
 
 const loadGoogleMapsScript = (callback: () => void) => {
@@ -1453,7 +1454,18 @@ export default function ActivityReviewPage() {
     }
   };
 
-  // ── Satpam Shift Audit Handlers ──
+  // ── Satpam Shift & Activity Audit Handlers ──
+  const [expandedActivityIds, setExpandedActivityIds] = useState<Set<string>>(new Set());
+
+  const toggleActivityExpanded = (id: string) => {
+    setExpandedActivityIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const toggleShiftExpanded = (occurrenceId: string) => {
     setExpandedShiftIds(prev => {
       const next = new Set(prev);
@@ -2092,7 +2104,7 @@ export default function ActivityReviewPage() {
                                               )}
                                             </div>
                                           )}
-                              {!rowPending && item.declineReason && (
+                                          {!rowPending && item.declineReason && (
                                             <p className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5">
                                               {item.declineReason}
                                             </p>
@@ -2162,228 +2174,250 @@ export default function ActivityReviewPage() {
                     {ungroupedActivities.map((activity) => {
                       const sc = getStatusConfig(activity.status);
                       const isSelected = selectedIds.has(activity.id);
+                      const isExpanded = expandedActivityIds.has(activity.id);
 
                       return (
-                        <TableRow
-                          key={activity.id}
-                          className={`border-slate-50 hover:bg-slate-50/40 transition-colors ${isSelected ? 'bg-indigo-50/30' : ''}`}
-                        >
-                          <TableCell className="pl-4">
-                            {activity.status === 'pending' && (
-                              <Checkbox
-                                checked={isSelected}
-                                onCheckedChange={() => toggleSelect(activity.id)}
-                                className="rounded border-slate-300 data-[state=checked]:bg-indigo-600"
-                              />
-                            )}
-                          </TableCell>
-                          <TableCell className="font-bold text-slate-800 text-sm py-3.5">
-                            {activity.employeeName}
-                          </TableCell>
-                          <TableCell className="text-sm text-slate-700 font-medium max-w-[200px]">
-                            <span className="truncate block font-semibold">{activity.activityName}</span>
-                            {activity.jobCategory === 'SOPIR' && (
-                              <div className="flex flex-col gap-1 mt-1.5">
-                                {activity.points && activity.points.length > 0 && (
-                                  <div className="text-[10px] text-slate-500 font-semibold bg-slate-50 border border-slate-200/50 p-1 px-1.5 rounded-lg leading-relaxed max-w-[240px] whitespace-normal">
-                                    📍 {activity.points.join(' → ')}
-                                  </div>
-                                )}
-                                <div className="flex flex-wrap gap-1">
-                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-slate-200 text-slate-500 font-medium">
-                                    {activity.vehicleType || 'Mobil Kecil'}
-                                  </Badge>
-                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-slate-200 text-slate-500 font-medium">
-                                    {activity.tripType || 'Dalam Kota'}
-                                  </Badge>
-                                  {activity.distanceKm && activity.distanceKm > 0 ? (
-                                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-emerald-200 bg-emerald-50 text-emerald-700 font-bold">
-                                      {activity.distanceKm} km ({activity.durationHours || 0} jam)
-                                    </Badge>
-                                  ) : null}
-                                  {activity.nightCount && (
-                                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 border-amber-200 bg-amber-50 text-amber-700 font-bold">
-                                      {activity.nightCount} malam
-                                    </Badge>
-                                  )}
-                                  {activity.fuelFee && activity.fuelFee > 0 ? (
-                                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-teal-200 bg-teal-50 text-teal-700 font-bold">
-                                      BBM: {fmtRp(activity.fuelFee)}
-                                    </Badge>
-                                  ) : null}
-                                  {activity.tollParkingFee && activity.tollParkingFee > 0 ? (
-                                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-cyan-200 bg-cyan-50 text-cyan-700 font-bold">
-                                      Tol: {fmtRp(activity.tollParkingFee)}
-                                    </Badge>
-                                  ) : null}
-                                </div>
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-sm text-slate-600 font-medium whitespace-nowrap">
-                            {activity.activityDate}
-                          </TableCell>
-                          <TableCell className="text-sm text-slate-600 font-medium whitespace-nowrap">
-                            {activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
-                              ? activity.timeStart
-                              : `${activity.timeStart} – ${activity.timeEnd}`}
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[10px] font-bold rounded-lg px-2 py-0.5`}>
-                              {sc.label}
-                            </Badge>
-                            {activity.status === 'declined' && activity.declineReason && (
-                              <p className="text-[10px] text-rose-400 mt-1 max-w-[150px] truncate" title={activity.declineReason}>
-                                {activity.declineReason}
-                              </p>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-sm font-bold text-slate-700 whitespace-nowrap">
-                            {activity.jobCategory === 'SOPIR' ? (
-                              <div className="flex flex-col">
-                                <span className="text-sm font-black text-emerald-600">
-                                  {fmtRp(
-                                    activity.status === 'approved'
-                                      ? (activity.upahBersih || 0)
-                                      : (activity.submittedFeeEstimate ?? activity.baseDriverWage ?? calculateDriverNetWage(activity.distanceKm || 0, activity.durationHours || 0, activity.nightCount || 0))
-                                  )}
-                                </span>
-                                {(activity.reimburseDelta || 0) > 0 && (
-                                  <span className="text-[10px] text-blue-600 font-bold">
-                                    +Reimburse: {fmtRp(activity.reimburseDelta || 0)}
-                                  </span>
-                                )}
-                              </div>
-                            ) : activity.status === 'approved' && activity.fee > 0
-                              ? fmtRp(activity.fee)
-                              : activity.status === 'pending' ? (
-                                <div className="flex">
-                                  <Input
-                                    type="text"
-                                    placeholder="-"
-                                    value={rowFees[activity.id] || ''}
-                                    onChange={(e) => {
-                                      const val = e.target.value.replace(/\D/g, '');
-                                      setRowFees(prev => ({ ...prev, [activity.id]: val }));
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        handleApproveRow(activity, rowFees[activity.id] || '');
-                                      }
-                                    }}
-                                    className="w-36 h-8 text-center font-bold text-sm bg-slate-50 border-slate-200 focus:border-emerald-400 focus:ring-emerald-400/20 rounded-xl px-3"
-                                    disabled={actionLoading}
+                        <React.Fragment key={activity.id}>
+                          <TableRow
+                            onClick={() => toggleActivityExpanded(activity.id)}
+                            className={`border-slate-50 hover:bg-slate-50/40 transition-colors cursor-pointer ${
+                              isExpanded ? 'bg-indigo-50/40' : isSelected ? 'bg-indigo-50/30' : ''
+                            }`}
+                          >
+                            <TableCell className="pl-4">
+                              <div className="flex items-center gap-2">
+                                <ChevronRight
+                                  className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                                />
+                                {activity.status === 'pending' && (
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={() => toggleSelect(activity.id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="rounded border-slate-300 data-[state=checked]:bg-indigo-600"
                                   />
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-bold text-slate-800 text-sm py-3.5">
+                              {activity.employeeName}
+                            </TableCell>
+                            <TableCell className="text-sm text-slate-700 font-medium max-w-[220px]">
+                              <span className="truncate block font-semibold">{activity.activityName}</span>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {activity.photoUrl ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[9px] px-1.5 py-0 h-4 border-emerald-200 text-emerald-700 bg-emerald-50 font-bold inline-flex items-center gap-1"
+                                  >
+                                    <Camera className="w-2.5 h-2.5" /> Berfoto
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[9px] px-1.5 py-0 h-4 border-slate-200 text-slate-400 font-medium inline-flex items-center gap-1"
+                                  >
+                                    Tanpa Bukti Foto
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-sm text-slate-600 font-medium whitespace-nowrap">
+                              {activity.activityDate}
+                            </TableCell>
+                            <TableCell className="text-sm text-slate-600 font-medium whitespace-nowrap">
+                              {activity.timeStart} – {activity.timeEnd}
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[10px] font-bold rounded-lg px-2 py-0.5`}>
+                                {sc.label}
+                              </Badge>
+                              {activity.status === 'declined' && activity.declineReason && (
+                                <p className="text-[10px] text-rose-400 mt-1 max-w-[150px] truncate" title={activity.declineReason}>
+                                  {activity.declineReason}
+                                </p>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-sm font-bold text-slate-700 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                              {activity.jobCategory === 'SOPIR' ? (
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-black text-emerald-600">
+                                    {fmtRp(
+                                      activity.status === 'approved'
+                                        ? (activity.upahBersih || 0)
+                                        : (activity.submittedFeeEstimate ?? activity.baseDriverWage ?? calculateDriverNetWage(activity.distanceKm || 0, activity.durationHours || 0, activity.nightCount || 0))
+                                    )}
+                                  </span>
+                                  {(activity.reimburseDelta || 0) > 0 && (
+                                    <span className="text-[10px] text-blue-600 font-bold">
+                                      +Reimburse: {fmtRp(activity.reimburseDelta || 0)}
+                                    </span>
+                                  )}
                                 </div>
+                              ) : activity.status === 'approved' && activity.fee > 0
+                                ? fmtRp(activity.fee)
+                                : activity.status === 'pending' ? (
+                                  <div className="flex">
+                                    <Input
+                                      type="text"
+                                      placeholder="-"
+                                      value={rowFees[activity.id] || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value.replace(/\D/g, '');
+                                        setRowFees(prev => ({ ...prev, [activity.id]: val }));
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          handleApproveRow(activity, rowFees[activity.id] || '');
+                                        }
+                                      }}
+                                      className="w-36 h-8 text-center font-bold text-sm bg-slate-50 border-slate-200 focus:border-emerald-400 focus:ring-emerald-400/20 rounded-xl px-3"
+                                      disabled={actionLoading}
+                                    />
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-300">—</span>
+                                )
+                              }
+                            </TableCell>
+                            <TableCell onClick={(e) => e.stopPropagation()}>
+                              {activity.jobCategory === 'SOPIR' ? (
+                                <span className="text-[10px] font-bold text-slate-400">SOPIR SPJ</span>
+                              ) : activity.status === 'pending' ? (
+                                (() => {
+                                  const [sh, sm] = activity.timeStart.split(':').map(Number);
+                                  const [eh, em] = activity.timeEnd.split(':').map(Number);
+                                  let minutes = (eh * 60 + em) - (sh * 60 + sm);
+                                  if (minutes < 0) minutes += 24 * 60;
+                                  const halfHours = Math.round(minutes / 30);
+                                  const qualifies = halfHours > 4 && activity.activityType !== 'Buang Sampah' && activity.activityName !== 'Buang Sampah';
+
+                                  if (!qualifies) return <span className="text-slate-300">—</span>;
+
+                                  const isAdded = !!rowUangMakan[activity.id];
+                                  return (
+                                    <Button
+                                      size="sm"
+                                      type="button"
+                                      disabled={actionLoading}
+                                      onClick={() => handleToggleUangMakan(activity.id, activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName)}
+                                      className={`h-7 px-2.5 rounded-lg font-bold text-[10px] cursor-pointer transition-colors ${isAdded
+                                          ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
+                                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
+                                        }`}
+                                    >
+                                      {isAdded ? '✓ Uang Makan' : '+ Uang Makan'}
+                                    </Button>
+                                  );
+                                })()
+                              ) : activity.status === 'approved' && activity.hasUangMakan ? (
+                                <Badge className="bg-amber-50 text-amber-800 hover:bg-amber-50 border border-amber-200 text-[10px] font-bold rounded-lg px-2 py-0.5 whitespace-nowrap">
+                                  +Rp7.500
+                                </Badge>
                               ) : (
                                 <span className="text-slate-300">—</span>
-                              )
-                            }
-                          </TableCell>
-                          <TableCell>
-                            {activity.jobCategory === 'SOPIR' ? (
-                              <span className="text-[10px] font-bold text-slate-400">SOPIR SPJ</span>
-                            ) : activity.status === 'pending' ? (
-                              (() => {
-                                const [sh, sm] = activity.timeStart.split(':').map(Number);
-                                const [eh, em] = activity.timeEnd.split(':').map(Number);
-                                let minutes = (eh * 60 + em) - (sh * 60 + sm);
-                                if (minutes < 0) minutes += 24 * 60;
-                                const halfHours = Math.round(minutes / 30);
-                                const qualifies = halfHours > 4 && activity.activityType !== 'Buang Sampah' && activity.activityName !== 'Buang Sampah';
-
-                                if (!qualifies) return <span className="text-slate-300">—</span>;
-
-                                const isAdded = !!rowUangMakan[activity.id];
-                                return (
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right pr-6" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1.5">
+                                {activity.status === 'pending' && (
+                                  <>
+                                    {activity.jobCategory === 'SOPIR' ? (
+                                      <Button
+                                        size="sm"
+                                        disabled={actionLoading}
+                                        onClick={() => handleOpenAuditSopir(activity)}
+                                        className="h-7 px-2.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold text-[11px] border border-indigo-200 cursor-pointer"
+                                      >
+                                        <ClipboardCheck className="w-3 h-3 mr-1" />
+                                        Audit & Edit
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        size="sm"
+                                        disabled={actionLoading}
+                                        onClick={() => handleApproveRow(activity, rowFees[activity.id] || '')}
+                                        className="h-7 px-2.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[11px] border border-emerald-200 cursor-pointer"
+                                      >
+                                        <ThumbsUp className="w-3 h-3 mr-1" />
+                                        Setujui
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      disabled={actionLoading}
+                                      onClick={() => { setDeclineTarget(activity); setDeclineReason(''); }}
+                                      className="h-7 px-2.5 rounded-lg text-rose-500 hover:bg-rose-50 font-bold text-[11px] cursor-pointer"
+                                    >
+                                      <ThumbsDown className="w-3 h-3 mr-1" />
+                                      Tolak
+                                    </Button>
+                                  </>
+                                )}
+                                {activity.jobCategory === 'SOPIR' && activity.status !== 'pending' && (
                                   <Button
                                     size="sm"
-                                    type="button"
-                                    disabled={actionLoading}
-                                    onClick={() => handleToggleUangMakan(activity.id, activity.timeStart, activity.timeEnd, activity.activityType, activity.activityName)}
-                                    className={`h-7 px-2.5 rounded-lg font-bold text-[10px] cursor-pointer transition-colors ${isAdded
-                                        ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
-                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
-                                      }`}
-                                  >
-                                    {isAdded ? '✓ Uang Makan' : '+ Uang Makan'}
-                                  </Button>
-                                );
-                              })()
-                            ) : activity.status === 'approved' && activity.hasUangMakan ? (
-                              <Badge className="bg-amber-50 text-amber-800 hover:bg-amber-50 border border-amber-200 text-[10px] font-bold rounded-lg px-2 py-0.5 whitespace-nowrap">
-                                +Rp7.500
-                              </Badge>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right pr-6">
-                            {activity.photoUrl && activity.jobCategory !== 'SATPAM' && (
-                              <div className="flex justify-end mb-1.5">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setSelectedExifImage({
-                                    url: activity.photoUrl!,
-                                    title: `${activity.activityName} — ${activity.employeeName}`,
-                                    activityDate: activity.activityDate,
-                                    auditMetadata: activity.photoAuditMetadata,
-                                  })}
-                                  className="h-7 px-2.5 rounded-lg border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[11px] cursor-pointer"
-                                >
-                                  <Eye className="w-3 h-3 mr-1" /> Foto Bukti
-                                </Button>
-                              </div>
-                            )}
-                            {activity.status === 'pending' && (
-                              <div className="flex justify-end gap-1.5">
-                                {activity.jobCategory === 'SOPIR' ? (
-                                  <Button
-                                    size="sm"
-                                    disabled={actionLoading}
                                     onClick={() => handleOpenAuditSopir(activity)}
-                                    className="h-7 px-2.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold text-[11px] border border-indigo-200 cursor-pointer"
+                                    className="h-7 px-2.5 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 font-bold text-[11px] border border-slate-200 cursor-pointer"
                                   >
-                                    <ClipboardCheck className="w-3 h-3 mr-1" />
-                                    Audit & Edit
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    size="sm"
-                                    disabled={actionLoading}
-                                    onClick={() => handleApproveRow(activity, rowFees[activity.id] || '')}
-                                    className="h-7 px-2.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-[11px] border border-emerald-200 cursor-pointer"
-                                  >
-                                    <ThumbsUp className="w-3 h-3 mr-1" />
-                                    Setujui
+                                    Lihat Detail
                                   </Button>
                                 )}
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  disabled={actionLoading}
-                                  onClick={() => { setDeclineTarget(activity); setDeclineReason(''); }}
-                                  className="h-7 px-2.5 rounded-lg text-rose-500 hover:bg-rose-50 font-bold text-[11px] cursor-pointer"
+                                  onClick={() => toggleActivityExpanded(activity.id)}
+                                  className="h-7 px-2 rounded-lg text-slate-500 hover:bg-slate-100 font-bold text-[11px] gap-1 cursor-pointer"
                                 >
-                                  <ThumbsDown className="w-3 h-3 mr-1" />
-                                  Tolak
+                                  <span>{isExpanded ? 'Tutup Audit' : 'Audit Foto'}</span>
                                 </Button>
                               </div>
-                            )}
-                            {activity.jobCategory === 'SOPIR' && activity.status !== 'pending' && (
-                              <div className="flex justify-end">
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleOpenAuditSopir(activity)}
-                                  className="h-7 px-2.5 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 font-bold text-[11px] border border-slate-200 cursor-pointer"
-                                >
-                                  Lihat Detail
-                                </Button>
-                              </div>
-                            )}
-                          </TableCell>
-                        </TableRow>
+                            </TableCell>
+                          </TableRow>
+
+                          {isExpanded && (
+                            <TableRow className="border-slate-100 hover:bg-transparent">
+                              <TableCell colSpan={9} className="bg-slate-50/70 p-4 sm:p-5">
+                                <div className="space-y-3.5">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-200/80">
+                                    <div className="flex items-center gap-2 text-xs font-black text-slate-700 uppercase tracking-wider">
+                                      <Camera className="w-4 h-4 text-indigo-600" />
+                                      <span>Audit Bukti Foto Kegiatan — {activity.activityName} ({activity.employeeName})</span>
+                                    </div>
+                                    <Badge className="bg-indigo-100 text-indigo-800 border-none font-bold text-[10px] w-fit">
+                                      {activity.jobCategory || 'PEKARYA'} · Tanggal: {activity.activityDate} ({activity.timeStart}{activity.timeEnd ? ` – ${activity.timeEnd}` : ''})
+                                    </Badge>
+                                  </div>
+
+                                  <div className="max-w-md">
+                                    {activity.photoUrl ? (
+                                      <InlinePhotoWithExif
+                                        photoUrl={activity.photoUrl}
+                                        title={`${activity.activityName} — ${activity.employeeName}`}
+                                        activityDate={activity.activityDate}
+                                        auditMetadata={activity.photoAuditMetadata}
+                                        onZoom={() =>
+                                          setSelectedExifImage({
+                                            url: activity.photoUrl!,
+                                            title: `${activity.activityName} — ${activity.employeeName}`,
+                                            activityDate: activity.activityDate,
+                                            auditMetadata: activity.photoAuditMetadata,
+                                          })
+                                        }
+                                      />
+                                    ) : (
+                                      <div className="w-full aspect-[4/3] bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl font-bold text-xs flex flex-col items-center justify-center gap-1.5 p-4 text-center">
+                                        <AlertTriangle className="w-6 h-6 text-amber-600 mb-0.5" />
+                                        <span>Laporan kegiatan ini tidak melampirkan foto bukti.</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                   </TableBody>
