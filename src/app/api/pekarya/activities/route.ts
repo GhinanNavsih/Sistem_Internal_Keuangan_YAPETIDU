@@ -415,8 +415,7 @@ export async function POST(request: NextRequest) {
       const jobCategory = employee.employment?.jobCategory;
       if (
         employee.employment?.status !== 'active' ||
-        !isPekaryaJobCategory(jobCategory) ||
-        jobCategory === 'SATPAM'
+        !isPekaryaJobCategory(jobCategory)
       ) {
         throw new HttpError(409, 'Pegawai tidak aktif atau kategori tidak mendukung laporan ini.');
       }

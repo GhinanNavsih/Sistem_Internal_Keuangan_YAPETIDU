@@ -4212,7 +4212,7 @@ function ActivitiesContent() {
       </div>
 
       {/* ── Floating Action Button ─────────────────────────────────────── */}
-      {!isRegularSatpam && !isSopir && (
+      {!isSopir && (
         <button
           onClick={() => {
             resetForm();
