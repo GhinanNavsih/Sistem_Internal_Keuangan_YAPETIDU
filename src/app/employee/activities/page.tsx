@@ -3291,7 +3291,7 @@ function ActivitiesContent() {
                                     ) : (
                                       <Camera className="w-3.5 h-3.5 text-slate-500" />
                                     )}
-                                    <span>{postPhotoUploading[post.id] ? 'Mengunggah...' : 'Unggah Foto Bukti Jaga'}</span>
+                                    <span>{postPhotoUploading[post.id] ? 'Mengunggah...' : 'Upload Foto'}</span>
                                   </Button>
                                 )
                               )}
@@ -3454,7 +3454,7 @@ function ActivitiesContent() {
                                   ) : (
                                     <Camera className="w-3.5 h-3.5" />
                                   )}
-                                  <span>{postPhotoUploading['extra'] ? 'Mengunggah...' : 'Unggah Foto Bukti'}</span>
+                                  <span>{postPhotoUploading['extra'] ? 'Mengunggah...' : 'Upload Foto'}</span>
                                 </Button>
                               )
                             )}
@@ -4884,7 +4884,7 @@ function ActivitiesContent() {
                     className="h-10 w-full gap-1.5 rounded-xl border-dashed border-slate-300 bg-slate-50/60 text-xs font-bold text-slate-600 hover:bg-slate-100"
                   >
                     {uploadingProofPhoto ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                    <span>{uploadingProofPhoto ? 'Mengunggah Foto...' : 'Pilih Foto Bukti dari Galeri'}</span>
+                    <span>{uploadingProofPhoto ? 'Mengunggah Foto...' : 'Upload Foto'}</span>
                   </Button>
                 )}
               </div>
