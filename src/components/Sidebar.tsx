@@ -15,15 +15,28 @@ import {
   Car,
   LogOut,
   Menu,
-  X
+  X,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
+
+const SIDEBAR_COLLAPSED_KEY = 'yapetidu_sidebar_collapsed';
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { logout, profile, activeProfile } = useAuth();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const currentProfile = activeProfile || profile;
+
+  // Restore collapsed state from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      if (stored === 'true') setIsCollapsed(true);
+    } catch {}
+  }, []);
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -33,6 +46,14 @@ export default function Sidebar() {
   if (!currentProfile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(currentProfile.role)) {
     return null;
   }
+
+  const toggleCollapsed = () => {
+    setIsCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next)); } catch {}
+      return next;
+    });
+  };
 
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
@@ -103,7 +124,14 @@ export default function Sidebar() {
     return "flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:text-indigo-600 hover:bg-slate-50/80 hover:translate-x-1 transition-all duration-200 cursor-pointer font-semibold";
   };
 
-  // Reusable Navigation Link List
+  const getCollapsedLinkStyle = (isActive: boolean) => {
+    if (isActive) {
+      return "relative group flex items-center justify-center w-11 h-11 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-600 transition-all cursor-pointer";
+    }
+    return "relative group flex items-center justify-center w-11 h-11 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-slate-50/80 transition-all duration-200 cursor-pointer";
+  };
+
+  // Reusable Navigation Link List (expanded)
   const NavigationLinks = ({ onLinkClick }: { onLinkClick?: () => void }) => (
     <nav className="flex flex-col gap-1.5 py-4">
       {menuItems.map((item) => {
@@ -124,63 +152,145 @@ export default function Sidebar() {
     </nav>
   );
 
+  // Navigation Links for collapsed mode (icons only + tooltip)
+  const CollapsedNavigationLinks = () => (
+    <nav className="flex flex-col items-center gap-2 py-4">
+      {menuItems.map((item) => {
+        const isActive = getIsActive(item);
+        const Icon = item.icon;
+        return (
+          <Link
+            key={item.name}
+            href={item.path}
+            className={getCollapsedLinkStyle(isActive)}
+            title={item.name}
+          >
+            <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-500' : ''}`} />
+            {/* Tooltip */}
+            <span className="absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-semibold whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-lg z-50">
+              {item.name}
+            </span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+
+  const roleLabel =
+    currentProfile?.role === 'super_admin'
+      ? 'Super Admin'
+      : currentProfile?.role === 'finance_verifier'
+        ? 'Badan Keuangan'
+        : currentProfile?.role === 'payroll_authorizer'
+          ? 'Kepala Biro Umum'
+          : currentProfile?.role || 'Pengguna';
+
   return (
     <>
       {/* ======================================================== */}
-      {/* DESKTOP SIDEBAR                                          */}
+      {/* DESKTOP SIDEBAR — EXPANDED                               */}
       {/* ======================================================== */}
-      <aside className="hidden md:flex flex-col justify-between w-72 shrink-0 border-r border-slate-200/80 bg-white/80 backdrop-blur-md sticky top-0 h-screen p-6 z-40">
+      <aside
+        className={`hidden md:flex flex-col justify-between shrink-0 border-r border-slate-200/80 bg-white/80 backdrop-blur-md sticky top-0 h-screen z-40 transition-all duration-300 ease-in-out ${
+          isCollapsed ? 'w-[76px] p-3' : 'w-72 p-6'
+        }`}
+      >
         <div className="flex flex-col gap-8">
           {/* Brand Header */}
-          <div className="flex items-center gap-3 px-2">
-            <img
-              src="/Logo YAPETIDU (Transparent bg).png"
-              alt="Logo YAPETIDU"
-              className="w-10 h-10 object-contain"
-            />
-            <div>
-              <h2 className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent font-extrabold text-xl tracking-tight leading-none">
-                YAPETIDU
-              </h2>
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 block">
-                Sistem Keuangan
-              </span>
+          {isCollapsed ? (
+            <div className="flex items-center justify-center pt-1">
+              <img
+                src="/Logo YAPETIDU (Transparent bg).png"
+                alt="Logo YAPETIDU"
+                className="w-9 h-9 object-contain"
+              />
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-3 px-2">
+              <img
+                src="/Logo YAPETIDU (Transparent bg).png"
+                alt="Logo YAPETIDU"
+                className="w-10 h-10 object-contain"
+              />
+              <div>
+                <h2 className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent font-extrabold text-xl tracking-tight leading-none">
+                  YAPETIDU
+                </h2>
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 block">
+                  Sistem Keuangan
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Navigation Links */}
-          <NavigationLinks />
+          {isCollapsed ? <CollapsedNavigationLinks /> : <NavigationLinks />}
         </div>
 
-        {/* User Profile Footer */}
-        <div className="border-t border-slate-200/80 pt-4 mt-auto">
-          <div className="flex items-center gap-3 mb-4 px-2">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-100 uppercase text-sm">
-              {currentProfile?.displayName ? currentProfile.displayName.substring(0, 2) : 'AD'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-slate-800 truncate leading-tight">
-                {currentProfile?.displayName || 'Administrator'}
-              </p>
-              <p className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md w-fit mt-1">
-                {currentProfile?.role === 'super_admin'
-                  ? 'Super Admin'
-                  : currentProfile?.role === 'finance_verifier'
-                    ? 'Badan Keuangan'
-                    : currentProfile?.role === 'payroll_authorizer'
-                      ? 'Kepala Biro Umum'
-                      : currentProfile?.role || 'Pengguna'}
-              </p>
-            </div>
+        {/* Bottom Area: Collapse toggle + User Profile */}
+        <div className="mt-auto">
+          {/* Collapse / Expand Toggle */}
+          <div className={`flex ${isCollapsed ? 'justify-center' : 'justify-end'} mb-3`}>
+            <button
+              onClick={toggleCollapsed}
+              className="flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all duration-200 cursor-pointer"
+              title={isCollapsed ? 'Perluas sidebar' : 'Ciutkan sidebar'}
+            >
+              {isCollapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
+            </button>
           </div>
-          <Button
-            variant="outline"
-            onClick={logout}
-            className="w-full rounded-xl shadow-sm bg-white border-slate-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center justify-center gap-2 h-10 font-bold"
-          >
-            <LogOut className="w-4 h-4" />
-            Keluar
-          </Button>
+
+          {/* User Profile Footer */}
+          <div className="border-t border-slate-200/80 pt-4">
+            {isCollapsed ? (
+              /* Collapsed: avatar + logout icon */
+              <div className="flex flex-col items-center gap-3">
+                <div
+                  className="relative group w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-100 uppercase text-sm cursor-default"
+                  title={`${currentProfile?.displayName || 'Administrator'} — ${roleLabel}`}
+                >
+                  {currentProfile?.displayName ? currentProfile.displayName.substring(0, 2) : 'AD'}
+                  <span className="absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 text-white text-[11px] font-semibold whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-lg z-50">
+                    {currentProfile?.displayName || 'Administrator'}
+                    <br />
+                    <span className="text-indigo-300 text-[10px]">{roleLabel}</span>
+                  </span>
+                </div>
+                <button
+                  onClick={logout}
+                  className="flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 text-rose-500 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all cursor-pointer"
+                  title="Keluar"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              /* Expanded: full user info + logout button */
+              <>
+                <div className="flex items-center gap-3 mb-4 px-2">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-100 uppercase text-sm">
+                    {currentProfile?.displayName ? currentProfile.displayName.substring(0, 2) : 'AD'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-800 truncate leading-tight">
+                      {currentProfile?.displayName || 'Administrator'}
+                    </p>
+                    <p className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md w-fit mt-1">
+                      {roleLabel}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={logout}
+                  className="w-full rounded-xl shadow-sm bg-white border-slate-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-100 transition-all cursor-pointer flex items-center justify-center gap-2 h-10 font-bold"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Keluar
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </aside>
 
@@ -261,13 +371,7 @@ export default function Sidebar() {
                     {currentProfile?.displayName || 'Administrator'}
                   </p>
                   <p className="text-[9px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md w-fit mt-0.5">
-                    {currentProfile?.role === 'super_admin'
-                      ? 'Super Admin'
-                      : currentProfile?.role === 'finance_verifier'
-                        ? 'Badan Keuangan'
-                        : currentProfile?.role === 'payroll_authorizer'
-                          ? 'Kepala Biro Umum'
-                          : currentProfile?.role || 'Pengguna'}
+                    {roleLabel}
                   </p>
                 </div>
               </div>

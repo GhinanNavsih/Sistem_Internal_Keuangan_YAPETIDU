@@ -35,6 +35,32 @@ import CetakKegiatanLoyalisDialog from '@/components/CetakKegiatanLoyalisDialog'
 import { generateKegiatanLoyalisRecapPdf } from '@/utils/generateKegiatanLoyalisRecapPdf';
 import { generateKegiatanLoyalisRecapXlsx } from '@/utils/generateKegiatanLoyalisRecapXlsx';
 
+type WorkerRow = {
+  employeeId: string;
+  employeeName: string;
+  payGiven: number;
+  showDropdown?: boolean;
+  searchText?: string;
+};
+
+type AutosaveSnapshot = {
+  rows: WorkerRow[];
+  eventName: string;
+  eventId: string | null;
+  isEndOfMonth: boolean;
+  department: string;
+  reportFileUrl: string | null;
+  reportFileName: string | null;
+};
+
+const createEmptyWorkerRow = (): WorkerRow => ({
+  employeeId: '',
+  employeeName: '',
+  payGiven: 0,
+  searchText: '',
+  showDropdown: false,
+});
+
 export default function VakasiLoyalisPage() {
   const { profile } = useAuth();
   const searchParams = useSearchParams();
@@ -51,7 +77,6 @@ export default function VakasiLoyalisPage() {
   const [existingEvents, setExistingEvents] = useState<any[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [filterDept, setFilterDept] = useState<string>('');
-  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number>(0);
   const [cetakKegiatanDialogOpen, setCetakKegiatanDialogOpen] = useState(false);
 
   // Form States
@@ -61,25 +86,49 @@ export default function VakasiLoyalisPage() {
     _setSelectedEventId(id);
     selectedEventIdRef.current = id;
   };
-  const [eventName, setEventName] = useState('');
-  const [isEndOfMonth, setIsEndOfMonth] = useState(false);
-  const [selectedDept, setSelectedDept] = useState<string>('');
+  const [eventName, _setEventName] = useState('');
+  const eventNameRef = useRef('');
+  const setEventName = (value: string) => {
+    eventNameRef.current = value;
+    _setEventName(value);
+  };
+  const [isEndOfMonth, _setIsEndOfMonth] = useState(false);
+  const isEndOfMonthRef = useRef(false);
+  const setIsEndOfMonth = (value: boolean) => {
+    isEndOfMonthRef.current = value;
+    _setIsEndOfMonth(value);
+  };
+  const [selectedDept, _setSelectedDept] = useState<string>('');
+  const selectedDeptRef = useRef('');
+  const setSelectedDept = (value: string) => {
+    selectedDeptRef.current = value;
+    _setSelectedDept(value);
+  };
   const [departments, setDepartments] = useState<string[]>([]);
-  const [workerRows, setWorkerRows] = useState<{
-    employeeId: string;
-    employeeName: string;
-    payGiven: number;
-    showDropdown?: boolean;
-    searchText?: string;
-  }[]>([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+  const [workerRows, _setWorkerRows] = useState<WorkerRow[]>([createEmptyWorkerRow()]);
+  const workerRowsRef = useRef<WorkerRow[]>([createEmptyWorkerRow()]);
+  const setWorkerRows = (rows: WorkerRow[]) => {
+    workerRowsRef.current = rows;
+    _setWorkerRows(rows);
+  };
 
   // Autosave status
   const [autosaveMessage, setAutosaveMessage] = useState<string>('');
   
   // File upload for SatKer Loyalis scanned report
   const [reportFile, setReportFile] = useState<File | null>(null);
-  const [reportFileUrl, setReportFileUrl] = useState<string | null>(null);
-  const [reportFileName, setReportFileName] = useState<string | null>(null);
+  const [reportFileUrl, _setReportFileUrl] = useState<string | null>(null);
+  const reportFileUrlRef = useRef<string | null>(null);
+  const setReportFileUrl = (value: string | null) => {
+    reportFileUrlRef.current = value;
+    _setReportFileUrl(value);
+  };
+  const [reportFileName, _setReportFileName] = useState<string | null>(null);
+  const reportFileNameRef = useRef<string | null>(null);
+  const setReportFileName = (value: string | null) => {
+    reportFileNameRef.current = value;
+    _setReportFileName(value);
+  };
   const [uploadingReport, setUploadingReport] = useState(false);
 
   // Review dialog for Super Admin
@@ -101,6 +150,10 @@ export default function VakasiLoyalisPage() {
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingAutosaveRef = useRef<AutosaveSnapshot | null>(null);
+  const autosaveInFlightRef = useRef(false);
+  const autosaveWritePromiseRef = useRef<Promise<void> | null>(null);
 
   // ── Fetch Signature Configurations ──
   const [signatureConfig, setSignatureConfig] = useState<Record<string, { name: string, title: string }>>({});
@@ -255,11 +308,11 @@ export default function VakasiLoyalisPage() {
 
     setUploadingReport(true);
     try {
-      const eventSeg = sanitizeEventId(eventName || 'unnamed');
+      const eventSeg = sanitizeEventId(eventNameRef.current || 'unnamed');
       const result = await uploadReportFile(fileToUpload, periodToken, eventSeg);
       setReportFileUrl(result.url);
       setMessage({ type: 'success', text: `File "${result.name}" berhasil diunggah.` });
-      triggerAutosave(workerRows, eventName, selectedEventIdRef.current, isEndOfMonth, selectedDept, result.url, result.name);
+      triggerAutosave();
     } catch (err) {
       console.error('Error uploading report file:', err);
       setMessage({ type: 'error', text: 'Gagal mengunggah file laporan.' });
@@ -272,39 +325,41 @@ export default function VakasiLoyalisPage() {
 
   const handleSubmitForReview = async () => {
     if (isSavingRef.current) return;
-    if (!eventName.trim()) {
-      setMessage({ type: 'error', text: 'Nama Kegiatan harus diisi.' });
-      return;
-    }
-    const invalidWorker = workerRows.find(w => w.searchText?.trim() && !w.employeeId);
-    if (invalidWorker) {
-      setMessage({
-        type: 'error',
-        text: `Pegawai "${invalidWorker.searchText}" belum dipilih secara valid dari daftar dropdown. Silakan cari dan klik nama pegawai dari dropdown.`
-      });
-      return;
-    }
-
-    const activeWorkers = workerRows.filter(w => w.employeeId);
-    if (activeWorkers.length === 0) {
-      setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai.' });
-      return;
-    }
-    if (!reportFileUrl) {
-      setMessage({ type: 'error', text: 'Laporan yang ditandatangani harus diunggah sebelum submit.' });
-      return;
-    }
-    const ids = activeWorkers.map(w => w.employeeId);
-    if (new Set(ids).size !== ids.length) {
-      setMessage({ type: 'error', text: 'Ada duplikasi pegawai dalam kegiatan ini.' });
-      return;
-    }
-
     isSavingRef.current = true;
     setSaving(true);
     try {
-      const eventSeg = sanitizeEventId(eventName);
-      const documentId = selectedEventId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
+      await cancelPendingAutosaveAndWait();
+      const snapshot = buildAutosaveSnapshot();
+      if (!snapshot.eventName.trim()) {
+        setMessage({ type: 'error', text: 'Nama Kegiatan harus diisi.' });
+        return;
+      }
+      const invalidWorker = snapshot.rows.find(w => w.searchText?.trim() && !w.employeeId);
+      if (invalidWorker) {
+        setMessage({
+          type: 'error',
+          text: `Pegawai "${invalidWorker.searchText}" belum dipilih secara valid. Pilih nama yang tepat dari daftar pegawai atau ketik nama lengkapnya.`
+        });
+        return;
+      }
+
+      const activeWorkers = snapshot.rows.filter(w => w.employeeId);
+      if (activeWorkers.length === 0) {
+        setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai.' });
+        return;
+      }
+      if (!snapshot.reportFileUrl) {
+        setMessage({ type: 'error', text: 'Laporan yang ditandatangani harus diunggah sebelum submit.' });
+        return;
+      }
+      const ids = activeWorkers.map(w => w.employeeId);
+      if (new Set(ids).size !== ids.length) {
+        setMessage({ type: 'error', text: 'Ada duplikasi pegawai dalam kegiatan ini.' });
+        return;
+      }
+
+      const eventSeg = sanitizeEventId(snapshot.eventName);
+      const documentId = snapshot.eventId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
 
       let totalPayout = 0;
       const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
@@ -318,8 +373,8 @@ export default function VakasiLoyalisPage() {
       });
 
       let previousWorkerIds: string[] = [];
-      if (selectedEventId) {
-        const prevSnap = await getDoc(doc(db, 'VakasiTambahan', selectedEventId));
+      if (snapshot.eventId) {
+        const prevSnap = await getDoc(doc(db, 'VakasiTambahan', snapshot.eventId));
         if (prevSnap.exists()) {
           const prevData = prevSnap.data() as any;
           previousWorkerIds = Object.keys(prevData.eventWorkers || {});
@@ -356,19 +411,19 @@ export default function VakasiLoyalisPage() {
       }
 
       const payload = {
-        eventName,
+        eventName: snapshot.eventName,
         period: periodToken,
         totalPayout,
         isEndOfMonth: false,
-        departmentUnit: selectedDept || null,
+        departmentUnit: snapshot.department || null,
         eventWorkers: workersMap,
         updatedAt: serverTimestamp(),
         status: 'pending_review',
         submittedBy: profile?.uid || null,
         submittedByName: profile?.displayName || null,
         submittedByEmail: profile?.email || null,
-        reportFileUrl: reportFileUrl,
-        reportFileName: reportFileName,
+        reportFileUrl: snapshot.reportFileUrl,
+        reportFileName: snapshot.reportFileName,
         submittedAt: serverTimestamp(),
         reviewNote: null,
         reviewedBy: null,
@@ -376,7 +431,7 @@ export default function VakasiLoyalisPage() {
       };
 
       await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
-      setMessage({ type: 'success', text: `Kegiatan "${eventName}" berhasil disubmit untuk review.` });
+      setMessage({ type: 'success', text: `Kegiatan "${snapshot.eventName}" berhasil disubmit untuk review.` });
       setAutosaveMessage('');
 
       setSelectedEventId(documentId);
@@ -400,6 +455,7 @@ export default function VakasiLoyalisPage() {
     isSavingRef.current = true;
     setSaving(true);
     try {
+      await cancelPendingAutosaveAndWait();
       const eventSnap = await getDoc(doc(db, 'VakasiTambahan', eventId));
       if (!eventSnap.exists()) {
         throw new Error("Event tidak ditemukan.");
@@ -478,6 +534,7 @@ export default function VakasiLoyalisPage() {
     isSavingRef.current = true;
     setSaving(true);
     try {
+      await cancelPendingAutosaveAndWait();
       const updatePayload: Record<string, any> = {
         status: 'pending_review',
         updatedAt: serverTimestamp(),
@@ -497,39 +554,37 @@ export default function VakasiLoyalisPage() {
 
   const handleSaveEvent = async () => {
     if (isSavingRef.current) return;
-    if (!eventName.trim()) {
-      setMessage({ type: 'error', text: 'Nama Kegiatan harus diisi.' });
-      return;
-    }
-    const invalidWorker = workerRows.find(w => w.searchText?.trim() && !w.employeeId);
-    if (invalidWorker) {
-      setMessage({
-        type: 'error',
-        text: `Pegawai "${invalidWorker.searchText}" belum dipilih secara valid dari daftar dropdown. Silakan cari dan klik nama pegawai dari dropdown.`
-      });
-      return;
-    }
-
-    const activeWorkers = workerRows.filter(w => w.employeeId);
-    if (activeWorkers.length === 0) {
-      setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai.' });
-      return;
-    }
-    const ids = activeWorkers.map(w => w.employeeId);
-    if (new Set(ids).size !== ids.length) {
-      setMessage({ type: 'error', text: 'Ada duplikasi pegawai dalam kegiatan ini.' });
-      return;
-    }
-
-    if (autosaveTimerRef.current) {
-      clearTimeout(autosaveTimerRef.current);
-    }
-
     isSavingRef.current = true;
     setSaving(true);
     try {
-      const eventSeg = sanitizeEventId(eventName);
-      const activeId = selectedEventIdRef.current;
+      await cancelPendingAutosaveAndWait();
+      const snapshot = buildAutosaveSnapshot();
+      if (!snapshot.eventName.trim()) {
+        setMessage({ type: 'error', text: 'Nama Kegiatan harus diisi.' });
+        return;
+      }
+      const invalidWorker = snapshot.rows.find(w => w.searchText?.trim() && !w.employeeId);
+      if (invalidWorker) {
+        setMessage({
+          type: 'error',
+          text: `Pegawai "${invalidWorker.searchText}" belum dipilih secara valid. Pilih nama yang tepat dari daftar pegawai atau ketik nama lengkapnya.`
+        });
+        return;
+      }
+
+      const activeWorkers = snapshot.rows.filter(w => w.employeeId);
+      if (activeWorkers.length === 0) {
+        setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai.' });
+        return;
+      }
+      const ids = activeWorkers.map(w => w.employeeId);
+      if (new Set(ids).size !== ids.length) {
+        setMessage({ type: 'error', text: 'Ada duplikasi pegawai dalam kegiatan ini.' });
+        return;
+      }
+
+      const eventSeg = sanitizeEventId(snapshot.eventName);
+      const activeId = snapshot.eventId;
       const documentId = activeId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
 
       let totalPayout = 0;
@@ -587,11 +642,11 @@ export default function VakasiLoyalisPage() {
       const finalSubmittedByEmail = activeId ? currentEventSubmittedByEmail : (profile?.email || null);
 
       const payload: Record<string, any> = {
-        eventName,
+        eventName: snapshot.eventName,
         period: periodToken,
         totalPayout,
-        isEndOfMonth,
-        departmentUnit: !isEndOfMonth ? selectedDept : null,
+        isEndOfMonth: snapshot.isEndOfMonth,
+        departmentUnit: !snapshot.isEndOfMonth ? snapshot.department : null,
         eventWorkers: workersMap,
         updatedAt: serverTimestamp(),
         status: isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'),
@@ -599,9 +654,9 @@ export default function VakasiLoyalisPage() {
         submittedByName: finalSubmittedByName,
         submittedByEmail: finalSubmittedByEmail,
       };
-      if (reportFileUrl) {
-        payload.reportFileUrl = reportFileUrl;
-        payload.reportFileName = reportFileName;
+      if (snapshot.reportFileUrl) {
+        payload.reportFileUrl = snapshot.reportFileUrl;
+        payload.reportFileName = snapshot.reportFileName;
       }
 
       await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
@@ -610,7 +665,7 @@ export default function VakasiLoyalisPage() {
       if (newStatus === 'approved') {
         const updatedEventPayload = {
           id: documentId,
-          eventName,
+          eventName: snapshot.eventName,
           status: 'approved',
           eventWorkers: workersMap
         };
@@ -619,7 +674,7 @@ export default function VakasiLoyalisPage() {
         );
       }
 
-      setMessage({ type: 'success', text: `Event "${eventName}" berhasil disimpan.` });
+      setMessage({ type: 'success', text: `Event "${snapshot.eventName}" berhasil disimpan.` });
       setAutosaveMessage('');
       setSelectedEventId(documentId);
       setCurrentEventStatus(newStatus);
@@ -644,42 +699,53 @@ export default function VakasiLoyalisPage() {
     });
   };
 
-  const handleAddRow = () => {
-    setWorkerRows(prev => [...prev, { employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
-  };
+  const buildAutosaveSnapshot = (): AutosaveSnapshot => ({
+    rows: workerRowsRef.current.map(row => ({ ...row })),
+    eventName: eventNameRef.current,
+    eventId: selectedEventIdRef.current,
+    isEndOfMonth: isEndOfMonthRef.current,
+    department: selectedDeptRef.current,
+    reportFileUrl: reportFileUrlRef.current,
+    reportFileName: reportFileNameRef.current,
+  });
 
-  const autosaveTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const triggerAutosave = (
-    currentRows = workerRows,
-    currentEventName = eventName,
-    activeId = selectedEventIdRef.current,
-    currentIsEndOfMonth = isEndOfMonth,
-    currentDept = selectedDept,
-    currentReportFileUrl = reportFileUrl,
-    currentReportFileName = reportFileName
-  ) => {
+  const scheduleAutosaveFlush = (delay = 1000) => {
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
     }
-    if (isSavingRef.current) return;
     autosaveTimerRef.current = setTimeout(() => {
-      handleAutosave(currentRows, currentEventName, activeId, currentIsEndOfMonth, currentDept, currentReportFileUrl, currentReportFileName);
-    }, 1000);
+      autosaveTimerRef.current = null;
+      void flushAutosaveQueue();
+    }, delay);
   };
 
-  const handleAutosave = async (
-    currentRows = workerRows,
-    currentEventName = eventName,
-    activeId = selectedEventIdRef.current,
-    currentIsEndOfMonth = isEndOfMonth,
-    currentDept = selectedDept,
-    currentReportFileUrl = reportFileUrl,
-    currentReportFileName = reportFileName
-  ) => {
-    if (isSavingRef.current) return;
+  const triggerAutosave = () => {
+    // Always retain the newest complete form snapshot. If a write is active, the
+    // queue flushes this snapshot immediately after that write completes.
+    pendingAutosaveRef.current = buildAutosaveSnapshot();
+    scheduleAutosaveFlush();
+  };
+
+  const cancelPendingAutosaveAndWait = async () => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    // The explicit save below uses the current refs, so an older queued snapshot
+    // must not run after it and overwrite the newer explicit save.
+    pendingAutosaveRef.current = null;
+    await autosaveWritePromiseRef.current;
+  };
+
+  const handleAutosave = async (snapshot: AutosaveSnapshot) => {
+    const { rows, eventName: currentEventName, eventId: activeId, isEndOfMonth: currentIsEndOfMonth, department: currentDept, reportFileUrl: currentReportFileUrl, reportFileName: currentReportFileName } = snapshot;
     if (!currentEventName.trim()) return;
-    const activeWorkers = currentRows.filter(w => w.employeeId);
+    const invalidWorker = rows.find(w => w.searchText?.trim() && !w.employeeId);
+    if (invalidWorker) {
+      setAutosaveMessage(`Belum tersimpan otomatis: pilih "${invalidWorker.searchText}" dari daftar pegawai.`);
+      return;
+    }
+    const activeWorkers = rows.filter(w => w.employeeId);
     const ids = activeWorkers.map(w => w.employeeId);
     if (new Set(ids).size !== ids.length) {
       setAutosaveMessage('Belum tersimpan otomatis: ada pegawai yang ganda dalam daftar.');
@@ -747,6 +813,107 @@ export default function VakasiLoyalisPage() {
       setAutosaveMessage('Gagal menyimpan otomatis. Periksa koneksi Anda dan klik "Simpan Event".');
     }
   };
+
+  const flushAutosaveQueue = async () => {
+    if (!pendingAutosaveRef.current) return;
+    if (isSavingRef.current || autosaveInFlightRef.current) {
+      scheduleAutosaveFlush(250);
+      return;
+    }
+
+    const snapshot = pendingAutosaveRef.current;
+    pendingAutosaveRef.current = null;
+    autosaveInFlightRef.current = true;
+    const writePromise = handleAutosave(snapshot);
+    autosaveWritePromiseRef.current = writePromise;
+    try {
+      await writePromise;
+    } finally {
+      autosaveInFlightRef.current = false;
+      if (autosaveWritePromiseRef.current === writePromise) {
+        autosaveWritePromiseRef.current = null;
+      }
+      if (pendingAutosaveRef.current) {
+        scheduleAutosaveFlush(0);
+      }
+    }
+  };
+
+  const updateWorkerRows = (updater: (rows: WorkerRow[]) => WorkerRow[]) => {
+    const nextRows = updater(workerRowsRef.current);
+    setWorkerRows(nextRows);
+    return nextRows;
+  };
+
+  const setWorkerDropdown = (index: number, showDropdown: boolean) => {
+    updateWorkerRows(rows => rows.map((row, rowIndex) =>
+      rowIndex === index ? { ...row, showDropdown } : row
+    ));
+  };
+
+  const updateWorkerSearchText = (index: number, searchText: string) => {
+    updateWorkerRows(rows => rows.map((row, rowIndex) => {
+      if (rowIndex !== index) return row;
+      const identityChanged = searchText !== row.employeeName;
+      return {
+        ...row,
+        searchText,
+        employeeId: identityChanged ? '' : row.employeeId,
+        employeeName: identityChanged ? '' : row.employeeName,
+        showDropdown: true,
+      };
+    }));
+    if (searchText.trim()) {
+      setAutosaveMessage('Pilih pegawai dari daftar agar baris ini dapat disimpan.');
+    }
+  };
+
+  const selectWorker = (index: number, employee: { id: string; name: string }) => {
+    const alreadySelected = workerRowsRef.current.some((row, rowIndex) =>
+      rowIndex !== index && row.employeeId === employee.id
+    );
+    if (alreadySelected) {
+      setAutosaveMessage(`Belum tersimpan otomatis: ${employee.name} sudah ada dalam daftar.`);
+      return false;
+    }
+
+    updateWorkerRows(rows => rows.map((row, rowIndex) =>
+      rowIndex === index
+        ? { ...row, employeeId: employee.id, employeeName: employee.name, searchText: employee.name, showDropdown: false }
+        : row
+    ));
+    triggerAutosave();
+    return true;
+  };
+
+  const resolveWorkerSearchText = (index: number) => {
+    const row = workerRowsRef.current[index];
+    if (!row || row.employeeId || !row.searchText?.trim()) return true;
+
+    const normalizeName = (value: string) => value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('id-ID');
+    const typedName = normalizeName(row.searchText);
+    const exactMatches = loyalisEmployees.filter(employee => normalizeName(employee.name) === typedName);
+    const uniqueMatches = exactMatches.length > 0
+      ? exactMatches
+      : loyalisEmployees.filter(employee => normalizeName(employee.name).includes(typedName));
+
+    if (uniqueMatches.length === 1) {
+      return selectWorker(index, uniqueMatches[0]);
+    }
+
+    setAutosaveMessage(`Belum tersimpan otomatis: pilih "${row.searchText}" dari daftar pegawai.`);
+    return false;
+  };
+
+  const handleAddRow = () => {
+    updateWorkerRows(rows => [...rows, createEmptyWorkerRow()]);
+  };
+
+  useEffect(() => () => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+    }
+  }, []);
 
   const handlePrintLoyalisRecap = () => {
     const approvedEvents = (existingEvents || []).filter(evt => !evt.status || evt.status === 'approved');
@@ -892,7 +1059,7 @@ export default function VakasiLoyalisPage() {
                     setEventName('');
                     setIsEndOfMonth(false);
                     setSelectedDept('');
-                    setWorkerRows([{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+                    setWorkerRows([createEmptyWorkerRow()]);
                     setReportFile(null);
                     setReportFileUrl(null);
                     setReportFileName(null);
@@ -946,7 +1113,7 @@ export default function VakasiLoyalisPage() {
                           searchText: w.employeeName || '',
                           showDropdown: false,
                         }));
-                        setWorkerRows(rows.length > 0 ? rows : [{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
+                        setWorkerRows(rows.length > 0 ? rows : [createEmptyWorkerRow()]);
                       }}
                       className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer ${getCardBgClass(evt.status, isActive)}`}
                     >
@@ -1012,7 +1179,7 @@ export default function VakasiLoyalisPage() {
                   disabled={isReadOnly}
                   onChange={(e) => {
                     setEventName(e.target.value);
-                    triggerAutosave(workerRows, e.target.value, selectedEventIdRef.current, isEndOfMonth, selectedDept);
+                    triggerAutosave();
                   }}
                   className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 h-10"
                 />
@@ -1025,7 +1192,7 @@ export default function VakasiLoyalisPage() {
                   disabled={isReadOnly || isEndOfMonth}
                   onValueChange={(v) => {
                     setSelectedDept(v || '');
-                    triggerAutosave(workerRows, eventName, selectedEventIdRef.current, isEndOfMonth, v || '');
+                    triggerAutosave();
                   }}
                 >
                   <SelectTrigger className="w-full bg-white border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all text-xs h-10">
@@ -1085,31 +1252,27 @@ export default function VakasiLoyalisPage() {
                         disabled={isReadOnly}
                         autoComplete="new-password"
                         onChange={(e) => {
-                          const val = e.target.value;
-                          setWorkerRows(prev => {
-                            const updated = [...prev];
-                            updated[idx].searchText = val;
-                            updated[idx].showDropdown = true;
-                            return updated;
-                          });
+                          updateWorkerSearchText(idx, e.target.value);
                         }}
                         onFocus={() => {
-                          setWorkerRows(prev => {
-                            const updated = [...prev];
-                            updated[idx].showDropdown = true;
-                            return updated;
-                          });
+                          setWorkerDropdown(idx, true);
                         }}
                         onBlur={() => {
+                          resolveWorkerSearchText(idx);
                           setTimeout(() => {
-                            setWorkerRows(prev => {
-                              const updated = [...prev];
-                              updated[idx].showDropdown = false;
-                              return updated;
-                            });
+                            setWorkerDropdown(idx, false);
                           }, 200);
                         }}
                         onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            resolveWorkerSearchText(idx);
+                            return;
+                          }
+                          if (e.key === 'Tab') {
+                            resolveWorkerSearchText(idx);
+                            return;
+                          }
                           const cols = ['search-input', 'pay-input'];
                           const col = 0;
                           let targetRow = idx;
@@ -1144,21 +1307,7 @@ export default function VakasiLoyalisPage() {
                                 key={emp.id}
                                 type="button"
                                 onClick={() => {
-                                  setWorkerRows(prev => {
-                                    const updated = [...prev];
-                                    updated[idx].employeeId = emp.id;
-                                    updated[idx].employeeName = emp.name;
-                                    updated[idx].searchText = emp.name;
-                                    updated[idx].showDropdown = false;
-                                    return updated;
-                                  });
-                                  triggerAutosave(
-                                    workerRows.map((r, rIdx) => rIdx === idx ? { ...r, employeeId: emp.id, employeeName: emp.name } : r),
-                                    eventName,
-                                    selectedEventIdRef.current,
-                                    isEndOfMonth,
-                                    selectedDept
-                                  );
+                                  selectWorker(idx, emp);
                                 }}
                                 className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[11px] font-semibold text-slate-700 flex justify-between"
                               >
@@ -1181,18 +1330,10 @@ export default function VakasiLoyalisPage() {
                         disabled={isReadOnly}
                         onChange={(e) => {
                           const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0;
-                          setWorkerRows(prev => {
-                            const updated = [...prev];
-                            updated[idx].payGiven = val;
-                            return updated;
-                          });
-                          triggerAutosave(
-                            workerRows.map((r, rIdx) => rIdx === idx ? { ...r, payGiven: val } : r),
-                            eventName,
-                            selectedEventIdRef.current,
-                            isEndOfMonth,
-                            selectedDept
-                          );
+                          updateWorkerRows(rows => rows.map((worker, workerIndex) =>
+                            workerIndex === idx ? { ...worker, payGiven: val } : worker
+                          ));
+                          triggerAutosave();
                         }}
                         onKeyDown={(e) => {
                           const cols = ['search-input', 'pay-input'];
@@ -1217,9 +1358,11 @@ export default function VakasiLoyalisPage() {
                         type="button"
                         variant="ghost"
                         onClick={() => {
-                          const nextRows = workerRows.filter((_, i) => i !== idx);
-                          setWorkerRows(nextRows.length > 0 ? nextRows : [{ employeeId: '', employeeName: '', payGiven: 0, searchText: '', showDropdown: false }]);
-                          triggerAutosave(nextRows, eventName, selectedEventIdRef.current, isEndOfMonth, selectedDept);
+                          updateWorkerRows(rows => {
+                            const nextRows = rows.filter((_, rowIndex) => rowIndex !== idx);
+                            return nextRows.length > 0 ? nextRows : [createEmptyWorkerRow()];
+                          });
+                          triggerAutosave();
                         }}
                         className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl h-9 w-9 shrink-0 flex items-center justify-center p-0"
                       >
@@ -1267,7 +1410,7 @@ export default function VakasiLoyalisPage() {
                               onClick={() => {
                                 setReportFileUrl(null);
                                 setReportFileName(null);
-                                triggerAutosave(workerRows, eventName, selectedEventIdRef.current, isEndOfMonth, selectedDept, null, null);
+                                triggerAutosave();
                               }}
                               className="h-7 w-7 rounded-lg text-red-500"
                             ><Trash2 className="w-4 h-4" /></Button>

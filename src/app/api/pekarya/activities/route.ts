@@ -244,7 +244,7 @@ function sanitizeDriverData(
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['honorer']);
+    requireRole(actor, ['honorer', 'ketua_shift_satpam']);
     if (!actor.linkedEmployeeId) {
       throw new HttpError(409, 'Akun belum terhubung ke data pegawai.');
     }
@@ -592,7 +592,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['honorer']);
+    requireRole(actor, ['honorer', 'ketua_shift_satpam']);
     const { searchParams } = new URL(request.url);
     const reportId = searchParams.get('reportId');
     const journeyIdParam = searchParams.get('journeyId');

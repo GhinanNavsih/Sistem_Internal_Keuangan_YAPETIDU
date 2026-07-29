@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import GlobalHeader from '@/components/GlobalHeader';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
+import UraianNavToggles from '@/components/UraianNavToggles';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,6 +68,9 @@ import {
   deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
+import { MONTHS_ID } from '@/utils/rekapConfig';
+
+const YEARS = Array.from({ length: 9 }, (_, i) => new Date().getFullYear() + 3 - i);
 
 const VEHICLE_RATES = {
   'Bis': 2500,
@@ -178,6 +183,7 @@ const loadGoogleMapsScript = (callback: () => void) => {
 function DriverJourneysContent() {
   const { user, profile } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   // Read URL params
@@ -716,7 +722,11 @@ function DriverJourneysContent() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <SatkerPekaryaNavBar />
+      {profile?.role === 'super_admin' ? (
+        <GlobalHeader />
+      ) : (
+        <SatkerPekaryaNavBar />
+      )}
 
       <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -730,14 +740,69 @@ function DriverJourneysContent() {
           </p>
         </div>
 
-        <Button
-          onClick={() => setShowAddForm(true)}
-          className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-200 text-xs px-4 h-10 gap-1.5 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Buat Perjalanan Baru
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Select value={String(month)} onValueChange={(v) => {
+            if (!v) return;
+            const params = new URLSearchParams(searchParams.toString());
+            params.set('month', v);
+            router.push(`${pathname}?${params.toString()}`);
+          }}>
+            <SelectTrigger className="w-44 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+              <SelectValue>
+                {`${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+              {MONTHS_ID.map((m, i) => {
+                const now = new Date();
+                const currentYear = now.getFullYear();
+                const currentMonth = now.getMonth() + 1;
+                const monthVal = i + 1;
+                if (year === currentYear && monthVal > currentMonth) return null;
+                if (profile?.role !== 'super_admin' && year === 2026 && monthVal < 7) return null;
+                return (
+                  <SelectItem key={i + 1} value={String(i + 1)}>
+                    {m}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          <Select value={String(year)} onValueChange={(v) => {
+            if (!v) return;
+            const params = new URLSearchParams(searchParams.toString());
+            params.set('year', v);
+            router.push(`${pathname}?${params.toString()}`);
+          }}>
+            <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+              {YEARS.filter(y => {
+                const now = new Date();
+                const currentYear = now.getFullYear();
+                if (y > currentYear) return false;
+                if (profile?.role !== 'super_admin' && y < 2026) return false;
+                return true;
+              }).map(y => (
+                <SelectItem key={y} value={String(y)}>
+                  {y}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            onClick={() => setShowAddForm(true)}
+            className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-200 text-xs px-4 h-10 gap-1.5 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Buat Perjalanan Baru
+          </Button>
+        </div>
       </div>
+
+      {/* Uraian Navigation Toggles (Super Admin) */}
+      <UraianNavToggles />
 
       {message && (
         <div

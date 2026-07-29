@@ -12,11 +12,12 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
-import { ScanLine, Banknote, ClipboardCheck, FileSpreadsheet, LogOut, ArrowLeft, Clock, Car, FileText } from 'lucide-react';
+import { LogOut, ArrowLeft } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { SUPPORTED_CATEGORIES, MONTHS_ID } from '@/utils/rekapConfig';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
+import UraianNavToggles from '@/components/UraianNavToggles';
 
 const YEARS = Array.from({ length: 9 }, (_, i) => new Date().getFullYear() + 3 - i);
 
@@ -325,135 +326,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
         {/* Tab Switcher for Super Admin & other roles */}
         {profile && profile.role !== 'satker_head' && profile.role !== 'satker_head_loyalis' && (
-          <div className="flex flex-col gap-2.5 w-full">
-            {/* Row 1: Loyalis Pay Navigation */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-500 px-1 shrink-0 bg-indigo-50/80 border border-indigo-100 py-1 rounded-md">
-                Loyalis
-              </span>
-              <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60 overflow-x-auto max-w-full">
-                {profile.role === 'super_admin' && (
-                  <>
-                    <button
-                      onClick={() => router.push(`/dashboard/payroll/uraian/proposal-kegiatan${getCleanParamsString('proposal_kegiatan')}`)}
-                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                        activeTab === 'proposal_kegiatan'
-                          ? 'bg-indigo-600 text-white shadow-sm'
-                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                      }`}
-                    >
-                      <FileText className="w-4 h-4" />
-                      Pengajuan Anggaran (Proposal)
-                    </button>
-                    <button
-                      onClick={() => router.push(`/dashboard/payroll/uraian/vakasi-loyalis${getCleanParamsString('vakasi_loyalis')}`)}
-                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                        activeTab === 'vakasi_loyalis'
-                          ? 'bg-indigo-600 text-white shadow-sm'
-                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                      }`}
-                    >
-                      <Banknote className="w-4 h-4" />
-                      Vakasi Tambahan (Loyalis)
-                    </button>
-                    <button
-                      onClick={() => router.push(`/dashboard/payroll/uraian/pelaporan-kegiatan${getCleanParamsString('pelaporan_kegiatan')}`)}
-                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                        activeTab === 'pelaporan_kegiatan'
-                          ? 'bg-indigo-600 text-white shadow-sm'
-                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                      }`}
-                    >
-                      <ClipboardCheck className="w-4 h-4" />
-                      Pelaporan Kegiatan
-                    </button>
-                    <button
-                      onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis${getCleanParamsString('presensi_loyalis')}`)}
-                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                        activeTab === 'presensi_loyalis'
-                          ? 'bg-indigo-600 text-white shadow-sm'
-                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                      }`}
-                    >
-                      <FileSpreadsheet className="w-4 h-4" />
-                      Presensi Loyalis
-                    </button>
-                  </>
-                )}
-
-                {(profile.role === 'super_admin' || profile.role === 'loyalis_presence_admin') && (
-                  <>
-                    <button
-                      onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis-raw${getCleanParamsString('presensi_loyalis_raw')}`)}
-                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                        activeTab === 'presensi_loyalis_raw'
-                          ? 'bg-indigo-600 text-white shadow-sm'
-                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                      }`}
-                    >
-                      <Clock className="w-4 h-4" />
-                      Presensi Loyalis (Raw)
-                    </button>
-                    <button
-                      onClick={() => router.push(`/dashboard/payroll/uraian/presence-corrections${getCleanParamsString('presence_corrections')}`)}
-                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                        activeTab === 'presence_corrections'
-                          ? 'bg-indigo-600 text-white shadow-sm'
-                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                      }`}
-                    >
-                      <ClipboardCheck className="w-4 h-4" />
-                      Review Koreksi Presensi
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Row 2: Pekarya Pay Navigation */}
-            {profile.role === 'super_admin' && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 px-1 shrink-0 bg-emerald-50/80 border border-emerald-100 py-1 rounded-md">
-                  Pekarya
-                </span>
-                <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60 overflow-x-auto max-w-full">
-                  <button
-                    onClick={() => router.push(`/dashboard/payroll/activity-review?month=${month}&year=${year}`)}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                      pathname.startsWith('/dashboard/payroll/activity-review')
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                    }`}
-                  >
-                    <ClipboardCheck className="w-4 h-4" />
-                    Review Kegiatan
-                  </button>
-                  <button
-                    onClick={() => router.push(`/dashboard/payroll/uraian/rekap-pekarya${getCleanParamsString('presensi')}`)}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                      activeTab === 'presensi'
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                    }`}
-                  >
-                    <ScanLine className="w-4 h-4" />
-                    Rekap Uraian (Pekarya)
-                  </button>
-                  <button
-                    onClick={() => router.push(`/dashboard/payroll/driver-journeys${getCleanParamsString('driver-journeys')}`)}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                      pathname.startsWith('/dashboard/payroll/driver-journeys')
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Car className="w-4 h-4" />
-                    Perjalanan Driver
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <UraianNavToggles />
         )}
 
         <div className="w-full">{children}</div>

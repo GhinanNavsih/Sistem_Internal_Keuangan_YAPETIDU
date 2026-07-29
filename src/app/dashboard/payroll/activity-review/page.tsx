@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
-import Link from 'next/link';
+import GlobalHeader from '@/components/GlobalHeader';
+import UraianNavToggles from '@/components/UraianNavToggles';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
@@ -43,7 +44,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  ArrowLeft,
+
   Loader2,
   CheckCircle2,
   XCircle,
@@ -1638,46 +1639,83 @@ export default function ActivityReviewPage() {
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
 
-      {/* ── SatKer Pekarya NavBar ─────────────────────────────────── */}
-      {profile?.role === 'satker_head' && (
+      {/* ── Top Navigation ─────────────────────────────────────────── */}
+      {profile?.role === 'super_admin' ? (
+        <GlobalHeader />
+      ) : profile?.role === 'satker_head' ? (
         <Suspense fallback={null}>
           <SatkerPekaryaNavBar />
         </Suspense>
-      )}
+      ) : null}
 
       <div className="max-w-[1600px] mx-auto p-6 lg:p-8 space-y-6 relative z-10">
 
         {/* ── Header ─────────────────────────────────────────────────── */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            {profile?.role === 'super_admin' && (
-              <Link href={`/dashboard/payroll/uraian?month=${month}&year=${year}`}>
-                <Button variant="ghost" className="group -ml-2 mb-2 text-slate-500 hover:text-indigo-600 transition-colors">
-                  <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
-                  Kembali ke Uraian
-                </Button>
-              </Link>
-            )}
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 shadow-inner">
-                <ClipboardCheck className="w-5 h-5" />
-              </div>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">Review Laporan Kegiatan</h1>
-                <p className="text-slate-500 text-sm">Tinjau, setujui, atau tolak kegiatan yang dilaporkan oleh karyawan kebersihan.</p>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 shadow-inner">
+              <ClipboardCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">Review Laporan Kegiatan</h1>
+              <p className="text-slate-500 text-sm">Tinjau, setujui, atau tolak kegiatan yang dilaporkan oleh karyawan kebersihan.</p>
             </div>
           </div>
-          <Button
-            variant="outline"
-            onClick={fetchActivities}
-            disabled={loading}
-            className="rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-sm"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Segarkan
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
+              <SelectTrigger className="w-44 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+                <SelectValue>
+                  {`${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                {MONTHS_ID.map((m, i) => {
+                  const now = new Date();
+                  const currentYear = now.getFullYear();
+                  const currentMonth = now.getMonth() + 1;
+                  const monthVal = i + 1;
+                  if (year === currentYear && monthVal > currentMonth) return null;
+                  if (profile?.role !== 'super_admin' && year === 2026 && monthVal < 7) return null;
+                  return (
+                    <SelectItem key={i + 1} value={String(i + 1)}>
+                      {m}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+            <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
+              <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                {YEARS.map(y => {
+                  const now = new Date();
+                  const currentYear = now.getFullYear();
+                  if (y > currentYear) return null;
+                  if (profile?.role !== 'super_admin' && y < 2026) return null;
+                  return (
+                    <SelectItem key={y} value={String(y)}>
+                      {y}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              onClick={fetchActivities}
+              disabled={loading}
+              className="rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-sm"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Segarkan
+            </Button>
+          </div>
         </div>
+
+        {/* ── Uraian Navigation Toggles (Super Admin) ──────────────────── */}
+        <UraianNavToggles />
 
         {/* ── Notifications ──────────────────────────────────────────── */}
         {successMsg && (
@@ -1697,54 +1735,6 @@ export default function ActivityReviewPage() {
         <Card className="bg-white rounded-2xl shadow-sm border-none">
           <CardContent className="p-4">
             <div className="flex flex-col md:flex-row md:items-center gap-3">
-              {/* Period */}
-              <div className="flex items-center gap-2">
-                <CalendarDays className="w-4 h-4 text-slate-400 shrink-0" />
-                <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
-                  <SelectTrigger className="w-36 bg-slate-50 border-slate-200 rounded-xl text-sm font-bold text-slate-700 h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
-                    {MONTHS_ID.map((m, i) => {
-                      const now = new Date();
-                      const currentYear = now.getFullYear();
-                      const currentMonth = now.getMonth() + 1;
-                      const monthVal = i + 1;
-                      // Hide future months for the current year
-                      if (year === currentYear && monthVal > currentMonth) return null;
-                      // Hide months before July for 2026 (except super_admin)
-                      if (profile?.role !== 'super_admin' && year === 2026 && monthVal < 7) return null;
-                      return (
-                        <SelectItem key={i + 1} value={String(i + 1)}>
-                          {m}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-                <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
-                  <SelectTrigger className="w-24 bg-slate-50 border-slate-200 rounded-xl text-sm font-bold text-slate-700 h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
-                    {YEARS.map(y => {
-                      const now = new Date();
-                      const currentYear = now.getFullYear();
-                      // Hide future years and years before 2026 (except super_admin)
-                      if (y > currentYear) return null;
-                      if (profile?.role !== 'super_admin' && y < 2026) return null;
-                      return (
-                        <SelectItem key={y} value={String(y)}>
-                          {y}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-
-
-
               {/* Search */}
               <div className="relative flex-1 md:max-w-xs md:ml-auto">
                 <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-slate-400" />
