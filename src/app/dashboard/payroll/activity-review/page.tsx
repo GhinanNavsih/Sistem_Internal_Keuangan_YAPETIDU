@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
-import { parseImageExif, ImageExifInsights } from '@/lib/exif';
+import type { PhotoAuditMetadata, PhotoEvidence } from '@/lib/payroll/domain';
 import {
   Card,
   CardContent,
@@ -50,6 +50,7 @@ import {
   XCircle,
   Clock,
   AlertCircle,
+  Info,
   AlertTriangle,
   Search,
   Filter,
@@ -177,6 +178,8 @@ interface ActivityReport {
   journeyId?: string;
   fuelReceiptUrl?: string;
   tollReceiptUrl?: string;
+  fuelReceiptEvidence?: PhotoEvidence[];
+  tollReceiptEvidence?: PhotoEvidence[];
   upahBersih?: number;
   extraMealAllowance?: number;
   extraFuelCost?: number;
@@ -214,6 +217,7 @@ interface ActivityReport {
   postId?: string;
   postName?: string;
   photoUrl?: string | null;
+  photoAuditMetadata?: PhotoAuditMetadata | null;
   dutyDate?: string;
   ketuaShiftId?: string;
   ketuaShiftName?: string;
@@ -349,49 +353,32 @@ function getStatusConfig(status: string) {
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 const CLEANING_CATEGORIES = ['KEBERSIHAN', 'KEBERSIHAN_IC', 'TEKNISI', 'SOPIR', 'KEBERSIHAN_PONTI', 'SATPAM', 'PEKARYA', 'PONTI'];
 
-// ─── Inline Photo with EXIF Pill Overlay ──────────────────────────────────────
+// ─── Inline Photo with Stored Audit Metadata Overlay ──────────────────────────
 
 function InlinePhotoWithExif({
   photoUrl,
   title,
   activityDate,
+  auditMetadata,
   onZoom,
 }: {
   photoUrl: string;
   title: string;
   activityDate?: string;
+  auditMetadata?: PhotoAuditMetadata | null;
   onZoom: () => void;
 }) {
-  const [exif, setExif] = useState<ImageExifInsights | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    parseImageExif(photoUrl)
-      .then((data) => {
-        if (active) {
-          setExif(data);
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setExif(null);
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [photoUrl]);
-
-  const dateMismatch = useMemo(() => {
-    if (!exif?.isoDateString || !activityDate) return false;
-    const photoYMD = exif.isoDateString.split('T')[0];
-    return photoYMD !== activityDate;
-  }, [exif?.isoDateString, activityDate]);
+  const dateMismatch = Boolean(
+    auditMetadata?.capturedAt && activityDate && auditMetadata.capturedAt.split('T')[0] !== activityDate,
+  );
+  const hasCoordinates = auditMetadata?.latitude !== null && auditMetadata?.latitude !== undefined &&
+    auditMetadata?.longitude !== null && auditMetadata?.longitude !== undefined;
+  const capturedDate = auditMetadata?.capturedAt
+    ? auditMetadata.capturedAt.replace('T', ' ').slice(0, 19)
+    : null;
+  const mapsUrl = hasCoordinates
+    ? `https://www.google.com/maps?q=${auditMetadata.latitude!.toFixed(6)},${auditMetadata.longitude!.toFixed(6)}`
+    : undefined;
 
   return (
     <div className="relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-950 aspect-[4/3] shadow-xs">
@@ -407,22 +394,17 @@ function InlinePhotoWithExif({
 
       {/* Semi-transparent Glass Pill Overlay for Datetime & Location (Top Left) */}
       <div className="absolute top-2 left-2 right-2 pointer-events-none flex flex-col items-start gap-1 z-10 max-w-[95%]">
-        {loading ? (
-          <div className="bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/20 text-white font-semibold text-[9px] flex items-center gap-1.5 shadow-md">
-            <Loader2 className="w-2.5 h-2.5 text-indigo-300 animate-spin" />
-            <span className="text-[9px] font-bold text-slate-200">EXIF...</span>
-          </div>
-        ) : (
+        {auditMetadata ? (
           <>
             {/* Datetime Pill */}
-            {exif?.formattedDate ? (
+            {capturedDate ? (
               <div
                 className={`flex items-center gap-1 text-[9.5px] px-2.5 py-0.5 rounded-full backdrop-blur-md border shadow-md ${
                   dateMismatch
                     ? 'bg-amber-950/40 text-amber-200 border-amber-500/50 font-black'
                     : 'bg-black/40 text-white border-white/25 font-bold'
                 }`}
-                title={dateMismatch ? `Tanggal foto (${exif.formattedDate}) beda dengan SPJ (${activityDate})` : exif.formattedDate}
+                title={dateMismatch ? `Tanggal foto (${capturedDate}) beda dengan SPJ (${activityDate})` : capturedDate}
               >
                 {dateMismatch ? (
                   <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
@@ -430,28 +412,28 @@ function InlinePhotoWithExif({
                   <Clock className="w-3 h-3 text-emerald-400 shrink-0" />
                 )}
                 <span className="truncate">
-                  {dateMismatch ? `${exif.formattedDate.split(',')[0]} (Beda Tgl)` : exif.formattedDate}
+                  {dateMismatch ? `${capturedDate.slice(0, 10)} (Beda Tgl)` : capturedDate}
                 </span>
               </div>
             ) : (
               <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-300 bg-black/35 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-full shadow-md">
                 <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                <span>Tanpa EXIF Jam</span>
+                <span>Tanpa Waktu Foto</span>
               </div>
             )}
 
             {/* GPS Location Pill */}
-            {exif?.latitude !== undefined && exif?.longitude !== undefined ? (
+            {hasCoordinates ? (
               <a
-                href={exif.googleMapsUrl}
+                href={mapsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
                 className="pointer-events-auto flex items-center gap-1 text-[9px] font-extrabold text-sky-300 hover:text-white bg-black/40 hover:bg-black/65 backdrop-blur-md border border-sky-400/35 px-2.5 py-0.5 rounded-full shadow-md transition-colors truncate max-w-full"
-                title="Buka lokasi di Google Maps"
+                title={auditMetadata.locationAddress || 'Buka lokasi di Google Maps'}
               >
                 <MapPin className="w-2.5 h-2.5 text-sky-400 shrink-0" />
-                <span className="truncate">{exif.latitude.toFixed(4)}, {exif.longitude.toFixed(4)} ↗</span>
+                <span className="truncate">{auditMetadata.locationName || `${auditMetadata.latitude!.toFixed(4)}, ${auditMetadata.longitude!.toFixed(4)}`} ↗</span>
               </a>
             ) : (
               <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-300 bg-black/35 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-full shadow-md">
@@ -460,6 +442,11 @@ function InlinePhotoWithExif({
               </div>
             )}
           </>
+        ) : (
+          <div className="flex items-center gap-1 text-[8.5px] font-bold text-slate-300 bg-black/35 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-full shadow-md">
+            <Info className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+            <span>Metadata Belum Direkam</span>
+          </div>
         )}
       </div>
 
@@ -473,7 +460,7 @@ function InlinePhotoWithExif({
           onClick={onZoom}
           className="px-2.5 py-1.5 bg-white/95 hover:bg-white text-slate-900 rounded-lg font-extrabold text-[10px] flex items-center gap-1 shadow-md transition-all backdrop-blur-xs cursor-pointer"
         >
-          <Eye className="w-3 h-3 text-indigo-600" /> Perbesar & EXIF Lengkap
+          <Eye className="w-3 h-3 text-indigo-600" /> Perbesar & Metadata
         </button>
       </div>
 
@@ -553,7 +540,7 @@ export default function ActivityReviewPage() {
   const [auditPoints, setAuditPoints] = useState<string[]>([]);
   const [isManualDistanceOverride, setIsManualDistanceOverride] = useState<boolean>(false);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
-  const [selectedExifImage, setSelectedExifImage] = useState<{ url: string; title: string; activityDate?: string } | null>(null);
+  const [selectedExifImage, setSelectedExifImage] = useState<{ url: string; title: string; activityDate?: string; auditMetadata?: PhotoAuditMetadata | null } | null>(null);
 
   // ── Satpam Shift Audit State ──
   const [expandedShiftIds, setExpandedShiftIds] = useState<Set<string>>(new Set());
@@ -2045,11 +2032,13 @@ export default function ActivityReviewPage() {
                                                 photoUrl={item.photoUrl}
                                                 title={`${item.postId || item.postName} — ${item.employeeName}`}
                                                 activityDate={item.dutyDate || item.activityDate}
+                                                auditMetadata={item.photoAuditMetadata}
                                                 onZoom={() =>
                                                   setSelectedExifImage({
                                                     url: item.photoUrl!,
                                                     title: `${item.postId || item.postName} — ${item.employeeName}`,
                                                     activityDate: item.dutyDate || item.activityDate,
+                                                    auditMetadata: item.photoAuditMetadata,
                                                   })
                                                 }
                                               />
@@ -2330,6 +2319,23 @@ export default function ActivityReviewPage() {
                             )}
                           </TableCell>
                           <TableCell className="text-right pr-6">
+                            {activity.photoUrl && activity.jobCategory !== 'SATPAM' && (
+                              <div className="flex justify-end mb-1.5">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setSelectedExifImage({
+                                    url: activity.photoUrl!,
+                                    title: `${activity.activityName} — ${activity.employeeName}`,
+                                    activityDate: activity.activityDate,
+                                    auditMetadata: activity.photoAuditMetadata,
+                                  })}
+                                  className="h-7 px-2.5 rounded-lg border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[11px] cursor-pointer"
+                                >
+                                  <Eye className="w-3 h-3 mr-1" /> Foto Bukti
+                                </Button>
+                              </div>
+                            )}
                             {activity.status === 'pending' && (
                               <div className="flex justify-end gap-1.5">
                                 {activity.jobCategory === 'SOPIR' ? (
@@ -2613,7 +2619,11 @@ export default function ActivityReviewPage() {
                             <button
                               key={idx}
                               type="button"
-                              onClick={() => setSelectedExifImage({ url, title: `Bukti BBM ${arr.length > 1 ? `#${idx + 1}` : ''}` })}
+                              onClick={() => setSelectedExifImage({
+                                url,
+                                title: `Bukti BBM ${arr.length > 1 ? `#${idx + 1}` : ''}`,
+                                auditMetadata: auditActivity.fuelReceiptEvidence?.find((item) => item.url === url)?.auditMetadata,
+                              })}
                               className="text-[10px] font-extrabold text-emerald-800 hover:bg-emerald-100 bg-emerald-50 border border-emerald-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                             >
                               🔍 Audit Metadata & Foto BBM {arr.length > 1 ? `#${idx + 1}` : ''}
@@ -2628,7 +2638,11 @@ export default function ActivityReviewPage() {
                             <button
                               key={idx}
                               type="button"
-                              onClick={() => setSelectedExifImage({ url, title: `Bukti Tol & Parkir ${arr.length > 1 ? `#${idx + 1}` : ''}` })}
+                              onClick={() => setSelectedExifImage({
+                                url,
+                                title: `Bukti Tol & Parkir ${arr.length > 1 ? `#${idx + 1}` : ''}`,
+                                auditMetadata: auditActivity.tollReceiptEvidence?.find((item) => item.url === url)?.auditMetadata,
+                              })}
                               className="text-[10px] font-extrabold text-indigo-800 hover:bg-indigo-100 bg-indigo-50 border border-indigo-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                             >
                               🔍 Audit Metadata & Foto Tol {arr.length > 1 ? `#${idx + 1}` : ''}
@@ -3162,6 +3176,7 @@ export default function ActivityReviewPage() {
           imageUrl={selectedExifImage.url}
           title={selectedExifImage.title}
           activityDate={selectedExifImage.activityDate ?? auditActivity?.activityDate}
+          auditMetadata={selectedExifImage.auditMetadata}
           isOpen={Boolean(selectedExifImage)}
           onClose={() => setSelectedExifImage(null)}
         />

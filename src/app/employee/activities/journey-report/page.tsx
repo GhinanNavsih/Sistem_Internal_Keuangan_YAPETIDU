@@ -57,7 +57,8 @@ import {
   getMealAllowanceForDuration,
   getMealTierCount,
 } from '@/lib/payroll/driverJourney';
-import { parseImageExif } from '@/lib/exif';
+import { prepareProofImage, type PhotoEvidence } from '@/lib/photoEvidence';
+import type { PhotoAuditMetadata } from '@/lib/payroll/domain';
 
 const loadGoogleMapsScript = (callback: () => void) => {
   if (typeof window === 'undefined') return;
@@ -478,9 +479,13 @@ function JourneyReportContent() {
   const [formTollParkingFee, setFormTollParkingFee] = useState('');
   const [formFuelReceiptUrls, setFormFuelReceiptUrls] = useState<string[]>([]);
   const [formTollReceiptUrls, setFormTollReceiptUrls] = useState<string[]>([]);
+  const [formFuelReceiptEvidence, setFormFuelReceiptEvidence] = useState<PhotoEvidence[]>([]);
+  const [formTollReceiptEvidence, setFormTollReceiptEvidence] = useState<PhotoEvidence[]>([]);
+  const hasCompleteFuelReceiptEvidence = formFuelReceiptEvidence.length === formFuelReceiptUrls.length;
+  const hasCompleteTollReceiptEvidence = formTollReceiptEvidence.length === formTollReceiptUrls.length;
   const [uploadingFuelReceipt, setUploadingFuelReceipt] = useState(false);
   const [uploadingTollReceipt, setUploadingTollReceipt] = useState(false);
-  const [selectedExifImage, setSelectedExifImage] = useState<{ url: string; title: string } | null>(null);
+  const [selectedExifImage, setSelectedExifImage] = useState<{ url: string; title: string; auditMetadata?: PhotoAuditMetadata | null } | null>(null);
 
   const [extraActivities, setExtraActivities] = useState<any[]>([]);
   const [calculatedDistanceKm, setCalculatedDistanceKm] = useState(0);
@@ -663,12 +668,22 @@ function JourneyReportContent() {
               ? localDraft.formFuelReceiptUrls
               : (rawFuelUrls ? (typeof rawFuelUrls === 'string' ? rawFuelUrls.split(',').filter(Boolean) : rawFuelUrls) : [])
           );
+          setFormFuelReceiptEvidence(
+            Array.isArray(localDraft?.formFuelReceiptEvidence)
+              ? localDraft.formFuelReceiptEvidence
+              : (Array.isArray(reportData.fuelReceiptEvidence) ? reportData.fuelReceiptEvidence : [])
+          );
 
           const rawTollUrls = reportData.draftTollReceiptUrl || reportData.tollReceiptUrl || '';
           setFormTollReceiptUrls(
             Array.isArray(localDraft?.formTollReceiptUrls)
               ? localDraft.formTollReceiptUrls
               : (rawTollUrls ? (typeof rawTollUrls === 'string' ? rawTollUrls.split(',').filter(Boolean) : rawTollUrls) : [])
+          );
+          setFormTollReceiptEvidence(
+            Array.isArray(localDraft?.formTollReceiptEvidence)
+              ? localDraft.formTollReceiptEvidence
+              : (Array.isArray(reportData.tollReceiptEvidence) ? reportData.tollReceiptEvidence : [])
           );
 
           const initialNightCount = localDraft?.formNightCount !== undefined
@@ -949,6 +964,8 @@ function JourneyReportContent() {
       formTollParkingFee,
       formFuelReceiptUrls,
       formTollReceiptUrls,
+      formFuelReceiptEvidence,
+      formTollReceiptEvidence,
       extraActivities,
       calculatedDistanceKm,
       calculatedDurationHours,
@@ -972,6 +989,8 @@ function JourneyReportContent() {
     formTollParkingFee,
     formFuelReceiptUrls,
     formTollReceiptUrls,
+    formFuelReceiptEvidence,
+    formTollReceiptEvidence,
     extraActivities,
     calculatedDistanceKm,
     calculatedDurationHours,
@@ -1001,6 +1020,8 @@ function JourneyReportContent() {
             tollParkingFee: tollVal,
             fuelReceiptUrl: formFuelReceiptUrls.join(','),
             tollReceiptUrl: formTollReceiptUrls.join(','),
+            ...(hasCompleteFuelReceiptEvidence ? { fuelReceiptEvidence: formFuelReceiptEvidence } : {}),
+            ...(hasCompleteTollReceiptEvidence ? { tollReceiptEvidence: formTollReceiptEvidence } : {}),
             extraActivities,
             calculatedDistanceKm,
             calculatedDurationHours,
@@ -1023,6 +1044,8 @@ function JourneyReportContent() {
         formTollParkingFee,
         formFuelReceiptUrls,
         formTollReceiptUrls,
+        formFuelReceiptEvidence,
+        formTollReceiptEvidence,
         extraActivities,
         calculatedDistanceKm,
         calculatedDurationHours,
@@ -1085,11 +1108,6 @@ function JourneyReportContent() {
     await recalculateRouteChain(updated);
   };
 
-  const compressImage = (file: File): Promise<File> => {
-    // Preserve original file intact to retain EXIF metadata (creation timestamp, GPS coordinates, device model) for auditing.
-    return Promise.resolve(file);
-  };
-
   const handleUploadReceipt = async (file: File, type: 'bbm' | 'toll') => {
     if (!activeReportingJourney) return;
     const isBbm = type === 'bbm';
@@ -1097,15 +1115,16 @@ function JourneyReportContent() {
     else setUploadingTollReceipt(true);
 
     try {
-      const processedFile = await compressImage(file);
-      const extension = processedFile.name.split('.').pop() || 'jpg';
-      const fileRef = ref(storage, `receipts/${activeReportingJourney.id}/${type}_${Date.now()}.${extension}`);
-      await uploadBytes(fileRef, processedFile);
+      const prepared = await prepareProofImage(file);
+      const fileRef = ref(storage, `receipts/${activeReportingJourney.id}/${type}_${Date.now()}.jpg`);
+      await uploadBytes(fileRef, prepared.file);
       const downloadUrl = await getDownloadURL(fileRef);
       if (isBbm) {
         setFormFuelReceiptUrls(prev => [...prev, downloadUrl]);
+        setFormFuelReceiptEvidence(prev => [...prev, { url: downloadUrl, auditMetadata: prepared.auditMetadata }]);
       } else {
         setFormTollReceiptUrls(prev => [...prev, downloadUrl]);
+        setFormTollReceiptEvidence(prev => [...prev, { url: downloadUrl, auditMetadata: prepared.auditMetadata }]);
       }
       setMessage({ type: 'success', text: `Bukti ${isBbm ? 'BBM' : 'Tol & Parkir'} berhasil diunggah.` });
     } catch (err: any) {
@@ -1322,6 +1341,8 @@ function JourneyReportContent() {
             tollParkingFee: tollVal,
             fuelReceiptUrl: formFuelReceiptUrls.join(','),
             tollReceiptUrl: formTollReceiptUrls.join(','),
+            ...(hasCompleteFuelReceiptEvidence ? { fuelReceiptEvidence: formFuelReceiptEvidence } : {}),
+            ...(hasCompleteTollReceiptEvidence ? { tollReceiptEvidence: formTollReceiptEvidence } : {}),
             points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
             reportedEndPoint: activeReportingJourney.endPoint,
             distanceKm: calculatedDistanceKm,
@@ -2104,14 +2125,21 @@ function JourneyReportContent() {
                             <div className="flex items-center gap-1.5 shrink-0">
                               <button
                                 type="button"
-                                onClick={() => setSelectedExifImage({ url, title: `Bukti BBM ${formFuelReceiptUrls.length > 1 ? `#${index + 1}` : ''}` })}
+                                onClick={() => setSelectedExifImage({
+                                  url,
+                                  title: `Bukti BBM ${formFuelReceiptUrls.length > 1 ? `#${index + 1}` : ''}`,
+                                  auditMetadata: formFuelReceiptEvidence.find((item) => item.url === url)?.auditMetadata,
+                                })}
                                 className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                               >
                                 <Eye className="w-3 h-3" /> Lihat Foto
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setFormFuelReceiptUrls(prev => prev.filter((_, i) => i !== index))}
+                                onClick={() => {
+                                  setFormFuelReceiptUrls(prev => prev.filter((_, i) => i !== index));
+                                  setFormFuelReceiptEvidence(prev => prev.filter((_, i) => i !== index));
+                                }}
                                 className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
                                 title="Hapus Bukti Ini"
                               >
@@ -2204,14 +2232,21 @@ function JourneyReportContent() {
                           <div className="flex items-center gap-1.5 shrink-0">
                             <button
                               type="button"
-                              onClick={() => setSelectedExifImage({ url, title: `Bukti Tol & Parkir ${formTollReceiptUrls.length > 1 ? `#${index + 1}` : ''}` })}
+                                onClick={() => setSelectedExifImage({
+                                  url,
+                                  title: `Bukti Tol & Parkir ${formTollReceiptUrls.length > 1 ? `#${index + 1}` : ''}`,
+                                  auditMetadata: formTollReceiptEvidence.find((item) => item.url === url)?.auditMetadata,
+                                })}
                               className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                             >
                               <Eye className="w-3 h-3" /> Lihat Foto
                             </button>
                             <button
                               type="button"
-                              onClick={() => setFormTollReceiptUrls(prev => prev.filter((_, i) => i !== index))}
+                              onClick={() => {
+                                setFormTollReceiptUrls(prev => prev.filter((_, i) => i !== index));
+                                setFormTollReceiptEvidence(prev => prev.filter((_, i) => i !== index));
+                              }}
                               className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
                               title="Hapus Bukti Ini"
                             >
@@ -2666,6 +2701,7 @@ function JourneyReportContent() {
           <ImageExifViewer
             imageUrl={selectedExifImage.url}
             title={selectedExifImage.title}
+            auditMetadata={selectedExifImage.auditMetadata}
             activityDate={formDate}
             isOpen={Boolean(selectedExifImage)}
             onClose={() => setSelectedExifImage(null)}

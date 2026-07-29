@@ -72,7 +72,8 @@ import {
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
-import { SatpamPostId, SatpamPayType } from '@/lib/payroll/domain';
+import { SatpamPostId, SatpamPayType, type PhotoAuditMetadata, type PhotoEvidence } from '@/lib/payroll/domain';
+import { prepareProofImage } from '@/lib/photoEvidence';
 import {
   calculateDriverNetWage,
   calculateJourneyElapsedHours,
@@ -218,6 +219,8 @@ interface ActivityReport {
   ketuaShiftName?: string;
   coveredEmployeeId?: string;
   overtimeReason?: string;
+  photoUrl?: string;
+  photoAuditMetadata?: PhotoAuditMetadata;
 }
 
 interface SatpamPostAssignment {
@@ -226,6 +229,7 @@ interface SatpamPostAssignment {
   coveredEmployeeId?: string;
   overtimeReason?: string;
   photoUrl?: string;
+  photoAuditMetadata?: PhotoAuditMetadata;
 }
 
 const getPlacesSearchQuery = (endPoint: string): string => {
@@ -602,6 +606,7 @@ function ActivitiesContent() {
   const editReportIdParam = searchParams.get('editReportId');
   const fuelFileInputRef = React.useRef<HTMLInputElement>(null);
   const tollFileInputRef = React.useRef<HTMLInputElement>(null);
+  const activityProofInputRef = React.useRef<HTMLInputElement>(null);
 
   const userJobCategory = profile?.permittedCategories?.[0] || '';
   const isKebersihan = [
@@ -611,6 +616,7 @@ function ActivitiesContent() {
     'PONTI',
   ].includes(userJobCategory);
   const isSopir = userJobCategory === 'SOPIR';
+  const supportsSpjProof = isKebersihan || userJobCategory === 'TEKNISI' || userJobCategory === 'SATPAM';
   const isKetuaShiftSatpam = (profile?.role as string) === 'ketua_shift_satpam';
   const isRegularSatpam = profile?.permittedCategories?.includes('SATPAM') && !isKetuaShiftSatpam && profile?.role !== 'honorer';
 
@@ -645,6 +651,7 @@ function ActivitiesContent() {
   // Guard-post proof photos, keyed by post id ('Pos 1'..'Pos 9', 'extra').
   const [postPhotoUploading, setPostPhotoUploading] = useState<Record<string, boolean>>({});
   const [extraPhotoUrl, setExtraPhotoUrl] = useState('');
+  const [extraPhotoAuditMetadata, setExtraPhotoAuditMetadata] = useState<PhotoAuditMetadata | undefined>();
   const [satpamPreviewPhoto, setSatpamPreviewPhoto] = useState<{ url: string; title: string } | null>(null);
   const postPhotoInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -668,6 +675,8 @@ function ActivitiesContent() {
   const [formTimeStart, setFormTimeStart] = useState('');
   const [formTimeEnd, setFormTimeEnd] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [formProofPhoto, setFormProofPhoto] = useState<PhotoEvidence | null>(null);
+  const [uploadingProofPhoto, setUploadingProofPhoto] = useState(false);
   const isSubmittingRef = useRef(false);
   const activityRequestIdRef = useRef<string | null>(null);
   const skipSaveDraftRef = useRef(false);
@@ -1605,6 +1614,8 @@ function ActivitiesContent() {
     setFormTollParkingFee('');
     setFormFuelReceiptUrls([]);
     setFormTollReceiptUrls([]);
+    setFormProofPhoto(null);
+    setUploadingProofPhoto(false);
     setUploadingFuelReceipt(false);
     setUploadingTollReceipt(false);
     setFormPoints(['Pool Unipdu', '']);
@@ -1650,6 +1661,11 @@ function ActivitiesContent() {
     setFormDate(activity.activityDate);
     setFormTimeStart(activity.timeStart);
     setFormTimeEnd(activity.timeEnd);
+    setFormProofPhoto(
+      activity.photoUrl && activity.photoAuditMetadata
+        ? { url: activity.photoUrl, auditMetadata: activity.photoAuditMetadata }
+        : null,
+    );
 
     // SOPIR fields prefill
     setFormTripType(activity.tripType || 'Dalam Kota');
@@ -2092,6 +2108,7 @@ function ActivitiesContent() {
         let extraSType = 'Lembur Sendiri';
         let extraReason = '';
         let extraPhoto = '';
+        let extraPhotoMetadata: PhotoAuditMetadata | undefined;
 
         snap.docs.forEach((doc) => {
           const data = doc.data();
@@ -2108,6 +2125,7 @@ function ActivitiesContent() {
             extraSType = data.shiftType || 'Lembur Sendiri';
             extraReason = data.overtimeReason || '';
             extraPhoto = data.photoUrl || '';
+            extraPhotoMetadata = data.photoAuditMetadata;
           } else {
             const match = rawPostName.match(/^(Pos\s+\d+)/i);
             if (match) {
@@ -2122,6 +2140,7 @@ function ActivitiesContent() {
                     coveredEmployeeId: data.coveredEmployeeId || '',
                     overtimeReason: data.overtimeReason || '',
                     photoUrl: data.photoUrl || '',
+                    photoAuditMetadata: data.photoAuditMetadata,
                   };
                 }
               }
@@ -2136,6 +2155,7 @@ function ActivitiesContent() {
           setExtraShiftType(extraSType);
           setExtraOvertimeReason(extraReason);
           setExtraPhotoUrl(extraPhoto);
+          setExtraPhotoAuditMetadata(extraPhotoMetadata);
           setIsExtraPostVisible(true);
         } else {
           setExtraEmployeeId('');
@@ -2143,6 +2163,7 @@ function ActivitiesContent() {
           setExtraShiftType('Lembur Sendiri');
           setExtraOvertimeReason('');
           setExtraPhotoUrl('');
+          setExtraPhotoAuditMetadata(undefined);
           setIsExtraPostVisible(false);
         }
         setIsSatpamReportSubmitted(true);
@@ -2178,6 +2199,7 @@ function ActivitiesContent() {
                   coveredEmployeeId: assignment.coveredEmployeeId || '',
                   overtimeReason: assignment.overtimeReason || '',
                   photoUrl: assignment.photoUrl || '',
+                  photoAuditMetadata: assignment.photoAuditMetadata,
                 };
               }
               const pendingExtra = pending.payload.extraAssignment;
@@ -2186,6 +2208,7 @@ function ActivitiesContent() {
               setExtraShiftType('Lembur Sendiri');
               setExtraOvertimeReason(pendingExtra?.overtimeReason || '');
               setExtraPhotoUrl(pendingExtra?.photoUrl || '');
+              setExtraPhotoAuditMetadata(pendingExtra?.photoAuditMetadata);
               setIsExtraPostVisible(Boolean(pendingExtra));
               satpamRequestIdsRef.current[
                 `${satpamReportDate}_${activeShift}`
@@ -2309,23 +2332,22 @@ function ActivitiesContent() {
 
     setPostPhotoUploading(prev => ({ ...prev, [postId]: true }));
     try {
-      // Upload the original bytes untouched. Any re-encode would strip the EXIF
-      // timestamp and GPS tags the Kepala SatKer audits the photo against.
-      const extension = file.name.split('.').pop() || 'jpg';
+      const prepared = await prepareProofImage(file);
       const safePost = postId.replace(/[^A-Za-z0-9_-]/g, '_');
       const fileRef = ref(
         storage,
-        `satpam_shifts/${profile.linkedEmployeeId}/${satpamReportDate}_${activeShift}_${safePost}_${Date.now()}.${extension}`,
+        `satpam_shifts/${profile.linkedEmployeeId}/${satpamReportDate}_${activeShift}_${safePost}_${Date.now()}.jpg`,
       );
-      await uploadBytes(fileRef, file);
+      await uploadBytes(fileRef, prepared.file);
       const downloadUrl = await getDownloadURL(fileRef);
 
       if (postId === 'extra') {
         setExtraPhotoUrl(downloadUrl);
+        setExtraPhotoAuditMetadata(prepared.auditMetadata);
       } else {
         setPostAssignments(prev => ({
           ...prev,
-          [postId]: { ...prev[postId], photoUrl: downloadUrl },
+          [postId]: { ...prev[postId], photoUrl: downloadUrl, photoAuditMetadata: prepared.auditMetadata },
         }));
       }
       setMessage({ type: 'success', text: `Foto bukti ${postId === 'extra' ? 'Lembur Sendiri' : postId} berhasil diunggah.` });
@@ -2340,12 +2362,37 @@ function ActivitiesContent() {
   const handleRemovePostPhoto = (postId: string) => {
     if (postId === 'extra') {
       setExtraPhotoUrl('');
+      setExtraPhotoAuditMetadata(undefined);
       return;
     }
     setPostAssignments(prev => ({
       ...prev,
-      [postId]: { ...prev[postId], photoUrl: '' },
+      [postId]: { ...prev[postId], photoUrl: '', photoAuditMetadata: undefined },
     }));
+  };
+
+  const handleUploadActivityProof = async (file: File) => {
+    if (!profile?.linkedEmployeeId) return;
+    setUploadingProofPhoto(true);
+    try {
+      const prepared = await prepareProofImage(file);
+      const fileRef = ref(
+        storage,
+        `activity_proofs/${profile.linkedEmployeeId}/${Date.now()}.jpg`,
+      );
+      await uploadBytes(fileRef, prepared.file);
+      const url = await getDownloadURL(fileRef);
+      setFormProofPhoto({ url, auditMetadata: prepared.auditMetadata });
+      setMessage({ type: 'success', text: 'Foto bukti kegiatan berhasil diunggah.' });
+    } catch (error) {
+      console.error('Error uploading SPJ proof photo:', error);
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Gagal mengunggah foto bukti kegiatan.',
+      });
+    } finally {
+      setUploadingProofPhoto(false);
+    }
   };
 
   const handleCoverDetail = (
@@ -2383,6 +2430,9 @@ function ActivitiesContent() {
             overtimeReason: assignment.overtimeReason,
           }),
           ...(assignment.photoUrl ? { photoUrl: assignment.photoUrl } : {}),
+          ...(assignment.photoUrl && assignment.photoAuditMetadata
+            ? { photoAuditMetadata: assignment.photoAuditMetadata }
+            : {}),
         })),
         ...(isExtraPostVisible && extraEmployeeId && extraPostName && {
           extraAssignment: {
@@ -2390,6 +2440,9 @@ function ActivitiesContent() {
             employeeId: extraEmployeeId,
             overtimeReason: extraOvertimeReason,
             ...(extraPhotoUrl ? { photoUrl: extraPhotoUrl } : {}),
+            ...(extraPhotoUrl && extraPhotoAuditMetadata
+              ? { photoAuditMetadata: extraPhotoAuditMetadata }
+              : {}),
           },
         }),
       };
@@ -2432,6 +2485,7 @@ function ActivitiesContent() {
       setExtraShiftType('Lembur Sendiri');
       setExtraOvertimeReason('');
       setExtraPhotoUrl('');
+      setExtraPhotoAuditMetadata(undefined);
       setIsExtraPostVisible(false);
       fetchActivities();
     } catch (err) {
@@ -2584,6 +2638,7 @@ function ActivitiesContent() {
           timeStart: formTimeStart,
           timeEnd: isBuangSampah ? '' : formTimeEnd,
           driverData: isSopir ? driverFields : undefined,
+          ...(formProofPhoto ? { proofPhoto: formProofPhoto } : {}),
         }),
       });
       activityRequestIdRef.current = null;
@@ -3183,12 +3238,11 @@ function ActivitiesContent() {
                               </>
                             )}
 
-                            {/* Guard-post proof photo (optional, audited by Kepala SatKer) */}
+                            {/* Guard-post proof photo; staff can select one from the gallery. */}
                             <div className="md:col-span-12">
                               <input
                                 type="file"
                                 accept="image/*"
-                                capture="environment"
                                 ref={el => { postPhotoInputRefs.current[post.id] = el; }}
                                 onChange={event => {
                                   const file = event.target.files?.[0];
@@ -3237,7 +3291,7 @@ function ActivitiesContent() {
                                     ) : (
                                       <Camera className="w-3.5 h-3.5 text-slate-500" />
                                     )}
-                                    <span>{postPhotoUploading[post.id] ? 'Mengunggah...' : 'Ambil Foto Bukti Jaga'}</span>
+                                    <span>{postPhotoUploading[post.id] ? 'Mengunggah...' : 'Unggah Foto Bukti Jaga'}</span>
                                   </Button>
                                 )
                               )}
@@ -3339,6 +3393,7 @@ function ActivitiesContent() {
                                   setExtraShiftType('Lembur Sendiri');
                                   setExtraOvertimeReason('');
                                   setExtraPhotoUrl('');
+                                  setExtraPhotoAuditMetadata(undefined);
                                 }}
                                 className="text-slate-400 hover:text-red-500 transition-colors p-1"
                               >
@@ -3351,7 +3406,6 @@ function ActivitiesContent() {
                             <input
                               type="file"
                               accept="image/*"
-                              capture="environment"
                               ref={el => { postPhotoInputRefs.current['extra'] = el; }}
                               onChange={event => {
                                 const file = event.target.files?.[0];
@@ -3400,7 +3454,7 @@ function ActivitiesContent() {
                                   ) : (
                                     <Camera className="w-3.5 h-3.5" />
                                   )}
-                                  <span>{postPhotoUploading['extra'] ? 'Mengunggah...' : 'Ambil Foto Bukti (Opsional)'}</span>
+                                  <span>{postPhotoUploading['extra'] ? 'Mengunggah...' : 'Unggah Foto Bukti'}</span>
                                 </Button>
                               )
                             )}
@@ -4790,6 +4844,52 @@ function ActivitiesContent() {
               )}
             </div>
 
+            {supportsSpjProof && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Foto Bukti Kegiatan
+                </Label>
+                <input
+                  ref={activityProofInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) handleUploadActivityProof(file);
+                    event.target.value = '';
+                  }}
+                />
+                {formProofPhoto ? (
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-2 text-[11px]">
+                    <div className="flex min-w-0 items-center gap-1.5 font-bold text-blue-800">
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                      <span className="truncate">Foto bukti kegiatan terunggah</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormProofPhoto(null)}
+                      className="rounded-lg p-1 text-rose-600 transition-colors hover:bg-rose-100"
+                      title="Hapus Foto Ini"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={uploadingProofPhoto}
+                    onClick={() => activityProofInputRef.current?.click()}
+                    className="h-10 w-full gap-1.5 rounded-xl border-dashed border-slate-300 bg-slate-50/60 text-xs font-bold text-slate-600 hover:bg-slate-100"
+                  >
+                    {uploadingProofPhoto ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                    <span>{uploadingProofPhoto ? 'Mengunggah Foto...' : 'Pilih Foto Bukti dari Galeri'}</span>
+                  </Button>
+                )}
+              </div>
+            )}
+
             {/* Submit */}
             <div className="flex gap-3 pt-2">
               <Button
@@ -4802,7 +4902,7 @@ function ActivitiesContent() {
               </Button>
               <Button
                 type="submit"
-                disabled={submitting || (isSopir && (calculatedDistanceKm <= 0 || JSON.stringify(formPoints) !== JSON.stringify(routeCalculatedPoints)))}
+                disabled={submitting || uploadingProofPhoto || (isSopir && (calculatedDistanceKm <= 0 || JSON.stringify(formPoints) !== JSON.stringify(routeCalculatedPoints)))}
                 className="flex-1 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 text-white font-bold shadow-md shadow-teal-200 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? (

@@ -36,6 +36,23 @@ export interface MoneyField {
   amount: number;
 }
 
+/** Immutable audit evidence captured from the original image before upload compression. */
+export interface PhotoAuditMetadata {
+  capturedAt: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  deviceName: string | null;
+  hasExif: boolean;
+  locationName: string | null;
+  locationAddress: string | null;
+  locationPlaceId: string | null;
+}
+
+export interface PhotoEvidence {
+  url: string;
+  auditMetadata: PhotoAuditMetadata;
+}
+
 export interface SatpamPrimaryAssignmentInput {
   postId: SatpamPostId;
   employeeId: string;
@@ -43,6 +60,7 @@ export interface SatpamPrimaryAssignmentInput {
   coveredEmployeeId?: string;
   overtimeReason?: string;
   photoUrl?: string;
+  photoAuditMetadata?: PhotoAuditMetadata;
 }
 
 export interface SatpamExtraAssignmentInput {
@@ -50,6 +68,7 @@ export interface SatpamExtraAssignmentInput {
   employeeId: string;
   overtimeReason: string;
   photoUrl?: string;
+  photoAuditMetadata?: PhotoAuditMetadata;
 }
 
 export interface SubmitSatpamShiftInput {
@@ -124,6 +143,11 @@ export function satpamPhotoFolder(ketuaShiftId: string): string {
   return `satpam_shifts/${safeDocumentPart(ketuaShiftId)}`;
 }
 
+/** Storage prefix for proof images attached to a regular Pekarya SPJ. */
+export function pekaryaActivityProofFolder(employeeId: string): string {
+  return `activity_proofs/${safeDocumentPart(employeeId)}`;
+}
+
 /**
  * Guard-post photos are optional, but any URL that is supplied must point at
  * the submitting Ketua Shift's own Storage folder. This stops a forged payload
@@ -150,6 +174,24 @@ export function assertSatpamPhotoUrl(value: string, ketuaShiftId: string): void 
   const objectPath = decodeURIComponent(parsed.pathname);
   if (!objectPath.includes(`/o/${satpamPhotoFolder(ketuaShiftId)}/`)) {
     throw new Error('Foto bukti berada di luar folder Ketua Shift ini.');
+  }
+}
+
+export function assertPekaryaActivityProofUrl(value: string, employeeId: string): void {
+  if (typeof value !== 'string' || value.length > 1500) {
+    throw new Error('URL foto bukti tidak valid.');
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error('URL foto bukti tidak valid.');
+  }
+  if (parsed.protocol !== 'https:' || !/(^|\.)googleapis\.com$/.test(parsed.hostname)) {
+    throw new Error('Foto bukti wajib diunggah ke Firebase Storage.');
+  }
+  if (!decodeURIComponent(parsed.pathname).includes(`/o/${pekaryaActivityProofFolder(employeeId)}/`)) {
+    throw new Error('Foto bukti berada di luar folder Pekarya ini.');
   }
 }
 

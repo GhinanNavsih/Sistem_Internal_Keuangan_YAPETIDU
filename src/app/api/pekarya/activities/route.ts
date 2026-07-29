@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
-import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
+import {
+  assertPekaryaActivityProofUrl,
+  assertRequestId,
+  isImmutablePayrollStatus,
+  type PhotoAuditMetadata,
+  type PhotoEvidence,
+} from '@/lib/payroll/domain';
 import {
   assertNightCount,
   calculateDriverNetWage,
@@ -35,6 +41,7 @@ interface SubmitActivityCommand {
   timeStart: string;
   timeEnd?: string;
   driverData?: Record<string, unknown>;
+  proofPhoto?: PhotoEvidence;
 }
 
 const SAFE_REPORT_ID = /^[A-Za-z0-9_-]{1,180}$/;
@@ -49,6 +56,8 @@ const ALLOWED_DRIVER_FIELDS = [
   'tollParkingFee',
   'fuelReceiptUrl',
   'tollReceiptUrl',
+  'fuelReceiptEvidence',
+  'tollReceiptEvidence',
   'points',
   'distanceKm',
   'durationHours',
@@ -80,6 +89,79 @@ const ALLOWED_DRIVER_FIELDS = [
   'reportedEndPoint',
   'ndalemMealMoneyReceived',
 ] as const;
+
+function parsePhotoAuditMetadata(value: unknown): PhotoAuditMetadata {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(400, 'Metadata audit foto tidak valid.');
+  }
+  const item = value as Record<string, unknown>;
+  const stringOrNull = (key: string, max: number): string | null => {
+    const field = item[key];
+    if (field === null) return null;
+    if (typeof field !== 'string' || field.trim().length > max) {
+      throw new HttpError(400, `Metadata ${key} tidak valid.`);
+    }
+    return field.trim() || null;
+  };
+  const numberOrNull = (key: string, min: number, max: number): number | null => {
+    const field = item[key];
+    if (field === null) return null;
+    if (typeof field !== 'number' || !Number.isFinite(field) || field < min || field > max) {
+      throw new HttpError(400, `Metadata ${key} tidak valid.`);
+    }
+    return field;
+  };
+  if (typeof item.hasExif !== 'boolean') throw new HttpError(400, 'Metadata hasExif tidak valid.');
+  const latitude = numberOrNull('latitude', -90, 90);
+  const longitude = numberOrNull('longitude', -180, 180);
+  if ((latitude === null) !== (longitude === null)) {
+    throw new HttpError(400, 'Koordinat foto harus lengkap.');
+  }
+  return {
+    capturedAt: stringOrNull('capturedAt', 64),
+    latitude,
+    longitude,
+    deviceName: stringOrNull('deviceName', 200),
+    hasExif: item.hasExif,
+    locationName: stringOrNull('locationName', 200),
+    locationAddress: stringOrNull('locationAddress', 500),
+    locationPlaceId: stringOrNull('locationPlaceId', 200),
+  };
+}
+
+function parseReceiptEvidence(value: unknown, receiptUrls: unknown, fieldName: string) {
+  if (!Array.isArray(value) || value.length > 20) {
+    throw new HttpError(400, `${fieldName} tidak valid.`);
+  }
+  const urls = typeof receiptUrls === 'string'
+    ? receiptUrls.split(',').map((url) => url.trim()).filter(Boolean)
+    : [];
+  if (value.length !== urls.length) {
+    throw new HttpError(400, `${fieldName} harus sesuai dengan setiap foto bukti.`);
+  }
+  const expectedUrls = new Set(urls);
+  return value.map((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new HttpError(400, `${fieldName} tidak valid.`);
+    }
+    const item = entry as Record<string, unknown>;
+    if (typeof item.url !== 'string' || !expectedUrls.has(item.url)) {
+      throw new HttpError(400, `URL pada ${fieldName} tidak sesuai.`);
+    }
+    return { url: item.url, auditMetadata: parsePhotoAuditMetadata(item.auditMetadata) };
+  });
+}
+
+function parseProofPhoto(value: unknown): PhotoEvidence {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(400, 'Foto bukti tidak valid.');
+  }
+  const item = value as Record<string, unknown>;
+  if (typeof item.url !== 'string' || !item.url) {
+    throw new HttpError(400, 'URL foto bukti tidak valid.');
+  }
+  return { url: item.url, auditMetadata: parsePhotoAuditMetadata(item.auditMetadata) };
+}
 
 function parseCommand(raw: unknown): SubmitActivityCommand {
   if (!raw || typeof raw !== 'object') {
@@ -127,6 +209,7 @@ function parseCommand(raw: unknown): SubmitActivityCommand {
     timeEnd: value.timeEnd || '',
     driverData:
       value.driverData && typeof value.driverData === 'object' ? value.driverData : undefined,
+    proofPhoto: value.proofPhoto === undefined ? undefined : parseProofPhoto(value.proofPhoto),
   };
 }
 
@@ -148,6 +231,20 @@ function sanitizeDriverData(
   const result: Record<string, unknown> = {};
   for (const key of ALLOWED_DRIVER_FIELDS) {
     if (value[key] !== undefined) result[key] = value[key];
+  }
+  if (result.fuelReceiptEvidence !== undefined) {
+    result.fuelReceiptEvidence = parseReceiptEvidence(
+      result.fuelReceiptEvidence,
+      result.fuelReceiptUrl,
+      'Metadata bukti BBM',
+    );
+  }
+  if (result.tollReceiptEvidence !== undefined) {
+    result.tollReceiptEvidence = parseReceiptEvidence(
+      result.tollReceiptEvidence,
+      result.tollReceiptUrl,
+      'Metadata bukti Tol & Parkir',
+    );
   }
 
   const boundedMoneyFields = [
@@ -265,6 +362,13 @@ export async function POST(request: NextRequest) {
     }
 
     const employeeId = actor.linkedEmployeeId;
+    if (command.proofPhoto) {
+      try {
+        assertPekaryaActivityProofUrl(command.proofPhoto.url, employeeId);
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : 'Foto bukti tidak valid.');
+      }
+    }
     const requestHash = createHash('sha256').update(JSON.stringify(command)).digest('hex');
     const safeEmployeeId = employeeId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 72);
     const reportId = command.reportId || `PEK-${safeEmployeeId}-${command.requestId}`;
@@ -488,6 +592,12 @@ export async function POST(request: NextRequest) {
         source: jobCategory === 'SOPIR' ? 'honorer_driver_report' : 'honorer_activity_form',
         schemaVersion: 2,
         ...driverData,
+        ...(command.proofPhoto
+          ? {
+              photoUrl: command.proofPhoto.url,
+              photoAuditMetadata: command.proofPhoto.auditMetadata,
+            }
+          : {}),
         // Employee-submitted calculations are evidence only. The approved
         // financial amount remains zero until Kepala SatKer reviews it.
         submittedFeeEstimate:

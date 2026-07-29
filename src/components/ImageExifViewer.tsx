@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { parseImageExif, ImageExifInsights } from '@/lib/exif';
+import React from 'react';
+import type { PhotoAuditMetadata } from '@/lib/payroll/domain';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  Loader2,
   Calendar,
   MapPin,
   Smartphone,
@@ -29,6 +28,16 @@ interface ImageExifViewerProps {
   isOpen: boolean;
   onClose: () => void;
   showMetadata?: boolean;
+  auditMetadata?: PhotoAuditMetadata | null;
+}
+
+function formatCapturedAt(value: string | null | undefined): string {
+  if (!value) return 'Tidak Tercatat';
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return value;
+  const [, year, month, day, hours, minutes, seconds = '00'] = match;
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  return `${Number(day)} ${monthNames[Number(month) - 1] || month} ${year}, ${hours}:${minutes}:${seconds}`;
 }
 
 export function ImageExifViewer({
@@ -38,46 +47,23 @@ export function ImageExifViewer({
   isOpen,
   onClose,
   showMetadata = true,
+  auditMetadata,
 }: ImageExifViewerProps) {
-  const [loading, setLoading] = useState(true);
-  const [exif, setExif] = useState<ImageExifInsights | null>(null);
-
-  useEffect(() => {
-    if (!isOpen || !imageUrl || !showMetadata) return;
-
-    let isMounted = true;
-    setLoading(true);
-    setExif(null);
-
-    parseImageExif(imageUrl)
-      .then((res) => {
-        if (isMounted) {
-          setExif(res);
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setExif({ hasExif: false });
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [imageUrl, isOpen, showMetadata]);
-
   if (!isOpen) return null;
 
   const isPdf = /\.pdf(?:[?#]|$)/i.test(imageUrl);
 
   // Check date matching
   let dateMatchStatus: 'match' | 'mismatch' | 'unknown' = 'unknown';
-  if (exif?.isoDateString && activityDate) {
-    const photoYMD = exif.isoDateString.split('T')[0];
+  if (auditMetadata?.capturedAt && activityDate) {
+    const photoYMD = auditMetadata.capturedAt.split('T')[0];
     dateMatchStatus = photoYMD === activityDate ? 'match' : 'mismatch';
   }
+  const hasCoordinates = auditMetadata?.latitude !== null && auditMetadata?.latitude !== undefined &&
+    auditMetadata?.longitude !== null && auditMetadata?.longitude !== undefined;
+  const mapsUrl = hasCoordinates
+    ? `https://www.google.com/maps?q=${auditMetadata.latitude!.toFixed(6)},${auditMetadata.longitude!.toFixed(6)}`
+    : null;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -90,7 +76,7 @@ export function ImageExifViewer({
             </DialogTitle>
             <p className="text-xs font-medium text-slate-500 mt-0.5">
               {showMetadata
-                ? 'Metadata EXIF diekstrak langsung dari berkas asli'
+                ? 'Metadata direkam saat foto asli diunggah'
                 : 'Pratinjau berkas bukti transaksi yang diunggah'}
             </p>
           </div>
@@ -123,15 +109,10 @@ export function ImageExifViewer({
               <div className="space-y-4">
                 <h4 className="text-xs font-black text-slate-900 tracking-wide uppercase flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  <span>Auditing Insight Metadata (EXIF)</span>
+                  <span>Auditing Insight Metadata Foto</span>
                 </h4>
 
-                {loading ? (
-                  <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center justify-center gap-2.5 text-xs font-bold text-slate-600 min-h-[220px]">
-                    <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-                    <span>Mengekstrak EXIF metadata dari gambar...</span>
-                  </div>
-                ) : exif && exif.hasExif ? (
+                {auditMetadata ? (
                   <div className="space-y-3.5">
                     {/* Date Verification Alert Badge */}
                     {dateMatchStatus === 'match' && (
@@ -146,7 +127,7 @@ export function ImageExifViewer({
                         <div>
                           <p className="font-extrabold">⚠️ Perhatian: Tanggal Foto Berbeda dari Tanggal SPJ</p>
                           <p className="text-[11px] font-medium text-amber-800 mt-0.5">
-                            Foto diambil pada <strong>{exif.formattedDate}</strong>, sedangkan SPJ tercatat tanggal <strong>{activityDate}</strong>.
+                            Foto diambil pada <strong>{formatCapturedAt(auditMetadata.capturedAt)}</strong>, sedangkan SPJ tercatat tanggal <strong>{activityDate}</strong>.
                           </p>
                         </div>
                       </div>
@@ -161,7 +142,7 @@ export function ImageExifViewer({
                           <span>Waktu Pengambilan Foto</span>
                         </div>
                         <p className="font-extrabold text-slate-900 text-sm">
-                          {exif.formattedDate || 'Tidak Tercatat'}
+                          {formatCapturedAt(auditMetadata.capturedAt)}
                         </p>
                       </div>
 
@@ -172,25 +153,31 @@ export function ImageExifViewer({
                           <span>Perangkat Kamera</span>
                         </div>
                         <p className="font-extrabold text-slate-900 text-sm">
-                          {exif.make || exif.model ? `${exif.make || ''} ${exif.model || ''}`.trim() : 'Perangkat Tidak Dikenal'}
+                          {auditMetadata.deviceName || 'Perangkat Tidak Dikenal'}
                         </p>
                       </div>
 
                       {/* GPS Coordinates */}
-                      {exif.latitude !== undefined && exif.longitude !== undefined ? (
+                      {hasCoordinates ? (
                         <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl space-y-1 flex items-center justify-between">
                           <div>
                             <div className="flex items-center gap-1.5 font-bold text-blue-700 text-[11px]">
                               <MapPin className="w-4 h-4 text-blue-600" />
                               <span>Lokasi Koordinat GPS Foto</span>
                             </div>
+                            {auditMetadata.locationName && (
+                              <p className="font-extrabold text-blue-950 text-sm mt-0.5">{auditMetadata.locationName}</p>
+                            )}
+                            {auditMetadata.locationAddress && (
+                              <p className="text-[11px] font-semibold text-blue-700 mt-0.5">{auditMetadata.locationAddress}</p>
+                            )}
                             <p className="font-extrabold text-blue-950 text-sm mt-0.5">
-                              {exif.latitude.toFixed(6)}, {exif.longitude.toFixed(6)}
+                              {auditMetadata.latitude!.toFixed(6)}, {auditMetadata.longitude!.toFixed(6)}
                             </p>
                           </div>
-                          {exif.googleMapsUrl && (
+                          {mapsUrl && (
                             <a
-                              href={exif.googleMapsUrl}
+                              href={mapsUrl}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors shrink-0 ml-3"
@@ -207,7 +194,7 @@ export function ImageExifViewer({
                             <span>Lokasi GPS Foto</span>
                           </div>
                           <p className="text-[11px] font-semibold text-slate-500">
-                            Tidak tersimpan di file. Aktifkan &quot;Tag Lokasi / Save Location Info&quot; pada aplikasi Kamera HP agar lokasi GPS tersimpan otomatis saat foto diambil.
+                          Tidak tersimpan pada metadata foto saat diunggah. Aktifkan &quot;Tag Lokasi / Save Location Info&quot; pada aplikasi Kamera HP agar lokasi GPS tersimpan otomatis saat foto diambil.
                           </p>
                         </div>
                       )}
@@ -217,9 +204,9 @@ export function ImageExifViewer({
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-start gap-2.5 text-xs text-slate-600 font-medium">
                     <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
                     <div>
-                      <p className="font-extrabold text-slate-800">Tidak ada metadata EXIF dalam berkas ini</p>
+                      <p className="font-extrabold text-slate-800">Metadata belum direkam untuk foto lama ini</p>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Hal ini wajar jika gambar dikirim via WhatsApp/kompresi pesan, hasil screenshot, atau fitur privasi lokasi perangkat dinonaktifkan.
+                        Metadata hanya disimpan untuk unggahan baru. Aplikasi tidak lagi membaca EXIF dari berkas lama saat audit dibuka.
                       </p>
                     </div>
                   </div>

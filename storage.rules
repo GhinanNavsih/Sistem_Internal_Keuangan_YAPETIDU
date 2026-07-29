@@ -65,6 +65,19 @@ service firebase.storage {
       allow delete: if false;
     }
 
+    // One optional proof image can accompany a non-driver Pekarya SPJ. It is
+    // scoped to the submitting employee before an ActivityReport exists.
+    match /activity_proofs/{employeeId}/{filename} {
+      allow read: if isFinance() || roleIs('satker_head') ||
+        (hasActiveProfile() && profile().get('linkedEmployeeId', '') == employeeId);
+      allow create, update: if
+        hasActiveProfile() &&
+        profile().get('linkedEmployeeId', '') == employeeId &&
+        request.resource.size < 5 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+      allow delete: if false;
+    }
+
     match /receipts/{journeyId}/{filename} {
       function journeyExists() {
         return firestore.exists(
