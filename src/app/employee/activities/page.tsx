@@ -51,7 +51,6 @@ import {
   Eye,
   Target,
   Save,
-  Upload,
   Camera,
 } from 'lucide-react';
 import { db, storage } from '@/lib/firebase';
@@ -3238,11 +3237,12 @@ function ActivitiesContent() {
                               </>
                             )}
 
-                            {/* Guard-post proof photo; staff can select one from the gallery. */}
+                            {/* Guard-post proof photo; opens the rear camera on supported mobile devices. */}
                             <div className="md:col-span-12">
                               <input
                                 type="file"
                                 accept="image/*"
+                                capture="environment"
                                 ref={el => { postPhotoInputRefs.current[post.id] = el; }}
                                 onChange={event => {
                                   const file = event.target.files?.[0];
@@ -3406,6 +3406,7 @@ function ActivitiesContent() {
                             <input
                               type="file"
                               accept="image/*"
+                              capture="environment"
                               ref={el => { postPhotoInputRefs.current['extra'] = el; }}
                               onChange={event => {
                                 const file = event.target.files?.[0];
@@ -4853,6 +4854,7 @@ function ActivitiesContent() {
                   ref={activityProofInputRef}
                   type="file"
                   accept="image/*"
+                  capture="environment"
                   className="hidden"
                   onChange={(event) => {
                     const file = event.target.files?.[0];
