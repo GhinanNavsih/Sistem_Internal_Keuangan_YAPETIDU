@@ -78,6 +78,7 @@ import {
   calculateJourneyElapsedHours,
   calculateNightPremium,
   calculateJourneyDateTimeTimings,
+  calculateEstimatedDriverWage,
   getMealAllowanceForDuration as calculateMealAllowanceForDuration,
   getShortTripMealWageComponent,
 } from '@/lib/payroll/driverJourney';
@@ -3561,8 +3562,9 @@ function ActivitiesContent() {
                             <span>Operasional: <strong>{fmtRp(j.totalOperationalCost)}</strong></span>
                           </div>
                           {(() => {
-                            const baseWage = (j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000);
-                            const maxWage = baseWage * 1.25;
+                            const est = calculateEstimatedDriverWage(j.distanceKm * 2, (j.durationHours || 0) * 2);
+                            const baseWage = j.estimatedBaseDriverWage || est.baseWage;
+                            const maxWage = j.estimatedMaxDriverWage || est.maxWage;
                             return (
                               <div className="pt-1 border-t border-white/10 text-[10px] text-purple-200 flex justify-between items-center">
                                 <span>Estimasi Upah:</span>
@@ -3594,8 +3596,9 @@ function ActivitiesContent() {
                   Perjalanan Aktif Anda
                 </h3>
                 {myClaimedJourneys.map((j) => {
-                  const baseWage = (j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000);
-                  const maxWage = baseWage * 1.25;
+                  const est = calculateEstimatedDriverWage(j.distanceKm * 2, (j.durationHours || 0) * 2);
+                  const baseWage = j.estimatedBaseDriverWage || est.baseWage;
+                  const maxWage = j.estimatedMaxDriverWage || est.maxWage;
 
                   return (
                     <div key={j.id} className="bg-white rounded-2xl border-2 border-indigo-200 shadow-xs overflow-hidden p-4 sm:p-5 space-y-3.5">
@@ -3723,8 +3726,9 @@ function ActivitiesContent() {
                               <span className="text-xs font-black text-indigo-600">{fmtRp(j.totalOperationalCost)}</span>
                             </div>
                             {(() => {
-                              const baseWage = (j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000);
-                              const maxWage = baseWage * 1.25;
+                              const est = calculateEstimatedDriverWage(j.distanceKm * 2, (j.durationHours || 0) * 2);
+                              const baseWage = j.estimatedBaseDriverWage || est.baseWage;
+                              const maxWage = j.estimatedMaxDriverWage || est.maxWage;
                               return (
                                 <div>
                                   <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Upah Bersih</span>

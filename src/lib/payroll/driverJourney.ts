@@ -207,3 +207,35 @@ export function calculateJourneyDateTimeTimings(
     dateEnd,
   };
 }
+
+export interface EstimatedDriverWageResult {
+  compJarak: number;
+  compWaktu: number;
+  shortTripMeal: number;
+  baseWage: number;
+  maxWage: number;
+}
+
+export function calculateEstimatedDriverWage(
+  totalDistanceKmPP: number,
+  totalDurationHoursPP: number,
+): EstimatedDriverWageResult {
+  const dist = Number.isFinite(totalDistanceKmPP) && totalDistanceKmPP > 0 ? totalDistanceKmPP : 0;
+  const dur = Number.isFinite(totalDurationHoursPP) && totalDurationHoursPP > 0 ? totalDurationHoursPP : 0;
+
+  const compJarak = Math.ceil(dist * DRIVER_DISTANCE_RATE);
+  const compWaktu = Math.ceil(dur * DRIVER_DURATION_RATE);
+  const shortTripMeal = getShortTripMealWageComponent(dur);
+
+  const baseWage = compJarak + compWaktu + shortTripMeal;
+  const maxWage = Math.ceil(baseWage * 1.25);
+
+  return {
+    compJarak,
+    compWaktu,
+    shortTripMeal,
+    baseWage,
+    maxWage,
+  };
+}
+

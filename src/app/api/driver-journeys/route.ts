@@ -5,6 +5,7 @@ import { adminDb } from '@/lib/firebase-admin';
 import { assertDateOnly } from '@/lib/payroll/domain';
 import {
   DRIVER_VEHICLE_RATES,
+  calculateEstimatedDriverWage,
   getMealAllowanceForDuration,
 } from '@/lib/payroll/driverJourney';
 import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
@@ -197,6 +198,8 @@ export async function POST(request: NextRequest) {
           throw new HttpError(409, 'Perjalanan yang sudah dimulai atau diproses tidak dapat diubah.');
         }
 
+        const wageEst = calculateEstimatedDriverWage(distanceKm * 2, customDurationPP);
+        const assignedTo = typeof body?.assignedTo === 'string' && body.assignedTo.trim().length > 0 ? body.assignedTo.trim() : null;
         let assignedToName: string | null = null;
         if (assignedTo) {
           const driverSnapshot = await transaction.get(
@@ -236,12 +239,10 @@ export async function POST(request: NextRequest) {
           mealAllowance,
           tollParkingFee,
           totalOperationalCost,
-          estimatedComponentJarak: Math.ceil(distanceKm * 2 * 300),
-          estimatedComponentWaktu: Math.ceil(customDurationPP * 5_000),
-          estimatedBaseDriverWage: Math.ceil(distanceKm * 2 * 300) + Math.ceil(customDurationPP * 5_000),
-          estimatedMaxDriverWage: Math.ceil(
-            (Math.ceil(distanceKm * 2 * 300) + Math.ceil(customDurationPP * 5_000)) * 1.25,
-          ),
+          estimatedComponentJarak: wageEst.compJarak,
+          estimatedComponentWaktu: wageEst.compWaktu,
+          estimatedBaseDriverWage: wageEst.baseWage,
+          estimatedMaxDriverWage: wageEst.maxWage,
           destinationImageUrl: typeof body?.destinationImageUrl === 'string' ? body.destinationImageUrl : null,
           assignedTo,
           assignedToName,
@@ -298,6 +299,7 @@ export async function POST(request: NextRequest) {
           throw new HttpError(409, 'Anda masih memiliki perjalanan aktif yang belum diselesaikan.');
         }
 
+        const selfWageEst = calculateEstimatedDriverWage(distanceKm * 2, durationHours * 2);
         const now = admin.firestore.FieldValue.serverTimestamp();
         transaction.create(journeyRef, {
           id: journeyId,
@@ -316,12 +318,10 @@ export async function POST(request: NextRequest) {
           mealAllowance: 0,
           tollParkingFee,
           totalOperationalCost: tollParkingFee,
-          estimatedComponentJarak: Math.ceil(distanceKm * 2 * 300),
-          estimatedComponentWaktu: Math.ceil(durationHours * 2 * 5_000),
-          estimatedBaseDriverWage: Math.ceil(distanceKm * 2 * 300) + Math.ceil(durationHours * 2 * 5_000),
-          estimatedMaxDriverWage: Math.ceil(
-            (Math.ceil(distanceKm * 2 * 300) + Math.ceil(durationHours * 2 * 5_000)) * 1.25,
-          ),
+          estimatedComponentJarak: selfWageEst.compJarak,
+          estimatedComponentWaktu: selfWageEst.compWaktu,
+          estimatedBaseDriverWage: selfWageEst.baseWage,
+          estimatedMaxDriverWage: selfWageEst.maxWage,
           employeeId: actor.linkedEmployeeId,
           employeeName: actor.displayName,
           claimedBy: actor.uid,

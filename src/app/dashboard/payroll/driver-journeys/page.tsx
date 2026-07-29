@@ -55,7 +55,7 @@ import {
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { DriverPiketSchedule, PIKET_STATIONS, PiketStationKey } from '@/lib/payroll/driverPiket';
-import { getMealAllowanceForDuration } from '@/lib/payroll/driverJourney';
+import { getMealAllowanceForDuration, calculateEstimatedDriverWage } from '@/lib/payroll/driverJourney';
 import { authenticatedJson } from '@/lib/payroll/client';
 import {
   collection,
@@ -942,11 +942,16 @@ function DriverJourneysContent() {
                               <div className="font-black text-emerald-600 text-xs sm:text-sm">
                                 {j.status === 'completed' ? (
                                   <span>{fmtRp(j.upahBersih || ((j.newTotalDistanceKm || j.distanceKm * 2) * 300 + (j.newTotalDurationHours || (j.durationHours || 0) * 2) * 5000))}</span>
-                                ) : (
-                                  <span>
-                                    {fmtRp((j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000))} - {fmtRp(((j.distanceKm * 2 * 300) + ((j.durationHours || 0) * 2 * 5000)) * 1.25)}
-                                  </span>
-                                )}
+                                ) : (() => {
+                                  const est = calculateEstimatedDriverWage(j.distanceKm * 2, (j.durationHours || 0) * 2);
+                                  const baseW = j.estimatedBaseDriverWage || est.baseWage;
+                                  const maxW = j.estimatedMaxDriverWage || est.maxWage;
+                                  return (
+                                    <span>
+                                      {fmtRp(baseW)} - {fmtRp(maxW)}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                             </TableCell>
                             <TableCell>
@@ -1590,26 +1595,37 @@ function DriverJourneysContent() {
                     </div>
                   </div>
 
-                  <div className="space-y-1 text-xs pt-1">
-                    <div className="flex justify-between text-slate-500 font-medium">
-                      <span>Komponen Jarak (Rp300/km)</span>
-                      <span className="font-bold text-slate-700">{fmtRp(calcDistance * 2 * 300)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-500 font-medium">
-                      <span>Komponen Waktu (Rp5.000/jam)</span>
-                      <span className="font-bold text-slate-700">{fmtRp((calcDuration ? calcDuration * 2 : 0) * 5000)}</span>
-                    </div>
-                    <div className="flex justify-between text-amber-600 font-medium">
-                      <span>Aktivitas di Perjalanan</span>
-                      <span className="font-bold text-amber-700">s.d. +{fmtRp(((calcDistance * 2 * 300) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 0.25)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-800 font-black border-t border-emerald-200/60 pt-1.5 mt-1 text-sm">
-                      <span>Kisaran Upah Bersih</span>
-                      <span className="text-emerald-700">
-                        {fmtRp((calcDistance * 2 * 300) + ((calcDuration ? calcDuration * 2 : 0) * 5000))} - {fmtRp(((calcDistance * 2 * 300) + ((calcDuration ? calcDuration * 2 : 0) * 5000)) * 1.25)}
-                      </span>
-                    </div>
-                  </div>
+                  {(() => {
+                    const estModal = calculateEstimatedDriverWage(calcDistance * 2, calcDuration ? calcDuration * 2 : 0);
+                    return (
+                      <div className="space-y-1 text-xs pt-1">
+                        <div className="flex justify-between text-slate-500 font-medium">
+                          <span>Komponen Jarak (Rp300/km)</span>
+                          <span className="font-bold text-slate-700">{fmtRp(estModal.compJarak)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-500 font-medium">
+                          <span>Komponen Waktu (Rp5.000/jam)</span>
+                          <span className="font-bold text-slate-700">{fmtRp(estModal.compWaktu)}</span>
+                        </div>
+                        {estModal.shortTripMeal > 0 && (
+                          <div className="flex justify-between text-emerald-600 font-medium">
+                            <span>Uang Makan Short-Trip (&le;2 Jam)</span>
+                            <span className="font-bold text-emerald-700">+{fmtRp(estModal.shortTripMeal)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-amber-600 font-medium">
+                          <span>Aktivitas di Perjalanan</span>
+                          <span className="font-bold text-amber-700">s.d. +{fmtRp(Math.ceil(estModal.baseWage * 0.25))}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-800 font-black border-t border-emerald-200/60 pt-1.5 mt-1 text-sm">
+                          <span>Kisaran Upah Bersih</span>
+                          <span className="text-emerald-700">
+                            {fmtRp(estModal.baseWage)} - {fmtRp(estModal.maxWage)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}

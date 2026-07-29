@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   DRIVER_VEHICLE_RATES,
   calculateDriverNetWage,
+  calculateEstimatedDriverWage,
   calculateJourneyElapsedHours,
   calculateJourneyDateTimeTimings,
   calculateNightPremium,
@@ -105,3 +106,22 @@ test('calculateJourneyDateTimeTimings enforces 05:00 AM cutoff threshold for ove
   // (173.4 * 300) + (26 * 5000) + (1 * 50000) + (5000 short trip meal) = 52020 + 130000 + 50000 + 5000 = 237020
   assert.equal(wage, 237_020);
 });
+
+test('calculateEstimatedDriverWage includes short-trip meal allowance when duration PP <= 2 hours', () => {
+  // 9.2 km PP, 0.2 hours PP (12 min)
+  const estShort = calculateEstimatedDriverWage(9.2, 0.2);
+  assert.equal(estShort.compJarak, 2_760);
+  assert.equal(estShort.compWaktu, 1_000);
+  assert.equal(estShort.shortTripMeal, 5_000);
+  assert.equal(estShort.baseWage, 8_760); // 2760 + 1000 + 5000
+  assert.equal(estShort.maxWage, 10_950); // 8760 * 1.25
+
+  // 10 km PP, 3 hours PP (over 2 hours -> shortTripMeal = 0)
+  const estLong = calculateEstimatedDriverWage(10, 3);
+  assert.equal(estLong.compJarak, 3_000);
+  assert.equal(estLong.compWaktu, 15_000);
+  assert.equal(estLong.shortTripMeal, 0);
+  assert.equal(estLong.baseWage, 18_000);
+  assert.equal(estLong.maxWage, 22_500);
+});
+
