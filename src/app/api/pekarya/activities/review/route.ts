@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
       reports.forEach((before, index) => {
         const item = command.items[index];
         const category = String(before.jobCategory || '');
-        if (category === 'SATPAM') {
+        if (category === 'SATPAM' && Boolean(before.sourceOccurrenceId)) {
           throw new HttpError(409, 'Shift Satpam memakai alur verifikasi khusus.');
         }
         if (
