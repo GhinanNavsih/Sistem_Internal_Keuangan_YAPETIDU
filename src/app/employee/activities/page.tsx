@@ -2531,13 +2531,12 @@ function ActivitiesContent() {
       return;
     }
     const invalidCover = Object.entries(postAssignments).find(([, assignment]) =>
-      assignment.shiftType === 'Lembur Cover' &&
-      (!assignment.coveredEmployeeId || (assignment.overtimeReason || '').trim().length < 8),
+      assignment.shiftType === 'Lembur Cover' && !assignment.coveredEmployeeId,
     );
     if (invalidCover) {
       setMessage({
         type: 'error',
-        text: `${invalidCover[0]}: pilih anggota yang digantikan dan isi alasan minimal 8 karakter.`,
+        text: `${invalidCover[0]}: pilih anggota regu yang digantikan.`,
       });
       return;
     }
@@ -3201,41 +3200,29 @@ function ActivitiesContent() {
                               </Select>
                             </div>
                             {val.shiftType === 'Lembur Cover' && (
-                              <>
-                                <div className="md:col-span-6">
-                                  <Select
-                                    value={val.coveredEmployeeId || 'none'}
-                                    onValueChange={(value: string | null) =>
-                                      handleCoverDetail(post.id, 'coveredEmployeeId', value === 'none' || value === null ? '' : value)}
-                                    disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
-                                  >
-                                    <SelectTrigger className="w-full h-10 rounded-lg bg-amber-50 border-amber-200 text-sm font-bold">
-                                      <span>
-                                        {groupEmployees.find(emp => emp.id === val.coveredEmployeeId)?.name ||
-                                          '-- Pilih anggota yang digantikan --'}
-                                      </span>
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="none">-- Pilih anggota --</SelectItem>
-                                      {groupEmployees
-                                        .filter(emp => !assignedEmployeeIds.includes(emp.id))
-                                        .map(emp => (
-                                          <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div className="md:col-span-6">
-                                  <Input
-                                    value={val.overtimeReason || ''}
-                                    onChange={event =>
-                                      handleCoverDetail(post.id, 'overtimeReason', event.target.value)}
-                                    disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
-                                    placeholder="Alasan cover / referensi ketidakhadiran"
-                                    className="h-10 rounded-lg bg-amber-50 border-amber-200"
-                                  />
-                                </div>
-                              </>
+                              <div className="md:col-span-12">
+                                <Select
+                                  value={val.coveredEmployeeId || 'none'}
+                                  onValueChange={(value: string | null) =>
+                                    handleCoverDetail(post.id, 'coveredEmployeeId', value === 'none' || value === null ? '' : value)}
+                                  disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                                >
+                                  <SelectTrigger className="w-full h-10 rounded-lg bg-amber-50 border-amber-200 text-sm font-bold">
+                                    <span>
+                                      {groupEmployees.find(emp => emp.id === val.coveredEmployeeId)?.name ||
+                                        '-- Pilih anggota yang digantikan --'}
+                                    </span>
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none">-- Pilih anggota --</SelectItem>
+                                    {groupEmployees
+                                      .filter(emp => !assignedEmployeeIds.includes(emp.id))
+                                      .map(emp => (
+                                        <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                                      ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
                             )}
 
                             {/* Guard-post proof photo; use the native Android photo/files source picker. */}

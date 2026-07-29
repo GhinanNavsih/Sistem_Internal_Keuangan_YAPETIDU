@@ -337,15 +337,13 @@ export async function POST(request: NextRequest) {
           (assignment) =>
             !assignment.coveredEmployeeId ||
             !roster.includes(assignment.coveredEmployeeId) ||
-            assignedEmployeeIds.includes(assignment.coveredEmployeeId) ||
-            !assignment.overtimeReason ||
-            assignment.overtimeReason.trim().length < 8,
+            assignedEmployeeIds.includes(assignment.coveredEmployeeId),
         ) ||
         new Set(coveredIds).size !== coveredIds.length
       ) {
         throw new HttpError(
           400,
-          'Lembur Cover wajib menyebut Satpam regu yang absen dan alasan minimal 8 karakter.',
+          'Lembur Cover wajib menyebut Satpam regu yang absen.',
         );
       }
 
