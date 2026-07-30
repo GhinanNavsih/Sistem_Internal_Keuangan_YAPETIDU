@@ -3,24 +3,30 @@ import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   activityReportId,
+  analyzeSatpamShiftSubmission,
   assertDateOnly,
   assertRequestId,
   assertSatpamPhotoUrl,
   getRegularSatpamPayType,
   getShiftIsoBounds,
-  guardDutyIndexId,
   payrollPeriodForDutyDate,
   resolveSatpamAssignmentPayType,
-  SATPAM_HOLIDAY_CALENDAR_VERSION,
   SATPAM_POSTS,
   SATPAM_RATES,
+  satpamKetuaEditConflict,
   SATPAM_RATE_VERSION,
   SHIFT_TIMES,
-  PhotoAuditMetadata,
+  type PhotoAuditMetadata,
+  type SatpamPayType,
+  type SatpamPostId,
+  type SatpamPrimaryAssignmentInput,
+  type SatpamShiftAnomaly,
+  type SatpamShiftName,
   shiftOccurrenceId,
-  SubmitSatpamShiftInput,
 } from '@/lib/payroll/domain';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
+import { isSatpamFlexibilityEnabled } from '@/lib/server/satpamFlexibility';
+import { getTodayDateString } from '@/lib/payroll/driverPiket';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
@@ -30,6 +36,35 @@ import {
 } from '@/lib/server/auth';
 
 export const dynamic = 'force-dynamic';
+
+interface ShiftCommand {
+  requestId: string;
+  occurrenceId?: string;
+  expectedRevision?: number;
+  dutyDate: string;
+  shiftName?: SatpamShiftName;
+  assignments: SatpamPrimaryAssignmentInput[];
+  extraAssignment?: {
+    postId: SatpamPostId;
+    employeeId: string;
+    overtimeReason: string;
+    photoUrl?: string;
+    photoAuditMetadata?: PhotoAuditMetadata;
+  };
+}
+
+interface AssignmentRecord {
+  assignmentKey: string;
+  assignmentKind: 'primary' | 'extra';
+  postId: SatpamPostId;
+  employeeId: string;
+  employeeName: string;
+  payType: SatpamPayType;
+  coveredEmployeeId: string | null;
+  overtimeReason: string | null;
+  photoUrl: string | null;
+  photoAuditMetadata: PhotoAuditMetadata | null;
+}
 
 function stableHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -76,123 +111,157 @@ function parsePhotoAuditMetadata(value: unknown): PhotoAuditMetadata {
   };
 }
 
-function parseInput(raw: unknown, ketuaShiftId: string): SubmitSatpamShiftInput {
-  if (!raw || typeof raw !== 'object') {
+function parsePhotoFields(
+  value: Record<string, unknown>,
+  ketuaShiftId: string,
+): Pick<
+  SatpamPrimaryAssignmentInput,
+  'photoUrl' | 'photoAuditMetadata'
+> {
+  if (value.photoUrl === undefined || value.photoUrl === '') return {};
+  if (typeof value.photoUrl !== 'string') {
+    throw new HttpError(400, 'URL foto bukti tidak valid.');
+  }
+  try {
+    assertSatpamPhotoUrl(value.photoUrl, ketuaShiftId);
+  } catch (error) {
+    throw new HttpError(
+      400,
+      error instanceof Error ? error.message : 'URL foto bukti tidak valid.',
+    );
+  }
+  return {
+    photoUrl: value.photoUrl,
+    ...(value.photoAuditMetadata !== undefined
+      ? { photoAuditMetadata: parsePhotoAuditMetadata(value.photoAuditMetadata) }
+      : {}),
+  };
+}
+
+function parseCommand(raw: unknown, ketuaShiftId: string, requireEditFields: boolean): ShiftCommand {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new HttpError(400, 'Payload shift tidak valid.');
   }
-  const input = raw as Partial<SubmitSatpamShiftInput>;
+  const input = raw as Record<string, unknown>;
   if (typeof input.requestId !== 'string' || typeof input.dutyDate !== 'string') {
     throw new HttpError(400, 'requestId dan dutyDate wajib diisi.');
   }
-  assertRequestId(input.requestId);
-  assertDateOnly(input.dutyDate);
-  if (!Array.isArray(input.assignments)) {
+  try {
+    assertRequestId(input.requestId);
+    assertDateOnly(input.dutyDate);
+  } catch (error) {
+    throw new HttpError(400, error instanceof Error ? error.message : 'Data tanggal tidak valid.');
+  }
+  if (
+    input.shiftName !== undefined &&
+    !['Pagi', 'Sore', 'Malam'].includes(String(input.shiftName))
+  ) {
+    throw new HttpError(400, 'Nama shift tidak valid.');
+  }
+  if (
+    requireEditFields &&
+    (typeof input.occurrenceId !== 'string' ||
+      !/^[A-Za-z0-9_-]{1,180}$/.test(input.occurrenceId) ||
+      !Number.isInteger(input.expectedRevision) ||
+      Number(input.expectedRevision) < 1)
+  ) {
+    throw new HttpError(400, 'ID shift atau revisi edit tidak valid.');
+  }
+  if (!Array.isArray(input.assignments) || input.assignments.length > 20) {
     throw new HttpError(400, 'Daftar penugasan tidak valid.');
   }
-  const assignments = input.assignments.map((assignment: unknown) => {
-    if (!assignment || typeof assignment !== 'object') {
+
+  const validPostIds = new Set<string>(SATPAM_POSTS.map((post) => post.id));
+  const assignments = input.assignments.map((rawAssignment) => {
+    if (!rawAssignment || typeof rawAssignment !== 'object' || Array.isArray(rawAssignment)) {
       throw new HttpError(400, 'Baris penugasan tidak valid.');
     }
-    const value = assignment as Record<string, unknown>;
+    const assignment = rawAssignment as Record<string, unknown>;
     if (
-      typeof value.postId !== 'string' ||
-      typeof value.employeeId !== 'string' ||
-      !value.employeeId ||
-      (value.coveredEmployeeId !== undefined &&
-        typeof value.coveredEmployeeId !== 'string') ||
-      (value.overtimeReason !== undefined &&
-        (typeof value.overtimeReason !== 'string' ||
-          value.overtimeReason.length > 500))
+      typeof assignment.postId !== 'string' ||
+      !validPostIds.has(assignment.postId) ||
+      typeof assignment.employeeId !== 'string' ||
+      !assignment.employeeId.trim()
     ) {
-      throw new HttpError(400, 'Data pos, petugas, atau alasan lembur tidak valid.');
+      throw new HttpError(400, 'Data pos atau petugas tidak valid.');
     }
-    if (value.photoUrl !== undefined && value.photoUrl !== '') {
-      if (typeof value.photoUrl !== 'string') {
-        throw new HttpError(400, 'URL foto bukti tidak valid.');
-      }
-      try {
-        assertSatpamPhotoUrl(value.photoUrl, ketuaShiftId);
-      } catch (error) {
-        throw new HttpError(
-          400,
-          error instanceof Error ? error.message : 'URL foto bukti tidak valid.',
-        );
-      }
+    if (
+      assignment.coveredEmployeeId !== undefined &&
+      typeof assignment.coveredEmployeeId !== 'string'
+    ) {
+      throw new HttpError(400, 'Petugas yang digantikan tidak valid.');
     }
-    if (value.photoAuditMetadata !== undefined && !value.photoUrl) {
-      throw new HttpError(400, 'Metadata foto membutuhkan URL foto bukti.');
+    if (
+      assignment.overtimeReason !== undefined &&
+      (typeof assignment.overtimeReason !== 'string' ||
+        assignment.overtimeReason.length > 500)
+    ) {
+      throw new HttpError(400, 'Alasan lembur tidak valid.');
     }
     return {
-      postId: value.postId,
-      employeeId: value.employeeId,
-      // 'Lembur Cover' is the only pay type a client may assert for a primary
-      // post. Harian/Jumat & Libur are derived server-side from the real
-      // dutyDate + holiday calendar, and Lembur Sendiri/Off-Duty are not
-      // meaningful on a primary assignment — accepting any of those from the
-      // client would let a Ketua Shift pick their own pay rate.
-      ...(value.shiftType === 'Lembur Cover' ? { shiftType: 'Lembur Cover' as const } : {}),
-      ...(typeof value.coveredEmployeeId === 'string'
-        ? { coveredEmployeeId: value.coveredEmployeeId }
+      postId: assignment.postId as SatpamPostId,
+      employeeId: assignment.employeeId.trim(),
+      ...(assignment.shiftType === 'Lembur Cover'
+        ? { shiftType: 'Lembur Cover' as const }
         : {}),
-      ...(typeof value.overtimeReason === 'string'
-        ? { overtimeReason: value.overtimeReason }
+      ...(typeof assignment.coveredEmployeeId === 'string' &&
+      assignment.coveredEmployeeId.trim()
+        ? { coveredEmployeeId: assignment.coveredEmployeeId.trim() }
         : {}),
-      ...(typeof value.photoUrl === 'string' && value.photoUrl
-        ? { photoUrl: value.photoUrl }
+      ...(typeof assignment.overtimeReason === 'string'
+        ? { overtimeReason: assignment.overtimeReason.trim() }
         : {}),
-      ...(value.photoAuditMetadata !== undefined
-        ? { photoAuditMetadata: parsePhotoAuditMetadata(value.photoAuditMetadata) }
-        : {}),
-    } as SubmitSatpamShiftInput['assignments'][number];
+      ...parsePhotoFields(assignment, ketuaShiftId),
+    };
   });
-  let extraAssignment: SubmitSatpamShiftInput['extraAssignment'];
+
+  let extraAssignment: ShiftCommand['extraAssignment'];
   if (input.extraAssignment !== undefined) {
-    if (!input.extraAssignment || typeof input.extraAssignment !== 'object') {
+    if (
+      !input.extraAssignment ||
+      typeof input.extraAssignment !== 'object' ||
+      Array.isArray(input.extraAssignment)
+    ) {
       throw new HttpError(400, 'Penugasan tambahan tidak valid.');
     }
-    const extra = input.extraAssignment as unknown as Record<string, unknown>;
+    const extra = input.extraAssignment as Record<string, unknown>;
     if (
       typeof extra.postId !== 'string' ||
+      !validPostIds.has(extra.postId) ||
       typeof extra.employeeId !== 'string' ||
-      !extra.employeeId ||
+      !extra.employeeId.trim() ||
       typeof extra.overtimeReason !== 'string' ||
       extra.overtimeReason.length > 500
     ) {
       throw new HttpError(400, 'Data Lembur Sendiri tidak valid.');
     }
-    if (extra.photoUrl !== undefined && extra.photoUrl !== '') {
-      if (typeof extra.photoUrl !== 'string') {
-        throw new HttpError(400, 'URL foto bukti tidak valid.');
-      }
-      try {
-        assertSatpamPhotoUrl(extra.photoUrl, ketuaShiftId);
-      } catch (error) {
-        throw new HttpError(
-          400,
-          error instanceof Error ? error.message : 'URL foto bukti tidak valid.',
-        );
-      }
-    }
-    if (extra.photoAuditMetadata !== undefined && !extra.photoUrl) {
-      throw new HttpError(400, 'Metadata foto membutuhkan URL foto bukti.');
-    }
     extraAssignment = {
-      postId: extra.postId,
-      employeeId: extra.employeeId,
-      overtimeReason: extra.overtimeReason,
-      ...(typeof extra.photoUrl === 'string' && extra.photoUrl
-        ? { photoUrl: extra.photoUrl }
-        : {}),
-      ...(extra.photoAuditMetadata !== undefined
-        ? { photoAuditMetadata: parsePhotoAuditMetadata(extra.photoAuditMetadata) }
-        : {}),
-    } as SubmitSatpamShiftInput['extraAssignment'];
+      postId: extra.postId as SatpamPostId,
+      employeeId: extra.employeeId.trim(),
+      overtimeReason: extra.overtimeReason.trim(),
+      ...parsePhotoFields(extra, ketuaShiftId),
+    };
   }
+
+  if (assignments.length === 0 && !extraAssignment) {
+    throw new HttpError(
+      400,
+      'Pilih sedikitnya satu petugas. Pos lain boleh dibiarkan kosong.',
+    );
+  }
+
   return {
     requestId: input.requestId,
     dutyDate: input.dutyDate,
+    shiftName: input.shiftName as SatpamShiftName | undefined,
     assignments,
     ...(extraAssignment ? { extraAssignment } : {}),
+    ...(requireEditFields
+      ? {
+          occurrenceId: input.occurrenceId as string,
+          expectedRevision: Number(input.expectedRevision),
+        }
+      : {}),
   };
 }
 
@@ -204,428 +273,620 @@ function isActiveSatpam(data: FirebaseFirestore.DocumentData | undefined): boole
   );
 }
 
-function jakartaDateToday(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Jakarta',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
+async function getKetuaTeam(linkedEmployeeId: string) {
+  const teamQuery = await adminDb
+    .collection('SatpamShiftTeams')
+    .where('ketuaShiftId', '==', linkedEmployeeId)
+    .limit(2)
+    .get();
+  if (teamQuery.size !== 1) {
+    throw new HttpError(409, 'Konfigurasi regu Ketua Shift harus tepat satu.');
+  }
+  const teamSnapshot = teamQuery.docs[0];
+  const teamNumber = Number(teamSnapshot.id.split('_')[1]);
+  if (![1, 2, 3].includes(teamNumber)) {
+    throw new HttpError(409, 'Nomor regu Satpam tidak valid.');
+  }
+  return { teamSnapshot, teamNumber };
 }
 
-export async function POST(request: NextRequest) {
+function buildAssignmentRecords(input: {
+  command: ShiftCommand;
+  roster: string[];
+  employeeById: Map<string, FirebaseFirestore.DocumentSnapshot>;
+  regularPayType: 'Harian' | 'Jumat & Libur';
+}): AssignmentRecord[] {
+  const primary = input.command.assignments.map((assignment, index) => {
+    const isExternal = !input.roster.includes(assignment.employeeId);
+    const payType = resolveSatpamAssignmentPayType(
+      assignment.shiftType,
+      isExternal,
+      input.regularPayType,
+    );
+    const employee = input.employeeById.get(assignment.employeeId);
+    return {
+      assignmentKey: `primary_${assignment.postId}_${index}`,
+      assignmentKind: 'primary' as const,
+      postId: assignment.postId,
+      employeeId: assignment.employeeId,
+      employeeName: String(employee?.data()?.name || assignment.employeeId),
+      payType,
+      coveredEmployeeId:
+        payType === 'Lembur Cover' ? assignment.coveredEmployeeId || null : null,
+      overtimeReason:
+        payType === 'Lembur Cover' ? assignment.overtimeReason?.trim() || null : null,
+      photoUrl: assignment.photoUrl || null,
+      photoAuditMetadata: assignment.photoAuditMetadata || null,
+    };
+  });
+  if (!input.command.extraAssignment) return primary;
+  const extra = input.command.extraAssignment;
+  const employee = input.employeeById.get(extra.employeeId);
+  return [
+    ...primary,
+    {
+      assignmentKey: `extra_${extra.postId}`,
+      assignmentKind: 'extra' as const,
+      postId: extra.postId,
+      employeeId: extra.employeeId,
+      employeeName: String(employee?.data()?.name || extra.employeeId),
+      payType: 'Lembur Sendiri' as const,
+      coveredEmployeeId: null,
+      overtimeReason: extra.overtimeReason?.trim() || null,
+      photoUrl: extra.photoUrl || null,
+      photoAuditMetadata: extra.photoAuditMetadata || null,
+    },
+  ];
+}
+
+function buildAnomalies(input: {
+  command: ShiftCommand;
+  suggestedShiftName: SatpamShiftName;
+  reportedShiftName: SatpamShiftName;
+  ketuaShiftId: string;
+  roster: string[];
+  employeeById: Map<string, FirebaseFirestore.DocumentSnapshot>;
+  holidayCalendarConfigured: boolean;
+}): SatpamShiftAnomaly[] {
+  const activeSatpamIds = new Set(
+    Array.from(input.employeeById.entries())
+      .filter(([, snapshot]) => snapshot.exists && isActiveSatpam(snapshot.data()))
+      .map(([employeeId]) => employeeId),
+  );
+  const normalizedAssignments = input.command.assignments.map((assignment) => ({
+    ...assignment,
+    ...(!input.roster.includes(assignment.employeeId)
+      ? { shiftType: 'Lembur Cover' as const }
+      : {}),
+  }));
+  const anomalies = analyzeSatpamShiftSubmission({
+    dutyDate: input.command.dutyDate,
+    reportedShiftName: input.reportedShiftName,
+    suggestedShiftName: input.suggestedShiftName,
+    ketuaShiftId: input.ketuaShiftId,
+    assignments: normalizedAssignments,
+    activeSatpamIds,
+    holidayCalendarConfigured: input.holidayCalendarConfigured,
+  });
+
+  const extra = input.command.extraAssignment;
+  if (extra) {
+    if (
+      normalizedAssignments.some(
+        (assignment) => assignment.employeeId === extra.employeeId,
+      )
+    ) {
+      anomalies.push({
+        code: 'DUPLICATE_GUARD',
+        severity: 'blocking',
+        message: 'Petugas tambahan juga tercatat pada pos utama.',
+      });
+    }
+    if (!activeSatpamIds.has(extra.employeeId)) {
+      anomalies.push({
+        code: 'INACTIVE_OR_MISMATCHED_GUARD',
+        severity: 'blocking',
+        message: 'Petugas tambahan belum memiliki status Satpam aktif yang sesuai.',
+      });
+    }
+    if (!extra.photoUrl) {
+      const photoAnomaly = anomalies.find((item) => item.code === 'MISSING_PHOTO');
+      if (photoAnomaly) {
+        photoAnomaly.message = 'Ada penugasan yang tidak memiliki foto bukti.';
+      } else {
+        anomalies.push({
+          code: 'MISSING_PHOTO',
+          severity: 'warning',
+          message: 'Petugas tambahan tidak memiliki foto bukti.',
+        });
+      }
+    }
+  }
+
+  return anomalies.filter(
+    (anomaly, index, list) =>
+      list.findIndex((candidate) => candidate.code === anomaly.code) === index,
+  );
+}
+
+function assignmentReportData(input: {
+  record: AssignmentRecord;
+  occurrenceId: string;
+  revision: number;
+  dutyDate: string;
+  period: string;
+  suggestedShiftName: SatpamShiftName;
+  reportedShiftName: SatpamShiftName;
+  startsAt: FirebaseFirestore.Timestamp;
+  endsAt: FirebaseFirestore.Timestamp;
+  ketuaShiftId: string;
+  ketuaShiftName: string;
+  holidayCalendarVersion: string | null;
+  anomalyCodes: string[];
+  now: FirebaseFirestore.FieldValue;
+}) {
+  const post = SATPAM_POSTS.find((item) => item.id === input.record.postId)!;
+  const shiftTimes = SHIFT_TIMES[input.reportedShiftName];
+  return {
+    employeeId: input.record.employeeId,
+    employeeName: input.record.employeeName,
+    jobCategory: 'SATPAM',
+    reportKind: 'satpam_shift_assignment',
+    period: input.period,
+    payrollPeriod: input.period,
+    activityName: `Pengamanan di ${post.id}: ${post.name}`,
+    activityType: 'Lainnya',
+    activityDate: input.dutyDate,
+    dutyDate: input.dutyDate,
+    timeStart: shiftTimes.start,
+    timeEnd: shiftTimes.end,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    status: 'pending',
+    fee: SATPAM_RATES[input.record.payType],
+    shiftType: input.record.payType,
+    assignmentKind: input.record.assignmentKind,
+    assignmentKey: input.record.assignmentKey,
+    postId: post.id,
+    postName: `${post.id}: ${post.name}`,
+    photoUrl: input.record.photoUrl,
+    photoAuditMetadata: input.record.photoAuditMetadata,
+    shiftName: input.reportedShiftName,
+    reportedShiftName: input.reportedShiftName,
+    suggestedShiftName: input.suggestedShiftName,
+    submittedDutyDate: input.dutyDate,
+    submittedShiftName: input.reportedShiftName,
+    submittedPostId: post.id,
+    submittedEmployeeId: input.record.employeeId,
+    submittedPayType: input.record.payType,
+    coveredEmployeeId: input.record.coveredEmployeeId,
+    overtimeReason: input.record.overtimeReason,
+    ketuaShiftId: input.ketuaShiftId,
+    ketuaShiftName: input.ketuaShiftName,
+    sourceOccurrenceId: input.occurrenceId,
+    sourceOccurrenceRevision: input.revision,
+    sourceLedgerEntryId: activityReportId(
+      input.occurrenceId,
+      input.record.employeeId,
+      input.record.assignmentKey,
+    ),
+    anomalyCodes: input.anomalyCodes,
+    auditorActionAt: null,
+    rateVersion: SATPAM_RATE_VERSION,
+    holidayCalendarVersion: input.holidayCalendarVersion,
+    submittedAt: input.now,
+    schemaVersion: 3,
+  };
+}
+
+async function mutateShift(
+  request: NextRequest,
+  mode: 'create' | 'edit',
+) {
+  const actor = await requireAuthenticatedProfile(request);
+  requireRole(actor, ['ketua_shift_satpam']);
+  if (!actor.linkedEmployeeId) {
+    throw new HttpError(409, 'Akun Ketua Shift belum terhubung ke data Satpam.');
+  }
+  const command = parseCommand(
+    await request.json(),
+    actor.linkedEmployeeId,
+    mode === 'edit',
+  );
+  const { teamSnapshot, teamNumber } = await getKetuaTeam(actor.linkedEmployeeId);
+  const team = teamSnapshot.data();
+  const members = Array.isArray(team.memberEmployeeIds)
+    ? team.memberEmployeeIds.filter((id): id is string => typeof id === 'string')
+    : [];
+  const roster = Array.from(new Set([actor.linkedEmployeeId, ...members]));
+  const suggestedShiftName = getSatpamShiftForTeam(teamNumber, command.dutyDate);
+  const reportedShiftName = command.shiftName || suggestedShiftName;
+  const flexibilityEnabled = isSatpamFlexibilityEnabled(teamSnapshot.id);
+  if (!flexibilityEnabled) {
+    const today = getTodayDateString();
+    const uniquePosts = new Set(
+      command.assignments.map((assignment) => assignment.postId),
+    );
+    const assignedEmployees = command.assignments.map(
+      (assignment) => assignment.employeeId,
+    );
+    if (
+      command.dutyDate !== today ||
+      reportedShiftName !== suggestedShiftName ||
+      command.assignments.length !== SATPAM_POSTS.length ||
+      uniquePosts.size !== SATPAM_POSTS.length ||
+      new Set(assignedEmployees).size !== assignedEmployees.length ||
+      !assignedEmployees.includes(actor.linkedEmployeeId) ||
+      command.assignments.some((assignment) => !roster.includes(assignment.employeeId))
+    ) {
+      throw new HttpError(
+        409,
+        'Alur fleksibel belum diaktifkan untuk regu ini. Gunakan tanggal dan roster hari ini sesuai jadwal.',
+      );
+    }
+  }
+  const occurrenceId =
+    mode === 'edit'
+      ? command.occurrenceId!
+      : shiftOccurrenceId(teamSnapshot.id, command.dutyDate, reportedShiftName);
+  const period = payrollPeriodForDutyDate(command.dutyDate);
+  const requestHash = stableHash({
+    occurrenceId,
+    expectedRevision: command.expectedRevision || null,
+    dutyDate: command.dutyDate,
+    shiftName: reportedShiftName,
+    assignments: command.assignments,
+    extraAssignment: command.extraAssignment || null,
+  });
+
+  return adminDb.runTransaction(async (transaction) => {
+    const occurrenceRef = adminDb.collection('ShiftOccurrences').doc(occurrenceId);
+    const periodRef = adminDb.collection('PayrollPeriods').doc(period);
+    const holidayRef = adminDb
+      .collection('PayrollHolidayCalendars')
+      .doc(command.dutyDate.slice(0, 4));
+    const idempotencyRef = adminDb
+      .collection('FinancialIdempotencyKeys')
+      .doc(`${actor.uid}__${command.requestId}`);
+    const selectedEmployeeIds = Array.from(
+      new Set([
+        ...roster,
+        ...command.assignments.map((assignment) => assignment.employeeId),
+        ...(command.extraAssignment ? [command.extraAssignment.employeeId] : []),
+      ]),
+    );
+    const employeeRefs = selectedEmployeeIds.map((employeeId) =>
+      adminDb.collection('Employees_BlueCollar').doc(employeeId),
+    );
+
+    const [
+      occurrenceSnapshot,
+      periodSnapshot,
+      holidaySnapshot,
+      idempotencySnapshot,
+      ...employeeSnapshots
+    ] = await Promise.all([
+      transaction.get(occurrenceRef),
+      transaction.get(periodRef),
+      transaction.get(holidayRef),
+      transaction.get(idempotencyRef),
+      ...employeeRefs.map((ref) => transaction.get(ref)),
+    ]);
+
+    if (idempotencySnapshot.exists) {
+      const previous = idempotencySnapshot.data()!;
+      if (
+        previous.requestHash !== requestHash ||
+        previous.entityId !== occurrenceId
+      ) {
+        throw new HttpError(409, 'requestId sudah digunakan untuk perubahan berbeda.');
+      }
+      return {
+        occurrenceId,
+        revision: Number(previous.revision || 1),
+        anomalies: previous.anomalies || [],
+        idempotent: true,
+      };
+    }
+    if (!periodSnapshot.exists || periodSnapshot.data()?.attendanceStatus !== 'open') {
+      throw new HttpError(
+        409,
+        'Tanggal ini berada di periode payroll yang belum dibuka atau sudah ditutup.',
+      );
+    }
+    if (mode === 'create' && occurrenceSnapshot.exists) {
+      throw new HttpError(
+        409,
+        'Laporan shift untuk tanggal dan jam ini sudah ada. Gunakan tombol Ubah Laporan.',
+      );
+    }
+    const before = occurrenceSnapshot.exists ? occurrenceSnapshot.data()! : null;
+    if (mode === 'edit') {
+      if (!occurrenceSnapshot.exists) {
+        throw new HttpError(404, 'Laporan shift yang akan diubah tidak ditemukan.');
+      }
+      if (
+        before?.ketuaShiftId !== actor.linkedEmployeeId ||
+        before?.teamId !== teamSnapshot.id
+      ) {
+        throw new HttpError(403, 'Laporan shift ini bukan milik regu Anda.');
+      }
+      const editConflict = satpamKetuaEditConflict({
+        status: before?.status,
+        auditorActionAt: before?.auditorActionAt,
+        revision: before?.revision,
+        expectedRevision: command.expectedRevision!,
+      });
+      if (editConflict === 'auditor_locked') {
+        throw new HttpError(
+          409,
+          'Auditor sudah mengambil tindakan. Laporan tidak dapat diubah lagi.',
+        );
+      }
+      if (editConflict === 'stale_revision') {
+        throw new HttpError(
+          409,
+          'Laporan telah berubah di perangkat lain. Muat ulang sebelum menyimpan.',
+        );
+      }
+    }
+
+    const employeeById = new Map(
+      employeeSnapshots.map((snapshot) => [snapshot.id, snapshot]),
+    );
+    const holidayDates = new Set<string>(
+      holidaySnapshot.exists && Array.isArray(holidaySnapshot.data()?.dates)
+        ? holidaySnapshot
+            .data()!
+            .dates.filter((date: unknown): date is string => typeof date === 'string')
+        : [],
+    );
+    const regularPayType = getRegularSatpamPayType(command.dutyDate, holidayDates);
+    const records = buildAssignmentRecords({
+      command,
+      roster,
+      employeeById,
+      regularPayType,
+    });
+    const anomalies = buildAnomalies({
+      command,
+      suggestedShiftName,
+      reportedShiftName,
+      ketuaShiftId: actor.linkedEmployeeId!,
+      roster,
+      employeeById,
+      holidayCalendarConfigured: holidaySnapshot.exists,
+    });
+    const revision = mode === 'edit' ? Number(before?.revision || 1) + 1 : 1;
+    const { startsAtIso, endsAtIso } = getShiftIsoBounds(
+      command.dutyDate,
+      reportedShiftName,
+    );
+    const startsAt = admin.firestore.Timestamp.fromDate(new Date(startsAtIso));
+    const endsAt = admin.firestore.Timestamp.fromDate(new Date(endsAtIso));
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const reportIds = records.map((record) =>
+      activityReportId(occurrenceId, record.employeeId, record.assignmentKey),
+    );
+
+    const oldReportIds: string[] =
+      mode === 'edit' && Array.isArray(before?.reportIds)
+        ? before.reportIds.filter((id: unknown): id is string => typeof id === 'string')
+        : [];
+    const oldReportSnapshots = await Promise.all(
+      oldReportIds.map((reportId) =>
+        transaction.get(adminDb.collection('ActivityReports').doc(reportId)),
+      ),
+    );
+    if (
+      oldReportSnapshots.some(
+        (snapshot) => snapshot.exists && snapshot.data()?.status !== 'pending',
+      )
+    ) {
+      throw new HttpError(
+        409,
+        'Salah satu penugasan sudah diaudit dan tidak dapat diubah.',
+      );
+    }
+
+    oldReportIds.forEach((reportId) => {
+      transaction.delete(adminDb.collection('ActivityReports').doc(reportId));
+    });
+    records.forEach((record, index) => {
+      transaction.set(
+        adminDb.collection('ActivityReports').doc(reportIds[index]),
+        assignmentReportData({
+          record,
+          occurrenceId,
+          revision,
+          dutyDate: command.dutyDate,
+          period,
+          suggestedShiftName,
+          reportedShiftName,
+          startsAt,
+          endsAt,
+          ketuaShiftId: actor.linkedEmployeeId!,
+          ketuaShiftName: String(team.ketuaShiftName || actor.displayName),
+          holidayCalendarVersion: holidaySnapshot.exists
+            ? String(holidaySnapshot.data()?.version || '')
+            : null,
+          anomalyCodes: anomalies.map((anomaly) => anomaly.code),
+          now,
+        }),
+      );
+    });
+
+    const latestSnapshot = {
+      dutyDate: command.dutyDate,
+      reportedShiftName,
+      suggestedShiftName,
+      assignments: records.map((record) => ({
+        assignmentKey: record.assignmentKey,
+        assignmentKind: record.assignmentKind,
+        postId: record.postId,
+        employeeId: record.employeeId,
+        payType: record.payType,
+        coveredEmployeeId: record.coveredEmployeeId,
+        overtimeReason: record.overtimeReason,
+        photoUrl: record.photoUrl,
+        photoAuditMetadata: record.photoAuditMetadata,
+      })),
+    };
+    const occurrenceData = {
+      teamId: teamSnapshot.id,
+      dutyDate: command.dutyDate,
+      payrollPeriod: period,
+      shiftName: reportedShiftName,
+      reportedShiftName,
+      suggestedShiftName,
+      startsAt,
+      endsAt,
+      timeZone: 'Asia/Jakarta',
+      status: 'pending_review',
+      reviewStatus: 'pending',
+      revision,
+      auditorActionAt: null,
+      reviewOwnerUid: null,
+      anomalyCodes: anomalies.map((anomaly) => anomaly.code),
+      anomalies,
+      blockingAnomalyCount: anomalies.filter(
+        (anomaly) => anomaly.severity === 'blocking',
+      ).length,
+      warningAnomalyCount: anomalies.filter(
+        (anomaly) => anomaly.severity === 'warning',
+      ).length,
+      pendingAssignmentCount: records.length,
+      approvedAssignmentCount: 0,
+      declinedAssignmentCount: 0,
+      requestId: command.requestId,
+      requestHash,
+      submittedByUid: actor.uid,
+      ketuaShiftId: actor.linkedEmployeeId,
+      ketuaShiftName: String(team.ketuaShiftName || actor.displayName),
+      rateVersion: SATPAM_RATE_VERSION,
+      holidayCalendarVersion: holidaySnapshot.exists
+        ? String(holidaySnapshot.data()?.version || '')
+        : null,
+      regularPayType,
+      assignmentCount: records.length,
+      reportIds,
+      latestSubmitterSnapshot: latestSnapshot,
+      ...(mode === 'create' ? { initialSubmissionSnapshot: latestSnapshot } : {}),
+      createdAt: before?.createdAt || now,
+      updatedAt: now,
+      schemaVersion: 2,
+    };
+    transaction.set(occurrenceRef, occurrenceData, { merge: mode === 'edit' });
+    transaction.create(
+      newFinancialAuditRef(),
+      buildFinancialAuditRecord(actor, {
+        action:
+          mode === 'edit'
+            ? 'SATPAM_SHIFT_RESUBMITTED'
+            : 'SATPAM_SHIFT_SUBMITTED',
+        entityType: 'ShiftOccurrence',
+        entityId: occurrenceId,
+        reason:
+          mode === 'edit'
+            ? 'Perubahan laporan oleh Ketua Shift sebelum tindakan auditor'
+            : 'Pelaporan shift fleksibel oleh Ketua Shift',
+        requestId: command.requestId,
+        before,
+        after: occurrenceData,
+        metadata: {
+          revision,
+          anomalyCodes: anomalies.map((anomaly) => anomaly.code),
+        },
+      }),
+    );
+    transaction.create(idempotencyRef, {
+      actorUid: actor.uid,
+      requestId: command.requestId,
+      requestHash,
+      entityType: 'ShiftOccurrence',
+      entityId: occurrenceId,
+      revision,
+      anomalies,
+      createdAt: now,
+    });
+
+    return { occurrenceId, revision, anomalies, idempotent: false };
+  });
+}
+
+export async function GET(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
     requireRole(actor, ['ketua_shift_satpam']);
     if (!actor.linkedEmployeeId) {
       throw new HttpError(409, 'Akun Ketua Shift belum terhubung ke data Satpam.');
     }
-
-    const input = parseInput(await request.json(), actor.linkedEmployeeId);
-    if (input.dutyDate > jakartaDateToday()) {
-      throw new HttpError(400, 'Tanggal shift tidak boleh berada di masa depan.');
+    const dutyDate = request.nextUrl.searchParams.get('dutyDate') || '';
+    try {
+      assertDateOnly(dutyDate);
+    } catch {
+      throw new HttpError(400, 'Tanggal laporan tidak valid.');
     }
-    const teamQuery = await adminDb
-      .collection('SatpamShiftTeams')
+    const snapshot = await adminDb
+      .collection('ShiftOccurrences')
       .where('ketuaShiftId', '==', actor.linkedEmployeeId)
-      .limit(2)
       .get();
-    if (teamQuery.size !== 1) {
-      throw new HttpError(409, 'Konfigurasi regu Ketua Shift harus tepat satu.');
+    const latestBefore = request.nextUrl.searchParams.get('latestBefore') === 'true';
+    const occurrences: Array<
+      { id: string } & FirebaseFirestore.DocumentData
+    > = snapshot.docs
+      .map((document) => ({ id: document.id, ...document.data() }));
+    const occurrence = occurrences
+      .filter((item) =>
+        latestBefore ? String(item.dutyDate || '') < dutyDate : item.dutyDate === dutyDate,
+      )
+      .sort((left, right) =>
+        latestBefore
+          ? String(right.dutyDate || '').localeCompare(String(left.dutyDate || ''))
+          : Number(right.revision || 0) - Number(left.revision || 0),
+      )[0];
+    if (!occurrence) {
+      return Response.json(
+        { occurrence: null, assignments: [] },
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
     }
+    const reportIds = Array.isArray(occurrence.reportIds)
+      ? occurrence.reportIds.filter((id): id is string => typeof id === 'string')
+      : [];
+    const reportSnapshots = await Promise.all(
+      reportIds.map((reportId) =>
+        adminDb.collection('ActivityReports').doc(reportId).get(),
+      ),
+    );
+    const assignments = reportSnapshots
+      .filter((report) => report.exists)
+      .map((report) => ({ id: report.id, ...report.data() }));
+    return Response.json(
+      { occurrence, assignments },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
 
-    const teamRef = teamQuery.docs[0].ref;
-    const teamId = teamRef.id;
-    const teamNumber = Number(teamId.split('_')[1]);
-    if (![1, 2, 3].includes(teamNumber)) {
-      throw new HttpError(409, 'Nomor regu Satpam tidak valid.');
-    }
-
-    const shiftName = getSatpamShiftForTeam(teamNumber, input.dutyDate);
-    const occurrenceId = shiftOccurrenceId(teamId, input.dutyDate, shiftName);
-    const period = payrollPeriodForDutyDate(input.dutyDate);
-    const requestHash = stableHash({
-      dutyDate: input.dutyDate,
-      assignments: [...input.assignments].sort((a, b) => a.postId.localeCompare(b.postId)),
-      extraAssignment: input.extraAssignment || null,
+export async function POST(request: NextRequest) {
+  try {
+    const result = await mutateShift(request, 'create');
+    return Response.json(result, {
+      status: result.idempotent ? 200 : 201,
+      headers: { 'Cache-Control': 'no-store' },
     });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
 
-    const transactionResult = await adminDb.runTransaction(async (transaction) => {
-      const occurrenceRef = adminDb.collection('ShiftOccurrences').doc(occurrenceId);
-      const idempotencyRef = adminDb
-        .collection('FinancialIdempotencyKeys')
-        .doc(`${actor.uid}__${input.requestId}`);
-      const periodRef = adminDb.collection('PayrollPeriods').doc(period);
-      const holidayRef = adminDb
-        .collection('PayrollHolidayCalendars')
-        .doc(input.dutyDate.slice(0, 4));
-
-      const [teamSnapshot, occurrenceSnapshot, idempotencySnapshot, periodSnapshot, holidaySnapshot] =
-        await Promise.all([
-          transaction.get(teamRef),
-          transaction.get(occurrenceRef),
-          transaction.get(idempotencyRef),
-          transaction.get(periodRef),
-          transaction.get(holidayRef),
-        ]);
-
-      if (idempotencySnapshot.exists) {
-        const stored = idempotencySnapshot.data()!;
-        if (stored.requestHash !== requestHash || stored.entityId !== occurrenceId) {
-          throw new HttpError(409, 'requestId sudah digunakan untuk permintaan berbeda.');
-        }
-        return { occurrenceId, idempotent: true };
-      }
-      if (occurrenceSnapshot.exists) {
-        const stored = occurrenceSnapshot.data()!;
-        if (stored.requestHash !== requestHash) {
-          throw new HttpError(409, 'Shift ini sudah disimpan dengan penugasan berbeda.');
-        }
-        return { occurrenceId, idempotent: true };
-      }
-      if (!teamSnapshot.exists) {
-        throw new HttpError(409, 'Regu Satpam tidak ditemukan.');
-      }
-      if (!periodSnapshot.exists || periodSnapshot.data()?.attendanceStatus !== 'open') {
-        throw new HttpError(423, 'Periode payroll belum dibuka atau sudah ditutup untuk presensi.');
-      }
-      if (!holidaySnapshot.exists) {
-        throw new HttpError(
-          409,
-          `Kalender hari libur ${input.dutyDate.slice(0, 4)} belum dikonfigurasi.`,
-        );
-      }
-
-      const team = teamSnapshot.data()!;
-      if (team.ketuaShiftId !== actor.linkedEmployeeId) {
-        throw new HttpError(403, 'Anda bukan Ketua Shift untuk regu ini.');
-      }
-      const members = Array.isArray(team.memberEmployeeIds)
-        ? team.memberEmployeeIds.filter((id): id is string => typeof id === 'string')
-        : [];
-      const roster = Array.from(new Set([actor.linkedEmployeeId!, ...members]));
-      if (members.length !== 9 || roster.length !== 10) {
-        throw new HttpError(409, 'Regu Satpam wajib berisi satu Ketua dan sembilan anggota unik.');
-      }
-
-      const expectedPostIds = new Set(SATPAM_POSTS.map((post) => post.id));
-      const suppliedPostIds = new Set(input.assignments.map((assignment) => assignment.postId));
-      const assignedEmployeeIds = input.assignments.map((assignment) => assignment.employeeId);
-      if (
-        input.assignments.length !== SATPAM_POSTS.length ||
-        suppliedPostIds.size !== SATPAM_POSTS.length ||
-        [...expectedPostIds].some((postId) => !suppliedPostIds.has(postId))
-      ) {
-        throw new HttpError(400, 'Kesembilan pos wajib diisi tepat satu kali.');
-      }
-      if (
-        assignedEmployeeIds.some((id) => typeof id !== 'string' || !id) ||
-        new Set(assignedEmployeeIds).size !== assignedEmployeeIds.length
-      ) {
-        throw new HttpError(400, 'Satu Satpam tidak boleh mengisi dua pos utama.');
-      }
-      if (!assignedEmployeeIds.includes(actor.linkedEmployeeId!)) {
-        throw new HttpError(400, 'Ketua Shift wajib menjaga salah satu dari sembilan pos.');
-      }
-
-      const externalAssignments = input.assignments.filter(
-        (assignment) => assignment.shiftType === 'Lembur Cover' || !roster.includes(assignment.employeeId),
-      );
-      const coveredIds = externalAssignments.map((assignment) => assignment.coveredEmployeeId || '');
-      if (
-        externalAssignments.some(
-          (assignment) =>
-            !assignment.coveredEmployeeId ||
-            !roster.includes(assignment.coveredEmployeeId) ||
-            assignedEmployeeIds.includes(assignment.coveredEmployeeId),
-        ) ||
-        new Set(coveredIds).size !== coveredIds.length
-      ) {
-        throw new HttpError(
-          400,
-          'Lembur Cover wajib menyebut Satpam regu yang absen.',
-        );
-      }
-
-      const extra = input.extraAssignment;
-      if (extra) {
-        if (
-          !expectedPostIds.has(extra.postId) ||
-          !roster.includes(extra.employeeId) ||
-          assignedEmployeeIds.includes(extra.employeeId) ||
-          coveredIds.includes(extra.employeeId)
-        ) {
-          throw new HttpError(
-            400,
-            'Lembur Sendiri hanya untuk anggota regu yang sedang libur.',
-          );
-        }
-      }
-
-      const guardIds = Array.from(
-        new Set([...assignedEmployeeIds, ...(extra ? [extra.employeeId] : [])]),
-      );
-      // Firestore requires every transaction read to happen before its first write.
-      // Load the complete roster as well as any external cover guards up front so
-      // off-duty records never introduce a read-after-write transaction failure.
-      const employeeIdsToLoad = Array.from(new Set([...roster, ...guardIds]));
-      const employeeRefs = employeeIdsToLoad.map((employeeId) =>
-        adminDb.collection('Employees_BlueCollar').doc(employeeId),
-      );
-      const employeeSnapshots = await Promise.all(
-        employeeRefs.map((reference) => transaction.get(reference)),
-      );
-      const employeeById = new Map(
-        employeeSnapshots.map((snapshot) => [snapshot.id, snapshot]),
-      );
-      for (const employeeId of employeeIdsToLoad) {
-        const employee = employeeById.get(employeeId);
-        if (!employee?.exists || !isActiveSatpam(employee.data())) {
-          throw new HttpError(409, `Satpam ${employeeId} tidak aktif atau tidak valid.`);
-        }
-      }
-
-      const holidayData = holidaySnapshot.data()!;
-      if (
-        typeof periodSnapshot.data()?.holidayCalendarVersion !== 'string' ||
-        periodSnapshot.data()?.holidayCalendarVersion !== holidayData.version
-      ) {
-        throw new HttpError(
-          409,
-          'Versi kalender libur periode tidak cocok. Hubungi Finance sebelum mengirim shift.',
-        );
-      }
-      const holidayDates = new Set<string>(
-        Array.isArray(holidayData.dates)
-          ? holidayData.dates.filter((date: unknown): date is string => typeof date === 'string')
-          : [],
-      );
-      const regularPayType = getRegularSatpamPayType(input.dutyDate, holidayDates);
-      const { startsAtIso, endsAtIso } = getShiftIsoBounds(input.dutyDate, shiftName);
-      const startsAt = admin.firestore.Timestamp.fromDate(new Date(startsAtIso));
-      const endsAt = admin.firestore.Timestamp.fromDate(new Date(endsAtIso));
-      const shiftTimes = SHIFT_TIMES[shiftName];
-
-      const guardIndexRefs = guardIds.map((employeeId) =>
-        adminDb
-          .collection('GuardDutyIndexes')
-          .doc(guardDutyIndexId(input.dutyDate, shiftName, employeeId)),
-      );
-      const guardIndexSnapshots = await Promise.all(
-        guardIndexRefs.map((reference) => transaction.get(reference)),
-      );
-      const conflictingIndex = guardIndexSnapshots.find((snapshot) => snapshot.exists);
-      if (conflictingIndex) {
-        throw new HttpError(
-          409,
-          `Satpam pada indeks ${conflictingIndex.id} sudah tercatat di shift yang sama.`,
-        );
-      }
-
-      const createdAt = admin.firestore.FieldValue.serverTimestamp();
-      transaction.create(occurrenceRef, {
-        teamId,
-        dutyDate: input.dutyDate,
-        payrollPeriod: period,
-        shiftName,
-        startsAt,
-        endsAt,
-        timeZone: 'Asia/Jakarta',
-        // Shifts wait for a Kepala SatKer audit of the guard-post photos before
-        // any fee becomes payable. Historical occurrences kept 'submitted'.
-        status: 'pending_review',
-        reviewStatus: 'pending',
-        pendingAssignmentCount: input.assignments.length + (extra ? 1 : 0),
-        approvedAssignmentCount: 0,
-        declinedAssignmentCount: 0,
-        requestId: input.requestId,
-        requestHash,
-        submittedByUid: actor.uid,
-        ketuaShiftId: actor.linkedEmployeeId,
-        ketuaShiftName: String(team.ketuaShiftName || actor.displayName),
-        rateVersion: SATPAM_RATE_VERSION,
-        holidayCalendarVersion:
-          String(holidayData.version || SATPAM_HOLIDAY_CALENDAR_VERSION),
-        regularPayType,
-        assignmentCount: input.assignments.length + (extra ? 1 : 0),
-        createdAt,
-        schemaVersion: 1,
-      });
-
-      const assignmentRecords: Array<{
-        assignmentKey: string;
-        postId: string;
-        employeeId: string;
-        payType: keyof typeof SATPAM_RATES;
-        coveredEmployeeId: string | null;
-        overtimeReason: string | null;
-        photoUrl: string | null;
-        photoAuditMetadata: PhotoAuditMetadata | null;
-      }> = input.assignments.map((assignment) => {
-        const isCover = !roster.includes(assignment.employeeId);
-        const chosenType = resolveSatpamAssignmentPayType(
-          assignment.shiftType,
-          isCover,
-          regularPayType,
-        );
-        const isCoverType = chosenType === 'Lembur Cover';
-        return {
-          assignmentKey: assignment.postId,
-          postId: assignment.postId,
-          employeeId: assignment.employeeId,
-          payType: chosenType,
-          coveredEmployeeId: isCoverType ? (assignment.coveredEmployeeId || null) : null,
-          overtimeReason: isCoverType ? (assignment.overtimeReason?.trim() || null) : null,
-          photoUrl: assignment.photoUrl || null,
-          photoAuditMetadata: assignment.photoAuditMetadata || null,
-        };
-      });
-      if (extra) {
-        assignmentRecords.push({
-          assignmentKey: `extra_${extra.postId}`,
-          postId: extra.postId,
-          employeeId: extra.employeeId,
-          payType: 'Lembur Sendiri',
-          coveredEmployeeId: null,
-          overtimeReason: extra.overtimeReason?.trim() || null,
-          photoUrl: extra.photoUrl || null,
-          photoAuditMetadata: extra.photoAuditMetadata || null,
-        });
-      }
-
-      for (const assignment of assignmentRecords) {
-        const employee = employeeById.get(assignment.employeeId)!;
-        const employeeName = String(employee.data()?.name || assignment.employeeId);
-        const post = SATPAM_POSTS.find((item) => item.id === assignment.postId)!;
-        const reportId = activityReportId(
-          occurrenceId,
-          assignment.employeeId,
-          assignment.assignmentKey,
-        );
-        const reportRef = adminDb.collection('ActivityReports').doc(reportId);
-        const fee = SATPAM_RATES[assignment.payType];
-
-        transaction.create(reportRef, {
-          employeeId: assignment.employeeId,
-          employeeName,
-          jobCategory: 'SATPAM',
-          period,
-          payrollPeriod: period,
-          activityName: `Pengamanan di ${post.id}: ${post.name}`,
-          activityType: 'Lainnya',
-          activityDate: input.dutyDate,
-          dutyDate: input.dutyDate,
-          timeStart: shiftTimes.start,
-          timeEnd: shiftTimes.end,
-          startsAt,
-          endsAt,
-          // Awaits Kepala SatKer verification of the guard-post photo. Only an
-          // approved report is picked up by payslipSync, so nothing is payable
-          // until the audit passes.
-          status: 'pending',
-          fee,
-          shiftType: assignment.payType,
-          assignmentKind: assignment.assignmentKey.startsWith('extra_') ? 'extra' : 'primary',
-          postId: post.id,
-          postName: `${post.id}: ${post.name}`,
-          photoUrl: assignment.photoUrl,
-          photoAuditMetadata: assignment.photoAuditMetadata,
-          shiftName,
-          coveredEmployeeId: assignment.coveredEmployeeId,
-          overtimeReason: assignment.overtimeReason,
-          ketuaShiftId: actor.linkedEmployeeId,
-          ketuaShiftName: String(team.ketuaShiftName || actor.displayName),
-          sourceOccurrenceId: occurrenceId,
-          sourceLedgerEntryId: reportId,
-          rateVersion: SATPAM_RATE_VERSION,
-          holidayCalendarVersion:
-            String(holidayData.version || SATPAM_HOLIDAY_CALENDAR_VERSION),
-          submittedAt: createdAt,
-          schemaVersion: 2,
-        });
-        const dutyIndexRef = adminDb
-          .collection('GuardDutyIndexes')
-          .doc(guardDutyIndexId(input.dutyDate, shiftName, assignment.employeeId));
-        transaction.create(dutyIndexRef, {
-          employeeId: assignment.employeeId,
-          occurrenceId,
-          reportId,
-          dutyDate: input.dutyDate,
-          shiftName,
-          startsAt,
-          endsAt,
-          createdAt,
-        });
-      }
-
-      const assignedOrOvertimeIds = new Set(guardIds);
-      for (const rosterEmployeeId of roster) {
-        if (assignedOrOvertimeIds.has(rosterEmployeeId)) continue;
-        const isCoveredAbsence = coveredIds.includes(rosterEmployeeId);
-        const rosterEmployeeSnapshot = employeeById.get(rosterEmployeeId)!;
-        const offDutyReportId = activityReportId(
-          occurrenceId,
-          rosterEmployeeId,
-          isCoveredAbsence ? 'covered_absence' : 'rest',
-        );
-        transaction.create(adminDb.collection('ActivityReports').doc(offDutyReportId), {
-          employeeId: rosterEmployeeId,
-          employeeName: String(rosterEmployeeSnapshot.data()?.name || rosterEmployeeId),
-          jobCategory: 'SATPAM',
-          period,
-          payrollPeriod: period,
-          activityName: isCoveredAbsence ? 'Tidak hadir (digantikan)' : 'Off-Duty (Rest Day)',
-          activityType: 'Lainnya',
-          activityDate: input.dutyDate,
-          dutyDate: input.dutyDate,
-          timeStart: '',
-          timeEnd: '',
-          status: 'approved',
-          fee: 0,
-          shiftType: 'Off-Duty',
-          postName: isCoveredAbsence ? 'Covered Absence' : 'Off-Duty',
-          absenceKind: isCoveredAbsence ? 'covered_absence' : 'scheduled_rest',
-          shiftName,
-          ketuaShiftId: actor.linkedEmployeeId,
-          ketuaShiftName: String(team.ketuaShiftName || actor.displayName),
-          sourceOccurrenceId: occurrenceId,
-          submittedAt: createdAt,
-          schemaVersion: 2,
-        });
-      }
-
-      transaction.create(idempotencyRef, {
-        actorUid: actor.uid,
-        requestId: input.requestId,
-        requestHash,
-        entityType: 'ShiftOccurrence',
-        entityId: occurrenceId,
-        createdAt,
-      });
-      transaction.create(
-        newFinancialAuditRef(),
-        buildFinancialAuditRecord(actor, {
-          action: 'SATPAM_SHIFT_SUBMITTED',
-          entityType: 'ShiftOccurrence',
-          entityId: occurrenceId,
-          reason: 'Verifikasi kehadiran harian oleh Ketua Shift',
-          requestId: input.requestId,
-          after: {
-            dutyDate: input.dutyDate,
-            shiftName,
-            assignmentCount: assignmentRecords.length,
-            photoCount: assignmentRecords.filter((item) => item.photoUrl).length,
-            status: 'pending_review',
-            rateVersion: SATPAM_RATE_VERSION,
-          },
-        }),
-      );
-
-      return { occurrenceId, idempotent: false };
-    });
-
-    return Response.json(transactionResult, {
-      status: transactionResult.idempotent ? 200 : 201,
+export async function PATCH(request: NextRequest) {
+  try {
+    const result = await mutateShift(request, 'edit');
+    return Response.json(result, {
       headers: { 'Cache-Control': 'no-store' },
     });
   } catch (error) {

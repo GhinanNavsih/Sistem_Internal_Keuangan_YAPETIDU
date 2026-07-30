@@ -27,6 +27,15 @@ export interface PekaryaActivityFinancialLike {
   id?: string;
   employeeId?: string;
   jobCategory?: string;
+  reportKind?: string;
+  sourceOccurrenceId?: string;
+  sourceType?: string;
+  assignmentKind?: string;
+  shiftName?: string;
+  shiftType?: string;
+  postId?: string;
+  postName?: string;
+  ketuaShiftId?: string;
   activityDate?: string;
   period?: string;
   payrollPeriod?: string;
@@ -133,7 +142,28 @@ export function pekaryaPayrollWindow(period: string): {
 export function approvedActivitySpjAmount(
   report: PekaryaActivityFinancialLike,
 ): number {
-  if (report.status !== 'approved' || report.jobCategory === 'SATPAM') return 0;
+  if (report.status !== 'approved') return 0;
+  if (
+    report.jobCategory === 'SATPAM' &&
+    report.reportKind !== 'satpam_spj'
+  ) {
+    // Explicit classification is authoritative for all new records. The
+    // sourceOccurrenceId fallback keeps historical shift rows out of SPJ
+    // during the reportKind backfill window.
+    if (
+      report.reportKind ||
+      report.sourceOccurrenceId ||
+      report.sourceType === 'satpam_shift' ||
+      report.assignmentKind ||
+      report.shiftName ||
+      report.shiftType ||
+      report.postId ||
+      report.postName ||
+      report.ketuaShiftId
+    ) {
+      return 0;
+    }
+  }
   // Driver operational reimbursements are not employee wages. The SPJ earning
   // is the reviewed net wage, with fee retained as a legacy fallback.
   const raw =
@@ -217,4 +247,3 @@ export function normalizeActivityIdentityPart(value: string): string {
     .replace(/^_+|_+$/g, '')
     .slice(0, 80);
 }
-

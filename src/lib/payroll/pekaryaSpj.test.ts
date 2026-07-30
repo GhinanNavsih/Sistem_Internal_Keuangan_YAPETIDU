@@ -91,6 +91,49 @@ test('counts approved non-Satpam activity once and does not double driver wage',
   assert.equal(sumApprovedActivitySpj(reports, 'E1', 'SOPIR', '2026-07'), 70_000);
 });
 
+test('personal Satpam SPJ is payable while shift assignments stay separate', () => {
+  const reports = [
+    {
+      id: 'SPJ-1',
+      employeeId: 'E1',
+      jobCategory: 'SATPAM',
+      reportKind: 'satpam_spj',
+      activityDate: '2026-08-03',
+      status: 'approved',
+      fee: 45_000,
+    },
+    {
+      id: 'SHIFT-1',
+      employeeId: 'E1',
+      jobCategory: 'SATPAM',
+      reportKind: 'satpam_shift_assignment',
+      sourceOccurrenceId: 'team_1__20260803__pagi',
+      activityDate: '2026-08-03',
+      status: 'approved',
+      fee: 12_500,
+    },
+  ];
+
+  assert.equal(sumApprovedActivitySpj(reports, 'E1', 'SATPAM', '2026-08'), 45_000);
+});
+
+test('legacy Satpam shift metadata never falls into the personal SPJ column', () => {
+  const reports = [
+    {
+      id: 'LEGACY-SHIFT',
+      employeeId: 'E1',
+      jobCategory: 'SATPAM',
+      activityDate: '2026-08-03',
+      status: 'approved',
+      shiftName: 'Pagi',
+      shiftType: 'Harian',
+      postName: 'Pos 1',
+      fee: 12_500,
+    },
+  ];
+  assert.equal(sumApprovedActivitySpj(reports, 'E1', 'SATPAM', '2026-08'), 0);
+});
+
 test('event totals are period/category scoped and legacy compatible', () => {
   const events = [
     {

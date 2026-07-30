@@ -2,6 +2,7 @@ import { doc, getDoc, getDocs, collection, query, where, runTransaction } from '
 import {
   dedupeSatpamActivityReports,
   SATPAM_RATES,
+  summarizeApprovedSatpamReports,
   SatpamActivityLike,
 } from '@/lib/payroll/domain';
 import {
@@ -73,40 +74,40 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
     let totalSpj = 0;
 
     if (jobCategory === 'SATPAM') {
-      reports.forEach(r => {
-        const shiftType = r.shiftType || '';
-        if (shiftType === 'Harian') harianCount++;
-        else if (shiftType === 'Jumat & Libur') jumatCount++;
-        else if (shiftType === 'Lembur Sendiri') lemburSendiriCount++;
-        else if (shiftType === 'Lembur Cover') lemburCoverCount++;
-      });
+      const contribution = summarizeApprovedSatpamReports(reports);
+      activityTotal = contribution.personalSpj;
+      harianCount = contribution.harianCount;
+      jumatCount = contribution.jumatLiburCount;
+      lemburSendiriCount = contribution.lemburSendiriCount;
+      lemburCoverCount = contribution.lemburCoverCount;
     } else {
       // Only reviewed employee earnings enter SPJ. For SOPIR, operational
       // reimbursements are excluded and upahBersih is counted exactly once.
       activityTotal = reports.reduce((sum, report) => {
         return sum + approvedActivitySpjAmount(report);
       }, 0);
-      
-      // Fetch SPJ Events (KegiatanSpj) to get kegiatanTotal
-      let spjEventsTotal = 0;
-      try {
-        const spjQ = query(
-          collection(db, 'KegiatanSpj'),
-          where('period', '==', period),
-          where('jobCategory', '==', jobCategory),
-        );
-        const spjSnap = await getDocs(spjQ);
-        spjEventsTotal = sumApprovedEventSpj(
-          spjSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-          employeeId,
-          jobCategory,
-          period,
-        );
-      } catch (err) {
-        console.error('[payslipSync] Error fetching KegiatanSpj:', err);
-      }
-      totalSpj = spjEventsTotal + activityTotal;
     }
+
+    // Kegiatan SPJ is additional to personal activity SPJ for every Pekarya
+    // category, including Satpam. Shift allowances remain separate columns.
+    let spjEventsTotal = 0;
+    try {
+      const spjQ = query(
+        collection(db, 'KegiatanSpj'),
+        where('period', '==', period),
+        where('jobCategory', '==', jobCategory),
+      );
+      const spjSnap = await getDocs(spjQ);
+      spjEventsTotal = sumApprovedEventSpj(
+        spjSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+        employeeId,
+        jobCategory,
+        period,
+      );
+    } catch (err) {
+      console.error('[payslipSync] Error fetching KegiatanSpj:', err);
+    }
+    totalSpj = spjEventsTotal + activityTotal;
 
     await runTransaction(db, async transaction => {
       const uraianSnap = await transaction.get(uraianRef);
@@ -125,6 +126,7 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
           jumatLibur: jumatCount * SATPAM_RATES['Jumat & Libur'],
           lemburSendiri: lemburSendiriCount * SATPAM_RATES['Lembur Sendiri'],
           lemburCover: lemburCoverCount * SATPAM_RATES['Lembur Cover'],
+          spj: totalSpj,
         };
         updatedCounts = {
           ...updatedCounts,
@@ -132,6 +134,7 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
           jumatLibur: jumatCount,
           lemburSendiri: lemburSendiriCount,
           lemburCover: lemburCoverCount,
+          spj: 0,
         };
       } else {
         updatedValues = {

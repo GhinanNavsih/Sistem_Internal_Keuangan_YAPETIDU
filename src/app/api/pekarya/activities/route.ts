@@ -213,15 +213,6 @@ function parseCommand(raw: unknown): SubmitActivityCommand {
   };
 }
 
-function jakartaDateToday(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Jakarta',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-}
-
 function sanitizeDriverData(
   value: Record<string, unknown> | undefined,
   category: string,
@@ -347,9 +338,6 @@ export async function POST(request: NextRequest) {
     }
     const command = parseCommand(await request.json());
     const payrollPeriod = pekaryaPayrollPeriodForDate(command.activityDate);
-    if (command.activityDate > jakartaDateToday()) {
-      throw new HttpError(400, 'Tanggal kegiatan tidak boleh berada di masa depan.');
-    }
     if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(command.timeStart)) {
       throw new HttpError(400, 'Waktu mulai wajib menggunakan format HH:MM.');
     }
@@ -357,8 +345,6 @@ export async function POST(request: NextRequest) {
       if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(command.timeEnd || '')) {
         throw new HttpError(400, 'Waktu selesai wajib menggunakan format HH:MM.');
       }
-    } else if (command.timeEnd) {
-      throw new HttpError(400, 'Kegiatan Buang Sampah tidak menggunakan waktu selesai.');
     }
 
     const employeeId = actor.linkedEmployeeId;
@@ -412,14 +398,37 @@ export async function POST(request: NextRequest) {
         throw new HttpError(404, 'Data Pekarya yang terhubung tidak ditemukan.');
       }
       const employee = employeeSnapshot.data()!;
-      const jobCategory = employee.employment?.jobCategory;
-      if (
-        employee.employment?.status !== 'active' ||
-        !isPekaryaJobCategory(jobCategory)
-      ) {
+      const storedJobCategory = employee.employment?.jobCategory;
+      const permittedFallback = actor.permittedCategories.find(isPekaryaJobCategory);
+      const jobCategory = isPekaryaJobCategory(storedJobCategory)
+        ? storedJobCategory
+        : permittedFallback;
+      if (!jobCategory) {
         throw new HttpError(409, 'Pegawai tidak aktif atau kategori tidak mendukung laporan ini.');
       }
-      if (jobCategory !== 'SOPIR' && command.activityType !== 'Buang Sampah') {
+      if (
+        jobCategory === 'SATPAM' &&
+        !/^([01]\d|2[0-3]):([0-5]\d)$/.test(command.timeEnd || '')
+      ) {
+        throw new HttpError(
+          400,
+          'SPJ pribadi Satpam wajib memiliki waktu selesai.',
+        );
+      }
+      const identityAnomalies: string[] = [];
+      if (
+        employee.employment?.status !== 'active' &&
+        employee.flags?.isActive !== true
+      ) {
+        identityAnomalies.push('EMPLOYEE_STATUS_NEEDS_REVIEW');
+      }
+      if (!isPekaryaJobCategory(storedJobCategory)) {
+        identityAnomalies.push('EMPLOYEE_CATEGORY_NEEDS_REVIEW');
+      }
+      if (
+        jobCategory !== 'SOPIR' &&
+        (jobCategory === 'SATPAM' || command.activityType !== 'Buang Sampah')
+      ) {
         try {
           activityDurationMinutes(command.timeStart, command.timeEnd || '');
         } catch (error) {
@@ -439,6 +448,15 @@ export async function POST(request: NextRequest) {
       if (command.reportId) {
         if (!reportSnapshot.exists || before?.employeeId !== employeeId) {
           throw new HttpError(404, 'Laporan yang akan diajukan ulang tidak ditemukan.');
+        }
+        if (
+          before?.reportKind === 'satpam_shift_assignment' ||
+          Boolean(before?.sourceOccurrenceId)
+        ) {
+          throw new HttpError(
+            409,
+            'Laporan shift hanya dapat diubah dari menu Lapor Shift Regu.',
+          );
         }
         if (!['pending', 'declined'].includes(before.status)) {
           throw new HttpError(409, 'Laporan yang sudah disetujui tidak dapat diubah.');
@@ -569,6 +587,7 @@ export async function POST(request: NextRequest) {
         employeeId,
         employeeName: String(employee.name || actor.displayName || ''),
         jobCategory,
+        reportKind: jobCategory === 'SATPAM' ? 'satpam_spj' : 'pekarya_activity',
         period: payrollPeriod,
         payrollPeriod,
         activityName: command.activityName,
@@ -589,6 +608,7 @@ export async function POST(request: NextRequest) {
         submittedAt: now,
         submissionRevision: Number(before?.submissionRevision || 0) + 1,
         source: jobCategory === 'SOPIR' ? 'honorer_driver_report' : 'honorer_activity_form',
+        identityAnomalies,
         schemaVersion: 2,
         ...driverData,
         ...(command.proofPhoto

@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "tsx --test src/lib/payroll/domain.test.ts src/lib/payroll/driverJourney.test.ts src/lib/payroll/koperasiLoan.test.ts src/lib/payroll/pekaryaSpj.test.ts src/lib/photoEvidence.test.ts src/utils/satpamRotation.test.ts",
     "audit:satpam-payroll": "tsx scripts/auditSatpamPayrollReadOnly.ts",
+    "reconcile:satpam-flexible": "tsx scripts/reconcileSatpamFlexibleReports.ts",
     "audit:pekarya-spj": "tsx scripts/auditPekaryaSpjReadOnly.ts",
     "migrate:salary-matrix": "tsx scripts/migrateSalaryMatrix.ts",
     "migrate:employees": "tsx scripts/migrateEmployees.ts",

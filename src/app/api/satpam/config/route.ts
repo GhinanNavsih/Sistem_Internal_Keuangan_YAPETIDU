@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { assertDateOnly, getRegularSatpamPayType } from '@/lib/payroll/domain';
+import { pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
+import { isSatpamFlexibilityEnabled } from '@/lib/server/satpamFlexibility';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import {
   errorResponse,
@@ -46,26 +48,35 @@ export async function GET(request: NextRequest) {
       throw new HttpError(409, 'Regu Satpam wajib berisi satu Ketua dan sembilan anggota unik.');
     }
 
-    const employeeSnapshot = await adminDb
-      .collection('Employees_BlueCollar')
-      .where('employment.jobCategory', '==', 'SATPAM')
-      .get();
-    const employees = employeeSnapshot.docs
-      .filter((snapshot) => {
-        const data = snapshot.data();
-        return data.employment?.status === 'active' || data.flags?.isActive === true;
+    const [employeeSnapshot, rosterSnapshots] = await Promise.all([
+      adminDb
+        .collection('Employees_BlueCollar')
+        .where('employment.jobCategory', '==', 'SATPAM')
+        .get(),
+      adminDb.getAll(
+        ...rosterIds.map((employeeId) =>
+          adminDb.collection('Employees_BlueCollar').doc(employeeId),
+        ),
+      ),
+    ]);
+    const employeeDocuments = new Map(
+      [...employeeSnapshot.docs, ...rosterSnapshots]
+        .filter((snapshot) => snapshot.exists)
+        .map((snapshot) => [snapshot.id, snapshot]),
+    );
+    const employees = Array.from(employeeDocuments.values())
+      .map((snapshot) => {
+        const data = snapshot.data()!;
+        return {
+          id: snapshot.id,
+          name: String(data.name || ''),
+          isActive:
+            data.employment?.jobCategory === 'SATPAM' &&
+            (data.employment?.status === 'active' || data.flags?.isActive === true),
+        };
       })
-      .map((snapshot) => ({
-        id: snapshot.id,
-        name: String(snapshot.data().name || ''),
-      }))
       .filter((employee) => employee.name)
       .sort((left, right) => left.name.localeCompare(right.name, 'id'));
-    const activeEmployeeIds = new Set(employees.map((employee) => employee.id));
-    const inactiveRosterId = rosterIds.find((employeeId) => !activeEmployeeIds.has(employeeId));
-    if (inactiveRosterId) {
-      throw new HttpError(409, `Satpam ${inactiveRosterId} pada regu tidak aktif.`);
-    }
 
     const holidaysSnapshot = year
       ? await adminDb.collection('PayrollHolidayCalendars').doc(year).get()
@@ -82,6 +93,21 @@ export async function GET(request: NextRequest) {
     if (![1, 2, 3].includes(teamNumber)) {
       throw new HttpError(409, 'Nomor regu Satpam tidak valid.');
     }
+    const openPeriodSnapshot = await adminDb
+      .collection('PayrollPeriods')
+      .where('attendanceStatus', '==', 'open')
+      .get();
+    const openPeriods = openPeriodSnapshot.docs
+      .flatMap((snapshot) => {
+        if (!/^\d{4}-\d{2}$/.test(snapshot.id)) return [];
+        const window = pekaryaPayrollWindow(snapshot.id);
+        return [{
+          period: snapshot.id,
+          startDate: window.startsOn,
+          endDate: window.endsOn,
+        }];
+      })
+      .sort((left, right) => left.startDate.localeCompare(right.startDate));
     return Response.json(
       {
         team: {
@@ -94,6 +120,8 @@ export async function GET(request: NextRequest) {
         shiftName: getSatpamShiftForTeam(teamNumber, dutyDate),
         regularPayType: getRegularSatpamPayType(dutyDate, holidayDates),
         holidayCalendarConfigured: Boolean(holidaysSnapshot?.exists),
+        openPeriods,
+        flexibilityEnabled: isSatpamFlexibilityEnabled(teamSnapshot.id),
       },
       {
         headers: {

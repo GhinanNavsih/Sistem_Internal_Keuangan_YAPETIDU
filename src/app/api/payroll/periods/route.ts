@@ -7,10 +7,38 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import { pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 
 export const dynamic = 'force-dynamic';
 
 type AttendanceStatus = 'open' | 'closed';
+
+export async function GET(request: NextRequest) {
+  try {
+    await requireAuthenticatedProfile(request);
+    const snapshot = await adminDb
+      .collection('PayrollPeriods')
+      .where('attendanceStatus', '==', 'open')
+      .get();
+    const openPeriods = snapshot.docs
+      .flatMap((document) => {
+        if (!/^\d{4}-\d{2}$/.test(document.id)) return [];
+        const window = pekaryaPayrollWindow(document.id);
+        return [{
+          period: document.id,
+          startDate: window.startsOn,
+          endDate: window.endsOn,
+        }];
+      })
+      .sort((left, right) => left.startDate.localeCompare(right.startDate));
+    return Response.json(
+      { openPeriods },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,7 +48,11 @@ export async function POST(request: NextRequest) {
     const period = typeof body.period === 'string' ? body.period : '';
     const attendanceStatus = body.attendanceStatus as AttendanceStatus;
     const holidays = Array.isArray(body.holidays)
-      ? body.holidays.filter((h: any) => typeof h === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(h))
+      ? body.holidays.filter(
+          (holiday: unknown): holiday is string =>
+            typeof holiday === 'string' &&
+            /^\d{4}-\d{2}-\d{2}$/.test(holiday),
+        )
       : [];
     const reason =
       typeof body.reason === 'string' && body.reason.trim().length > 0

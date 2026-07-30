@@ -10,6 +10,7 @@
 import { adminDb } from '../src/lib/firebase-admin';
 import {
   getRegularSatpamPayType,
+  inferLegacySatpamReportKind,
   SATPAM_RATES,
   SatpamActivityLike,
 } from '../src/lib/payroll/domain';
@@ -33,7 +34,7 @@ function requiredPeriod(): string {
 async function main() {
   const period = requiredPeriod();
   const year = period.slice(0, 4);
-  const [activitySnapshot, slipSnapshot, paymentSnapshot, calendarSnapshot] =
+  const [activitySnapshot, slipSnapshot, paymentSnapshot, calendarSnapshot, employeeSnapshot] =
     await Promise.all([
       adminDb.collection('ActivityReports').where('period', '==', period).get(),
       adminDb
@@ -45,7 +46,20 @@ async function main() {
         .where('period', '==', period.replace('-', '_'))
         .get(),
       adminDb.collection('PayrollHolidayCalendars').doc(year).get(),
+      adminDb
+        .collection('Employees_BlueCollar')
+        .where('employment.jobCategory', '==', 'SATPAM')
+        .get(),
     ]);
+  const satpamEmployeeIds = new Set(
+    employeeSnapshot.docs.map((document) => document.id),
+  );
+  const satpamSlipDocuments = slipSnapshot.docs.filter((document) =>
+    satpamEmployeeIds.has(String(document.data().employeeId || '')),
+  );
+  const satpamPaymentDocuments = paymentSnapshot.docs.filter((document) =>
+    satpamEmployeeIds.has(String(document.data().employeeId || '')),
+  );
 
   const holidayDates = new Set<string>(
     Array.isArray(calendarSnapshot.data()?.dates)
@@ -64,8 +78,14 @@ async function main() {
   const satpamReports = allPeriodReports.filter(
     (report) => report.jobCategory === 'SATPAM',
   );
+  const satpamShiftReports = satpamReports.filter(
+    (report) => inferLegacySatpamReportKind(report) === 'satpam_shift_assignment',
+  );
+  const satpamPersonalSpjReports = satpamReports.filter(
+    (report) => inferLegacySatpamReportKind(report) === 'satpam_spj',
+  );
 
-  for (const report of satpamReports) {
+  for (const report of satpamShiftReports) {
     const documentId = report.id || '(unknown)';
     if (report.shiftType === 'Off-Duty') {
       if (Number(report.fee || 0) !== 0) {
@@ -130,7 +150,7 @@ async function main() {
     }
   }
 
-  for (const document of slipSnapshot.docs) {
+  for (const document of satpamSlipDocuments) {
     const slip = document.data();
     const netSalary = Number(slip.netSalary);
     if (!Number.isFinite(netSalary) || netSalary < 0) {
@@ -155,7 +175,7 @@ async function main() {
   }
 
   const paymentKeys = new Set<string>();
-  for (const document of paymentSnapshot.docs) {
+  for (const document of satpamPaymentDocuments) {
     const payment = document.data();
     const key = `${String(payment.employeeId)}|${String(payment.period)}`;
     if (paymentKeys.has(key)) {
@@ -176,8 +196,10 @@ async function main() {
         period,
         scanned: {
           activityReports: satpamReports.length,
-          payrollSlips: slipSnapshot.size,
-          payments: paymentSnapshot.size,
+          shiftAssignments: satpamShiftReports.length,
+          personalSpj: satpamPersonalSpjReports.length,
+          payrollSlips: satpamSlipDocuments.length,
+          payments: satpamPaymentDocuments.length,
         },
         summary: {
           critical: findings.filter((finding) => finding.severity === 'critical').length,

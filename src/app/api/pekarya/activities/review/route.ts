@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
-import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
+import {
+  assertRequestId,
+  hasActivityEnded,
+  isImmutablePayrollStatus,
+} from '@/lib/payroll/domain';
 import {
   assertNightCount,
   calculateDriverNetWage,
@@ -242,10 +246,26 @@ export async function POST(request: NextRequest) {
         const employee = employeeSnapshots[index]?.data();
         if (
           !employeeSnapshots[index]?.exists ||
-          employee?.employment?.status !== 'active' ||
+          (employee?.employment?.status !== 'active' &&
+            employee?.flags?.isActive !== true) ||
           employee?.employment?.jobCategory !== category
         ) {
           throw new HttpError(409, 'Data pegawai tidak aktif atau kategori laporan tidak cocok.');
+        }
+        if (
+          command.action !== 'decline' &&
+          category === 'SATPAM' &&
+          before.reportKind === 'satpam_spj' &&
+          !hasActivityEnded(
+            String(before.activityDate || ''),
+            String(before.timeStart || ''),
+            String(before.timeEnd || ''),
+          )
+        ) {
+          throw new HttpError(
+            409,
+            'Kegiatan ini belum selesai. SPJ dapat diaudit setelah waktu selesai terlewati.',
+          );
         }
         if (!periodSnapshots[index]?.exists || periodSnapshots[index]?.data()?.attendanceStatus !== 'open') {
           throw new HttpError(409, 'Periode payroll belum dibuka atau sudah ditutup.');
@@ -429,6 +449,9 @@ export async function POST(request: NextRequest) {
             period: reportPeriods[index],
             sourceType: 'ActivityReport',
             sourceId: item.reportId,
+            ...(category === 'SATPAM' && before.reportKind === 'satpam_spj'
+              ? { reportKind: 'satpam_spj' }
+              : {}),
             earningCode: 'SPJ',
             amount,
             status: 'active',

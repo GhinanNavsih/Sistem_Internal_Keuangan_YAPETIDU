@@ -211,8 +211,20 @@ interface ActivityReport {
   startPoint?: string;
   endPoint?: string;
   // SATPAM specific fields
+  reportKind?: 'satpam_spj' | 'satpam_shift_assignment' | string;
+  identityAnomalies?: string[];
   payrollPeriod?: string;
   sourceOccurrenceId?: string;
+  sourceOccurrenceRevision?: number;
+  anomalyCodes?: string[];
+  reportedShiftName?: string;
+  suggestedShiftName?: string;
+  submittedDutyDate?: string;
+  submittedShiftName?: string;
+  submittedPostId?: string;
+  submittedEmployeeId?: string;
+  submittedPayType?: string;
+  auditorActionAt?: any;
   shiftName?: string;
   shiftType?: string;
   postId?: string;
@@ -242,6 +254,22 @@ interface SatpamShiftGroup {
   declinedCount: number;
   photoCount: number;
   totalFee: number;
+  revision: number;
+  suggestedShiftName: string;
+  submittedDutyDate: string;
+  submittedShiftName: string;
+  anomalyCodes: string[];
+  hasAuditorEdit: boolean;
+}
+
+interface SatpamAuditorEditRow {
+  reportId?: string;
+  assignmentKind: 'primary' | 'extra';
+  postId: string;
+  employeeId: string;
+  shiftType: string;
+  coveredEmployeeId?: string;
+  overtimeReason?: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -353,6 +381,31 @@ function getStatusConfig(status: string) {
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 const CLEANING_CATEGORIES = ['KEBERSIHAN', 'KEBERSIHAN_IC', 'TEKNISI', 'SOPIR', 'KEBERSIHAN_PONTI', 'SATPAM', 'PEKARYA', 'PONTI'];
+const SATPAM_POST_OPTIONS = [
+  'Pos 1',
+  'Pos 2',
+  'Pos 3',
+  'Pos 4',
+  'Pos 5',
+  'Pos 6',
+  'Pos 7',
+  'Pos 8',
+  'Pos 9',
+];
+
+const SATPAM_ANOMALY_LABELS: Record<string, string> = {
+  MISSING_POSTS: 'Pos belum lengkap',
+  DUPLICATE_POST: 'Pos ganda',
+  DUPLICATE_GUARD: 'Petugas ganda',
+  KETUA_NOT_ASSIGNED: 'Ketua tidak tercantum',
+  ROTA_MISMATCH: 'Berbeda dari rota',
+  COVER_DETAILS_INCOMPLETE: 'Detail cover belum lengkap',
+  MISSING_PHOTO: 'Foto tidak lengkap',
+  INACTIVE_OR_MISMATCHED_GUARD: 'Status/kategori perlu diselesaikan',
+  HOLIDAY_CALENDAR_MISSING: 'Kalender upah belum tersedia',
+  PAY_CLASSIFICATION_MISMATCH: 'Klasifikasi upah perlu diperbaiki',
+  FUTURE_WORK_NOT_FINISHED: 'Pekerjaan belum selesai',
+};
 
 // ─── Inline Photo with Stored Audit Metadata Overlay ──────────────────────────
 
@@ -550,6 +603,13 @@ export default function ActivityReviewPage() {
   const [shiftDeclineReasons, setShiftDeclineReasons] = useState<Record<string, string>>({});
   const [shiftReviewNotes, setShiftReviewNotes] = useState<Record<string, string>>({});
   const [submittingShiftId, setSubmittingShiftId] = useState<string | null>(null);
+  const [auditorEditShift, setAuditorEditShift] = useState<SatpamShiftGroup | null>(null);
+  const [auditorEditDate, setAuditorEditDate] = useState('');
+  const [auditorEditShiftName, setAuditorEditShiftName] = useState('Pagi');
+  const [auditorEditReason, setAuditorEditReason] = useState('');
+  const [auditorEditRows, setAuditorEditRows] = useState<SatpamAuditorEditRow[]>([]);
+  const [satpamEmployeeDirectory, setSatpamEmployeeDirectory] = useState<Array<{ id: string; name: string; isActive: boolean }>>([]);
+  const [savingAuditorEdit, setSavingAuditorEdit] = useState(false);
 
   // Google Maps Location Picker Modal state
   const [showMapSelector, setShowMapSelector] = useState(false);
@@ -1148,6 +1208,12 @@ export default function ActivityReviewPage() {
           declinedCount: 0,
           photoCount: 0,
           totalFee: 0,
+          revision: Number(activity.sourceOccurrenceRevision || 1),
+          suggestedShiftName: activity.suggestedShiftName || activity.shiftName || '',
+          submittedDutyDate: activity.submittedDutyDate || activity.dutyDate || activity.activityDate,
+          submittedShiftName: activity.submittedShiftName || activity.reportedShiftName || activity.shiftName || '',
+          anomalyCodes: [],
+          hasAuditorEdit: Boolean(activity.auditorActionAt),
         };
         groups.set(occurrenceId, group);
       }
@@ -1158,6 +1224,11 @@ export default function ActivityReviewPage() {
       }
 
       group.assignments.push(activity);
+      group.revision = Math.max(group.revision, Number(activity.sourceOccurrenceRevision || 1));
+      group.hasAuditorEdit = group.hasAuditorEdit || Boolean(activity.auditorActionAt);
+      for (const code of activity.anomalyCodes || []) {
+        if (!group.anomalyCodes.includes(code)) group.anomalyCodes.push(code);
+      }
       if (activity.status === 'pending') group.pendingCount += 1;
       if (activity.status === 'approved') {
         group.approvedCount += 1;
@@ -1176,7 +1247,11 @@ export default function ActivityReviewPage() {
           }),
         ),
       }))
-      .sort((a, b) => b.dutyDate.localeCompare(a.dutyDate) || a.shiftName.localeCompare(b.shiftName));
+      .sort((a, b) =>
+        b.anomalyCodes.length - a.anomalyCodes.length ||
+        b.dutyDate.localeCompare(a.dutyDate) ||
+        a.shiftName.localeCompare(b.shiftName),
+      );
   }, [filteredActivities]);
 
   const groupedSatpamIds = useMemo(() => {
@@ -1189,7 +1264,14 @@ export default function ActivityReviewPage() {
   }, [satpamShiftGroups]);
 
   const ungroupedActivities = useMemo(
-    () => filteredActivities.filter((activity) => !groupedSatpamIds.has(activity.id)),
+    () =>
+      filteredActivities
+        .filter((activity) => !groupedSatpamIds.has(activity.id))
+        .sort(
+          (left, right) =>
+            Number((right.identityAnomalies || []).length > 0) -
+            Number((left.identityAnomalies || []).length > 0),
+        ),
     [filteredActivities, groupedSatpamIds],
   );
 
@@ -1458,21 +1540,13 @@ export default function ActivityReviewPage() {
   const [expandedActivityIds, setExpandedActivityIds] = useState<Set<string>>(new Set());
 
   const toggleActivityExpanded = (id: string) => {
-    setExpandedActivityIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setExpandedActivityIds(prev => (prev.has(id) ? new Set() : new Set([id])));
+    setExpandedShiftIds(new Set());
   };
 
   const toggleShiftExpanded = (occurrenceId: string) => {
-    setExpandedShiftIds(prev => {
-      const next = new Set(prev);
-      if (next.has(occurrenceId)) next.delete(occurrenceId);
-      else next.add(occurrenceId);
-      return next;
-    });
+    setExpandedShiftIds(prev => (prev.has(occurrenceId) ? new Set() : new Set([occurrenceId])));
+    setExpandedActivityIds(new Set());
   };
 
   const setAssignmentVerdict = (reportId: string, verdict: 'approve' | 'decline') => {
@@ -1489,6 +1563,84 @@ export default function ActivityReviewPage() {
       });
       return updated;
     });
+  };
+
+  const openAuditorShiftEdit = async (group: SatpamShiftGroup) => {
+    setErrorMsg('');
+    try {
+      if (satpamEmployeeDirectory.length === 0) {
+        const directory = await authenticatedJson<{
+          employees: Array<{ id: string; name: string; isActive: boolean }>;
+        }>('/api/satpam/shifts/review', { method: 'GET' });
+        setSatpamEmployeeDirectory(directory.employees);
+      }
+      setAuditorEditShift(group);
+      setAuditorEditDate(group.dutyDate);
+      setAuditorEditShiftName(group.shiftName || 'Pagi');
+      setAuditorEditReason('');
+      setAuditorEditRows(
+        group.assignments
+          .filter((assignment) => assignment.status === 'pending')
+          .map((assignment) => ({
+            reportId: assignment.id,
+            assignmentKind: assignment.assignmentKind || 'primary',
+            postId: assignment.postId || 'Pos 1',
+            employeeId: assignment.employeeId,
+            shiftType: assignment.shiftType || 'Harian',
+            coveredEmployeeId: assignment.coveredEmployeeId || undefined,
+            overtimeReason: assignment.overtimeReason || undefined,
+          })),
+      );
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Data Satpam gagal dimuat.');
+    }
+  };
+
+  const updateAuditorEditRow = (
+    index: number,
+    patch: Partial<SatpamAuditorEditRow>,
+  ) => {
+    setAuditorEditRows((rows) =>
+      rows.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, ...patch } : row,
+      ),
+    );
+  };
+
+  const handleSaveAuditorShiftEdit = async () => {
+    if (!auditorEditShift || savingAuditorEdit) return;
+    if (auditorEditRows.length < 1) {
+      setErrorMsg('Sisakan sekurang-kurangnya satu penugasan untuk disimpan.');
+      return;
+    }
+    if (auditorEditReason.trim().length < 8) {
+      setErrorMsg('Alasan edit auditor wajib diisi sekurang-kurangnya 8 karakter.');
+      return;
+    }
+    setSavingAuditorEdit(true);
+    setErrorMsg('');
+    try {
+      await authenticatedJson('/api/satpam/shifts/review', {
+        method: 'PUT',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('satpam_shift_auditor_edit'),
+          occurrenceId: auditorEditShift.occurrenceId,
+          expectedRevision: auditorEditShift.revision,
+          dutyDate: auditorEditDate,
+          shiftName: auditorEditShiftName,
+          reason: auditorEditReason.trim(),
+          assignments: auditorEditRows,
+        }),
+      });
+      setSuccessMsg('Koreksi auditor tersimpan. Ketua Shift tidak dapat mengubah laporan ini lagi.');
+      setAuditorEditShift(null);
+      setAuditorEditRows([]);
+      fetchActivities();
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Koreksi auditor gagal disimpan.');
+    } finally {
+      setSavingAuditorEdit(false);
+    }
   };
 
   const handleSubmitShiftReview = async (group: SatpamShiftGroup) => {
@@ -1509,6 +1661,14 @@ export default function ActivityReviewPage() {
           : {}),
       };
     });
+
+    const needsNote =
+      group.anomalyCodes.length > 0 ||
+      decisions.some((decision) => decision.action === 'decline');
+    if (needsNote && note.length < 8) {
+      setErrorMsg('Isi catatan auditor sekurang-kurangnya 8 karakter untuk laporan yang memiliki peringatan atau penolakan.');
+      return;
+    }
 
 
 
@@ -1857,7 +2017,7 @@ export default function ActivityReviewPage() {
             ) : (
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader className="bg-slate-50/60">
+                  <TableHeader className="bg-slate-50/60 sticky top-0 z-20">
                     <TableRow className="border-slate-100">
                       <TableHead className="w-12 pl-4">
                         <Checkbox
@@ -1868,12 +2028,12 @@ export default function ActivityReviewPage() {
                       </TableHead>
                       <TableHead className="font-bold text-slate-500">Nama Pegawai</TableHead>
                       <TableHead className="font-bold text-slate-500">Nama Kegiatan</TableHead>
-                      <TableHead className="font-bold text-slate-500">Tanggal</TableHead>
-                      <TableHead className="font-bold text-slate-500">Waktu</TableHead>
-                      <TableHead className="font-bold text-slate-500">Status</TableHead>
+                      <TableHead className="font-bold text-slate-500">Waktu & Tanggal</TableHead>
                       <TableHead className="font-bold text-slate-500">Fee</TableHead>
                       <TableHead className="font-bold text-slate-500">Uang Makan</TableHead>
-                      <TableHead className="font-bold text-slate-500 text-right pr-6">Aksi</TableHead>
+                      <TableHead className="font-bold text-slate-500 text-right pr-6 sticky right-0 bg-slate-50 z-20 shadow-[-8px_0_12px_-4px_rgba(0,0,0,0.06)]">
+                        Aksi
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1898,11 +2058,7 @@ export default function ActivityReviewPage() {
                               isExpanded ? 'bg-indigo-50/50' : 'hover:bg-slate-50/60'
                             }`}
                           >
-                            <TableCell className="pl-4">
-                              <ChevronRight
-                                className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                              />
-                            </TableCell>
+                            <TableCell className="pl-4 w-8" />
                             <TableCell className="font-bold text-slate-800 text-sm py-3.5">
                               <div className="flex items-center gap-2">
                                 <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
@@ -1932,41 +2088,52 @@ export default function ActivityReviewPage() {
                                     {group.offDuty.length} libur
                                   </Badge>
                                 )}
+                                {group.anomalyCodes.length > 0 && (
+                                  <Badge className="text-[9px] px-1.5 py-0 h-4 border-none bg-rose-100 text-rose-800 font-bold">
+                                    {group.anomalyCodes.length} pengecualian
+                                  </Badge>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell className="text-sm text-slate-600 font-medium">
-                              {group.dutyDate}
-                            </TableCell>
-                            <TableCell className="text-sm text-slate-500 font-medium">—</TableCell>
-                            <TableCell>
-                              {isPending ? (
-                                <Badge className="bg-amber-100 text-amber-800 border-none font-bold text-[10px]">
-                                  {group.pendingCount} Menunggu Audit
-                                </Badge>
-                              ) : group.declinedCount > 0 ? (
-                                <Badge className="bg-rose-100 text-rose-800 border-none font-bold text-[10px]">
-                                  {group.approvedCount} Disetujui · {group.declinedCount} Ditolak
-                                </Badge>
-                              ) : (
-                                <Badge className="bg-emerald-100 text-emerald-800 border-none font-bold text-[10px]">
-                                  Disetujui
-                                </Badge>
+                              <span className="font-semibold text-slate-800 block">{group.dutyDate}</span>
+                              {statusFilter === 'all' && (
+                                <div className="mt-0.5">
+                                  {isPending ? (
+                                    <Badge className="bg-amber-100 text-amber-800 border-none font-bold text-[10px]">
+                                      {group.pendingCount} Menunggu Audit
+                                    </Badge>
+                                  ) : group.declinedCount > 0 ? (
+                                    <Badge className="bg-rose-100 text-rose-800 border-none font-bold text-[10px]">
+                                      {group.approvedCount} Disetujui · {group.declinedCount} Ditolak
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-emerald-100 text-emerald-800 border-none font-bold text-[10px]">
+                                      Disetujui
+                                    </Badge>
+                                  )}
+                                </div>
                               )}
                             </TableCell>
                             <TableCell className="font-bold text-slate-800 text-sm">
                               {fmtRp(displayShiftFee)}
                             </TableCell>
                             <TableCell className="text-sm text-slate-400">—</TableCell>
-                            <TableCell className="text-right pr-6">
-                              <span className="text-[11px] font-bold text-indigo-600">
-                                {isExpanded ? 'Tutup' : 'Audit Shift'}
-                              </span>
+                            <TableCell className="text-right pr-6 sticky right-0 bg-white group-hover:bg-slate-50/60 z-10 shadow-[-8px_0_12px_-4px_rgba(0,0,0,0.06)]">
+                              <div className="flex items-center justify-end gap-2">
+                                <ChevronRight
+                                  className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${isExpanded ? 'rotate-90 text-indigo-600' : ''}`}
+                                />
+                                <span className="text-[11px] font-bold text-indigo-600">
+                                  {isExpanded ? 'Tutup' : 'Audit Shift'}
+                                </span>
+                              </div>
                             </TableCell>
                           </TableRow>
 
                           {isExpanded && (
                             <TableRow className="border-slate-100 hover:bg-transparent">
-                              <TableCell colSpan={9} className="bg-slate-50/70 p-4 sm:p-5">
+                              <TableCell colSpan={7} className="bg-slate-50/70 p-4 sm:p-5">
                                 <div className="space-y-3.5">
                                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-1 border-b border-slate-200/80">
                                     <div className="flex items-center gap-2 text-[11px] font-black text-slate-700 uppercase tracking-wider">
@@ -1977,6 +2144,13 @@ export default function ActivityReviewPage() {
                                     {/* Bulk Action Buttons */}
                                     {group.assignments.some(item => item.status === 'pending') && (
                                       <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => openAuditorShiftEdit(group)}
+                                          className="px-3 py-1.5 rounded-xl text-[10px] font-extrabold bg-indigo-100 hover:bg-indigo-200 text-indigo-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" /> Edit Auditor
+                                        </button>
                                         <button
                                           type="button"
                                           onClick={() => handleBulkSetShiftVerdict(group, 'approve')}
@@ -1994,6 +2168,37 @@ export default function ActivityReviewPage() {
                                       </div>
                                     )}
                                   </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Nilai Dikirim</p>
+                                      <p className="mt-1 text-sm font-bold text-slate-800">{group.submittedDutyDate} · Shift {group.submittedShiftName || '—'}</p>
+                                    </div>
+                                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                                      <p className="text-[10px] font-black uppercase tracking-wider text-blue-500">Saran Sistem</p>
+                                      <p className="mt-1 text-sm font-bold text-blue-900">{group.dutyDate} · Shift {group.suggestedShiftName || '—'}</p>
+                                    </div>
+                                    <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+                                      <p className="text-[10px] font-black uppercase tracking-wider text-indigo-500">Nilai Auditor</p>
+                                      <p className="mt-1 text-sm font-bold text-indigo-900">
+                                        {group.dutyDate} · Shift {group.shiftName || '—'}
+                                        {group.hasAuditorEdit ? ' · sudah dikoreksi' : ' · belum diubah'}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {group.anomalyCodes.length > 0 && (
+                                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                                      <p className="text-xs font-bold text-amber-950">Pengecualian yang perlu diperiksa</p>
+                                      <div className="mt-2 flex flex-wrap gap-1.5">
+                                        {group.anomalyCodes.map((code) => (
+                                          <Badge key={code} variant="outline" className="border-amber-300 bg-white text-amber-900 text-[10px]">
+                                            {SATPAM_ANOMALY_LABELS[code] || code}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
 
                                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
                                     {group.assignments.map((item) => {
@@ -2098,7 +2303,7 @@ export default function ActivityReviewPage() {
                                                       [item.id]: e.target.value,
                                                     }))
                                                   }
-                                                  placeholder="Alasan penolakan (opsional)"
+                                                  placeholder="Alasan penolakan"
                                                   className="h-8 rounded-lg text-[11px] bg-rose-50/60 border-rose-200"
                                                 />
                                               )}
@@ -2142,7 +2347,7 @@ export default function ActivityReviewPage() {
                                               [group.occurrenceId]: e.target.value,
                                             }))
                                           }
-                                          placeholder="Catatan audit shift (opsional) — tercatat di log audit finansial"
+                                          placeholder={group.anomalyCodes.length > 0 ? 'Catatan auditor wajib untuk laporan ini' : 'Catatan audit shift'}
                                           className="h-10 rounded-xl text-xs bg-white border-slate-200 w-full"
                                         />
                                       </div>
@@ -2185,22 +2390,24 @@ export default function ActivityReviewPage() {
                             }`}
                           >
                             <TableCell className="pl-4">
-                              <div className="flex items-center gap-2">
-                                <ChevronRight
-                                  className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                              {activity.status === 'pending' && (
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={() => toggleSelect(activity.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="rounded border-slate-300 data-[state=checked]:bg-indigo-600"
                                 />
-                                {activity.status === 'pending' && (
-                                  <Checkbox
-                                    checked={isSelected}
-                                    onCheckedChange={() => toggleSelect(activity.id)}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="rounded border-slate-300 data-[state=checked]:bg-indigo-600"
-                                  />
-                                )}
-                              </div>
+                              )}
                             </TableCell>
                             <TableCell className="font-bold text-slate-800 text-sm py-3.5">
-                              {activity.employeeName}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span>{activity.employeeName}</span>
+                                {statusFilter === 'all' && (
+                                  <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[9px] font-bold rounded-lg px-1.5 py-0`}>
+                                    {sc.label}
+                                  </Badge>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell className="text-sm text-slate-700 font-medium max-w-[220px]">
                               <span className="truncate block font-semibold">{activity.activityName}</span>
@@ -2220,23 +2427,23 @@ export default function ActivityReviewPage() {
                                     Tanpa Bukti Foto
                                   </Badge>
                                 )}
+                                {activity.reportKind === 'satpam_spj' && (
+                                  <Badge className="text-[9px] px-1.5 py-0 h-4 border-none bg-teal-100 text-teal-800 font-bold">
+                                    SPJ Pribadi Satpam
+                                  </Badge>
+                                )}
+                                {(activity.identityAnomalies || []).length > 0 && (
+                                  <Badge className="text-[9px] px-1.5 py-0 h-4 border-none bg-rose-100 text-rose-800 font-bold">
+                                    Identitas perlu diselesaikan
+                                  </Badge>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell className="text-sm text-slate-600 font-medium whitespace-nowrap">
-                              {activity.activityDate}
-                            </TableCell>
-                            <TableCell className="text-sm text-slate-600 font-medium whitespace-nowrap">
-                              {activity.timeStart} – {activity.timeEnd}
-                            </TableCell>
-                            <TableCell>
-                              <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[10px] font-bold rounded-lg px-2 py-0.5`}>
-                                {sc.label}
-                              </Badge>
-                              {activity.status === 'declined' && activity.declineReason && (
-                                <p className="text-[10px] text-rose-400 mt-1 max-w-[150px] truncate" title={activity.declineReason}>
-                                  {activity.declineReason}
-                                </p>
-                              )}
+                              <span className="font-semibold text-slate-800 block">{activity.activityDate}</span>
+                              <span className="text-xs text-slate-400 font-medium">
+                                {activity.timeStart} – {activity.timeEnd}
+                              </span>
                             </TableCell>
                             <TableCell className="text-sm font-bold text-slate-700 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                               {activity.jobCategory === 'SOPIR' ? (
@@ -2271,7 +2478,7 @@ export default function ActivityReviewPage() {
                                           handleApproveRow(activity, rowFees[activity.id] || '');
                                         }
                                       }}
-                                      className="w-36 h-8 text-center font-bold text-sm bg-slate-50 border-slate-200 focus:border-emerald-400 focus:ring-emerald-400/20 rounded-xl px-3"
+                                      className="w-32 h-8 text-center font-bold text-sm bg-slate-50 border-slate-200 focus:border-emerald-400 focus:ring-emerald-400/20 rounded-xl px-3"
                                       disabled={actionLoading}
                                     />
                                   </div>
@@ -2318,8 +2525,19 @@ export default function ActivityReviewPage() {
                                 <span className="text-slate-300">—</span>
                               )}
                             </TableCell>
-                            <TableCell className="text-right pr-6" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center justify-end gap-1.5">
+                            <TableCell className={`text-right pr-6 sticky right-0 z-10 shadow-[-8px_0_12px_-4px_rgba(0,0,0,0.06)] ${
+                              isExpanded ? 'bg-indigo-50/90' : isSelected ? 'bg-indigo-50/90' : 'bg-white group-hover:bg-slate-50/90'
+                            }`} onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-2">
+                                <ChevronRight
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleActivityExpanded(activity.id);
+                                  }}
+                                  className={`w-4 h-4 text-slate-400 transition-transform cursor-pointer shrink-0 ${
+                                    isExpanded ? 'rotate-90 text-indigo-600 font-bold' : 'hover:text-slate-600'
+                                  }`}
+                                />
                                 {activity.status === 'pending' && (
                                   <>
                                     {activity.jobCategory === 'SOPIR' ? (
@@ -2364,21 +2582,13 @@ export default function ActivityReviewPage() {
                                     Lihat Detail
                                   </Button>
                                 )}
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => toggleActivityExpanded(activity.id)}
-                                  className="h-7 px-2 rounded-lg text-slate-500 hover:bg-slate-100 font-bold text-[11px] gap-1 cursor-pointer"
-                                >
-                                  <span>{isExpanded ? 'Tutup Audit' : 'Audit Foto'}</span>
-                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
 
                           {isExpanded && (
                             <TableRow className="border-slate-100 hover:bg-transparent">
-                              <TableCell colSpan={9} className="bg-slate-50/70 p-4 sm:p-5">
+                              <TableCell colSpan={7} className="bg-slate-50/70 p-4 sm:p-5">
                                 <div className="space-y-3.5">
                                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-200/80">
                                     <div className="flex items-center gap-2 text-xs font-black text-slate-700 uppercase tracking-wider">
@@ -3031,6 +3241,201 @@ export default function ActivityReviewPage() {
                 </Button>
               </>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Satpam Auditor Correction Dialog ───────────────────────────── */}
+      <Dialog
+        open={Boolean(auditorEditShift)}
+        onOpenChange={(open) => {
+          if (!open && !savingAuditorEdit) setAuditorEditShift(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <Edit2 className="w-5 h-5 text-indigo-600" />
+              Edit Auditor Laporan Shift
+            </DialogTitle>
+            <DialogDescription>
+              Perubahan pertama langsung mengunci laporan dari Ketua Shift. Foto asli tetap disimpan.
+            </DialogDescription>
+          </DialogHeader>
+
+          {auditorEditShift && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase text-slate-400">Dikirim Ketua</p>
+                  <p className="mt-1 text-sm font-bold">{auditorEditShift.submittedDutyDate} · {auditorEditShift.submittedShiftName}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-blue-500">Saran Sistem</p>
+                  <p className="mt-1 text-sm font-bold text-blue-900">{auditorEditShift.dutyDate} · {auditorEditShift.suggestedShiftName}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-indigo-500">Nilai Auditor</p>
+                  <p className="mt-1 text-sm font-bold text-indigo-900">{auditorEditDate} · {auditorEditShiftName}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="auditorShiftDate">Tanggal dinas</Label>
+                  <Input
+                    id="auditorShiftDate"
+                    type="date"
+                    value={auditorEditDate}
+                    onChange={(event) => setAuditorEditDate(event.target.value)}
+                    className="h-11 rounded-xl"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Shift yang benar</Label>
+                  <Select value={auditorEditShiftName} onValueChange={(value) => value && setAuditorEditShiftName(value)}>
+                    <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Pagi">Pagi</SelectItem>
+                      <SelectItem value="Sore">Sore</SelectItem>
+                      <SelectItem value="Malam">Malam</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {auditorEditRows.map((row, index) => (
+                  <div key={`${row.reportId || 'new'}-${index}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 rounded-xl border border-slate-200 p-3">
+                    <div className="md:col-span-2">
+                      <Select value={row.postId} onValueChange={(value) => value && updateAuditorEditRow(index, { postId: value })}>
+                        <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {SATPAM_POST_OPTIONS.map((post) => <SelectItem key={post} value={post}>{post}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="md:col-span-4">
+                      <Select value={row.employeeId} onValueChange={(value) => value && updateAuditorEditRow(index, { employeeId: value })}>
+                        <SelectTrigger className="h-10 rounded-lg">
+                          <span className="truncate">
+                            {satpamEmployeeDirectory.find((employee) => employee.id === row.employeeId)?.name || row.employeeId}
+                          </span>
+                        </SelectTrigger>
+                        <SelectContent className="max-h-72">
+                          {satpamEmployeeDirectory.map((employee) => (
+                            <SelectItem key={employee.id} value={employee.id}>
+                              {employee.name}{employee.isActive ? '' : ' · tidak aktif'}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="md:col-span-3">
+                      <Select value={row.shiftType} onValueChange={(value) => value && updateAuditorEditRow(index, { shiftType: value })}>
+                        <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Harian">Harian</SelectItem>
+                          <SelectItem value="Jumat & Libur">Jumat & Libur</SelectItem>
+                          <SelectItem value="Lembur Sendiri">Lembur Sendiri</SelectItem>
+                          <SelectItem value="Lembur Cover">Lembur Cover</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <Select
+                        value={row.assignmentKind}
+                        onValueChange={(value) => value && updateAuditorEditRow(index, { assignmentKind: value as 'primary' | 'extra' })}
+                      >
+                        <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="primary">Pos utama</SelectItem>
+                          <SelectItem value="extra">Tambahan</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="md:col-span-1 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setAuditorEditRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}
+                        className="h-10 w-10 p-0 text-rose-600"
+                        aria-label="Hapus penugasan"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    {row.shiftType === 'Lembur Cover' && (
+                      <>
+                        <div className="md:col-span-5">
+                          <Select
+                            value={row.coveredEmployeeId || 'none'}
+                            onValueChange={(value) => updateAuditorEditRow(index, { coveredEmployeeId: value === 'none' ? undefined : value || undefined })}
+                          >
+                            <SelectTrigger className="h-10 rounded-lg"><SelectValue placeholder="Petugas yang digantikan" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Belum ditentukan</SelectItem>
+                              {satpamEmployeeDirectory.map((employee) => <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="md:col-span-7">
+                          <Input
+                            value={row.overtimeReason || ''}
+                            onChange={(event) => updateAuditorEditRow(index, { overtimeReason: event.target.value })}
+                            placeholder="Catatan cover"
+                            className="h-10 rounded-lg"
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    setAuditorEditRows((rows) => [
+                      ...rows,
+                      {
+                        assignmentKind: 'primary',
+                        postId: 'Pos 1',
+                        employeeId: satpamEmployeeDirectory[0]?.id || '',
+                        shiftType: 'Harian',
+                      },
+                    ])
+                  }
+                  className="rounded-xl gap-2"
+                >
+                  <Plus className="w-4 h-4" /> Tambah Penugasan
+                </Button>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="auditorEditReason">Alasan perubahan (wajib)</Label>
+                <Input
+                  id="auditorEditReason"
+                  value={auditorEditReason}
+                  onChange={(event) => setAuditorEditReason(event.target.value)}
+                  placeholder="Contoh: memperbaiki petugas ganda sesuai daftar hadir"
+                  className="h-11 rounded-xl"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" disabled={savingAuditorEdit} onClick={() => setAuditorEditShift(null)}>
+              Batal
+            </Button>
+            <Button
+              disabled={savingAuditorEdit || auditorEditRows.length < 1}
+              onClick={handleSaveAuditorShiftEdit}
+              className="bg-indigo-600 hover:bg-indigo-700 gap-2"
+            >
+              {savingAuditorEdit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+              Simpan dan Ambil Alih
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

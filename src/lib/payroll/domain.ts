@@ -23,6 +23,28 @@ export type SatpamPayType =
   | 'Lembur Cover'
   | 'Off-Duty';
 
+export type SatpamReportKind = 'satpam_spj' | 'satpam_shift_assignment';
+
+export type SatpamShiftAnomalyCode =
+  | 'MISSING_POSTS'
+  | 'DUPLICATE_POST'
+  | 'DUPLICATE_GUARD'
+  | 'KETUA_NOT_ASSIGNED'
+  | 'ROTA_MISMATCH'
+  | 'COVER_DETAILS_INCOMPLETE'
+  | 'MISSING_PHOTO'
+  | 'INACTIVE_OR_MISMATCHED_GUARD'
+  | 'HOLIDAY_CALENDAR_MISSING'
+  | 'PAY_CLASSIFICATION_MISMATCH'
+  | 'FUTURE_WORK_NOT_FINISHED';
+
+export interface SatpamShiftAnomaly {
+  code: SatpamShiftAnomalyCode;
+  severity: 'warning' | 'blocking';
+  message: string;
+  assignmentIndexes?: number[];
+}
+
 export type PayrollStatus =
   | 'draft'
   | 'finance_verified'
@@ -74,6 +96,9 @@ export interface SatpamExtraAssignmentInput {
 export interface SubmitSatpamShiftInput {
   requestId: string;
   dutyDate: string;
+  shiftName?: SatpamShiftName;
+  occurrenceId?: string;
+  expectedRevision?: number;
   assignments: SatpamPrimaryAssignmentInput[];
   extraAssignment?: SatpamExtraAssignmentInput;
 }
@@ -81,14 +106,77 @@ export interface SubmitSatpamShiftInput {
 export interface SatpamActivityLike {
   id?: string;
   employeeId?: string;
+  reportKind?: string;
+  sourceType?: string;
+  assignmentKind?: string;
   activityDate?: string;
   shiftName?: string;
+  postId?: string;
   postName?: string;
   shiftType?: string;
+  ketuaShiftId?: string;
   sourceOccurrenceId?: string;
   sourceLedgerEntryId?: string;
   fee?: number;
   status?: string;
+}
+
+/**
+ * Migration-only classification for legacy Satpam reports. New writes must
+ * always persist reportKind explicitly.
+ */
+export function inferLegacySatpamReportKind(
+  report: SatpamActivityLike,
+): SatpamReportKind {
+  if (
+    report.reportKind === 'satpam_spj' ||
+    report.reportKind === 'satpam_shift_assignment'
+  ) {
+    return report.reportKind;
+  }
+  return report.sourceOccurrenceId ||
+    report.sourceType === 'satpam_shift' ||
+    report.assignmentKind ||
+    report.postId ||
+    report.postName ||
+    report.ketuaShiftId ||
+    report.shiftName ||
+    report.shiftType
+    ? 'satpam_shift_assignment'
+    : 'satpam_spj';
+}
+
+export interface SatpamPayrollContribution {
+  personalSpj: number;
+  harianCount: number;
+  jumatLiburCount: number;
+  lemburSendiriCount: number;
+  lemburCoverCount: number;
+}
+
+export function summarizeApprovedSatpamReports(
+  input: readonly SatpamActivityLike[],
+): SatpamPayrollContribution {
+  const summary: SatpamPayrollContribution = {
+    personalSpj: 0,
+    harianCount: 0,
+    jumatLiburCount: 0,
+    lemburSendiriCount: 0,
+    lemburCoverCount: 0,
+  };
+  for (const report of dedupeSatpamActivityReports(input)) {
+    if (report.status !== 'approved') continue;
+    if (inferLegacySatpamReportKind(report) === 'satpam_spj') {
+      const fee = Number(report.fee || 0);
+      if (Number.isFinite(fee) && fee > 0) summary.personalSpj += fee;
+      continue;
+    }
+    if (report.shiftType === 'Harian') summary.harianCount += 1;
+    if (report.shiftType === 'Jumat & Libur') summary.jumatLiburCount += 1;
+    if (report.shiftType === 'Lembur Sendiri') summary.lemburSendiriCount += 1;
+    if (report.shiftType === 'Lembur Cover') summary.lemburCoverCount += 1;
+  }
+  return summary;
 }
 
 export const SATPAM_RATES: Readonly<Record<SatpamPayType, number>> = Object.freeze({
@@ -279,6 +367,185 @@ export function getShiftIsoBounds(
   };
 }
 
+export function hasSatpamShiftEnded(
+  dutyDate: string,
+  shiftName: SatpamShiftName,
+  now: Date = new Date(),
+): boolean {
+  const { endsAtIso } = getShiftIsoBounds(dutyDate, shiftName);
+  return new Date(endsAtIso).getTime() <= now.getTime();
+}
+
+export function hasActivityEnded(
+  activityDate: string,
+  timeStart: string,
+  timeEnd: string,
+  now: Date = new Date(),
+): boolean {
+  assertDateOnly(activityDate);
+  if (
+    !/^([01]\d|2[0-3]):([0-5]\d)$/.test(timeStart) ||
+    !/^([01]\d|2[0-3]):([0-5]\d)$/.test(timeEnd)
+  ) {
+    return false;
+  }
+  const endDate = timeEnd <= timeStart ? addCalendarDays(activityDate, 1) : activityDate;
+  return new Date(`${endDate}T${timeEnd}:00+07:00`).getTime() <= now.getTime();
+}
+
+export function satpamKetuaEditConflict(input: {
+  status: unknown;
+  auditorActionAt?: unknown;
+  revision: unknown;
+  expectedRevision: number;
+}): 'auditor_locked' | 'stale_revision' | null {
+  if (input.auditorActionAt || input.status !== 'pending_review') {
+    return 'auditor_locked';
+  }
+  if (Number(input.revision || 1) !== input.expectedRevision) {
+    return 'stale_revision';
+  }
+  return null;
+}
+
+export function analyzeSatpamShiftSubmission(input: {
+  dutyDate: string;
+  reportedShiftName: SatpamShiftName;
+  suggestedShiftName: SatpamShiftName;
+  ketuaShiftId: string;
+  assignments: readonly SatpamPrimaryAssignmentInput[];
+  activeSatpamIds?: ReadonlySet<string>;
+  holidayCalendarConfigured?: boolean;
+  now?: Date;
+}): SatpamShiftAnomaly[] {
+  const anomalies: SatpamShiftAnomaly[] = [];
+  const postIndexes = new Map<string, number[]>();
+  const guardIndexes = new Map<string, number[]>();
+
+  input.assignments.forEach((assignment, index) => {
+    if (!postIndexes.has(assignment.postId)) postIndexes.set(assignment.postId, []);
+    postIndexes.get(assignment.postId)!.push(index);
+    if (!guardIndexes.has(assignment.employeeId)) guardIndexes.set(assignment.employeeId, []);
+    guardIndexes.get(assignment.employeeId)!.push(index);
+  });
+
+  const suppliedPosts = new Set(input.assignments.map((assignment) => assignment.postId));
+  const missingPosts = SATPAM_POSTS.filter((post) => !suppliedPosts.has(post.id));
+  if (missingPosts.length > 0) {
+    anomalies.push({
+      code: 'MISSING_POSTS',
+      severity: 'warning',
+      message: `${missingPosts.length} pos belum memiliki petugas.`,
+    });
+  }
+
+  const duplicatePostIndexes = Array.from(postIndexes.values()).filter(
+    (indexes) => indexes.length > 1,
+  );
+  if (duplicatePostIndexes.length > 0) {
+    anomalies.push({
+      code: 'DUPLICATE_POST',
+      severity: 'blocking',
+      message: 'Ada pos yang dicatat lebih dari satu kali.',
+      assignmentIndexes: duplicatePostIndexes.flat(),
+    });
+  }
+
+  const duplicateGuardIndexes = Array.from(guardIndexes.values()).filter(
+    (indexes) => indexes.length > 1,
+  );
+  if (duplicateGuardIndexes.length > 0) {
+    anomalies.push({
+      code: 'DUPLICATE_GUARD',
+      severity: 'blocking',
+      message: 'Ada petugas yang dicatat lebih dari satu kali pada shift yang sama.',
+      assignmentIndexes: duplicateGuardIndexes.flat(),
+    });
+  }
+
+  if (
+    !input.assignments.some((assignment) => assignment.employeeId === input.ketuaShiftId)
+  ) {
+    anomalies.push({
+      code: 'KETUA_NOT_ASSIGNED',
+      severity: 'warning',
+      message: 'Ketua Shift tidak tercatat menjaga salah satu pos.',
+    });
+  }
+
+  if (input.reportedShiftName !== input.suggestedShiftName) {
+    anomalies.push({
+      code: 'ROTA_MISMATCH',
+      severity: 'warning',
+      message: `Shift yang dilaporkan (${input.reportedShiftName}) berbeda dari saran rota (${input.suggestedShiftName}).`,
+    });
+  }
+
+  const incompleteCoverIndexes = input.assignments.flatMap((assignment, index) =>
+    assignment.shiftType === 'Lembur Cover' && !assignment.coveredEmployeeId
+      ? [index]
+      : [],
+  );
+  if (incompleteCoverIndexes.length > 0) {
+    anomalies.push({
+      code: 'COVER_DETAILS_INCOMPLETE',
+      severity: 'blocking',
+      message: 'Ada Lembur Cover yang belum menyebut petugas yang digantikan.',
+      assignmentIndexes: incompleteCoverIndexes,
+    });
+  }
+
+  const missingPhotoIndexes = input.assignments.flatMap((assignment, index) =>
+    assignment.photoUrl ? [] : [index],
+  );
+  if (missingPhotoIndexes.length > 0) {
+    anomalies.push({
+      code: 'MISSING_PHOTO',
+      severity: 'warning',
+      message: `${missingPhotoIndexes.length} penugasan tidak memiliki foto bukti.`,
+      assignmentIndexes: missingPhotoIndexes,
+    });
+  }
+
+  if (input.activeSatpamIds) {
+    const inactiveIndexes = input.assignments.flatMap((assignment, index) =>
+      input.activeSatpamIds!.has(assignment.employeeId) ? [] : [index],
+    );
+    if (inactiveIndexes.length > 0) {
+      anomalies.push({
+        code: 'INACTIVE_OR_MISMATCHED_GUARD',
+        severity: 'blocking',
+        message: 'Ada petugas yang status aktif atau kategori Satpam-nya belum sesuai.',
+        assignmentIndexes: inactiveIndexes,
+      });
+    }
+  }
+
+  if (input.holidayCalendarConfigured === false) {
+    anomalies.push({
+      code: 'HOLIDAY_CALENDAR_MISSING',
+      severity: 'blocking',
+      message: 'Kalender hari libur belum tersedia sehingga tarif belum dapat dipastikan.',
+    });
+  }
+
+  if (
+    !hasSatpamShiftEnded(
+      input.dutyDate,
+      input.reportedShiftName,
+      input.now || new Date(),
+    )
+  ) {
+    anomalies.push({
+      code: 'FUTURE_WORK_NOT_FINISHED',
+      severity: 'blocking',
+      message: 'Waktu dinas belum selesai. Laporan dapat disimpan tetapi belum dapat disetujui.',
+    });
+  }
+
+  return anomalies;
+}
+
 function safeDocumentPart(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]/g, '_');
 }
@@ -364,6 +631,10 @@ export function dedupeSatpamActivityReports<T extends SatpamActivityLike>(
   for (const report of reports) {
     const key =
       report.sourceLedgerEntryId ||
+      (report.reportKind === 'satpam_spj' ||
+      (!report.reportKind && !report.sourceOccurrenceId && !report.shiftType)
+        ? report.id
+        : undefined) ||
       [
         'legacy',
         report.employeeId || '',

@@ -2,16 +2,22 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   assertSatpamPhotoUrl,
+  analyzeSatpamShiftSubmission,
   calculatePayrollTotals,
   dedupeSatpamActivityReports,
   getRegularSatpamPayType,
   getShiftIsoBounds,
+  hasActivityEnded,
+  hasSatpamShiftEnded,
+  inferLegacySatpamReportKind,
   guardDutyIndexId,
   isTransferEligibleStatus,
   payrollPeriodForDutyDate,
   resolveSatpamAssignmentPayType,
   SATPAM_RATES,
   shiftOccurrenceId,
+  satpamKetuaEditConflict,
+  summarizeApprovedSatpamReports,
 } from './domain';
 import { pekaryaPayrollPeriodForDate } from './pekaryaSpj';
 
@@ -191,5 +197,212 @@ test('guard post photo URLs must live in the submitting Ketua Shift folder', () 
         'EMP001',
       ),
     /luar folder/,
+  );
+});
+
+test('flexible Satpam submission records warnings without rejecting partial rosters', () => {
+  const anomalies = analyzeSatpamShiftSubmission({
+    dutyDate: '2026-08-02',
+    reportedShiftName: 'Sore',
+    suggestedShiftName: 'Pagi',
+    ketuaShiftId: 'KETUA001',
+    assignments: [
+      { postId: 'Pos 1', employeeId: 'GUARD001' },
+      { postId: 'Pos 2', employeeId: 'GUARD001', shiftType: 'Lembur Cover' },
+    ],
+    activeSatpamIds: new Set(['GUARD001']),
+    holidayCalendarConfigured: false,
+    now: new Date('2026-07-30T00:00:00.000Z'),
+  });
+
+  assert.deepEqual(
+    new Set(anomalies.map((item) => item.code)),
+    new Set([
+      'MISSING_POSTS',
+      'DUPLICATE_GUARD',
+      'KETUA_NOT_ASSIGNED',
+      'ROTA_MISMATCH',
+      'COVER_DETAILS_INCOMPLETE',
+      'MISSING_PHOTO',
+      'HOLIDAY_CALENDAR_MISSING',
+      'FUTURE_WORK_NOT_FINISHED',
+    ]),
+  );
+  assert.equal(
+    anomalies.find((item) => item.code === 'DUPLICATE_GUARD')?.severity,
+    'blocking',
+  );
+  assert.equal(
+    anomalies.find((item) => item.code === 'MISSING_POSTS')?.severity,
+    'warning',
+  );
+});
+
+test('future work can be captured but does not become reviewable early', () => {
+  assert.equal(
+    hasSatpamShiftEnded(
+      '2026-08-01',
+      'Malam',
+      new Date('2026-08-01T23:00:00+07:00'),
+    ),
+    false,
+  );
+  assert.equal(
+    hasSatpamShiftEnded(
+      '2026-08-01',
+      'Malam',
+      new Date('2026-08-02T08:01:00+07:00'),
+    ),
+    true,
+  );
+  assert.equal(
+    hasActivityEnded(
+      '2026-08-01',
+      '22:00',
+      '01:00',
+      new Date('2026-08-02T00:30:00+07:00'),
+    ),
+    false,
+  );
+});
+
+test('legacy report classification uses source metadata while explicit classification wins', () => {
+  assert.equal(
+    inferLegacySatpamReportKind({
+      id: 'personal',
+      reportKind: 'satpam_spj',
+      shiftName: 'Pagi',
+    }),
+    'satpam_spj',
+    'explicit personal SPJ must never be reclassified from incidental fields',
+  );
+  assert.equal(
+    inferLegacySatpamReportKind({
+      id: 'legacy-shift',
+      sourceOccurrenceId: 'team_1__20260801__pagi',
+    }),
+    'satpam_shift_assignment',
+  );
+  assert.equal(
+    inferLegacySatpamReportKind({ id: 'legacy-personal' }),
+    'satpam_spj',
+  );
+});
+
+test('Satpam payroll summarizes shift columns and personal SPJ simultaneously', () => {
+  const contribution = summarizeApprovedSatpamReports([
+    {
+      id: 'shift-harian',
+      reportKind: 'satpam_shift_assignment',
+      sourceOccurrenceId: 'occurrence-1',
+      employeeId: 'SAT-1',
+      activityDate: '2026-08-01',
+      postName: 'Pos 1',
+      shiftName: 'Pagi',
+      shiftType: 'Harian',
+      status: 'approved',
+      fee: 12_500,
+    },
+    {
+      id: 'personal-spj',
+      reportKind: 'satpam_spj',
+      employeeId: 'SAT-1',
+      activityDate: '2026-08-02',
+      status: 'approved',
+      fee: 47_500,
+    },
+    {
+      id: 'shift-pending',
+      reportKind: 'satpam_shift_assignment',
+      employeeId: 'SAT-1',
+      activityDate: '2026-08-03',
+      shiftType: 'Lembur Cover',
+      status: 'pending',
+      fee: 50_000,
+    },
+  ]);
+  assert.deepEqual(contribution, {
+    personalSpj: 47_500,
+    harianCount: 1,
+    jumatLiburCount: 0,
+    lemburSendiriCount: 0,
+    lemburCoverCount: 0,
+  });
+});
+
+test('duplicate shift financial identities are counted once but personal SPJs remain independent', () => {
+  const contribution = summarizeApprovedSatpamReports([
+    {
+      id: 'shift-a',
+      reportKind: 'satpam_shift_assignment',
+      sourceLedgerEntryId: 'ledger-shift-1',
+      employeeId: 'SAT-1',
+      activityDate: '2026-08-01',
+      shiftName: 'Pagi',
+      postName: 'Pos 1',
+      shiftType: 'Harian',
+      status: 'approved',
+      fee: 12_500,
+    },
+    {
+      id: 'shift-retry',
+      reportKind: 'satpam_shift_assignment',
+      sourceLedgerEntryId: 'ledger-shift-1',
+      employeeId: 'SAT-1',
+      activityDate: '2026-08-01',
+      shiftName: 'Pagi',
+      postName: 'Pos 1',
+      shiftType: 'Harian',
+      status: 'approved',
+      fee: 12_500,
+    },
+    {
+      id: 'spj-a',
+      reportKind: 'satpam_spj',
+      employeeId: 'SAT-1',
+      activityDate: '2026-08-01',
+      status: 'approved',
+      fee: 20_000,
+    },
+    {
+      id: 'spj-b',
+      reportKind: 'satpam_spj',
+      employeeId: 'SAT-1',
+      activityDate: '2026-08-01',
+      status: 'approved',
+      fee: 25_000,
+    },
+  ]);
+  assert.equal(contribution.harianCount, 1);
+  assert.equal(contribution.personalSpj, 45_000);
+});
+
+test('Ketua edit uses optimistic revision locking and auditor ownership', () => {
+  assert.equal(
+    satpamKetuaEditConflict({
+      status: 'pending_review',
+      auditorActionAt: null,
+      revision: 3,
+      expectedRevision: 3,
+    }),
+    null,
+  );
+  assert.equal(
+    satpamKetuaEditConflict({
+      status: 'pending_review',
+      auditorActionAt: null,
+      revision: 4,
+      expectedRevision: 3,
+    }),
+    'stale_revision',
+  );
+  assert.equal(
+    satpamKetuaEditConflict({
+      status: 'under_review',
+      auditorActionAt: { seconds: 1 },
+      revision: 4,
+      expectedRevision: 4,
+    }),
+    'auditor_locked',
   );
 });

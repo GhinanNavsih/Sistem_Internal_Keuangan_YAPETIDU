@@ -71,7 +71,13 @@ import {
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
-import { SatpamPostId, SatpamPayType, type PhotoAuditMetadata, type PhotoEvidence } from '@/lib/payroll/domain';
+import {
+  SatpamPostId,
+  SatpamPayType,
+  type PhotoAuditMetadata,
+  type PhotoEvidence,
+  type SatpamShiftAnomaly,
+} from '@/lib/payroll/domain';
 import { prepareProofImage } from '@/lib/photoEvidence';
 import {
   calculateDriverNetWage,
@@ -211,6 +217,13 @@ interface ActivityReport {
   completedAt?: any;
   customDurationPP?: number;
   // SATPAM specific fields
+  reportKind?: 'satpam_spj' | 'satpam_shift_assignment' | 'pekarya_activity';
+  sourceOccurrenceId?: string;
+  sourceOccurrenceRevision?: number;
+  auditorActionAt?: any;
+  anomalyCodes?: string[];
+  suggestedShiftName?: 'Pagi' | 'Sore' | 'Malam' | string;
+  reportedShiftName?: 'Pagi' | 'Sore' | 'Malam' | string;
   shiftName?: 'Pagi' | 'Sore' | 'Malam' | string;
   shiftType?: 'Harian' | 'Jumat & Libur' | 'Lembur Sendiri' | 'Lembur Cover' | 'Off-Duty' | string;
   postName?: string;
@@ -642,6 +655,18 @@ function ActivitiesContent() {
   const [extraOvertimeReason, setExtraOvertimeReason] = useState('');
   const [satpamRegularPayType, setSatpamRegularPayType] = useState<'Harian' | 'Jumat & Libur'>('Harian');
   const [holidayCalendarConfigured, setHolidayCalendarConfigured] = useState(false);
+  const [satpamFlexibilityEnabled, setSatpamFlexibilityEnabled] = useState(true);
+  const [satpamSuggestedShiftName, setSatpamSuggestedShiftName] = useState<'Pagi' | 'Sore' | 'Malam'>('Pagi');
+  const [satpamReportedShiftName, setSatpamReportedShiftName] = useState<'Pagi' | 'Sore' | 'Malam'>('Pagi');
+  const [satpamOpenPeriods, setSatpamOpenPeriods] = useState<Array<{ period: string; startDate: string; endDate: string }>>([]);
+  const [satpamOccurrenceId, setSatpamOccurrenceId] = useState('');
+  const [satpamOccurrenceRevision, setSatpamOccurrenceRevision] = useState(0);
+  const [satpamAuditorActionAt, setSatpamAuditorActionAt] = useState<any>(null);
+  const [satpamReviewStatus, setSatpamReviewStatus] = useState<'draft' | 'pending_review' | 'under_review' | 'approved' | 'partially_approved' | 'declined'>('draft');
+  const [satpamAnomalies, setSatpamAnomalies] = useState<SatpamShiftAnomaly[]>([]);
+  const [satpamDraftHydrated, setSatpamDraftHydrated] = useState(false);
+  const [copyingPreviousShift, setCopyingPreviousShift] = useState(false);
+  const [satpamEmployeeSearch, setSatpamEmployeeSearch] = useState('');
   const satpamRequestIdsRef = useRef<Record<string, string>>({});
   const [isExtraPostVisible, setIsExtraPostVisible] = useState(false);
   const [loadingSubmittedSatpam, setLoadingSubmittedSatpam] = useState(false);
@@ -653,6 +678,7 @@ function ActivitiesContent() {
   const [extraPhotoAuditMetadata, setExtraPhotoAuditMetadata] = useState<PhotoAuditMetadata | undefined>();
   const [satpamPreviewPhoto, setSatpamPreviewPhoto] = useState<{ url: string; title: string } | null>(null);
   const postPhotoInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const satpamShiftCardRef = useRef<HTMLDivElement | null>(null);
 
 
   // ── Period ──
@@ -1395,16 +1421,22 @@ function ActivitiesContent() {
       try {
         const config = await authenticatedJson<{
           team: any;
-          employees: { id: string; name: string }[];
+          employees: { id: string; name: string; isActive?: boolean }[];
+          shiftName: 'Pagi' | 'Sore' | 'Malam';
           regularPayType: 'Harian' | 'Jumat & Libur';
           holidayCalendarConfigured: boolean;
+          openPeriods: Array<{ period: string; startDate: string; endDate: string }>;
+          flexibilityEnabled: boolean;
         }>(`/api/satpam/config?dutyDate=${encodeURIComponent(satpamReportDate)}`, {
           method: 'GET',
         });
         setMyShiftTeam(config.team);
         setAllSatpamEmployees(config.employees);
+        setSatpamSuggestedShiftName(config.shiftName);
         setSatpamRegularPayType(config.regularPayType);
         setHolidayCalendarConfigured(config.holidayCalendarConfigured);
+        setSatpamOpenPeriods(config.openPeriods || []);
+        setSatpamFlexibilityEnabled(config.flexibilityEnabled !== false);
       } catch (err) {
         console.error('Error loading Satpam shift configuration:', err);
         setMessage({
@@ -1418,6 +1450,17 @@ function ActivitiesContent() {
 
     loadSatpamConfig();
   }, [isKetuaShiftSatpam, profile?.linkedEmployeeId, satpamReportDate]);
+
+  useEffect(() => {
+    if (userJobCategory !== 'SATPAM' || isKetuaShiftSatpam) return;
+    authenticatedJson<{
+      openPeriods: Array<{ period: string; startDate: string; endDate: string }>;
+    }>('/api/payroll/periods', { method: 'GET' })
+      .then((response) => setSatpamOpenPeriods(response.openPeriods || []))
+      .catch((error) => {
+        console.error('Error loading open payroll periods:', error);
+      });
+  }, [isKetuaShiftSatpam, userJobCategory]);
 
   useEffect(() => {
     if (message) {
@@ -2052,6 +2095,22 @@ function ActivitiesContent() {
     return allSatpamEmployees.filter(emp => !groupEmployeeIds.includes(emp.id));
   }, [allSatpamEmployees, groupEmployeeIds]);
 
+  const visibleGroupEmployees = useMemo(() => {
+    const search = satpamEmployeeSearch.trim().toLocaleLowerCase('id');
+    if (!search) return groupEmployees;
+    return groupEmployees.filter((employee) =>
+      String(employee.name || '').toLocaleLowerCase('id').includes(search),
+    );
+  }, [groupEmployees, satpamEmployeeSearch]);
+
+  const visibleExternalEmployees = useMemo(() => {
+    const search = satpamEmployeeSearch.trim().toLocaleLowerCase('id');
+    if (!search) return externalEmployees;
+    return externalEmployees.filter((employee) =>
+      String(employee.name || '').toLocaleLowerCase('id').includes(search),
+    );
+  }, [externalEmployees, satpamEmployeeSearch]);
+
   const teamNumber = useMemo(() => {
     if (!myShiftTeam) return 1;
     return parseInt(myShiftTeam.id.split('_')[1], 10) || 1;
@@ -2059,37 +2118,64 @@ function ActivitiesContent() {
 
   const activeShift = useMemo(() => {
     if (!isKetuaShiftSatpam) return 'Pagi';
-    return getSatpamShiftForTeam(teamNumber, satpamReportDate);
-  }, [isKetuaShiftSatpam, teamNumber, satpamReportDate]);
+    return satpamReportedShiftName;
+  }, [isKetuaShiftSatpam, satpamReportedShiftName]);
+
+  const calculatedSuggestedShift = useMemo(
+    () => getSatpamShiftForTeam(teamNumber, satpamReportDate),
+    [teamNumber, satpamReportDate],
+  );
+
+  const isSatpamReportLocked =
+    isSatpamReportSubmitted &&
+    (Boolean(satpamAuditorActionAt) ||
+      !['pending_review', 'draft'].includes(satpamReviewStatus));
 
   const satpamPendingStorageKey = useMemo(
     () =>
       profile?.linkedEmployeeId
-        ? `unipdu:satpam-pending:${profile.linkedEmployeeId}:${satpamReportDate}:${activeShift}`
+        ? `unipdu:satpam-draft:${profile.linkedEmployeeId}:${satpamReportDate}`
         : '',
-    [profile?.linkedEmployeeId, satpamReportDate, activeShift],
+    [profile?.linkedEmployeeId, satpamReportDate],
   );
 
   useEffect(() => {
-    if (!isKetuaShiftSatpam || !profile?.linkedEmployeeId || !satpamReportDate || !activeShift) return;
+    if (!isKetuaShiftSatpam || !profile?.linkedEmployeeId || !satpamReportDate) return;
 
     let isMounted = true;
     setLoadingSubmittedSatpam(true);
+    setSatpamDraftHydrated(false);
 
-    const q = query(
-      collection(db, 'ActivityReports'),
-      where('activityDate', '==', satpamReportDate),
-      where('shiftName', '==', activeShift),
-      where('jobCategory', '==', 'SATPAM'),
-      where('ketuaShiftId', '==', profile.linkedEmployeeId)
-    );
-
-    getDocs(q).then((snap) => {
+    authenticatedJson<{
+      occurrence: null | {
+        id: string;
+        revision?: number;
+        status?: string;
+        reviewStatus?: string;
+        auditorActionAt?: any;
+        reportedShiftName?: 'Pagi' | 'Sore' | 'Malam';
+        suggestedShiftName?: 'Pagi' | 'Sore' | 'Malam';
+        anomalies?: SatpamShiftAnomaly[];
+      };
+      assignments: Array<{
+        assignmentKind?: 'primary' | 'extra';
+        postId?: string;
+        postName?: string;
+        employeeId?: string;
+        shiftType?: string;
+        coveredEmployeeId?: string;
+        overtimeReason?: string;
+        photoUrl?: string;
+        photoAuditMetadata?: PhotoAuditMetadata;
+      }>;
+    }>(`/api/satpam/shifts?dutyDate=${encodeURIComponent(satpamReportDate)}`, {
+      method: 'GET',
+    }).then(({ occurrence, assignments }) => {
       if (!isMounted) return;
 
       const defaultShiftTypeForDate = getDefaultShiftTypeForDate(satpamReportDate);
 
-      if (!snap.empty) {
+      if (occurrence) {
         const newAssignments: Record<string, SatpamPostAssignment> = {
           'Pos 1': { employeeId: '', shiftType: defaultShiftTypeForDate },
           'Pos 2': { employeeId: '', shiftType: defaultShiftTypeForDate },
@@ -2109,14 +2195,13 @@ function ActivitiesContent() {
         let extraPhoto = '';
         let extraPhotoMetadata: PhotoAuditMetadata | undefined;
 
-        snap.docs.forEach((doc) => {
-          const data = doc.data();
-          const rawPostName = data.postName || '';
+        assignments.forEach((data) => {
+          const rawPostName = data.postId || data.postName || '';
 
-          if (rawPostName.startsWith('Tambahan:') || data.assignmentKind === 'extra') {
+          if (data.assignmentKind === 'extra') {
             foundExtra = true;
             extraEmpId = data.employeeId || '';
-            extraPName = rawPostName.replace('Tambahan:', '').split(':')[0].trim();
+            extraPName = String(data.postId || rawPostName).replace('Tambahan:', '').split(':')[0].trim();
             const matchedPost = POSTS_CONFIG.find(p => p.name === extraPName || p.id === extraPName);
             if (matchedPost) {
               extraPName = matchedPost.id;
@@ -2148,6 +2233,23 @@ function ActivitiesContent() {
         });
 
         setPostAssignments(newAssignments);
+        setSatpamOccurrenceId(occurrence.id);
+        setSatpamOccurrenceRevision(Number(occurrence.revision || 1));
+        setSatpamAuditorActionAt(occurrence.auditorActionAt || null);
+        setSatpamReviewStatus(
+          occurrence.status === 'approved' || occurrence.reviewStatus === 'approved'
+            ? 'approved'
+            : occurrence.reviewStatus === 'partially_approved'
+              ? 'partially_approved'
+            : occurrence.status === 'declined' || occurrence.reviewStatus === 'declined'
+              ? 'declined'
+              : occurrence.status === 'under_review' || occurrence.reviewStatus === 'under_review'
+                ? 'under_review'
+                : 'pending_review',
+        );
+        setSatpamAnomalies(Array.isArray(occurrence.anomalies) ? occurrence.anomalies : []);
+        if (occurrence.reportedShiftName) setSatpamReportedShiftName(occurrence.reportedShiftName);
+        if (occurrence.suggestedShiftName) setSatpamSuggestedShiftName(occurrence.suggestedShiftName);
         if (foundExtra) {
           setExtraEmployeeId(extraEmpId);
           setExtraPostName(extraPName);
@@ -2167,6 +2269,13 @@ function ActivitiesContent() {
         }
         setIsSatpamReportSubmitted(true);
       } else {
+        setSatpamOccurrenceId('');
+        setSatpamOccurrenceRevision(0);
+        setSatpamAuditorActionAt(null);
+        setSatpamReviewStatus('draft');
+        setSatpamAnomalies([]);
+        setSatpamSuggestedShiftName(calculatedSuggestedShift);
+        setSatpamReportedShiftName(calculatedSuggestedShift);
         const blankAssignments: Record<string, SatpamPostAssignment> = {
           'Pos 1': { employeeId: '', shiftType: defaultShiftTypeForDate },
           'Pos 2': { employeeId: '', shiftType: defaultShiftTypeForDate },
@@ -2184,10 +2293,13 @@ function ActivitiesContent() {
             const rawPending = window.localStorage.getItem(satpamPendingStorageKey);
             const pending = rawPending ? JSON.parse(rawPending) : null;
             if (
-              pending?.requestId &&
+              pending &&
               pending?.payload?.dutyDate === satpamReportDate &&
               Array.isArray(pending.payload.assignments)
             ) {
+              if (['Pagi', 'Sore', 'Malam'].includes(pending.payload.shiftName)) {
+                setSatpamReportedShiftName(pending.payload.shiftName);
+              }
               for (const assignment of pending.payload.assignments) {
                 if (!blankAssignments[assignment.postId]) continue;
                 blankAssignments[assignment.postId] = {
@@ -2209,13 +2321,15 @@ function ActivitiesContent() {
               setExtraPhotoUrl(pendingExtra?.photoUrl || '');
               setExtraPhotoAuditMetadata(pendingExtra?.photoAuditMetadata);
               setIsExtraPostVisible(Boolean(pendingExtra));
-              satpamRequestIdsRef.current[
-                `${satpamReportDate}_${activeShift}`
-              ] = pending.requestId;
+              if (pending.requestId) {
+                satpamRequestIdsRef.current[
+                  `${satpamReportDate}_${pending.payload.shiftName || calculatedSuggestedShift}`
+                ] = pending.requestId;
+              }
               restoredPending = true;
               setMessage({
-                type: 'error',
-                text: 'Pengiriman sebelumnya belum terkonfirmasi. Draf lokal dipulihkan; kirim ulang dengan data yang sama.',
+                type: 'success',
+                text: 'Draf laporan yang belum selesai berhasil dipulihkan.',
               });
             }
           } catch (error) {
@@ -2232,10 +2346,12 @@ function ActivitiesContent() {
         }
         setIsSatpamReportSubmitted(false);
       }
+      setSatpamDraftHydrated(true);
       setLoadingSubmittedSatpam(false);
     }).catch((err) => {
       console.error('Error fetching submitted Satpam reports:', err);
       if (isMounted) {
+        setSatpamDraftHydrated(true);
         setLoadingSubmittedSatpam(false);
       }
     });
@@ -2245,9 +2361,64 @@ function ActivitiesContent() {
     };
   }, [
     satpamReportDate,
-    activeShift,
     profile?.linkedEmployeeId,
     satpamPendingStorageKey,
+    calculatedSuggestedShift,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isKetuaShiftSatpam ||
+      !satpamDraftHydrated ||
+      !satpamPendingStorageKey ||
+      isSatpamReportLocked
+    ) {
+      return;
+    }
+    const payload = {
+      dutyDate: satpamReportDate,
+      shiftName: activeShift,
+      assignments: Object.entries(postAssignments)
+        .filter(([, assignment]) => Boolean(assignment.employeeId))
+        .map(([postId, assignment]) => ({
+          postId,
+          employeeId: assignment.employeeId,
+          shiftType: assignment.shiftType,
+          coveredEmployeeId: assignment.coveredEmployeeId,
+          overtimeReason: assignment.overtimeReason,
+          photoUrl: assignment.photoUrl,
+          photoAuditMetadata: assignment.photoAuditMetadata,
+        })),
+      ...(isExtraPostVisible && extraEmployeeId
+        ? {
+            extraAssignment: {
+              postId: extraPostName,
+              employeeId: extraEmployeeId,
+              overtimeReason: extraOvertimeReason,
+              photoUrl: extraPhotoUrl,
+              photoAuditMetadata: extraPhotoAuditMetadata,
+            },
+          }
+        : {}),
+    };
+    window.localStorage.setItem(
+      satpamPendingStorageKey,
+      JSON.stringify({ payload, savedAt: new Date().toISOString() }),
+    );
+  }, [
+    activeShift,
+    extraEmployeeId,
+    extraOvertimeReason,
+    extraPhotoAuditMetadata,
+    extraPhotoUrl,
+    extraPostName,
+    isExtraPostVisible,
+    isKetuaShiftSatpam,
+    isSatpamReportLocked,
+    postAssignments,
+    satpamDraftHydrated,
+    satpamPendingStorageKey,
+    satpamReportDate,
   ]);
 
   const assignedEmployeeIds = useMemo(() => {
@@ -2276,6 +2447,149 @@ function ActivitiesContent() {
   const getDefaultShiftTypeForDate = (dateStr: string) => {
     if (dateStr === satpamReportDate) return satpamRegularPayType;
     return isFriday(dateStr) ? 'Jumat & Libur' : 'Harian';
+  };
+
+  const setSatpamDateShortcut = (dayOffset: number) => {
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + dayOffset);
+    const nextValue = [
+      nextDate.getFullYear(),
+      String(nextDate.getMonth() + 1).padStart(2, '0'),
+      String(nextDate.getDate()).padStart(2, '0'),
+    ].join('-');
+    const isOpen = satpamOpenPeriods.some(
+      (period) => nextValue >= period.startDate && nextValue <= period.endDate,
+    );
+    if (!isOpen) {
+      setMessage({ type: 'error', text: 'Tanggal tersebut belum termasuk periode payroll yang terbuka.' });
+      return;
+    }
+    setSatpamReportDate(nextValue);
+  };
+
+  const handleSatpamDateChange = (nextValue: string) => {
+    if (!nextValue) return;
+    const isOpen = satpamOpenPeriods.some(
+      (period) => nextValue >= period.startDate && nextValue <= period.endDate,
+    );
+    if (!isOpen) {
+      setMessage({
+        type: 'error',
+        text: 'Pilih tanggal yang berada dalam periode payroll terbuka.',
+      });
+      return;
+    }
+    setSatpamReportDate(nextValue);
+  };
+
+  const setPersonalSpjDate = (nextValue: string) => {
+    if (!nextValue) return;
+    if (
+      userJobCategory === 'SATPAM' &&
+      !satpamOpenPeriods.some(
+        (period) => nextValue >= period.startDate && nextValue <= period.endDate,
+      )
+    ) {
+      setMessage({
+        type: 'error',
+        text: 'Tanggal SPJ harus berada dalam periode payroll terbuka.',
+      });
+      return;
+    }
+    setFormDate(nextValue);
+  };
+
+  const setPersonalSpjDateShortcut = (offset: number) => {
+    const date = new Date();
+    date.setDate(date.getDate() + offset);
+    setPersonalSpjDate([
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-'));
+  };
+
+  const satpamFormWarnings = (() => {
+    const warnings: string[] = [];
+    const assigned = Object.entries(postAssignments).filter(([, value]) => value.employeeId);
+    const assignedIds = assigned.map(([, value]) => value.employeeId);
+    if (assigned.length < POSTS_CONFIG.length) {
+      warnings.push(`${POSTS_CONFIG.length - assigned.length} pos belum diisi.`);
+    }
+    if (new Set(assignedIds).size !== assignedIds.length || (extraEmployeeId && assignedIds.includes(extraEmployeeId))) {
+      warnings.push('Ada nama petugas yang dipilih lebih dari satu kali.');
+    }
+    if (profile?.linkedEmployeeId && !assignedIds.includes(profile.linkedEmployeeId) && extraEmployeeId !== profile.linkedEmployeeId) {
+      warnings.push('Ketua Shift belum tercantum sebagai petugas.');
+    }
+    if (activeShift !== satpamSuggestedShiftName) {
+      warnings.push(`Shift yang dipilih berbeda dari saran sistem (${satpamSuggestedShiftName}).`);
+    }
+    if (!holidayCalendarConfigured) {
+      warnings.push('Kalender hari libur belum tersedia; auditor perlu menentukan klasifikasi bayar.');
+    }
+    if (assigned.some(([, value]) => !value.photoUrl) || (extraEmployeeId && !extraPhotoUrl)) {
+      warnings.push('Ada penugasan tanpa foto bukti.');
+    }
+    if (assigned.some(([, value]) => value.shiftType === 'Lembur Cover' && !value.coveredEmployeeId)) {
+      warnings.push('Ada Lembur Cover yang belum mencantumkan petugas yang digantikan.');
+    }
+    if (assigned.some(([, value]) => allSatpamEmployees.find((employee) => employee.id === value.employeeId)?.isActive === false)) {
+      warnings.push('Ada data petugas yang perlu diverifikasi statusnya oleh auditor.');
+    }
+    return warnings;
+  })();
+
+  const copyPreviousSatpamShift = async () => {
+    if (isSatpamReportLocked) return;
+    setCopyingPreviousShift(true);
+    try {
+      const previous = await authenticatedJson<{
+        occurrence: null | { reportedShiftName?: 'Pagi' | 'Sore' | 'Malam' };
+        assignments: Array<{
+          assignmentKind?: 'primary' | 'extra';
+          postId?: string;
+          employeeId?: string;
+          shiftType?: string;
+          coveredEmployeeId?: string;
+          overtimeReason?: string;
+        }>;
+      }>(
+        `/api/satpam/shifts?dutyDate=${encodeURIComponent(satpamReportDate)}&latestBefore=true`,
+        { method: 'GET' },
+      );
+      if (!previous.occurrence) {
+        setMessage({ type: 'error', text: 'Belum ada laporan sebelumnya yang dapat disalin.' });
+        return;
+      }
+      const defaultType = getDefaultShiftTypeForDate(satpamReportDate);
+      const copied = Object.fromEntries(
+        POSTS_CONFIG.map((post) => [post.id, { employeeId: '', shiftType: defaultType }]),
+      ) as Record<string, SatpamPostAssignment>;
+      const copiedExtra = previous.assignments.find((assignment) => assignment.assignmentKind === 'extra');
+      previous.assignments
+        .filter((assignment) => assignment.assignmentKind !== 'extra' && assignment.postId && copied[assignment.postId])
+        .forEach((assignment) => {
+          copied[assignment.postId!] = {
+            employeeId: assignment.employeeId || '',
+            shiftType: assignment.shiftType || defaultType,
+            coveredEmployeeId: assignment.coveredEmployeeId || '',
+            overtimeReason: assignment.overtimeReason || '',
+          };
+        });
+      setPostAssignments(copied);
+      setExtraEmployeeId(copiedExtra?.employeeId || '');
+      setExtraPostName(copiedExtra?.postId || '');
+      setExtraOvertimeReason(copiedExtra?.overtimeReason || '');
+      setExtraPhotoUrl('');
+      setExtraPhotoAuditMetadata(undefined);
+      setIsExtraPostVisible(Boolean(copiedExtra));
+      setMessage({ type: 'success', text: 'Nama petugas dari laporan terakhir sudah disalin. Foto tidak ikut disalin.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Laporan terakhir gagal disalin.' });
+    } finally {
+      setCopyingPreviousShift(false);
+    }
   };
 
   const handleShiftTypeChange = (postId: string, shiftType: string) => {
@@ -2420,19 +2734,28 @@ function ActivitiesContent() {
       const payload = {
         requestId,
         dutyDate: satpamReportDate,
-        assignments: Object.entries(postAssignments).map(([postId, assignment]) => ({
-          postId: postId as SatpamPostId,
-          employeeId: assignment.employeeId,
-          shiftType: (assignment.shiftType || getDefaultShiftTypeForDate(satpamReportDate)) as SatpamPayType,
-          ...(assignment.shiftType === 'Lembur Cover' && {
-            coveredEmployeeId: assignment.coveredEmployeeId,
-            overtimeReason: assignment.overtimeReason,
-          }),
-          ...(assignment.photoUrl ? { photoUrl: assignment.photoUrl } : {}),
-          ...(assignment.photoUrl && assignment.photoAuditMetadata
-            ? { photoAuditMetadata: assignment.photoAuditMetadata }
-            : {}),
-        })),
+        shiftName: activeShift,
+        ...(satpamOccurrenceId
+          ? {
+              occurrenceId: satpamOccurrenceId,
+              expectedRevision: satpamOccurrenceRevision,
+            }
+          : {}),
+        assignments: Object.entries(postAssignments)
+          .filter(([, assignment]) => Boolean(assignment.employeeId))
+          .map(([postId, assignment]) => ({
+            postId: postId as SatpamPostId,
+            employeeId: assignment.employeeId,
+            shiftType: (assignment.shiftType || getDefaultShiftTypeForDate(satpamReportDate)) as SatpamPayType,
+            ...(assignment.shiftType === 'Lembur Cover' && {
+              coveredEmployeeId: assignment.coveredEmployeeId,
+              overtimeReason: assignment.overtimeReason,
+            }),
+            ...(assignment.photoUrl ? { photoUrl: assignment.photoUrl } : {}),
+            ...(assignment.photoUrl && assignment.photoAuditMetadata
+              ? { photoAuditMetadata: assignment.photoAuditMetadata }
+              : {}),
+          })),
         ...(isExtraPostVisible && extraEmployeeId && extraPostName && {
           extraAssignment: {
             postId: extraPostName as SatpamPostId,
@@ -2452,8 +2775,12 @@ function ActivitiesContent() {
         );
       }
 
-      await authenticatedJson('/api/satpam/shifts', {
-        method: 'POST',
+      const result = await authenticatedJson<{
+        occurrenceId: string;
+        revision: number;
+        anomalies?: SatpamShiftAnomaly[];
+      }>('/api/satpam/shifts', {
+        method: satpamOccurrenceId ? 'PATCH' : 'POST',
         body: JSON.stringify(payload),
       });
       delete satpamRequestIdsRef.current[requestKey];
@@ -2463,29 +2790,15 @@ function ActivitiesContent() {
 
       setMessage({
         type: 'success',
-        text: `Laporan shift ${activeShift} tanggal ${satpamReportDate} terkirim dan menunggu audit Kepala SatKer.`,
+        text: satpamOccurrenceId
+          ? 'Perubahan laporan tersimpan dan menunggu pemeriksaan auditor.'
+          : `Laporan shift ${activeShift} tanggal ${satpamReportDate} terkirim dan menunggu audit Kepala SatKer.`,
       });
-
-      // Reset post selection
-      const defaultShiftTypeForReset = getDefaultShiftTypeForDate(satpamReportDate);
-      setPostAssignments({
-        'Pos 1': { employeeId: '', shiftType: defaultShiftTypeForReset },
-        'Pos 2': { employeeId: '', shiftType: defaultShiftTypeForReset },
-        'Pos 3': { employeeId: '', shiftType: defaultShiftTypeForReset },
-        'Pos 4': { employeeId: '', shiftType: defaultShiftTypeForReset },
-        'Pos 5': { employeeId: '', shiftType: defaultShiftTypeForReset },
-        'Pos 6': { employeeId: '', shiftType: defaultShiftTypeForReset },
-        'Pos 7': { employeeId: '', shiftType: defaultShiftTypeForReset },
-        'Pos 8': { employeeId: '', shiftType: defaultShiftTypeForReset },
-        'Pos 9': { employeeId: '', shiftType: defaultShiftTypeForReset },
-      });
-      setExtraEmployeeId('');
-      setExtraPostName('');
-      setExtraShiftType('Lembur Sendiri');
-      setExtraOvertimeReason('');
-      setExtraPhotoUrl('');
-      setExtraPhotoAuditMetadata(undefined);
-      setIsExtraPostVisible(false);
+      setSatpamOccurrenceId(result.occurrenceId);
+      setSatpamOccurrenceRevision(result.revision);
+      setSatpamAnomalies(result.anomalies || []);
+      setSatpamReviewStatus('pending_review');
+      setIsSatpamReportSubmitted(true);
       fetchActivities();
     } catch (err) {
       console.error('Error submitting Satpam shift reports:', err);
@@ -2505,47 +2818,36 @@ function ActivitiesContent() {
   const handleSubmitSatpamShift = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.linkedEmployeeId || satpamSubmitting) return;
-    if (!holidayCalendarConfigured) {
-      setMessage({
-        type: 'error',
-        text: `Kalender hari libur ${satpamReportDate.slice(0, 4)} belum dikonfigurasi oleh Finance.`,
-      });
+    if (isSatpamReportLocked) {
+      setMessage({ type: 'error', text: 'Laporan sudah ditangani auditor sehingga tidak dapat diubah lagi.' });
       return;
     }
-
-    // Validate that all 9 posts are assigned
-    const emptyPostEntry = Object.entries(postAssignments).find(([, assignment]) => !assignment.employeeId);
-    if (emptyPostEntry) {
-      const [postId] = emptyPostEntry;
-      const postName = POSTS_CONFIG.find(p => p.id === postId)?.name || '';
-      setMessage({
-        type: 'error',
-        text: `${postId}${postName ? ` (${postName})` : ''} masih kosong. Silakan pilih petugas.`
-      });
+    if (!satpamFlexibilityEnabled) {
+      const assigned = Object.values(postAssignments).filter(
+        (assignment) => assignment.employeeId,
+      );
+      if (
+        assigned.length !== POSTS_CONFIG.length ||
+        new Set(assigned.map((assignment) => assignment.employeeId)).size !==
+          POSTS_CONFIG.length ||
+        !assigned.some(
+          (assignment) => assignment.employeeId === profile.linkedEmployeeId,
+        )
+      ) {
+        setMessage({
+          type: 'error',
+          text: 'Regu ini masih memakai alur lama: sembilan pos harus diisi unik dan Ketua Shift harus tercantum.',
+        });
+        return;
+      }
+    }
+    const assignedCount =
+      Object.values(postAssignments).filter((assignment) => assignment.employeeId).length +
+      (isExtraPostVisible && extraEmployeeId ? 1 : 0);
+    if (assignedCount < 1) {
+      setMessage({ type: 'error', text: 'Pilih sekurang-kurangnya satu nama petugas sebelum mengirim.' });
       return;
     }
-    if (!Object.values(postAssignments).some(
-      assignment => assignment.employeeId === profile.linkedEmployeeId,
-    )) {
-      setMessage({ type: 'error', text: 'Ketua Shift wajib menjaga salah satu dari sembilan pos.' });
-      return;
-    }
-    const invalidCover = Object.entries(postAssignments).find(([, assignment]) =>
-      assignment.shiftType === 'Lembur Cover' && !assignment.coveredEmployeeId,
-    );
-    if (invalidCover) {
-      setMessage({
-        type: 'error',
-        text: `${invalidCover[0]}: pilih anggota regu yang digantikan.`,
-      });
-      return;
-    }
-
-    if (isExtraPostVisible && extraEmployeeId && !extraPostName.trim()) {
-      setMessage({ type: 'error', text: 'Nama pos tambahan harus diisi jika petugas tambahan dipilih.' });
-      return;
-    }
-
 
     // Intercept with confirmation modal if activeShift is Malam
     if (activeShift === 'Malam') {
@@ -2967,6 +3269,36 @@ function ActivitiesContent() {
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 relative z-10">
 
+        {userJobCategory === 'SATPAM' && (
+          <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {isKetuaShiftSatpam && (
+                <Button
+                  type="button"
+                  onClick={() => satpamShiftCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  className="min-h-14 h-auto rounded-xl bg-purple-600 hover:bg-purple-700 text-base font-bold gap-2"
+                >
+                  <ClipboardList className="w-5 h-5" />
+                  Lapor Shift Regu
+                </Button>
+              )}
+              <Button
+                type="button"
+                onClick={() => {
+                  resetForm();
+                  setShowForm(true);
+                }}
+                className="min-h-14 h-auto rounded-xl bg-teal-600 hover:bg-teal-700 text-base font-bold gap-2"
+              >
+                <Pencil className="w-5 h-5" />
+                Lapor SPJ Pribadi
+              </Button>
+              <p className="sm:col-span-2 text-sm leading-relaxed text-slate-600">
+                Laporan Shift Regu dan SPJ Pribadi adalah dua laporan berbeda. Pilih sesuai kegiatan yang akan dilaporkan.
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
 
         {/* ── Period Selector (Non-Driver Users Only) ────────────────── */}
@@ -3033,7 +3365,7 @@ function ActivitiesContent() {
 
         {/* ── Satpam Shift Team Daily Logging Form (Ketua Shift only) ── */}
         {isKetuaShiftSatpam && (
-          <Card className="bg-white rounded-2xl shadow-sm border-none overflow-hidden py-0">
+          <Card ref={satpamShiftCardRef} className="bg-white rounded-2xl shadow-sm border-none overflow-hidden py-0 scroll-mt-4">
             <CardHeader className="bg-gradient-to-r from-purple-600 to-indigo-600 p-5 text-white">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur-md">
@@ -3041,7 +3373,7 @@ function ActivitiesContent() {
                 </div>
                 <div>
                   <CardTitle className="text-base font-bold text-white">Lapor Roster Shift Regu</CardTitle>
-                  <CardDescription className="text-purple-100 text-xs mt-0.5">
+                  <CardDescription className="text-purple-100 text-base mt-1">
                     {myShiftTeam ? `Regu ${myShiftTeam.id.split('_')[1]} (Ketua: ${myShiftTeam.ketuaShiftName})` : 'Mengambil data regu...'}
                   </CardDescription>
                 </div>
@@ -3051,41 +3383,96 @@ function ActivitiesContent() {
               {loadingSatpamConfig ? (
                 <div className="py-8 flex flex-col items-center justify-center text-slate-400">
                   <Loader2 className="w-6 h-6 animate-spin text-purple-600 mb-2" />
-                  <span className="text-xs font-semibold">Memuat data regu Satpam...</span>
+                  <span className="text-base font-semibold">Memuat data regu Satpam...</span>
                 </div>
               ) : (
                 <form onSubmit={handleSubmitSatpamShift} className="space-y-4">
                   {/* Date selection & Shift Display */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 pb-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="satpamDate" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <div className="space-y-2">
+                      <Label htmlFor="satpamDate" className="text-sm font-bold text-slate-600">
                         Pilih Tanggal Dinas
                       </Label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { label: 'Kemarin', offset: -1 },
+                          { label: 'Hari Ini', offset: 0 },
+                          { label: 'Besok', offset: 1 },
+                        ].map((shortcut) => (
+                          <Button
+                            key={shortcut.label}
+                            type="button"
+                            variant="outline"
+                            disabled={
+                              isSatpamReportLocked ||
+                              (!satpamFlexibilityEnabled && shortcut.offset !== 0)
+                            }
+                            onClick={() => setSatpamDateShortcut(shortcut.offset)}
+                            className="h-12 px-2 rounded-xl text-sm font-bold"
+                          >
+                            {shortcut.label}
+                          </Button>
+                        ))}
+                      </div>
                       <Input
                         id="satpamDate"
                         type="date"
-                        max={getTodayISO()}
                         value={satpamReportDate}
-                        onChange={(e) => setSatpamReportDate(e.target.value)}
-                        className="rounded-xl border-slate-200 focus:border-purple-400 focus:ring-purple-400/20 text-sm font-bold text-slate-700 bg-white"
+                        onChange={(e) => handleSatpamDateChange(e.target.value)}
+                        disabled={isSatpamReportLocked || !satpamFlexibilityEnabled}
+                        className="h-12 rounded-xl border-slate-200 focus:border-purple-400 focus:ring-purple-400/20 text-base font-bold text-slate-700 bg-white"
                         required
                       />
                     </div>
 
-                    <div className="flex flex-col justify-center space-y-1">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Jadwal Shift Roster</span>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <Badge className="bg-purple-100 hover:bg-purple-100 text-purple-800 border-none font-extrabold text-sm px-3.5 py-1 rounded-xl">
-                          Shift {activeShift}
-                        </Badge>
-                        <span className="text-[10px] text-slate-400 font-medium">
-                          {activeShift === 'Pagi' ? '08:00 - 14:00' : activeShift === 'Sore' ? '14:00 - 22:00' : '22:00 - 08:00 (H+1)'}
-                        </span>
+                    <div className="flex flex-col justify-center space-y-2">
+                      <Label className="text-sm font-bold text-slate-600">Shift yang Dilaporkan</Label>
+                      <Select
+                        value={activeShift}
+                        onValueChange={(value) => value && setSatpamReportedShiftName(value as 'Pagi' | 'Sore' | 'Malam')}
+                        disabled={
+                          isSatpamReportLocked ||
+                          loadingSubmittedSatpam ||
+                          !satpamFlexibilityEnabled
+                        }
+                      >
+                        <SelectTrigger className="h-12 rounded-xl bg-white text-base font-bold">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Pagi">Shift Pagi · 08:00–14:00</SelectItem>
+                          <SelectItem value="Sore">Shift Sore · 14:00–22:00</SelectItem>
+                          <SelectItem value="Malam">Shift Malam · 22:00–08:00</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-sm text-slate-600">
+                        Saran sistem: <strong>Shift {satpamSuggestedShiftName}</strong>. Anda tetap boleh memilih shift yang benar.
+                      </p>
+                      {!satpamFlexibilityEnabled && (
+                        <p className="text-sm font-semibold text-amber-800">
+                          Alur fleksibel sedang diuji pada regu lain; regu ini masih memakai tanggal dan rota hari ini.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="sm:col-span-2 flex flex-col sm:flex-row gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={copyingPreviousShift || isSatpamReportLocked}
+                        onClick={copyPreviousSatpamShift}
+                        className="h-12 rounded-xl text-sm font-bold gap-2"
+                      >
+                        {copyingPreviousShift ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />}
+                        Salin Laporan Terakhir
+                      </Button>
+                      <div className="flex-1 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                        Draf tersimpan otomatis di perangkat ini.
                       </div>
                     </div>
 
                     {/* Shift Date Range Helper */}
-                    <div className="sm:col-span-2 pt-1 border-t border-slate-200/60 mt-1 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+                    <div className="sm:col-span-2 pt-2 border-t border-slate-200/60 mt-1 flex items-start gap-2 text-base font-semibold text-slate-600">
                       <Clock className="w-3.5 h-3.5 text-purple-500" />
                       <span>
                         Waktu Dinas: {(() => {
@@ -3110,26 +3497,30 @@ function ActivitiesContent() {
 
                   {/* 9 Posts Duty Grid */}
                   <div className="space-y-3">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-1.5 pl-0.5">
+                    <h3 className="text-base font-bold text-slate-600 border-b border-slate-100 pb-2">
                       Penugasan Pos Keamanan (9 Pos)
                     </h3>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+                      <Input
+                        type="search"
+                        value={satpamEmployeeSearch}
+                        onChange={(event) => setSatpamEmployeeSearch(event.target.value)}
+                        placeholder="Cari nama petugas..."
+                        className="h-12 rounded-xl pl-10 text-base border-slate-200"
+                      />
+                    </div>
 
                     <div className="space-y-3.5">
                       {POSTS_CONFIG.map((post) => {
                         const defaultShiftTypeForRender = getDefaultShiftTypeForDate(satpamReportDate);
                         const val = postAssignments[post.id] || { employeeId: '', shiftType: defaultShiftTypeForRender };
-                        const assignedElsewhere = [
-                          ...Object.entries(postAssignments)
-                            .filter(([postId]) => postId !== post.id)
-                            .map(([, assignment]) => assignment.employeeId),
-                          extraEmployeeId
-                        ].filter(Boolean);
                         return (
                           <div key={post.id} className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-white p-3 rounded-xl border border-slate-200 hover:shadow-sm transition-shadow">
                             {/* Pos Name Label */}
                             <div className="md:col-span-3">
-                              <span className="text-xs font-black text-slate-500 uppercase block tracking-wider leading-tight">{post.id}</span>
-                              <span className="text-xs font-extrabold text-slate-800 truncate block mt-0.5">{post.name}</span>
+                              <span className="text-base font-black text-slate-600 block leading-tight">{post.id}</span>
+                              <span className="text-base font-extrabold text-slate-900 block mt-1">{post.name}</span>
                             </div>
 
                             {/* Guard Dropdown */}
@@ -3137,31 +3528,31 @@ function ActivitiesContent() {
                               <Select
                                 value={val.employeeId || 'none'}
                                 onValueChange={(v: string | null) => handleSelectGuard(post.id, v === 'none' || v === null ? '' : v)}
-                                disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                                disabled={isSatpamReportLocked || loadingSubmittedSatpam}
                               >
-                                <SelectTrigger className="w-full text-sm font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                                <SelectTrigger className="w-full text-base font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 h-12 flex items-center justify-between">
                                   <span className={val.employeeId ? "truncate" : "truncate text-slate-400 font-normal"}>
                                     {allSatpamEmployees.find(emp => emp.id === val.employeeId)?.name || '-- Pilih Petugas --'}
                                   </span>
                                 </SelectTrigger>
                                 <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
-                                  <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
+                                  <SelectItem value="none" className="text-base py-3 pl-3 text-slate-500 italic">
                                     -- Kosongkan Pos --
                                   </SelectItem>
                                   <SelectGroup>
-                                    <SelectLabel className="text-xs font-black text-purple-600 px-2 py-1.5 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
-                                    {groupEmployees.filter(emp => !assignedElsewhere.includes(emp.id)).map(emp => (
-                                      <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
-                                        {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''}
+                                    <SelectLabel className="text-base font-black text-purple-700 px-2 py-2 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
+                                    {visibleGroupEmployees.map(emp => (
+                                      <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                        {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''} {emp.isActive === false ? '· perlu verifikasi' : ''}
                                       </SelectItem>
                                     ))}
                                   </SelectGroup>
                                   <SelectSeparator className="my-1" />
                                   <SelectGroup>
-                                    <SelectLabel className="text-xs font-black text-slate-400 px-2 py-1.5 bg-slate-50">Satpam Regu Lain (Lembur Cover)</SelectLabel>
-                                    {externalEmployees.filter(emp => !assignedElsewhere.includes(emp.id)).map(emp => (
-                                      <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
-                                        {emp.name}
+                                    <SelectLabel className="text-base font-black text-slate-600 px-2 py-2 bg-slate-50">Satpam Regu Lain (Lembur Cover)</SelectLabel>
+                                    {visibleExternalEmployees.map(emp => (
+                                      <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                        {emp.name} {emp.isActive === false ? '· perlu verifikasi' : ''}
                                       </SelectItem>
                                     ))}
                                   </SelectGroup>
@@ -3184,16 +3575,16 @@ function ActivitiesContent() {
                                 onValueChange={(type: string | null) => {
                                   if (type) handleShiftTypeChange(post.id, type);
                                 }}
-                                disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                                disabled={isSatpamReportLocked || loadingSubmittedSatpam}
                               >
-                                <SelectTrigger className="w-full h-10 text-xs sm:text-sm font-extrabold text-slate-700 bg-white border border-slate-200 rounded-lg">
+                                <SelectTrigger className="w-full h-12 text-base font-extrabold text-slate-700 bg-white border border-slate-200 rounded-lg">
                                   <SelectValue placeholder="Pilih Jenis Shift" />
                                 </SelectTrigger>
                                 <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
-                                  <SelectItem value={defaultShiftTypeForRender} className="text-xs sm:text-sm font-bold">
+                                  <SelectItem value={defaultShiftTypeForRender} className="text-base font-bold">
                                     {defaultShiftTypeForRender} ({defaultShiftTypeForRender === 'Jumat & Libur' ? 'Rp25.000' : 'Rp12.500'})
                                   </SelectItem>
-                                  <SelectItem value="Lembur Cover" className="text-xs sm:text-sm font-bold">
+                                  <SelectItem value="Lembur Cover" className="text-base font-bold">
                                     Lembur Cover (Rp50.000)
                                   </SelectItem>
                                 </SelectContent>
@@ -3205,9 +3596,9 @@ function ActivitiesContent() {
                                   value={val.coveredEmployeeId || 'none'}
                                   onValueChange={(value: string | null) =>
                                     handleCoverDetail(post.id, 'coveredEmployeeId', value === 'none' || value === null ? '' : value)}
-                                  disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                                  disabled={isSatpamReportLocked || loadingSubmittedSatpam}
                                 >
-                                  <SelectTrigger className="w-full h-10 rounded-lg bg-amber-50 border-amber-200 text-sm font-bold">
+                                  <SelectTrigger className="w-full h-12 rounded-lg bg-amber-50 border-amber-200 text-base font-bold">
                                     <span>
                                       {groupEmployees.find(emp => emp.id === val.coveredEmployeeId)?.name ||
                                         '-- Pilih anggota yang digantikan --'}
@@ -3215,7 +3606,7 @@ function ActivitiesContent() {
                                   </SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="none">-- Pilih anggota --</SelectItem>
-                                    {groupEmployees
+                                    {visibleGroupEmployees
                                       .filter(emp => !assignedEmployeeIds.includes(emp.id))
                                       .map(emp => (
                                         <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
@@ -3239,7 +3630,7 @@ function ActivitiesContent() {
                                 className="hidden"
                               />
                               {val.photoUrl ? (
-                                <div className="flex items-center justify-between gap-2 p-2 bg-blue-50/80 border border-blue-200 rounded-xl text-[11px]">
+                                <div className="flex items-center justify-between gap-2 p-2 bg-blue-50/80 border border-blue-200 rounded-xl text-base">
                                   <div className="flex items-center gap-1.5 truncate font-bold text-blue-800">
                                     <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                                     <span className="truncate">Foto bukti {post.id} terunggah</span>
@@ -3248,15 +3639,15 @@ function ActivitiesContent() {
                                     <button
                                       type="button"
                                       onClick={() => setSatpamPreviewPhoto({ url: val.photoUrl!, title: `${post.id} — ${post.name}` })}
-                                      className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                                      className="min-h-12 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-base flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                                     >
                                       <Eye className="w-3 h-3" /> Lihat Foto
                                     </button>
-                                    {!isSatpamReportSubmitted && (
+                                    {!isSatpamReportLocked && (
                                       <button
                                         type="button"
                                         onClick={() => handleRemovePostPhoto(post.id)}
-                                        className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                        className="h-12 w-12 flex items-center justify-center hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
                                         title="Hapus Foto Ini"
                                       >
                                         <Trash2 className="w-3.5 h-3.5" />
@@ -3265,13 +3656,13 @@ function ActivitiesContent() {
                                   </div>
                                 </div>
                               ) : (
-                                !isSatpamReportSubmitted && (
+                                !isSatpamReportLocked && (
                                   <Button
                                     type="button"
                                     variant="outline"
                                     disabled={postPhotoUploading[post.id] || loadingSubmittedSatpam}
                                     onClick={() => postPhotoInputRefs.current[post.id]?.click()}
-                                    className="w-full h-9 rounded-lg border-dashed border-slate-300 bg-slate-50/60 hover:bg-slate-100 text-[11px] font-bold text-slate-600 gap-1.5"
+                                    className="w-full h-12 rounded-lg border-dashed border-slate-300 bg-slate-50/60 hover:bg-slate-100 text-base font-bold text-slate-700 gap-2"
                                   >
                                     {postPhotoUploading[post.id] ? (
                                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -3288,12 +3679,12 @@ function ActivitiesContent() {
                       })}
 
                       {!isExtraPostVisible ? (
-                        !isSatpamReportSubmitted && (
+                        !isSatpamReportLocked && (
                           <div
                             onClick={() => setIsExtraPostVisible(true)}
                             className="flex items-center justify-center bg-slate-50/50 hover:bg-slate-50 p-4 rounded-xl border border-dashed border-slate-300 hover:border-slate-400 hover:shadow-sm transition-all cursor-pointer h-[66px] animate-in fade-in duration-200"
                           >
-                            <span className="text-sm font-extrabold text-indigo-600 hover:text-indigo-700 flex items-center gap-1.5">
+                            <span className="text-base font-extrabold text-indigo-600 hover:text-indigo-700 flex items-center gap-2">
                               <Plus className="w-4.5 h-4.5" /> Tambah Petugas
                             </span>
                           </div>
@@ -3305,19 +3696,19 @@ function ActivitiesContent() {
                             <Select
                               value={extraPostName || 'none'}
                               onValueChange={(v: string | null) => setExtraPostName(v === 'none' || v === null ? '' : v)}
-                              disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                              disabled={isSatpamReportLocked || loadingSubmittedSatpam}
                             >
-                              <SelectTrigger className="w-full text-sm font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                              <SelectTrigger className="w-full text-base font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 h-12 flex items-center justify-between">
                                 <span className={extraPostName ? "truncate" : "truncate text-slate-400 font-normal"}>
                                   {POSTS_CONFIG.find(p => p.id === extraPostName || p.name === extraPostName)?.name || '-- Pilih Pos --'}
                                 </span>
                               </SelectTrigger>
                               <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
-                                <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
+                                <SelectItem value="none" className="text-base py-3 pl-3 text-slate-500 italic">
                                   -- Pilih Pos --
                                 </SelectItem>
                                 {POSTS_CONFIG.map((post) => (
-                                  <SelectItem key={post.id} value={post.id} className="text-sm py-2 pl-3">
+                                  <SelectItem key={post.id} value={post.id} className="text-base py-3 pl-3">
                                     {post.name}
                                   </SelectItem>
                                 ))}
@@ -3336,22 +3727,22 @@ function ActivitiesContent() {
                                   setExtraShiftType('Lembur Sendiri');
                                 }
                               }}
-                              disabled={isSatpamReportSubmitted || loadingSubmittedSatpam}
+                              disabled={isSatpamReportLocked || loadingSubmittedSatpam}
                             >
-                              <SelectTrigger className="w-full text-sm font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-2.5 h-10 flex items-center justify-between">
+                              <SelectTrigger className="w-full text-base font-extrabold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 h-12 flex items-center justify-between">
                                 <span className={extraEmployeeId ? "truncate" : "truncate text-slate-400 font-normal"}>
                                   {allSatpamEmployees.find(emp => emp.id === extraEmployeeId)?.name || '-- Pilih Petugas --'}
                                 </span>
                               </SelectTrigger>
                               <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white max-h-[300px] overflow-y-auto">
-                                <SelectItem value="none" className="text-sm py-2 pl-3 text-slate-400 italic">
+                                <SelectItem value="none" className="text-base py-3 pl-3 text-slate-500 italic">
                                   -- Kosongkan Pos --
                                 </SelectItem>
                                 <SelectGroup>
-                                  <SelectLabel className="text-xs font-black text-purple-600 px-2 py-1.5 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
-                                  {groupEmployees.filter(emp => !Object.values(postAssignments).map(a => a.employeeId).includes(emp.id)).map(emp => (
-                                    <SelectItem key={emp.id} value={emp.id} className="text-sm py-2 pl-3">
-                                      {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''}
+                                  <SelectLabel className="text-base font-black text-purple-700 px-2 py-2 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
+                                  {visibleGroupEmployees.map(emp => (
+                                    <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                      {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''} {emp.isActive === false ? '· perlu verifikasi' : ''}
                                     </SelectItem>
                                   ))}
                                 </SelectGroup>
@@ -3361,14 +3752,14 @@ function ActivitiesContent() {
 
                           {/* Fixed overtime type */}
                           <div className="md:col-span-3">
-                            <div className="w-full text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 h-10 flex items-center">
+                            <div className="w-full text-base font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 h-12 flex items-center">
                               Lembur Sendiri (Rp30.000)
                             </div>
                           </div>
 
                           {/* Cancel/Remove Button */}
                           <div className="md:col-span-1 flex justify-center">
-                            {!isSatpamReportSubmitted && (
+                            {!isSatpamReportLocked && (
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -3382,7 +3773,7 @@ function ActivitiesContent() {
                                   setExtraPhotoUrl('');
                                   setExtraPhotoAuditMetadata(undefined);
                                 }}
-                                className="text-slate-400 hover:text-red-500 transition-colors p-1"
+                                className="h-12 w-12 p-0 text-slate-400 hover:text-red-500 transition-colors"
                               >
                                 <X className="w-5 h-5" />
                               </Button>
@@ -3402,7 +3793,7 @@ function ActivitiesContent() {
                               className="hidden"
                             />
                             {extraPhotoUrl ? (
-                              <div className="flex items-center justify-between gap-2 p-2 bg-indigo-50 border border-indigo-200 rounded-xl text-[11px]">
+                              <div className="flex items-center justify-between gap-2 p-2 bg-indigo-50 border border-indigo-200 rounded-xl text-base">
                                 <div className="flex items-center gap-1.5 truncate font-bold text-indigo-800">
                                   <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                                   <span className="truncate">Foto bukti Lembur Sendiri terunggah</span>
@@ -3411,15 +3802,15 @@ function ActivitiesContent() {
                                   <button
                                     type="button"
                                     onClick={() => setSatpamPreviewPhoto({ url: extraPhotoUrl, title: 'Lembur Sendiri' })}
-                                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                                    className="min-h-12 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-base flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                                   >
                                     <Eye className="w-3 h-3" /> Lihat Foto
                                   </button>
-                                  {!isSatpamReportSubmitted && (
+                                  {!isSatpamReportLocked && (
                                     <button
                                       type="button"
                                       onClick={() => handleRemovePostPhoto('extra')}
-                                      className="p-1 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                      className="h-12 w-12 flex items-center justify-center hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
                                       title="Hapus Foto Ini"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -3428,13 +3819,13 @@ function ActivitiesContent() {
                                 </div>
                               </div>
                             ) : (
-                              !isSatpamReportSubmitted && (
+                              !isSatpamReportLocked && (
                                 <Button
                                   type="button"
                                   variant="outline"
                                   disabled={postPhotoUploading['extra'] || loadingSubmittedSatpam}
                                   onClick={() => postPhotoInputRefs.current['extra']?.click()}
-                                  className="w-full h-9 rounded-lg border-dashed border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50 text-[11px] font-bold text-indigo-700 gap-1.5"
+                                  className="w-full h-12 rounded-lg border-dashed border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50 text-base font-bold text-indigo-700 gap-2"
                                 >
                                   {postPhotoUploading['extra'] ? (
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -3451,32 +3842,77 @@ function ActivitiesContent() {
                     </div>
                   </div>
 
-                  {/* Libur & Rest Info */}
-                  <div className="p-4 rounded-xl bg-purple-50/50 border border-purple-100 text-xs font-medium space-y-1.5">
+                  {/* Plain-language summary */}
+                  <div className="p-4 rounded-xl bg-purple-50/50 border border-purple-100 text-base font-medium space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-purple-700">Anggota Libur (Regu Istirahat):</span>
-                      <Badge className="bg-purple-100 text-purple-800 border-none font-bold text-[10px] rounded-md py-px px-1.5">Auto-Approved</Badge>
+                      <span className="font-bold text-purple-800">Ringkasan sebelum dikirim</span>
+                      <Badge variant="outline" className="bg-white border-purple-200 text-purple-800">
+                        {assignedEmployeeIds.length} penugasan
+                      </Badge>
                     </div>
                     {offDutyMembers.length === 0 ? (
-                      <p className="text-slate-400 italic">Semua anggota regu sedang ditugaskan di pos.</p>
+                      <p className="text-slate-600">Semua anggota regu tercantum dalam laporan.</p>
                     ) : (
-                      <div className="flex flex-wrap gap-1.5 mt-1">
-                        {offDutyMembers.map(emp => (
-                          <Badge key={emp.id} variant="outline" className="bg-white border-purple-200 text-purple-700 font-extrabold text-[10px] py-0.5 px-2 rounded-md">
-                            {emp.name} (Libur)
-                          </Badge>
-                        ))}
-                      </div>
+                      <p className="text-slate-600">
+                        Belum tercantum: {offDutyMembers.map((employee) => employee.name).join(', ')}.
+                      </p>
                     )}
                   </div>
+
+                  {(satpamFormWarnings.length > 0 || satpamAnomalies.length > 0) && (
+                    <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-base text-amber-950">
+                      <div className="flex items-start gap-2 font-bold">
+                        <AlertCircle className="mt-0.5 w-5 h-5 shrink-0" />
+                        <span>Laporan tetap boleh dikirim. Auditor akan memeriksa catatan berikut:</span>
+                      </div>
+                      <ul className="mt-2 pl-5 list-disc space-y-1.5">
+                        {(satpamFormWarnings.length > 0
+                          ? satpamFormWarnings
+                          : satpamAnomalies.map((anomaly) => anomaly.message)
+                        ).map((warning) => <li key={warning}>{warning}</li>)}
+                      </ul>
+                    </div>
+                  )}
+
+                  {isSatpamReportSubmitted && (
+                    <div className={`rounded-xl border p-4 text-base ${
+                      isSatpamReportLocked
+                        ? 'border-blue-300 bg-blue-50 text-blue-950'
+                        : 'border-emerald-300 bg-emerald-50 text-emerald-950'
+                    }`}>
+                      <p className="font-bold">
+                        Status: {
+                          satpamReviewStatus === 'approved'
+                            ? 'Disetujui'
+                            : satpamReviewStatus === 'partially_approved'
+                              ? 'Disetujui Sebagian'
+                            : satpamReviewStatus === 'declined'
+                              ? 'Ditolak'
+                              : isSatpamReportLocked
+                                ? 'Sedang Diperiksa'
+                                : 'Menunggu Auditor'
+                        }
+                      </p>
+                      <p className="mt-1">
+                        {isSatpamReportLocked
+                          ? 'Auditor sudah menangani laporan ini. Perubahan berikutnya dilakukan oleh auditor.'
+                          : 'Anda masih dapat mengubah laporan ini sampai auditor mulai menanganinya.'}
+                      </p>
+                    </div>
+                  )}
+                  {!isSatpamReportSubmitted && satpamDraftHydrated && (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-base text-slate-700">
+                      <strong>Status: Draft.</strong> Perubahan tersimpan otomatis di perangkat ini sampai laporan dikirim.
+                    </div>
+                  )}
 
                   {/* Action Buttons */}
                   <div className="pt-2">
                     <Button
                       type="submit"
-                      disabled={satpamSubmitting || isSatpamReportSubmitted || loadingSubmittedSatpam}
-                      className={`w-full rounded-xl font-extrabold text-sm h-11 flex items-center justify-center gap-2 border-none shadow-md ${isSatpamReportSubmitted
-                        ? 'bg-emerald-600 hover:bg-emerald-600 text-white cursor-not-allowed shadow-emerald-100'
+                      disabled={satpamSubmitting || isSatpamReportLocked || loadingSubmittedSatpam}
+                      className={`w-full rounded-xl font-extrabold text-base min-h-12 flex items-center justify-center gap-2 border-none shadow-md ${isSatpamReportLocked
+                        ? 'bg-slate-500 hover:bg-slate-500 text-white cursor-not-allowed'
                         : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-purple-100 cursor-pointer'
                         }`}
                     >
@@ -3490,10 +3926,23 @@ function ActivitiesContent() {
                           <Loader2 className="w-4 h-4 animate-spin text-white" />
                           <span>Memeriksa Status Laporan...</span>
                         </>
+                      ) : isSatpamReportLocked ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-white" />
+                          <span>{
+                            satpamReviewStatus === 'approved'
+                              ? 'Laporan Disetujui'
+                              : satpamReviewStatus === 'partially_approved'
+                                ? 'Laporan Disetujui Sebagian'
+                              : satpamReviewStatus === 'declined'
+                                ? 'Laporan Ditolak'
+                                : 'Sedang Diperiksa Auditor'
+                          }</span>
+                        </>
                       ) : isSatpamReportSubmitted ? (
                         <>
-                          <CheckCircle2 className="w-4 h-4 text-white animate-bounce" />
-                          <span>Laporan Regu Shift {activeShift} Sudah Dikirim & Disetujui</span>
+                          <Save className="w-4 h-4 text-white" />
+                          <span>Simpan Perubahan Laporan</span>
                         </>
                       ) : (
                         <>
@@ -3872,7 +4321,9 @@ function ActivitiesContent() {
                   <p className="text-xs text-slate-400 max-w-xs mt-1.5 leading-relaxed">
                     {statusFilter !== 'all'
                       ? `Tidak ada kegiatan berstatus "${getStatusConfig(statusFilter).label}" pada periode ini.`
-                      : 'Tekan tombol "+" di bawah untuk menambahkan kegiatan baru.'
+                      : userJobCategory === 'SATPAM'
+                        ? 'Gunakan tombol “Lapor SPJ Pribadi” di atas untuk menambahkan kegiatan.'
+                        : 'Tekan tombol “Tambah Kegiatan” untuk membuat laporan baru.'
                     }
                   </p>
                 </CardContent>
@@ -4173,7 +4624,9 @@ function ActivitiesContent() {
                             )}
 
                             {/* Edit / Re-submit action */}
-                            {canEdit && (activity.jobCategory !== 'SATPAM' || profile?.role === 'honorer') && (
+                            {canEdit &&
+                              activity.reportKind !== 'satpam_shift_assignment' &&
+                              !activity.sourceOccurrenceId && (
                               <Button
                                 onClick={() => openEditForm(activity)}
                                 variant="outline"
@@ -4200,15 +4653,16 @@ function ActivitiesContent() {
       </div>
 
       {/* ── Floating Action Button ─────────────────────────────────────── */}
-      {!isSopir && (
+      {!isSopir && userJobCategory !== 'SATPAM' && (
         <button
           onClick={() => {
             resetForm();
             setShowForm(true);
           }}
-          className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-xl shadow-teal-300/40 hover:shadow-2xl hover:shadow-teal-300/50 hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center"
+          className="fixed bottom-6 right-6 z-40 min-w-14 h-14 px-4 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-xl shadow-teal-300/40 hover:shadow-2xl hover:shadow-teal-300/50 hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2"
         >
           <Plus className="w-6 h-6" />
+          <span className="font-bold">Tambah Kegiatan</span>
         </button>
       )}
 
@@ -4220,13 +4674,15 @@ function ActivitiesContent() {
               <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
                 {editingActivity
                   ? <><Pencil className="w-4.5 h-4.5" /> Edit Kegiatan</>
-                  : <><Sparkles className="w-4.5 h-4.5" /> Lapor Kegiatan Baru</>
+                  : <><Sparkles className="w-4.5 h-4.5" /> {userJobCategory === 'SATPAM' ? 'Lapor SPJ Pribadi' : 'Lapor Kegiatan Baru'}</>
                 }
               </DialogTitle>
-              <DialogDescription className="text-teal-100 text-xs mt-1">
+              <DialogDescription className="text-teal-100 text-base mt-1">
                 {editingActivity
                   ? 'Perbarui detail dan ajukan ulang kegiatan ini.'
-                  : 'Masukkan detail kegiatan yang telah Anda selesaikan hari ini.'
+                  : userJobCategory === 'SATPAM'
+                    ? 'Isi kegiatan, tanggal, serta waktu mulai dan selesai. Jadwal shift tidak membatasi SPJ pribadi.'
+                    : 'Masukkan detail kegiatan yang telah Anda selesaikan.'
                 }
               </DialogDescription>
             </DialogHeader>
@@ -4708,10 +5164,28 @@ function ActivitiesContent() {
               </div>
             ) : (
               /* Free text input for other job categories */
-              <div className="space-y-1.5 animate-in fade-in duration-200">
-                <Label htmlFor="activityNameInput" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              <div className="space-y-2 animate-in fade-in duration-200">
+                <Label htmlFor="activityNameInput" className="text-sm font-bold text-slate-600">
                   Nama Kegiatan
                 </Label>
+                {userJobCategory === 'SATPAM' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {['Patroli Tambahan', 'Pengamanan Kegiatan', 'Membantu Kegiatan', 'Lainnya'].map((preset) => (
+                      <Button
+                        key={preset}
+                        type="button"
+                        variant={formName === preset ? 'default' : 'outline'}
+                        onClick={() => {
+                          setFormName(preset === 'Lainnya' ? '' : preset);
+                          setFormCustomName(preset === 'Lainnya' ? '' : preset);
+                        }}
+                        className="min-h-12 h-auto whitespace-normal rounded-xl text-base font-bold"
+                      >
+                        {preset}
+                      </Button>
+                    ))}
+                  </div>
+                )}
                 <Input
                   id="activityNameInput"
                   placeholder="Masukkan nama kegiatan..."
@@ -4720,7 +5194,7 @@ function ActivitiesContent() {
                     setFormName(e.target.value);
                     setFormCustomName(e.target.value);
                   }}
-                  className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
+                  className="h-12 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
                   required
                   autoFocus
                   autoComplete="off"
@@ -4730,15 +5204,38 @@ function ActivitiesContent() {
 
             {/* Date */}
             <div className="space-y-1.5">
-              <Label htmlFor="activityDate" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              <Label htmlFor="activityDate" className="text-base font-bold text-slate-600">
                 Tanggal Kegiatan
               </Label>
+              {userJobCategory === 'SATPAM' && (
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'Kemarin', offset: -1 },
+                    { label: 'Hari Ini', offset: 0 },
+                    { label: 'Besok', offset: 1 },
+                  ].map((shortcut) => (
+                    <Button
+                      key={shortcut.label}
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPersonalSpjDateShortcut(shortcut.offset)}
+                      className="min-h-12 rounded-xl px-2 text-sm font-bold"
+                    >
+                      {shortcut.label}
+                    </Button>
+                  ))}
+                </div>
+              )}
               <Input
                 id="activityDate"
                 type="date"
                 value={formDate}
-                onChange={(e) => setFormDate(e.target.value)}
-                className="rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
+                onChange={(e) =>
+                  userJobCategory === 'SATPAM'
+                    ? setPersonalSpjDate(e.target.value)
+                    : setFormDate(e.target.value)
+                }
+                className="h-12 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
                 required
               />
             </div>
@@ -4746,14 +5243,14 @@ function ActivitiesContent() {
             {/* Time Range */}
             <div className={formActivityType === 'Buang Sampah' ? 'grid grid-cols-1' : 'grid grid-cols-2 gap-3'}>
               <div className="space-y-1.5">
-                <Label htmlFor="timeStart" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                <Label htmlFor="timeStart" className="text-base font-bold text-slate-600">
                   Waktu Mulai
                 </Label>
                 <div className="relative">
                   <Timer className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                   <Input
                     id="timeStart"
-                    type="text"
+                    type={userJobCategory === 'SATPAM' ? 'time' : 'text'}
                     inputMode="numeric"
                     maxLength={5}
                     placeholder="JJ:MM"
@@ -4781,21 +5278,21 @@ function ActivitiesContent() {
                     onBlur={(e) => {
                       setFormTimeStart(padTime(e.target.value));
                     }}
-                    className="pl-9 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
+                    className="pl-9 h-12 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
                     required
                   />
                 </div>
               </div>
               {formActivityType !== 'Buang Sampah' && (
                 <div className="space-y-1.5">
-                  <Label htmlFor="timeEnd" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  <Label htmlFor="timeEnd" className="text-base font-bold text-slate-600">
                     Waktu Selesai
                   </Label>
                   <div className="relative">
                     <Timer className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                     <Input
                       id="timeEnd"
-                      type="text"
+                      type={userJobCategory === 'SATPAM' ? 'time' : 'text'}
                       inputMode="numeric"
                       maxLength={5}
                       placeholder="JJ:MM"
@@ -4823,7 +5320,7 @@ function ActivitiesContent() {
                       onBlur={(e) => {
                         setFormTimeEnd(padTime(e.target.value));
                       }}
-                      className="pl-9 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm"
+                      className="pl-9 h-12 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base"
                       required
                     />
                   </div>
@@ -4833,8 +5330,8 @@ function ActivitiesContent() {
 
             {supportsSpjProof && (
               <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Foto Bukti Kegiatan
+                <Label className="text-base font-bold text-slate-600">
+                  Foto Bukti Kegiatan (Opsional)
                 </Label>
                 <input
                   ref={activityProofInputRef}
@@ -4848,7 +5345,7 @@ function ActivitiesContent() {
                   }}
                 />
                 {formProofPhoto ? (
-                  <div className="flex items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-2 text-[11px]">
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-2 text-base">
                     <div className="flex min-w-0 items-center gap-1.5 font-bold text-blue-800">
                       <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-blue-600" />
                       <span className="truncate">Foto bukti kegiatan terunggah</span>
@@ -4856,7 +5353,7 @@ function ActivitiesContent() {
                     <button
                       type="button"
                       onClick={() => setFormProofPhoto(null)}
-                      className="rounded-lg p-1 text-rose-600 transition-colors hover:bg-rose-100"
+                      className="h-12 w-12 flex items-center justify-center rounded-lg text-rose-600 transition-colors hover:bg-rose-100"
                       title="Hapus Foto Ini"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -4868,7 +5365,7 @@ function ActivitiesContent() {
                     variant="outline"
                     disabled={uploadingProofPhoto}
                     onClick={() => activityProofInputRef.current?.click()}
-                    className="h-10 w-full gap-1.5 rounded-xl border-dashed border-slate-300 bg-slate-50/60 text-xs font-bold text-slate-600 hover:bg-slate-100"
+                    className="h-12 w-full gap-2 rounded-xl border-dashed border-slate-300 bg-slate-50/60 text-base font-bold text-slate-700 hover:bg-slate-100"
                   >
                     {uploadingProofPhoto ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
                     <span>{uploadingProofPhoto ? 'Mengunggah Foto...' : 'Upload Foto'}</span>
@@ -4883,14 +5380,14 @@ function ActivitiesContent() {
                 type="button"
                 variant="ghost"
                 onClick={resetForm}
-                className="flex-1 rounded-xl font-bold text-slate-500 hover:bg-slate-50"
+                className="min-h-12 flex-1 rounded-xl text-base font-bold text-slate-600 hover:bg-slate-50"
               >
                 Batal
               </Button>
               <Button
                 type="submit"
                 disabled={submitting || uploadingProofPhoto || (isSopir && (calculatedDistanceKm <= 0 || JSON.stringify(formPoints) !== JSON.stringify(routeCalculatedPoints)))}
-                className="flex-1 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 text-white font-bold shadow-md shadow-teal-200 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="min-h-12 flex-1 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 text-base text-white font-bold shadow-md shadow-teal-200 hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -4912,20 +5409,20 @@ function ActivitiesContent() {
               <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
                 <AlertCircle className="w-5 h-5 text-white animate-pulse" /> Konfirmasi Tanggal Dinas
               </DialogTitle>
-              <DialogDescription className="text-amber-50 text-xs mt-1">
+              <DialogDescription className="text-amber-50 text-base mt-1">
                 Harap periksa kembali tanggal dinas untuk Shift Malam Anda.
               </DialogDescription>
             </DialogHeader>
           </div>
 
-          <div className="p-5 space-y-4 text-sm text-slate-600">
+          <div className="p-5 space-y-4 text-base text-slate-600">
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
               <div className="flex items-start gap-2.5">
                 <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="font-extrabold text-amber-900 text-sm">Roster Shift Malam (22:00 - 08:00 WIB)</h4>
-                  <p className="text-xs text-amber-800/80 leading-relaxed mt-1">
-                    Shift Malam dimulai pada malam hari **tanggal mulai** dan berakhir keesokan paginya. Roster tanggal dinas Anda adalah **tanggal saat shift malam Anda dimulai**.
+                  <h4 className="font-extrabold text-amber-900 text-base">Roster Shift Malam (22:00 - 08:00 WIB)</h4>
+                  <p className="text-base text-amber-800 leading-relaxed mt-1">
+                    Shift Malam dimulai pada tanggal yang dipilih dan berakhir keesokan paginya. Gunakan tanggal saat shift malam mulai.
                   </p>
                 </div>
               </div>
