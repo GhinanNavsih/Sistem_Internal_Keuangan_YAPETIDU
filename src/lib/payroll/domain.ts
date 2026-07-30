@@ -36,7 +36,15 @@ export type SatpamShiftAnomalyCode =
   | 'INACTIVE_OR_MISMATCHED_GUARD'
   | 'HOLIDAY_CALENDAR_MISSING'
   | 'PAY_CLASSIFICATION_MISMATCH'
-  | 'FUTURE_WORK_NOT_FINISHED';
+  | 'FUTURE_WORK_NOT_FINISHED'
+  | 'DUTY_PLAN_MISSING'
+  | 'DUTY_PLAN_STALE'
+  | 'DUTY_PLAN_BACKFILL_PENDING'
+  | 'ACTUAL_ROSTER_DIFFERS'
+  | 'EXTRA_NOT_OFF_DUTY'
+  | 'EXTRA_WITH_INCOMPLETE_PRIMARY_ROSTER'
+  | 'ABSENCE_WORK_CONFLICT'
+  | 'DUTY_PLAN_CHANGED_AFTER_REPORT';
 
 export interface SatpamShiftAnomaly {
   code: SatpamShiftAnomalyCode;
@@ -99,6 +107,8 @@ export interface SubmitSatpamShiftInput {
   shiftName?: SatpamShiftName;
   occurrenceId?: string;
   expectedRevision?: number;
+  dutyPlanId?: string;
+  dutyPlanRevision?: number;
   assignments: SatpamPrimaryAssignmentInput[];
   extraAssignment?: SatpamExtraAssignmentInput;
 }

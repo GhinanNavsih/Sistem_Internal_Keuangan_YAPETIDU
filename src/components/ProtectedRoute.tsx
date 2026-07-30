@@ -143,7 +143,11 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   ) {
     return null;
   }
-  if (profile.role === 'payroll_authorizer' && pathname !== '/dashboard/payroll') {
+  if (
+    profile.role === 'payroll_authorizer' &&
+    pathname !== '/dashboard/payroll' &&
+    !pathname.startsWith('/dashboard/payroll/uraian/presensi-pekarya')
+  ) {
     return null;
   }
   if (profile.role === 'loyalis' && pathname !== '/employee/payslip' && pathname !== '/employee/presensi-correction') {

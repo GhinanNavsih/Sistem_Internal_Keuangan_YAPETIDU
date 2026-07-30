@@ -1,8 +1,18 @@
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-import { assertDateOnly, getRegularSatpamPayType } from '@/lib/payroll/domain';
+import {
+  assertDateOnly,
+  getRegularSatpamPayType,
+  payrollPeriodForDutyDate,
+} from '@/lib/payroll/domain';
+import { periodCalendarFromData } from '@/lib/payroll/calendar';
 import { pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
+import {
+  isSatpamDutyPlanRequired,
+  satpamAdvancePlanningPeriod,
+} from '@/lib/payroll/satpamDutyPlan';
 import { isSatpamFlexibilityEnabled } from '@/lib/server/satpamFlexibility';
+import { loadSatpamDutyPlanContext } from '@/lib/server/satpamDutyPlan';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import {
   errorResponse,
@@ -78,15 +88,29 @@ export async function GET(request: NextRequest) {
       .filter((employee) => employee.name)
       .sort((left, right) => left.name.localeCompare(right.name, 'id'));
 
-    const holidaysSnapshot = year
-      ? await adminDb.collection('PayrollHolidayCalendars').doc(year).get()
-      : null;
-    const holidayDates = new Set<string>(
+    const dutyPeriod = payrollPeriodForDutyDate(dutyDate);
+    const [holidaysSnapshot, dutyPeriodSnapshot] = await Promise.all([
+      year
+        ? adminDb.collection('PayrollHolidayCalendars').doc(year).get()
+        : Promise.resolve(null),
+      adminDb.collection('PayrollPeriods').doc(dutyPeriod).get(),
+    ]);
+    const annualDates =
       holidaysSnapshot?.exists && Array.isArray(holidaysSnapshot.data()?.dates)
         ? holidaysSnapshot.data()!.dates.filter(
             (date: unknown): date is string => typeof date === 'string',
           )
-        : [],
+        : [];
+    const periodCalendar = periodCalendarFromData(
+      dutyPeriod,
+      dutyPeriodSnapshot.exists ? dutyPeriodSnapshot.data()! : null,
+      annualDates,
+    );
+    const holidayDates = new Set<string>(periodCalendar.premiumDates);
+    const dutyPlanContext = await loadSatpamDutyPlanContext(
+      dutyPeriod,
+      teamSnapshot.id,
+      dutyDate,
     );
 
     const teamNumber = Number(teamSnapshot.id.split('_')[1]);
@@ -105,9 +129,31 @@ export async function GET(request: NextRequest) {
           period: snapshot.id,
           startDate: window.startsOn,
           endDate: window.endsOn,
+          planningOnly: false,
         }];
       })
       .sort((left, right) => left.startDate.localeCompare(right.startDate));
+    const advancePeriod = satpamAdvancePlanningPeriod();
+    const advancePeriodSnapshot = await adminDb
+      .collection('PayrollPeriods')
+      .doc(advancePeriod)
+      .get();
+    const planningPeriods = [...openPeriods];
+    if (
+      !planningPeriods.some((item) => item.period === advancePeriod) &&
+      advancePeriodSnapshot.data()?.attendanceStatus !== 'closed'
+    ) {
+      const advanceWindow = pekaryaPayrollWindow(advancePeriod);
+      planningPeriods.push({
+        period: advancePeriod,
+        startDate: advanceWindow.startsOn,
+        endDate: advanceWindow.endsOn,
+        planningOnly: true,
+      });
+    }
+    planningPeriods.sort((left, right) =>
+      left.startDate.localeCompare(right.startDate),
+    );
     return Response.json(
       {
         team: {
@@ -119,9 +165,27 @@ export async function GET(request: NextRequest) {
         employees,
         shiftName: getSatpamShiftForTeam(teamNumber, dutyDate),
         regularPayType: getRegularSatpamPayType(dutyDate, holidayDates),
-        holidayCalendarConfigured: Boolean(holidaysSnapshot?.exists),
+        holidayCalendarConfigured:
+          Boolean(dutyPeriodSnapshot.data()?.workCalendar) ||
+          Boolean(holidaysSnapshot?.exists),
         openPeriods,
+        planningPeriods,
         flexibilityEnabled: isSatpamFlexibilityEnabled(teamSnapshot.id),
+        dutyPlan: {
+          enabled: isSatpamDutyPlanRequired(
+            dutyPeriod,
+            dutyPeriodSnapshot.data() || null,
+          ),
+          planId: dutyPlanContext.plan?.id || null,
+          revision: dutyPlanContext.plan?.revision || 0,
+          status: dutyPlanContext.plan?.status || 'missing',
+          day: dutyPlanContext.day,
+          warning: !dutyPlanContext.plan
+            ? 'Rencana dinas belum diterbitkan. Laporan tetap dapat dikirim dan akan direkonsiliasi.'
+            : dutyPlanContext.plan.status !== 'published'
+              ? 'Rencana dinas masih memerlukan pemeriksaan Kepala SatKer.'
+              : null,
+        },
       },
       {
         headers: {

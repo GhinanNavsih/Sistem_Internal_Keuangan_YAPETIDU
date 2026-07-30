@@ -120,20 +120,41 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
       let updatedCounts = { ...(currentEntry.counts || {}) };
 
       if (jobCategory === 'SATPAM') {
+        const satpamDutySource =
+          currentEntry.satpamDutySource &&
+          typeof currentEntry.satpamDutySource === 'object'
+            ? currentEntry.satpamDutySource
+            : {};
+        const approvedAbsenceCount = Math.max(
+          0,
+          Number(satpamDutySource.approvedAbsenceCount || 0),
+        );
+        const canonicalBonusCount =
+          satpamDutySource.eligibleForBonus === true ? 1 : 0;
+        const totalHarianCount = harianCount + approvedAbsenceCount;
         updatedValues = {
           ...updatedValues,
-          harian: harianCount * SATPAM_RATES.Harian,
+          harian: totalHarianCount * SATPAM_RATES.Harian,
           jumatLibur: jumatCount * SATPAM_RATES['Jumat & Libur'],
           lemburSendiri: lemburSendiriCount * SATPAM_RATES['Lembur Sendiri'],
           lemburCover: lemburCoverCount * SATPAM_RATES['Lembur Cover'],
+          ...(currentEntry.satpamDutySource
+            ? {
+                bonusPresensiBulanan:
+                  canonicalBonusCount * 100_000,
+              }
+            : {}),
           spj: totalSpj,
         };
         updatedCounts = {
           ...updatedCounts,
-          harian: harianCount,
+          harian: totalHarianCount,
           jumatLibur: jumatCount,
           lemburSendiri: lemburSendiriCount,
           lemburCover: lemburCoverCount,
+          ...(currentEntry.satpamDutySource
+            ? { bonusPresensiBulanan: canonicalBonusCount }
+            : {}),
           spj: 0,
         };
       } else {

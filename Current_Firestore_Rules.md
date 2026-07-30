@@ -83,19 +83,35 @@ service cloud.firestore {
     // their own record. Ketua Shift receives a redacted directory from the API.
     match /Employees_BlueCollar/{employeeId} {
       allow read: if signedIn();
-      allow create, update: if isSuperAdmin() || isEmployeeAdmin();
+      allow create: if (isSuperAdmin() || isEmployeeAdmin()) &&
+        !request.resource.data.keys().hasAny(['nipy', 'nipyAssignment']);
+      allow update: if (isSuperAdmin() || isEmployeeAdmin()) &&
+        request.resource.data.get('nipy', null) == resource.data.get('nipy', null) &&
+        request.resource.data.get('nipyAssignment', null) ==
+          resource.data.get('nipyAssignment', null);
       allow delete: if false;
     }
 
     match /Employees_WhiteCollar/{employeeId} {
       allow read: if signedIn();
-      allow create, update: if isSuperAdmin() || isEmployeeAdmin();
+      allow create: if (isSuperAdmin() || isEmployeeAdmin()) &&
+        !request.resource.data.keys().hasAny(['nipy']);
+      allow update: if (isSuperAdmin() || isEmployeeAdmin()) &&
+        request.resource.data.get('nipy', null) == resource.data.get('nipy', null);
       allow delete: if false;
     }
 
     match /Employees_Loyalis/{employeeId} {
       allow read: if signedIn();
-      allow create, update: if isSuperAdmin() || isEmployeeAdmin();
+      allow create: if (isSuperAdmin() || isEmployeeAdmin()) &&
+        !request.resource.data.keys().hasAny(['nipy']) &&
+        request.resource.data.get('personal_info', {})
+          .get('employee_id_niy', null) == null;
+      allow update: if (isSuperAdmin() || isEmployeeAdmin()) &&
+        request.resource.data.get('nipy', null) == resource.data.get('nipy', null) &&
+        request.resource.data.get('personal_info', {})
+          .get('employee_id_niy', null) ==
+          resource.data.get('personal_info', {}).get('employee_id_niy', null);
       allow delete: if false;
     }
 
@@ -208,6 +224,42 @@ service cloud.firestore {
     match /PayrollHolidayCalendars/{year} {
       allow read: if isFinanceRole();
       allow write: if false;
+    }
+
+    // Shared attendance state is exposed through scoped APIs. Detailed scan
+    // rows and correction overlays are never mutated directly by a browser.
+    match /AttendanceImports/{period} {
+      allow read: if isFinanceRole() || roleIs('loyalis_presence_admin');
+      allow write: if false;
+    }
+
+    match /AttendanceImportRevisions/{revisionId} {
+      allow read: if isFinanceRole() || roleIs('loyalis_presence_admin');
+      allow write: if false;
+    }
+
+    match /AttendanceImportRows/{rowId} {
+      allow read, write: if false;
+    }
+
+    match /AttendanceIdentityIndex/{identityId} {
+      allow read, write: if false;
+    }
+
+    match /PekaryaNipySequences/{prefixCode} {
+      allow read, write: if false;
+    }
+
+    match /PekaryaAttendanceCorrections/{correctionId} {
+      allow read, write: if false;
+    }
+
+    match /PekaryaAttendanceCorrectionHeads/{headId} {
+      allow read, write: if false;
+    }
+
+    match /PekaryaAttendancePublications/{publicationId} {
+      allow read, write: if false;
     }
 
     // Shift audit state (pending_review -> reviewed) is written only by
@@ -336,6 +388,32 @@ service cloud.firestore {
     match /SatpamShiftTeams/{teamId} {
       allow read: if isFinanceRole() || isEmployeeAdmin() || isSatkerRole();
       allow write: if false;
+    }
+
+    // Monthly Satpam plans, absence decisions, entitlements, and bonus
+    // reconciliation are exposed only through revision-checked server APIs.
+    match /SatpamDutyPlans/{planId} {
+      allow read, write: if false;
+    }
+
+    match /SatpamDutyPlanRevisions/{revisionId} {
+      allow read, write: if false;
+    }
+
+    match /SatpamAbsenceRequests/{requestId} {
+      allow read, write: if false;
+    }
+
+    match /SatpamAbsenceRequestRevisions/{revisionId} {
+      allow read, write: if false;
+    }
+
+    match /SatpamAbsenceEntitlements/{entitlementId} {
+      allow read, write: if false;
+    }
+
+    match /SatpamDutyReconciliations/{reconciliationId} {
+      allow read, write: if false;
     }
 
     // Everything not explicitly listed is denied.

@@ -7,6 +7,14 @@ import {
   requireRole,
 } from '@/lib/server/auth';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
+import {
+  isSatpamAdvancePlanningPeriod,
+  isSatpamPlanDayStarted,
+} from '@/lib/payroll/satpamDutyPlan';
+import {
+  SATPAM_DUTY_PLANS_COLLECTION,
+  SATPAM_DUTY_PLAN_REVISIONS_COLLECTION,
+} from '@/lib/server/satpamDutyPlan';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,12 +87,28 @@ export async function POST(request: NextRequest) {
         .collection('users')
         .where('linkedEmployeeId', '==', input.ketuaShiftId)
         .limit(2);
-      const [teamsSnapshot, ketuaProfilesSnapshot, ...employeeSnapshots] =
+      const dutyPlansQuery = adminDb
+        .collection(SATPAM_DUTY_PLANS_COLLECTION)
+        .where('teamId', '==', input.teamId);
+      const [
+        teamsSnapshot,
+        ketuaProfilesSnapshot,
+        dutyPlansSnapshot,
+        ...employeeSnapshots
+      ] =
         await Promise.all([
           transaction.get(teamsQuery),
           transaction.get(ketuaProfilesQuery),
+          transaction.get(dutyPlansQuery),
           ...employeeRefs.map((reference) => transaction.get(reference)),
         ]);
+      const planPeriodSnapshots = await Promise.all(
+        dutyPlansSnapshot.docs.map((plan) =>
+          transaction.get(
+            adminDb.collection('PayrollPeriods').doc(String(plan.data().period)),
+          ),
+        ),
+      );
 
       const invalidEmployee = employeeSnapshots.find(
         (snapshot) => !snapshot.exists || !isActiveSatpam(snapshot.data()),
@@ -142,6 +166,73 @@ export async function POST(request: NextRequest) {
         schemaVersion: 2,
       };
       transaction.set(teamRef, after, { merge: true });
+      dutyPlansSnapshot.docs.forEach((planSnapshot, index) => {
+        const planPeriod = String(planSnapshot.data().period || '');
+        const periodStatus =
+          planPeriodSnapshots[index].data()?.attendanceStatus;
+        if (
+          periodStatus !== 'open' &&
+          !(
+            isSatpamAdvancePlanningPeriod(planPeriod) &&
+            periodStatus !== 'closed'
+          )
+        ) {
+          return;
+        }
+        const planBefore = planSnapshot.data();
+        const staleDates = Array.isArray(planBefore.generatedDays)
+          ? planBefore.generatedDays
+              .filter(
+                (day: {
+                  dutyDate: string;
+                  shiftName: 'Pagi' | 'Sore' | 'Malam';
+                }) => !isSatpamPlanDayStarted(day),
+              )
+              .map((day: { dutyDate: string }) => day.dutyDate)
+          : [];
+        if (staleDates.length === 0) return;
+        const revision = Number(planBefore.revision || 0) + 1;
+        const planAfter = {
+          ...planBefore,
+          status: 'stale',
+          revision,
+          staleDates,
+          staleReason: input.reason,
+          staleAt: admin.firestore.FieldValue.serverTimestamp(),
+          staleBy: actor.uid,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedBy: actor.uid,
+        };
+        transaction.set(planSnapshot.ref, planAfter);
+        transaction.create(
+          adminDb
+            .collection(SATPAM_DUTY_PLAN_REVISIONS_COLLECTION)
+            .doc(`${planSnapshot.id}__r${revision}`),
+          {
+            planId: planSnapshot.id,
+            revision,
+            action: 'team_roster_changed',
+            reason: input.reason,
+            staleDates,
+            before: planBefore,
+            after: planAfter,
+            actorUid: actor.uid,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+        );
+        transaction.create(
+          newFinancialAuditRef(),
+          buildFinancialAuditRecord(actor, {
+            action: 'SATPAM_DUTY_PLAN_STALE_AFTER_TEAM_CHANGE',
+            entityType: 'SatpamDutyPlan',
+            entityId: planSnapshot.id,
+            reason: input.reason,
+            before: planBefore,
+            after: planAfter,
+            metadata: { staleDates, revision },
+          }),
+        );
+      });
       transaction.create(
         newFinancialAuditRef(),
         buildFinancialAuditRecord(actor, {

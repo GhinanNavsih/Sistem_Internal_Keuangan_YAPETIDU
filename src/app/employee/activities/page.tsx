@@ -91,6 +91,10 @@ import {
 import { parseImageExif } from '@/lib/exif';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
 import {
+  SatpamAbsencePanel,
+  SatpamDutyPlanPanel,
+} from '@/components/satpam/SatpamDutyAndAbsencePanels';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -630,7 +634,9 @@ function ActivitiesContent() {
   const isSopir = userJobCategory === 'SOPIR';
   const supportsSpjProof = isKebersihan || userJobCategory === 'TEKNISI' || userJobCategory === 'SATPAM';
   const isKetuaShiftSatpam = (profile?.role as string) === 'ketua_shift_satpam';
-  const isRegularSatpam = profile?.permittedCategories?.includes('SATPAM') && !isKetuaShiftSatpam && profile?.role !== 'honorer';
+  const isRegularSatpam =
+    profile?.permittedCategories?.includes('SATPAM') &&
+    !isKetuaShiftSatpam;
 
   // ── Satpam Shift Teams States ──
   const [myShiftTeam, setMyShiftTeam] = useState<any | null>(null);
@@ -656,9 +662,30 @@ function ActivitiesContent() {
   const [satpamRegularPayType, setSatpamRegularPayType] = useState<'Harian' | 'Jumat & Libur'>('Harian');
   const [holidayCalendarConfigured, setHolidayCalendarConfigured] = useState(false);
   const [satpamFlexibilityEnabled, setSatpamFlexibilityEnabled] = useState(true);
+  const [satpamDutyPlan, setSatpamDutyPlan] = useState<{
+    enabled: boolean;
+    planId: string | null;
+    revision: number;
+    status: string;
+    warning: string | null;
+    day: null | {
+      dutyDate: string;
+      shiftName: 'Pagi' | 'Sore' | 'Malam';
+      assignments: Array<{ postId: SatpamPostId; employeeId: string }>;
+      offDutyEmployeeId: string;
+    };
+  } | null>(null);
   const [satpamSuggestedShiftName, setSatpamSuggestedShiftName] = useState<'Pagi' | 'Sore' | 'Malam'>('Pagi');
   const [satpamReportedShiftName, setSatpamReportedShiftName] = useState<'Pagi' | 'Sore' | 'Malam'>('Pagi');
   const [satpamOpenPeriods, setSatpamOpenPeriods] = useState<Array<{ period: string; startDate: string; endDate: string }>>([]);
+  const [satpamPlanningPeriods, setSatpamPlanningPeriods] = useState<
+    Array<{
+      period: string;
+      startDate: string;
+      endDate: string;
+      planningOnly?: boolean;
+    }>
+  >([]);
   const [satpamOccurrenceId, setSatpamOccurrenceId] = useState('');
   const [satpamOccurrenceRevision, setSatpamOccurrenceRevision] = useState(0);
   const [satpamAuditorActionAt, setSatpamAuditorActionAt] = useState<any>(null);
@@ -1426,7 +1453,26 @@ function ActivitiesContent() {
           regularPayType: 'Harian' | 'Jumat & Libur';
           holidayCalendarConfigured: boolean;
           openPeriods: Array<{ period: string; startDate: string; endDate: string }>;
+          planningPeriods: Array<{
+            period: string;
+            startDate: string;
+            endDate: string;
+            planningOnly?: boolean;
+          }>;
           flexibilityEnabled: boolean;
+          dutyPlan: {
+            enabled: boolean;
+            planId: string | null;
+            revision: number;
+            status: string;
+            warning: string | null;
+            day: null | {
+              dutyDate: string;
+              shiftName: 'Pagi' | 'Sore' | 'Malam';
+              assignments: Array<{ postId: SatpamPostId; employeeId: string }>;
+              offDutyEmployeeId: string;
+            };
+          };
         }>(`/api/satpam/config?dutyDate=${encodeURIComponent(satpamReportDate)}`, {
           method: 'GET',
         });
@@ -1436,7 +1482,11 @@ function ActivitiesContent() {
         setSatpamRegularPayType(config.regularPayType);
         setHolidayCalendarConfigured(config.holidayCalendarConfigured);
         setSatpamOpenPeriods(config.openPeriods || []);
+        setSatpamPlanningPeriods(
+          config.planningPeriods || config.openPeriods || [],
+        );
         setSatpamFlexibilityEnabled(config.flexibilityEnabled !== false);
+        setSatpamDutyPlan(config.dutyPlan || null);
       } catch (err) {
         console.error('Error loading Satpam shift configuration:', err);
         setMessage({
@@ -2088,11 +2138,11 @@ function ActivitiesContent() {
   }, [myShiftTeam]);
 
   const groupEmployees = useMemo(() => {
-    return allSatpamEmployees.filter(emp => groupEmployeeIds.includes(emp.id));
+    return allSatpamEmployees.filter(emp => groupEmployeeIds.includes(emp.id) && emp.isActive !== false);
   }, [allSatpamEmployees, groupEmployeeIds]);
 
   const externalEmployees = useMemo(() => {
-    return allSatpamEmployees.filter(emp => !groupEmployeeIds.includes(emp.id));
+    return allSatpamEmployees.filter(emp => !groupEmployeeIds.includes(emp.id) && emp.isActive !== false);
   }, [allSatpamEmployees, groupEmployeeIds]);
 
   const visibleGroupEmployees = useMemo(() => {
@@ -2370,6 +2420,49 @@ function ActivitiesContent() {
     if (
       !isKetuaShiftSatpam ||
       !satpamDraftHydrated ||
+      isSatpamReportSubmitted ||
+      !satpamDutyPlan?.day
+    ) {
+      return;
+    }
+    if (
+      satpamPendingStorageKey &&
+      window.localStorage.getItem(satpamPendingStorageKey)
+    ) {
+      return;
+    }
+    const plannedAssignments: Record<string, SatpamPostAssignment> = {
+      'Pos 1': { employeeId: '', shiftType: satpamRegularPayType },
+      'Pos 2': { employeeId: '', shiftType: satpamRegularPayType },
+      'Pos 3': { employeeId: '', shiftType: satpamRegularPayType },
+      'Pos 4': { employeeId: '', shiftType: satpamRegularPayType },
+      'Pos 5': { employeeId: '', shiftType: satpamRegularPayType },
+      'Pos 6': { employeeId: '', shiftType: satpamRegularPayType },
+      'Pos 7': { employeeId: '', shiftType: satpamRegularPayType },
+      'Pos 8': { employeeId: '', shiftType: satpamRegularPayType },
+      'Pos 9': { employeeId: '', shiftType: satpamRegularPayType },
+    };
+    satpamDutyPlan.day.assignments.forEach((assignment) => {
+      plannedAssignments[assignment.postId] = {
+        employeeId: assignment.employeeId,
+        shiftType: satpamRegularPayType,
+      };
+    });
+    setPostAssignments(plannedAssignments);
+    setSatpamReportedShiftName(satpamDutyPlan.day.shiftName);
+  }, [
+    isKetuaShiftSatpam,
+    isSatpamReportSubmitted,
+    satpamDraftHydrated,
+    satpamDutyPlan,
+    satpamPendingStorageKey,
+    satpamRegularPayType,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isKetuaShiftSatpam ||
+      !satpamDraftHydrated ||
       !satpamPendingStorageKey ||
       isSatpamReportLocked
     ) {
@@ -2378,6 +2471,12 @@ function ActivitiesContent() {
     const payload = {
       dutyDate: satpamReportDate,
       shiftName: activeShift,
+      ...(satpamDutyPlan?.planId && satpamDutyPlan.revision > 0
+        ? {
+            dutyPlanId: satpamDutyPlan.planId,
+            dutyPlanRevision: satpamDutyPlan.revision,
+          }
+        : {}),
       assignments: Object.entries(postAssignments)
         .filter(([, assignment]) => Boolean(assignment.employeeId))
         .map(([postId, assignment]) => ({
@@ -2419,6 +2518,7 @@ function ActivitiesContent() {
     satpamDraftHydrated,
     satpamPendingStorageKey,
     satpamReportDate,
+    satpamDutyPlan,
   ]);
 
   const assignedEmployeeIds = useMemo(() => {
@@ -2735,6 +2835,12 @@ function ActivitiesContent() {
         requestId,
         dutyDate: satpamReportDate,
         shiftName: activeShift,
+        ...(satpamDutyPlan?.planId && satpamDutyPlan.revision > 0
+          ? {
+              dutyPlanId: satpamDutyPlan.planId,
+              dutyPlanRevision: satpamDutyPlan.revision,
+            }
+          : {}),
         ...(satpamOccurrenceId
           ? {
               occurrenceId: satpamOccurrenceId,
@@ -3269,36 +3375,6 @@ function ActivitiesContent() {
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 relative z-10">
 
-        {userJobCategory === 'SATPAM' && (
-          <Card className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {isKetuaShiftSatpam && (
-                <Button
-                  type="button"
-                  onClick={() => satpamShiftCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                  className="min-h-14 h-auto rounded-xl bg-purple-600 hover:bg-purple-700 text-base font-bold gap-2"
-                >
-                  <ClipboardList className="w-5 h-5" />
-                  Lapor Shift Regu
-                </Button>
-              )}
-              <Button
-                type="button"
-                onClick={() => {
-                  resetForm();
-                  setShowForm(true);
-                }}
-                className="min-h-14 h-auto rounded-xl bg-teal-600 hover:bg-teal-700 text-base font-bold gap-2"
-              >
-                <Pencil className="w-5 h-5" />
-                Lapor SPJ Pribadi
-              </Button>
-              <p className="sm:col-span-2 text-sm leading-relaxed text-slate-600">
-                Laporan Shift Regu dan SPJ Pribadi adalah dua laporan berbeda. Pilih sesuai kegiatan yang akan dilaporkan.
-              </p>
-            </CardContent>
-          </Card>
-        )}
 
 
         {/* ── Period Selector (Non-Driver Users Only) ────────────────── */}
@@ -3363,6 +3439,21 @@ function ActivitiesContent() {
           </Card>
         )}
 
+        {userJobCategory === 'SATPAM' && profile.linkedEmployeeId && (
+          <SatpamAbsencePanel
+            employeeId={profile.linkedEmployeeId}
+            openPeriods={satpamOpenPeriods}
+          />
+        )}
+
+        {isKetuaShiftSatpam && (
+          <SatpamDutyPlanPanel
+            team={myShiftTeam}
+            employees={allSatpamEmployees}
+            openPeriods={satpamPlanningPeriods}
+          />
+        )}
+
         {/* ── Satpam Shift Team Daily Logging Form (Ketua Shift only) ── */}
         {isKetuaShiftSatpam && (
           <Card ref={satpamShiftCardRef} className="bg-white rounded-2xl shadow-sm border-none overflow-hidden py-0 scroll-mt-4">
@@ -3393,27 +3484,6 @@ function ActivitiesContent() {
                       <Label htmlFor="satpamDate" className="text-sm font-bold text-slate-600">
                         Pilih Tanggal Dinas
                       </Label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { label: 'Kemarin', offset: -1 },
-                          { label: 'Hari Ini', offset: 0 },
-                          { label: 'Besok', offset: 1 },
-                        ].map((shortcut) => (
-                          <Button
-                            key={shortcut.label}
-                            type="button"
-                            variant="outline"
-                            disabled={
-                              isSatpamReportLocked ||
-                              (!satpamFlexibilityEnabled && shortcut.offset !== 0)
-                            }
-                            onClick={() => setSatpamDateShortcut(shortcut.offset)}
-                            className="h-12 px-2 rounded-xl text-sm font-bold"
-                          >
-                            {shortcut.label}
-                          </Button>
-                        ))}
-                      </div>
                       <Input
                         id="satpamDate"
                         type="date"
@@ -3436,13 +3506,22 @@ function ActivitiesContent() {
                           !satpamFlexibilityEnabled
                         }
                       >
-                        <SelectTrigger className="h-12 rounded-xl bg-white text-base font-bold">
+                        <SelectTrigger className="h-12 w-full rounded-xl border border-slate-200 bg-white text-base font-bold text-slate-700 px-3 flex items-center justify-between shadow-xs">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Pagi">Shift Pagi · 08:00–14:00</SelectItem>
-                          <SelectItem value="Sore">Shift Sore · 14:00–22:00</SelectItem>
-                          <SelectItem value="Malam">Shift Malam · 22:00–08:00</SelectItem>
+                        <SelectContent className="w-[var(--radix-select-trigger-width)] min-w-[280px] rounded-xl border border-slate-100 shadow-xl bg-white p-1.5 z-50">
+                          <SelectItem value="Pagi" className="rounded-lg font-semibold py-2.5 px-3 cursor-pointer">
+                            <span className="font-bold text-slate-800">Shift Pagi</span>
+                            <span className="ml-2 text-xs font-medium text-slate-500">(08:00 – 14:00 WIB)</span>
+                          </SelectItem>
+                          <SelectItem value="Sore" className="rounded-lg font-semibold py-2.5 px-3 cursor-pointer">
+                            <span className="font-bold text-slate-800">Shift Sore</span>
+                            <span className="ml-2 text-xs font-medium text-slate-500">(14:00 – 22:00 WIB)</span>
+                          </SelectItem>
+                          <SelectItem value="Malam" className="rounded-lg font-semibold py-2.5 px-3 cursor-pointer">
+                            <span className="font-bold text-slate-800">Shift Malam</span>
+                            <span className="ml-2 text-xs font-medium text-slate-500">(22:00 – 08:00 WIB)</span>
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <p className="text-sm text-slate-600">
@@ -3455,21 +3534,6 @@ function ActivitiesContent() {
                       )}
                     </div>
 
-                    <div className="sm:col-span-2 flex flex-col sm:flex-row gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={copyingPreviousShift || isSatpamReportLocked}
-                        onClick={copyPreviousSatpamShift}
-                        className="h-12 rounded-xl text-sm font-bold gap-2"
-                      >
-                        {copyingPreviousShift ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />}
-                        Salin Laporan Terakhir
-                      </Button>
-                      <div className="flex-1 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-                        Draf tersimpan otomatis di perangkat ini.
-                      </div>
-                    </div>
 
                     {/* Shift Date Range Helper */}
                     <div className="sm:col-span-2 pt-2 border-t border-slate-200/60 mt-1 flex items-start gap-2 text-base font-semibold text-slate-600">
@@ -3497,24 +3561,33 @@ function ActivitiesContent() {
 
                   {/* 9 Posts Duty Grid */}
                   <div className="space-y-3">
+                    {satpamDutyPlan?.warning && (
+                      <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-base text-amber-950">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                          <span>{satpamDutyPlan.warning}</span>
+                        </div>
+                      </div>
+                    )}
                     <h3 className="text-base font-bold text-slate-600 border-b border-slate-100 pb-2">
                       Penugasan Pos Keamanan (9 Pos)
                     </h3>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                      <Input
-                        type="search"
-                        value={satpamEmployeeSearch}
-                        onChange={(event) => setSatpamEmployeeSearch(event.target.value)}
-                        placeholder="Cari nama petugas..."
-                        className="h-12 rounded-xl pl-10 text-base border-slate-200"
-                      />
-                    </div>
 
                     <div className="space-y-3.5">
                       {POSTS_CONFIG.map((post) => {
                         const defaultShiftTypeForRender = getDefaultShiftTypeForDate(satpamReportDate);
                         const val = postAssignments[post.id] || { employeeId: '', shiftType: defaultShiftTypeForRender };
+                        const isPlannedRegular = Boolean(
+                          val.employeeId &&
+                          satpamDutyPlan?.day?.assignments.some(
+                            assignment => assignment.employeeId === val.employeeId,
+                          ),
+                        );
+                        const plannedPayLabel = isPlannedRegular
+                          ? `${defaultShiftTypeForRender} (${defaultShiftTypeForRender === 'Jumat & Libur' ? 'Rp25.000' : 'Rp12.500'})`
+                          : val.employeeId
+                            ? 'Lembur Cover (Rp50.000)'
+                            : 'Pilih petugas dahulu';
                         return (
                           <div key={post.id} className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center bg-white p-3 rounded-xl border border-slate-200 hover:shadow-sm transition-shadow">
                             {/* Pos Name Label */}
@@ -3543,7 +3616,7 @@ function ActivitiesContent() {
                                     <SelectLabel className="text-base font-black text-purple-700 px-2 py-2 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
                                     {visibleGroupEmployees.map(emp => (
                                       <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
-                                        {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''} {emp.isActive === false ? '· perlu verifikasi' : ''}
+                                        {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''}
                                       </SelectItem>
                                     ))}
                                   </SelectGroup>
@@ -3570,6 +3643,11 @@ function ActivitiesContent() {
                                 covered. Offering more than that would promise a
                                 rate the backend will never actually pay. */}
                             <div className="md:col-span-4">
+                              {satpamDutyPlan?.enabled && satpamDutyPlan.day ? (
+                                <div className="flex min-h-12 w-full items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-base font-extrabold text-indigo-800">
+                                  {plannedPayLabel}
+                                </div>
+                              ) : (
                               <Select
                                 value={val.shiftType === 'Lembur Cover' ? 'Lembur Cover' : defaultShiftTypeForRender}
                                 onValueChange={(type: string | null) => {
@@ -3589,6 +3667,7 @@ function ActivitiesContent() {
                                   </SelectItem>
                                 </SelectContent>
                               </Select>
+                              )}
                             </div>
                             {val.shiftType === 'Lembur Cover' && (
                               <div className="md:col-span-12">
@@ -3604,7 +3683,7 @@ function ActivitiesContent() {
                                         '-- Pilih anggota yang digantikan --'}
                                     </span>
                                   </SelectTrigger>
-                                  <SelectContent>
+                                  <SelectContent className="w-[var(--radix-select-trigger-width)] min-w-[240px] rounded-xl border border-slate-100 shadow-xl bg-white p-1 z-50">
                                     <SelectItem value="none">-- Pilih anggota --</SelectItem>
                                     {visibleGroupEmployees
                                       .filter(emp => !assignedEmployeeIds.includes(emp.id))
@@ -3740,7 +3819,12 @@ function ActivitiesContent() {
                                 </SelectItem>
                                 <SelectGroup>
                                   <SelectLabel className="text-base font-black text-purple-700 px-2 py-2 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
-                                  {visibleGroupEmployees.map(emp => (
+                                  {visibleGroupEmployees
+                                    .filter(emp =>
+                                      !satpamDutyPlan?.day ||
+                                      emp.id === satpamDutyPlan.day.offDutyEmployeeId,
+                                    )
+                                    .map(emp => (
                                     <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
                                       {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''} {emp.isActive === false ? '· perlu verifikasi' : ''}
                                     </SelectItem>
@@ -4653,7 +4737,7 @@ function ActivitiesContent() {
       </div>
 
       {/* ── Floating Action Button ─────────────────────────────────────── */}
-      {!isSopir && userJobCategory !== 'SATPAM' && (
+      {!isSopir && (
         <button
           onClick={() => {
             resetForm();
@@ -4662,7 +4746,9 @@ function ActivitiesContent() {
           className="fixed bottom-6 right-6 z-40 min-w-14 h-14 px-4 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-xl shadow-teal-300/40 hover:shadow-2xl hover:shadow-teal-300/50 hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2"
         >
           <Plus className="w-6 h-6" />
-          <span className="font-bold">Tambah Kegiatan</span>
+          <span className="font-bold">
+            {userJobCategory === 'SATPAM' ? 'Lapor SPJ Pribadi' : 'Tambah Kegiatan'}
+          </span>
         </button>
       )}
 
@@ -5168,24 +5254,6 @@ function ActivitiesContent() {
                 <Label htmlFor="activityNameInput" className="text-sm font-bold text-slate-600">
                   Nama Kegiatan
                 </Label>
-                {userJobCategory === 'SATPAM' && (
-                  <div className="grid grid-cols-2 gap-2">
-                    {['Patroli Tambahan', 'Pengamanan Kegiatan', 'Membantu Kegiatan', 'Lainnya'].map((preset) => (
-                      <Button
-                        key={preset}
-                        type="button"
-                        variant={formName === preset ? 'default' : 'outline'}
-                        onClick={() => {
-                          setFormName(preset === 'Lainnya' ? '' : preset);
-                          setFormCustomName(preset === 'Lainnya' ? '' : preset);
-                        }}
-                        className="min-h-12 h-auto whitespace-normal rounded-xl text-base font-bold"
-                      >
-                        {preset}
-                      </Button>
-                    ))}
-                  </div>
-                )}
                 <Input
                   id="activityNameInput"
                   placeholder="Masukkan nama kegiatan..."
@@ -5207,25 +5275,6 @@ function ActivitiesContent() {
               <Label htmlFor="activityDate" className="text-base font-bold text-slate-600">
                 Tanggal Kegiatan
               </Label>
-              {userJobCategory === 'SATPAM' && (
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { label: 'Kemarin', offset: -1 },
-                    { label: 'Hari Ini', offset: 0 },
-                    { label: 'Besok', offset: 1 },
-                  ].map((shortcut) => (
-                    <Button
-                      key={shortcut.label}
-                      type="button"
-                      variant="outline"
-                      onClick={() => setPersonalSpjDateShortcut(shortcut.offset)}
-                      className="min-h-12 rounded-xl px-2 text-sm font-bold"
-                    >
-                      {shortcut.label}
-                    </Button>
-                  ))}
-                </div>
-              )}
               <Input
                 id="activityDate"
                 type="date"

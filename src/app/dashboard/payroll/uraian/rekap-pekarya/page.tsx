@@ -29,7 +29,10 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import {
-  REKAP_COLUMNS, SUPPORTED_CATEGORIES, MONTHS_ID,
+  getRekapColumns,
+  isAttendanceDerivedRekapColumn,
+  SUPPORTED_CATEGORIES,
+  MONTHS_ID,
 } from '@/utils/rekapConfig';
 import {
   renderFileToCanvas, runOcr, parseRekapRows, matchEmployee, cropCanvas,
@@ -39,6 +42,7 @@ import type {
 } from '@/types';
 import { generateRekapPresensiKebersihanyPdf } from '@/utils/generateRekapPresensiKebersihan';
 import { dedupeSatpamActivityReports } from '@/lib/payroll/domain';
+import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
 import { authenticatedJson } from '@/lib/payroll/client';
 import {
   pekaryaPayrollWindow,
@@ -56,6 +60,7 @@ export default function RekapPekaryaPage() {
   const month = parseInt(searchParams.get('month') || String(new Date().getMonth() + 1), 10);
   const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()), 10);
   const category = searchParams.get('category') || "";
+  const period = `${year}-${String(month).padStart(2, '0')}`;
 
   const docId = `${year}_${String(month).padStart(2, '0')}_${category}`;
 
@@ -68,6 +73,9 @@ export default function RekapPekaryaPage() {
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [employees, setEmployees] = useState<BlueCollarEmployee[]>([]);
   const [tableData, setTableData] = useState<Record<string, Record<string, number>>>({});
+  const [satpamDutySources, setSatpamDutySources] = useState<
+    Record<string, UraianEntry['satpamDutySource']>
+  >({});
   const [rowBounds, setRowBounds] = useState<Record<string, { top: number, bottom: number }>>({});
   const [detectedColumnOrder, setDetectedColumnOrder] = useState<string[] | null>(null);
   const [scanImgDims, setScanImgDims] = useState<{ w: number, h: number } | null>(null);
@@ -79,7 +87,30 @@ export default function RekapPekaryaPage() {
   const isSavingRef = useRef(false);
   const [saved, setSaved] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
+  const [satpamDutyPlanRequired, setSatpamDutyPlanRequired] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getDoc(doc(db, 'PayrollPeriods', period))
+      .then((snapshot) => {
+        if (active) {
+          setSatpamDutyPlanRequired(
+            snapshot.exists() &&
+              isSatpamDutyPlanRequired(
+                period,
+                snapshot.data() || null,
+              ),
+          );
+        }
+      })
+      .catch(() => {
+        if (active) setSatpamDutyPlanRequired(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [period]);
 
   // ── Custom Column Dialog States ──
   const [customColumns, setCustomColumns] = useState<RekapColumn[]>([]);
@@ -359,6 +390,10 @@ export default function RekapPekaryaPage() {
         setEmployees(sortedEmps);
 
         const initialTable: Record<string, Record<string, number>> = {};
+        const loadedDutySources: Record<
+          string,
+          UraianEntry['satpamDutySource']
+        > = {};
         const uraianSnap = await getDoc(doc(db, 'UraianGaji', docId));
         if (uraianSnap.exists()) {
           setSaved(true);
@@ -371,7 +406,7 @@ export default function RekapPekaryaPage() {
 
           Object.values(docData.entries).forEach((entry: any) => {
             const rawValues = { ...entry.values };
-            const empCols = [...(REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN), ...loadedCustomCols];
+            const empCols = [...getRekapColumns(category, period), ...loadedCustomCols];
             empCols.forEach(col => {
               const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'].includes(col.key);
               if (isDualMap && col.multiplier) {
@@ -383,12 +418,16 @@ export default function RekapPekaryaPage() {
               }
             });
             initialTable[entry.employeeId] = rawValues;
+            if (entry.satpamDutySource) {
+              loadedDutySources[entry.employeeId] = entry.satpamDutySource;
+            }
           });
         } else {
           setCustomColumns([]);
           setSaved(false);
           setIsLocked(false);
         }
+        setSatpamDutySources(loadedDutySources);
         setTableData(initialTable);
       } catch (err) {
         console.error(err);
@@ -514,7 +553,7 @@ export default function RekapPekaryaPage() {
       const blob = await new Promise<Blob>((resolve) => targetCanvas.toBlob((b) => resolve(b!), 'image/png'));
       const formData = new FormData();
       formData.append('file', blob, 'cropped.png');
-      const baseCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+      const baseCols = getRekapColumns(category, period);
       formData.append('columns', JSON.stringify(baseCols.map(c => ({ key: c.key, label: c.label }))));
       if (!user) throw new Error('Sesi tidak ditemukan.');
       const token = await user.getIdToken();
@@ -555,6 +594,13 @@ export default function RekapPekaryaPage() {
 
   const updateCell = (employeeId: string, key: string, value: string) => {
     if (isLocked) return;
+    if (
+      satpamDutyPlanRequired &&
+      category === 'SATPAM' &&
+      key === 'bonusPresensiBulanan'
+    ) {
+      return;
+    }
     if (key === 'spj' && value.trim() === '') {
       setTableData(prev => {
         const copy = { ...prev };
@@ -598,7 +644,7 @@ export default function RekapPekaryaPage() {
         storedValues.piket = getComputedSopirPiketCount(emp.employeeId);
       }
       const storedCounts: Record<string, number> = {};
-      const empCols = [...(REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN), ...customColumns];
+      const empCols = [...getRekapColumns(category, period), ...customColumns];
       empCols.forEach(col => {
         const rawVal = storedValues[col.key]; if (rawVal === undefined || rawVal === null) return;
         const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'].includes(col.key);
@@ -607,7 +653,15 @@ export default function RekapPekaryaPage() {
           else { storedCounts[col.key] = rawVal; storedValues[col.key] = rawVal * col.multiplier; }
         } else if (col.type === 'count' && col.multiplier) { storedCounts[col.key] = rawVal; storedValues[col.key] = rawVal * col.multiplier; }
       });
-      entries[emp.employeeId] = { employeeId: emp.employeeId, name: emp.name, values: storedValues, ...(Object.keys(storedCounts).length > 0 && { counts: storedCounts }) };
+      entries[emp.employeeId] = {
+        employeeId: emp.employeeId,
+        name: emp.name,
+        values: storedValues,
+        ...(Object.keys(storedCounts).length > 0 && { counts: storedCounts }),
+        ...(satpamDutySources[emp.employeeId]
+          ? { satpamDutySource: satpamDutySources[emp.employeeId] }
+          : {}),
+      };
     }
 
     const sanitizedCustomCols = customColumns.map(col => {
@@ -697,7 +751,7 @@ export default function RekapPekaryaPage() {
 
   const buildConfirmRows = () => {
     if (!category) return [];
-    const baseCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+    const baseCols = getRekapColumns(category, period);
     const empCols = [...baseCols, ...customColumns];
     return employees.map(emp => {
       const rawValues = tableData[emp.employeeId] ?? {};
@@ -759,7 +813,7 @@ export default function RekapPekaryaPage() {
         computedValues.piket = getComputedSopirPiketCount(emp.employeeId);
       }
       const computedCounts: Record<string, number> = {};
-      const baseCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+      const baseCols = getRekapColumns(category, period);
       const empCols = [...baseCols, ...customColumns];
       empCols.forEach(col => {
         const rawVal = computedValues[col.key]; if (rawVal === undefined || rawVal === null) return;
@@ -849,7 +903,7 @@ export default function RekapPekaryaPage() {
 
   const columns = useMemo(() => {
     if (!category) return [];
-    const baseCols = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+    const baseCols = getRekapColumns(category, period);
     const allCols = [...baseCols, ...customColumns];
     if (detectedColumnOrder) {
       return detectedColumnOrder
@@ -857,7 +911,7 @@ export default function RekapPekaryaPage() {
         .filter((c): c is RekapColumn => !!c);
     }
     return allCols;
-  }, [category, detectedColumnOrder, customColumns]);
+  }, [category, period, detectedColumnOrder, customColumns]);
 
   const spjDiscrepancies = useMemo(() => {
     return employees.map(emp => {
@@ -1140,6 +1194,12 @@ export default function RekapPekaryaPage() {
                           const isSatpamShift = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'].includes(col.key);
                           const isTunjanganJabatan = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && col.key === 'tunjanganJabatan';
                           const isSopirPiket = category === 'SOPIR' && col.key === 'piket';
+                          const isAttendanceDerived =
+                            isAttendanceDerivedRekapColumn(category, period, col.key);
+                          const isDutyPlanDerived =
+                            satpamDutyPlanRequired &&
+                            category === 'SATPAM' &&
+                            col.key === 'bonusPresensiBulanan';
                           const cellValue = isSpj
                             ? (getComputedSpj(emp.employeeId) || 0)
                             : (isSatpamShift && tableData[emp.employeeId]?.[col.key] === undefined)
@@ -1160,10 +1220,27 @@ export default function RekapPekaryaPage() {
                                 type="text"
                                 value={cellValue}
                                 onChange={(e) => updateCell(emp.employeeId, col.key, e.target.value)}
-                                disabled={isLocked || isSpj}
-                                title={isLocked ? 'Tabel rekap sedang dikunci. Klik "Buka Kunci" jika ingin mengubah data.' : isSpj ? 'SPJ dihitung otomatis dari kegiatan yang disetujui.' : undefined}
+                                disabled={
+                                  isLocked ||
+                                  isSpj ||
+                                  isAttendanceDerived ||
+                                  isDutyPlanDerived
+                                }
+                                title={
+                                  isDutyPlanDerived
+                                    ? 'Bonus dihitung otomatis dari pemenuhan rencana dinas Satpam.'
+                                  : isAttendanceDerived
+                                    ? 'Nilai ini bersumber dari publikasi Presensi Pekarya.'
+                                    : isLocked
+                                      ? 'Tabel rekap sedang dikunci. Klik "Buka Kunci" jika ingin mengubah data.'
+                                      : isSpj
+                                        ? 'SPJ dihitung otomatis dari kegiatan yang disetujui.'
+                                        : undefined
+                                }
                                 className={`h-10 text-center font-extrabold transition-all ${isLocked
                                   ? 'bg-slate-50/60 border-slate-200/80 text-slate-900 disabled:opacity-100 cursor-default shadow-2xs'
+                                  : isAttendanceDerived || isDutyPlanDerived
+                                    ? 'bg-indigo-50 border-indigo-200 text-indigo-800 disabled:opacity-100 cursor-not-allowed'
                                   : isSpj || isSatpamShift || isSopirPiket || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
                                     ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
                                     : hasScanData

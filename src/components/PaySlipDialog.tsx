@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
 import { BlueCollarEmployee, UraianEntry, RekapColumn } from '@/types';
-import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
+import { getRekapColumns, computeSlipAmount } from '@/utils/rekapConfig';
 import { PayrollStatus, isImmutablePayrollStatus } from '@/lib/payroll/domain';
 import { UserRole } from '@/lib/payroll/roles';
 import { 
@@ -223,7 +223,17 @@ export function buildInitialEarnings(
     }
   } else {
     const jobCategory = emp.employment?.jobCategory || '';
-    const columns = REKAP_COLUMNS[jobCategory] || REKAP_COLUMNS.KEBERSIHAN;
+    const attendanceDerived =
+      Boolean((uraian as any)?.attendanceSource) ||
+      Boolean(
+        uraian?.values &&
+          ('harian' in uraian.values || 'jumatLibur' in uraian.values) &&
+          !('presensi' in uraian.values),
+      );
+    const columns = getRekapColumns(
+      jobCategory,
+      attendanceDerived ? '2026-08' : undefined,
+    );
     const allCols = [...columns, ...(customColumns || [])];
 
     // Gaji Pokok – always known

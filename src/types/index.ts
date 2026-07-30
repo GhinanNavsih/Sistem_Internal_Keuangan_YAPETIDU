@@ -2,6 +2,16 @@
 
 export interface BlueCollarEmployee {
   employeeId: string;        // e.g. "BC_001"
+  nipy?: string | null;      // Attendance identity connector
+  nipyAssignment?: {
+    formulaVersion: number;
+    categoryGroup: 'KEBERSIHAN' | 'SOPIR' | 'SATPAM' | 'TEKNISI';
+    prefixCode: '13' | '14' | '15' | '16';
+    sourceStartDate: string | null;
+    sequence: number;
+    status: 'issued' | 'reserved';
+    source: 'formula';
+  } | null;
   nik: string | null;        // National ID (NIK)
   name: string;
   phoneNumber?: string;
@@ -105,6 +115,19 @@ export interface UraianEntry {
   name: string;
   values: Record<string, number>; // column key → monetary nominal (count cols are multiplied)
   counts?: Record<string, number>; // column key → raw count (e.g. harian: 18, jumatLibur: 10)
+  satpamDutySource?: {
+    planId?: string;
+    planRevision?: number;
+    approvedAbsenceCount?: number;
+    requiredDuties?: number;
+    fulfilledDuties?: number;
+    missedDuties?: number;
+    pendingDuties?: number;
+    conflictingDuties?: number;
+    extraDuties?: number;
+    eligibleForBonus?: boolean;
+    generatedAtIso?: string;
+  };
 }
 
 export interface UraianGajiDocument {

@@ -253,6 +253,9 @@ export default function PayrollValidationDashboard() {
 
   // ─── Open Period Modal State ─────────────────────────────────────
   const [showOpenPeriodModal, setShowOpenPeriodModal] = useState(false);
+  const [calendarEditMode, setCalendarEditMode] = useState(false);
+  const [calendarRevision, setCalendarRevision] = useState(1);
+  const [calendarEditReason, setCalendarEditReason] = useState('');
   const [selectedHolidays, setSelectedHolidays] = useState<Set<string>>(new Set());
   const [isSubmittingModal, setIsSubmittingModal] = useState(false);
 
@@ -263,7 +266,7 @@ export default function PayrollValidationDashboard() {
 
   // Pre-select all Fridays whenever modal opens
   useEffect(() => {
-    if (showOpenPeriodModal) {
+    if (showOpenPeriodModal && !calendarEditMode) {
       const yearStr = String(modalYear);
       const monthStr = String(modalMonth + 1).padStart(2, '0');
       const initialHolidays = new Set<string>();
@@ -277,7 +280,7 @@ export default function PayrollValidationDashboard() {
       }
       setSelectedHolidays(initialHolidays);
     }
-  }, [showOpenPeriodModal, modalYear, modalMonth, modalDaysInMonth]);
+  }, [showOpenPeriodModal, calendarEditMode, modalYear, modalMonth, modalDaysInMonth]);
 
   useEffect(() => {
     if (!profile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(profile.role)) {
@@ -303,6 +306,8 @@ export default function PayrollValidationDashboard() {
 
   const handleSetAttendancePeriod = async (attendanceStatus: 'open' | 'closed') => {
     if (attendanceStatus === 'open') {
+      setCalendarEditMode(false);
+      setCalendarEditReason('');
       setShowOpenPeriodModal(true);
       return;
     }
@@ -327,6 +332,95 @@ export default function PayrollValidationDashboard() {
         type: 'error',
         message: error.message || 'Gagal menutup periode.',
       });
+    }
+  };
+
+  const handleOpenCalendarEditor = async () => {
+    const period = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+    setIsSubmittingModal(true);
+    try {
+      const result = await authenticatedJson<{
+        calendar: { revision: number; premiumDates: string[] };
+      }>(`/api/payroll/periods/${period}/calendar`);
+      setCalendarRevision(result.calendar.revision);
+      setSelectedHolidays(new Set(result.calendar.premiumDates));
+      setCalendarEditReason('');
+      setCalendarEditMode(true);
+      setShowOpenPeriodModal(true);
+    } catch (error: any) {
+      setNotification({
+        show: true,
+        type: 'error',
+        message: error.message || 'Gagal memuat kalender periode.',
+      });
+    } finally {
+      setIsSubmittingModal(false);
+    }
+  };
+
+  const handleConfirmCalendarEdit = async () => {
+    const period = `${modalYear}-${String(modalMonth + 1).padStart(2, '0')}`;
+    if (calendarEditReason.trim().length < 8) {
+      setNotification({
+        show: true,
+        type: 'error',
+        message: 'Alasan perubahan kalender wajib diisi minimal 8 karakter.',
+      });
+      return;
+    }
+    setIsSubmittingModal(true);
+    try {
+      const premiumDates = Array.from(selectedHolidays).sort();
+      const preview = await authenticatedJson<{
+        impact: {
+          changedDates: string[];
+          affectedPublicationCount: number;
+          affectedOccurrenceCount: number;
+          affectedPendingRegularAssignments: number;
+          affectedApprovedRegularAssignments: number;
+        };
+      }>(`/api/payroll/periods/${period}/calendar`, {
+        method: 'POST',
+        body: JSON.stringify({ premiumDates }),
+      });
+      const impact = preview.impact;
+      const confirmed = window.confirm(
+        [
+          `Ubah ${impact.changedDates.length} tanggal kalender?`,
+          `${impact.affectedPublicationCount} publikasi presensi akan ditandai perlu diproses ulang.`,
+          `${impact.affectedPendingRegularAssignments + impact.affectedApprovedRegularAssignments} penugasan Satpam pada ${impact.affectedOccurrenceCount} shift akan direkonsiliasi.`,
+          'Riwayat perubahan akan disimpan permanen.',
+        ].join('\n'),
+      );
+      if (!confirmed) return;
+      const result = await authenticatedJson<{ revision: number }>(
+        `/api/payroll/periods/${period}/calendar`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            requestId: createFinancialRequestId('period-calendar'),
+            expectedRevision: calendarRevision,
+            premiumDates,
+            reason: calendarEditReason.trim(),
+          }),
+        },
+      );
+      setCalendarRevision(result.revision);
+      setShowOpenPeriodModal(false);
+      setCalendarEditMode(false);
+      setNotification({
+        show: true,
+        type: 'success',
+        message: `Kalender periode ${period} diperbarui ke revisi ${result.revision}.`,
+      });
+    } catch (error: any) {
+      setNotification({
+        show: true,
+        type: 'error',
+        message: error.message || 'Gagal memperbarui kalender periode.',
+      });
+    } finally {
+      setIsSubmittingModal(false);
     }
   };
 
@@ -2693,6 +2787,19 @@ export default function PayrollValidationDashboard() {
                             {attendancePeriodStatus === 'open' ? 'Tutup Permanen' : 'Buka Periode'}
                           </Button>
                         )}
+                      {profile?.role === 'super_admin' &&
+                        attendancePeriodStatus === 'open' && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-7 rounded-lg px-2 text-[11px]"
+                            onClick={() => void handleOpenCalendarEditor()}
+                            disabled={isSubmittingModal}
+                          >
+                            <CalendarDays className="mr-1 h-3.5 w-3.5" />
+                            Edit Kalender Periode
+                          </Button>
+                        )}
                     </div>
                   </div>
                   <div>
@@ -3761,9 +3868,14 @@ export default function PayrollValidationDashboard() {
                   <CalendarDays className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-lg sm:text-xl font-black tracking-tight">Konfigurasi Tanggal Merah & Buka Periode</h2>
+                  <h2 className="text-lg sm:text-xl font-black tracking-tight">
+                    {calendarEditMode
+                      ? 'Edit Kalender Periode Aktif'
+                      : 'Konfigurasi Tanggal Merah & Buka Periode'}
+                  </h2>
                   <p className="text-xs text-indigo-100 font-medium mt-0.5">
                     {targetDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
+                    {calendarEditMode ? ` · Revisi ${calendarRevision}` : ''}
                   </p>
                 </div>
               </div>
@@ -3815,7 +3927,9 @@ export default function PayrollValidationDashboard() {
               <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200/80 text-xs font-semibold text-amber-900 flex items-start gap-2.5">
                 <span className="text-base leading-none">💡</span>
                 <span>
-                  Setiap hari <strong>Jumat</strong> telah otomatis ditandai sebagai Tanggal Merah (Hari Libur). Klik pada tanggal mana pun di kalender untuk menambahkan atau mengurangi Tanggal Merah.
+                  Setiap hari <strong>Jumat</strong> otomatis menjadi hari premium dan
+                  tidak dapat dihapus. Klik tanggal lain untuk menambah atau mengurangi
+                  hari libur periode ini.
                 </span>
               </div>
 
@@ -3851,7 +3965,9 @@ export default function PayrollValidationDashboard() {
                       <button
                         key={dateStr}
                         type="button"
+                        disabled={isFriday}
                         onClick={() => {
+                          if (isFriday) return;
                           setSelectedHolidays(prev => {
                             const next = new Set(prev);
                             if (next.has(dateStr)) {
@@ -3862,9 +3978,11 @@ export default function PayrollValidationDashboard() {
                             return next;
                           });
                         }}
-                        className={`h-14 sm:h-16 rounded-2xl p-2 flex flex-col justify-between items-start transition-all cursor-pointer border text-left relative overflow-hidden group select-none ${
+                        className={`h-14 sm:h-16 rounded-2xl p-2 flex flex-col justify-between items-start transition-all border text-left relative overflow-hidden group select-none ${
                           isHoliday
-                            ? 'bg-rose-500 text-white border-rose-600 shadow-sm hover:bg-rose-600'
+                            ? isFriday
+                              ? 'bg-rose-600 text-white border-rose-700 shadow-sm cursor-not-allowed'
+                              : 'bg-rose-500 text-white border-rose-600 shadow-sm hover:bg-rose-600 cursor-pointer'
                             : 'bg-white text-slate-800 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30'
                         }`}
                       >
@@ -3884,6 +4002,27 @@ export default function PayrollValidationDashboard() {
                   })}
                 </div>
               </div>
+              {calendarEditMode && (
+                <div className="space-y-2">
+                  <label
+                    htmlFor="calendar-edit-reason"
+                    className="text-sm font-bold text-slate-700"
+                  >
+                    Alasan perubahan kalender
+                  </label>
+                  <textarea
+                    id="calendar-edit-reason"
+                    value={calendarEditReason}
+                    onChange={(event) => setCalendarEditReason(event.target.value)}
+                    className="min-h-24 w-full rounded-2xl border border-slate-300 p-3 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                    placeholder="Contoh: Rektor menetapkan libur insidental pada 17 Agustus."
+                  />
+                  <p className="text-xs text-slate-500">
+                    Perubahan disimpan dengan nilai sebelum/sesudah, pelaku, waktu,
+                    alasan, dan nomor permintaan.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Modal Footer */}
@@ -3898,8 +4037,15 @@ export default function PayrollValidationDashboard() {
               </Button>
               <Button
                 type="button"
-                onClick={handleConfirmOpenPeriod}
-                disabled={isSubmittingModal}
+                onClick={
+                  calendarEditMode
+                    ? handleConfirmCalendarEdit
+                    : handleConfirmOpenPeriod
+                }
+                disabled={
+                  isSubmittingModal ||
+                  (calendarEditMode && calendarEditReason.trim().length < 8)
+                }
                 className="rounded-xl font-bold text-xs h-10 px-5 bg-indigo-600 hover:bg-indigo-700 text-white gap-2 cursor-pointer shadow-md"
               >
                 {isSubmittingModal ? (
@@ -3910,7 +4056,11 @@ export default function PayrollValidationDashboard() {
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4 text-white" />
-                    <span>Simpan & Buka Periode</span>
+                    <span>
+                      {calendarEditMode
+                        ? 'Tinjau Dampak & Simpan'
+                        : 'Simpan & Buka Periode'}
+                    </span>
                   </>
                 )}
               </Button>

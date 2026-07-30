@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { FileText, Printer, FileSpreadsheet } from 'lucide-react';
 import { BlueCollarEmployee, SalaryMatrix, UraianGajiDocument } from '@/types';
 import { calculateTotalEarnings, calculateTotalDeductions, calculateNetSalary } from '@/utils/salaryCalculator';
-import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
+import { getRekapColumns, computeSlipAmount } from '@/utils/rekapConfig';
 import { PaySlipField } from '@/utils/generatePaySlipPdf';
 import { generateLegalitasPimpinanPdf, LegalitasEmployeeData, LegalitasPimpinanData } from '@/utils/generateLegalitasPimpinanPdf';
 import { generateLegalitasPimpinanXlsx } from '@/utils/generateLegalitasPimpinanXlsx';
@@ -111,7 +111,17 @@ function buildInitialEarnings(
   }
 
   const jobCategory = emp.employment?.jobCategory || '';
-  const columns = REKAP_COLUMNS[jobCategory] || REKAP_COLUMNS.KEBERSIHAN;
+  const attendanceDerived =
+    Boolean(uraian?.attendanceSource) ||
+    Boolean(
+      uraian?.values &&
+        ('harian' in uraian.values || 'jumatLibur' in uraian.values) &&
+        !('presensi' in uraian.values),
+    );
+  const columns = getRekapColumns(
+    jobCategory,
+    attendanceDerived ? '2026-08' : undefined,
+  );
 
   // Gaji Pokok
   earnings.push({ label: 'Gaji Pokok', amount: gapok });

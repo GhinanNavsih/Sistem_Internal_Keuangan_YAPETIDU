@@ -52,7 +52,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
-import { MONTHS_ID, REKAP_COLUMNS } from '@/utils/rekapConfig';
+import { MONTHS_ID, getRekapColumns } from '@/utils/rekapConfig';
 import { sumApprovedActivitySpj } from '@/lib/payroll/pekaryaSpj';
 import {
   composeKoperasiLoanHistoryTrail,
@@ -858,7 +858,7 @@ export default function EmployeePayslipPage() {
             amount: money(employee.salaryProfile?.baseSalaryAmount),
           });
 
-          const columns = REKAP_COLUMNS[jobCategory] || REKAP_COLUMNS.PEKARYA;
+          const columns = getRekapColumns(jobCategory, periodToken);
           for (const column of columns) {
             if (!column.slipLabel) continue;
             fallbackEarnings.push({

@@ -12,6 +12,7 @@ import {
   sumApprovedActivitySpj,
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
+import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
 import {
   canAuthorizePayroll,
   canOperatePayments,
@@ -25,6 +26,10 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import {
+  pekaryaPublicationId,
+  PEKARYA_PUBLICATIONS_COLLECTION,
+} from '@/lib/server/attendanceStore';
 
 export const dynamic = 'force-dynamic';
 
@@ -172,6 +177,12 @@ export async function POST(request: NextRequest) {
       let auditAction = command.action.toUpperCase();
 
       let canonicalPekaryaSpj: number | null = null;
+      let canonicalAttendance:
+        | { harian: number; jumatLibur: number }
+        | null = null;
+      let canonicalSatpamDuty:
+        | { harian: number; jumatLibur: number; bonusPresensiBulanan: number }
+        | null = null;
       if (command.action === 'save_draft' && blueEmployeeSnapshot.exists) {
         const employee = blueEmployeeSnapshot.data()!;
         const jobCategory = employee.employment?.jobCategory;
@@ -210,6 +221,83 @@ export async function POST(request: NextRequest) {
             periodToken,
           ) +
           sumApprovedEventSpj(events, command.employeeId, jobCategory, periodToken);
+
+        if (periodToken >= '2026-08' && jobCategory !== 'SATPAM') {
+          const publicationRef = adminDb
+            .collection(PEKARYA_PUBLICATIONS_COLLECTION)
+            .doc(pekaryaPublicationId(periodToken, jobCategory));
+          const uraianRef = adminDb
+            .collection('UraianGaji')
+            .doc(`${command.period}_${jobCategory}`);
+          const importRef = adminDb
+            .collection('AttendanceImports')
+            .doc(periodToken);
+          const [publicationSnapshot, uraianSnapshot, importSnapshot] =
+            await Promise.all([
+              transaction.get(publicationRef),
+              transaction.get(uraianRef),
+              transaction.get(importRef),
+            ]);
+          const publication = publicationSnapshot.data();
+          const calendarRevision = Number(
+            periodSnapshot.data()?.workCalendar?.revision || 1,
+          );
+          if (
+            !publicationSnapshot.exists ||
+            publication?.state !== 'published' ||
+            publication?.stale === true ||
+            publication?.importRevisionId !==
+              importSnapshot.data()?.activeRevisionId ||
+            Number(publication?.calendarRevision || 0) !== calendarRevision
+          ) {
+            throw new HttpError(
+              409,
+              `Presensi ${jobCategory} belum dipublikasikan pada revisi import dan kalender terbaru.`,
+            );
+          }
+          const entry = uraianSnapshot.data()?.entries?.[command.employeeId];
+          if (!entry) {
+            throw new HttpError(
+              409,
+              'Hasil presensi resmi pegawai belum tersedia di Rekap Uraian.',
+            );
+          }
+          canonicalAttendance = {
+            harian: Number(entry.values?.harian || 0),
+            jumatLibur: Number(entry.values?.jumatLibur || 0),
+          };
+        } else if (
+          jobCategory === 'SATPAM' &&
+          isSatpamDutyPlanRequired(
+            periodToken,
+            periodSnapshot.data() || null,
+          )
+        ) {
+          const uraianSnapshot = await transaction.get(
+            adminDb
+              .collection('UraianGaji')
+              .doc(`${command.period}_SATPAM`),
+          );
+          const entry =
+            uraianSnapshot.data()?.entries?.[command.employeeId];
+          if (
+            !entry ||
+            !entry.satpamDutySource ||
+            uraianSnapshot.data()?.satpamDutyReconciliation?.blockerCount > 0
+          ) {
+            throw new HttpError(
+              409,
+              'Rekonsiliasi kewajiban dinas dan bonus Satpam belum final.',
+            );
+          }
+          canonicalSatpamDuty = {
+            harian: Number(entry.values?.harian || 0),
+            jumatLibur: Number(entry.values?.jumatLibur || 0),
+            bonusPresensiBulanan: Number(
+              entry.values?.bonusPresensiBulanan || 0,
+            ),
+          };
+        }
       }
 
       switch (command.action) {
@@ -231,6 +319,52 @@ export async function POST(request: NextRequest) {
               throw new HttpError(
                 409,
                 `SPJ tidak sinkron. Nilai resmi adalah Rp${canonicalPekaryaSpj.toLocaleString('id-ID')}; muat ulang dan simpan rekap Pekarya.`,
+              );
+            }
+          }
+          if (canonicalAttendance) {
+            const submittedHarian = earnings.filter(
+              (field) => field.label.trim().toUpperCase() === 'VAKASI HARIAN',
+            );
+            const submittedPremium = earnings.filter(
+              (field) => field.label.trim().toUpperCase() === 'JUMAT & LIBUR',
+            );
+            if (
+              submittedHarian.length !== 1 ||
+              submittedPremium.length !== 1 ||
+              submittedHarian[0].amount !== canonicalAttendance.harian ||
+              submittedPremium[0].amount !== canonicalAttendance.jumatLibur
+            ) {
+              throw new HttpError(
+                409,
+                'Nilai Harian/Jumat & Libur tidak sama dengan publikasi Presensi Pekarya terbaru. Muat ulang draf.',
+              );
+            }
+          }
+          if (canonicalSatpamDuty) {
+            const submittedHarian = earnings.filter(
+              (field) => field.label.trim().toUpperCase() === 'VAKASI HARIAN',
+            );
+            const submittedPremium = earnings.filter(
+              (field) => field.label.trim().toUpperCase() === 'JUMAT & LIBUR',
+            );
+            const submittedBonus = earnings.filter(
+              (field) =>
+                field.label.trim().toUpperCase() ===
+                'BONUS PRESENSI BULANAN',
+            );
+            if (
+              submittedHarian.length !== 1 ||
+              submittedPremium.length !== 1 ||
+              submittedBonus.length !== 1 ||
+              submittedHarian[0].amount !== canonicalSatpamDuty.harian ||
+              submittedPremium[0].amount !== canonicalSatpamDuty.jumatLibur ||
+              submittedBonus[0].amount !==
+                canonicalSatpamDuty.bonusPresensiBulanan
+            ) {
+              throw new HttpError(
+                409,
+                'Nilai Harian, Jumat & Libur, atau Bonus Presensi Satpam tidak sama dengan rekonsiliasi terbaru. Muat ulang draf.',
               );
             }
           }

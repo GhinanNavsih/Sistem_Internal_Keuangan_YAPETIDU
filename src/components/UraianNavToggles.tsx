@@ -11,6 +11,7 @@ import {
   Clock,
   Car,
   FileText,
+  UsersRound,
 } from 'lucide-react';
 
 /**
@@ -30,6 +31,7 @@ export default function UraianNavToggles() {
 
   // Derive the active tab from the current pathname
   const activeTab = useMemo(() => {
+    if (pathname.includes('/presensi-pekarya')) return 'presensi_pekarya';
     if (pathname.includes('/rekap-pekarya')) return 'presensi';
     if (pathname.includes('/vakasi-loyalis')) return 'vakasi_loyalis';
     if (pathname.includes('/proposal-kegiatan')) return 'proposal_kegiatan';
@@ -70,7 +72,9 @@ export default function UraianNavToggles() {
   if (!profile) return null;
   if (
     profile.role !== 'super_admin' &&
-    profile.role !== 'loyalis_presence_admin'
+    profile.role !== 'loyalis_presence_admin' &&
+    profile.role !== 'finance_verifier' &&
+    profile.role !== 'payroll_authorizer'
   ) {
     return null;
   }
@@ -145,18 +149,29 @@ export default function UraianNavToggles() {
       </div>
 
       {/* Row 2: Pekarya Pay Navigation */}
-      {profile.role === 'super_admin' && (
+      {(profile.role === 'super_admin' ||
+        profile.role === 'finance_verifier' ||
+        profile.role === 'payroll_authorizer') && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 px-1 shrink-0 bg-emerald-50/80 border border-emerald-100 py-1 rounded-md">
             Pekarya
           </span>
           <div className="flex bg-white p-1 rounded-xl w-fit shadow-sm border border-slate-200/60 overflow-x-auto max-w-full">
+            {profile.role === 'super_admin' && (
+              <button
+                onClick={() => router.push(`/dashboard/payroll/activity-review?month=${month}&year=${year}`)}
+                className={btnCls(activeTab === 'activity_review')}
+              >
+                <ClipboardCheck className="w-4 h-4" />
+                Review Kegiatan
+              </button>
+            )}
             <button
-              onClick={() => router.push(`/dashboard/payroll/activity-review?month=${month}&year=${year}`)}
-              className={btnCls(activeTab === 'activity_review')}
+              onClick={() => router.push(`/dashboard/payroll/uraian/presensi-pekarya${getCleanParamsString('presensi_pekarya')}`)}
+              className={btnCls(activeTab === 'presensi_pekarya')}
             >
-              <ClipboardCheck className="w-4 h-4" />
-              Review Kegiatan
+              <UsersRound className="w-4 h-4" />
+              Presensi Pekarya
             </button>
             <button
               onClick={() => router.push(`/dashboard/payroll/uraian/rekap-pekarya${getCleanParamsString('presensi')}`)}
@@ -165,13 +180,15 @@ export default function UraianNavToggles() {
               <ScanLine className="w-4 h-4" />
               Rekap Uraian (Pekarya)
             </button>
-            <button
-              onClick={() => router.push(`/dashboard/payroll/driver-journeys${getCleanParamsString('driver-journeys')}`)}
-              className={btnCls(activeTab === 'driver_journeys')}
-            >
-              <Car className="w-4 h-4" />
-              Perjalanan Driver
-            </button>
+            {profile.role === 'super_admin' && (
+              <button
+                onClick={() => router.push(`/dashboard/payroll/driver-journeys${getCleanParamsString('driver-journeys')}`)}
+                className={btnCls(activeTab === 'driver_journeys')}
+              >
+                <Car className="w-4 h-4" />
+                Perjalanan Driver
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -60,4 +60,39 @@ export async function authenticatedJson<T>(
   return payload as T;
 }
 
+export async function authenticatedFormData<T>(
+  input: string,
+  body: FormData,
+): Promise<T> {
+  const user = auth.currentUser;
+  if (!user) {
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
+    throw new Error('Sesi pengguna tidak tersedia. Silakan masuk kembali.');
+  }
+
+  let token = await user.getIdToken();
+  let response = await fetch(input, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body,
+  });
+  if (response.status === 401) {
+    token = await user.getIdToken(true);
+    response = await fetch(input, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body,
+    });
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401 && typeof window !== 'undefined') {
+      window.location.href = '/login';
+    }
+    throw new Error(payload.error || `Permintaan gagal (${response.status}).`);
+  }
+  return payload as T;
+}
 

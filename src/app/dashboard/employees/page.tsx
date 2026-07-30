@@ -63,6 +63,7 @@ import {
   ChevronsUpDown,
   ChevronUp,
   ChevronDown,
+  Fingerprint,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -79,6 +80,7 @@ import {
 import { db } from '@/lib/firebase';
 import { BlueCollarEmployee } from '@/types';
 import { useDashboardData } from '@/lib/DashboardDataContext';
+import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 
 const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI'];
 
@@ -100,11 +102,53 @@ const COLLAR_TABS = [
 
 type FormData = any;
 
+type PekaryaNipyPreviewItem = {
+  employeeId: string;
+  name: string;
+  category: string;
+  categoryGroup: string | null;
+  prefixCode: string | null;
+  startDate: string | null;
+  sequence: number | null;
+  proposedNipy: string | null;
+  currentNipy: string | null;
+  state: 'ready' | 'reserved' | 'existing' | 'blocked' | 'conflict';
+  needsWrite: boolean;
+  reasonCode: string | null;
+  reason: string | null;
+};
+
+type PekaryaNipyPreview = {
+  initialized: boolean;
+  items: PekaryaNipyPreviewItem[];
+  counters: Record<string, number>;
+  summary: {
+    active: number;
+    ready: number;
+    reserved: number;
+    existing: number;
+    blocked: number;
+    conflicts: number;
+    pendingWrites: number;
+  };
+  previewHash: string;
+};
+
 // Helper getters to unify rendering between blue collar and Loyalis white collar records
 const getEmpId = (emp: any) => emp.employeeId || emp.id || '';
 const getEmpName = (emp: any) => emp.personal_info?.name || emp.name || '';
 const getEmpNikOrNiy = (emp: any) => emp.personal_info?.employee_id_niy || emp.nik || '';
+const getEmpNipy = (emp: any) =>
+  String(emp.nipy || emp.personal_info?.employee_id_niy || '')
+    .trim()
+    .toUpperCase();
 const getEmpCategory = (emp: any) => emp.employment_profile?.job_role || emp.employment?.jobCategory || '';
+const getPekaryaNipyGroup = (category: unknown) => {
+  const normalized = String(category || '').trim().toUpperCase();
+  if (normalized.startsWith('KEBERSIHAN')) return 'KEBERSIHAN';
+  if (['SOPIR', 'SATPAM', 'TEKNISI'].includes(normalized)) return normalized;
+  return '';
+};
 const getEmpGrade = (emp: any) => emp.academic_and_tier?.level_code || emp.salaryProfile?.salaryGradeCode || '';
 const getEmpIsActive = (emp: any) => {
   if (emp.personal_info?.status !== undefined) {
@@ -368,6 +412,13 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isNipyDialogOpen, setIsNipyDialogOpen] = useState(false);
+  const [nipyPreview, setNipyPreview] = useState<PekaryaNipyPreview | null>(null);
+  const [nipyLoading, setNipyLoading] = useState(false);
+  const [nipyApplying, setNipyApplying] = useState(false);
+  const [nipyCorrectionEmployee, setNipyCorrectionEmployee] = useState<any | null>(null);
+  const [nipyCorrectionReason, setNipyCorrectionReason] = useState('');
+  const [nipyCorrecting, setNipyCorrecting] = useState(false);
 
   // Edit Log States
   const [pendingEdits, setPendingEdits] = useState<PendingEdit[]>([]);
@@ -489,6 +540,7 @@ export default function EmployeesPage() {
   const resetForm = (tab: string): any => {
     if (tab === 'loyalis') {
       return {
+        nipy: '',
         personal_info: { name: '', employee_id_niy: '', tax_id_npwp: '', status: 'AKTIF', phone: '', email: '' },
         banking_info: { bank_name: 'BSI', account_number: '' },
         employment_profile: { job_role: '', department_unit: '', date_of_hire: '', date_recognized: '', date_exit: '', structural_positions: [] },
@@ -505,6 +557,7 @@ export default function EmployeesPage() {
       };
     }
     return {
+      nipy: '',
       name: '',
       nik: '',
       phoneNumber: '',
@@ -569,6 +622,115 @@ export default function EmployeesPage() {
       console.error('Error refreshing employees:', err);
     } finally {
       setLocalLoading(false);
+    }
+  };
+
+  const loadNipyPreview = async () => {
+    setNipyLoading(true);
+    try {
+      const preview = await authenticatedJson<PekaryaNipyPreview>(
+        '/api/admin/attendance-identities/pekarya',
+      );
+      setNipyPreview(preview);
+      return preview;
+    } finally {
+      setNipyLoading(false);
+    }
+  };
+
+  const handleOpenNipyGenerator = async () => {
+    setMessage(null);
+    setIsNipyDialogOpen(true);
+    setNipyPreview(null);
+    try {
+      await loadNipyPreview();
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Gagal memuat pratinjau NIPY.',
+      });
+    }
+  };
+
+  const handleApplyNipyPreview = async () => {
+    if (!nipyPreview || nipyPreview.summary.pendingWrites < 1) return;
+    setNipyApplying(true);
+    setMessage(null);
+    try {
+      const result = await authenticatedJson<{
+        issued: number;
+        reserved: number;
+      }>('/api/admin/attendance-identities/pekarya', {
+        method: 'POST',
+        body: JSON.stringify({
+          operation: 'bulk_apply',
+          expectedPreviewHash: nipyPreview.previewHash,
+          requestId: createFinancialRequestId('pekarya-nipy-bulk'),
+        }),
+      });
+      await Promise.all([loadNipyPreview(), fetchEmployees()]);
+      setMessage({
+        type: 'success',
+        text: `${result.issued} NIPY diterbitkan dan ${result.reserved} nomor urut direservasi.`,
+      });
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Penerbitan massal NIPY gagal.',
+      });
+      await loadNipyPreview().catch(() => undefined);
+    } finally {
+      setNipyApplying(false);
+    }
+  };
+
+  const handleReissueNipy = async () => {
+    if (!nipyCorrectionEmployee) return;
+    if (nipyCorrectionReason.trim().length < 8) {
+      setMessage({
+        type: 'error',
+        text: 'Alasan koreksi NIPY minimal 8 karakter.',
+      });
+      return;
+    }
+    setNipyCorrecting(true);
+    setMessage(null);
+    try {
+      const result = await authenticatedJson<{ nipy: string }>(
+        '/api/admin/attendance-identities/pekarya',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            employeeId: getEmpId(nipyCorrectionEmployee),
+            expectedNipy: getEmpNipy(nipyCorrectionEmployee),
+            reason: nipyCorrectionReason.trim(),
+            requestId: createFinancialRequestId('pekarya-nipy-correction'),
+          }),
+        },
+      );
+      setMessage({
+        type: 'success',
+        text: `NIPY dikoreksi menjadi ${result.nipy}.`,
+      });
+      setNipyCorrectionEmployee(null);
+      setNipyCorrectionReason('');
+      await fetchEmployees();
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Koreksi NIPY gagal.',
+      });
+    } finally {
+      setNipyCorrecting(false);
     }
   };
 
@@ -659,6 +821,21 @@ export default function EmployeesPage() {
       }
 
       let final: any;
+      const desiredNipy = String(
+        formData.personal_info?.employee_id_niy || '',
+      )
+        .trim()
+        .toUpperCase();
+      if (
+        activeTab === 'blue' &&
+        !editingEmployee &&
+        formData.flags?.isActive !== false &&
+        !formData.employment?.startDate
+      ) {
+        throw new Error(
+          'Tanggal mulai kerja wajib diisi untuk Pekarya aktif agar NIPY dapat diterbitkan.',
+        );
+      }
 
       if (activeTab === 'loyalis') {
         const toTimestamp = (dateString: string) => {
@@ -670,7 +847,6 @@ export default function EmployeesPage() {
         final = {
           personal_info: {
             name: formData.personal_info?.name || '',
-            employee_id_niy: formData.personal_info?.employee_id_niy || null,
             tax_id_npwp: formData.personal_info?.tax_id_npwp || null,
             status: formData.personal_info?.status || 'AKTIF',
             phone: formData.personal_info?.phone || '',
@@ -735,8 +911,9 @@ export default function EmployeesPage() {
           }
         };
       } else {
+        const { nipy: _nipy, ...blueCollarForm } = formData as BlueCollarEmployee;
         final = {
-          ...(formData as BlueCollarEmployee),
+          ...blueCollarForm,
           employeeId,
           collarType: 'blue_collar',
           bankAccount: {
@@ -808,6 +985,35 @@ export default function EmployeesPage() {
       }
 
       await setDoc(doc(db, currentTab.collection, employeeId), final, { merge: true });
+      const previousNipy = editingEmployee ? getEmpNipy(editingEmployee) : '';
+      if (activeTab === 'loyalis' && desiredNipy !== previousNipy) {
+        await authenticatedJson('/api/admin/attendance-identities', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            employeeId,
+            employeeCollection: currentTab.collection,
+            nipy: desiredNipy,
+            requestId: createFinancialRequestId('employee-nipy'),
+          }),
+        });
+      } else if (
+        activeTab === 'blue' &&
+        !previousNipy &&
+        formData.flags?.isActive !== false &&
+        formData.employment?.startDate
+      ) {
+        await authenticatedJson(
+          '/api/admin/attendance-identities/pekarya',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              operation: 'generate_one',
+              employeeId,
+              requestId: createFinancialRequestId('pekarya-nipy'),
+            }),
+          },
+        );
+      }
 
       if (activeTab === 'loyalis' && isCustomDept && customDeptValue.trim()) {
         const newDept = customDeptValue.trim().toUpperCase();
@@ -828,7 +1034,13 @@ export default function EmployeesPage() {
       setTimeout(() => setMessage(null), 3000);
     } catch (err) {
       console.error('Error saving employee:', err);
-      setMessage({ type: 'error', text: 'Gagal menyimpan data.' });
+      setMessage({
+        type: 'error',
+        text:
+          err instanceof Error
+            ? err.message
+            : 'Gagal menyimpan data.',
+      });
     } finally {
       isSavingRef.current = false;
       setSaving(false);
@@ -935,10 +1147,12 @@ export default function EmployeesPage() {
     let list = employees.filter(emp => {
       const name = getEmpName(emp);
       const nik = getEmpNikOrNiy(emp);
+      const nipy = getEmpNipy(emp);
       const id = getEmpId(emp);
       return (
         name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (nik && String(nik).includes(searchQuery)) ||
+        (nipy && nipy.includes(searchQuery.toUpperCase())) ||
         id.includes(searchQuery)
       );
     });
@@ -1100,7 +1314,7 @@ export default function EmployeesPage() {
         return {
           'ID Pegawai': getEmpId(emp),
           'Nama Lengkap': getEmpName(emp),
-          'NIY': getEmpNikOrNiy(emp),
+          'NIPY / NIY Presensi': getEmpNipy(emp),
           'NPWP': emp.personal_info?.tax_id_npwp || '',
           'Status': getEmpIsActive(emp) ? 'Aktif' : 'Non-Aktif',
           'Nomor Telepon': emp.personal_info?.phone || '',
@@ -1129,6 +1343,7 @@ export default function EmployeesPage() {
           'ID Pegawai': getEmpId(emp),
           'Nama Lengkap': getEmpName(emp),
           'NIK': getEmpNikOrNiy(emp),
+          'NIPY Presensi': getEmpNipy(emp),
           'Status': getEmpIsActive(emp) ? 'Aktif' : 'Non-Aktif',
           'Nomor Telepon': emp.phoneNumber || '',
           'Email': emp.email || '',
@@ -1202,6 +1417,16 @@ export default function EmployeesPage() {
             <Button onClick={handleExportExcel} variant="outline" className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
               <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" /> Export Excel
             </Button>
+            {activeTab === 'blue' && (
+              <Button
+                onClick={handleOpenNipyGenerator}
+                variant="outline"
+                className="rounded-xl border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 shadow-sm px-4 cursor-pointer"
+              >
+                <Fingerprint className="w-4 h-4 mr-2" />
+                Buat NIPY Pekarya
+              </Button>
+            )}
             <Link href="/dashboard/payroll/master">
               <Button variant="outline" className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
                 <FileText className="w-4 h-4 mr-2 text-indigo-600" /> Master Gaji Pokok
@@ -1243,7 +1468,7 @@ export default function EmployeesPage() {
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <Input
-              placeholder="Cari nama, NIK..."
+              placeholder="Cari nama, NIK/NIY, atau NIPY..."
               className="pl-10 w-full bg-white border-slate-200 rounded-xl shadow-sm"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
@@ -1445,9 +1670,20 @@ export default function EmployeesPage() {
                       <TableCell className="w-[320px] max-w-[320px]">
                         <div className="flex flex-col">
                           <span className="font-bold text-slate-900 block truncate" title={getEmpName(emp)}>{getEmpName(emp)}</span>
-                          <span className="text-xs text-slate-400 font-mono">
-                            {activeTab === 'loyalis' ? 'NIY' : 'NIK'}: {getEmpNikOrNiy(emp) || '-'}
-                          </span>
+                          {activeTab === 'loyalis' ? (
+                            <span className={`text-xs font-mono font-semibold ${getEmpNipy(emp) ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              NIPY / NIY: {getEmpNipy(emp) || 'BELUM DIISI'}
+                            </span>
+                          ) : (
+                            <>
+                              <span className="text-xs text-slate-400 font-mono">
+                                NIK: {getEmpNikOrNiy(emp) || '-'}
+                              </span>
+                              <span className={`text-xs font-mono font-semibold ${getEmpNipy(emp) ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                NIPY: {getEmpNipy(emp) || 'BELUM DIISI'}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="w-[320px] max-w-[320px]">
@@ -1496,7 +1732,7 @@ export default function EmployeesPage() {
                         <div className="flex flex-col">
                           <span className="font-bold text-slate-900 block truncate" title={getEmpName(empRow)}>{getEmpName(empRow)}</span>
                           <span className="text-xs text-slate-400 font-mono">
-                            {activeTab === 'loyalis' ? 'NIY' : 'NIK'}: {getEmpNikOrNiy(empRow) || '-'}
+                            {activeTab === 'loyalis' ? 'NIPY / NIY' : 'NIK'}: {activeTab === 'loyalis' ? getEmpNipy(empRow) || '-' : getEmpNikOrNiy(empRow) || '-'}
                           </span>
                         </div>
                       </TableCell>
@@ -1531,7 +1767,7 @@ export default function EmployeesPage() {
                         <div className="flex flex-col">
                           <span className="font-bold text-slate-900 block truncate" title={getEmpName(emp)}>{getEmpName(emp)}</span>
                           <span className="text-[10px] text-slate-400 font-mono">
-                            {activeTab === 'loyalis' ? 'NIY' : 'NIK'}: {getEmpNikOrNiy(emp) || '-'}
+                            {activeTab === 'loyalis' ? 'NIPY / NIY' : 'NIK'}: {activeTab === 'loyalis' ? getEmpNipy(emp) || '-' : getEmpNikOrNiy(emp) || '-'}
                           </span>
                         </div>
                       </TableCell>
@@ -1577,6 +1813,268 @@ export default function EmployeesPage() {
         </Card>
       </div>
 
+      <Dialog
+        open={Boolean(nipyCorrectionEmployee)}
+        onOpenChange={open => {
+          if (!open && !nipyCorrecting) {
+            setNipyCorrectionEmployee(null);
+            setNipyCorrectionReason('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg rounded-[24px] border-none shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Fingerprint className="w-5 h-5 text-amber-600" />
+              Koreksi Penerbitan NIPY
+            </DialogTitle>
+            <DialogDescription>
+              Sistem menghitung ulang kode kategori dan tanggal DDMMYY, tetapi
+              mempertahankan nomor urut{' '}
+              {String(
+                nipyCorrectionEmployee?.nipyAssignment?.sequence || '',
+              ).padStart(3, '0')}
+              . Tindakan ini tercatat permanen.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="font-semibold text-slate-900">
+                {getEmpName(nipyCorrectionEmployee || {})}
+              </p>
+              <p className="mt-1 font-mono text-sm text-slate-600">
+                NIPY saat ini: {getEmpNipy(nipyCorrectionEmployee || {})}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nipy-correction-reason">Alasan koreksi</Label>
+              <Input
+                id="nipy-correction-reason"
+                value={nipyCorrectionReason}
+                onChange={event => setNipyCorrectionReason(event.target.value)}
+                placeholder="Contoh: Tanggal mulai kerja telah dikoreksi sesuai SK."
+                maxLength={500}
+              />
+              <p className="text-xs text-slate-500">
+                Minimal 8 karakter. NIPY lama tetap tersimpan dalam audit.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setNipyCorrectionEmployee(null)}
+              disabled={nipyCorrecting}
+              className="rounded-xl"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleReissueNipy}
+              disabled={
+                nipyCorrecting || nipyCorrectionReason.trim().length < 8
+              }
+              className="rounded-xl bg-amber-600 text-white hover:bg-amber-700"
+            >
+              {nipyCorrecting && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
+              Hitung Ulang NIPY
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isNipyDialogOpen} onOpenChange={setIsNipyDialogOpen}>
+        <DialogContent className="!max-w-6xl w-[94vw] rounded-[28px] border-none shadow-2xl p-0 overflow-hidden bg-white">
+          <DialogHeader className="p-6 bg-indigo-50/70 border-b border-indigo-100">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2 text-indigo-950">
+              <Fingerprint className="w-5 h-5 text-indigo-600" />
+              Buat NIPY Pekarya
+            </DialogTitle>
+            <DialogDescription className="text-indigo-800/70">
+              Formula: kode kategori + tanggal mulai DDMMYY + nomor urut
+              kategori. Periksa seluruh nilai sebelum diterbitkan.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-6 max-h-[70vh] overflow-y-auto">
+            {nipyLoading && !nipyPreview ? (
+              <div className="min-h-64 flex flex-col items-center justify-center gap-3 text-slate-500">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+                <p>Menyiapkan pratinjau NIPY...</p>
+              </div>
+            ) : nipyPreview ? (
+              <div className="space-y-5">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                  {[
+                    ['Aktif', nipyPreview.summary.active, 'text-slate-900'],
+                    ['Siap', nipyPreview.summary.ready, 'text-emerald-700'],
+                    ['Reservasi', nipyPreview.summary.reserved, 'text-amber-700'],
+                    ['Sudah Terbit', nipyPreview.summary.existing, 'text-indigo-700'],
+                    ['Terblokir', nipyPreview.summary.blocked, 'text-rose-700'],
+                    ['Konflik', nipyPreview.summary.conflicts, 'text-rose-700'],
+                  ].map(([label, value, color]) => (
+                    <div
+                      key={String(label)}
+                      className="rounded-2xl border border-slate-100 bg-slate-50 p-3"
+                    >
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500">
+                        {label}
+                      </p>
+                      <p className={`text-2xl font-bold ${color}`}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+                  <p className="font-semibold">
+                    Urutan terakhir: Kebersihan{' '}
+                    {String(nipyPreview.counters.KEBERSIHAN || 0).padStart(3, '0')}
+                    {' · '}Sopir{' '}
+                    {String(nipyPreview.counters.SOPIR || 0).padStart(3, '0')}
+                    {' · '}Satpam{' '}
+                    {String(nipyPreview.counters.SATPAM || 0).padStart(3, '0')}
+                    {' · '}Teknisi{' '}
+                    {String(nipyPreview.counters.TEKNISI || 0).padStart(3, '0')}
+                  </p>
+                  <p className="mt-1 text-xs text-indigo-700">
+                    {nipyPreview.summary.pendingWrites > 0
+                      ? `${nipyPreview.summary.pendingWrites} perubahan akan dicatat dalam audit keuangan.`
+                      : 'Tidak ada penerbitan atau reservasi baru.'}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                  <div className="max-h-[390px] overflow-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-slate-50">
+                        <TableRow>
+                          <TableHead>ID / Nama</TableHead>
+                          <TableHead>Kategori</TableHead>
+                          <TableHead>Tanggal Mulai</TableHead>
+                          <TableHead className="text-center">Urutan</TableHead>
+                          <TableHead>NIPY</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[...nipyPreview.items]
+                          .sort((left, right) => {
+                            const rank = {
+                              conflict: 0,
+                              blocked: 1,
+                              reserved: 2,
+                              ready: 3,
+                              existing: 4,
+                            };
+                            return (
+                              rank[left.state] - rank[right.state] ||
+                              left.employeeId.localeCompare(right.employeeId)
+                            );
+                          })
+                          .map(item => (
+                            <TableRow key={item.employeeId}>
+                              <TableCell>
+                                <p className="font-mono text-xs text-slate-400">
+                                  {item.employeeId}
+                                </p>
+                                <p className="font-semibold text-slate-900">
+                                  {item.name}
+                                </p>
+                              </TableCell>
+                              <TableCell className="text-xs font-medium">
+                                {item.category}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {item.startDate || 'BELUM DIISI'}
+                              </TableCell>
+                              <TableCell className="text-center font-mono font-bold">
+                                {item.sequence
+                                  ? String(item.sequence).padStart(3, '0')
+                                  : '-'}
+                              </TableCell>
+                              <TableCell className="font-mono font-semibold">
+                                {item.proposedNipy || item.currentNipy || '-'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  className={
+                                    item.state === 'ready'
+                                      ? 'border-none bg-emerald-100 text-emerald-800'
+                                      : item.state === 'reserved'
+                                        ? 'border-none bg-amber-100 text-amber-800'
+                                        : item.state === 'existing'
+                                          ? 'border-none bg-indigo-100 text-indigo-800'
+                                          : 'border-none bg-rose-100 text-rose-800'
+                                  }
+                                >
+                                  {item.state === 'ready'
+                                    ? 'Siap diterbitkan'
+                                    : item.state === 'reserved'
+                                      ? item.needsWrite
+                                        ? 'Akan direservasi'
+                                        : 'Sudah direservasi'
+                                      : item.state === 'existing'
+                                        ? 'Sudah terbit'
+                                        : item.state === 'conflict'
+                                          ? 'Konflik'
+                                          : 'Terblokir'}
+                                </Badge>
+                                {item.reason && (
+                                  <p className="mt-1 max-w-[220px] text-[11px] leading-snug text-slate-500">
+                                    {item.reason}
+                                  </p>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="min-h-48 flex items-center justify-center text-slate-500">
+                Pratinjau tidak tersedia.
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="p-6 bg-slate-50 border-t border-slate-100 flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => loadNipyPreview().catch(() => undefined)}
+              disabled={nipyLoading || nipyApplying}
+              className="rounded-xl"
+            >
+              {nipyLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Muat Ulang
+            </Button>
+            <Button
+              type="button"
+              onClick={handleApplyNipyPreview}
+              disabled={
+                !nipyPreview ||
+                nipyApplying ||
+                nipyPreview.summary.pendingWrites < 1 ||
+                nipyPreview.summary.blocked > 0 ||
+                nipyPreview.summary.conflicts > 0
+              }
+              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              {nipyApplying ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Fingerprint className="w-4 h-4 mr-2" />
+              )}
+              Terbitkan dan Reservasi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* CRUD Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="!max-w-5xl w-[90vw] rounded-[28px] border-none shadow-2xl p-0 overflow-hidden bg-white">
@@ -1597,7 +2095,21 @@ export default function EmployeesPage() {
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Identitas</h3>
                     <div className="space-y-2"><Label>Nama</Label><Input value={formData.personal_info?.name || ''} onChange={e => updateNestedField('personal_info', 'name', e.target.value)} className="rounded-xl border-slate-200" /></div>
-                    <div className="space-y-2"><Label>NIY</Label><Input value={formData.personal_info?.employee_id_niy || ''} onChange={e => updateNestedField('personal_info', 'employee_id_niy', e.target.value)} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2">
+                      <Label>NIPY / NIY Presensi</Label>
+                      <Input
+                        value={formData.personal_info?.employee_id_niy || ''}
+                        onChange={e =>
+                          updateNestedField(
+                            'personal_info',
+                            'employee_id_niy',
+                            e.target.value.toUpperCase(),
+                          )
+                        }
+                        className="rounded-xl border-slate-200 font-mono"
+                        placeholder="Harus sama persis dengan NIPY/PIN pada file presensi"
+                      />
+                    </div>
                     <div className="space-y-2"><Label>NPWP</Label><Input value={formData.personal_info?.tax_id_npwp || ''} onChange={e => updateNestedField('personal_info', 'tax_id_npwp', e.target.value)} className="rounded-xl border-slate-200" /></div>
                     <div className="space-y-2"><Label>Nomor WhatsApp/HP</Label><Input value={formData.personal_info?.phone || ''} onChange={e => updateNestedField('personal_info', 'phone', e.target.value)} className="rounded-xl border-slate-200" placeholder="Contoh: 08123456789" /></div>
                     <div className="space-y-2"><Label>Alamat Email</Label><Input type="email" value={formData.personal_info?.email || ''} onChange={e => updateNestedField('personal_info', 'email', e.target.value)} className="rounded-xl border-slate-200" placeholder="Contoh: nama@domain.com" /></div>
@@ -2134,6 +2646,63 @@ export default function EmployeesPage() {
                 <div className="grid grid-cols-3 gap-6">
                   <div className="col-span-3 grid grid-cols-4 gap-4">
                     <div className="space-y-2"><Label htmlFor="name">Nama Lengkap</Label><Input id="name" required value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2">
+                      <Label htmlFor="nipy">NIPY Presensi</Label>
+                      <Input
+                        id="nipy"
+                        value={
+                          formData.nipy ||
+                          (formData.nipyAssignment?.status === 'reserved'
+                            ? `Nomor urut ${String(formData.nipyAssignment?.sequence || '').padStart(3, '0')} direservasi`
+                            : 'Diterbitkan otomatis setelah data disimpan')
+                        }
+                        readOnly
+                        className="rounded-xl border-slate-200 bg-slate-50 font-mono text-slate-600"
+                      />
+                      <p className="text-[11px] leading-relaxed text-slate-500">
+                        {formData.nipy
+                          ? `NIPY permanen · kode ${formData.nipyAssignment?.prefixCode || formData.nipy.slice(0, 2)} · urutan ${String(formData.nipyAssignment?.sequence || formData.nipy.slice(-3)).padStart(3, '0')}`
+                          : formData.nipyAssignment?.status === 'reserved'
+                            ? 'Isi tanggal mulai kerja untuk menyelesaikan NIPY dari nomor yang telah direservasi.'
+                            : 'Formula memakai kategori, tanggal mulai kerja DDMMYY, dan urutan kategori.'}
+                      </p>
+                      {formData.nipy &&
+                        formData.nipyAssignment &&
+                        (formData.nipyAssignment.sourceStartDate !==
+                          formData.employment?.startDate ||
+                          formData.nipyAssignment.categoryGroup !==
+                            getPekaryaNipyGroup(
+                              formData.employment?.jobCategory,
+                            )) && (
+                          <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-800">
+                            Kategori atau tanggal mulai telah berubah. NIPY tetap
+                            permanen; koreksi penerbitan hanya dapat dilakukan
+                            Superadmin dengan alasan audit.
+                          </p>
+                        )}
+                      {profile?.role === 'super_admin' &&
+                        editingEmployee?.nipy &&
+                        editingEmployee?.nipyAssignment &&
+                        (editingEmployee.nipyAssignment.sourceStartDate !==
+                          editingEmployee.employment?.startDate ||
+                          editingEmployee.nipyAssignment.categoryGroup !==
+                            getPekaryaNipyGroup(
+                              editingEmployee.employment?.jobCategory,
+                            )) && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setNipyCorrectionEmployee(editingEmployee);
+                              setNipyCorrectionReason('');
+                              setIsDialogOpen(false);
+                            }}
+                            className="h-9 w-full rounded-xl border-amber-200 bg-amber-50 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                          >
+                            Koreksi NIPY dari Data Tersimpan
+                          </Button>
+                        )}
+                    </div>
                     <div className="space-y-2"><Label htmlFor="nik">NIK (Nomor Induk Kependudukan)</Label><Input id="nik" value={formData.nik || ''} onChange={e => setFormData({ ...formData, nik: e.target.value })} className="rounded-xl border-slate-200" /></div>
                     <div className="space-y-2"><Label htmlFor="phoneNumber">Nomor WhatsApp/HP</Label><Input id="phoneNumber" value={formData.phoneNumber || ''} onChange={e => setFormData({ ...formData, phoneNumber: e.target.value })} className="rounded-xl border-slate-200" placeholder="Contoh: 08123456789" /></div>
                     <div className="space-y-2"><Label htmlFor="email">Alamat Email</Label><Input id="email" type="email" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} className="rounded-xl border-slate-200" placeholder="Contoh: nama@domain.com" /></div>
@@ -2147,7 +2716,7 @@ export default function EmployeesPage() {
                         <SelectContent>{JOB_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2"><Label>Tanggal Mulai</Label><Input type="date" value={formData.employment?.startDate || ''} onChange={e => setFormData((prev: any) => ({ ...prev, employment: { ...(prev.employment || { status: 'active', jobCategory: 'OTHER', endDate: null }), startDate: e.target.value } as any }))} className="rounded-xl border-slate-200" /></div>
+                    <div className="space-y-2"><Label>Tanggal Mulai</Label><Input type="date" required={!editingEmployee && formData.flags?.isActive !== false} value={formData.employment?.startDate || ''} onChange={e => setFormData((prev: any) => ({ ...prev, employment: { ...(prev.employment || { status: 'active', jobCategory: 'OTHER', endDate: null }), startDate: e.target.value } as any }))} className="rounded-xl border-slate-200" /></div>
                     <div className="space-y-2">
                       <Label>Golongan (Grade)</Label>
                       <Select

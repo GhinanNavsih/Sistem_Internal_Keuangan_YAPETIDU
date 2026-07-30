@@ -24,10 +24,18 @@ import {
   type SatpamShiftName,
   shiftOccurrenceId,
 } from '@/lib/payroll/domain';
+import { periodCalendarFromData } from '@/lib/payroll/calendar';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { isSatpamFlexibilityEnabled } from '@/lib/server/satpamFlexibility';
 import { getTodayDateString } from '@/lib/payroll/driverPiket';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
+import {
+  classifySatpamDutyAssignments,
+  isSatpamDutyPlanRequired,
+  satpamDutyPlanId,
+  type SatpamDutyPlanDay,
+} from '@/lib/payroll/satpamDutyPlan';
+import { SATPAM_DUTY_PLANS_COLLECTION } from '@/lib/server/satpamDutyPlan';
 import {
   errorResponse,
   HttpError,
@@ -43,6 +51,8 @@ interface ShiftCommand {
   expectedRevision?: number;
   dutyDate: string;
   shiftName?: SatpamShiftName;
+  dutyPlanId?: string;
+  dutyPlanRevision?: number;
   assignments: SatpamPrimaryAssignmentInput[];
   extraAssignment?: {
     postId: SatpamPostId;
@@ -64,6 +74,7 @@ interface AssignmentRecord {
   overtimeReason: string | null;
   photoUrl: string | null;
   photoAuditMetadata: PhotoAuditMetadata | null;
+  scheduleRelation: string | null;
 }
 
 function stableHash(value: unknown): string {
@@ -157,6 +168,20 @@ function parseCommand(raw: unknown, ketuaShiftId: string, requireEditFields: boo
     !['Pagi', 'Sore', 'Malam'].includes(String(input.shiftName))
   ) {
     throw new HttpError(400, 'Nama shift tidak valid.');
+  }
+  if (
+    input.dutyPlanId !== undefined &&
+    (typeof input.dutyPlanId !== 'string' ||
+      !/^[A-Za-z0-9_-]{1,180}$/.test(input.dutyPlanId))
+  ) {
+    throw new HttpError(400, 'ID rencana dinas tidak valid.');
+  }
+  if (
+    input.dutyPlanRevision !== undefined &&
+    (!Number.isInteger(input.dutyPlanRevision) ||
+      Number(input.dutyPlanRevision) < 1)
+  ) {
+    throw new HttpError(400, 'Revisi rencana dinas tidak valid.');
   }
   if (
     requireEditFields &&
@@ -254,6 +279,12 @@ function parseCommand(raw: unknown, ketuaShiftId: string, requireEditFields: boo
     requestId: input.requestId,
     dutyDate: input.dutyDate,
     shiftName: input.shiftName as SatpamShiftName | undefined,
+    ...(typeof input.dutyPlanId === 'string'
+      ? { dutyPlanId: input.dutyPlanId }
+      : {}),
+    ...(Number.isInteger(input.dutyPlanRevision)
+      ? { dutyPlanRevision: Number(input.dutyPlanRevision) }
+      : {}),
     assignments,
     ...(extraAssignment ? { extraAssignment } : {}),
     ...(requireEditFields
@@ -295,7 +326,56 @@ function buildAssignmentRecords(input: {
   roster: string[];
   employeeById: Map<string, FirebaseFirestore.DocumentSnapshot>;
   regularPayType: 'Harian' | 'Jumat & Libur';
+  planDay: SatpamDutyPlanDay | null;
+  canonicalPlanEnabled: boolean;
 }): AssignmentRecord[] {
+  if (input.canonicalPlanEnabled) {
+    const classified = classifySatpamDutyAssignments({
+      planDay: input.planDay,
+      primaryAssignments: input.command.assignments.map((assignment) => ({
+        postId: assignment.postId,
+        employeeId: assignment.employeeId,
+      })),
+      extraAssignment: input.command.extraAssignment
+        ? {
+            postId: input.command.extraAssignment.postId,
+            employeeId: input.command.extraAssignment.employeeId,
+          }
+        : null,
+      regularPayType: input.regularPayType,
+      teamRosterEmployeeIds: new Set(input.roster),
+    });
+    return classified.assignments.map((assignment, index) => {
+      const source =
+        assignment.assignmentKind === 'extra'
+          ? input.command.extraAssignment!
+          : input.command.assignments[index];
+      const employee = input.employeeById.get(assignment.employeeId);
+      return {
+        assignmentKey:
+          assignment.assignmentKind === 'extra'
+            ? `extra_${assignment.postId}`
+            : `primary_${assignment.postId}_${index}`,
+        assignmentKind: assignment.assignmentKind,
+        postId: assignment.postId,
+        employeeId: assignment.employeeId,
+        employeeName: String(
+          employee?.data()?.name || assignment.employeeId,
+        ),
+        payType: assignment.payType,
+        coveredEmployeeId: assignment.coveredEmployeeId,
+        overtimeReason:
+          assignment.payType === 'Lembur Cover'
+            ? 'Pengganti petugas sesuai rencana dinas'
+            : assignment.assignmentKind === 'extra'
+              ? source.overtimeReason?.trim() || null
+              : null,
+        photoUrl: source.photoUrl || null,
+        photoAuditMetadata: source.photoAuditMetadata || null,
+        scheduleRelation: assignment.scheduleRelation,
+      };
+    });
+  }
   const primary = input.command.assignments.map((assignment, index) => {
     const isExternal = !input.roster.includes(assignment.employeeId);
     const payType = resolveSatpamAssignmentPayType(
@@ -317,6 +397,7 @@ function buildAssignmentRecords(input: {
         payType === 'Lembur Cover' ? assignment.overtimeReason?.trim() || null : null,
       photoUrl: assignment.photoUrl || null,
       photoAuditMetadata: assignment.photoAuditMetadata || null,
+      scheduleRelation: null,
     };
   });
   if (!input.command.extraAssignment) return primary;
@@ -335,6 +416,7 @@ function buildAssignmentRecords(input: {
       overtimeReason: extra.overtimeReason?.trim() || null,
       photoUrl: extra.photoUrl || null,
       photoAuditMetadata: extra.photoAuditMetadata || null,
+      scheduleRelation: null,
     },
   ];
 }
@@ -422,7 +504,10 @@ function assignmentReportData(input: {
   ketuaShiftId: string;
   ketuaShiftName: string;
   holidayCalendarVersion: string | null;
+  calendarRevision: number;
   anomalyCodes: string[];
+  dutyPlanId: string | null;
+  dutyPlanRevision: number | null;
   now: FirebaseFirestore.FieldValue;
 }) {
   const post = SATPAM_POSTS.find((item) => item.id === input.record.postId)!;
@@ -460,6 +545,7 @@ function assignmentReportData(input: {
     submittedEmployeeId: input.record.employeeId,
     submittedPayType: input.record.payType,
     coveredEmployeeId: input.record.coveredEmployeeId,
+    scheduleRelation: input.record.scheduleRelation,
     overtimeReason: input.record.overtimeReason,
     ketuaShiftId: input.ketuaShiftId,
     ketuaShiftName: input.ketuaShiftName,
@@ -474,6 +560,9 @@ function assignmentReportData(input: {
     auditorActionAt: null,
     rateVersion: SATPAM_RATE_VERSION,
     holidayCalendarVersion: input.holidayCalendarVersion,
+    calendarRevision: input.calendarRevision,
+    dutyPlanId: input.dutyPlanId,
+    dutyPlanRevision: input.dutyPlanRevision,
     submittedAt: input.now,
     schemaVersion: 3,
   };
@@ -537,6 +626,8 @@ async function mutateShift(
     shiftName: reportedShiftName,
     assignments: command.assignments,
     extraAssignment: command.extraAssignment || null,
+    dutyPlanId: command.dutyPlanId || null,
+    dutyPlanRevision: command.dutyPlanRevision || null,
   });
 
   return adminDb.runTransaction(async (transaction) => {
@@ -548,6 +639,9 @@ async function mutateShift(
     const idempotencyRef = adminDb
       .collection('FinancialIdempotencyKeys')
       .doc(`${actor.uid}__${command.requestId}`);
+    const dutyPlanRef = adminDb
+      .collection(SATPAM_DUTY_PLANS_COLLECTION)
+      .doc(satpamDutyPlanId(period, teamSnapshot.id));
     const selectedEmployeeIds = Array.from(
       new Set([
         ...roster,
@@ -564,12 +658,14 @@ async function mutateShift(
       periodSnapshot,
       holidaySnapshot,
       idempotencySnapshot,
+      dutyPlanSnapshot,
       ...employeeSnapshots
     ] = await Promise.all([
       transaction.get(occurrenceRef),
       transaction.get(periodRef),
       transaction.get(holidayRef),
       transaction.get(idempotencyRef),
+      transaction.get(dutyPlanRef),
       ...employeeRefs.map((ref) => transaction.get(ref)),
     ]);
 
@@ -594,6 +690,35 @@ async function mutateShift(
         'Tanggal ini berada di periode payroll yang belum dibuka atau sudah ditutup.',
       );
     }
+    const canonicalPlanEnabled = isSatpamDutyPlanRequired(
+      period,
+      periodSnapshot.data() || null,
+    );
+    const dutyPlan = dutyPlanSnapshot.exists ? dutyPlanSnapshot.data()! : null;
+    if (
+      canonicalPlanEnabled &&
+      dutyPlan &&
+      command.dutyPlanRevision !== undefined &&
+      Number(dutyPlan.revision || 0) !== command.dutyPlanRevision
+    ) {
+      throw new HttpError(
+        409,
+        'Rencana dinas telah berubah. Muat ulang agar draf Anda tidak hilang.',
+      );
+    }
+    if (
+      canonicalPlanEnabled &&
+      command.dutyPlanId &&
+      command.dutyPlanId !== dutyPlanRef.id
+    ) {
+      throw new HttpError(409, 'Rencana dinas laporan tidak sesuai regu.');
+    }
+    const planDay: SatpamDutyPlanDay | null =
+      dutyPlan && Array.isArray(dutyPlan.generatedDays)
+        ? dutyPlan.generatedDays.find(
+            (day: SatpamDutyPlanDay) => day.dutyDate === command.dutyDate,
+          ) || null
+        : null;
     if (mode === 'create' && occurrenceSnapshot.exists) {
       throw new HttpError(
         409,
@@ -634,19 +759,26 @@ async function mutateShift(
     const employeeById = new Map(
       employeeSnapshots.map((snapshot) => [snapshot.id, snapshot]),
     );
-    const holidayDates = new Set<string>(
+    const annualHolidayDates =
       holidaySnapshot.exists && Array.isArray(holidaySnapshot.data()?.dates)
         ? holidaySnapshot
             .data()!
             .dates.filter((date: unknown): date is string => typeof date === 'string')
-        : [],
+        : [];
+    const periodCalendar = periodCalendarFromData(
+      period,
+      periodSnapshot.data()!,
+      annualHolidayDates,
     );
+    const holidayDates = new Set<string>(periodCalendar.premiumDates);
     const regularPayType = getRegularSatpamPayType(command.dutyDate, holidayDates);
     const records = buildAssignmentRecords({
       command,
       roster,
       employeeById,
       regularPayType,
+      planDay,
+      canonicalPlanEnabled,
     });
     const anomalies = buildAnomalies({
       command,
@@ -655,8 +787,80 @@ async function mutateShift(
       ketuaShiftId: actor.linkedEmployeeId!,
       roster,
       employeeById,
-      holidayCalendarConfigured: holidaySnapshot.exists,
+      holidayCalendarConfigured:
+        Boolean(periodSnapshot.data()?.workCalendar) || holidaySnapshot.exists,
     });
+    if (canonicalPlanEnabled) {
+      const classification = classifySatpamDutyAssignments({
+        planDay,
+        primaryAssignments: command.assignments.map((assignment) => ({
+          postId: assignment.postId,
+          employeeId: assignment.employeeId,
+        })),
+        extraAssignment: command.extraAssignment
+          ? {
+              postId: command.extraAssignment.postId,
+              employeeId: command.extraAssignment.employeeId,
+            }
+          : null,
+        regularPayType,
+        teamRosterEmployeeIds: new Set(roster),
+      });
+      for (const code of classification.anomalyCodes) {
+        if (anomalies.some((anomaly) => anomaly.code === code)) continue;
+        const blocking = [
+          'DUTY_PLAN_STALE',
+          'EXTRA_NOT_OFF_DUTY',
+          'EXTRA_WITH_INCOMPLETE_PRIMARY_ROSTER',
+          'ABSENCE_WORK_CONFLICT',
+        ].includes(code);
+        anomalies.push({
+          code,
+          severity: blocking ? 'blocking' : 'warning',
+          message:
+            code === 'DUTY_PLAN_MISSING'
+              ? 'Rencana dinas belum tersedia. Laporan tetap diterima dan harus direkonsiliasi.'
+              : code === 'ACTUAL_ROSTER_DIFFERS'
+                ? 'Petugas aktual berbeda dari rencana dinas.'
+                : code === 'EXTRA_NOT_OFF_DUTY'
+                  ? 'Petugas tambahan bukan anggota yang dijadwalkan Libur.'
+                  : 'Penugasan tambahan belum memiliki sembilan pos utama yang unik.',
+        });
+      }
+      if (
+        dutyPlan &&
+        dutyPlan.status === 'pending_backfill_review' &&
+        Array.isArray(dutyPlan.lateBackfillDates) &&
+        dutyPlan.lateBackfillDates.includes(command.dutyDate) &&
+        !(
+          Array.isArray(dutyPlan.acknowledgedBackfillDates) &&
+          dutyPlan.acknowledgedBackfillDates.includes(command.dutyDate)
+        ) &&
+        !anomalies.some(
+          (anomaly) => anomaly.code === 'DUTY_PLAN_BACKFILL_PENDING',
+        )
+      ) {
+        anomalies.push({
+          code: 'DUTY_PLAN_BACKFILL_PENDING',
+          severity: 'blocking',
+          message: 'Rencana tanggal ini masih menunggu konfirmasi backfill Kepala SatKer.',
+        });
+      }
+      if (
+        dutyPlan &&
+        dutyPlan.status === 'stale' &&
+        Array.isArray(dutyPlan.staleDates) &&
+        dutyPlan.staleDates.includes(command.dutyDate) &&
+        !anomalies.some((anomaly) => anomaly.code === 'DUTY_PLAN_STALE')
+      ) {
+        anomalies.push({
+          code: 'DUTY_PLAN_STALE',
+          severity: 'blocking',
+          message:
+            'Susunan regu berubah. Tanggal ini perlu dibuat ulang pada rencana dinas sebelum dapat disetujui.',
+        });
+      }
+    }
     const revision = mode === 'edit' ? Number(before?.revision || 1) + 1 : 1;
     const { startsAtIso, endsAtIso } = getShiftIsoBounds(
       command.dutyDate,
@@ -708,9 +912,14 @@ async function mutateShift(
           ketuaShiftId: actor.linkedEmployeeId!,
           ketuaShiftName: String(team.ketuaShiftName || actor.displayName),
           holidayCalendarVersion: holidaySnapshot.exists
-            ? String(holidaySnapshot.data()?.version || '')
-            : null,
+            ? `PERIOD-${period}-R${periodCalendar.revision}`
+            : periodCalendar.annualVersion,
+          calendarRevision: periodCalendar.revision,
           anomalyCodes: anomalies.map((anomaly) => anomaly.code),
+          dutyPlanId: dutyPlanSnapshot.exists ? dutyPlanRef.id : null,
+          dutyPlanRevision: dutyPlanSnapshot.exists
+            ? Number(dutyPlan?.revision || 0)
+            : null,
           now,
         }),
       );
@@ -730,6 +939,7 @@ async function mutateShift(
         overtimeReason: record.overtimeReason,
         photoUrl: record.photoUrl,
         photoAuditMetadata: record.photoAuditMetadata,
+        scheduleRelation: record.scheduleRelation,
       })),
     };
     const occurrenceData = {
@@ -765,11 +975,19 @@ async function mutateShift(
       ketuaShiftName: String(team.ketuaShiftName || actor.displayName),
       rateVersion: SATPAM_RATE_VERSION,
       holidayCalendarVersion: holidaySnapshot.exists
-        ? String(holidaySnapshot.data()?.version || '')
-        : null,
+        ? `PERIOD-${period}-R${periodCalendar.revision}`
+        : periodCalendar.annualVersion,
+      calendarRevision: periodCalendar.revision,
       regularPayType,
+      dutyPlanId: dutyPlanSnapshot.exists ? dutyPlanRef.id : null,
+      dutyPlanRevision: dutyPlanSnapshot.exists
+        ? Number(dutyPlan?.revision || 0)
+        : null,
+      plannedAssignmentSnapshot: planDay,
+      actualAssignmentSnapshot: latestSnapshot.assignments,
       assignmentCount: records.length,
       reportIds,
+      pendingReportIds: reportIds,
       latestSubmitterSnapshot: latestSnapshot,
       ...(mode === 'create' ? { initialSubmissionSnapshot: latestSnapshot } : {}),
       createdAt: before?.createdAt || now,

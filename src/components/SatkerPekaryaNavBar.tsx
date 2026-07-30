@@ -3,7 +3,7 @@
 import React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote, FileText } from 'lucide-react';
+import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote, FileText, UsersRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function SatkerPekaryaNavBar() {
@@ -17,7 +17,16 @@ export default function SatkerPekaryaNavBar() {
 
   const month = searchParams.get('month') || String(new Date().getMonth() + 1);
   const year = searchParams.get('year') || String(new Date().getFullYear());
+  const attendanceCategory =
+    searchParams.get('category') ||
+    profile?.permittedCategories?.[0] ||
+    '';
   const uraianUrl = `/dashboard/payroll/uraian/rekap-pekarya?month=${month}&year=${year}`;
+  const attendanceUrl =
+    `/dashboard/payroll/uraian/presensi-pekarya?month=${month}&year=${year}` +
+    (attendanceCategory
+      ? `&category=${encodeURIComponent(attendanceCategory)}`
+      : '');
   const activityUrl = `/dashboard/payroll/activity-review?month=${month}&year=${year}`;
   const journeysUrl = `/dashboard/payroll/driver-journeys?month=${month}&year=${year}`;
   const dashboardUrl = `/dashboard/payroll/journey-dashboard?month=${month}&year=${year}`;
@@ -28,7 +37,14 @@ export default function SatkerPekaryaNavBar() {
   const isActivity = pathname.startsWith('/dashboard/payroll/activity-review');
   const isJourneys = pathname.startsWith('/dashboard/payroll/driver-journeys');
   const isDashboard = pathname.startsWith('/dashboard/payroll/journey-dashboard');
-  const isUraian = pathname.startsWith('/dashboard/payroll/uraian/rekap-pekarya') || (pathname.startsWith('/dashboard/payroll/uraian') && !pathname.includes('vakasi-loyalis') && !pathname.includes('pelaporan-kegiatan') && !pathname.includes('proposal-kegiatan'));
+  const isUraian =
+    pathname.startsWith('/dashboard/payroll/uraian/rekap-pekarya') ||
+    (pathname.startsWith('/dashboard/payroll/uraian') &&
+      !pathname.includes('presensi-pekarya') &&
+      !pathname.includes('vakasi-loyalis') &&
+      !pathname.includes('pelaporan-kegiatan') &&
+      !pathname.includes('proposal-kegiatan'));
+  const isAttendance = pathname.startsWith('/dashboard/payroll/uraian/presensi-pekarya');
   const isVakasi = pathname.startsWith('/dashboard/payroll/uraian/vakasi-loyalis');
   const isProposal = pathname.startsWith('/dashboard/payroll/uraian/proposal-kegiatan');
   const isPelaporan = pathname.startsWith('/dashboard/payroll/uraian/pelaporan-kegiatan');
@@ -115,6 +131,13 @@ export default function SatkerPekaryaNavBar() {
                 <span>Dashboard Perjalanan</span>
               </button>
               <button
+                onClick={() => router.push(attendanceUrl)}
+                className={navBtnClass(isAttendance)}
+              >
+                <UsersRound className="w-4 h-4" />
+                <span>Presensi Pekarya</span>
+              </button>
+              <button
                 onClick={() => router.push(uraianUrl)}
                 className={navBtnClass(isUraian)}
               >
@@ -149,4 +172,3 @@ export default function SatkerPekaryaNavBar() {
     </header>
   );
 }
-

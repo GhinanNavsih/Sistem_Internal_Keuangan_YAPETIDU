@@ -25,6 +25,11 @@ import { db } from '@/lib/firebase';
 import { MONTHS_ID, REKAP_COLUMNS, SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import * as XLSX from 'xlsx';
+import {
+  authenticatedFormData,
+  authenticatedJson,
+  createFinancialRequestId,
+} from '@/lib/payroll/client';
 
 import Link from 'next/link'; const normalizeExcelDate = (val: any): string => {
   if (val === undefined || val === null) return '';
@@ -107,6 +112,26 @@ const parseDateToDDMMYYYY = (dateStr: string) => {
   if (!dateStr || !dateStr.includes('-')) return dateStr;
   const [y, m, d] = dateStr.split('-');
   return `${d}-${m}-${y}`;
+};
+
+const normalizeExcelTime = (value: unknown): string => {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const seconds = Math.round((((value % 1) + 1) % 1) * 86_400) % 86_400;
+    return [
+      Math.floor(seconds / 3_600),
+      Math.floor((seconds % 3_600) / 60),
+      seconds % 60,
+    ]
+      .map((part) => String(part).padStart(2, '0'))
+      .join(':');
+  }
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(
+    String(value).trim(),
+  );
+  return match
+    ? `${match[1].padStart(2, '0')}:${match[2]}:${match[3] || '00'}`
+    : '';
 };
 
 const recalculateSummary = (dailyLogs: any[], expHours: number) => {
@@ -216,6 +241,8 @@ export default function PresensiLoyalisRawPage() {
   const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()), 10);
 
   const periodToken = `${year}_${String(month).padStart(2, '0')}`;
+  const canonicalPeriod = `${year}-${String(month).padStart(2, '0')}`;
+  const usesSharedImport = canonicalPeriod >= '2026-08';
 
   // ── States ──
   const [loyalisEmployees, setLoyalisEmployees] = useState<any[]>([]);
@@ -229,6 +256,20 @@ export default function PresensiLoyalisRawPage() {
   const [existingPresence, setExistingPresence] = useState<any>(null);
   const [loadingPresence, setLoadingPresence] = useState(false);
   const [expandedRowIdx, setExpandedRowIdx] = useState<number | null>(null);
+  const [activeImport, setActiveImport] = useState<{
+    activeRevision?: number;
+    activeRevisionId?: string;
+  } | null>(null);
+  const [activeCalendarRevision, setActiveCalendarRevision] = useState(1);
+  const [importHistory, setImportHistory] = useState<
+    Array<{
+      id: string;
+      revision?: number;
+      status?: string;
+      fileName?: string;
+      downloadUrl?: string | null;
+    }>
+  >([]);
 
   // ── Pekarya Presence Utility States ──
   const [presensiTargetType, setPresensiTargetType] = useState<'loyalis' | 'pekarya'>('loyalis');
@@ -274,6 +315,11 @@ export default function PresensiLoyalisRawPage() {
           const data = d.data();
           return {
             id: d.id,
+            nipy: String(
+              data.nipy || data.personal_info?.employee_id_niy || '',
+            )
+              .trim()
+              .toUpperCase(),
             name: data.personal_info?.name || '',
             role: data.employment_profile?.job_role || '',
             department: data.employment_profile?.department_unit || '',
@@ -288,6 +334,45 @@ export default function PresensiLoyalisRawPage() {
     };
     fetchLoyalis();
   }, []);
+
+  const fetchActiveImport = useCallback(async () => {
+    if (!usesSharedImport) {
+      setActiveImport(null);
+      return;
+    }
+    try {
+      const [result, calendarResult] = await Promise.all([
+        authenticatedJson<{
+          import: {
+            activeRevision?: number;
+            activeRevisionId?: string;
+          } | null;
+          revisions: Array<{
+            id: string;
+            revision?: number;
+            status?: string;
+            fileName?: string;
+            downloadUrl?: string | null;
+          }>;
+        }>(
+          `/api/attendance/imports?period=${encodeURIComponent(canonicalPeriod)}&includeDownload=true`,
+        ),
+        authenticatedJson<{ calendar: { revision: number } }>(
+          `/api/payroll/periods/${encodeURIComponent(canonicalPeriod)}/calendar`,
+        ),
+      ]);
+      setActiveImport(result.import);
+      setImportHistory(result.revisions || []);
+      setActiveCalendarRevision(calendarResult.calendar.revision);
+    } catch (error) {
+      console.error('Failed to load shared attendance import:', error);
+      setActiveImport(null);
+    }
+  }, [canonicalPeriod, usesSharedImport]);
+
+  useEffect(() => {
+    void fetchActiveImport();
+  }, [fetchActiveImport]);
 
   // ── Fetch Existing Loyalis Presence Data ──
   const fetchExistingPresence = useCallback(async () => {
@@ -509,6 +594,7 @@ export default function PresensiLoyalisRawPage() {
     if (!existingPresence?.entries) return;
     const entriesList = Object.values(existingPresence.entries).map((entry: any) => ({
       excelName: entry.excelName || '-',
+      nipy: entry.nipy || '',
       employeeId: entry.isNotFoundInExcel ? null : entry.employeeId,
       employeeName: entry.isNotFoundInExcel ? null : entry.employeeName,
       minutes: Math.ceil(entry.minutes || 0),
@@ -531,6 +617,7 @@ export default function PresensiLoyalisRawPage() {
         const calc = calculatePresenceStratum(row.minutes, calcMode, activeWorkingDays, expectedHours);
         const mappedRow = {
           excelName: row.excelName,
+          nipy: row.nipy || '',
           employeeId: row.employeeId,
           employeeName: row.employeeName,
           minutes: row.minutes,
@@ -581,6 +668,7 @@ export default function PresensiLoyalisRawPage() {
     if (existingPresence && existingPresence.entries) {
       const entriesList = Object.values(existingPresence.entries).map((entry: any) => ({
         excelName: entry.excelName,
+        nipy: entry.nipy || '',
         employeeId: entry.employeeId,
         employeeName: entry.employeeName,
         minutes: Math.ceil(entry.minutes || 0),
@@ -629,6 +717,35 @@ export default function PresensiLoyalisRawPage() {
           setMessage({ type: 'error', text: 'Format Excel tidak cocok. Pastikan memiliki kolom "Nama" dan "Jam kerja".' });
           return;
         }
+        const calculationRows = usesSharedImport
+          ? rows.filter((row) => {
+              const normalizedDate = normalizeExcelDate(row['Tanggal']);
+              const [dayPart, monthPart, yearPart] = normalizedDate
+                .split('-')
+                .map(Number);
+              const dedicatedNipy = String(row['NIPY'] || '')
+                .trim()
+                .toUpperCase();
+              const pin = String(row['PIN'] || '').trim().toUpperCase();
+              const validTime = (value: unknown) =>
+                value === undefined ||
+                value === null ||
+                value === '' ||
+                typeof value === 'number' ||
+                /^([01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(
+                  String(value).trim(),
+                );
+              return (
+                dayPart >= 1 &&
+                monthPart === month &&
+                yearPart === year &&
+                Boolean(dedicatedNipy || pin) &&
+                !(dedicatedNipy && pin && dedicatedNipy !== pin) &&
+                validTime(row['Scan masuk']) &&
+                validTime(row['Scan pulang'])
+              );
+            })
+          : rows;
 
         // Auto-detect working days count from the uploaded raw logs using robust algorithm:
         // - A date is NOT a working day if:
@@ -636,7 +753,7 @@ export default function PresensiLoyalisRawPage() {
         //   2) At least half of the employees recorded on that date have "Libur Rutin" status.
         // - Otherwise, it is a working day.
         const dateStats: Record<string, { total: number; tidakHadir: number; liburRutin: number }> = {};
-        rows.forEach(row => {
+        calculationRows.forEach(row => {
           const tgl = normalizeExcelDate(row['Tanggal']);
           const jk = String(row['Jam kerja'] || '').trim().toUpperCase();
           if (!tgl) return;
@@ -664,26 +781,34 @@ export default function PresensiLoyalisRawPage() {
           setWorkingDays(deducedDays);
         }
 
-        // Group rows by Excel Name
+        // Starting August 2026, NIPY is the only payroll identity connector.
+        // Historical periods retain the old display-name matching path.
         const grouped: Record<string, any[]> = {};
-        rows.forEach(row => {
+        calculationRows.forEach(row => {
           const name = String(row['Nama'] || '').trim();
-          if (!name) return;
-          if (!grouped[name]) {
-            grouped[name] = [];
+          const dedicatedNipy = String(row['NIPY'] || '').trim().toUpperCase();
+          const pin = String(row['PIN'] || '').trim().toUpperCase();
+          if (usesSharedImport && dedicatedNipy && pin && dedicatedNipy !== pin) {
+            return;
           }
-          grouped[name].push(row);
+          const connector = dedicatedNipy || pin;
+          const groupKey = usesSharedImport ? connector : name;
+          if (!groupKey) return;
+          if (!grouped[groupKey]) grouped[groupKey] = [];
+          grouped[groupKey].push(row);
         });
 
         const parsedData: any[] = [];
-        Object.entries(grouped).forEach(([excelName, empRows]) => {
+        Object.entries(grouped).forEach(([groupKey, empRows]) => {
+          const excelName = String(empRows[0]?.['Nama'] || groupKey).trim();
+          const sourceNipy = usesSharedImport ? groupKey : '';
           const dailyLogs: any[] = [];
           empRows.forEach(dayRow => {
             dailyLogs.push({
               Tanggal: normalizeExcelDate(dayRow['Tanggal']),
               'Jam kerja': String(dayRow['Jam kerja'] || ''),
-              'Scan masuk': dayRow['Scan masuk'] ? String(dayRow['Scan masuk']).trim() : '',
-              'Scan pulang': dayRow['Scan pulang'] ? String(dayRow['Scan pulang']).trim() : '',
+              'Scan masuk': normalizeExcelTime(dayRow['Scan masuk']),
+              'Scan pulang': normalizeExcelTime(dayRow['Scan pulang']),
             });
           });
 
@@ -696,10 +821,14 @@ export default function PresensiLoyalisRawPage() {
 
           // Run recalculation to get total worked minutes, active days, etc.
           const summary = recalculateSummary(dailyLogs, expectedHours);
-          const match = matchExcelName(excelName, loyalisEmployees);
+          const match = usesSharedImport
+            ? loyalisEmployees.find((employee) => employee.nipy === sourceNipy) || null
+            : matchExcelName(excelName, loyalisEmployees);
+          if (usesSharedImport && !match) return;
 
           parsedData.push({
             excelName,
+            nipy: sourceNipy,
             employeeId: match?.id || null,
             employeeName: match?.name || null,
             ...summary,
@@ -716,8 +845,92 @@ export default function PresensiLoyalisRawPage() {
         setMessage({ type: 'error', text: 'Gagal membaca file Excel. Pastikan format benar.' });
       }
     };
-    reader.readAsBinaryString(file);
-  }, [loyalisEmployees, expectedHours, matchExcelName]);
+    const prepareAndRead = async () => {
+      if (!usesSharedImport) {
+        reader.readAsBinaryString(file);
+        return;
+      }
+      setSavingPresence(true);
+      try {
+        const previewForm = new FormData();
+        previewForm.append('file', file);
+        previewForm.append('period', canonicalPeriod);
+        previewForm.append('mode', 'preview');
+        const preview = await authenticatedFormData<{
+          summary: {
+            sourceRowCount: number;
+            matchedLoyalisCount: number;
+            matchedPekaryaCount: number;
+            matchedSatpamCount: number;
+            unknownNipyCount: number;
+            invalidRowCount: number;
+            activeEmployeeMissingNipyCount: number;
+            duplicateMasterNipyCount: number;
+          };
+          differences: {
+            previousRevision: number;
+            added: number;
+            removed: number;
+            changed: number;
+          };
+        }>('/api/attendance/imports', previewForm);
+        const summary = preview.summary;
+        const proceed = window.confirm(
+          [
+            `Aktifkan file presensi bersama untuk ${canonicalPeriod}?`,
+            `${summary.sourceRowCount} baris · ${summary.matchedLoyalisCount} Loyalis · ${summary.matchedPekaryaCount} Pekarya (${summary.matchedSatpamCount} Satpam).`,
+            `${summary.unknownNipyCount} NIPY tidak dikenal · ${summary.invalidRowCount} baris tidak valid.`,
+            `${summary.activeEmployeeMissingNipyCount} pegawai aktif belum punya NIPY · ${summary.duplicateMasterNipyCount} NIPY master duplikat.`,
+            `Perubahan terhadap revisi aktif: +${preview.differences.added} / -${preview.differences.removed} / ${preview.differences.changed} berubah.`,
+            'File lama dan hasil sebelumnya tetap disimpan untuk audit.',
+          ].join('\n'),
+        );
+        if (!proceed) return;
+        const activateForm = new FormData();
+        activateForm.append('file', file);
+        activateForm.append('period', canonicalPeriod);
+        activateForm.append('mode', 'activate');
+        activateForm.append(
+          'requestId',
+          createFinancialRequestId('attendance-import'),
+        );
+        activateForm.append(
+          'reason',
+          'Mengaktifkan file presensi bulanan bersama untuk perhitungan payroll.',
+        );
+        activateForm.append(
+          'expectedRevision',
+          String(preview.differences.previousRevision),
+        );
+        const activated = await authenticatedFormData<{
+          activeRevision: number;
+          activeRevisionId: string;
+        }>('/api/attendance/imports', activateForm);
+        setActiveImport({
+          activeRevision: activated.activeRevision,
+          activeRevisionId: activated.activeRevisionId,
+        });
+        reader.readAsBinaryString(file);
+      } catch (error) {
+        setMessage({
+          type: 'error',
+          text:
+            error instanceof Error
+              ? error.message
+              : 'Gagal mengaktifkan file presensi bersama.',
+        });
+      } finally {
+        setSavingPresence(false);
+      }
+    };
+    void prepareAndRead();
+  }, [
+    canonicalPeriod,
+    loyalisEmployees,
+    expectedHours,
+    matchExcelName,
+    usesSharedImport,
+  ]);
 
   const handleUpdateDailyLog = useCallback((excelName: string, dateStr: string, field: string, value: any) => {
     setUploadedData(prev => {
@@ -779,6 +992,16 @@ export default function PresensiLoyalisRawPage() {
 
   const handleSavePresence = async () => {
     if (!uploadedData || uploadedData.length === 0) return;
+    if (
+      usesSharedImport &&
+      (!activeImport?.activeRevision || !activeImport.activeRevisionId)
+    ) {
+      setMessage({
+        type: 'error',
+        text: 'Aktifkan file presensi bersama sebelum menyimpan hasil Loyalis.',
+      });
+      return;
+    }
     setSavingPresence(true);
     try {
       const entriesMap: Record<string, any> = {};
@@ -790,6 +1013,7 @@ export default function PresensiLoyalisRawPage() {
           employeeId: row.employeeId,
           employeeName: row.employeeName,
           excelName: row.excelName,
+          nipy: row.nipy || '',
           minutes: row.minutes,
           absenceMinutes: calc.absenceMinutes,
           stratum: calc.stratum,
@@ -810,6 +1034,7 @@ export default function PresensiLoyalisRawPage() {
             employeeId: emp.id,
             employeeName: emp.name,
             excelName: '-',
+            nipy: emp.nipy || '',
             minutes: 0,
             absenceMinutes: activeWorkingDays * expectedHours * 60,
             stratum: 5,
@@ -830,6 +1055,13 @@ export default function PresensiLoyalisRawPage() {
         expectedHours,
         mode: calcMode,
         entries: entriesMap,
+        ...(usesSharedImport && {
+          sourceImportRevision: activeImport?.activeRevision || 0,
+          sourceImportRevisionId: activeImport?.activeRevisionId || '',
+          sourceImportStale: false,
+          sourceCalendarRevision: activeCalendarRevision,
+          sourceCalendarStale: false,
+        }),
         updatedAt: serverTimestamp(),
       };
 
@@ -976,7 +1208,24 @@ export default function PresensiLoyalisRawPage() {
         </div>
       )}
 
-      {presensiTargetType === 'pekarya' && profile?.role !== 'loyalis_presence_admin' ? (
+      {presensiTargetType === 'pekarya' &&
+      profile?.role !== 'loyalis_presence_admin' &&
+      usesSharedImport ? (
+        <Card className="rounded-[20px] border border-indigo-200 bg-indigo-50 p-6">
+          <h3 className="font-bold text-indigo-950">Presensi Pekarya memakai data NIPY per pegawai</h3>
+          <p className="mt-2 text-sm text-indigo-800">
+            Mulai Agustus 2026, pengisian massal jumlah hari dinonaktifkan.
+            Kepala SatKer meninjau hari hadir, koreksi, dan peringatan pada halaman
+            Presensi Pekarya.
+          </p>
+          <Link
+            href={`/dashboard/payroll/uraian/presensi-pekarya?month=${month}&year=${year}&category=${selectedPekaryaCategory}`}
+            className="mt-4 inline-flex min-h-12 items-center rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white hover:bg-indigo-700"
+          >
+            Buka Presensi Pekarya
+          </Link>
+        </Card>
+      ) : presensiTargetType === 'pekarya' && profile?.role !== 'loyalis_presence_admin' ? (
         <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6 space-y-6">
           <div className="flex justify-between items-center border-b border-slate-50 pb-4">
             <div>
@@ -1074,6 +1323,53 @@ export default function PresensiLoyalisRawPage() {
               </div>
             </div>
 
+            {usesSharedImport && (
+              <div className="space-y-3">
+                <div className={`rounded-2xl border p-4 text-sm ${
+                  activeImport?.activeRevision
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    : 'border-amber-200 bg-amber-50 text-amber-900'
+                }`}>
+                  {activeImport?.activeRevision
+                    ? `File presensi bersama aktif: revisi ${activeImport.activeRevision}. Unggahan baru akan membuat revisi pengganti dan tetap menyimpan file lama.`
+                    : 'Belum ada file presensi bersama aktif untuk periode ini. Unggah satu XLSX yang memuat Loyalis dan Pekarya.'}
+                  {(existingPresence?.sourceImportStale ||
+                    existingPresence?.sourceCalendarStale) && (
+                    <p className="mt-2 font-bold">
+                      Hasil Loyalis lama sudah tidak sesuai dengan revisi import
+                      atau kalender aktif. Proses dan simpan ulang sebelum periode
+                      ditutup.
+                    </p>
+                  )}
+                </div>
+                {importHistory.length > 0 && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-bold text-slate-700">Riwayat file presensi</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {importHistory.map((revision) =>
+                        revision.downloadUrl ? (
+                          <a
+                            key={revision.id}
+                            href={revision.downloadUrl}
+                            className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-indigo-700"
+                          >
+                            Revisi {revision.revision} · {revision.status}
+                          </a>
+                        ) : (
+                          <span
+                            key={revision.id}
+                            className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-500"
+                          >
+                            Revisi {revision.revision} · {revision.status}
+                          </span>
+                        ),
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {existingPresence && Object.keys(existingPresence.entries || {}).length === 0 && !uploadedData && (
               <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
                 <Calendar className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
@@ -1163,7 +1459,9 @@ export default function PresensiLoyalisRawPage() {
                     className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold h-10 flex items-center justify-center gap-2 transition-all"
                   >
                     <Upload className="w-4 h-4 text-slate-400" />
-                    Pilih File Excel Daily Raw Log
+                    {usesSharedImport
+                      ? 'Pilih & Aktifkan File Presensi Bersama'
+                      : 'Pilih File Excel Daily Raw Log'}
                   </Button>
                 </div>
               </div>
@@ -1208,7 +1506,7 @@ export default function PresensiLoyalisRawPage() {
                             <div className="space-y-0.5">
                               <h4 className="font-bold text-slate-800 text-xs tracking-wide">{row.excelName}</h4>
                               <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                {uploadedData && row.excelName !== '-' ? (
+                                {uploadedData && row.excelName !== '-' && !usesSharedImport ? (
                                   activeSearchRowIdx === row.idx ? (
                                     <div className="relative w-full max-w-[200px] z-20">
                                       <Input
@@ -1286,11 +1584,18 @@ export default function PresensiLoyalisRawPage() {
                                   <div className="flex items-center gap-1">
                                     <span className="font-bold text-indigo-600 text-[10px]">{row.employeeName}</span>
                                     <span className="text-[9px] text-slate-400 font-mono">(ID: {row.employeeId})</span>
+                                    {usesSharedImport && row.nipy && (
+                                      <span className="text-[9px] text-emerald-600 font-mono">
+                                        NIPY {row.nipy}
+                                      </span>
+                                    )}
                                   </div>
                                 ) : (
                                   <span className="inline-flex items-center gap-0.5 text-rose-500 bg-rose-50 border border-rose-100 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
                                     <AlertCircle className="w-2.5 h-2.5" />
-                                    Tidak cocok
+                                    {usesSharedImport
+                                      ? `NIPY ${row.nipy || 'kosong'} tidak cocok`
+                                      : 'Tidak cocok'}
                                   </span>
                                 )}
                               </div>
@@ -1502,7 +1807,10 @@ export default function PresensiLoyalisRawPage() {
                                     </thead>
                                     <tbody>
                                       {row.dailyLogs.map((log: any, logIdx: number) => {
-                                        const isEditable = !!uploadedData && row.excelName !== '-';
+                                        const isEditable =
+                                          !!uploadedData &&
+                                          row.excelName !== '-' &&
+                                          !usesSharedImport;
                                         return (
                                           <tr key={logIdx} className="border-b border-slate-50 hover:bg-slate-50/40">
                                             <td className="px-3 py-2 text-slate-400 text-center font-mono">{logIdx + 1}</td>

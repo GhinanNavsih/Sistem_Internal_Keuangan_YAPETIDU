@@ -99,6 +99,70 @@ export function computeAllSlipAmounts(
 // ─── Supported job categories ───────────────────────────────────────────────
 export const SUPPORTED_CATEGORIES = Object.keys(REKAP_COLUMNS);
 
+const ATTENDANCE_HARIAN_COLUMN: RekapColumn = {
+  key: 'harian',
+  label: 'Harian',
+  type: 'count',
+  multiplier: RATE_HARIAN,
+  slipLabel: 'Vakasi Harian',
+};
+const ATTENDANCE_PREMIUM_COLUMN: RekapColumn = {
+  key: 'jumatLibur',
+  label: 'Jumat & Libur',
+  type: 'count',
+  multiplier: RATE_JUMAT,
+  slipLabel: 'Jumat & Libur',
+};
+
+export function getRekapColumns(
+  category: string,
+  period?: string,
+): RekapColumn[] {
+  const base = REKAP_COLUMNS[category] || REKAP_COLUMNS.KEBERSIHAN;
+  const normalizedPeriod = normalizeRekapPeriod(period);
+  if (!normalizedPeriod || normalizedPeriod < '2026-08' || category === 'SATPAM') {
+    return base;
+  }
+  const withoutLegacyPresence = base.filter(
+    (column) =>
+      column.key !== 'presensi' &&
+      column.key !== 'harian' &&
+      column.key !== 'jumatLibur',
+  );
+  return [
+    ATTENDANCE_HARIAN_COLUMN,
+    ATTENDANCE_PREMIUM_COLUMN,
+    ...withoutLegacyPresence,
+  ];
+}
+
+function normalizeRekapPeriod(period?: string): string {
+  if (!period) return '';
+  const tokenMatch = /(\d{4})[-_](\d{2})/.exec(period);
+  if (tokenMatch) return `${tokenMatch[1]}-${tokenMatch[2]}`;
+  const yearMatch = /\b(20\d{2})\b/.exec(period);
+  const monthIndex = MONTHS_ID.findIndex((month) =>
+    period.toLocaleLowerCase('id-ID').includes(
+      month.toLocaleLowerCase('id-ID'),
+    ),
+  );
+  return yearMatch && monthIndex >= 0
+    ? `${yearMatch[1]}-${String(monthIndex + 1).padStart(2, '0')}`
+    : '';
+}
+
+export function isAttendanceDerivedRekapColumn(
+  category: string,
+  period: string,
+  key: string,
+): boolean {
+  return (
+    normalizeRekapPeriod(period) >= '2026-08' &&
+    category !== 'SATPAM' &&
+    (key === 'harian' || key === 'jumatLibur')
+  );
+}
+
 // ─── Month labels ───────────────────────────────────────────────────────────
 export const MONTHS_ID = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',

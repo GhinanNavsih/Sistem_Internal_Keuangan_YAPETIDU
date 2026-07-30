@@ -54,7 +54,13 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
   const allowedCategories = useMemo(() => {
     if (!profile) return [];
-    if (profile.role === 'super_admin') return dynamicCategories;
+    if (
+      profile.role === 'super_admin' ||
+      profile.role === 'finance_verifier' ||
+      profile.role === 'payroll_authorizer'
+    ) {
+      return dynamicCategories;
+    }
     return dynamicCategories.filter(cat => profile.permittedCategories?.includes(cat));
   }, [profile, dynamicCategories]);
 
@@ -79,6 +85,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
   // Determine active tab/page based on pathname
   const activeTab = useMemo(() => {
+    if (pathname.includes('/presensi-pekarya')) return 'presensi_pekarya';
     if (pathname.includes('/rekap-pekarya')) return 'presensi';
     if (pathname.includes('/vakasi-loyalis')) return 'vakasi_loyalis';
     if (pathname.includes('/proposal-kegiatan')) return 'proposal_kegiatan';
@@ -121,9 +128,17 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       if (activeTab !== 'vakasi_loyalis' && activeTab !== 'pelaporan_kegiatan' && activeTab !== 'proposal_kegiatan') {
         router.replace(`/dashboard/payroll/uraian/vakasi-loyalis${getCleanParamsString('vakasi_loyalis')}`);
       }
-    } else if (profile.role !== 'super_admin') {
+    } else if (
+      profile.role !== 'super_admin' &&
+      profile.role !== 'finance_verifier' &&
+      profile.role !== 'payroll_authorizer'
+    ) {
       // Satker Head Pekarya / other roles
-      if (activeTab !== 'presensi' && activeTab !== 'kegiatan_spj') {
+      if (
+        activeTab !== 'presensi' &&
+        activeTab !== 'presensi_pekarya' &&
+        activeTab !== 'kegiatan_spj'
+      ) {
         router.replace(`/dashboard/payroll/uraian/rekap-pekarya${getCleanParamsString('presensi')}`);
       }
     }
@@ -131,7 +146,13 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
   // Set default category for Pekarya views
   useEffect(() => {
-    if (allowedCategories.length > 0 && !category && (activeTab === 'presensi' || activeTab === 'kegiatan_spj')) {
+    if (
+      allowedCategories.length > 0 &&
+      !category &&
+      (activeTab === 'presensi' ||
+        activeTab === 'presensi_pekarya' ||
+        activeTab === 'kegiatan_spj')
+    ) {
       setCategory(allowedCategories[0]);
     }
   }, [allowedCategories, category, activeTab]);
@@ -140,6 +161,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     switch (activeTab) {
       case 'presensi':
         return 'Rekap Uraian Pekarya';
+      case 'presensi_pekarya':
+        return 'Presensi Pekarya';
       case 'vakasi_loyalis':
         return 'Vakasi Tambahan (Loyalis)';
       case 'presensi_loyalis':
@@ -161,6 +184,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     switch (activeTab) {
       case 'presensi':
         return 'Upload rekap PDF/Gambar untuk auto-input';
+      case 'presensi_pekarya':
+        return 'Tinjau scan NIPY, peringatan, koreksi, dan publikasi upah kehadiran';
       case 'vakasi_loyalis':
         return 'Kelola pembayaran kegiatan variabel loyalis bulanan';
       case 'presensi_loyalis':
@@ -186,7 +211,10 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const showCategorySelector = activeTab === 'presensi' || activeTab === 'kegiatan_spj';
+  const showCategorySelector =
+    activeTab === 'presensi' ||
+    activeTab === 'presensi_pekarya' ||
+    activeTab === 'kegiatan_spj';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans selection:bg-indigo-100 relative text-slate-800">
@@ -247,8 +275,9 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                     const now = new Date();
                     const currentYear = now.getFullYear();
                     const currentMonth = now.getMonth() + 1;
-                    // Hide future months
-                    if (year === currentYear && item.index > currentMonth) return false;
+                    // Allow the immediately upcoming month so attendance and
+                    // NIPY readiness can be prepared before payroll starts.
+                    if (year === currentYear && item.index > currentMonth + 1) return false;
                     if (year > currentYear) return false;
                     // Hide months before July 2026 for non-super_admins
                     if (profile?.role !== 'super_admin' && year === 2026 && item.index < 7) return false;

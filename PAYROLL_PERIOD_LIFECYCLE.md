@@ -22,7 +22,11 @@ An opened period contains data similar to:
   attendanceStatus: "open",
   datePolicy: "shift_start_date",
   timeZone: "Asia/Jakarta",
-  holidayCalendarVersion: "ID-2026-V1",
+  workCalendar: {
+    revision: 1,
+    annualVersion: "ID-2026-V1",
+    premiumDates: ["2026-08-07", "2026-08-14", "2026-08-17"]
+  },
   updatedAt: ServerTimestamp,
   updatedBy: "<firebase-user-id>",
   schemaVersion: 1
@@ -78,7 +82,7 @@ Consequences:
 - Kepala SatKer can approve or reject pending Pekarya and driver activities.
 - Kepala SatKer can create or revise collective Pekarya SPJ events.
 - Finance can create and refresh draft payslips.
-- The holiday calendar used by the period is protected from modification.
+- The period owns an editable calendar snapshot. Fridays remain automatic.
 - Finance verification, final authorization, locking, and payment remain blocked.
 
 ### 3. Closed (`DITUTUP`)
@@ -100,25 +104,131 @@ Consequences:
 
 A closed period cannot be reopened through the normal period endpoint. Corrections must use the formal correction workflow so that the original locked payroll remains auditable.
 
-## Prerequisite: Holiday Calendar
+## Period Calendar Snapshot and Revisions
 
-Before a period can be opened, a holiday calendar must exist for the relevant year:
+Before a period can be opened, an annual calendar must exist for the relevant year:
 
 ```text
 PayrollHolidayCalendars/{YYYY}
 ```
 
-The holiday calendar determines national-holiday treatment for attendance and shift calculations.
+Opening a period copies applicable dates into `PayrollPeriods/{YYYY-MM}.workCalendar`.
+Later annual-calendar changes do not silently rewrite the period.
 
-While any payroll period in that year remains open, the calendar cannot be replaced. This prevents payroll calculations from changing after attendance collection has started.
+While the period remains open, Superadmin can use **Edit Kalender Periode** to
+add or remove non-Friday premium dates. Every update requires a reason,
+`requestId`, and expected revision and creates an immutable
+`FinancialAuditLogs` before/after record.
 
-Only a Super Admin can configure the holiday calendar.
+An update after attendance publication marks affected Pekarya categories stale.
+Affected approved regular Satpam assignments return to auditor review, while
+their original report and approval evidence remain intact. Lembur Sendiri and
+Lembur Cover are not reopened. Closed periods and immutable slips reject
+calendar edits.
+
+## Shared Attendance Import (August 2026 onward)
+
+`loyalis_presence_admin` or Superadmin uploads one monthly XLS/XLSX for Loyalis
+and Pekarya. A dedicated `NIPY` column is authoritative; `PIN` is used only
+when `NIPY` is absent. If both values disagree, the row is invalid.
+For existing Loyalis records, `personal_info.employee_id_niy` is accepted as
+the attendance NIPY, so existing NIY values do not need to be re-entered.
+Employee administration keeps the canonical `nipy` value and legacy Loyalis
+NIY field synchronized whenever that identifier is edited.
+
+The server stores:
+
+- the original workbook and SHA-256 hash;
+- an immutable normalized row set with second-level scan times;
+- uploader and activation revision;
+- a replacement diff and the complete revision history.
+
+Names are display-only diagnostics. Payroll matching is exact by the unique
+NIPY index maintained from employee administration.
+
+### Pekarya NIPY issuance
+
+Active Pekarya receive an 11-digit permanent NIPY from:
+
+`category prefix + employment.startDate as DDMMYY + category sequence`
+
+Kebersihan, including IC and Ponti, uses prefix `13`; Sopir uses `14`;
+Satpam uses `15`; and Teknisi uses `16`. Initial sequences follow numeric
+`BC_###` order within each grouped category. Future issuance uses a
+transactional category counter and never renumbers an issued employee.
+
+Superadmin and Employee Admin may issue formula-generated NIPYs. Missing start
+dates block the final NIPY but may retain an audited sequence reservation.
+Category or start-date changes do not silently alter an issued NIPY. Only
+Superadmin may explicitly reissue it from corrected source data, retaining the
+assigned suffix and recording the before/after identity in `FinancialAuditLogs`.
+Direct client writes to `nipy`, `nipyAssignment`, the identity index, and the
+sequence counters are prohibited.
+
+For active non-Satpam Pekarya, one valid scan on a `MASUK` row pays one full
+day. A regular day is Harian (Rp12.500); Friday or a selected holiday is Jumat
+& Libur (Rp25.000). Duration, lateness, and early departure do not reduce pay.
+A one-sided scan remains payable with a warning.
+
+Satpam attendance is verification evidence only. Approved Ketua Shift
+assignments remain the sole source of Satpam shift pay; Malam evidence may be
+found on the duty date or following date.
+
+Kepala SatKer corrections are append-only overlays. A correction never changes
+the imported row, and records raw/effective values, actor, reason, import
+revision, calendar revision, and superseded correction.
+
+## Satpam Duty Plan (Newly Opened Periods)
+
+Every newly opened period is marked `satpamDutyPlanRequired`. July 2026 is an
+explicit trial exception so the already-open July period can use and demonstrate
+the workflow before August. Other previously opened periods keep their legacy
+behavior. For each ten-person team, Ketua Shift
+publishes a ten-day seed containing nine unique posts and one unique Off-duty
+member per day; every member must be Off-duty exactly once. The server repeats
+that matrix over the exact payroll window and retains every revision.
+
+Ketua Shift may also prepare and publish the immediately following calendar
+month before Superadmin opens its payroll period. This advance plan is limited
+to one upcoming month. Daily reports, absence requests, attendance processing,
+and payroll posting remain unavailable until the period is officially open.
+Opening the period preserves the already-published plan.
+
+Daily reports remain flexible and may be submitted without a plan, but a
+missing, stale, or unreconciled plan blocks financial approval and period
+closing. The server derives:
+
+- regular Harian/Jumat & Libur for planned-on guards;
+- Lembur Cover Rp50.000 when the planned Off-duty or an external substitute
+  fills a primary post;
+- Lembur Sendiri Rp30.000 only when the planned Off-duty guard is the tenth
+  worker after nine distinct guards occupy nine distinct posts.
+
+An approved Satpam absence creates a separate Rp12.500 entitlement, fulfills
+the scheduled obligation, and suppresses the expected-attendance warning.
+Off-day work remains an extra duty and never replaces a missed scheduled duty.
+After every shift or absence decision, the server reconciles required,
+fulfilled, missed, pending, conflicting, and extra duties. Only a fully
+fulfilled, conflict-free completed period writes one Rp100.000 monthly
+attendance bonus.
+
+Team changes mark future plan dates stale. Started dates and reported dates can
+only be corrected by the scoped Kepala SatKer with a reason and before/after
+financial audit. Attendance scans remain verification evidence and never
+independently create or remove Satpam pay.
 
 ## Roles
 
 | Action | Authorized roles |
 |---|---|
 | Configure holiday calendar | `super_admin` |
+| Edit an open period calendar | `super_admin` |
+| Upload/replace shared attendance workbook | `super_admin`, `loyalis_presence_admin` |
+| Issue formula-based Pekarya NIPY | `super_admin`, `employee_admin` |
+| Reissue an incorrect Pekarya NIPY | `super_admin` |
+| Review, correct, and publish Pekarya attendance | scoped `satker_head` |
+| Publish/edit future Satpam duty plan | `ketua_shift_satpam` |
+| Correct started Satpam plan dates / review absence | scoped `satker_head` |
 | Open payroll period | `super_admin`, `finance_verifier` |
 | Permanently close payroll period | `super_admin`, `finance_verifier` |
 | Submit Pekarya activity | Linked `honorer` account |
@@ -148,6 +258,8 @@ The audit record contains the actor, action, entity, timestamp, reason, previous
 | Collective SPJ | Pekarya SPJ events can be created or revised |
 | Payslip preparation | Draft payslips can be generated or refreshed |
 | Holiday configuration | Calendar for the year becomes protected |
+| Period calendar correction | Superadmin may revision the period snapshot |
+| Shared attendance | Import, corrections, and scoped category publication |
 | Final payroll | Verification, locking, and payment remain blocked until closure |
 
 ## What Opening a Period Does Not Do
