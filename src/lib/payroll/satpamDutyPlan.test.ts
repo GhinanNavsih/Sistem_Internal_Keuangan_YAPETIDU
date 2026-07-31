@@ -5,13 +5,19 @@ import {
   classifySatpamDutyAssignments,
   isSatpamAdvancePlanningPeriod,
   isSatpamDutyPlanRequired,
+  nextSatpamRotationAssignments,
   reconcileSatpamDuties,
   satpamDutyKey,
+  SATPAM_DUTY_PLAN_ROTATION_VERSION,
+  SATPAM_FIXED_POST_ID,
+  SATPAM_KETUA_POST_ID,
   SATPAM_MONTHLY_ATTENDANCE_BONUS,
   SATPAM_PAID_ABSENCE_RATE,
+  SATPAM_ROTATION_SLOTS,
   validateAndGenerateSatpamDutyPlan,
+  validateSatpamDutyPlanDay,
   type SatpamDutyPlanDay,
-  type SatpamDutyPlanSeedDay,
+  type SatpamRotationSlotAssignment,
 } from './satpamDutyPlan';
 
 const roster = Array.from({ length: 10 }, (_, index) =>
@@ -38,66 +44,146 @@ test('Ketua may plan exactly the next Jakarta calendar month', () => {
   assert.equal(isSatpamAdvancePlanningPeriod('2027-01', yearEnd), true);
 });
 
-function seedDays(): SatpamDutyPlanSeedDay[] {
-  return Array.from({ length: 10 }, (_, dayIndex) => {
-    const offDutyEmployeeId = roster[dayIndex];
-    const working = roster.filter(
-      (employeeId) => employeeId !== offDutyEmployeeId,
-    );
-    return {
-      dutyDate: `2026-08-${String(dayIndex + 1).padStart(2, '0')}`,
-      shiftName: 'Pagi' as const,
-      assignments: SATPAM_POSTS.map((post, postIndex) => ({
-        postId: post.id,
-        employeeId: working[postIndex],
-      })),
-      offDutyEmployeeId,
-    };
+const ketuaShiftId = roster[0];
+const fixedPost9EmployeeId = roster[1];
+
+function firstDayAssignments(): SatpamRotationSlotAssignment[] {
+  return SATPAM_ROTATION_SLOTS.map((slot, index) => ({
+    slot,
+    employeeId: roster[index + 2],
+  }));
+}
+
+function generatePlan(periodStart = '2026-08-01', periodEnd = '2026-08-23') {
+  return validateAndGenerateSatpamDutyPlan({
+    periodStart,
+    periodEnd,
+    rosterEmployeeIds: roster,
+    ketuaShiftId,
+    fixedPost9EmployeeId,
+    firstDayAssignments: firstDayAssignments(),
   });
 }
 
-test('ten-day seed repeats across the exact payroll window', () => {
-  const days = validateAndGenerateSatpamDutyPlan({
-    periodStart: '2026-08-01',
-    periodEnd: '2026-08-23',
-    rosterEmployeeIds: roster,
-    seedDays: seedDays(),
-  });
+test('eight-day seed follows the canonical sequence and repeats on day nine', () => {
+  const { generatedDays: days, seedDays, rotatingEmployeeIds } = generatePlan();
 
+  assert.equal(SATPAM_DUTY_PLAN_ROTATION_VERSION, 'SATPAM-8DAY-V1');
+  assert.equal(seedDays.length, 8);
+  assert.deepEqual(rotatingEmployeeIds, roster.slice(2));
   assert.equal(days.length, 23);
-  assert.equal(days[10].dutyDate, '2026-08-11');
-  assert.equal(days[10].offDutyEmployeeId, days[0].offDutyEmployeeId);
-  assert.deepEqual(days[10].assignments, days[0].assignments);
-  assert.equal(days[20].offDutyEmployeeId, days[0].offDutyEmployeeId);
-  assert.deepEqual(days[22].assignments, days[2].assignments);
+  assert.equal(days[8].dutyDate, '2026-08-09');
+  assert.equal(days[8].offDutyEmployeeId, days[0].offDutyEmployeeId);
+  assert.deepEqual(days[8].assignments, days[0].assignments);
+  assert.equal(days[16].offDutyEmployeeId, days[0].offDutyEmployeeId);
+  assert.deepEqual(days[22].assignments, days[6].assignments);
   assert.equal(days[22].cycleNumber, 3);
+
+  const firstGuard = roster[2];
+  const expectedPosts = ['Pos 1', 'Pos 8', 'Pos 6', 'Pos 5', 'Pos 7', 'Pos 4', 'Pos 3'];
+  expectedPosts.forEach((postId, dayIndex) => {
+    assert.equal(
+      days[dayIndex].assignments.find(
+        (assignment) => assignment.employeeId === firstGuard,
+      )?.postId,
+      postId,
+    );
+  });
+  assert.equal(days[7].offDutyEmployeeId, firstGuard);
 });
 
-test('seed requires nine unique posts and every guard Off-duty once', () => {
-  const invalidSeed = seedDays();
-  invalidSeed[9] = {
-    ...invalidSeed[9],
-    offDutyEmployeeId: invalidSeed[0].offDutyEmployeeId,
-  };
+test('Ketua and fixed Pos 9 guard work every day while each rotating guard rests once', () => {
+  const { seedDays } = generatePlan('2026-08-01', '2026-08-08');
+  for (const day of seedDays) {
+    assert.equal(
+      day.assignments.find((assignment) => assignment.postId === SATPAM_KETUA_POST_ID)
+        ?.employeeId,
+      ketuaShiftId,
+    );
+    assert.equal(
+      day.assignments.find((assignment) => assignment.postId === SATPAM_FIXED_POST_ID)
+        ?.employeeId,
+      fixedPost9EmployeeId,
+    );
+  }
+  assert.deepEqual(
+    seedDays.map((day) => day.offDutyEmployeeId).sort(),
+    roster.slice(2).sort(),
+  );
+});
+
+test('rotation continuation advances every guard from the prior final day', () => {
+  const july = generatePlan('2026-06-26', '2026-07-31');
+  const continued = nextSatpamRotationAssignments(july.generatedDays.at(-1)!);
+  const august = validateAndGenerateSatpamDutyPlan({
+    periodStart: '2026-08-01',
+    periodEnd: '2026-08-08',
+    rosterEmployeeIds: roster,
+    ketuaShiftId,
+    fixedPost9EmployeeId,
+    firstDayAssignments: continued,
+  });
+  assert.equal(
+    august.generatedDays[0].offDutyEmployeeId,
+    july.generatedDays[4].offDutyEmployeeId,
+  );
+  assert.deepEqual(august.generatedDays[0].assignments, july.generatedDays[4].assignments);
+});
+
+test('manual start requires all eight rotating members exactly once', () => {
+  const invalidStart = firstDayAssignments();
+  invalidStart[7] = { ...invalidStart[7], employeeId: invalidStart[0].employeeId };
   assert.throws(
     () =>
       validateAndGenerateSatpamDutyPlan({
         periodStart: '2026-08-01',
         periodEnd: '2026-08-31',
         rosterEmployeeIds: roster,
-        seedDays: invalidSeed,
+        ketuaShiftId,
+        fixedPost9EmployeeId,
+        firstDayAssignments: invalidStart,
       }),
-    /setiap anggota regu tepat satu kali|Off-duty tepat satu kali/,
+    /harus dipakai tepat satu kali/,
+  );
+});
+
+test('fixed roles must be valid and cannot be changed by a daily plan edit', () => {
+  assert.throws(
+    () =>
+      validateAndGenerateSatpamDutyPlan({
+        periodStart: '2026-08-01',
+        periodEnd: '2026-08-08',
+        rosterEmployeeIds: roster,
+        ketuaShiftId,
+        fixedPost9EmployeeId: ketuaShiftId,
+        firstDayAssignments: firstDayAssignments(),
+      }),
+    /petugas tetap Pos 9/i,
+  );
+
+  const day = generatePlan('2026-08-01', '2026-08-08').generatedDays[0];
+  const invalidDay = {
+    ...day,
+    assignments: day.assignments.map((assignment) =>
+      assignment.postId === SATPAM_KETUA_POST_ID
+        ? { ...assignment, employeeId: roster[2] }
+        : assignment.employeeId === roster[2]
+          ? { ...assignment, employeeId: ketuaShiftId }
+        : assignment,
+    ),
+  };
+  assert.throws(
+    () =>
+      validateSatpamDutyPlanDay(invalidDay, roster, {
+        ketuaShiftId,
+        fixedPost9EmployeeId,
+      }),
+    /Pos 2 wajib tetap diisi Ketua Shift/,
   );
 });
 
 test('server classification distinguishes regular, Cover, and Lembur Sendiri', () => {
-  const [planDay] = validateAndGenerateSatpamDutyPlan({
-    periodStart: '2026-08-01',
-    periodEnd: '2026-08-10',
-    rosterEmployeeIds: roster,
-    seedDays: seedDays(),
-  });
+  const [planDay] = generatePlan('2026-08-01', '2026-08-08').generatedDays;
   const moved = [
     { ...planDay.assignments[0], postId: planDay.assignments[1].postId },
     { ...planDay.assignments[1], postId: planDay.assignments[0].postId },

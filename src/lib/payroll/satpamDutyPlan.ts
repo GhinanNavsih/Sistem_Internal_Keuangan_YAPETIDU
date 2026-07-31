@@ -8,11 +8,35 @@ import {
   type SatpamShiftName,
 } from '@/lib/payroll/domain';
 
-export const SATPAM_DUTY_PLAN_SCHEMA_VERSION = 1;
-export const SATPAM_DUTY_PLAN_SEED_LENGTH = 10;
+export const SATPAM_DUTY_PLAN_SCHEMA_VERSION = 2;
+export const SATPAM_DUTY_PLAN_ROTATION_VERSION = 'SATPAM-8DAY-V1';
+export const SATPAM_DUTY_PLAN_SEED_LENGTH = 8;
 export const SATPAM_PAID_ABSENCE_RATE = 12_500;
 export const SATPAM_MONTHLY_ATTENDANCE_BONUS = 100_000;
 export const SATPAM_DUTY_PLAN_TRIAL_PERIOD = '2026-07';
+
+export const SATPAM_ROTATING_POST_IDS = [
+  'Pos 1',
+  'Pos 8',
+  'Pos 6',
+  'Pos 5',
+  'Pos 7',
+  'Pos 4',
+  'Pos 3',
+] as const satisfies readonly SatpamPostId[];
+export const SATPAM_ROTATION_SLOTS = [
+  ...SATPAM_ROTATING_POST_IDS,
+  'Off-Duty',
+] as const;
+export const SATPAM_KETUA_POST_ID = 'Pos 2' as const satisfies SatpamPostId;
+export const SATPAM_FIXED_POST_ID = 'Pos 9' as const satisfies SatpamPostId;
+
+export type SatpamRotationSlot = (typeof SATPAM_ROTATION_SLOTS)[number];
+
+export interface SatpamRotationSlotAssignment {
+  slot: SatpamRotationSlot;
+  employeeId: string;
+}
 
 export function isSatpamDutyPlanRequired(
   period: string,
@@ -69,6 +93,12 @@ export interface SatpamDutyPlanDay extends SatpamDutyPlanSeedDay {
   sourceSeedIndex: number;
   cycleNumber: number;
   overridden?: boolean;
+}
+
+export interface SatpamDutyPlanGeneration {
+  rotatingEmployeeIds: string[];
+  seedDays: SatpamDutyPlanDay[];
+  generatedDays: SatpamDutyPlanDay[];
 }
 
 export interface SatpamActualPrimaryAssignment {
@@ -156,89 +186,147 @@ export function periodDatesBetween(startsOn: string, endsOn: string): string[] {
   return dates;
 }
 
+function normalizeRotationStart(input: {
+  rosterEmployeeIds: readonly string[];
+  ketuaShiftId: string;
+  fixedPost9EmployeeId: string;
+  firstDayAssignments: readonly SatpamRotationSlotAssignment[];
+}): { roster: string[]; rotatingEmployeeIds: string[] } {
+  const roster = input.rosterEmployeeIds.map((employeeId) => employeeId.trim());
+  const ketuaShiftId = input.ketuaShiftId.trim();
+  const fixedPost9EmployeeId = input.fixedPost9EmployeeId.trim();
+  if (
+    roster.length !== 10 ||
+    roster.some((employeeId) => !employeeId) ||
+    new Set(roster).size !== 10
+  ) {
+    throw new Error('Regu wajib berisi tepat sepuluh Satpam unik.');
+  }
+  const rosterSet = new Set(roster);
+  if (!rosterSet.has(ketuaShiftId)) {
+    throw new Error('Ketua Shift tidak terdaftar dalam roster regu.');
+  }
+  if (
+    !rosterSet.has(fixedPost9EmployeeId) ||
+    fixedPost9EmployeeId === ketuaShiftId
+  ) {
+    throw new Error('Petugas tetap Pos 9 wajib dipilih dari anggota selain Ketua Shift.');
+  }
+  if (input.firstDayAssignments.length !== SATPAM_DUTY_PLAN_SEED_LENGTH) {
+    throw new Error('Susunan tanggal pertama wajib mengisi tujuh pos dan satu Libur.');
+  }
+  const slots = input.firstDayAssignments.map((assignment) => assignment.slot);
+  if (
+    slots.some(
+      (slot) => !(SATPAM_ROTATION_SLOTS as readonly string[]).includes(slot),
+    ) ||
+    new Set(slots).size !== SATPAM_DUTY_PLAN_SEED_LENGTH
+  ) {
+    throw new Error('Setiap slot rotasi wajib diisi tepat satu kali.');
+  }
+  const employeeBySlot = new Map(
+    input.firstDayAssignments.map((assignment) => [
+      assignment.slot,
+      assignment.employeeId.trim(),
+    ]),
+  );
+  const rotatingEmployeeIds = SATPAM_ROTATION_SLOTS.map(
+    (slot) => employeeBySlot.get(slot) || '',
+  );
+  const expectedRotatingIds = roster.filter(
+    (employeeId) =>
+      employeeId !== ketuaShiftId && employeeId !== fixedPost9EmployeeId,
+  );
+  if (
+    rotatingEmployeeIds.some((employeeId) => !employeeId) ||
+    new Set(rotatingEmployeeIds).size !== SATPAM_DUTY_PLAN_SEED_LENGTH ||
+    rotatingEmployeeIds.some(
+      (employeeId) => !expectedRotatingIds.includes(employeeId),
+    ) ||
+    expectedRotatingIds.some(
+      (employeeId) => !rotatingEmployeeIds.includes(employeeId),
+    )
+  ) {
+    throw new Error(
+      'Delapan anggota selain Ketua dan petugas tetap Pos 9 harus dipakai tepat satu kali.',
+    );
+  }
+  return { roster, rotatingEmployeeIds };
+}
+
+function buildCanonicalSeedDay(input: {
+  dutyDate: string;
+  shiftName: SatpamShiftName;
+  seedIndex: number;
+  ketuaShiftId: string;
+  fixedPost9EmployeeId: string;
+  rotatingEmployeeIds: readonly string[];
+}): SatpamDutyPlanDay {
+  const employeeForSlot = (slotIndex: number) =>
+    input.rotatingEmployeeIds[
+      (slotIndex - input.seedIndex + SATPAM_DUTY_PLAN_SEED_LENGTH) %
+        SATPAM_DUTY_PLAN_SEED_LENGTH
+    ];
+  const rotatingByPost = new Map<SatpamPostId, string>(
+    SATPAM_ROTATING_POST_IDS.map((postId, slotIndex) => [
+      postId,
+      employeeForSlot(slotIndex),
+    ]),
+  );
+  return {
+    dutyDate: input.dutyDate,
+    shiftName: input.shiftName,
+    assignments: SATPAM_POSTS.map((post) => ({
+      postId: post.id,
+      employeeId:
+        post.id === SATPAM_KETUA_POST_ID
+          ? input.ketuaShiftId
+          : post.id === SATPAM_FIXED_POST_ID
+            ? input.fixedPost9EmployeeId
+            : rotatingByPost.get(post.id) || '',
+    })),
+    offDutyEmployeeId: employeeForSlot(SATPAM_DUTY_PLAN_SEED_LENGTH - 1),
+    sourceSeedDate: input.dutyDate,
+    sourceSeedIndex: input.seedIndex,
+    cycleNumber: 1,
+  };
+}
+
 export function validateAndGenerateSatpamDutyPlan(input: {
   periodStart: string;
   periodEnd: string;
   rosterEmployeeIds: readonly string[];
-  seedDays: readonly SatpamDutyPlanSeedDay[];
+  ketuaShiftId: string;
+  fixedPost9EmployeeId: string;
+  firstDayAssignments: readonly SatpamRotationSlotAssignment[];
   shiftNameForDate?: (dutyDate: string) => SatpamShiftName;
-}): SatpamDutyPlanDay[] {
+}): SatpamDutyPlanGeneration {
   const periodDates = periodDatesBetween(input.periodStart, input.periodEnd);
   if (periodDates.length < SATPAM_DUTY_PLAN_SEED_LENGTH) {
-    throw new Error('Periode Satpam harus memiliki sedikitnya sepuluh tanggal.');
+    throw new Error('Periode Satpam harus memiliki sedikitnya delapan tanggal.');
   }
-  const roster = input.rosterEmployeeIds.map((employeeId) => employeeId.trim());
-  if (
-    roster.length !== SATPAM_DUTY_PLAN_SEED_LENGTH ||
-    roster.some((employeeId) => !employeeId) ||
-    new Set(roster).size !== SATPAM_DUTY_PLAN_SEED_LENGTH
-  ) {
-    throw new Error('Regu wajib berisi tepat sepuluh Satpam unik.');
-  }
-  if (input.seedDays.length !== SATPAM_DUTY_PLAN_SEED_LENGTH) {
-    throw new Error('Lengkapi tepat sepuluh hari pola awal.');
-  }
-
-  const rosterSet = new Set(roster);
-  const offDutyCounts = new Map(roster.map((employeeId) => [employeeId, 0]));
-  const normalizedSeed = input.seedDays.map((day, seedIndex) => {
-    const expectedDate = periodDates[seedIndex];
-    if (day.dutyDate !== expectedDate) {
-      throw new Error(`Hari pola ke-${seedIndex + 1} harus bertanggal ${expectedDate}.`);
-    }
-    if (!VALID_SHIFT_NAMES.has(day.shiftName)) {
-      throw new Error(`Nama shift pada ${day.dutyDate} tidak valid.`);
-    }
-    if (day.assignments.length !== SATPAM_POSTS.length) {
-      throw new Error(`${day.dutyDate} wajib memiliki sembilan penugasan pos.`);
-    }
-    const postIds = day.assignments.map((assignment) => assignment.postId);
-    const assignedEmployeeIds = day.assignments.map((assignment) =>
-      assignment.employeeId.trim(),
-    );
-    if (
-      postIds.some((postId) => !VALID_POST_IDS.has(postId)) ||
-      new Set(postIds).size !== SATPAM_POSTS.length
-    ) {
-      throw new Error(`${day.dutyDate} wajib mengisi sembilan pos secara unik.`);
-    }
-    const offDutyEmployeeId = day.offDutyEmployeeId.trim();
-    const dailyRoster = [...assignedEmployeeIds, offDutyEmployeeId];
-    if (
-      dailyRoster.some((employeeId) => !rosterSet.has(employeeId)) ||
-      new Set(dailyRoster).size !== SATPAM_DUTY_PLAN_SEED_LENGTH
-    ) {
-      throw new Error(
-        `${day.dutyDate} harus memakai setiap anggota regu tepat satu kali, termasuk Off-duty.`,
-      );
-    }
-    offDutyCounts.set(
-      offDutyEmployeeId,
-      Number(offDutyCounts.get(offDutyEmployeeId) || 0) + 1,
-    );
-    return {
-      dutyDate: day.dutyDate,
-      shiftName: day.shiftName,
-      assignments: day.assignments.map((assignment) => ({
-        postId: assignment.postId,
-        employeeId: assignment.employeeId.trim(),
-      })),
-      offDutyEmployeeId,
-    };
-  });
-
-  const invalidOffDutyRotation = Array.from(offDutyCounts.entries()).find(
-    ([, count]) => count !== 1,
-  );
-  if (invalidOffDutyRotation) {
-    throw new Error(
-      'Dalam sepuluh hari awal, setiap anggota regu harus mendapat Off-duty tepat satu kali.',
-    );
-  }
-
-  return periodDates.map((dutyDate, dateIndex) => {
+  const { rotatingEmployeeIds } = normalizeRotationStart(input);
+  const seedDays = periodDates
+    .slice(0, SATPAM_DUTY_PLAN_SEED_LENGTH)
+    .map((dutyDate, seedIndex) => {
+      const shiftName = input.shiftNameForDate
+        ? input.shiftNameForDate(dutyDate)
+        : 'Pagi';
+      if (!VALID_SHIFT_NAMES.has(shiftName)) {
+        throw new Error(`Nama shift pada ${dutyDate} tidak valid.`);
+      }
+      return buildCanonicalSeedDay({
+        dutyDate,
+        shiftName,
+        seedIndex,
+        ketuaShiftId: input.ketuaShiftId.trim(),
+        fixedPost9EmployeeId: input.fixedPost9EmployeeId.trim(),
+        rotatingEmployeeIds,
+      });
+    });
+  const generatedDays = periodDates.map((dutyDate, dateIndex) => {
     const sourceSeedIndex = dateIndex % SATPAM_DUTY_PLAN_SEED_LENGTH;
-    const source = normalizedSeed[sourceSeedIndex];
+    const source = seedDays[sourceSeedIndex];
     return {
       dutyDate,
       shiftName: input.shiftNameForDate
@@ -251,11 +339,48 @@ export function validateAndGenerateSatpamDutyPlan(input: {
       cycleNumber: Math.floor(dateIndex / SATPAM_DUTY_PLAN_SEED_LENGTH) + 1,
     };
   });
+  return {
+    rotatingEmployeeIds: [...rotatingEmployeeIds],
+    seedDays,
+    generatedDays,
+  };
+}
+
+export function nextSatpamRotationAssignments(
+  previousDay: SatpamDutyPlanSeedDay,
+): SatpamRotationSlotAssignment[] {
+  const employeeByPreviousSlot = new Map<SatpamRotationSlot, string>();
+  for (const postId of SATPAM_ROTATING_POST_IDS) {
+    const employeeId = previousDay.assignments.find(
+      (assignment) => assignment.postId === postId,
+    )?.employeeId;
+    if (!employeeId) {
+      throw new Error('Rencana sebelumnya tidak memiliki susunan rotasi lengkap.');
+    }
+    employeeByPreviousSlot.set(postId, employeeId);
+  }
+  if (!previousDay.offDutyEmployeeId) {
+    throw new Error('Rencana sebelumnya tidak memiliki petugas Libur.');
+  }
+  employeeByPreviousSlot.set('Off-Duty', previousDay.offDutyEmployeeId);
+  return SATPAM_ROTATION_SLOTS.map((slot, slotIndex) => ({
+    slot,
+    employeeId: employeeByPreviousSlot.get(
+      SATPAM_ROTATION_SLOTS[
+        (slotIndex - 1 + SATPAM_DUTY_PLAN_SEED_LENGTH) %
+          SATPAM_DUTY_PLAN_SEED_LENGTH
+      ],
+    )!,
+  }));
 }
 
 export function validateSatpamDutyPlanDay(
   day: SatpamDutyPlanSeedDay,
   rosterEmployeeIds: readonly string[],
+  fixedRoles?: {
+    ketuaShiftId: string;
+    fixedPost9EmployeeId: string;
+  },
 ): void {
   assertDateOnly(day.dutyDate);
   if (!VALID_SHIFT_NAMES.has(day.shiftName)) {
@@ -278,6 +403,20 @@ export function validateSatpamDutyPlanDay(
     throw new Error(
       'Tanggal wajib memiliki sembilan pos dan satu Off-duty dengan petugas unik.',
     );
+  }
+  if (fixedRoles) {
+    const employeeByPost = new Map(
+      day.assignments.map((assignment) => [assignment.postId, assignment.employeeId]),
+    );
+    if (employeeByPost.get(SATPAM_KETUA_POST_ID) !== fixedRoles.ketuaShiftId) {
+      throw new Error('Pos 2 wajib tetap diisi Ketua Shift.');
+    }
+    if (
+      employeeByPost.get(SATPAM_FIXED_POST_ID) !==
+      fixedRoles.fixedPost9EmployeeId
+    ) {
+      throw new Error('Pos 9 wajib tetap diisi petugas tetap periode ini.');
+    }
   }
 }
 

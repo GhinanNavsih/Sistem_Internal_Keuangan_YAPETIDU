@@ -1,4 +1,21 @@
-import { payrollPeriodForDutyDate } from './domain';
+import {
+  isSatpamPersonalSpjReportKind,
+  payrollPeriodForDutyDate,
+} from './domain';
+
+export const SATPAM_FOUND_ITEM_RECOMMENDED_FEE = 5_000;
+
+export function assertSatpamFoundItemPhotoCount(count: number): void {
+  if (!Number.isInteger(count) || count < 1 || count > 5) {
+    throw new Error('Penemuan barang wajib memiliki 1 sampai 5 foto.');
+  }
+}
+
+export function satpamFoundItemFeeNeedsAdjustmentReason(
+  _fee: number,
+): boolean {
+  return false;
+}
 
 export const PEKARYA_JOB_CATEGORIES = [
   'SATPAM',
@@ -145,7 +162,7 @@ export function approvedActivitySpjAmount(
   if (report.status !== 'approved') return 0;
   if (
     report.jobCategory === 'SATPAM' &&
-    report.reportKind !== 'satpam_spj'
+    !isSatpamPersonalSpjReportKind(report.reportKind)
   ) {
     // Explicit classification is authoritative for all new records. The
     // sourceOccurrenceId fallback keeps historical shift rows out of SPJ

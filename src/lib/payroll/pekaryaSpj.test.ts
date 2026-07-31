@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   activityDurationMinutes,
+  assertSatpamFoundItemPhotoCount,
   pekaryaPayrollPeriodForDate,
   pekaryaPayrollWindow,
+  satpamFoundItemFeeNeedsAdjustmentReason,
   sumApprovedActivitySpj,
   sumApprovedEventSpj,
 } from './pekaryaSpj';
@@ -115,6 +117,34 @@ test('personal Satpam SPJ is payable while shift assignments stay separate', () 
   ];
 
   assert.equal(sumApprovedActivitySpj(reports, 'E1', 'SATPAM', '2026-08'), 45_000);
+});
+
+test('approved Satpam found items enter only the personal SPJ total', () => {
+  const reports = [
+    {
+      id: 'found-wallet',
+      employeeId: 'SAT-1',
+      jobCategory: 'SATPAM',
+      reportKind: 'satpam_found_item',
+      activityDate: '2026-08-12',
+      payrollPeriod: '2026-08',
+      status: 'approved',
+      fee: 7_500,
+    },
+  ];
+  assert.equal(
+    sumApprovedActivitySpj(reports, 'SAT-1', 'SATPAM', '2026-08'),
+    7_500,
+  );
+});
+
+test('found-item evidence and fee adjustment rules are bounded', () => {
+  assert.doesNotThrow(() => assertSatpamFoundItemPhotoCount(1));
+  assert.doesNotThrow(() => assertSatpamFoundItemPhotoCount(5));
+  assert.throws(() => assertSatpamFoundItemPhotoCount(0), /1 sampai 5 foto/);
+  assert.throws(() => assertSatpamFoundItemPhotoCount(6), /1 sampai 5 foto/);
+  assert.equal(satpamFoundItemFeeNeedsAdjustmentReason(5_000), false);
+  assert.equal(satpamFoundItemFeeNeedsAdjustmentReason(7_500), false);
 });
 
 test('legacy Satpam shift metadata never falls into the personal SPJ column', () => {

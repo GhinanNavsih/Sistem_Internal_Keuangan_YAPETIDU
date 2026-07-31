@@ -52,6 +52,8 @@ import {
   Target,
   Save,
   Camera,
+  PackageSearch,
+  Images,
 } from 'lucide-react';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -221,7 +223,11 @@ interface ActivityReport {
   completedAt?: any;
   customDurationPP?: number;
   // SATPAM specific fields
-  reportKind?: 'satpam_spj' | 'satpam_shift_assignment' | 'pekarya_activity';
+  reportKind?:
+    | 'satpam_spj'
+    | 'satpam_found_item'
+    | 'satpam_shift_assignment'
+    | 'pekarya_activity';
   sourceOccurrenceId?: string;
   sourceOccurrenceRevision?: number;
   auditorActionAt?: any;
@@ -237,6 +243,9 @@ interface ActivityReport {
   overtimeReason?: string;
   photoUrl?: string;
   photoAuditMetadata?: PhotoAuditMetadata;
+  itemName?: string;
+  proofPhotos?: PhotoEvidence[];
+  submittedFeeRecommendation?: number;
 }
 
 interface SatpamPostAssignment {
@@ -623,6 +632,7 @@ function ActivitiesContent() {
   const fuelFileInputRef = React.useRef<HTMLInputElement>(null);
   const tollFileInputRef = React.useRef<HTMLInputElement>(null);
   const activityProofInputRef = React.useRef<HTMLInputElement>(null);
+  const foundItemPhotoInputRef = React.useRef<HTMLInputElement>(null);
 
   const userJobCategory = profile?.permittedCategories?.[0] || '';
   const isKebersihan = [
@@ -719,6 +729,8 @@ function ActivitiesContent() {
 
   // ── Form state ──
   const [showForm, setShowForm] = useState(false);
+  const [showSatpamSpjChoice, setShowSatpamSpjChoice] = useState(false);
+  const [showFoundItemForm, setShowFoundItemForm] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ActivityReport | null>(null);
   const [formActivityType, setFormActivityType] = useState<'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya' | 'Buang Sampah'>('Piket');
   const [formName, setFormName] = useState('Piket');
@@ -729,6 +741,10 @@ function ActivitiesContent() {
   const [submitting, setSubmitting] = useState(false);
   const [formProofPhoto, setFormProofPhoto] = useState<PhotoEvidence | null>(null);
   const [uploadingProofPhoto, setUploadingProofPhoto] = useState(false);
+  const [foundItemName, setFoundItemName] = useState('');
+  const [foundItemDate, setFoundItemDate] = useState(getTodayISO());
+  const [foundItemPhotos, setFoundItemPhotos] = useState<PhotoEvidence[]>([]);
+  const [uploadingFoundItemPhotos, setUploadingFoundItemPhotos] = useState(false);
   const isSubmittingRef = useRef(false);
   const activityRequestIdRef = useRef<string | null>(null);
   const skipSaveDraftRef = useRef(false);
@@ -1719,6 +1735,16 @@ function ActivitiesContent() {
     setShowForm(false);
   };
 
+  const resetFoundItemForm = () => {
+    activityRequestIdRef.current = null;
+    setFoundItemName('');
+    setFoundItemDate(getTodayISO());
+    setFoundItemPhotos([]);
+    setUploadingFoundItemPhotos(false);
+    setEditingActivity(null);
+    setShowFoundItemForm(false);
+  };
+
   useEffect(() => {
     if (activeReportingJourney) {
       const rawFuel = activeReportingJourney.draftFuelReceiptUrl || activeReportingJourney.fuelReceiptUrl || '';
@@ -1734,6 +1760,26 @@ function ActivitiesContent() {
   const openEditForm = (activity: ActivityReport) => {
     if (activity.jobCategory === 'SOPIR' && activity.journeyId) {
       router.push(`/employee/activities/journey-report?id=${activity.journeyId}`);
+      return;
+    }
+
+    if (activity.reportKind === 'satpam_found_item') {
+      setEditingActivity(activity);
+      setFoundItemName(activity.itemName || activity.activityName || '');
+      setFoundItemDate(activity.activityDate || getTodayISO());
+      setFoundItemPhotos(
+        activity.proofPhotos?.length
+          ? activity.proofPhotos
+          : activity.photoUrl && activity.photoAuditMetadata
+            ? [
+                {
+                  url: activity.photoUrl,
+                  auditMetadata: activity.photoAuditMetadata,
+                },
+              ]
+            : [],
+      );
+      setShowFoundItemForm(true);
       return;
     }
 
@@ -2808,6 +2854,58 @@ function ActivitiesContent() {
     }
   };
 
+  const handleUploadFoundItemPhotos = async (files: File[]) => {
+    if (!profile?.linkedEmployeeId || files.length === 0) return;
+    const remainingSlots = 5 - foundItemPhotos.length;
+    if (remainingSlots <= 0) {
+      setMessage({ type: 'error', text: 'Maksimal lima foto untuk satu barang.' });
+      return;
+    }
+    if (files.length > remainingSlots) {
+      setMessage({
+        type: 'error',
+        text: `Anda hanya dapat menambahkan ${remainingSlots} foto lagi.`,
+      });
+      return;
+    }
+
+    setUploadingFoundItemPhotos(true);
+    const uploaded: PhotoEvidence[] = [];
+    try {
+      for (const [index, file] of files.entries()) {
+        const prepared = await prepareProofImage(file);
+        const fileRef = ref(
+          storage,
+          `activity_proofs/${profile.linkedEmployeeId}/found-item-${Date.now()}-${index}.jpg`,
+        );
+        await uploadBytes(fileRef, prepared.file);
+        uploaded.push({
+          url: await getDownloadURL(fileRef),
+          auditMetadata: prepared.auditMetadata,
+        });
+      }
+      setFoundItemPhotos((current) => [...current, ...uploaded].slice(0, 5));
+      setMessage({
+        type: 'success',
+        text: `${uploaded.length} foto barang berhasil diunggah.`,
+      });
+    } catch (error) {
+      if (uploaded.length > 0) {
+        setFoundItemPhotos((current) => [...current, ...uploaded].slice(0, 5));
+      }
+      console.error('Error uploading found-item photos:', error);
+      setMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Sebagian foto gagal diunggah. Silakan coba lagi.',
+      });
+    } finally {
+      setUploadingFoundItemPhotos(false);
+    }
+  };
+
   const handleCoverDetail = (
     postId: string,
     field: 'coveredEmployeeId' | 'overtimeReason',
@@ -2960,6 +3058,82 @@ function ActivitiesContent() {
       setShowConfirmModal(true);
     } else {
       await executeSubmitSatpamShift();
+    }
+  };
+
+  const handleSubmitFoundItem = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!profile?.linkedEmployeeId || isSubmittingRef.current) return;
+    if (foundItemName.trim().length < 2) {
+      setMessage({ type: 'error', text: 'Nama barang wajib diisi minimal 2 karakter.' });
+      return;
+    }
+    if (!foundItemDate) {
+      setMessage({ type: 'error', text: 'Tanggal penemuan wajib diisi.' });
+      return;
+    }
+    if (
+      !satpamOpenPeriods.some(
+        (period) =>
+          foundItemDate >= period.startDate && foundItemDate <= period.endDate,
+      )
+    ) {
+      setMessage({
+        type: 'error',
+        text: 'Tanggal penemuan harus berada dalam periode payroll terbuka.',
+      });
+      return;
+    }
+    if (foundItemPhotos.length < 1 || foundItemPhotos.length > 5) {
+      setMessage({
+        type: 'error',
+        text: 'Lampirkan minimal satu dan maksimal lima foto barang.',
+      });
+      return;
+    }
+
+    isSubmittingRef.current = true;
+    setSubmitting(true);
+    try {
+      const requestId =
+        activityRequestIdRef.current ||
+        createFinancialRequestId(
+          editingActivity ? 'found_item_resubmit' : 'found_item_submit',
+        );
+      activityRequestIdRef.current = requestId;
+      await authenticatedJson('/api/pekarya/activities', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId,
+          reportId: editingActivity?.id,
+          reportKind: 'satpam_found_item',
+          itemName: foundItemName.trim(),
+          activityName: foundItemName.trim(),
+          activityDate: foundItemDate,
+          proofPhotos: foundItemPhotos,
+        }),
+      });
+      activityRequestIdRef.current = null;
+      setMessage({
+        type: 'success',
+        text: editingActivity
+          ? 'Laporan penemuan barang berhasil diperbarui dan diajukan ulang.'
+          : 'Penemuan barang berhasil dilaporkan.',
+      });
+      resetFoundItemForm();
+      fetchActivities();
+    } catch (error) {
+      console.error('Error submitting found item:', error);
+      setMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Gagal menyimpan penemuan barang. Silakan coba lagi.',
+      });
+    } finally {
+      isSubmittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -3594,6 +3768,16 @@ function ActivitiesContent() {
                             <div className="md:col-span-3">
                               <span className="text-base font-black text-slate-600 block leading-tight">{post.id}</span>
                               <span className="text-base font-extrabold text-slate-900 block mt-1">{post.name}</span>
+                              {post.id === 'Pos 2' && (
+                                <span className="mt-1 block text-sm font-bold text-blue-700">
+                                  Ketua Shift / Keliling
+                                </span>
+                              )}
+                              {post.id === 'Pos 9' && satpamDutyPlan?.day && (
+                                <span className="mt-1 block text-sm font-bold text-violet-700">
+                                  Petugas Tetap
+                                </span>
+                              )}
                             </div>
 
                             {/* Guard Dropdown */}
@@ -4437,12 +4621,21 @@ function ActivitiesContent() {
 
                           {/* Activity info */}
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-bold text-slate-800 truncate">{activity.activityName}</div>
+                            <div className="flex items-center gap-2">
+                              <div className="truncate text-sm font-bold text-slate-800">{activity.activityName}</div>
+                              {activity.reportKind === 'satpam_found_item' && (
+                                <Badge className="shrink-0 border-none bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                                  Penemuan Barang
+                                </Badge>
+                              )}
+                            </div>
                             <div className="flex items-center gap-2 mt-0.5">
                               <span className="text-[11px] text-slate-400 font-medium">{activity.activityDate}</span>
                               <span className="text-[11px] text-slate-300">•</span>
                               <span className="text-[11px] text-slate-400 font-medium">
-                                {activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
+                                {activity.reportKind === 'satpam_found_item'
+                                  ? `${activity.proofPhotos?.length || (activity.photoUrl ? 1 : 0)} foto`
+                                  : activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
                                   ? activity.timeStart
                                   : `${activity.timeStart} – ${activity.timeEnd}`}
                               </span>
@@ -4470,14 +4663,43 @@ function ActivitiesContent() {
                                 <p className="text-sm font-semibold text-slate-700 mt-0.5">{activity.activityDate}</p>
                               </div>
                               <div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase">Waktu</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">
+                                  {activity.reportKind === 'satpam_found_item' ? 'Bukti' : 'Waktu'}
+                                </span>
                                 <p className="text-sm font-semibold text-slate-700 mt-0.5">
-                                  {activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
+                                  {activity.reportKind === 'satpam_found_item'
+                                    ? `${activity.proofPhotos?.length || (activity.photoUrl ? 1 : 0)} foto barang`
+                                    : activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
                                     ? activity.timeStart
                                     : `${activity.timeStart} – ${activity.timeEnd}`}
                                 </p>
                               </div>
                             </div>
+
+                            {activity.reportKind === 'satpam_found_item' && (
+                              <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                                <div className="flex items-center gap-2 text-sm font-bold text-amber-950">
+                                  <PackageSearch className="h-4 w-4" /> Foto Barang Temuan
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                  {(activity.proofPhotos?.length
+                                    ? activity.proofPhotos
+                                    : activity.photoUrl
+                                      ? [{ url: activity.photoUrl }]
+                                      : []
+                                  ).map((photo, index) => (
+                                    <div key={photo.url} className="aspect-square overflow-hidden rounded-xl bg-slate-100">
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={photo.url}
+                                        alt={`Foto barang ${index + 1}`}
+                                        className="h-full w-full object-cover"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
 
                             {/* Driver details section */}
                             {activity.jobCategory === 'SOPIR' && (
@@ -4614,7 +4836,9 @@ function ActivitiesContent() {
                                     <div className="flex items-center gap-2">
                                       <Banknote className="w-4 h-4 text-amber-600" />
                                       <span className="text-sm font-bold text-amber-700">
-                                        Estimasi Upah: {fmtRp(activity.fee)}
+                                        {activity.reportKind === 'satpam_found_item'
+                                          ? `Rekomendasi SPJ: ${fmtRp(activity.submittedFeeRecommendation || 5_000)}`
+                                          : `Estimasi Upah: ${fmtRp(activity.fee)}`}
                                       </span>
                                     </div>
                                     {activity.shiftType ? (
@@ -4740,8 +4964,12 @@ function ActivitiesContent() {
       {!isSopir && (
         <button
           onClick={() => {
-            resetForm();
-            setShowForm(true);
+            if (userJobCategory === 'SATPAM') {
+              setShowSatpamSpjChoice(true);
+            } else {
+              resetForm();
+              setShowForm(true);
+            }
           }}
           className="fixed bottom-6 right-6 z-40 min-w-14 h-14 px-4 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-xl shadow-teal-300/40 hover:shadow-2xl hover:shadow-teal-300/50 hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2"
         >
@@ -4751,6 +4979,242 @@ function ActivitiesContent() {
           </span>
         </button>
       )}
+
+      {/* ── Satpam personal-SPJ report type chooser ─────────────────── */}
+      <Dialog open={showSatpamSpjChoice} onOpenChange={setShowSatpamSpjChoice}>
+        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] rounded-3xl border-none bg-white p-0 shadow-2xl overflow-hidden">
+          <div className="bg-gradient-to-r from-teal-500 to-cyan-600 p-5">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-xl font-bold text-white">
+                <Sparkles className="h-5 w-5" /> Lapor SPJ Pribadi
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-base text-teal-50">
+                Pilih jenis laporan yang ingin Anda kirim.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="space-y-3 p-5">
+            <button
+              type="button"
+              onClick={() => {
+                setShowSatpamSpjChoice(false);
+                resetForm();
+                setShowForm(true);
+              }}
+              className="flex min-h-24 w-full items-center gap-4 rounded-2xl border-2 border-teal-200 bg-teal-50 p-4 text-left transition-colors hover:bg-teal-100 active:bg-teal-100"
+            >
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-teal-600 text-white">
+                <ClipboardList className="h-7 w-7" />
+              </span>
+              <span>
+                <span className="block text-lg font-black text-slate-900">Lapor Kegiatan</span>
+                <span className="mt-1 block text-base leading-5 text-slate-600">
+                  Kegiatan pribadi dengan waktu mulai dan selesai.
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowSatpamSpjChoice(false);
+                setShowFoundItemForm(true);
+              }}
+              className="flex min-h-24 w-full items-center gap-4 rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 text-left transition-colors hover:bg-amber-100 active:bg-amber-100"
+            >
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-white">
+                <PackageSearch className="h-7 w-7" />
+              </span>
+              <span>
+                <span className="block text-lg font-black text-slate-900">Penemuan Barang</span>
+                <span className="mt-1 block text-base leading-5 text-slate-600">
+                  Laporkan satu barang temuan dengan bukti foto.
+                </span>
+              </span>
+            </button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setShowSatpamSpjChoice(false)}
+              className="min-h-12 w-full rounded-xl text-base font-bold text-slate-600"
+            >
+              Batal
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Satpam found-item report ─────────────────────────────────── */}
+      <Dialog open={showFoundItemForm} onOpenChange={setShowFoundItemForm}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] sm:max-w-lg max-w-[calc(100%-2rem)] rounded-3xl border-none bg-white p-0 shadow-2xl overflow-y-auto">
+          <div className="sticky top-0 z-10 bg-gradient-to-r from-amber-500 to-orange-500 p-5">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-xl font-bold text-white">
+                <PackageSearch className="h-5 w-5" />
+                {editingActivity ? 'Edit Penemuan Barang' : 'Penemuan Barang'}
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-base text-amber-50">
+                Satu laporan untuk satu barang. Kepala SatKer akan memeriksa foto dan nominalnya.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <form onSubmit={handleSubmitFoundItem} className="space-y-5 p-5">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-base text-amber-950">
+              Rekomendasi awal kompensasi <strong>Rp5.000</strong>. Nominal akhir ditentukan saat audit.
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="foundItemName" className="text-base font-bold text-slate-700">
+                Nama Barang
+              </Label>
+              <Input
+                id="foundItemName"
+                value={foundItemName}
+                onChange={(event) => setFoundItemName(event.target.value)}
+                placeholder="Contoh: Kunci motor dengan gantungan merah"
+                maxLength={180}
+                autoComplete="off"
+                autoFocus
+                required
+                className="h-14 rounded-xl border-slate-300 px-4 text-base"
+              />
+              <p className="text-sm text-slate-500">Buat laporan terpisah jika menemukan barang lain.</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="foundItemDate" className="text-base font-bold text-slate-700">
+                Tanggal Penemuan
+              </Label>
+              <Input
+                id="foundItemDate"
+                type="date"
+                value={foundItemDate}
+                onChange={(event) => {
+                  const nextDate = event.target.value;
+                  if (
+                    nextDate &&
+                    !satpamOpenPeriods.some(
+                      (period) =>
+                        nextDate >= period.startDate && nextDate <= period.endDate,
+                    )
+                  ) {
+                    setMessage({
+                      type: 'error',
+                      text: 'Tanggal penemuan harus berada dalam periode payroll terbuka.',
+                    });
+                    return;
+                  }
+                  setFoundItemDate(nextDate);
+                }}
+                required
+                className="h-14 rounded-xl border-slate-300 px-4 text-base"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <Label className="text-base font-bold text-slate-700">Foto Barang</Label>
+                <Badge className="border-none bg-slate-100 text-sm font-bold text-slate-700">
+                  {foundItemPhotos.length}/5 foto
+                </Badge>
+              </div>
+              <p className="text-sm text-slate-500">Wajib minimal satu foto. Anda dapat mengunggah sampai lima sudut foto.</p>
+              <input
+                ref={foundItemPhotoInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  void handleUploadFoundItemPhotos(Array.from(event.target.files || []));
+                  event.target.value = '';
+                }}
+              />
+
+              {foundItemPhotos.length > 0 && (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {foundItemPhotos.map((photo, index) => (
+                    <div
+                      key={photo.url}
+                      className="relative aspect-square overflow-hidden rounded-2xl border border-slate-200 bg-slate-100"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photo.url}
+                        alt={`Foto barang ${index + 1}`}
+                        className="h-full w-full object-cover"
+                      />
+                      <span className="absolute left-2 top-2 rounded-full bg-black/65 px-2 py-1 text-xs font-bold text-white">
+                        Foto {index + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFoundItemPhotos((photos) =>
+                            photos.filter((candidate) => candidate.url !== photo.url),
+                          )
+                        }
+                        className="absolute bottom-2 right-2 flex h-12 w-12 items-center justify-center rounded-xl bg-white/95 text-rose-600 shadow-lg"
+                        aria-label={`Hapus foto ${index + 1}`}
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {foundItemPhotos.length < 5 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={uploadingFoundItemPhotos}
+                  onClick={() => foundItemPhotoInputRef.current?.click()}
+                  className="min-h-14 w-full gap-2 rounded-xl border-dashed border-amber-300 bg-amber-50 text-base font-bold text-amber-900"
+                >
+                  {uploadingFoundItemPhotos ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Images className="h-5 w-5" />
+                  )}
+                  {uploadingFoundItemPhotos
+                    ? 'Mengunggah foto…'
+                    : foundItemPhotos.length === 0
+                      ? 'Upload Foto Barang'
+                      : 'Tambah Foto'}
+                </Button>
+              )}
+            </div>
+
+            <div className="flex gap-3 border-t border-slate-100 pt-4">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={resetFoundItemForm}
+                className="min-h-12 flex-1 rounded-xl text-base font-bold text-slate-600"
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  submitting ||
+                  uploadingFoundItemPhotos ||
+                  foundItemPhotos.length < 1
+                }
+                className="min-h-12 flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-base font-bold text-white"
+              >
+                {submitting ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : (
+                  <Send className="mr-2 h-5 w-5" />
+                )}
+                {editingActivity ? 'Ajukan Ulang' : 'Laporkan'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Add / Edit Activity Dialog ─────────────────────────────────── */}
       <Dialog open={showForm} onOpenChange={(open) => { if (!open) resetForm(); }}>

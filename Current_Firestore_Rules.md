@@ -347,6 +347,14 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /ActivityReportRevisions/{revisionId} {
+      allow read: if isFinanceRole() ||
+        (roleIs('satker_head') && hasCategory(resource.data.snapshot.jobCategory)) ||
+        ownsEmployee(resource.data.employeeId);
+      // Every revision is created once by the submission API and is immutable.
+      allow create, update, delete: if false;
+    }
+
     match /PekaryaActivityIndexes/{indexId} {
       allow read, write: if false;
     }

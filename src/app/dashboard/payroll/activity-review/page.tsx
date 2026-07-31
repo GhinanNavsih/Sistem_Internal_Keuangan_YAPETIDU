@@ -72,6 +72,8 @@ import {
   MapPin,
   Maximize2,
   Camera,
+  PackageSearch,
+  Images,
 } from 'lucide-react';
 
 const loadGoogleMapsScript = (callback: () => void) => {
@@ -211,7 +213,11 @@ interface ActivityReport {
   startPoint?: string;
   endPoint?: string;
   // SATPAM specific fields
-  reportKind?: 'satpam_spj' | 'satpam_shift_assignment' | string;
+  reportKind?:
+    | 'satpam_spj'
+    | 'satpam_found_item'
+    | 'satpam_shift_assignment'
+    | string;
   identityAnomalies?: string[];
   payrollPeriod?: string;
   sourceOccurrenceId?: string;
@@ -224,6 +230,8 @@ interface ActivityReport {
   submittedPostId?: string;
   submittedEmployeeId?: string;
   submittedPayType?: string;
+  plannedEmployeeId?: string | null;
+  plannedEmployeeName?: string | null;
   auditorActionAt?: any;
   shiftName?: string;
   shiftType?: string;
@@ -231,6 +239,10 @@ interface ActivityReport {
   postName?: string;
   photoUrl?: string | null;
   photoAuditMetadata?: PhotoAuditMetadata | null;
+  itemName?: string;
+  proofPhotos?: PhotoEvidence[];
+  submittedFeeRecommendation?: number;
+  submissionRevision?: number;
   dutyDate?: string;
   ketuaShiftId?: string;
   ketuaShiftName?: string;
@@ -415,12 +427,14 @@ function InlinePhotoWithExif({
   activityDate,
   auditMetadata,
   onZoom,
+  className,
 }: {
   photoUrl: string;
   title: string;
   activityDate?: string;
   auditMetadata?: PhotoAuditMetadata | null;
   onZoom: () => void;
+  className?: string;
 }) {
   const dateMismatch = Boolean(
     auditMetadata?.capturedAt && activityDate && auditMetadata.capturedAt.split('T')[0] !== activityDate,
@@ -435,7 +449,7 @@ function InlinePhotoWithExif({
     : undefined;
 
   return (
-    <div className="relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-950 aspect-[4/3] shadow-xs">
+    <div className={`relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-950 shadow-xs ${className || 'aspect-[4/3]'}`}>
       {/* Photo Image */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -571,12 +585,31 @@ export default function ActivityReviewPage() {
 
   // ── UI State ──
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'declined'>('pending');
+  const [reportTypeFilter, setReportTypeFilter] = useState<
+    'all' | 'activity' | 'found_item' | 'shift'
+  >('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // ── Row Fees (Inline input values) ──
   const [rowFees, setRowFees] = useState<Record<string, string>>({});
   const [rowUangMakan, setRowUangMakan] = useState<Record<string, boolean>>({});
+  const [foundItemAdjustmentReasons, setFoundItemAdjustmentReasons] = useState<
+    Record<string, string>
+  >({});
+  const [activityRevisionHistory, setActivityRevisionHistory] = useState<
+    Record<
+      string,
+      Array<{
+        revision: number;
+        submittedAt: string | null;
+        itemName: string;
+        activityDate: string;
+        photoCount: number;
+      }>
+    >
+  >({});
+  const [loadingActivityRevisionId, setLoadingActivityRevisionId] = useState<string | null>(null);
 
   // ── Decline Modal ──
   const [declineTarget, setDeclineTarget] = useState<ActivityReport | null>(null);
@@ -1120,21 +1153,24 @@ export default function ActivityReviewPage() {
         list.forEach(a => {
           if (a.status === 'pending') {
             if (newFees[a.id] === undefined) {
-              const defaultFee = calculateDefaultFee(
-                a.timeStart,
-                a.timeEnd,
-                a.activityType,
-                a.activityName,
-                a.jobCategory,
-                a.tripType,
-                a.vehicleType,
-                a.nightCount,
-                a.activityDate,
-                a.fuelFee,
-                a.tollParkingFee,
-                a.distanceKm,
-                a.durationHours
-              );
+              const defaultFee =
+                a.reportKind === 'satpam_found_item'
+                  ? a.submittedFeeRecommendation || 5_000
+                  : calculateDefaultFee(
+                      a.timeStart,
+                      a.timeEnd,
+                      a.activityType,
+                      a.activityName,
+                      a.jobCategory,
+                      a.tripType,
+                      a.vehicleType,
+                      a.nightCount,
+                      a.activityDate,
+                      a.fuelFee,
+                      a.tollParkingFee,
+                      a.distanceKm,
+                      a.durationHours,
+                    );
               newFees[a.id] = String(defaultFee);
             }
           } else {
@@ -1171,6 +1207,17 @@ export default function ActivityReviewPage() {
     if (statusFilter !== 'all') {
       filtered = filtered.filter(a => a.status === statusFilter);
     }
+    if (reportTypeFilter === 'found_item') {
+      filtered = filtered.filter((activity) => activity.reportKind === 'satpam_found_item');
+    } else if (reportTypeFilter === 'shift') {
+      filtered = filtered.filter((activity) => Boolean(activity.sourceOccurrenceId));
+    } else if (reportTypeFilter === 'activity') {
+      filtered = filtered.filter(
+        (activity) =>
+          activity.reportKind !== 'satpam_found_item' &&
+          !activity.sourceOccurrenceId,
+      );
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(a =>
@@ -1179,7 +1226,7 @@ export default function ActivityReviewPage() {
       );
     }
     return filtered;
-  }, [activities, statusFilter, searchQuery]);
+  }, [activities, reportTypeFilter, statusFilter, searchQuery]);
 
   // ── Satpam shift grouping ──
   // Satpam reports are audited as a whole shift occurrence rather than as ten
@@ -1305,7 +1352,11 @@ export default function ActivityReviewPage() {
   // ── Selection Handlers ──
   // Grouped Satpam shifts are audited through their own endpoint, so they must
   // never be swept into the bulk pekarya review (which rejects SATPAM anyway).
-  const pendingInView = ungroupedActivities.filter(a => a.status === 'pending');
+  const pendingInView = ungroupedActivities.filter(
+    (activity) =>
+      activity.status === 'pending' &&
+      activity.reportKind !== 'satpam_found_item',
+  );
   const allPendingSelected = pendingInView.length > 0 && pendingInView.every(a => selectedIds.has(a.id));
 
   const toggleSelect = (id: string) => {
@@ -1357,6 +1408,8 @@ export default function ActivityReviewPage() {
       setErrorMsg('Masukkan nilai fee yang valid (lebih dari 0).');
       return;
     }
+    const isFoundItem = activity.reportKind === 'satpam_found_item';
+    const adjustmentReason = (foundItemAdjustmentReasons[activity.id] || '').trim();
 
     isActionLoadingRef.current = true;
     setActionLoading(true);
@@ -1366,11 +1419,16 @@ export default function ActivityReviewPage() {
         body: JSON.stringify({
           requestId: createFinancialRequestId('activity_approve'),
           action: 'approve',
-          reason: 'Persetujuan kegiatan oleh Kepala SatKer',
+          reason: isFoundItem
+            ? adjustmentReason || 'Persetujuan penemuan barang oleh Kepala SatKer'
+            : 'Persetujuan kegiatan oleh Kepala SatKer',
           items: [{
             reportId: activity.id,
             fee: feeVal,
-            hasUangMakan: !!rowUangMakan[activity.id],
+            hasUangMakan: isFoundItem ? false : !!rowUangMakan[activity.id],
+            ...(isFoundItem && adjustmentReason
+              ? { reason: adjustmentReason }
+              : {}),
           }],
         }),
       });
@@ -1384,6 +1442,11 @@ export default function ActivityReviewPage() {
       });
       setRowUangMakan(prev => {
         const next = { ...prev };
+        delete next[activity.id];
+        return next;
+      });
+      setFoundItemAdjustmentReasons((current) => {
+        const next = { ...current };
         delete next[activity.id];
         return next;
       });
@@ -1539,9 +1602,48 @@ export default function ActivityReviewPage() {
   // ── Satpam Shift & Activity Audit Handlers ──
   const [expandedActivityIds, setExpandedActivityIds] = useState<Set<string>>(new Set());
 
-  const toggleActivityExpanded = (id: string) => {
-    setExpandedActivityIds(prev => (prev.has(id) ? new Set() : new Set([id])));
+  const loadActivityRevisionHistory = async (activity: ActivityReport) => {
+    if (activityRevisionHistory[activity.id]) return;
+    setLoadingActivityRevisionId(activity.id);
+    try {
+      const response = await authenticatedJson<{
+        revisions: Array<{
+          revision: number;
+          submittedAt: string | null;
+          itemName: string;
+          activityDate: string;
+          photoCount: number;
+        }>;
+      }>(
+        `/api/pekarya/activities?revisions=true&reportId=${encodeURIComponent(activity.id)}`,
+        { method: 'GET' },
+      );
+      setActivityRevisionHistory((current) => ({
+        ...current,
+        [activity.id]: response.revisions,
+      }));
+    } catch (error) {
+      console.error('Error loading activity revision history:', error);
+      setErrorMsg(
+        error instanceof Error
+          ? error.message
+          : 'Gagal memuat riwayat revisi laporan.',
+      );
+    } finally {
+      setLoadingActivityRevisionId(null);
+    }
+  };
+
+  const toggleActivityExpanded = (activity: ActivityReport) => {
+    if (activity.jobCategory === 'SOPIR') return;
+    const isOpening = !expandedActivityIds.has(activity.id);
+    setExpandedActivityIds(prev =>
+      prev.has(activity.id) ? new Set() : new Set([activity.id]),
+    );
     setExpandedShiftIds(new Set());
+    if (isOpening && activity.reportKind === 'satpam_found_item') {
+      void loadActivityRevisionHistory(activity);
+    }
   };
 
   const toggleShiftExpanded = (occurrenceId: string) => {
@@ -1894,6 +1996,28 @@ export default function ActivityReviewPage() {
         <Card className="bg-white rounded-2xl shadow-sm border-none">
           <CardContent className="p-4">
             <div className="flex flex-col md:flex-row md:items-center gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <Filter className="h-4 w-4 shrink-0 text-slate-400" />
+                <Select
+                  value={reportTypeFilter}
+                  onValueChange={(value) =>
+                    value &&
+                    setReportTypeFilter(
+                      value as 'all' | 'activity' | 'found_item' | 'shift',
+                    )
+                  }
+                >
+                  <SelectTrigger className="h-12 w-full min-w-56 rounded-xl border-slate-200 bg-white text-base font-bold md:w-64">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl bg-white">
+                    <SelectItem value="all" className="min-h-11 text-base">Semua Jenis Laporan</SelectItem>
+                    <SelectItem value="activity" className="min-h-11 text-base">SPJ / Kegiatan Pribadi</SelectItem>
+                    <SelectItem value="found_item" className="min-h-11 text-base">Penemuan Barang</SelectItem>
+                    <SelectItem value="shift" className="min-h-11 text-base">Shift Regu Satpam</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               {/* Search */}
               <div className="relative flex-1 md:max-w-xs md:ml-auto">
                 <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-slate-400" />
@@ -2228,6 +2352,25 @@ export default function ActivityReviewPage() {
                                                 <p className="text-[10px] font-bold text-slate-500 mt-0.5">
                                                   {item.shiftType} · {fmtRp(item.fee || 0)}
                                                 </p>
+                                                {item.plannedEmployeeId &&
+                                                  item.plannedEmployeeId !== item.employeeId && (
+                                                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900">
+                                                    Rencana: {item.plannedEmployeeName || item.plannedEmployeeId}
+                                                    <span className="block font-bold">
+                                                      Aktual: {item.employeeName}
+                                                    </span>
+                                                  </div>
+                                                )}
+                                                {item.postId === 'Pos 2' && (
+                                                  <span className="mt-1 block text-[10px] font-bold text-blue-700">
+                                                    Ketua Shift / Keliling
+                                                  </span>
+                                                )}
+                                                {item.postId === 'Pos 9' && (
+                                                  <span className="mt-1 block text-[10px] font-bold text-violet-700">
+                                                    Petugas Tetap
+                                                  </span>
+                                                )}
                                               </div>
                                               {!rowPending && (
                                                 <Badge
@@ -2379,18 +2522,24 @@ export default function ActivityReviewPage() {
                     {ungroupedActivities.map((activity) => {
                       const sc = getStatusConfig(activity.status);
                       const isSelected = selectedIds.has(activity.id);
-                      const isExpanded = expandedActivityIds.has(activity.id);
+                      const isDriver = activity.jobCategory === 'SOPIR';
+                      const isExpanded = !isDriver && expandedActivityIds.has(activity.id);
 
                       return (
                         <React.Fragment key={activity.id}>
                           <TableRow
-                            onClick={() => toggleActivityExpanded(activity.id)}
-                            className={`border-slate-50 hover:bg-slate-50/40 transition-colors cursor-pointer ${
+                            onClick={() => {
+                              if (!isDriver) toggleActivityExpanded(activity);
+                            }}
+                            className={`border-slate-50 hover:bg-slate-50/40 transition-colors ${
+                              !isDriver ? 'cursor-pointer' : ''
+                            } ${
                               isExpanded ? 'bg-indigo-50/40' : isSelected ? 'bg-indigo-50/30' : ''
                             }`}
                           >
                             <TableCell className="pl-4">
-                              {activity.status === 'pending' && (
+                              {activity.status === 'pending' &&
+                                activity.reportKind !== 'satpam_found_item' && (
                                 <Checkbox
                                   checked={isSelected}
                                   onCheckedChange={() => toggleSelect(activity.id)}
@@ -2432,6 +2581,16 @@ export default function ActivityReviewPage() {
                                     SPJ Pribadi Satpam
                                   </Badge>
                                 )}
+                                {activity.reportKind === 'satpam_found_item' && (
+                                  <Badge className="inline-flex h-5 items-center gap-1 border-none bg-amber-100 px-2 py-0 text-[10px] font-bold text-amber-900">
+                                    <PackageSearch className="h-3 w-3" /> Penemuan Barang
+                                  </Badge>
+                                )}
+                                {activity.reportKind === 'satpam_found_item' && (
+                                  <Badge variant="outline" className="inline-flex h-5 items-center gap-1 border-amber-200 bg-white px-2 py-0 text-[10px] font-bold text-amber-800">
+                                    <Images className="h-3 w-3" /> {activity.proofPhotos?.length || (activity.photoUrl ? 1 : 0)} foto
+                                  </Badge>
+                                )}
                                 {(activity.identityAnomalies || []).length > 0 && (
                                   <Badge className="text-[9px] px-1.5 py-0 h-4 border-none bg-rose-100 text-rose-800 font-bold">
                                     Identitas perlu diselesaikan
@@ -2442,7 +2601,9 @@ export default function ActivityReviewPage() {
                             <TableCell className="text-sm text-slate-600 font-medium whitespace-nowrap">
                               <span className="font-semibold text-slate-800 block">{activity.activityDate}</span>
                               <span className="text-xs text-slate-400 font-medium">
-                                {activity.timeStart} – {activity.timeEnd}
+                                {activity.reportKind === 'satpam_found_item'
+                                  ? `Versi ${activity.submissionRevision || 1}`
+                                  : `${activity.timeStart} – ${activity.timeEnd}`}
                               </span>
                             </TableCell>
                             <TableCell className="text-sm font-bold text-slate-700 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
@@ -2464,7 +2625,12 @@ export default function ActivityReviewPage() {
                               ) : activity.status === 'approved' && activity.fee > 0
                                 ? fmtRp(activity.fee)
                                 : activity.status === 'pending' ? (
-                                  <div className="flex">
+                                  <div className="flex flex-col items-center gap-1">
+                                    {activity.reportKind === 'satpam_found_item' && (
+                                      <span className="text-[10px] font-bold text-amber-700">
+                                        Saran {fmtRp(activity.submittedFeeRecommendation || 5_000)}
+                                      </span>
+                                    )}
                                     <Input
                                       type="text"
                                       placeholder="-"
@@ -2492,6 +2658,9 @@ export default function ActivityReviewPage() {
                                 <span className="text-[10px] font-bold text-slate-400">SOPIR SPJ</span>
                               ) : activity.status === 'pending' ? (
                                 (() => {
+                                  if (activity.reportKind === 'satpam_found_item') {
+                                    return <span className="text-[10px] font-bold text-slate-400">Tidak berlaku</span>;
+                                  }
                                   const [sh, sm] = activity.timeStart.split(':').map(Number);
                                   const [eh, em] = activity.timeEnd.split(':').map(Number);
                                   let minutes = (eh * 60 + em) - (sh * 60 + sm);
@@ -2529,15 +2698,17 @@ export default function ActivityReviewPage() {
                               isExpanded ? 'bg-indigo-50/90' : isSelected ? 'bg-indigo-50/90' : 'bg-white group-hover:bg-slate-50/90'
                             }`} onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-2">
-                                <ChevronRight
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleActivityExpanded(activity.id);
-                                  }}
-                                  className={`w-4 h-4 text-slate-400 transition-transform cursor-pointer shrink-0 ${
-                                    isExpanded ? 'rotate-90 text-indigo-600 font-bold' : 'hover:text-slate-600'
-                                  }`}
-                                />
+                                {!isDriver && (
+                                  <ChevronRight
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleActivityExpanded(activity);
+                                    }}
+                                    className={`w-4 h-4 text-slate-400 transition-transform cursor-pointer shrink-0 ${
+                                      isExpanded ? 'rotate-90 text-indigo-600 font-bold' : 'hover:text-slate-600'
+                                    }`}
+                                  />
+                                )}
                                 {activity.status === 'pending' && (
                                   <>
                                     {activity.jobCategory === 'SOPIR' ? (
@@ -2592,36 +2763,151 @@ export default function ActivityReviewPage() {
                                 <div className="space-y-3.5">
                                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-200/80">
                                     <div className="flex items-center gap-2 text-xs font-black text-slate-700 uppercase tracking-wider">
-                                      <Camera className="w-4 h-4 text-indigo-600" />
-                                      <span>Audit Bukti Foto Kegiatan — {activity.activityName} ({activity.employeeName})</span>
+                                      {activity.reportKind === 'satpam_found_item' ? (
+                                        <PackageSearch className="h-4 w-4 text-amber-600" />
+                                      ) : (
+                                        <Camera className="w-4 h-4 text-indigo-600" />
+                                      )}
+                                      <span>
+                                        {activity.reportKind === 'satpam_found_item'
+                                          ? 'Audit Penemuan Barang'
+                                          : 'Audit Bukti Foto Kegiatan'}{' '}
+                                        — {activity.activityName} ({activity.employeeName})
+                                      </span>
                                     </div>
-                                    <Badge className="bg-indigo-100 text-indigo-800 border-none font-bold text-[10px] w-fit">
-                                      {activity.jobCategory || 'PEKARYA'} · Tanggal: {activity.activityDate} ({activity.timeStart}{activity.timeEnd ? ` – ${activity.timeEnd}` : ''})
+                                    <Badge className="w-fit border-none bg-indigo-100 text-[10px] font-bold text-indigo-800">
+                                      {activity.jobCategory || 'PEKARYA'} · Tanggal: {activity.activityDate}
+                                      {activity.reportKind !== 'satpam_found_item' &&
+                                        ` (${activity.timeStart}${activity.timeEnd ? ` – ${activity.timeEnd}` : ''})`}
                                     </Badge>
                                   </div>
 
-                                  <div className="max-w-md">
-                                    {activity.photoUrl ? (
-                                      <InlinePhotoWithExif
-                                        photoUrl={activity.photoUrl}
-                                        title={`${activity.activityName} — ${activity.employeeName}`}
-                                        activityDate={activity.activityDate}
-                                        auditMetadata={activity.photoAuditMetadata}
-                                        onZoom={() =>
-                                          setSelectedExifImage({
-                                            url: activity.photoUrl!,
-                                            title: `${activity.activityName} — ${activity.employeeName}`,
-                                            activityDate: activity.activityDate,
-                                            auditMetadata: activity.photoAuditMetadata,
-                                          })
-                                        }
-                                      />
-                                    ) : (
-                                      <div className="w-full aspect-[4/3] bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl font-bold text-xs flex flex-col items-center justify-center gap-1.5 p-4 text-center">
-                                        <AlertTriangle className="w-6 h-6 text-amber-600 mb-0.5" />
-                                        <span>Laporan kegiatan ini tidak melampirkan foto bukti.</span>
+                                  {/* Main content layout: Shrunk photo on left matching combined cards height, cards on right */}
+                                  <div className="flex flex-col lg:flex-row items-start gap-4">
+                                    {/* Left: Shrunk photo(s) constrained to 280px height matching right cards */}
+                                    <div className="shrink-0 space-y-1">
+                                      <div className={activity.reportKind === 'satpam_found_item' && (activity.proofPhotos?.length || 0) > 1 ? 'flex flex-wrap gap-3' : ''}>
+                                        {(activity.reportKind === 'satpam_found_item' && activity.proofPhotos?.length
+                                          ? activity.proofPhotos
+                                          : activity.photoUrl
+                                            ? [{ url: activity.photoUrl, auditMetadata: activity.photoAuditMetadata }]
+                                            : []
+                                        ).length > 0 ? (
+                                          (activity.reportKind === 'satpam_found_item' && activity.proofPhotos?.length
+                                            ? activity.proofPhotos
+                                            : [{ url: activity.photoUrl!, auditMetadata: activity.photoAuditMetadata }]
+                                          ).map((photo, index) => (
+                                            <div key={photo.url} className="space-y-1">
+                                              {activity.reportKind === 'satpam_found_item' && (
+                                                <p className="text-xs font-bold text-slate-500">Foto {index + 1}</p>
+                                              )}
+                                              <InlinePhotoWithExif
+                                                photoUrl={photo.url}
+                                                title={`${activity.activityName} — Foto ${index + 1}`}
+                                                activityDate={activity.activityDate}
+                                                auditMetadata={photo.auditMetadata}
+                                                className="h-[280px] aspect-[4/3] max-w-full rounded-2xl"
+                                                onZoom={() =>
+                                                  setSelectedExifImage({
+                                                    url: photo.url,
+                                                    title: `${activity.activityName} — Foto ${index + 1}`,
+                                                    activityDate: activity.activityDate,
+                                                    auditMetadata: photo.auditMetadata,
+                                                  })
+                                                }
+                                              />
+                                            </div>
+                                          ))
+                                        ) : (
+                                          <div className="h-[280px] aspect-[4/3] max-w-full bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl font-bold text-xs flex flex-col items-center justify-center gap-1.5 p-4 text-center">
+                                            <AlertTriangle className="w-6 h-6 text-amber-600 mb-0.5" />
+                                            <span>Laporan kegiatan ini tidak melampirkan foto bukti.</span>
+                                          </div>
+                                        )}
                                       </div>
-                                    )}
+                                    </div>
+
+                                    {/* Right Column: Audit controls & history filling remaining width */}
+                                    <div className="flex-1 min-w-0 space-y-3 w-full">
+                                      {activity.reportKind === 'satpam_found_item' ? (
+                                        <div className="rounded-2xl border border-amber-200 bg-white p-4 space-y-3.5 shadow-xs flex-1 flex flex-col justify-between h-[280px] overflow-hidden">
+                                          {/* Section 1: Nominal Audit */}
+                                          <div className="space-y-1.5 rounded-xl border border-amber-200/80 bg-amber-50/70 p-3">
+                                            <p className="text-xs font-bold uppercase tracking-wider text-amber-700">Nominal Audit</p>
+                                            <p className="text-xs sm:text-sm font-semibold text-amber-950">
+                                              Rekomendasi sistem: <strong>{fmtRp(activity.submittedFeeRecommendation || 5_000)}</strong>
+                                            </p>
+                                            <p className="text-[11px] text-amber-800">Nominal akhir dapat diubah langsung oleh Kepala SatKer.</p>
+                                          </div>
+
+                                          {/* Section 2: Riwayat Pengajuan */}
+                                          <div className="space-y-2 pt-1 border-t border-slate-100">
+                                            <div className="flex items-center justify-between gap-3">
+                                              <div>
+                                                <p className="text-xs font-black uppercase tracking-wider text-slate-700">Riwayat Pengajuan</p>
+                                                <p className="text-[10px] text-slate-500">Setiap versi disimpan terpisah dan tidak ditimpa.</p>
+                                              </div>
+                                              <Badge variant="outline" className="border-slate-200 text-[10px] font-bold text-slate-600">
+                                                Versi {activity.submissionRevision || 1}
+                                              </Badge>
+                                            </div>
+                                            {loadingActivityRevisionId === activity.id ? (
+                                              <div className="flex min-h-10 items-center justify-center gap-2 text-xs text-slate-500">
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Memuat riwayat…
+                                              </div>
+                                            ) : (activityRevisionHistory[activity.id] || []).length > 0 ? (
+                                              <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+                                                {activityRevisionHistory[activity.id].map((revision) => (
+                                                  <div key={revision.revision} className="flex flex-col gap-1 rounded-xl border border-slate-100 bg-slate-50 px-3 py-1.5 text-xs sm:flex-row sm:items-center sm:justify-between">
+                                                    <span className="font-bold text-slate-800">
+                                                      Versi {revision.revision} · {revision.itemName}
+                                                    </span>
+                                                    <span className="text-slate-500 text-[11px]">
+                                                      {revision.activityDate} · {revision.photoCount} foto
+                                                      {revision.submittedAt
+                                                        ? ` · ${new Date(revision.submittedAt).toLocaleString('id-ID')}`
+                                                        : ''}
+                                                    </span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            ) : (
+                                              <p className="rounded-xl bg-slate-50 p-2 text-[11px] text-slate-500">
+                                                Riwayat versi lama belum tersedia untuk laporan ini.
+                                              </p>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+                                          <p className="text-xs font-black uppercase tracking-wider text-slate-700">Detail Audit Kegiatan</p>
+                                          <div className="space-y-2 text-xs text-slate-600">
+                                            <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                                              <span className="font-semibold text-slate-500">Nama Kegiatan</span>
+                                              <span className="font-bold text-slate-800">{activity.activityName}</span>
+                                            </div>
+                                            <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                                              <span className="font-semibold text-slate-500">Pegawai</span>
+                                              <span className="font-bold text-slate-800">{activity.employeeName} ({activity.jobCategory || 'PEKARYA'})</span>
+                                            </div>
+                                            <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                                              <span className="font-semibold text-slate-500">Waktu & Tanggal</span>
+                                              <span className="font-bold text-slate-800">{activity.activityDate} · {activity.timeStart} – {activity.timeEnd}</span>
+                                            </div>
+                                            <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                                              <span className="font-semibold text-slate-500">Status Foto</span>
+                                              <span className="font-bold text-slate-800">{activity.photoUrl ? 'Foto Terlampir' : 'Tanpa Bukti Foto'}</span>
+                                            </div>
+                                            {activity.fee > 0 && (
+                                              <div className="flex justify-between pt-0.5">
+                                                <span className="font-semibold text-slate-500">Fee / Kompensasi</span>
+                                                <span className="font-bold text-emerald-600">{fmtRp(activity.fee)}</span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </TableCell>
@@ -2676,7 +2962,9 @@ export default function ActivityReviewPage() {
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
               <ThumbsDown className="w-5 h-5 text-rose-500" />
-              Tolak Kegiatan
+              {declineTarget?.reportKind === 'satpam_found_item'
+                ? 'Tolak Penemuan Barang'
+                : 'Tolak Kegiatan'}
             </DialogTitle>
             <DialogDescription className="text-slate-500">
               Tolak kegiatan <strong>"{declineTarget?.activityName}"</strong> oleh <strong>{declineTarget?.employeeName}</strong>.
@@ -2690,9 +2978,13 @@ export default function ActivityReviewPage() {
                 <span className="font-bold text-slate-700">{declineTarget?.activityDate}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400 font-semibold">Waktu</span>
+                <span className="text-slate-400 font-semibold">
+                  {declineTarget?.reportKind === 'satpam_found_item' ? 'Bukti' : 'Waktu'}
+                </span>
                 <span className="font-bold text-slate-700">
-                  {declineTarget?.activityType === 'Buang Sampah' || declineTarget?.activityName === 'Buang Sampah'
+                  {declineTarget?.reportKind === 'satpam_found_item'
+                    ? `${declineTarget.proofPhotos?.length || (declineTarget.photoUrl ? 1 : 0)} foto`
+                    : declineTarget?.activityType === 'Buang Sampah' || declineTarget?.activityName === 'Buang Sampah'
                     ? declineTarget?.timeStart
                     : `${declineTarget?.timeStart} – ${declineTarget?.timeEnd}`}
                 </span>

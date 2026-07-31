@@ -23,7 +23,16 @@ export type SatpamPayType =
   | 'Lembur Cover'
   | 'Off-Duty';
 
-export type SatpamReportKind = 'satpam_spj' | 'satpam_shift_assignment';
+export type SatpamReportKind =
+  | 'satpam_spj'
+  | 'satpam_found_item'
+  | 'satpam_shift_assignment';
+
+export function isSatpamPersonalSpjReportKind(
+  value: unknown,
+): value is Extract<SatpamReportKind, 'satpam_spj' | 'satpam_found_item'> {
+  return value === 'satpam_spj' || value === 'satpam_found_item';
+}
 
 export type SatpamShiftAnomalyCode =
   | 'MISSING_POSTS'
@@ -140,6 +149,7 @@ export function inferLegacySatpamReportKind(
 ): SatpamReportKind {
   if (
     report.reportKind === 'satpam_spj' ||
+    report.reportKind === 'satpam_found_item' ||
     report.reportKind === 'satpam_shift_assignment'
   ) {
     return report.reportKind;
@@ -176,7 +186,9 @@ export function summarizeApprovedSatpamReports(
   };
   for (const report of dedupeSatpamActivityReports(input)) {
     if (report.status !== 'approved') continue;
-    if (inferLegacySatpamReportKind(report) === 'satpam_spj') {
+    if (
+      isSatpamPersonalSpjReportKind(inferLegacySatpamReportKind(report))
+    ) {
       const fee = Number(report.fee || 0);
       if (Number.isFinite(fee) && fee > 0) summary.personalSpj += fee;
       continue;
@@ -641,7 +653,7 @@ export function dedupeSatpamActivityReports<T extends SatpamActivityLike>(
   for (const report of reports) {
     const key =
       report.sourceLedgerEntryId ||
-      (report.reportKind === 'satpam_spj' ||
+      (isSatpamPersonalSpjReportKind(report.reportKind) ||
       (!report.reportKind && !report.sourceOccurrenceId && !report.shiftType)
         ? report.id
         : undefined) ||

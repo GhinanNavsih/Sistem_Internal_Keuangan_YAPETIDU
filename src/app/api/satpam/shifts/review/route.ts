@@ -1236,12 +1236,25 @@ export async function PUT(request: NextRequest) {
         );
         const employee = employeeById.get(assignment.employeeId);
         const post = SATPAM_POSTS.find((item) => item.id === assignment.postId)!;
+        const plannedEmployeeId =
+          assignment.assignmentKind === 'primary'
+            ? planDay?.assignments.find(
+                (planned) => planned.postId === assignment.postId,
+              )?.employeeId || null
+            : null;
         const reportId = reportIds[index];
         const assignmentKey =
           String(original?.assignmentKey || `auditor_${assignment.postId}_${index}`);
         transaction.set(adminDb.collection('ActivityReports').doc(reportId), {
           employeeId: assignment.employeeId,
           employeeName: String(employee?.data()?.name || assignment.employeeId),
+          plannedEmployeeId,
+          plannedEmployeeName: plannedEmployeeId
+            ? String(
+                employeeById.get(plannedEmployeeId)?.data()?.name ||
+                  plannedEmployeeId,
+              )
+            : null,
           jobCategory: 'SATPAM',
           reportKind: 'satpam_shift_assignment',
           period,

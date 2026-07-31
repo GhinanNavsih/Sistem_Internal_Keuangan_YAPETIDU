@@ -69,6 +69,8 @@ interface AssignmentRecord {
   postId: SatpamPostId;
   employeeId: string;
   employeeName: string;
+  plannedEmployeeId: string | null;
+  plannedEmployeeName: string | null;
   payType: SatpamPayType;
   coveredEmployeeId: string | null;
   overtimeReason: string | null;
@@ -351,6 +353,12 @@ function buildAssignmentRecords(input: {
           ? input.command.extraAssignment!
           : input.command.assignments[index];
       const employee = input.employeeById.get(assignment.employeeId);
+      const plannedEmployeeId =
+        assignment.assignmentKind === 'primary'
+          ? input.planDay?.assignments.find(
+              (planned) => planned.postId === assignment.postId,
+            )?.employeeId || null
+          : null;
       return {
         assignmentKey:
           assignment.assignmentKind === 'extra'
@@ -362,6 +370,13 @@ function buildAssignmentRecords(input: {
         employeeName: String(
           employee?.data()?.name || assignment.employeeId,
         ),
+        plannedEmployeeId,
+        plannedEmployeeName: plannedEmployeeId
+          ? String(
+              input.employeeById.get(plannedEmployeeId)?.data()?.name ||
+                plannedEmployeeId,
+            )
+          : null,
         payType: assignment.payType,
         coveredEmployeeId: assignment.coveredEmployeeId,
         overtimeReason:
@@ -390,6 +405,8 @@ function buildAssignmentRecords(input: {
       postId: assignment.postId,
       employeeId: assignment.employeeId,
       employeeName: String(employee?.data()?.name || assignment.employeeId),
+      plannedEmployeeId: null,
+      plannedEmployeeName: null,
       payType,
       coveredEmployeeId:
         payType === 'Lembur Cover' ? assignment.coveredEmployeeId || null : null,
@@ -411,6 +428,8 @@ function buildAssignmentRecords(input: {
       postId: extra.postId,
       employeeId: extra.employeeId,
       employeeName: String(employee?.data()?.name || extra.employeeId),
+      plannedEmployeeId: null,
+      plannedEmployeeName: null,
       payType: 'Lembur Sendiri' as const,
       coveredEmployeeId: null,
       overtimeReason: extra.overtimeReason?.trim() || null,
@@ -544,6 +563,8 @@ function assignmentReportData(input: {
     submittedPostId: post.id,
     submittedEmployeeId: input.record.employeeId,
     submittedPayType: input.record.payType,
+    plannedEmployeeId: input.record.plannedEmployeeId,
+    plannedEmployeeName: input.record.plannedEmployeeName,
     coveredEmployeeId: input.record.coveredEmployeeId,
     scheduleRelation: input.record.scheduleRelation,
     overtimeReason: input.record.overtimeReason,

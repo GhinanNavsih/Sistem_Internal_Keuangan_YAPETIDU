@@ -312,6 +312,14 @@ test('Satpam payroll summarizes shift columns and personal SPJ simultaneously', 
       fee: 47_500,
     },
     {
+      id: 'found-item',
+      reportKind: 'satpam_found_item',
+      employeeId: 'SAT-1',
+      activityDate: '2026-08-02',
+      status: 'approved',
+      fee: 5_000,
+    },
+    {
       id: 'shift-pending',
       reportKind: 'satpam_shift_assignment',
       employeeId: 'SAT-1',
@@ -322,7 +330,7 @@ test('Satpam payroll summarizes shift columns and personal SPJ simultaneously', 
     },
   ]);
   assert.deepEqual(contribution, {
-    personalSpj: 47_500,
+    personalSpj: 52_500,
     harianCount: 1,
     jumatLiburCount: 0,
     lemburSendiriCount: 0,

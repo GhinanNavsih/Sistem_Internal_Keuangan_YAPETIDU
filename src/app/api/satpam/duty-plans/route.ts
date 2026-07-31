@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
+  addCalendarDays,
   assertRequestId,
   guardDutyIndexId,
   isImmutablePayrollStatus,
@@ -14,11 +15,17 @@ import {
   isSatpamAdvancePlanningPeriod,
   isSatpamDutyPlanRequired,
   isSatpamPlanDayStarted,
+  nextSatpamRotationAssignments,
   satpamDutyPlanId,
+  SATPAM_DUTY_PLAN_ROTATION_VERSION,
+  SATPAM_DUTY_PLAN_SCHEMA_VERSION,
+  SATPAM_ROTATION_SLOTS,
   validateAndGenerateSatpamDutyPlan,
   validateSatpamDutyPlanDay,
   type SatpamDutyPlanDay,
   type SatpamDutyPlanSeedDay,
+  type SatpamRotationSlot,
+  type SatpamRotationSlotAssignment,
 } from '@/lib/payroll/satpamDutyPlan';
 import {
   SATPAM_DUTY_PLANS_COLLECTION,
@@ -89,59 +96,143 @@ function rosterIdsFromTeam(team: FirebaseFirestore.DocumentSnapshot): string[] {
   ).filter(Boolean);
 }
 
-function parseSeedDays(value: unknown): SatpamDutyPlanSeedDay[] {
-  if (!Array.isArray(value) || value.length !== 10) {
-    throw new HttpError(400, 'Pola awal wajib berisi tepat sepuluh hari.');
+function parseFirstDayAssignments(value: unknown): SatpamRotationSlotAssignment[] {
+  if (!Array.isArray(value) || value.length !== SATPAM_ROTATION_SLOTS.length) {
+    throw new HttpError(
+      400,
+      'Susunan tanggal pertama wajib berisi tujuh pos dan satu Libur.',
+    );
   }
-  const validPostIds = new Set(SATPAM_POSTS.map((post) => post.id));
+  const validSlots = new Set<string>(SATPAM_ROTATION_SLOTS);
   return value.map((raw, index) => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      throw new HttpError(400, `Pola hari ke-${index + 1} tidak valid.`);
+      throw new HttpError(400, `Slot rotasi ke-${index + 1} tidak valid.`);
     }
-    const day = raw as Record<string, unknown>;
+    const assignment = raw as Record<string, unknown>;
     if (
-      typeof day.dutyDate !== 'string' ||
-      !['Pagi', 'Sore', 'Malam'].includes(String(day.shiftName)) ||
-      typeof day.offDutyEmployeeId !== 'string' ||
-      !Array.isArray(day.assignments)
+      typeof assignment.slot !== 'string' ||
+      !validSlots.has(assignment.slot) ||
+      typeof assignment.employeeId !== 'string' ||
+      !assignment.employeeId.trim()
     ) {
-      throw new HttpError(400, `Pola hari ke-${index + 1} belum lengkap.`);
+      throw new HttpError(400, `Slot rotasi ke-${index + 1} belum lengkap.`);
     }
-    const assignments = day.assignments.map((rawAssignment) => {
-      if (
-        !rawAssignment ||
-        typeof rawAssignment !== 'object' ||
-        Array.isArray(rawAssignment)
-      ) {
-        throw new HttpError(400, 'Baris penugasan pola tidak valid.');
-      }
-      const assignment = rawAssignment as Record<string, unknown>;
-      if (
-        typeof assignment.postId !== 'string' ||
-        !validPostIds.has(assignment.postId as SatpamPostId) ||
-        typeof assignment.employeeId !== 'string'
-      ) {
-        throw new HttpError(400, 'Pos atau petugas pola tidak valid.');
-      }
-      return {
-        postId: assignment.postId as SatpamPostId,
-        employeeId: assignment.employeeId.trim(),
-      };
-    });
     return {
-      dutyDate: day.dutyDate,
-      shiftName: day.shiftName as SatpamShiftName,
-      assignments,
-      offDutyEmployeeId: day.offDutyEmployeeId.trim(),
+      slot: assignment.slot as SatpamRotationSlot,
+      employeeId: assignment.employeeId.trim(),
     };
   });
 }
 
 function parseDay(value: unknown): SatpamDutyPlanSeedDay {
-  const parsed = parseSeedDays(
-    Array.from({ length: 10 }, () => value),
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(400, 'Penugasan harian tidak valid.');
+  }
+  const day = value as Record<string, unknown>;
+  if (
+    typeof day.dutyDate !== 'string' ||
+    !['Pagi', 'Sore', 'Malam'].includes(String(day.shiftName)) ||
+    typeof day.offDutyEmployeeId !== 'string' ||
+    !Array.isArray(day.assignments)
+  ) {
+    throw new HttpError(400, 'Penugasan harian belum lengkap.');
+  }
+  const validPostIds = new Set<string>(SATPAM_POSTS.map((post) => post.id));
+  const assignments = day.assignments.map((rawAssignment) => {
+    if (
+      !rawAssignment ||
+      typeof rawAssignment !== 'object' ||
+      Array.isArray(rawAssignment)
+    ) {
+      throw new HttpError(400, 'Baris penugasan harian tidak valid.');
+    }
+    const assignment = rawAssignment as Record<string, unknown>;
+    if (
+      typeof assignment.postId !== 'string' ||
+      !validPostIds.has(assignment.postId) ||
+      typeof assignment.employeeId !== 'string'
+    ) {
+      throw new HttpError(400, 'Pos atau petugas harian tidak valid.');
+    }
+    return {
+      postId: assignment.postId as SatpamPostId,
+      employeeId: assignment.employeeId.trim(),
+    };
+  });
+  return {
+    dutyDate: day.dutyDate,
+    shiftName: day.shiftName as SatpamShiftName,
+    assignments,
+    offDutyEmployeeId: day.offDutyEmployeeId.trim(),
+  };
+}
+
+function previousPayrollPeriod(period: string): string {
+  const [year, month] = period.split('-').map(Number);
+  const previous = new Date(Date.UTC(year, month - 2, 1));
+  return `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function sameEmployeeSet(left: unknown, right: readonly string[]): boolean {
+  if (!Array.isArray(left)) return false;
+  const normalized = left.filter(
+    (value): value is string => typeof value === 'string' && Boolean(value),
   );
-  return parsed[0];
+  return (
+    normalized.length === right.length &&
+    new Set(normalized).size === right.length &&
+    right.every((employeeId) => normalized.includes(employeeId))
+  );
+}
+
+async function loadContinuation(input: {
+  period: string;
+  teamId: string;
+  ketuaShiftId: string;
+  rosterEmployeeIds: readonly string[];
+  fixedPost9EmployeeId?: string;
+}) {
+  const previousPeriod = previousPayrollPeriod(input.period);
+  const [previousPlan, previousWindow] = await Promise.all([
+    adminDb
+      .collection(SATPAM_DUTY_PLANS_COLLECTION)
+      .doc(satpamDutyPlanId(previousPeriod, input.teamId))
+      .get(),
+    Promise.resolve(pekaryaPayrollWindow(previousPeriod)),
+  ]);
+  if (!previousPlan.exists) return null;
+  const data = previousPlan.data()!;
+  const currentWindow = pekaryaPayrollWindow(input.period);
+  const fixedPost9EmployeeId = String(data.fixedPost9EmployeeId || '');
+  const compatible =
+    Number(data.schemaVersion || 0) === SATPAM_DUTY_PLAN_SCHEMA_VERSION &&
+    data.rotationVersion === SATPAM_DUTY_PLAN_ROTATION_VERSION &&
+    data.status !== 'stale' &&
+    String(data.ketuaShiftId || '') === input.ketuaShiftId &&
+    sameEmployeeSet(data.rosterEmployeeIds, input.rosterEmployeeIds) &&
+    addCalendarDays(previousWindow.endsOn, 1) === currentWindow.startsOn &&
+    (!input.fixedPost9EmployeeId ||
+      input.fixedPost9EmployeeId === fixedPost9EmployeeId);
+  const generatedDays = Array.isArray(data.generatedDays)
+    ? (data.generatedDays as SatpamDutyPlanDay[])
+    : [];
+  const previousGeneratedDay = generatedDays.find(
+    (day) => day.dutyDate === previousWindow.endsOn,
+  );
+  const seedDays = Array.isArray(data.seedDays)
+    ? (data.seedDays as SatpamDutyPlanDay[])
+    : [];
+  const previousDay = previousGeneratedDay
+    ? seedDays[Number(previousGeneratedDay.sourceSeedIndex)] ||
+      previousGeneratedDay
+    : null;
+  if (!compatible || !previousDay || !fixedPost9EmployeeId) return null;
+  return {
+    sourcePlanId: previousPlan.id,
+    sourceRevision: Number(data.revision || 0),
+    fixedPost9EmployeeId,
+    firstDayAssignments: nextSatpamRotationAssignments(previousDay),
+  };
 }
 
 async function rosterSnapshot(rosterEmployeeIds: string[]) {
@@ -189,11 +280,13 @@ export async function GET(request: NextRequest) {
       throw new HttpError(404, 'Periode payroll tidak ditemukan.');
     }
     let teamIds: string[] = [];
+    let ketuaTeamSnapshot: FirebaseFirestore.DocumentSnapshot | null = null;
     if (actor.role === 'ketua_shift_satpam') {
       if (!actor.linkedEmployeeId) {
         throw new HttpError(409, 'Akun belum terhubung ke data Satpam.');
       }
-      teamIds = [(await teamForKetua(actor.linkedEmployeeId)).id];
+      ketuaTeamSnapshot = await teamForKetua(actor.linkedEmployeeId);
+      teamIds = [ketuaTeamSnapshot.id];
     } else {
       const requestedTeamId = request.nextUrl.searchParams.get('teamId') || '';
       if (requestedTeamId) {
@@ -231,6 +324,17 @@ export async function GET(request: NextRequest) {
           : [],
       };
     });
+    const continuation =
+      actor.role === 'ketua_shift_satpam' &&
+      actor.linkedEmployeeId &&
+      ketuaTeamSnapshot
+        ? await loadContinuation({
+            period,
+            teamId: ketuaTeamSnapshot.id,
+            ketuaShiftId: actor.linkedEmployeeId,
+            rosterEmployeeIds: rosterIdsFromTeam(ketuaTeamSnapshot),
+          })
+        : null;
     return Response.json(
       {
         period,
@@ -245,6 +349,7 @@ export async function GET(request: NextRequest) {
           (advancePlanning ? 'advance_planning' : null),
         advancePlanning,
         window: pekaryaPayrollWindow(period),
+        continuation,
         plans,
       },
       { headers: { 'Cache-Control': 'no-store' } },
@@ -265,21 +370,46 @@ export async function POST(request: NextRequest) {
     const action = String(body.action || '');
     const period = String(body.period || '');
     assertPeriod(period);
-    const seedDays = parseSeedDays(body.seedDays);
     const teamSnapshot = await teamForKetua(actor.linkedEmployeeId);
     const rosterEmployeeIds = rosterIdsFromTeam(teamSnapshot);
+    const fixedPost9EmployeeId = String(body.fixedPost9EmployeeId || '').trim();
+    const rotationStartMode = String(body.rotationStartMode || '');
+    if (!['manual', 'continued'].includes(rotationStartMode)) {
+      throw new HttpError(400, 'Pilih cara memulai rotasi dinas.');
+    }
     const teamNumber = Number(teamSnapshot.id.split('_')[1]);
     if (![1, 2, 3].includes(teamNumber)) {
       throw new HttpError(409, 'Nomor regu Satpam tidak valid.');
     }
     const window = pekaryaPayrollWindow(period);
-    let generatedDays: SatpamDutyPlanDay[];
+    const continuation =
+      rotationStartMode === 'continued'
+        ? await loadContinuation({
+            period,
+            teamId: teamSnapshot.id,
+            ketuaShiftId: actor.linkedEmployeeId,
+            rosterEmployeeIds,
+            fixedPost9EmployeeId,
+          })
+        : null;
+    if (rotationStartMode === 'continued' && !continuation) {
+      throw new HttpError(
+        409,
+        'Rencana sebelumnya tidak lagi cocok. Susun tanggal pertama secara manual.',
+      );
+    }
+    const firstDayAssignments = continuation
+      ? continuation.firstDayAssignments
+      : parseFirstDayAssignments(body.firstDayAssignments);
+    let generation;
     try {
-      generatedDays = validateAndGenerateSatpamDutyPlan({
+      generation = validateAndGenerateSatpamDutyPlan({
         periodStart: window.startsOn,
         periodEnd: window.endsOn,
         rosterEmployeeIds,
-        seedDays,
+        ketuaShiftId: actor.linkedEmployeeId,
+        fixedPost9EmployeeId,
+        firstDayAssignments,
         shiftNameForDate: (dutyDate) =>
           getSatpamShiftForTeam(teamNumber, dutyDate),
       });
@@ -289,22 +419,35 @@ export async function POST(request: NextRequest) {
         error instanceof Error ? error.message : 'Pola rencana dinas tidak valid.',
       );
     }
+    const { generatedDays, seedDays, rotatingEmployeeIds } = generation;
+    const previewInput = {
+      period,
+      teamId: teamSnapshot.id,
+      rosterEmployeeIds,
+      fixedPost9EmployeeId,
+      rotatingEmployeeIds,
+      rotationStartMode,
+      firstDayAssignments,
+      continuedFromPlanId: continuation?.sourcePlanId || null,
+      continuedFromRevision: continuation?.sourceRevision || null,
+    };
     if (action === 'preview') {
       const previewNow = new Date();
       return Response.json({
         period,
         teamId: teamSnapshot.id,
         window,
+        seedDays,
         generatedDays,
+        fixedPost9EmployeeId,
+        rotatingEmployeeIds,
+        rotationStartMode,
+        continuedFromPlanId: continuation?.sourcePlanId || null,
+        continuedFromRevision: continuation?.sourceRevision || null,
         lateBackfillDates: generatedDays
           .filter((day) => isSatpamPlanDayStarted(day, previewNow))
           .map((day) => day.dutyDate),
-        previewHash: stableHash({
-          period,
-          teamId: teamSnapshot.id,
-          rosterEmployeeIds,
-          seedDays,
-        }),
+        previewHash: stableHash(previewInput),
       });
     }
     if (action !== 'publish') {
@@ -322,12 +465,7 @@ export async function POST(request: NextRequest) {
     if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
       throw new HttpError(400, 'Revisi rencana tidak valid.');
     }
-    const previewHash = stableHash({
-      period,
-      teamId: teamSnapshot.id,
-      rosterEmployeeIds,
-      seedDays,
-    });
+    const previewHash = stableHash(previewInput);
     if (body.previewHash !== previewHash) {
       throw new HttpError(409, 'Pratinjau berubah. Periksa kembali sebelum menerbitkan.');
     }
@@ -387,13 +525,26 @@ export async function POST(request: NextRequest) {
     const reportedOccurrencesQuery = adminDb
       .collection('ShiftOccurrences')
       .where('payrollPeriod', '==', period);
+    const continuationRef = continuation
+      ? adminDb
+          .collection(SATPAM_DUTY_PLANS_COLLECTION)
+          .doc(continuation.sourcePlanId)
+      : null;
     const result = await adminDb.runTransaction(async (transaction) => {
-      const [planBefore, idempotencyBefore, reportedOccurrences] =
+      const [
+        planBefore,
+        idempotencyBefore,
+        reportedOccurrences,
+        continuationBefore,
+      ] =
         await Promise.all([
-        transaction.get(planRef),
-        transaction.get(idempotencyRef),
-        transaction.get(reportedOccurrencesQuery),
-      ]);
+          transaction.get(planRef),
+          transaction.get(idempotencyRef),
+          transaction.get(reportedOccurrencesQuery),
+          continuationRef
+            ? transaction.get(continuationRef)
+            : Promise.resolve(null),
+        ]);
       if (idempotencyBefore.exists) {
         if (idempotencyBefore.data()?.requestHash !== requestHash) {
           throw new HttpError(409, 'requestId sudah digunakan untuk rencana berbeda.');
@@ -413,6 +564,17 @@ export async function POST(request: NextRequest) {
         : 0;
       if (currentRevision !== expectedRevision) {
         throw new HttpError(409, 'Rencana telah berubah. Muat ulang sebelum menerbitkan.');
+      }
+      if (
+        continuation &&
+        (!continuationBefore?.exists ||
+          Number(continuationBefore.data()?.revision || 0) !==
+            continuation.sourceRevision)
+      ) {
+        throw new HttpError(
+          409,
+          'Rencana periode sebelumnya berubah. Periksa kembali kelanjutan rotasi.',
+        );
       }
       const current = planBefore.data() || {};
       const currentDays = new Map<string, SatpamDutyPlanDay>(
@@ -479,10 +641,25 @@ export async function POST(request: NextRequest) {
         periodStart: window.startsOn,
         periodEnd: window.endsOn,
         ketuaShiftId: actor.linkedEmployeeId,
+        fixedPost9EmployeeId,
+        rotatingEmployeeIds,
+        firstDayAssignments,
+        rotationVersion: SATPAM_DUTY_PLAN_ROTATION_VERSION,
+        rotationStartMode,
+        continuedFromPlanId: continuation?.sourcePlanId || null,
+        continuedFromRevision: continuation?.sourceRevision || null,
         rosterEmployeeIds,
         reconciliationEmployeeIds,
-        rosterSnapshot: employeeRoster,
-        seedDays: generatedDays.slice(0, 10),
+        rosterSnapshot: employeeRoster.map((employee) => ({
+          ...employee,
+          dutyRole:
+            employee.employeeId === actor.linkedEmployeeId
+              ? 'ketua'
+              : employee.employeeId === fixedPost9EmployeeId
+                ? 'fixed_pos_9'
+                : 'rotating',
+        })),
+        seedDays,
         generatedDays: finalGeneratedDays,
         status,
         revision,
@@ -495,7 +672,7 @@ export async function POST(request: NextRequest) {
         advancePublished:
           !periodSnapshot.exists ||
           periodSnapshot.data()?.attendanceStatus !== 'open',
-        schemaVersion: 1,
+        schemaVersion: SATPAM_DUTY_PLAN_SCHEMA_VERSION,
       };
       transaction.set(planRef, after);
       transaction.create(
@@ -520,12 +697,15 @@ export async function POST(request: NextRequest) {
           entityType: 'SatpamDutyPlan',
           entityId: planRef.id,
           requestId: body.requestId,
-          reason: 'Ketua Shift menerbitkan pola rencana dinas sepuluh hari.',
+          reason: 'Ketua Shift menerbitkan pola rotasi dinas delapan hari.',
           before: planBefore.exists ? planBefore.data() : null,
           after,
           metadata: {
             lateBackfillDates: effectiveLateBackfillDates,
             preservedLockedDates,
+            rotationStartMode,
+            continuedFromPlanId: continuation?.sourcePlanId || null,
+            continuedFromRevision: continuation?.sourceRevision || null,
           },
         }),
       );
@@ -638,6 +818,10 @@ export async function PATCH(request: NextRequest) {
         validateSatpamDutyPlanDay(
           replacementDay,
           current.rosterEmployeeIds || [],
+          {
+            ketuaShiftId: String(current.ketuaShiftId || ''),
+            fixedPost9EmployeeId: String(current.fixedPost9EmployeeId || ''),
+          },
         );
       } catch (error) {
         throw new HttpError(

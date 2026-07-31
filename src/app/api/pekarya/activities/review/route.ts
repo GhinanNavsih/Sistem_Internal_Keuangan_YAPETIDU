@@ -17,6 +17,7 @@ import {
   activityDurationMinutes,
   approvedActivitySpjAmount,
   pekaryaPayrollPeriodForDate,
+  satpamFoundItemFeeNeedsAdjustmentReason,
 } from '@/lib/payroll/pekaryaSpj';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
@@ -411,7 +412,8 @@ export async function POST(request: NextRequest) {
           if (category === 'SOPIR') {
             throw new HttpError(409, 'Laporan SOPIR wajib memakai audit perjalanan.');
           }
-          if (before.activityType !== 'Buang Sampah') {
+          const isFoundItem = before.reportKind === 'satpam_found_item';
+          if (!isFoundItem && before.activityType !== 'Buang Sampah') {
             try {
               activityDurationMinutes(String(before.timeStart || ''), String(before.timeEnd || ''));
             } catch (error) {
@@ -422,12 +424,22 @@ export async function POST(request: NextRequest) {
             }
           }
           const fee = parseMoney(item.fee, 'Nominal SPJ', false);
+          if (
+            isFoundItem &&
+            satpamFoundItemFeeNeedsAdjustmentReason(fee) &&
+            (typeof item.reason !== 'string' || item.reason.trim().length < 8)
+          ) {
+            throw new HttpError(
+              400,
+              'Alasan penyesuaian nominal penemuan barang wajib diisi minimal 8 karakter.',
+            );
+          }
           after = {
             ...before,
             status: 'approved',
             fee,
             upahBersih: 0,
-            hasUangMakan: Boolean(item.hasUangMakan),
+            hasUangMakan: isFoundItem ? false : Boolean(item.hasUangMakan),
             declineReason: '',
             reviewedAt: now,
             reviewedBy: actor.uid,
@@ -449,8 +461,10 @@ export async function POST(request: NextRequest) {
             period: reportPeriods[index],
             sourceType: 'ActivityReport',
             sourceId: item.reportId,
-            ...(category === 'SATPAM' && before.reportKind === 'satpam_spj'
-              ? { reportKind: 'satpam_spj' }
+            ...(category === 'SATPAM' &&
+            (before.reportKind === 'satpam_spj' ||
+              before.reportKind === 'satpam_found_item')
+              ? { reportKind: before.reportKind }
               : {}),
             earningCode: 'SPJ',
             amount,

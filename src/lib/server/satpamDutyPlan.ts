@@ -11,6 +11,7 @@ import {
   SATPAM_PAID_ABSENCE_RATE,
   type SatpamDutyPlanDay,
   type SatpamDutyPlanStatus,
+  type SatpamRotationSlotAssignment,
 } from '@/lib/payroll/satpamDutyPlan';
 
 export const SATPAM_DUTY_PLANS_COLLECTION = 'SatpamDutyPlans';
@@ -29,9 +30,21 @@ export interface StoredSatpamDutyPlan {
   periodStart: string;
   periodEnd: string;
   ketuaShiftId: string;
+  fixedPost9EmployeeId: string;
+  rotatingEmployeeIds: string[];
+  rotationVersion: string;
+  rotationStartMode: 'manual' | 'continued';
+  continuedFromPlanId?: string | null;
+  continuedFromRevision?: number | null;
+  firstDayAssignments?: SatpamRotationSlotAssignment[];
   rosterEmployeeIds: string[];
   reconciliationEmployeeIds?: string[];
-  rosterSnapshot: Array<{ employeeId: string; name: string; nipy: string }>;
+  rosterSnapshot: Array<{
+    employeeId: string;
+    name: string;
+    nipy: string;
+    dutyRole?: 'ketua' | 'fixed_pos_9' | 'rotating';
+  }>;
   seedDays: SatpamDutyPlanDay[];
   generatedDays: SatpamDutyPlanDay[];
   status: SatpamDutyPlanStatus;

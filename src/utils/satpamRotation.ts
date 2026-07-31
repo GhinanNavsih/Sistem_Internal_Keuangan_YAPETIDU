@@ -3,29 +3,30 @@
  * 
  * Shift Rotation Rules:
  * - Shift sequence: Pagi -> Malam -> Sore -> Pagi
- * - Shift rotation happens every Monday at 08:00 (Start of Shift Pagi).
+ * - Shift rotation happens every Sunday at 08:00 (Start of Shift Pagi).
  * - Roster Teams:
  *   - Team 1 (Ketua: BASTOMI)
  *   - Team 2 (Ketua: MUJIONO)
  *   - Team 3 (Ketua: SUHARIONO)
  * 
- * Reference Week (Week 0): Monday, July 13, 2026 to Sunday, July 19, 2026:
+ * Reference Week (Week 0): Sunday, July 12, 2026 at 08:00 WIB:
  * - Team 1 = Shift Pagi
  *   Team 2 = Shift Malam
  *   Team 3 = Shift Sore
  */
 
-// Anchor Monday: July 13, 2026 at the exact rotation boundary in Jakarta.
-const REF_MONDAY_MS = new Date('2026-07-13T08:00:00+07:00').getTime();
+// Anchor Sunday: July 12, 2026 at the exact rotation boundary in Jakarta.
+const REF_SUNDAY_MS = new Date('2026-07-12T08:00:00+07:00').getTime();
 
 export type SatpamShift = 'Pagi' | 'Sore' | 'Malam';
 
 /**
- * Gets the Monday start timestamp of the scheduling week containing the given date.
- * A scheduling week starts on Monday at 08:00.
- * Any date/time before Monday 08:00 belongs to the previous week's schedule.
+ * Gets the Sunday start timestamp of the scheduling week containing the given date.
+ * A scheduling week starts on Sunday at 08:00 WIB.
+ * Any instant before Sunday 08:00 WIB belongs to the previous week's schedule.
+ * A date-only value represents that date's schedule at the rotation boundary.
  */
-export function getSchedulingMonday(dateInput: Date | string | number): Date {
+export function getSchedulingSunday(dateInput: Date | string | number): Date {
   const isDateOnly =
     typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput);
 
@@ -58,21 +59,20 @@ export function getSchedulingMonday(dateInput: Date | string | number): Date {
 
   // Use UTC for calendar arithmetic; Jakarta has a fixed +07:00 offset and no DST.
   let calendarDate = new Date(Date.UTC(year, month - 1, dayOfMonth));
-  if (!isDateOnly && calendarDate.getUTCDay() === 1 && hour < 8) {
+  if (!isDateOnly && calendarDate.getUTCDay() === 0 && hour < 8) {
     calendarDate = new Date(calendarDate.getTime() - 24 * 60 * 60 * 1000);
   }
 
-  const weekday = calendarDate.getUTCDay();
-  const daysSinceMonday = weekday === 0 ? 6 : weekday - 1;
-  const mondayCalendar = new Date(
-    calendarDate.getTime() - daysSinceMonday * 24 * 60 * 60 * 1000,
+  const daysSinceSunday = calendarDate.getUTCDay();
+  const sundayCalendar = new Date(
+    calendarDate.getTime() - daysSinceSunday * 24 * 60 * 60 * 1000,
   );
-  const mondayDateOnly = [
-    mondayCalendar.getUTCFullYear(),
-    String(mondayCalendar.getUTCMonth() + 1).padStart(2, '0'),
-    String(mondayCalendar.getUTCDate()).padStart(2, '0'),
+  const sundayDateOnly = [
+    sundayCalendar.getUTCFullYear(),
+    String(sundayCalendar.getUTCMonth() + 1).padStart(2, '0'),
+    String(sundayCalendar.getUTCDate()).padStart(2, '0'),
   ].join('-');
-  return new Date(`${mondayDateOnly}T08:00:00+07:00`);
+  return new Date(`${sundayDateOnly}T08:00:00+07:00`);
 }
 
 /**
@@ -85,10 +85,10 @@ export function getSatpamShiftForTeam(
   teamNumber: 1 | 2 | 3 | number,
   dateInput: Date | string | number
 ): SatpamShift {
-  const schedMonday = getSchedulingMonday(dateInput);
+  const schedulingSunday = getSchedulingSunday(dateInput);
   
   // Calculate difference in weeks
-  const msDiff = schedMonday.getTime() - REF_MONDAY_MS;
+  const msDiff = schedulingSunday.getTime() - REF_SUNDAY_MS;
   const msInWeek = 7 * 24 * 60 * 60 * 1000;
   
   const diffWeeks = Math.round(msDiff / msInWeek);

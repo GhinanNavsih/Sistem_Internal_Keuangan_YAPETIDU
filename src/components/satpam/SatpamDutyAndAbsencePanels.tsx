@@ -4,8 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CalendarDays,
-  ChevronLeft,
-  ChevronRight,
   ClipboardList,
   Loader2,
   Pencil,
@@ -19,17 +17,20 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebase';
 import {
-  addCalendarDays,
   SATPAM_POSTS,
   type SatpamPostId,
   type SatpamShiftName,
 } from '@/lib/payroll/domain';
 import {
+  SATPAM_ROTATION_SLOTS,
+  type SatpamRotationSlot,
+  type SatpamRotationSlotAssignment,
+} from '@/lib/payroll/satpamDutyPlan';
+import {
   authenticatedJson,
   createFinancialRequestId,
 } from '@/lib/payroll/client';
 import { compressProofImage } from '@/lib/photoEvidence';
-import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -84,6 +85,14 @@ type DutyPlan = {
   teamId: string;
   status: string;
   revision: number;
+  schemaVersion?: number;
+  rotationVersion?: string;
+  fixedPost9EmployeeId?: string;
+  rotatingEmployeeIds?: string[];
+  firstDayAssignments?: SatpamRotationSlotAssignment[];
+  rotationStartMode?: 'manual' | 'continued';
+  continuedFromPlanId?: string | null;
+  continuedFromRevision?: number | null;
   seedDays?: PlanDay[];
   generatedDays?: PlanDay[];
   lateBackfillDates?: string[];
@@ -95,6 +104,12 @@ type DutyPlanResponse = {
   enabled: boolean;
   attendanceStatus: string;
   window: { startsOn: string; endsOn: string };
+  continuation?: {
+    sourcePlanId: string;
+    sourceRevision: number;
+    fixedPost9EmployeeId: string;
+    firstDayAssignments: SatpamRotationSlotAssignment[];
+  } | null;
   plans: Array<DutyPlan | { id: string; teamId: string; status: 'missing' }>;
 };
 
@@ -118,6 +133,13 @@ type ScheduledDuty = {
   shiftName: string;
   postId: string;
 };
+
+function formatSatpamPostLabel(postId: string): string {
+  const post = SATPAM_POSTS.find((p) => p.id === postId);
+  if (!post) return postId;
+  const cleanName = post.name.replace(/^Pos\s*/i, '');
+  return `${post.id} ${cleanName}`;
+}
 
 function LargeSelect(props: {
   id?: string;
@@ -188,28 +210,21 @@ function statusLabel(status: string) {
   return status;
 }
 
-function buildSuggestedSeed(
-  period: OpenPeriod,
+function buildManualFirstDayAssignments(
   team: Team,
-): PlanDay[] {
-  const roster = [team.ketuaShiftId, ...team.memberEmployeeIds];
-  const teamNumber = Number(team.id.split('_')[1]) || 1;
-  return Array.from({ length: 10 }, (_, dayIndex) => {
-    const dutyDate = addCalendarDays(period.startDate, dayIndex);
-    const offDutyEmployeeId = roster[dayIndex];
-    const working = roster.filter(
-      (employeeId) => employeeId !== offDutyEmployeeId,
-    );
-    return {
-      dutyDate,
-      shiftName: getSatpamShiftForTeam(teamNumber, dutyDate),
-      assignments: SATPAM_POSTS.map((post, postIndex) => ({
-        postId: post.id,
-        employeeId: working[(postIndex + dayIndex) % working.length],
-      })),
-      offDutyEmployeeId,
-    };
-  });
+  fixedPost9EmployeeId: string,
+): SatpamRotationSlotAssignment[] {
+  const rotatingIds = team.memberEmployeeIds.filter(
+    (employeeId) => employeeId !== fixedPost9EmployeeId,
+  );
+  return SATPAM_ROTATION_SLOTS.map((slot, index) => ({
+    slot,
+    employeeId: rotatingIds[index] || '',
+  }));
+}
+
+function rotationSlotLabel(slot: SatpamRotationSlot): string {
+  return slot === 'Off-Duty' ? 'Libur' : formatSatpamPostLabel(slot);
 }
 
 export function SatpamDutyPlanPanel(props: {
@@ -222,8 +237,13 @@ export function SatpamDutyPlanPanel(props: {
   const period =
     selectedPeriod || openPeriods[openPeriods.length - 1]?.period || '';
   const [view, setView] = useState<DutyPlanResponse | null>(null);
-  const [seedDays, setSeedDays] = useState<PlanDay[]>([]);
-  const [seedIndex, setSeedIndex] = useState(0);
+  const [fixedPost9EmployeeId, setFixedPost9EmployeeId] = useState('');
+  const [rotationStartMode, setRotationStartMode] = useState<
+    'manual' | 'continued'
+  >('manual');
+  const [firstDayAssignments, setFirstDayAssignments] = useState<
+    SatpamRotationSlotAssignment[]
+  >([]);
   const [previewHash, setPreviewHash] = useState('');
   const [previewDays, setPreviewDays] = useState<PlanDay[]>([]);
   const [previewLateBackfillDates, setPreviewLateBackfillDates] = useState<
@@ -260,7 +280,7 @@ export function SatpamDutyPlanPanel(props: {
     plan && plan.status !== 'missing' && plan.status !== 'stale',
   );
   const storageKey =
-    team && period ? `unipdu:satpam-duty-seed:${team.id}:${period}` : '';
+    team && period ? `unipdu:satpam-duty-seed-v2:${team.id}:${period}` : '';
 
   const load = useCallback(async () => {
     if (!team || !period) return;
@@ -275,25 +295,57 @@ export function SatpamDutyPlanPanel(props: {
       const current = response.plans.find(
         (candidate) => candidate.teamId === team.id,
       ) as DutyPlan | undefined;
-      if (current?.seedDays?.length === 10) {
-        setSeedDays(current.seedDays);
-      } else if (selectedOpenPeriod) {
+      if (
+        current?.schemaVersion === 2 &&
+        current.fixedPost9EmployeeId &&
+        current.firstDayAssignments?.length === SATPAM_ROTATION_SLOTS.length
+      ) {
+        setFixedPost9EmployeeId(current.fixedPost9EmployeeId);
+        setRotationStartMode(current.rotationStartMode || 'manual');
+        setFirstDayAssignments(current.firstDayAssignments);
+      } else {
         const saved = storageKey
           ? window.localStorage.getItem(storageKey)
           : null;
+        let restored = false;
         if (saved) {
           try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed) && parsed.length === 10) {
-              setSeedDays(parsed);
-            } else {
-              setSeedDays(buildSuggestedSeed(selectedOpenPeriod, team));
+            const parsed = JSON.parse(saved) as {
+              schemaVersion?: number;
+              fixedPost9EmployeeId?: string;
+              rotationStartMode?: 'manual' | 'continued';
+              firstDayAssignments?: SatpamRotationSlotAssignment[];
+            };
+            if (
+              parsed.schemaVersion === 2 &&
+              parsed.fixedPost9EmployeeId &&
+              parsed.firstDayAssignments?.length === SATPAM_ROTATION_SLOTS.length
+            ) {
+              const canContinue =
+                parsed.rotationStartMode === 'continued' &&
+                response.continuation?.fixedPost9EmployeeId ===
+                  parsed.fixedPost9EmployeeId;
+              setFixedPost9EmployeeId(parsed.fixedPost9EmployeeId);
+              setRotationStartMode(canContinue ? 'continued' : 'manual');
+              setFirstDayAssignments(
+                canContinue
+                  ? response.continuation!.firstDayAssignments
+                  : parsed.firstDayAssignments,
+              );
+              restored = true;
             }
           } catch {
-            setSeedDays(buildSuggestedSeed(selectedOpenPeriod, team));
+            window.localStorage.removeItem(storageKey);
           }
-        } else {
-          setSeedDays(buildSuggestedSeed(selectedOpenPeriod, team));
+        }
+        if (!restored && response.continuation) {
+          setFixedPost9EmployeeId(response.continuation.fixedPost9EmployeeId);
+          setRotationStartMode('continued');
+          setFirstDayAssignments(response.continuation.firstDayAssignments);
+        } else if (!restored) {
+          setFixedPost9EmployeeId('');
+          setRotationStartMode('manual');
+          setFirstDayAssignments([]);
         }
       }
     } catch (cause) {
@@ -305,7 +357,7 @@ export function SatpamDutyPlanPanel(props: {
     } finally {
       setLoading(false);
     }
-  }, [period, selectedOpenPeriod, storageKey, team]);
+  }, [period, storageKey, team]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -313,71 +365,76 @@ export function SatpamDutyPlanPanel(props: {
   }, [load]);
 
   useEffect(() => {
-    if (!storageKey || seedDays.length !== 10 || hasPublishedPlan) return;
-    window.localStorage.setItem(storageKey, JSON.stringify(seedDays));
-  }, [hasPublishedPlan, seedDays, storageKey]);
+    if (
+      !storageKey ||
+      !fixedPost9EmployeeId ||
+      firstDayAssignments.length !== SATPAM_ROTATION_SLOTS.length ||
+      hasPublishedPlan
+    ) return;
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        schemaVersion: 2,
+        fixedPost9EmployeeId,
+        rotationStartMode,
+        firstDayAssignments,
+      }),
+    );
+  }, [
+    firstDayAssignments,
+    fixedPost9EmployeeId,
+    hasPublishedPlan,
+    rotationStartMode,
+    storageKey,
+  ]);
 
-  const updateSeedAssignment = (
-    postId: SatpamPostId | 'Off-Duty',
+  const resetPreview = () => {
+    setPreviewHash('');
+    setPreviewDays([]);
+    setPreviewLateBackfillDates([]);
+  };
+
+  const selectFixedPost9Employee = (employeeId: string) => {
+    if (!team) return;
+    setFixedPost9EmployeeId(employeeId);
+    if (view?.continuation?.fixedPost9EmployeeId === employeeId) {
+      setRotationStartMode('continued');
+      setFirstDayAssignments(view.continuation.firstDayAssignments);
+    } else {
+      setRotationStartMode('manual');
+      setFirstDayAssignments(buildManualFirstDayAssignments(team, employeeId));
+    }
+    resetPreview();
+  };
+
+  const updateFirstDayAssignment = (
+    slot: SatpamRotationSlot,
     employeeId: string,
   ) => {
-    setSeedDays((current) =>
-      current.map((day, index) => {
-        if (index !== seedIndex) return day;
-        if (postId === 'Off-Duty') {
-          return { ...day, offDutyEmployeeId: employeeId };
-        }
-        return {
-          ...day,
-          assignments: day.assignments.map((assignment) =>
-            assignment.postId === postId
-              ? { ...assignment, employeeId }
-              : assignment,
-          ),
-        };
-      }),
+    setRotationStartMode('manual');
+    setFirstDayAssignments((current) =>
+      current.map((assignment) =>
+        assignment.slot === slot
+          ? { ...assignment, employeeId }
+          : assignment,
+      ),
     );
-    setPreviewHash('');
-    setPreviewDays([]);
-    setPreviewLateBackfillDates([]);
+    resetPreview();
   };
 
-  const copyPreviousSeedLayout = () => {
-    if (seedIndex === 0) return;
-    setSeedDays((current) =>
-      current.map((day, index) => {
-        if (index !== seedIndex) return day;
-        const previous = current[seedIndex - 1];
-        return {
-          ...day,
-          assignments: previous.assignments.map((assignment) => ({
-            ...assignment,
-            employeeId:
-              assignment.employeeId === day.offDutyEmployeeId
-                ? previous.offDutyEmployeeId
-                : assignment.employeeId,
-          })),
-        };
-      }),
-    );
-    setPreviewHash('');
-    setPreviewDays([]);
-    setPreviewLateBackfillDates([]);
-  };
-
-  const activeSeed = seedDays[seedIndex];
-  const seedEmployeeIds = activeSeed
-    ? [
-        ...activeSeed.assignments.map((assignment) => assignment.employeeId),
-        activeSeed.offDutyEmployeeId,
-      ]
-    : [];
-  const seedHasDuplicate =
-    seedEmployeeIds.filter(Boolean).length !==
-    new Set(seedEmployeeIds.filter(Boolean)).size;
+  const firstDayEmployeeIds = firstDayAssignments
+    .map((assignment) => assignment.employeeId)
+    .filter(Boolean);
+  const firstDayHasDuplicate =
+    firstDayEmployeeIds.length !== new Set(firstDayEmployeeIds).size;
+  const firstDayReady =
+    Boolean(fixedPost9EmployeeId) &&
+    firstDayAssignments.length === SATPAM_ROTATION_SLOTS.length &&
+    firstDayEmployeeIds.length === SATPAM_ROTATION_SLOTS.length &&
+    !firstDayHasDuplicate;
 
   const preview = async () => {
-    if (!period || seedDays.length !== 10) return;
+    if (!period || !firstDayReady) return;
     setWorking(true);
     setError('');
     try {
@@ -387,13 +444,19 @@ export function SatpamDutyPlanPanel(props: {
         lateBackfillDates: string[];
       }>('/api/satpam/duty-plans', {
         method: 'POST',
-        body: JSON.stringify({ action: 'preview', period, seedDays }),
+        body: JSON.stringify({
+          action: 'preview',
+          period,
+          fixedPost9EmployeeId,
+          rotationStartMode,
+          firstDayAssignments,
+        }),
       });
       setPreviewHash(result.previewHash);
       setPreviewDays(result.generatedDays);
       setPreviewLateBackfillDates(result.lateBackfillDates || []);
       setMessage(
-        `Pratinjau siap: ${result.generatedDays.length} tanggal telah dibuat dari pola sepuluh hari.`,
+        `Pratinjau siap: ${result.generatedDays.length} tanggal dibuat dari rotasi delapan hari.`,
       );
     } catch (cause) {
       setError(
@@ -426,7 +489,9 @@ export function SatpamDutyPlanPanel(props: {
         body: JSON.stringify({
           action: 'publish',
           period,
-          seedDays,
+          fixedPost9EmployeeId,
+          rotationStartMode,
+          firstDayAssignments,
           previewHash,
           expectedRevision: plan?.revision || 0,
           requestId: createFinancialRequestId('satpam-plan'),
@@ -487,8 +552,8 @@ export function SatpamDutyPlanPanel(props: {
           Jadwal Regu Satu Periode
         </CardTitle>
         <p className="text-base text-slate-600">
-          Isi pola 10 hari. Sistem mengulang petugas pos dan Libur untuk
-          seluruh jendela payroll.
+          Pilih petugas tetap Pos 9 dan susunan awal. Sistem melanjutkan
+          rotasi delapan hari untuk seluruh jendela payroll.
         </p>
       </CardHeader>
       <CardContent className="space-y-5 p-4 sm:p-5">
@@ -615,7 +680,7 @@ export function SatpamDutyPlanPanel(props: {
                           {day.assignments
                             .map(
                               (assignment) =>
-                                `${assignment.postId}: ${employeeName(
+                                `${formatSatpamPostLabel(assignment.postId)}: ${employeeName(
                                   rosterEmployees,
                                   assignment.employeeId,
                                 )}`,
@@ -641,13 +706,13 @@ export function SatpamDutyPlanPanel(props: {
               })}
             </div>
           </>
-        ) : activeSeed ? (
+        ) : (
           <>
             {plan?.status === 'stale' && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
                 <p className="font-bold">Susunan regu berubah</p>
                 <p className="mt-1 text-sm">
-                  Periksa ulang pola sepuluh hari lalu terbitkan revisi baru
+                  Periksa ulang rotasi delapan hari lalu terbitkan revisi baru
                   untuk tanggal mendatang.
                 </p>
               </div>
@@ -671,91 +736,111 @@ export function SatpamDutyPlanPanel(props: {
                 sebelum menerbitkan.
               </p>
             </div>
-            <p className="font-bold text-slate-900">
-              Langkah 2 · Isi pola sepuluh hari
-            </p>
-            <div className="flex items-center justify-between gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-12"
-                disabled={seedIndex === 0}
-                onClick={() => setSeedIndex((value) => value - 1)}
-              >
-                <ChevronLeft className="h-5 w-5" />
-                Sebelumnya
-              </Button>
-              <p className="text-center font-bold">
-                Hari {seedIndex + 1} dari 10
+            <div className="space-y-3">
+              <p className="font-bold text-slate-900">
+                Langkah 2 · Pilih petugas tetap Pos 9
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-12"
-                disabled={seedIndex === 9}
-                onClick={() => setSeedIndex((value) => value + 1)}
-              >
-                Berikutnya
-                <ChevronRight className="h-5 w-5" />
-              </Button>
-            </div>
-            <div className="rounded-xl border border-indigo-200 p-4">
-              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-lg font-bold">
-                  {activeSeed.dutyDate} · Saran Shift {activeSeed.shiftName}
-                </p>
-                {seedIndex > 0 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="min-h-12"
-                    onClick={copyPreviousSeedLayout}
-                  >
-                    Salin Susunan Hari Sebelumnya
-                  </Button>
-                )}
-              </div>
-              <div className="space-y-4">
-                {activeSeed.assignments.map((assignment) => (
-                  <div key={assignment.postId} className="space-y-2">
-                    <Label>{assignment.postId}</Label>
-                    <LargeSelect
-                      value={assignment.employeeId}
-                      onValueChange={(employeeId) =>
-                        updateSeedAssignment(
-                          assignment.postId,
-                          employeeId,
-                        )
-                      }
-                      options={rosterEmployees.map((employee) => ({
+              <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+                <Label htmlFor="satpam-fixed-pos-9">
+                  Pos 9 Hurun-inn — Petugas Tetap
+                </Label>
+                <div className="mt-2">
+                  <LargeSelect
+                    id="satpam-fixed-pos-9"
+                    value={fixedPost9EmployeeId}
+                    onValueChange={selectFixedPost9Employee}
+                    options={rosterEmployees
+                      .filter((employee) => employee.id !== team.ketuaShiftId)
+                      .map((employee) => ({
                         value: employee.id,
                         label: employee.name,
                       }))}
-                    />
-                  </div>
-                ))}
-                <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
-                  <Label>Libur</Label>
-                  <LargeSelect
-                    value={activeSeed.offDutyEmployeeId}
-                    onValueChange={(employeeId) =>
-                      updateSeedAssignment('Off-Duty', employeeId)
-                    }
-                    options={rosterEmployees.map((employee) => ({
-                      value: employee.id,
-                      label: employee.name,
-                    }))}
                   />
                 </div>
+                <p className="mt-2 text-sm text-violet-800">
+                  Petugas ini dijadwalkan di Pos 9 pada setiap tanggal periode.
+                </p>
               </div>
-              {seedHasDuplicate && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                <p className="font-bold text-blue-950">
+                  Pos 2 Stasiun — Ketua Shift / Keliling
+                </p>
+                <p className="mt-1 text-base text-blue-900">
+                  {employeeName(rosterEmployees, team.ketuaShiftId)}
+                </p>
+                <p className="mt-1 text-sm text-blue-800">
+                  Pos 2 tercatat atas nama Ketua. Ketua tetap berkeliling,
+                  mengambil foto, dan mengirim laporan seluruh regu.
+                </p>
+              </div>
+            </div>
+
+            {fixedPost9EmployeeId && (
+              <div className="space-y-4">
+                <div>
+                  <p className="font-bold text-slate-900">
+                    Langkah 3 · Susunan tanggal pertama
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Urutan harian: Pos 1 → Pos 8 → Pos 6 → Pos 5 → Pos 7 →
+                    Pos 4 → Pos 3 → Libur.
+                  </p>
+                </div>
+                {rotationStartMode === 'continued' && view?.continuation && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+                    <p className="font-bold">Dilanjutkan dari periode sebelumnya</p>
+                    <p className="mt-1 text-sm">
+                      Susunan tanggal pertama sudah maju satu langkah dari revisi{' '}
+                      {view.continuation.sourceRevision}. Mengubah pilihan di bawah
+                      akan menjadikannya susunan manual.
+                    </p>
+                  </div>
+                )}
+                <div className="rounded-xl border border-indigo-200 p-4">
+                  <p className="mb-4 text-lg font-bold">
+                    {selectedOpenPeriod?.startDate || view?.window.startsOn}
+                  </p>
+                  <div className="space-y-4">
+                    {firstDayAssignments.map((assignment) => (
+                      <div
+                        key={assignment.slot}
+                        className={
+                          assignment.slot === 'Off-Duty'
+                            ? 'space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3'
+                            : 'space-y-2'
+                        }
+                      >
+                        <Label>{rotationSlotLabel(assignment.slot)}</Label>
+                        <LargeSelect
+                          value={assignment.employeeId}
+                          onValueChange={(employeeId) =>
+                            updateFirstDayAssignment(assignment.slot, employeeId)
+                          }
+                          options={rosterEmployees
+                            .filter(
+                              (employee) =>
+                                employee.id !== team.ketuaShiftId &&
+                                employee.id !== fixedPost9EmployeeId,
+                            )
+                            .map((employee) => ({
+                              value: employee.id,
+                              label: employee.name,
+                            }))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {firstDayHasDuplicate && (
                 <div className="mt-4 flex gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-800">
                   <AlertTriangle className="h-5 w-5 shrink-0" />
                   Satu petugas dipilih lebih dari sekali. Setiap orang harus
                   mengisi tepat satu pos atau Libur.
                 </div>
-              )}
-            </div>
+            )}
             {previewDays.length > 0 && (
               <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
                 <div>
@@ -763,7 +848,7 @@ export function SatpamDutyPlanPanel(props: {
                     Pratinjau {previewDays.length} tanggal siap diterbitkan.
                   </p>
                   <p className="text-sm">
-                    Hari ke-11 mengulang penugasan hari pertama; shift tetap
+                    Hari ke-9 mengulang penugasan hari pertama; shift tetap
                     mengikuti saran rota pada tanggal aktual.
                   </p>
                   {(!plan || plan.status === 'missing') &&
@@ -794,7 +879,7 @@ export function SatpamDutyPlanPanel(props: {
                         {day.assignments
                           .map(
                             (assignment) =>
-                              `${assignment.postId}: ${employeeName(
+                              `${formatSatpamPostLabel(assignment.postId)}: ${employeeName(
                                 rosterEmployees,
                                 assignment.employeeId,
                               )}`,
@@ -807,14 +892,14 @@ export function SatpamDutyPlanPanel(props: {
               </div>
             )}
             <p className="font-bold text-slate-900">
-              Langkah 3 · Periksa semua tanggal lalu terbitkan
+              Langkah 4 · Periksa semua tanggal lalu terbitkan
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <Button
                 type="button"
                 variant="outline"
                 className="min-h-12 gap-2"
-                disabled={working}
+                disabled={working || !firstDayReady}
                 onClick={() => void preview()}
               >
                 {working ? (
@@ -822,7 +907,7 @@ export function SatpamDutyPlanPanel(props: {
                 ) : (
                   <ClipboardList className="h-5 w-5" />
                 )}
-                Periksa Pola 10 Hari
+                Periksa Rotasi 8 Hari
               </Button>
               <Button
                 type="button"
@@ -835,7 +920,7 @@ export function SatpamDutyPlanPanel(props: {
               </Button>
             </div>
           </>
-        ) : null}
+        )}
       </CardContent>
 
       {editingDay && (
@@ -860,31 +945,48 @@ export function SatpamDutyPlanPanel(props: {
             <div className="space-y-4">
               {editingDay.assignments.map((assignment) => (
                 <div key={assignment.postId} className="space-y-2">
-                  <Label>{assignment.postId}</Label>
-                  <LargeSelect
-                    value={assignment.employeeId}
-                    onValueChange={(employeeId) =>
-                      setEditingDay((current) =>
-                        current
-                          ? {
-                              ...current,
-                              assignments: current.assignments.map((item) =>
-                                item.postId === assignment.postId
-                                  ? {
-                                      ...item,
-                                      employeeId,
-                                    }
-                                  : item,
-                              ),
-                            }
-                          : current,
-                      )
-                    }
-                    options={rosterEmployees.map((employee) => ({
-                      value: employee.id,
-                      label: employee.name,
-                    }))}
-                  />
+                  <Label>{formatSatpamPostLabel(assignment.postId)}</Label>
+                  {assignment.postId === 'Pos 2' || assignment.postId === 'Pos 9' ? (
+                    <div className="min-h-14 rounded-xl border border-slate-200 bg-slate-100 px-4 py-4 text-base font-bold text-slate-700">
+                      {employeeName(rosterEmployees, assignment.employeeId)}
+                      <span className="mt-1 block text-sm font-medium text-slate-500">
+                        {assignment.postId === 'Pos 2'
+                          ? 'Ketua Shift / Keliling'
+                          : 'Petugas tetap periode ini'}
+                      </span>
+                    </div>
+                  ) : (
+                    <LargeSelect
+                      value={assignment.employeeId}
+                      onValueChange={(employeeId) =>
+                        setEditingDay((current) =>
+                          current
+                            ? {
+                                ...current,
+                                assignments: current.assignments.map((item) =>
+                                  item.postId === assignment.postId
+                                    ? {
+                                        ...item,
+                                        employeeId,
+                                      }
+                                    : item,
+                                ),
+                              }
+                            : current,
+                        )
+                      }
+                      options={rosterEmployees
+                        .filter(
+                          (employee) =>
+                            employee.id !== team.ketuaShiftId &&
+                            employee.id !== plan?.fixedPost9EmployeeId,
+                        )
+                        .map((employee) => ({
+                          value: employee.id,
+                          label: employee.name,
+                        }))}
+                    />
+                  )}
                 </div>
               ))}
               <div className="space-y-2 rounded-xl bg-amber-50 p-3">
@@ -901,10 +1003,16 @@ export function SatpamDutyPlanPanel(props: {
                         : current,
                     )
                   }
-                  options={rosterEmployees.map((employee) => ({
-                    value: employee.id,
-                    label: employee.name,
-                  }))}
+                  options={rosterEmployees
+                    .filter(
+                      (employee) =>
+                        employee.id !== team.ketuaShiftId &&
+                        employee.id !== plan?.fixedPost9EmployeeId,
+                    )
+                    .map((employee) => ({
+                      value: employee.id,
+                      label: employee.name,
+                    }))}
                 />
               </div>
               <Button
@@ -1100,7 +1208,7 @@ export function SatpamAbsencePanel(props: {
                 onValueChange={setDutyDate}
                 options={scheduledDuties.map((duty) => ({
                   value: duty.dutyDate,
-                  label: `${duty.dutyDate} · ${duty.shiftName} · ${duty.postId}`,
+                  label: `${duty.dutyDate} · ${duty.shiftName} · ${formatSatpamPostLabel(duty.postId)}`,
                 }))}
               />
             </div>

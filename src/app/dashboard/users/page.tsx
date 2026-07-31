@@ -43,6 +43,7 @@ import {
   Loader2,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   UserCog,
   Mail,
   Lock,
@@ -341,12 +342,15 @@ export default function UserManagementPage() {
       setErrorMsg('Email dan Password wajib diisi.');
       return;
     }
-    if (
-      newRole === 'ketua_shift_satpam' &&
-      (!newLinkedEmployeeId || newTeamMembers.length !== 9)
-    ) {
-      setErrorMsg('Ketua Shift dan tepat 9 anggota regu wajib dipilih.');
-      return;
+    if (newRole === 'ketua_shift_satpam') {
+      if (!newLinkedEmployeeId) {
+        setErrorMsg('Konfigurasi Regu Satpam belum lengkap: Pilih 1 Ketua Shift Satpam terlebih dahulu.');
+        return;
+      }
+      if (newTeamMembers.length !== 9) {
+        setErrorMsg(`Konfigurasi Regu Satpam belum lengkap: Wajib memilih tepat 9 anggota regu (saat ini terpilih ${newTeamMembers.length} anggota).`);
+        return;
+      }
     }
 
     isActionLoadingRef.current = true;
@@ -425,6 +429,7 @@ export default function UserManagementPage() {
 
   // Open Edit Dialog and pre-populate state
   const openEditDialog = (u: ManagedUser) => {
+    setErrorMsg(null);
     setEditingUser(u);
     setEditDisplayName(u.displayName || '');
     setEditEmail(u.email || '');
@@ -456,12 +461,15 @@ export default function UserManagementPage() {
   // Submit Edit changes
   const handleUpdateUser = async () => {
     if (!user || !editingUser || isActionLoadingRef.current) return;
-    if (
-      editRole === 'ketua_shift_satpam' &&
-      (!editLinkedEmployeeId || editTeamMembers.length !== 9)
-    ) {
-      setErrorMsg('Ketua Shift dan tepat 9 anggota regu wajib dipilih.');
-      return;
+    if (editRole === 'ketua_shift_satpam') {
+      if (!editLinkedEmployeeId) {
+        setErrorMsg('Konfigurasi Regu Satpam belum lengkap: Silakan pilih 1 Ketua Shift Satpam terlebih dahulu.');
+        return;
+      }
+      if (editTeamMembers.length !== 9) {
+        setErrorMsg(`Konfigurasi Regu Satpam belum lengkap: Wajib memilih tepat 9 anggota regu (saat ini terpilih ${editTeamMembers.length} anggota).`);
+        return;
+      }
     }
     isActionLoadingRef.current = true;
     setActionLoading(true);
@@ -844,8 +852,8 @@ export default function UserManagementPage() {
                         </div>
                       ) : newRole === 'ketua_shift_satpam' ? (
                         <div className="space-y-4">
-                          <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-100 text-purple-800 text-xs leading-relaxed font-medium">
-                            Pilih Ketua Shift dan atur regu anggotanya (maksimal 9 anggota).
+                          <div className="p-3.5 rounded-xl bg-purple-50 border border-purple-100 text-purple-900 text-xs leading-relaxed font-medium">
+                            Atur Ketua Shift dan alokasi <strong>tepat 9 anggota regu</strong> yang dipimpin (Total roster 10 personel).
                           </div>
                           
                           {/* 1. Pilih Ketua Shift */}
@@ -857,7 +865,9 @@ export default function UserManagementPage() {
                                 setNewLinkedEmployeeId(e.target.value);
                                 setNewTeamMembers(prev => prev.filter(id => id !== e.target.value));
                               }}
-                              className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                              className={`w-full text-sm font-bold text-slate-700 bg-white rounded-xl border px-3 py-2.5 focus:outline-none ${
+                                !newLinkedEmployeeId ? 'border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20' : 'border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                              }`}
                             >
                               <option value="">-- Pilih Ketua Shift --</option>
                               {allEmployees
@@ -868,6 +878,12 @@ export default function UserManagementPage() {
                                   </option>
                                 ))}
                             </select>
+                            {!newLinkedEmployeeId && (
+                              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200/80 text-rose-800 text-xs font-medium flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                                <span>Ketua Shift belum dipilih. Silakan pilih 1 Ketua Shift Satpam.</span>
+                              </div>
+                            )}
                           </div>
 
                           {/* 2. Pilih Nomor Regu */}
@@ -900,6 +916,12 @@ export default function UserManagementPage() {
                             const selectedEmpName = allEmployees.find(e => e.id === newLinkedEmployeeId)?.name || 'Pengguna baru ini';
                             const otherTeam = shiftTeams.find(t => t.ketuaShiftId === newLinkedEmployeeId && t.id !== `team_${newTeamNumber}`);
 
+                            const overlappingMembers = newTeamMembers.map(empId => {
+                              const emp = allEmployees.find(e => e.id === empId);
+                              const other = shiftTeams.find(t => t.id !== `team_${newTeamNumber}` && (t.ketuaShiftId === empId || t.memberEmployeeIds?.includes(empId)));
+                              return other ? { name: emp?.name || empId, teamNum: other.id.split('_')[1] } : null;
+                            }).filter((item): item is { name: string; teamNum: string } => item !== null);
+
                             return (
                               <>
                                 {isConflict && (
@@ -925,39 +947,74 @@ export default function UserManagementPage() {
                                     </p>
                                   </div>
                                 )}
+
+                                {overlappingMembers.length > 0 && (
+                                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200/80 text-rose-900 text-xs font-medium space-y-1 shadow-xs">
+                                    <div className="flex items-center gap-2 font-bold text-rose-800">
+                                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                                      <span>Konflik Keanggotaan Regu Ganda</span>
+                                    </div>
+                                    <p className="leading-relaxed text-[11px] text-rose-700">
+                                      Anggota berikut masih terdaftar di regu lain: <strong>{overlappingMembers.map(m => `${m.name} (Regu ${m.teamNum})`).join(', ')}</strong>. Lepaskan keanggotaan regu lama agar simpan tidak ditolak.
+                                    </p>
+                                  </div>
+                                )}
                               </>
                             );
                           })()}
 
                           {/* 3. Pilih Anggota Regu */}
                           <div className="space-y-1.5">
-                            <Label className="text-xs font-semibold text-slate-500 flex justify-between">
+                            <Label className="text-xs font-semibold text-slate-500 flex justify-between items-center">
                               <span>Pilih Anggota Regu</span>
-                              <span className="text-purple-600 font-bold">Terpilih: {newTeamMembers.length}</span>
+                              <span className={newTeamMembers.length === 9 ? "text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md font-bold text-xs flex items-center gap-1" : "text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-md font-bold text-xs flex items-center gap-1"}>
+                                {newTeamMembers.length === 9 ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
+                                {newTeamMembers.length} / 9 Terpilih
+                              </span>
                             </Label>
                             
+                            {newTeamMembers.length !== 9 && (
+                              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200/80 text-rose-800 text-xs font-medium flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                                <span>
+                                  {newTeamMembers.length < 9 
+                                    ? `Jumlah anggota kurang. Pilih ${9 - newTeamMembers.length} anggota regu lagi.`
+                                    : `Jumlah anggota kelebihan. Hapus ${newTeamMembers.length - 9} anggota regu.`}
+                                </span>
+                              </div>
+                            )}
+
                             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 max-h-[220px] overflow-y-auto space-y-2.5">
                               {allEmployees
                                 .filter(emp => emp.type === 'Pekarya' && emp.detail === 'SATPAM' && emp.id !== newLinkedEmployeeId)
                                 .map(emp => {
                                   const isChecked = newTeamMembers.includes(emp.id);
+                                  const assignedOtherTeam = shiftTeams.find(t => t.id !== `team_${newTeamNumber}` && (t.ketuaShiftId === emp.id || t.memberEmployeeIds?.includes(emp.id)));
+
                                   return (
-                                    <div key={emp.id} className="flex items-center space-x-2.5">
-                                      <Checkbox
-                                        id={`new-member-${emp.id}`}
-                                        checked={isChecked}
-                                        onCheckedChange={() => {
-                                          setNewTeamMembers(prev => 
-                                            prev.includes(emp.id)
-                                              ? prev.filter(id => id !== emp.id)
-                                              : [...prev, emp.id]
-                                          );
-                                        }}
-                                        className="rounded border-slate-300 data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
-                                      />
-                                      <Label htmlFor={`new-member-${emp.id}`} className="text-xs font-bold text-slate-700 cursor-pointer select-none">
-                                        {emp.name}
-                                      </Label>
+                                    <div key={emp.id} className="flex items-center justify-between hover:bg-slate-100/60 p-1 rounded-lg transition-colors">
+                                      <div className="flex items-center space-x-2.5">
+                                        <Checkbox
+                                          id={`new-member-${emp.id}`}
+                                          checked={isChecked}
+                                          onCheckedChange={() => {
+                                            setNewTeamMembers(prev => 
+                                              prev.includes(emp.id)
+                                                ? prev.filter(id => id !== emp.id)
+                                                : [...prev, emp.id]
+                                            );
+                                          }}
+                                          className="rounded border-slate-300 data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
+                                        />
+                                        <Label htmlFor={`new-member-${emp.id}`} className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                                          {emp.name}
+                                        </Label>
+                                      </div>
+                                      {assignedOtherTeam && (
+                                        <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded shrink-0">
+                                          Regu {assignedOtherTeam.id.split('_')[1]}
+                                        </span>
+                                      )}
                                     </div>
                                   );
                                 })}
@@ -1059,8 +1116,23 @@ export default function UserManagementPage() {
                       </p>
                     </div>
                   </div>
-
                 </div>
+
+                {errorMsg && (
+                  <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center justify-between gap-2.5 shadow-sm animate-in fade-in slide-in-from-top-1 mt-4">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <AlertTriangle className="w-4.5 h-4.5 text-rose-600 shrink-0" />
+                      <span className="leading-snug">{errorMsg}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setErrorMsg(null)}
+                      className="text-rose-500 hover:text-rose-700 hover:bg-rose-100 p-1 rounded-lg text-xs font-bold shrink-0 transition-colors"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
 
                 <div className="border-t border-slate-100 pt-4 flex justify-end gap-3 shrink-0">
                   <Button
@@ -1360,7 +1432,12 @@ export default function UserManagementPage() {
       </div>
 
       {/* Edit User Modal Dialog */}
-      <Dialog open={editingUser !== null} onOpenChange={(open) => !open && setEditingUser(null)}>
+      <Dialog open={editingUser !== null} onOpenChange={(open) => {
+        if (!open) {
+          setEditingUser(null);
+          setErrorMsg(null);
+        }
+      }}>
         <DialogContent className="w-[96vw] max-w-[96vw] sm:max-w-[96vw] h-[92vh] max-h-[92vh] rounded-[28px] border-none shadow-2xl bg-white p-5 sm:p-7 flex flex-col justify-between overflow-hidden">
           <DialogHeader className="pb-3 border-b border-slate-100 shrink-0">
             <DialogTitle className="text-xl font-extrabold flex items-center gap-2.5 text-slate-800">
@@ -1371,6 +1448,22 @@ export default function UserManagementPage() {
               Perbarui nama lengkap, level otoritas, atau izin unit kerja untuk <strong className="text-slate-700 font-semibold">{editingUser?.email}</strong>.
             </DialogDescription>
           </DialogHeader>
+
+          {errorMsg && (
+            <div className="mx-1 my-2 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center justify-between gap-2.5 shadow-sm animate-in fade-in slide-in-from-top-1 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <AlertTriangle className="w-4.5 h-4.5 text-rose-600 shrink-0" />
+                <span className="leading-snug">{errorMsg}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setErrorMsg(null)}
+                className="text-rose-500 hover:text-rose-700 hover:bg-rose-100 p-1 rounded-lg text-xs font-bold shrink-0 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {editingUser && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0 py-3 overflow-y-auto lg:overflow-hidden">
@@ -1527,7 +1620,7 @@ export default function UserManagementPage() {
                   ) : editRole === 'ketua_shift_satpam' ? (
                     <div className="space-y-4 flex-1 flex flex-col">
                       <div className="p-3.5 rounded-xl bg-purple-50 border border-purple-100 text-purple-900 text-xs leading-relaxed font-medium">
-                        Atur Ketua Shift dan alokasi 9 anggota regu yang dipimpin.
+                        Atur Ketua Shift dan alokasi <strong>tepat 9 anggota regu</strong> yang dipimpin (Total roster 10 personel).
                       </div>
 
                       {/* 1. Pilih Ketua Shift */}
@@ -1539,7 +1632,9 @@ export default function UserManagementPage() {
                             setEditLinkedEmployeeId(e.target.value);
                             setEditTeamMembers(prev => prev.filter(id => id !== e.target.value));
                           }}
-                          className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 px-3 py-2.5 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                          className={`w-full text-sm font-bold text-slate-700 bg-white rounded-xl border px-3 py-2.5 focus:outline-none ${
+                            !editLinkedEmployeeId ? 'border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20' : 'border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                          }`}
                         >
                           <option value="">-- Pilih Ketua Shift --</option>
                           {allEmployees
@@ -1550,6 +1645,12 @@ export default function UserManagementPage() {
                               </option>
                             ))}
                         </select>
+                        {!editLinkedEmployeeId && (
+                          <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200/80 text-rose-800 text-xs font-medium flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                            <span>Ketua Shift belum dipilih. Silakan pilih 1 Ketua Shift Satpam.</span>
+                          </div>
+                        )}
                       </div>
 
                       {/* 2. Pilih Nomor Regu */}
@@ -1582,6 +1683,12 @@ export default function UserManagementPage() {
                         const selectedEmpName = allEmployees.find(e => e.id === editLinkedEmployeeId)?.name || 'Pengguna ini';
                         const otherTeam = shiftTeams.find(t => t.ketuaShiftId === editLinkedEmployeeId && t.id !== `team_${editTeamNumber}`);
 
+                        const overlappingMembers = editTeamMembers.map(empId => {
+                          const emp = allEmployees.find(e => e.id === empId);
+                          const other = shiftTeams.find(t => t.id !== `team_${editTeamNumber}` && (t.ketuaShiftId === empId || t.memberEmployeeIds?.includes(empId)));
+                          return other ? { name: emp?.name || empId, teamNum: other.id.split('_')[1] } : null;
+                        }).filter((item): item is { name: string; teamNum: string } => item !== null);
+
                         return (
                           <>
                             {isConflict && (
@@ -1607,39 +1714,74 @@ export default function UserManagementPage() {
                                 </p>
                               </div>
                             )}
+
+                            {overlappingMembers.length > 0 && (
+                              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200/80 text-rose-900 text-xs font-medium space-y-1 shadow-xs">
+                                <div className="flex items-center gap-2 font-bold text-rose-800">
+                                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                                  <span>Konflik Keanggotaan Regu Ganda</span>
+                                </div>
+                                <p className="leading-relaxed text-[11px] text-rose-700">
+                                  Anggota berikut masih terdaftar di regu lain: <strong>{overlappingMembers.map(m => `${m.name} (Regu ${m.teamNum})`).join(', ')}</strong>. Lepaskan keanggotaan regu lama agar simpan tidak ditolak.
+                                </p>
+                              </div>
+                            )}
                           </>
                         );
                       })()}
 
                       {/* 3. Pilih Anggota Regu */}
                       <div className="space-y-1.5 flex-1 flex flex-col min-h-0">
-                        <Label className="text-xs font-semibold text-slate-600 flex justify-between">
+                        <Label className="text-xs font-semibold text-slate-600 flex justify-between items-center">
                           <span>Pilih Anggota Regu</span>
-                          <span className="text-purple-600 font-bold">Terpilih: {editTeamMembers.length}</span>
+                          <span className={editTeamMembers.length === 9 ? "text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md font-bold text-xs flex items-center gap-1" : "text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md font-bold text-xs flex items-center gap-1"}>
+                            {editTeamMembers.length === 9 ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
+                            {editTeamMembers.length} / 9 Terpilih
+                          </span>
                         </Label>
                         
+                        {editTeamMembers.length !== 9 && (
+                          <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200/80 text-rose-800 text-xs font-medium flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                            <span>
+                              {editTeamMembers.length < 9 
+                                ? `Jumlah anggota kurang. Pilih ${9 - editTeamMembers.length} anggota regu lagi agar tepat 9 orang.`
+                                : `Jumlah anggota kelebihan. Hapus ${editTeamMembers.length - 9} anggota regu agar tepat 9 orang.`}
+                            </span>
+                          </div>
+                        )}
+
                         <div className="p-3 rounded-xl bg-white border border-slate-200/80 flex-1 min-h-[160px] overflow-y-auto space-y-2">
                           {allEmployees
                             .filter(emp => emp.type === 'Pekarya' && emp.detail === 'SATPAM' && emp.id !== editLinkedEmployeeId)
                             .map(emp => {
                               const isChecked = editTeamMembers.includes(emp.id);
+                              const assignedOtherTeam = shiftTeams.find(t => t.id !== `team_${editTeamNumber}` && (t.ketuaShiftId === emp.id || t.memberEmployeeIds?.includes(emp.id)));
+
                               return (
-                                <div key={emp.id} className="flex items-center space-x-2.5 hover:bg-slate-50 p-1 rounded-lg transition-colors">
-                                  <Checkbox
-                                    id={`edit-member-${emp.id}`}
-                                    checked={isChecked}
-                                    onCheckedChange={() => {
-                                      setEditTeamMembers(prev => 
-                                        prev.includes(emp.id)
-                                          ? prev.filter(id => id !== emp.id)
-                                          : [...prev, emp.id]
-                                      );
-                                    }}
-                                    className="rounded border-slate-300 data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
-                                  />
-                                  <Label htmlFor={`edit-member-${emp.id}`} className="text-xs font-bold text-slate-700 cursor-pointer select-none">
-                                    {emp.name}
-                                  </Label>
+                                <div key={emp.id} className="flex items-center justify-between hover:bg-slate-50 p-1 rounded-lg transition-colors">
+                                  <div className="flex items-center space-x-2.5">
+                                    <Checkbox
+                                      id={`edit-member-${emp.id}`}
+                                      checked={isChecked}
+                                      onCheckedChange={() => {
+                                        setEditTeamMembers(prev => 
+                                          prev.includes(emp.id)
+                                            ? prev.filter(id => id !== emp.id)
+                                            : [...prev, emp.id]
+                                        );
+                                      }}
+                                      className="rounded border-slate-300 data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600"
+                                    />
+                                    <Label htmlFor={`edit-member-${emp.id}`} className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                                      {emp.name}
+                                    </Label>
+                                  </div>
+                                  {assignedOtherTeam && (
+                                    <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded shrink-0">
+                                      Regu {assignedOtherTeam.id.split('_')[1]}
+                                    </span>
+                                  )}
                                 </div>
                               );
                             })}
