@@ -121,33 +121,21 @@ export function generateSatpamDutyPlanPdf(
   doc.line(12, 34, pageWidth - 12, 34);
 
   // ── 2. Schedule Table Generation ──────────────────────────────────────────
-  const postIds = [
-    'Pos 1',
-    'Pos 2',
-    'Pos 3',
-    'Pos 4',
-    'Pos 5',
-    'Pos 6',
-    'Pos 7',
-    'Pos 8',
-    'Pos 9 IC',
-  ];
-
   const tableHeaders = [
     'No',
     'Tanggal',
     'Hari',
     'Shift',
-    'Pos 1',
-    'Pos 2',
-    'Pos 3',
-    'Pos 4',
-    'Pos 5',
-    'Pos 6',
-    'Pos 7',
-    'Pos 8',
-    'Pos 9 IC',
-    'Libur (Off)',
+    'Pos 1 IC',
+    'Pos 8 Parkiran FIK',
+    'Pos 6 Gor',
+    'Pos 5 Masjid Induk',
+    'Pos 7 Saintek',
+    'Pos 4 Plaza',
+    'Pos 3 ATM Graha',
+    'Pos 9 Hurun-inn',
+    'Pos 2 Stasiun',
+    'Libur',
   ];
 
   const tableRows = days.map((day, index) => {
@@ -157,15 +145,15 @@ export function generateSatpamDutyPlanPdf(
       postMap.set(assignment.postId, assignment.employeeId);
     });
 
-    const pos1 = getEmployeeName(employees, postMap.get('Pos 1') || '');
-    const pos2 = getEmployeeName(employees, postMap.get('Pos 2') || '');
-    const pos3 = getEmployeeName(employees, postMap.get('Pos 3') || '');
-    const pos4 = getEmployeeName(employees, postMap.get('Pos 4') || '');
-    const pos5 = getEmployeeName(employees, postMap.get('Pos 5') || '');
-    const pos6 = getEmployeeName(employees, postMap.get('Pos 6') || '');
-    const pos7 = getEmployeeName(employees, postMap.get('Pos 7') || '');
+    const pos1 = getEmployeeName(employees, postMap.get('Pos 1') || postMap.get('Pos 1 IC') || '');
     const pos8 = getEmployeeName(employees, postMap.get('Pos 8') || '');
-    const pos9 = getEmployeeName(employees, postMap.get('Pos 9 IC') || '');
+    const pos6 = getEmployeeName(employees, postMap.get('Pos 6') || '');
+    const pos5 = getEmployeeName(employees, postMap.get('Pos 5') || '');
+    const pos7 = getEmployeeName(employees, postMap.get('Pos 7') || '');
+    const pos4 = getEmployeeName(employees, postMap.get('Pos 4') || '');
+    const pos3 = getEmployeeName(employees, postMap.get('Pos 3') || '');
+    const pos9 = getEmployeeName(employees, postMap.get('Pos 9') || postMap.get('Pos 9 IC') || '');
+    const pos2 = getEmployeeName(employees, postMap.get('Pos 2') || '');
     const offDuty = getEmployeeName(employees, day.offDutyEmployeeId || '');
 
     return [
@@ -174,14 +162,14 @@ export function generateSatpamDutyPlanPdf(
       dayName,
       `Shift ${day.shiftName}`,
       pos1,
-      pos2,
-      pos3,
-      pos4,
-      pos5,
-      pos6,
-      pos7,
       pos8,
+      pos6,
+      pos5,
+      pos7,
+      pos4,
+      pos3,
       pos9,
+      pos2,
       offDuty,
     ];
   });
@@ -194,33 +182,33 @@ export function generateSatpamDutyPlanPdf(
     headStyles: {
       fillColor: [30, 41, 59], // Slate-800
       textColor: 255,
-      fontSize: 7.5,
+      fontSize: 7,
       fontStyle: 'bold',
       halign: 'center',
       valign: 'middle',
     },
     bodyStyles: {
-      fontSize: 7,
+      fontSize: 6.8,
       textColor: [30, 41, 59],
       valign: 'middle',
       cellPadding: 1.2,
     },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 8 }, // No
-      1: { halign: 'center', cellWidth: 18 }, // Tanggal
-      2: { halign: 'center', cellWidth: 16 }, // Hari
-      3: { halign: 'center', cellWidth: 16, fontStyle: 'bold' }, // Shift
-      4: { cellWidth: 20 }, // Pos 1
-      5: { cellWidth: 20 }, // Pos 2
-      6: { cellWidth: 20 }, // Pos 3
-      7: { cellWidth: 20 }, // Pos 4
-      8: { cellWidth: 20 }, // Pos 5
-      9: { cellWidth: 20 }, // Pos 6
-      10: { cellWidth: 20 }, // Pos 7
-      11: { cellWidth: 20 }, // Pos 8
-      12: { cellWidth: 24, fontStyle: 'bold' }, // Pos 9 IC
+      0: { halign: 'center', cellWidth: 7 }, // No
+      1: { halign: 'center', cellWidth: 17 }, // Tanggal
+      2: { halign: 'center', cellWidth: 14 }, // Hari
+      3: { halign: 'center', cellWidth: 15, fontStyle: 'bold' }, // Shift
+      4: { cellWidth: 22, fontStyle: 'bold' }, // Pos 1 IC
+      5: { cellWidth: 24 }, // Pos 8 Parkiran FIK
+      6: { cellWidth: 20 }, // Pos 6 Gor
+      7: { cellWidth: 24 }, // Pos 5 Masjid Induk
+      8: { cellWidth: 20 }, // Pos 7 Saintek
+      9: { cellWidth: 20 }, // Pos 4 Plaza
+      10: { cellWidth: 22 }, // Pos 3 ATM Graha
+      11: { cellWidth: 22 }, // Pos 9 Hurun-inn
+      12: { cellWidth: 22 }, // Pos 2 Stasiun
       13: {
-        cellWidth: 28,
+        cellWidth: 24,
         fontStyle: 'italic',
         fillColor: [254, 243, 199], // Amber-100 highlight for Off-Duty
       },
