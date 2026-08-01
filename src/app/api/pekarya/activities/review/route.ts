@@ -26,6 +26,12 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import {
+  annualCalendarRef,
+  annualDatesFrom,
+  assertPeriodAcceptsInput,
+  buildPeriodMaterialization,
+} from '@/lib/server/payrollPeriod';
 
 export const dynamic = 'force-dynamic';
 
@@ -214,11 +220,13 @@ export async function POST(request: NextRequest) {
       const journeyRefs = reports.map((report) =>
         report.journeyId ? adminDb.collection('DriverJourneys').doc(report.journeyId) : null,
       );
+      const annualRefs = reportPeriods.map((period) => annualCalendarRef(period));
       const secondarySnapshots = await Promise.all([
         ...periodRefs.map((ref) => transaction.get(ref)),
         ...slipRefs.map((ref) => transaction.get(ref)),
         ...employeeRefs.map((ref) => transaction.get(ref)),
         ...journeyRefs.map((ref) => (ref ? transaction.get(ref) : Promise.resolve(null))),
+        ...annualRefs.map((ref) => transaction.get(ref)),
       ]);
       const periodSnapshots = secondarySnapshots.slice(0, reports.length);
       const slipSnapshots = secondarySnapshots.slice(reports.length, reports.length * 2);
@@ -226,9 +234,18 @@ export async function POST(request: NextRequest) {
         reports.length * 2,
         reports.length * 3,
       );
-      const journeySnapshots = secondarySnapshots.slice(reports.length * 3);
+      const journeySnapshots = secondarySnapshots.slice(
+        reports.length * 3,
+        reports.length * 4,
+      );
+      const annualSnapshots = secondarySnapshots.slice(reports.length * 4);
 
       const now = admin.firestore.FieldValue.serverTimestamp();
+      // Periods are open by default, so an approval may be the first event that
+      // gives a month a document. Freezing its calendar here means every fee
+      // approved from this point is rated against a snapshot that a later
+      // premium-date edit cannot retroactively change.
+      const materializedPeriods = new Set<string>();
       reports.forEach((before, index) => {
         const item = command.items[index];
         const category = String(before.jobCategory || '');
@@ -268,9 +285,7 @@ export async function POST(request: NextRequest) {
             'Kegiatan ini belum selesai. SPJ dapat diaudit setelah waktu selesai terlewati.',
           );
         }
-        if (!periodSnapshots[index]?.exists || periodSnapshots[index]?.data()?.attendanceStatus !== 'open') {
-          throw new HttpError(409, 'Periode payroll belum dibuka atau sudah ditutup.');
-        }
+        assertPeriodAcceptsInput(periodSnapshots[index]?.data());
         if (slipSnapshots[index]?.exists && isImmutablePayrollStatus(slipSnapshots[index]?.data()?.status)) {
           throw new HttpError(409, 'Slip pegawai sudah dikunci; gunakan alur koreksi.');
         }
@@ -413,7 +428,9 @@ export async function POST(request: NextRequest) {
             throw new HttpError(409, 'Laporan SOPIR wajib memakai audit perjalanan.');
           }
           const isFoundItem = before.reportKind === 'satpam_found_item';
-          if (!isFoundItem && before.activityType !== 'Buang Sampah') {
+          const isReprimand = before.reportKind === 'satpam_reprimand';
+          const isPhotoOnlyReport = isFoundItem || isReprimand;
+          if (!isPhotoOnlyReport && before.activityType !== 'Buang Sampah') {
             try {
               activityDurationMinutes(String(before.timeStart || ''), String(before.timeEnd || ''));
             } catch (error) {
@@ -425,13 +442,13 @@ export async function POST(request: NextRequest) {
           }
           const fee = parseMoney(item.fee, 'Nominal SPJ', false);
           if (
-            isFoundItem &&
+            isPhotoOnlyReport &&
             satpamFoundItemFeeNeedsAdjustmentReason(fee) &&
             (typeof item.reason !== 'string' || item.reason.trim().length < 8)
           ) {
             throw new HttpError(
               400,
-              'Alasan penyesuaian nominal penemuan barang wajib diisi minimal 8 karakter.',
+              'Alasan penyesuaian nominal laporan wajib diisi minimal 8 karakter.',
             );
           }
           after = {
@@ -439,7 +456,7 @@ export async function POST(request: NextRequest) {
             status: 'approved',
             fee,
             upahBersih: 0,
-            hasUangMakan: isFoundItem ? false : Boolean(item.hasUangMakan),
+            hasUangMakan: isPhotoOnlyReport ? false : Boolean(item.hasUangMakan),
             declineReason: '',
             reviewedAt: now,
             reviewedBy: actor.uid,
@@ -449,6 +466,22 @@ export async function POST(request: NextRequest) {
         }
 
         after = { ...after, payrollPeriod: reportPeriods[index] };
+        if (
+          command.action !== 'decline' &&
+          !materializedPeriods.has(reportPeriods[index])
+        ) {
+          materializedPeriods.add(reportPeriods[index]);
+          const materialization = buildPeriodMaterialization({
+            period: reportPeriods[index],
+            periodData: periodSnapshots[index]?.data(),
+            annualDates: annualDatesFrom(annualSnapshots[index]),
+            actorUid: actor.uid,
+            reason: `Kalender periode dibekukan saat persetujuan SPJ ${reportPeriods[index]}`,
+          });
+          if (materialization) {
+            transaction.set(periodRefs[index], materialization, { merge: true });
+          }
+        }
         transaction.set(reportRefs[index], after);
         const amount = approvedActivitySpjAmount(after);
         if (amount > 0) {
@@ -463,7 +496,8 @@ export async function POST(request: NextRequest) {
             sourceId: item.reportId,
             ...(category === 'SATPAM' &&
             (before.reportKind === 'satpam_spj' ||
-              before.reportKind === 'satpam_found_item')
+              before.reportKind === 'satpam_found_item' ||
+              before.reportKind === 'satpam_reprimand')
               ? { reportKind: before.reportKind }
               : {}),
             earningCode: 'SPJ',

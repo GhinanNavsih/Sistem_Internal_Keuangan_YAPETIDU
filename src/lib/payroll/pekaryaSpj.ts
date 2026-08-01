@@ -4,10 +4,12 @@ import {
 } from './domain';
 
 export const SATPAM_FOUND_ITEM_RECOMMENDED_FEE = 5_000;
+export const SATPAM_REPRIMAND_RECOMMENDED_FEE = 15_000;
 
+/** Shared by both found-item and reprimand reports, which use the same 1-5 photo evidence rule. */
 export function assertSatpamFoundItemPhotoCount(count: number): void {
   if (!Number.isInteger(count) || count < 1 || count > 5) {
-    throw new Error('Penemuan barang wajib memiliki 1 sampai 5 foto.');
+    throw new Error('Laporan wajib memiliki 1 sampai 5 foto.');
   }
 }
 

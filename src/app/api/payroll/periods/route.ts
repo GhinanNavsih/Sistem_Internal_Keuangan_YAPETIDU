@@ -23,6 +23,11 @@ import {
   pekaryaPublicationId,
 } from '@/lib/server/attendanceStore';
 import { syncSatpamDutyReconciliation } from '@/lib/server/satpamDutyPlan';
+import {
+  isPeriodClosed,
+  isPeriodMaterialized,
+  livePeriodWindow,
+} from '@/lib/server/payrollPeriod';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,25 +36,33 @@ type AttendanceStatus = 'open' | 'closed';
 export async function GET(request: NextRequest) {
   try {
     await requireAuthenticatedProfile(request);
-    const snapshot = await adminDb
-      .collection('PayrollPeriods')
-      .where('attendanceStatus', '==', 'open')
-      .get();
-    const openPeriods = snapshot.docs
-      .flatMap((document) => {
-        if (!/^\d{4}-\d{2}$/.test(document.id)) return [];
-        const window = pekaryaPayrollWindow(document.id);
-        const calendar = periodCalendarFromData(
-          document.id,
-          document.data(),
-        );
-        return [{
-          period: document.id,
+    const snapshot = await adminDb.collection('PayrollPeriods').get();
+    const byPeriod = new Map(
+      snapshot.docs
+        .filter((document) => /^\d{4}-\d{2}$/.test(document.id))
+        .map((document) => [document.id, document.data()]),
+    );
+
+    // Periods accept input by default, so the answer is no longer "which
+    // documents say open" -- an untouched month has no document at all. The
+    // reportable set is the live window around today plus any existing period
+    // that has not been permanently closed.
+    const candidates = new Set<string>(byPeriod.keys());
+    for (const period of livePeriodWindow()) candidates.add(period);
+
+    const openPeriods = Array.from(candidates)
+      .filter((period) => !isPeriodClosed(byPeriod.get(period)))
+      .map((period) => {
+        const window = pekaryaPayrollWindow(period);
+        const calendar = periodCalendarFromData(period, byPeriod.get(period));
+        return {
+          period,
           startDate: window.startsOn,
           endDate: window.endsOn,
           calendarRevision: calendar.revision,
           premiumDates: calendar.premiumDates,
-        }];
+          materialized: isPeriodMaterialized(byPeriod.get(period)),
+        };
       })
       .sort((left, right) => left.startDate.localeCompare(right.startDate));
     return Response.json(
@@ -118,7 +131,10 @@ export async function POST(request: NextRequest) {
           'Import presensi terpadu harus diaktifkan sebelum periode ditutup.',
         );
       }
+      // An unmaterialized period never had a calendar revision to reconcile;
+      // closure pins it for the first time.
       if (
+        isPeriodMaterialized(periodBeforeClose.data()) &&
         periodBeforeClose.data()?.calendarReconciliationStatus !== 'complete'
       ) {
         throw new HttpError(
@@ -267,17 +283,19 @@ export async function POST(request: NextRequest) {
         transaction.get(calendarRef),
       ]);
       const before = snapshot.exists ? snapshot.data()! : null;
-      if (attendanceStatus === 'closed' && !before) {
-        throw new HttpError(409, 'Periode harus dibuka sebelum dapat ditutup.');
-      }
+      // Periods are open by default, so closing a month that nobody explicitly
+      // opened is normal and must materialize it rather than be rejected.
       if (before?.attendanceStatus === 'closed' && attendanceStatus === 'open') {
         throw new HttpError(
           409,
           'Periode yang sudah ditutup tidak dapat dibuka kembali; gunakan proses koreksi.',
         );
       }
-      if (before?.attendanceStatus === 'open' && attendanceStatus === 'open') {
-        throw new HttpError(409, 'Periode ini sudah terbuka.');
+      if (attendanceStatus === 'open' && !isPeriodClosed(before)) {
+        throw new HttpError(
+          409,
+          'Periode sudah menerima input secara otomatis; tindakan membuka periode tidak diperlukan lagi.',
+        );
       }
 
       // Sync calendar snapshot or create auto-version if calendar doesn't exist yet
@@ -305,18 +323,19 @@ export async function POST(request: NextRequest) {
       const after = {
         period,
         attendanceStatus,
-        holidays:
-          attendanceStatus === 'open'
-            ? periodPremiumDates
-            : before?.holidays || periodPremiumDates,
+        holidays: before?.holidays || periodPremiumDates,
         datePolicy: 'shift_start_date',
         timeZone: 'Asia/Jakarta',
         holidayCalendarVersion: calData.version || `ID-${year}-V1`,
-        ...(attendanceStatus === 'open'
-          ? {
-              // Existing periods are not rewritten. This marker is only
-              // introduced when a new period is opened after deployment.
-              satpamDutyPlanRequired: true,
+        // A month that collected work without ever being explicitly opened has
+        // no frozen calendar yet. Closure is the last moment it can be pinned,
+        // so the closed snapshot records exactly what the period was rated on.
+        ...(isPeriodMaterialized(before)
+          ? {}
+          : {
+              satpamDutyPlanRequired:
+                before?.satpamDutyPlanRequired === true ||
+                period >= ATTENDANCE_PAYROLL_START_PERIOD,
               satpamDutyPlanSchemaVersion: 1,
               workCalendar: {
                 revision: 1,
@@ -327,8 +346,7 @@ export async function POST(request: NextRequest) {
                 updatedBy: actor.uid,
               },
               calendarReconciliationStatus: 'complete',
-            }
-          : {}),
+            }),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedBy: actor.uid,
         schemaVersion: 1,

@@ -23,6 +23,7 @@ import {
   normalizeActivityIdentityPart,
   pekaryaPayrollPeriodForDate,
   SATPAM_FOUND_ITEM_RECOMMENDED_FEE,
+  SATPAM_REPRIMAND_RECOMMENDED_FEE,
 } from '@/lib/payroll/pekaryaSpj';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
@@ -31,13 +32,14 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import { assertPeriodAcceptsInput } from '@/lib/server/payrollPeriod';
 
 export const dynamic = 'force-dynamic';
 
 interface SubmitActivityCommand {
   requestId: string;
   reportId?: string;
-  reportKind?: 'satpam_spj' | 'satpam_found_item';
+  reportKind?: 'satpam_spj' | 'satpam_found_item' | 'satpam_reprimand';
   itemName?: string;
   activityName: string;
   activityType: string;
@@ -170,19 +172,19 @@ function parseProofPhoto(value: unknown): PhotoEvidence {
 
 function parseProofPhotos(value: unknown): PhotoEvidence[] {
   if (!Array.isArray(value)) {
-    throw new HttpError(400, 'Penemuan barang wajib memiliki 1 sampai 5 foto.');
+    throw new HttpError(400, 'Laporan wajib memiliki 1 sampai 5 foto.');
   }
   try {
     assertSatpamFoundItemPhotoCount(value.length);
   } catch (error) {
     throw new HttpError(
       400,
-      error instanceof Error ? error.message : 'Jumlah foto penemuan barang tidak valid.',
+      error instanceof Error ? error.message : 'Jumlah foto laporan tidak valid.',
     );
   }
   const photos = value.map(parseProofPhoto);
   if (new Set(photos.map((photo) => photo.url)).size !== photos.length) {
-    throw new HttpError(400, 'Foto penemuan barang tidak boleh duplikat.');
+    throw new HttpError(400, 'Foto laporan tidak boleh duplikat.');
   }
   return photos;
 }
@@ -206,12 +208,17 @@ function parseCommand(raw: unknown): SubmitActivityCommand {
   if (
     value.reportKind !== undefined &&
     value.reportKind !== 'satpam_spj' &&
-    value.reportKind !== 'satpam_found_item'
+    value.reportKind !== 'satpam_found_item' &&
+    value.reportKind !== 'satpam_reprimand'
   ) {
     throw new HttpError(400, 'Jenis laporan Satpam tidak valid.');
   }
   const isFoundItem = value.reportKind === 'satpam_found_item';
-  const rawName = isFoundItem ? value.itemName ?? value.activityName : value.activityName;
+  const isReprimand = value.reportKind === 'satpam_reprimand';
+  // Found-item and reprimand reports share the same shape: a short
+  // description plus 1-5 photos, no activity type or time window.
+  const isPhotoOnlyReport = isFoundItem || isReprimand;
+  const rawName = isPhotoOnlyReport ? value.itemName ?? value.activityName : value.activityName;
   let activityName =
     typeof rawName === 'string' ? rawName.normalize('NFKC').trim() : '';
   if (activityName.length > 180) {
@@ -222,10 +229,12 @@ function parseCommand(raw: unknown): SubmitActivityCommand {
       400,
       isFoundItem
         ? 'Nama barang wajib diisi minimal 2 karakter.'
-        : 'Nama kegiatan wajib diisi minimal 2 karakter.',
+        : isReprimand
+          ? 'Keterangan teguran wajib diisi minimal 2 karakter.'
+          : 'Nama kegiatan wajib diisi minimal 2 karakter.',
     );
   }
-  if (!isFoundItem) {
+  if (!isPhotoOnlyReport) {
     try {
       assertPekaryaActivityType(value.activityType);
     } catch (error) {
@@ -236,7 +245,7 @@ function parseCommand(raw: unknown): SubmitActivityCommand {
     throw new HttpError(400, 'Tanggal atau waktu kegiatan tidak valid.');
   }
   if (
-    !isFoundItem &&
+    !isPhotoOnlyReport &&
     (typeof value.timeStart !== 'string' ||
       (value.timeEnd !== undefined && typeof value.timeEnd !== 'string'))
   ) {
@@ -247,15 +256,19 @@ function parseCommand(raw: unknown): SubmitActivityCommand {
     reportId: value.reportId,
     reportKind: value.reportKind,
     activityName,
-    itemName: isFoundItem ? activityName : undefined,
-    activityType: isFoundItem ? 'Penemuan Barang' : value.activityType!,
+    itemName: isPhotoOnlyReport ? activityName : undefined,
+    activityType: isFoundItem
+      ? 'Penemuan Barang'
+      : isReprimand
+        ? 'Teguran Pengendara'
+        : value.activityType!,
     activityDate: value.activityDate,
-    timeStart: isFoundItem ? '' : value.timeStart!,
-    timeEnd: isFoundItem ? '' : value.timeEnd || '',
+    timeStart: isPhotoOnlyReport ? '' : value.timeStart!,
+    timeEnd: isPhotoOnlyReport ? '' : value.timeEnd || '',
     driverData:
       value.driverData && typeof value.driverData === 'object' ? value.driverData : undefined,
     proofPhoto: value.proofPhoto === undefined ? undefined : parseProofPhoto(value.proofPhoto),
-    proofPhotos: isFoundItem ? parseProofPhotos(value.proofPhotos) : undefined,
+    proofPhotos: isPhotoOnlyReport ? parseProofPhotos(value.proofPhotos) : undefined,
   };
 }
 
@@ -443,11 +456,13 @@ export async function POST(request: NextRequest) {
     }
     const command = parseCommand(await request.json());
     const isFoundItem = command.reportKind === 'satpam_found_item';
+    const isReprimand = command.reportKind === 'satpam_reprimand';
+    const isPhotoOnlyReport = isFoundItem || isReprimand;
     const payrollPeriod = pekaryaPayrollPeriodForDate(command.activityDate);
-    if (!isFoundItem && !/^([01]\d|2[0-3]):([0-5]\d)$/.test(command.timeStart)) {
+    if (!isPhotoOnlyReport && !/^([01]\d|2[0-3]):([0-5]\d)$/.test(command.timeStart)) {
       throw new HttpError(400, 'Waktu mulai wajib menggunakan format HH:MM.');
     }
-    if (!isFoundItem && command.activityType !== 'Buang Sampah') {
+    if (!isPhotoOnlyReport && command.activityType !== 'Buang Sampah') {
       if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(command.timeEnd || '')) {
         throw new HttpError(400, 'Waktu selesai wajib menggunakan format HH:MM.');
       }
@@ -467,15 +482,15 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         throw new HttpError(
           400,
-          error instanceof Error ? error.message : 'Foto penemuan barang tidak valid.',
+          error instanceof Error ? error.message : 'Foto laporan tidak valid.',
         );
       }
     }
     const requestHash = createHash('sha256').update(JSON.stringify(command)).digest('hex');
     const safeEmployeeId = employeeId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 72);
     const reportId = command.reportId || `PEK-${safeEmployeeId}-${command.requestId}`;
-    const identity = isFoundItem
-      ? ['found_item', reportId].join('__')
+    const identity = isPhotoOnlyReport
+      ? [isFoundItem ? 'found_item' : 'reprimand', reportId].join('__')
       : [
           safeEmployeeId,
           command.activityDate.replaceAll('-', ''),
@@ -524,12 +539,12 @@ export async function POST(request: NextRequest) {
       if (!jobCategory) {
         throw new HttpError(409, 'Pegawai tidak aktif atau kategori tidak mendukung laporan ini.');
       }
-      if (isFoundItem && jobCategory !== 'SATPAM') {
-        throw new HttpError(403, 'Penemuan barang hanya dapat dilaporkan oleh Satpam.');
+      if (isPhotoOnlyReport && jobCategory !== 'SATPAM') {
+        throw new HttpError(403, 'Laporan ini hanya dapat diajukan oleh Satpam.');
       }
       if (
         jobCategory === 'SATPAM' &&
-        !isFoundItem &&
+        !isPhotoOnlyReport &&
         !/^([01]\d|2[0-3]):([0-5]\d)$/.test(command.timeEnd || '')
       ) {
         throw new HttpError(
@@ -548,7 +563,7 @@ export async function POST(request: NextRequest) {
         identityAnomalies.push('EMPLOYEE_CATEGORY_NEEDS_REVIEW');
       }
       if (
-        !isFoundItem &&
+        !isPhotoOnlyReport &&
         jobCategory !== 'SOPIR' &&
         (jobCategory === 'SATPAM' || command.activityType !== 'Buang Sampah')
       ) {
@@ -561,9 +576,7 @@ export async function POST(request: NextRequest) {
           );
         }
       }
-      if (!periodSnapshot.exists || periodSnapshot.data()?.attendanceStatus !== 'open') {
-        throw new HttpError(409, 'Periode payroll belum dibuka atau sudah ditutup.');
-      }
+      assertPeriodAcceptsInput(periodSnapshot.data());
       if (slipSnapshot.exists && isImmutablePayrollStatus(slipSnapshot.data()?.status)) {
         throw new HttpError(409, 'Slip periode ini sudah dikunci; ajukan koreksi resmi.');
       }
@@ -589,9 +602,11 @@ export async function POST(request: NextRequest) {
           (jobCategory === 'SATPAM' ? 'satpam_spj' : 'pekarya_activity');
         const requestedKind = isFoundItem
           ? 'satpam_found_item'
-          : jobCategory === 'SATPAM'
-            ? 'satpam_spj'
-            : 'pekarya_activity';
+          : isReprimand
+            ? 'satpam_reprimand'
+            : jobCategory === 'SATPAM'
+              ? 'satpam_spj'
+              : 'pekarya_activity';
         if (existingKind !== requestedKind) {
           throw new HttpError(409, 'Jenis laporan tidak dapat diubah setelah dibuat.');
         }
@@ -723,21 +738,23 @@ export async function POST(request: NextRequest) {
         jobCategory,
         reportKind: isFoundItem
           ? 'satpam_found_item'
-          : jobCategory === 'SATPAM'
-            ? 'satpam_spj'
-            : 'pekarya_activity',
+          : isReprimand
+            ? 'satpam_reprimand'
+            : jobCategory === 'SATPAM'
+              ? 'satpam_spj'
+              : 'pekarya_activity',
         period: payrollPeriod,
         payrollPeriod,
         activityName: command.activityName,
         activityType: command.activityType,
         activityDate: command.activityDate,
-        timeStart: isFoundItem ? '' : command.timeStart,
+        timeStart: isPhotoOnlyReport ? '' : command.timeStart,
         timeEnd:
-          isFoundItem || command.activityType === 'Buang Sampah'
+          isPhotoOnlyReport || command.activityType === 'Buang Sampah'
             ? ''
             : command.timeEnd,
         crossesMidnight:
-          !isFoundItem &&
+          !isPhotoOnlyReport &&
           command.activityType !== 'Buang Sampah' &&
           (jobCategory === 'SOPIR'
             ? Number(driverData.nightCount || 0) > 0
@@ -752,11 +769,13 @@ export async function POST(request: NextRequest) {
         submissionRevision: Number(before?.submissionRevision || 0) + 1,
         source: isFoundItem
           ? 'satpam_found_item_form'
-          : jobCategory === 'SOPIR'
-            ? 'honorer_driver_report'
-            : 'honorer_activity_form',
+          : isReprimand
+            ? 'satpam_reprimand_form'
+            : jobCategory === 'SOPIR'
+              ? 'honorer_driver_report'
+              : 'honorer_activity_form',
         identityAnomalies,
-        schemaVersion: isFoundItem ? 3 : 2,
+        schemaVersion: isPhotoOnlyReport ? 3 : 2,
         ...driverData,
         ...(command.proofPhoto
           ? {
@@ -764,13 +783,15 @@ export async function POST(request: NextRequest) {
               photoAuditMetadata: command.proofPhoto.auditMetadata,
             }
           : {}),
-        ...(isFoundItem
+        ...(isPhotoOnlyReport
           ? {
               itemName: command.activityName,
               proofPhotos: command.proofPhotos,
               photoUrl: command.proofPhotos![0].url,
               photoAuditMetadata: command.proofPhotos![0].auditMetadata,
-              submittedFeeRecommendation: SATPAM_FOUND_ITEM_RECOMMENDED_FEE,
+              submittedFeeRecommendation: isFoundItem
+                ? SATPAM_FOUND_ITEM_RECOMMENDED_FEE
+                : SATPAM_REPRIMAND_RECOMMENDED_FEE,
             }
           : {}),
         // Employee-submitted calculations are evidence only. The approved

@@ -14,6 +14,7 @@ import {
   PEKARYA_CORRECTIONS_COLLECTION,
   PEKARYA_PUBLICATIONS_COLLECTION,
 } from '@/lib/server/attendanceStore';
+import { isPeriodClosed } from './payrollPeriod';
 import { SATPAM_ABSENCE_REQUESTS_COLLECTION } from '@/lib/server/satpamDutyPlan';
 
 export interface PekaryaAttendanceEmployeeView {
@@ -449,8 +450,8 @@ export async function publishPekaryaAttendance(
         idempotent: true,
       };
     }
-    if (!periodSnapshot.exists || periodSnapshot.data()?.attendanceStatus !== 'open') {
-      throw new Error('Periode payroll belum dibuka atau sudah ditutup.');
+    if (isPeriodClosed(periodSnapshot.data())) {
+      throw new Error('Periode payroll sudah ditutup permanen.');
     }
     if (
       String(importSnapshot.data()?.activeRevisionId || '') !== view.importRevisionId

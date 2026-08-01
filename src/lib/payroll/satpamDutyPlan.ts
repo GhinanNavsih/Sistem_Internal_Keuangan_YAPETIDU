@@ -7,6 +7,7 @@ import {
   type SatpamPostId,
   type SatpamShiftName,
 } from '@/lib/payroll/domain';
+import { ATTENDANCE_PAYROLL_START_PERIOD } from '@/lib/payroll/attendance';
 
 export const SATPAM_DUTY_PLAN_SCHEMA_VERSION = 2;
 export const SATPAM_DUTY_PLAN_ROTATION_VERSION = 'SATPAM-8DAY-V1';
@@ -38,13 +39,23 @@ export interface SatpamRotationSlotAssignment {
   employeeId: string;
 }
 
+/**
+ * Duty planning is required for the explicit trial month, for any period
+ * already marked at materialization, and for every period in the
+ * attendance-payroll regime.
+ *
+ * The regime check matters because periods are open by default: an August-or-
+ * later month that nobody has materialized yet still owes a duty plan, and
+ * relying on the stored marker alone would silently exempt it.
+ */
 export function isSatpamDutyPlanRequired(
   period: string,
   periodData?: Record<string, unknown> | null,
 ): boolean {
   return (
     period === SATPAM_DUTY_PLAN_TRIAL_PERIOD ||
-    periodData?.satpamDutyPlanRequired === true
+    periodData?.satpamDutyPlanRequired === true ||
+    period >= ATTENDANCE_PAYROLL_START_PERIOD
   );
 }
 

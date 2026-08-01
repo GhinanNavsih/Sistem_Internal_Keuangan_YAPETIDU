@@ -216,6 +216,7 @@ interface ActivityReport {
   reportKind?:
     | 'satpam_spj'
     | 'satpam_found_item'
+    | 'satpam_reprimand'
     | 'satpam_shift_assignment'
     | string;
   identityAnomalies?: string[];
@@ -586,7 +587,7 @@ export default function ActivityReviewPage() {
   // ── UI State ──
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'declined'>('pending');
   const [reportTypeFilter, setReportTypeFilter] = useState<
-    'all' | 'activity' | 'found_item' | 'shift'
+    'all' | 'activity' | 'found_item' | 'reprimand' | 'shift'
   >('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1156,7 +1157,9 @@ export default function ActivityReviewPage() {
               const defaultFee =
                 a.reportKind === 'satpam_found_item'
                   ? a.submittedFeeRecommendation || 5_000
-                  : calculateDefaultFee(
+                  : a.reportKind === 'satpam_reprimand'
+                    ? a.submittedFeeRecommendation || 15_000
+                    : calculateDefaultFee(
                       a.timeStart,
                       a.timeEnd,
                       a.activityType,
@@ -1209,12 +1212,15 @@ export default function ActivityReviewPage() {
     }
     if (reportTypeFilter === 'found_item') {
       filtered = filtered.filter((activity) => activity.reportKind === 'satpam_found_item');
+    } else if (reportTypeFilter === 'reprimand') {
+      filtered = filtered.filter((activity) => activity.reportKind === 'satpam_reprimand');
     } else if (reportTypeFilter === 'shift') {
       filtered = filtered.filter((activity) => Boolean(activity.sourceOccurrenceId));
     } else if (reportTypeFilter === 'activity') {
       filtered = filtered.filter(
         (activity) =>
           activity.reportKind !== 'satpam_found_item' &&
+          activity.reportKind !== 'satpam_reprimand' &&
           !activity.sourceOccurrenceId,
       );
     }
@@ -1355,7 +1361,8 @@ export default function ActivityReviewPage() {
   const pendingInView = ungroupedActivities.filter(
     (activity) =>
       activity.status === 'pending' &&
-      activity.reportKind !== 'satpam_found_item',
+      activity.reportKind !== 'satpam_found_item' &&
+      activity.reportKind !== 'satpam_reprimand',
   );
   const allPendingSelected = pendingInView.length > 0 && pendingInView.every(a => selectedIds.has(a.id));
 
@@ -1409,6 +1416,8 @@ export default function ActivityReviewPage() {
       return;
     }
     const isFoundItem = activity.reportKind === 'satpam_found_item';
+    const isReprimand = activity.reportKind === 'satpam_reprimand';
+    const isPhotoOnlyReport = isFoundItem || isReprimand;
     const adjustmentReason = (foundItemAdjustmentReasons[activity.id] || '').trim();
 
     isActionLoadingRef.current = true;
@@ -1419,14 +1428,17 @@ export default function ActivityReviewPage() {
         body: JSON.stringify({
           requestId: createFinancialRequestId('activity_approve'),
           action: 'approve',
-          reason: isFoundItem
-            ? adjustmentReason || 'Persetujuan penemuan barang oleh Kepala SatKer'
+          reason: isPhotoOnlyReport
+            ? adjustmentReason ||
+              (isReprimand
+                ? 'Persetujuan teguran pengendara oleh Kepala SatKer'
+                : 'Persetujuan penemuan barang oleh Kepala SatKer')
             : 'Persetujuan kegiatan oleh Kepala SatKer',
           items: [{
             reportId: activity.id,
             fee: feeVal,
-            hasUangMakan: isFoundItem ? false : !!rowUangMakan[activity.id],
-            ...(isFoundItem && adjustmentReason
+            hasUangMakan: isPhotoOnlyReport ? false : !!rowUangMakan[activity.id],
+            ...(isPhotoOnlyReport && adjustmentReason
               ? { reason: adjustmentReason }
               : {}),
           }],
@@ -1641,7 +1653,10 @@ export default function ActivityReviewPage() {
       prev.has(activity.id) ? new Set() : new Set([activity.id]),
     );
     setExpandedShiftIds(new Set());
-    if (isOpening && activity.reportKind === 'satpam_found_item') {
+    if (
+      isOpening &&
+      (activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand')
+    ) {
       void loadActivityRevisionHistory(activity);
     }
   };
@@ -2003,7 +2018,7 @@ export default function ActivityReviewPage() {
                   onValueChange={(value) =>
                     value &&
                     setReportTypeFilter(
-                      value as 'all' | 'activity' | 'found_item' | 'shift',
+                      value as 'all' | 'activity' | 'found_item' | 'reprimand' | 'shift',
                     )
                   }
                 >
@@ -2014,6 +2029,7 @@ export default function ActivityReviewPage() {
                     <SelectItem value="all" className="min-h-11 text-base">Semua Jenis Laporan</SelectItem>
                     <SelectItem value="activity" className="min-h-11 text-base">SPJ / Kegiatan Pribadi</SelectItem>
                     <SelectItem value="found_item" className="min-h-11 text-base">Penemuan Barang</SelectItem>
+                    <SelectItem value="reprimand" className="min-h-11 text-base">Teguran Pengendara</SelectItem>
                     <SelectItem value="shift" className="min-h-11 text-base">Shift Regu Satpam</SelectItem>
                   </SelectContent>
                 </Select>
@@ -2524,6 +2540,9 @@ export default function ActivityReviewPage() {
                       const isSelected = selectedIds.has(activity.id);
                       const isDriver = activity.jobCategory === 'SOPIR';
                       const isExpanded = !isDriver && expandedActivityIds.has(activity.id);
+                      const isFoundItem = activity.reportKind === 'satpam_found_item';
+                      const isReprimand = activity.reportKind === 'satpam_reprimand';
+                      const isPhotoOnlyReport = isFoundItem || isReprimand;
 
                       return (
                         <React.Fragment key={activity.id}>
@@ -2539,7 +2558,8 @@ export default function ActivityReviewPage() {
                           >
                             <TableCell className="pl-4">
                               {activity.status === 'pending' &&
-                                activity.reportKind !== 'satpam_found_item' && (
+                                activity.reportKind !== 'satpam_found_item' &&
+                                activity.reportKind !== 'satpam_reprimand' && (
                                 <Checkbox
                                   checked={isSelected}
                                   onCheckedChange={() => toggleSelect(activity.id)}
@@ -2586,7 +2606,12 @@ export default function ActivityReviewPage() {
                                     <PackageSearch className="h-3 w-3" /> Penemuan Barang
                                   </Badge>
                                 )}
-                                {activity.reportKind === 'satpam_found_item' && (
+                                {activity.reportKind === 'satpam_reprimand' && (
+                                  <Badge className="inline-flex h-5 items-center gap-1 border-none bg-amber-100 px-2 py-0 text-[10px] font-bold text-amber-900">
+                                    <PackageSearch className="h-3 w-3" /> Teguran Pengendara
+                                  </Badge>
+                                )}
+                                {(activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand') && (
                                   <Badge variant="outline" className="inline-flex h-5 items-center gap-1 border-amber-200 bg-white px-2 py-0 text-[10px] font-bold text-amber-800">
                                     <Images className="h-3 w-3" /> {activity.proofPhotos?.length || (activity.photoUrl ? 1 : 0)} foto
                                   </Badge>
@@ -2601,7 +2626,7 @@ export default function ActivityReviewPage() {
                             <TableCell className="text-sm text-slate-600 font-medium whitespace-nowrap">
                               <span className="font-semibold text-slate-800 block">{activity.activityDate}</span>
                               <span className="text-xs text-slate-400 font-medium">
-                                {activity.reportKind === 'satpam_found_item'
+                                {activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand'
                                   ? `Versi ${activity.submissionRevision || 1}`
                                   : `${activity.timeStart} – ${activity.timeEnd}`}
                               </span>
@@ -2626,9 +2651,12 @@ export default function ActivityReviewPage() {
                                 ? fmtRp(activity.fee)
                                 : activity.status === 'pending' ? (
                                   <div className="flex flex-col items-center gap-1">
-                                    {activity.reportKind === 'satpam_found_item' && (
+                                    {(activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand') && (
                                       <span className="text-[10px] font-bold text-amber-700">
-                                        Saran {fmtRp(activity.submittedFeeRecommendation || 5_000)}
+                                        Saran {fmtRp(
+                                          activity.submittedFeeRecommendation ||
+                                            (activity.reportKind === 'satpam_reprimand' ? 15_000 : 5_000),
+                                        )}
                                       </span>
                                     )}
                                     <Input
@@ -2658,7 +2686,7 @@ export default function ActivityReviewPage() {
                                 <span className="text-[10px] font-bold text-slate-400">SOPIR SPJ</span>
                               ) : activity.status === 'pending' ? (
                                 (() => {
-                                  if (activity.reportKind === 'satpam_found_item') {
+                                  if (activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand') {
                                     return <span className="text-[10px] font-bold text-slate-400">Tidak berlaku</span>;
                                   }
                                   const [sh, sm] = activity.timeStart.split(':').map(Number);
@@ -2763,21 +2791,23 @@ export default function ActivityReviewPage() {
                                 <div className="space-y-3.5">
                                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-200/80">
                                     <div className="flex items-center gap-2 text-xs font-black text-slate-700 uppercase tracking-wider">
-                                      {activity.reportKind === 'satpam_found_item' ? (
+                                      {isPhotoOnlyReport ? (
                                         <PackageSearch className="h-4 w-4 text-amber-600" />
                                       ) : (
                                         <Camera className="w-4 h-4 text-indigo-600" />
                                       )}
                                       <span>
-                                        {activity.reportKind === 'satpam_found_item'
-                                          ? 'Audit Penemuan Barang'
-                                          : 'Audit Bukti Foto Kegiatan'}{' '}
+                                        {isReprimand
+                                          ? 'Audit Teguran Pengendara'
+                                          : isFoundItem
+                                            ? 'Audit Penemuan Barang'
+                                            : 'Audit Bukti Foto Kegiatan'}{' '}
                                         — {activity.activityName} ({activity.employeeName})
                                       </span>
                                     </div>
                                     <Badge className="w-fit border-none bg-indigo-100 text-[10px] font-bold text-indigo-800">
                                       {activity.jobCategory || 'PEKARYA'} · Tanggal: {activity.activityDate}
-                                      {activity.reportKind !== 'satpam_found_item' &&
+                                      {!isPhotoOnlyReport &&
                                         ` (${activity.timeStart}${activity.timeEnd ? ` – ${activity.timeEnd}` : ''})`}
                                     </Badge>
                                   </div>
@@ -2786,19 +2816,19 @@ export default function ActivityReviewPage() {
                                   <div className="flex flex-col lg:flex-row items-start gap-4">
                                     {/* Left: Shrunk photo(s) constrained to 280px height matching right cards */}
                                     <div className="shrink-0 space-y-1">
-                                      <div className={activity.reportKind === 'satpam_found_item' && (activity.proofPhotos?.length || 0) > 1 ? 'flex flex-wrap gap-3' : ''}>
-                                        {(activity.reportKind === 'satpam_found_item' && activity.proofPhotos?.length
+                                      <div className={isPhotoOnlyReport && (activity.proofPhotos?.length || 0) > 1 ? 'flex flex-wrap gap-3' : ''}>
+                                        {(isPhotoOnlyReport && activity.proofPhotos?.length
                                           ? activity.proofPhotos
                                           : activity.photoUrl
                                             ? [{ url: activity.photoUrl, auditMetadata: activity.photoAuditMetadata }]
                                             : []
                                         ).length > 0 ? (
-                                          (activity.reportKind === 'satpam_found_item' && activity.proofPhotos?.length
+                                          (isPhotoOnlyReport && activity.proofPhotos?.length
                                             ? activity.proofPhotos
                                             : [{ url: activity.photoUrl!, auditMetadata: activity.photoAuditMetadata }]
                                           ).map((photo, index) => (
                                             <div key={photo.url} className="space-y-1">
-                                              {activity.reportKind === 'satpam_found_item' && (
+                                              {isPhotoOnlyReport && (
                                                 <p className="text-xs font-bold text-slate-500">Foto {index + 1}</p>
                                               )}
                                               <InlinePhotoWithExif
@@ -2829,13 +2859,13 @@ export default function ActivityReviewPage() {
 
                                     {/* Right Column: Audit controls & history filling remaining width */}
                                     <div className="flex-1 min-w-0 space-y-3 w-full">
-                                      {activity.reportKind === 'satpam_found_item' ? (
+                                      {isPhotoOnlyReport ? (
                                         <div className="rounded-2xl border border-amber-200 bg-white p-4 space-y-3.5 shadow-xs flex-1 flex flex-col justify-between h-[280px] overflow-hidden">
                                           {/* Section 1: Nominal Audit */}
                                           <div className="space-y-1.5 rounded-xl border border-amber-200/80 bg-amber-50/70 p-3">
                                             <p className="text-xs font-bold uppercase tracking-wider text-amber-700">Nominal Audit</p>
                                             <p className="text-xs sm:text-sm font-semibold text-amber-950">
-                                              Rekomendasi sistem: <strong>{fmtRp(activity.submittedFeeRecommendation || 5_000)}</strong>
+                                              Rekomendasi sistem: <strong>{fmtRp(activity.submittedFeeRecommendation || (isReprimand ? 15_000 : 5_000))}</strong>
                                             </p>
                                             <p className="text-[11px] text-amber-800">Nominal akhir dapat diubah langsung oleh Kepala SatKer.</p>
                                           </div>
@@ -2964,7 +2994,9 @@ export default function ActivityReviewPage() {
               <ThumbsDown className="w-5 h-5 text-rose-500" />
               {declineTarget?.reportKind === 'satpam_found_item'
                 ? 'Tolak Penemuan Barang'
-                : 'Tolak Kegiatan'}
+                : declineTarget?.reportKind === 'satpam_reprimand'
+                  ? 'Tolak Teguran Pengendara'
+                  : 'Tolak Kegiatan'}
             </DialogTitle>
             <DialogDescription className="text-slate-500">
               Tolak kegiatan <strong>"{declineTarget?.activityName}"</strong> oleh <strong>{declineTarget?.employeeName}</strong>.
@@ -2979,10 +3011,10 @@ export default function ActivityReviewPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400 font-semibold">
-                  {declineTarget?.reportKind === 'satpam_found_item' ? 'Bukti' : 'Waktu'}
+                  {declineTarget?.reportKind === 'satpam_found_item' || declineTarget?.reportKind === 'satpam_reprimand' ? 'Bukti' : 'Waktu'}
                 </span>
                 <span className="font-bold text-slate-700">
-                  {declineTarget?.reportKind === 'satpam_found_item'
+                  {declineTarget?.reportKind === 'satpam_found_item' || declineTarget?.reportKind === 'satpam_reprimand'
                     ? `${declineTarget.proofPhotos?.length || (declineTarget.photoUrl ? 1 : 0)} foto`
                     : declineTarget?.activityType === 'Buang Sampah' || declineTarget?.activityName === 'Buang Sampah'
                     ? declineTarget?.timeStart

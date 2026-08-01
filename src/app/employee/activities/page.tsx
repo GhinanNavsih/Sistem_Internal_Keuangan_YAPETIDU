@@ -54,6 +54,7 @@ import {
   Camera,
   PackageSearch,
   Images,
+  ShieldCheck,
 } from 'lucide-react';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -92,10 +93,7 @@ import {
 } from '@/lib/payroll/driverJourney';
 import { parseImageExif } from '@/lib/exif';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
-import {
-  SatpamAbsencePanel,
-  SatpamDutyPlanPanel,
-} from '@/components/satpam/SatpamDutyAndAbsencePanels';
+import { SatpamAbsencePanel } from '@/components/satpam/SatpamDutyAndAbsencePanels';
 import {
   Select,
   SelectContent,
@@ -226,6 +224,7 @@ interface ActivityReport {
   reportKind?:
     | 'satpam_spj'
     | 'satpam_found_item'
+    | 'satpam_reprimand'
     | 'satpam_shift_assignment'
     | 'pekarya_activity';
   sourceOccurrenceId?: string;
@@ -688,14 +687,6 @@ function ActivitiesContent() {
   const [satpamSuggestedShiftName, setSatpamSuggestedShiftName] = useState<'Pagi' | 'Sore' | 'Malam'>('Pagi');
   const [satpamReportedShiftName, setSatpamReportedShiftName] = useState<'Pagi' | 'Sore' | 'Malam'>('Pagi');
   const [satpamOpenPeriods, setSatpamOpenPeriods] = useState<Array<{ period: string; startDate: string; endDate: string }>>([]);
-  const [satpamPlanningPeriods, setSatpamPlanningPeriods] = useState<
-    Array<{
-      period: string;
-      startDate: string;
-      endDate: string;
-      planningOnly?: boolean;
-    }>
-  >([]);
   const [satpamOccurrenceId, setSatpamOccurrenceId] = useState('');
   const [satpamOccurrenceRevision, setSatpamOccurrenceRevision] = useState(0);
   const [satpamAuditorActionAt, setSatpamAuditorActionAt] = useState<any>(null);
@@ -730,6 +721,7 @@ function ActivitiesContent() {
   // ── Form state ──
   const [showForm, setShowForm] = useState(false);
   const [showSatpamSpjChoice, setShowSatpamSpjChoice] = useState(false);
+  const [showSatpamAbsenceForm, setShowSatpamAbsenceForm] = useState(false);
   const [showFoundItemForm, setShowFoundItemForm] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ActivityReport | null>(null);
   const [formActivityType, setFormActivityType] = useState<'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya' | 'Buang Sampah'>('Piket');
@@ -741,6 +733,7 @@ function ActivitiesContent() {
   const [submitting, setSubmitting] = useState(false);
   const [formProofPhoto, setFormProofPhoto] = useState<PhotoEvidence | null>(null);
   const [uploadingProofPhoto, setUploadingProofPhoto] = useState(false);
+  const [foundItemCategory, setFoundItemCategory] = useState<'satpam_found_item' | 'satpam_reprimand'>('satpam_found_item');
   const [foundItemName, setFoundItemName] = useState('');
   const [foundItemDate, setFoundItemDate] = useState(getTodayISO());
   const [foundItemPhotos, setFoundItemPhotos] = useState<PhotoEvidence[]>([]);
@@ -1498,9 +1491,6 @@ function ActivitiesContent() {
         setSatpamRegularPayType(config.regularPayType);
         setHolidayCalendarConfigured(config.holidayCalendarConfigured);
         setSatpamOpenPeriods(config.openPeriods || []);
-        setSatpamPlanningPeriods(
-          config.planningPeriods || config.openPeriods || [],
-        );
         setSatpamFlexibilityEnabled(config.flexibilityEnabled !== false);
         setSatpamDutyPlan(config.dutyPlan || null);
       } catch (err) {
@@ -1737,6 +1727,7 @@ function ActivitiesContent() {
 
   const resetFoundItemForm = () => {
     activityRequestIdRef.current = null;
+    setFoundItemCategory('satpam_found_item');
     setFoundItemName('');
     setFoundItemDate(getTodayISO());
     setFoundItemPhotos([]);
@@ -1763,8 +1754,9 @@ function ActivitiesContent() {
       return;
     }
 
-    if (activity.reportKind === 'satpam_found_item') {
+    if (activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand') {
       setEditingActivity(activity);
+      setFoundItemCategory(activity.reportKind);
       setFoundItemName(activity.itemName || activity.activityName || '');
       setFoundItemDate(activity.activityDate || getTodayISO());
       setFoundItemPhotos(
@@ -2858,7 +2850,7 @@ function ActivitiesContent() {
     if (!profile?.linkedEmployeeId || files.length === 0) return;
     const remainingSlots = 5 - foundItemPhotos.length;
     if (remainingSlots <= 0) {
-      setMessage({ type: 'error', text: 'Maksimal lima foto untuk satu barang.' });
+      setMessage({ type: 'error', text: 'Maksimal lima foto untuk satu laporan.' });
       return;
     }
     if (files.length > remainingSlots) {
@@ -2887,7 +2879,7 @@ function ActivitiesContent() {
       setFoundItemPhotos((current) => [...current, ...uploaded].slice(0, 5));
       setMessage({
         type: 'success',
-        text: `${uploaded.length} foto barang berhasil diunggah.`,
+        text: `${uploaded.length} foto berhasil diunggah.`,
       });
     } catch (error) {
       if (uploaded.length > 0) {
@@ -3064,12 +3056,18 @@ function ActivitiesContent() {
   const handleSubmitFoundItem = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!profile?.linkedEmployeeId || isSubmittingRef.current) return;
+    const isReprimand = foundItemCategory === 'satpam_reprimand';
     if (foundItemName.trim().length < 2) {
-      setMessage({ type: 'error', text: 'Nama barang wajib diisi minimal 2 karakter.' });
+      setMessage({
+        type: 'error',
+        text: isReprimand
+          ? 'Keterangan teguran wajib diisi minimal 2 karakter.'
+          : 'Nama barang wajib diisi minimal 2 karakter.',
+      });
       return;
     }
     if (!foundItemDate) {
-      setMessage({ type: 'error', text: 'Tanggal penemuan wajib diisi.' });
+      setMessage({ type: 'error', text: 'Tanggal kejadian wajib diisi.' });
       return;
     }
     if (
@@ -3080,14 +3078,14 @@ function ActivitiesContent() {
     ) {
       setMessage({
         type: 'error',
-        text: 'Tanggal penemuan harus berada dalam periode payroll terbuka.',
+        text: 'Tanggal kejadian harus berada dalam periode payroll terbuka.',
       });
       return;
     }
     if (foundItemPhotos.length < 1 || foundItemPhotos.length > 5) {
       setMessage({
         type: 'error',
-        text: 'Lampirkan minimal satu dan maksimal lima foto barang.',
+        text: 'Lampirkan minimal satu dan maksimal lima foto.',
       });
       return;
     }
@@ -3098,7 +3096,9 @@ function ActivitiesContent() {
       const requestId =
         activityRequestIdRef.current ||
         createFinancialRequestId(
-          editingActivity ? 'found_item_resubmit' : 'found_item_submit',
+          editingActivity
+            ? (isReprimand ? 'reprimand_resubmit' : 'found_item_resubmit')
+            : (isReprimand ? 'reprimand_submit' : 'found_item_submit'),
         );
       activityRequestIdRef.current = requestId;
       await authenticatedJson('/api/pekarya/activities', {
@@ -3106,7 +3106,7 @@ function ActivitiesContent() {
         body: JSON.stringify({
           requestId,
           reportId: editingActivity?.id,
-          reportKind: 'satpam_found_item',
+          reportKind: foundItemCategory,
           itemName: foundItemName.trim(),
           activityName: foundItemName.trim(),
           activityDate: foundItemDate,
@@ -3117,19 +3117,21 @@ function ActivitiesContent() {
       setMessage({
         type: 'success',
         text: editingActivity
-          ? 'Laporan penemuan barang berhasil diperbarui dan diajukan ulang.'
-          : 'Penemuan barang berhasil dilaporkan.',
+          ? 'Laporan berhasil diperbarui dan diajukan ulang.'
+          : isReprimand
+            ? 'Teguran pengendara berhasil dilaporkan.'
+            : 'Penemuan barang berhasil dilaporkan.',
       });
       resetFoundItemForm();
       fetchActivities();
     } catch (error) {
-      console.error('Error submitting found item:', error);
+      console.error('Error submitting found-item/reprimand report:', error);
       setMessage({
         type: 'error',
         text:
           error instanceof Error
             ? error.message
-            : 'Gagal menyimpan penemuan barang. Silakan coba lagi.',
+            : 'Gagal menyimpan laporan. Silakan coba lagi.',
       });
     } finally {
       isSubmittingRef.current = false;
@@ -3514,20 +3516,32 @@ function ActivitiesContent() {
             {isSopir && (
               <Link href="/employee/driver-history">
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="icon"
-                  className="text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-xl h-9 w-9 flex items-center justify-center cursor-pointer"
+                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
                   title="Riwayat Perjalanan"
                 >
-                  <Compass className="w-4.5 h-4.5 text-indigo-600" />
+                  <Compass className="w-4.5 h-4.5 text-indigo-500" />
+                </Button>
+              </Link>
+            )}
+            {isKetuaShiftSatpam && (
+              <Link href="/employee/satpam-duty-plan">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
+                  title="Jadwal Regu"
+                >
+                  <CalendarDays className="w-4.5 h-4.5 text-indigo-500" />
                 </Button>
               </Link>
             )}
             <Link href="/employee/payslip">
               <Button
-                variant="ghost"
+                variant="outline"
                 size="icon"
-                className="text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-xl h-9 w-9 flex items-center justify-center cursor-pointer"
+                className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
                 title="Slip Gaji"
               >
                 <Banknote className="w-4.5 h-4.5 text-emerald-600" />
@@ -3538,7 +3552,7 @@ function ActivitiesContent() {
               onClick={() => logout()}
               variant="ghost"
               size="icon"
-              className="text-slate-400 hover:text-rose-500 rounded-xl h-9 w-9 flex items-center justify-center"
+              className="text-slate-400 hover:text-rose-500 rounded-xl h-9 w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer"
               title="Keluar"
             >
               <LogOut className="w-4.5 h-4.5" />
@@ -3548,8 +3562,6 @@ function ActivitiesContent() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 relative z-10">
-
-
 
         {/* ── Period Selector (Non-Driver Users Only) ────────────────── */}
         {!isSopir && (
@@ -3613,20 +3625,8 @@ function ActivitiesContent() {
           </Card>
         )}
 
-        {userJobCategory === 'SATPAM' && profile.linkedEmployeeId && (
-          <SatpamAbsencePanel
-            employeeId={profile.linkedEmployeeId}
-            openPeriods={satpamOpenPeriods}
-          />
-        )}
-
-        {isKetuaShiftSatpam && (
-          <SatpamDutyPlanPanel
-            team={myShiftTeam}
-            employees={allSatpamEmployees}
-            openPeriods={satpamPlanningPeriods}
-          />
-        )}
+        {/* Izin Satpam lives in a modal behind its own FAB, and the duty plan
+            has moved to /employee/satpam-duty-plan. */}
 
         {/* ── Satpam Shift Team Daily Logging Form (Ketua Shift only) ── */}
         {isKetuaShiftSatpam && (
@@ -4628,12 +4628,17 @@ function ActivitiesContent() {
                                   Penemuan Barang
                                 </Badge>
                               )}
+                              {activity.reportKind === 'satpam_reprimand' && (
+                                <Badge className="shrink-0 border-none bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                                  Teguran Pengendara
+                                </Badge>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 mt-0.5">
                               <span className="text-[11px] text-slate-400 font-medium">{activity.activityDate}</span>
                               <span className="text-[11px] text-slate-300">•</span>
                               <span className="text-[11px] text-slate-400 font-medium">
-                                {activity.reportKind === 'satpam_found_item'
+                                {activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand'
                                   ? `${activity.proofPhotos?.length || (activity.photoUrl ? 1 : 0)} foto`
                                   : activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
                                   ? activity.timeStart
@@ -4664,11 +4669,11 @@ function ActivitiesContent() {
                               </div>
                               <div>
                                 <span className="text-[10px] font-bold text-slate-400 uppercase">
-                                  {activity.reportKind === 'satpam_found_item' ? 'Bukti' : 'Waktu'}
+                                  {activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand' ? 'Bukti' : 'Waktu'}
                                 </span>
                                 <p className="text-sm font-semibold text-slate-700 mt-0.5">
-                                  {activity.reportKind === 'satpam_found_item'
-                                    ? `${activity.proofPhotos?.length || (activity.photoUrl ? 1 : 0)} foto barang`
+                                  {activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand'
+                                    ? `${activity.proofPhotos?.length || (activity.photoUrl ? 1 : 0)} foto`
                                     : activity.activityType === 'Buang Sampah' || activity.activityName === 'Buang Sampah'
                                     ? activity.timeStart
                                     : `${activity.timeStart} – ${activity.timeEnd}`}
@@ -4676,10 +4681,11 @@ function ActivitiesContent() {
                               </div>
                             </div>
 
-                            {activity.reportKind === 'satpam_found_item' && (
+                            {(activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand') && (
                               <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
                                 <div className="flex items-center gap-2 text-sm font-bold text-amber-950">
-                                  <PackageSearch className="h-4 w-4" /> Foto Barang Temuan
+                                  <PackageSearch className="h-4 w-4" />
+                                  {activity.reportKind === 'satpam_reprimand' ? 'Foto Bukti Teguran' : 'Foto Barang Temuan'}
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                                   {(activity.proofPhotos?.length
@@ -4836,8 +4842,8 @@ function ActivitiesContent() {
                                     <div className="flex items-center gap-2">
                                       <Banknote className="w-4 h-4 text-amber-600" />
                                       <span className="text-sm font-bold text-amber-700">
-                                        {activity.reportKind === 'satpam_found_item'
-                                          ? `Rekomendasi SPJ: ${fmtRp(activity.submittedFeeRecommendation || 5_000)}`
+                                        {activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand'
+                                          ? `Rekomendasi SPJ: ${fmtRp(activity.submittedFeeRecommendation || (activity.reportKind === 'satpam_reprimand' ? 15_000 : 5_000))}`
                                           : `Estimasi Upah: ${fmtRp(activity.fee)}`}
                                       </span>
                                     </div>
@@ -4980,6 +4986,42 @@ function ActivitiesContent() {
         </button>
       )}
 
+      {/* ── Ajukan Izin FAB (Satpam) ───────────────────────────────────── */}
+      {userJobCategory === 'SATPAM' && profile.linkedEmployeeId && (
+        <button
+          onClick={() => setShowSatpamAbsenceForm(true)}
+          className="fixed bottom-6 left-6 z-40 min-w-14 h-14 px-4 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-xl shadow-amber-300/40 hover:shadow-2xl hover:shadow-amber-300/50 hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2"
+        >
+          <ShieldCheck className="w-6 h-6" />
+          <span className="font-bold">Ajukan Izin</span>
+        </button>
+      )}
+
+      {/* ── Ajukan Izin Satpam ─────────────────────────────────────────── */}
+      <Dialog open={showSatpamAbsenceForm} onOpenChange={setShowSatpamAbsenceForm}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] sm:max-w-lg max-w-[calc(100%-2rem)] rounded-3xl border-none bg-white p-0 shadow-2xl overflow-y-auto">
+          <div className="sticky top-0 z-10 bg-gradient-to-r from-amber-500 to-orange-500 p-5">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-xl font-bold text-white">
+                <ShieldCheck className="h-5 w-5" />
+                Ajukan Izin Satpam
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-base text-amber-50">
+                Anda sendiri yang mengajukan alasan kepada Kepala SatKer. Bukti
+                foto boleh dikosongkan.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          {profile.linkedEmployeeId && (
+            <SatpamAbsencePanel
+              embedded
+              employeeId={profile.linkedEmployeeId}
+              openPeriods={satpamOpenPeriods}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* ── Satpam personal-SPJ report type chooser ─────────────────── */}
       <Dialog open={showSatpamSpjChoice} onOpenChange={setShowSatpamSpjChoice}>
         <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] rounded-3xl border-none bg-white p-0 shadow-2xl overflow-hidden">
@@ -5017,6 +5059,7 @@ function ActivitiesContent() {
               type="button"
               onClick={() => {
                 setShowSatpamSpjChoice(false);
+                setFoundItemCategory('satpam_found_item');
                 setShowFoundItemForm(true);
               }}
               className="flex min-h-24 w-full items-center gap-4 rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 text-left transition-colors hover:bg-amber-100 active:bg-amber-100"
@@ -5025,9 +5068,9 @@ function ActivitiesContent() {
                 <PackageSearch className="h-7 w-7" />
               </span>
               <span>
-                <span className="block text-lg font-black text-slate-900">Penemuan Barang</span>
+                <span className="block text-lg font-black text-slate-900">Laporan Lainnya</span>
                 <span className="mt-1 block text-base leading-5 text-slate-600">
-                  Laporkan satu barang temuan dengan bukti foto.
+                  Penemuan barang atau teguran pengendara, dengan bukti foto.
                 </span>
               </span>
             </button>
@@ -5050,40 +5093,78 @@ function ActivitiesContent() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-xl font-bold text-white">
                 <PackageSearch className="h-5 w-5" />
-                {editingActivity ? 'Edit Penemuan Barang' : 'Penemuan Barang'}
+                {editingActivity ? 'Edit Laporan Lainnya' : 'Laporan Lainnya'}
               </DialogTitle>
               <DialogDescription className="mt-1 text-base text-amber-50">
-                Satu laporan untuk satu barang. Kepala SatKer akan memeriksa foto dan nominalnya.
+                Satu laporan untuk satu kejadian. Kepala SatKer akan memeriksa foto dan nominalnya.
               </DialogDescription>
             </DialogHeader>
           </div>
 
           <form onSubmit={handleSubmitFoundItem} className="space-y-5 p-5">
+            <div className="space-y-2">
+              <Label htmlFor="foundItemCategory" className="text-base font-bold text-slate-700">
+                Jenis Laporan
+              </Label>
+              <Select
+                value={foundItemCategory}
+                onValueChange={(value) =>
+                  setFoundItemCategory(value as 'satpam_found_item' | 'satpam_reprimand')
+                }
+                disabled={Boolean(editingActivity)}
+              >
+                <SelectTrigger id="foundItemCategory" className="h-14 w-full rounded-xl border border-slate-300 bg-white px-4 text-base font-bold text-slate-700">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                  <SelectItem value="satpam_found_item" className="text-base py-3">
+                    Penemuan Barang (Rp5.000)
+                  </SelectItem>
+                  <SelectItem value="satpam_reprimand" className="text-base py-3">
+                    Teguran Pengendara (Rp15.000)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {editingActivity && (
+                <p className="text-sm text-slate-500">Jenis laporan tidak dapat diubah setelah dibuat.</p>
+              )}
+            </div>
+
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-base text-amber-950">
-              Rekomendasi awal kompensasi <strong>Rp5.000</strong>. Nominal akhir ditentukan saat audit.
+              Rekomendasi awal kompensasi{' '}
+              <strong>{foundItemCategory === 'satpam_reprimand' ? 'Rp15.000' : 'Rp5.000'}</strong>.
+              Nominal akhir ditentukan saat audit.
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="foundItemName" className="text-base font-bold text-slate-700">
-                Nama Barang
+                {foundItemCategory === 'satpam_reprimand' ? 'Keterangan Teguran' : 'Nama Barang'}
               </Label>
               <Input
                 id="foundItemName"
                 value={foundItemName}
                 onChange={(event) => setFoundItemName(event.target.value)}
-                placeholder="Contoh: Kunci motor dengan gantungan merah"
+                placeholder={
+                  foundItemCategory === 'satpam_reprimand'
+                    ? 'Contoh: Motor Honda Beat, plat merah, 3 penumpang'
+                    : 'Contoh: Kunci motor dengan gantungan merah'
+                }
                 maxLength={180}
                 autoComplete="off"
                 autoFocus
                 required
                 className="h-14 rounded-xl border-slate-300 px-4 text-base"
               />
-              <p className="text-sm text-slate-500">Buat laporan terpisah jika menemukan barang lain.</p>
+              <p className="text-sm text-slate-500">
+                {foundItemCategory === 'satpam_reprimand'
+                  ? 'Buat laporan terpisah untuk setiap teguran.'
+                  : 'Buat laporan terpisah jika menemukan barang lain.'}
+              </p>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="foundItemDate" className="text-base font-bold text-slate-700">
-                Tanggal Penemuan
+                {foundItemCategory === 'satpam_reprimand' ? 'Tanggal Kejadian' : 'Tanggal Penemuan'}
               </Label>
               <Input
                 id="foundItemDate"
@@ -5100,7 +5181,7 @@ function ActivitiesContent() {
                   ) {
                     setMessage({
                       type: 'error',
-                      text: 'Tanggal penemuan harus berada dalam periode payroll terbuka.',
+                      text: 'Tanggal kejadian harus berada dalam periode payroll terbuka.',
                     });
                     return;
                   }
@@ -5113,7 +5194,9 @@ function ActivitiesContent() {
 
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
-                <Label className="text-base font-bold text-slate-700">Foto Barang</Label>
+                <Label className="text-base font-bold text-slate-700">
+                  {foundItemCategory === 'satpam_reprimand' ? 'Foto Bukti' : 'Foto Barang'}
+                </Label>
                 <Badge className="border-none bg-slate-100 text-sm font-bold text-slate-700">
                   {foundItemPhotos.length}/5 foto
                 </Badge>
@@ -5141,7 +5224,7 @@ function ActivitiesContent() {
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={photo.url}
-                        alt={`Foto barang ${index + 1}`}
+                        alt={`Foto bukti ${index + 1}`}
                         className="h-full w-full object-cover"
                       />
                       <span className="absolute left-2 top-2 rounded-full bg-black/65 px-2 py-1 text-xs font-bold text-white">
@@ -5180,7 +5263,7 @@ function ActivitiesContent() {
                   {uploadingFoundItemPhotos
                     ? 'Mengunggah foto…'
                     : foundItemPhotos.length === 0
-                      ? 'Upload Foto Barang'
+                      ? 'Upload Foto'
                       : 'Tambah Foto'}
                 </Button>
               )}

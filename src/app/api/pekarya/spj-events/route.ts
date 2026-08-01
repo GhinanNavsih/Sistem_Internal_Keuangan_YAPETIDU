@@ -10,6 +10,7 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import { assertPeriodAcceptsInput } from '@/lib/server/payrollPeriod';
 
 export const dynamic = 'force-dynamic';
 
@@ -191,9 +192,7 @@ export async function POST(request: NextRequest) {
         }
         return { eventId, revision: previous.revision, idempotent: true };
       }
-      if (!periodSnapshot.exists || periodSnapshot.data()?.attendanceStatus !== 'open') {
-        throw new HttpError(409, 'Periode payroll belum dibuka atau sudah ditutup.');
-      }
+      assertPeriodAcceptsInput(periodSnapshot.data());
       employeeSnapshots.forEach((snapshot, index) => {
         const employee = snapshot.data();
         if (

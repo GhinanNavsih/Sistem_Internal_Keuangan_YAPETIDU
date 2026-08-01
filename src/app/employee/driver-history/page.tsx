@@ -310,9 +310,9 @@ function DriverHistoryContent() {
           <div className="flex items-center gap-1.5 sm:gap-2">
             <Link href="/employee/payslip">
               <Button
-                variant="ghost"
+                variant="outline"
                 size="icon"
-                className="text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-xl h-9 w-9 flex items-center justify-center cursor-pointer"
+                className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
                 title="Slip Gaji"
               >
                 <Banknote className="w-4.5 h-4.5 text-emerald-600" />
@@ -323,7 +323,7 @@ function DriverHistoryContent() {
               onClick={() => logout()}
               variant="ghost"
               size="icon"
-              className="text-slate-400 hover:text-rose-500 rounded-xl h-9 w-9 flex items-center justify-center"
+              className="text-slate-400 hover:text-rose-500 rounded-xl h-9 w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer"
               title="Keluar"
             >
               <LogOut className="w-4.5 h-4.5" />

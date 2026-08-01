@@ -23,6 +23,7 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import { assertPeriodAcceptsInput, isPeriodClosed } from '@/lib/server/payrollPeriod';
 
 export const dynamic = 'force-dynamic';
 
@@ -266,12 +267,7 @@ export async function POST(request: NextRequest) {
     }
 
     const periodSnapshot = await adminDb.collection('PayrollPeriods').doc(period).get();
-    if (
-      !periodSnapshot.exists ||
-      periodSnapshot.data()?.attendanceStatus !== 'open'
-    ) {
-      throw new HttpError(409, 'Periode payroll belum dibuka atau sudah ditutup.');
-    }
+    assertPeriodAcceptsInput(periodSnapshot.data());
     const bytes = new Uint8Array(await file.arrayBuffer());
     const hash = createHash('sha256').update(bytes).digest('hex');
     const parsed = parseAttendanceWorkbook(bytes, period);
@@ -422,7 +418,7 @@ export async function POST(request: NextRequest) {
             'Import lain telah diaktifkan lebih dahulu. Revisi ini disimpan tetapi tidak diaktifkan.',
           );
         }
-        if (periodLatest.data()?.attendanceStatus !== 'open') {
+        if (isPeriodClosed(periodLatest.data())) {
           throw new HttpError(409, 'Periode telah ditutup sebelum import selesai.');
         }
         const now = admin.firestore.FieldValue.serverTimestamp();

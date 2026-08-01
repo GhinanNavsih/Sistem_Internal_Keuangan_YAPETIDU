@@ -25,6 +25,7 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import { isPeriodClosed } from '@/lib/server/payrollPeriod';
 
 export const dynamic = 'force-dynamic';
 
@@ -165,8 +166,7 @@ export async function POST(request: NextRequest) {
     const period = payrollPeriodForDutyDate(dutyDate);
     const periodSnapshot = await adminDb.collection('PayrollPeriods').doc(period).get();
     if (
-      !periodSnapshot.exists ||
-      periodSnapshot.data()?.attendanceStatus !== 'open' ||
+      isPeriodClosed(periodSnapshot.data()) ||
       !isSatpamDutyPlanRequired(period, periodSnapshot.data() || null)
     ) {
       throw new HttpError(

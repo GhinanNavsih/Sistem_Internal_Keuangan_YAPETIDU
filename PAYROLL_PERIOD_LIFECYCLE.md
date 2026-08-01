@@ -1,12 +1,14 @@
 # Payroll Period Lifecycle
 
-This document explains what happens when a payroll period is opened in the UNIPDU Internal Super App, which workflows depend on it, and which TypeScript files enforce the lifecycle.
+This document explains how payroll periods collect and finalize data in the UNIPDU Internal Super App, which workflows depend on them, and which TypeScript files enforce the lifecycle.
 
 ## Purpose
 
-Opening a payroll period starts the controlled data-collection and review window for a particular payroll month.
+A payroll period is the controlled data-collection and review window for a
+particular payroll month. Collection is automatic; only permanent closure is an
+explicit administrative act.
 
-It does **not** immediately calculate salaries, lock payslips, create bank payments, or modify historical payroll records.
+Closing a period does **not** immediately calculate salaries, lock payslips, create bank payments, or modify historical payroll records. It ends collection and starts finance verification.
 
 The period status is stored in Firestore as:
 
@@ -14,7 +16,7 @@ The period status is stored in Firestore as:
 PayrollPeriods/{YYYY-MM}
 ```
 
-An opened period contains data similar to:
+A materialized period contains data similar to:
 
 ```ts
 {
@@ -35,14 +37,18 @@ An opened period contains data similar to:
 
 ## Lifecycle
 
+Periods are **open by default**. There is no "open the period" action: a month
+collects work from the moment it begins and stops only when it is permanently
+closed. This removes the recurring month-end outage where field staff could not
+report because the next period had not been opened yet, while the previous one
+could not be closed until Finance had finished its audit.
+
 ```text
-BELUM DIATUR
-    |
-    | Buka Periode
-    v
-DIBUKA
+DIBUKA (implicit -- no document required)
     |
     | Attendance, activity, SPJ, and review collection
+    |
+    | First approval or red-date edit materializes the period
     |
     | Tutup Permanen
     v
@@ -53,26 +59,10 @@ DITUTUP
 FINAL PAYROLL
 ```
 
-### 1. Unconfigured (`BELUM DIATUR`)
+### 1. Open (`DIBUKA`)
 
-No `PayrollPeriods/{YYYY-MM}` document exists for the selected period.
-
-Consequences:
-
-- Pekarya activity submissions are rejected.
-- Driver journey reports are rejected.
-- Satpam shift submissions are rejected.
-- Kepala SatKer activity reviews are rejected.
-- Pekarya SPJ event creation or revision is rejected.
-- Final payroll processing cannot begin.
-
-### 2. Open (`DIBUKA`)
-
-The period document exists with:
-
-```ts
-attendanceStatus: "open"
-```
+Either no `PayrollPeriods/{YYYY-MM}` document exists yet, or one exists without
+`attendanceStatus: "closed"`. Both states behave identically for collection.
 
 Consequences:
 
@@ -84,6 +74,27 @@ Consequences:
 - Finance can create and refresh draft payslips.
 - The period owns an editable calendar snapshot. Fridays remain automatic.
 - Finance verification, final authorization, locking, and payment remain blocked.
+
+### 2. Materialization
+
+A period gains its `PayrollPeriods/{YYYY-MM}` document the first time one of
+these happens, whichever comes first:
+
+1. **A Kepala SatKer approves anything** in that period — activity SPJ, Satpam
+   shift, or an auditor shift correction.
+2. **Superadmin sets the month's red dates** through *Tanggal Merah Periode*.
+3. **The period is permanently closed.**
+
+Materialization freezes `workCalendar` at revision 1. That snapshot is what
+stops a later premium-date edit from silently re-rating work that was already
+approved against the previous calendar, so it must exist before any money is
+committed. Until it does, the effective calendar is derived on read: every
+Friday in the window is premium automatically, plus any nationally declared
+dates recorded for the year.
+
+Because Fridays are always derived, an untouched month never mis-rates Harian
+versus Jumat & Libur. Only nationally declared holidays require an explicit red-
+date edit.
 
 ### 3. Closed (`DITUTUP`)
 
@@ -106,17 +117,20 @@ A closed period cannot be reopened through the normal period endpoint. Correctio
 
 ## Period Calendar Snapshot and Revisions
 
-Before a period can be opened, an annual calendar must exist for the relevant year:
+Nationally declared dates accumulate per year in:
 
 ```text
 PayrollHolidayCalendars/{YYYY}
 ```
 
-Opening a period copies applicable dates into `PayrollPeriods/{YYYY-MM}.workCalendar`.
-Later annual-calendar changes do not silently rewrite the period.
+Materializing a period copies the applicable dates into
+`PayrollPeriods/{YYYY-MM}.workCalendar`. Later annual-calendar changes do not
+silently rewrite a materialized period, and the annual calendar cannot be
+replaced while a materialized, not-yet-closed period exists for that year.
 
-While the period remains open, Superadmin can use **Edit Kalender Periode** to
-add or remove non-Friday premium dates. Every update requires a reason,
+Until the period remains open, Superadmin can use **Tanggal Merah Periode** to
+add or remove non-Friday premium dates. Doing so on a month that has not been
+materialized yet creates it at revision 1. Every update requires a reason,
 `requestId`, and expected revision and creates an immutable
 `FinancialAuditLogs` before/after record.
 
@@ -178,9 +192,10 @@ Kepala SatKer corrections are append-only overlays. A correction never changes
 the imported row, and records raw/effective values, actor, reason, import
 revision, calendar revision, and superseded correction.
 
-## Satpam Duty Plan (Newly Opened Periods)
+## Satpam Duty Plan
 
-Every newly opened period is marked `satpamDutyPlanRequired`. July 2026 is an
+Every period from 2026-08 onward requires a duty plan, whether or not it has
+been materialized; materialized periods also carry `satpamDutyPlanRequired`. July 2026 is an
 explicit trial exception so the already-open July period can use and demonstrate
 the workflow before August. Other previously opened periods keep their legacy
 behavior. For each ten-person team, Ketua Shift
@@ -229,7 +244,7 @@ independently create or remove Satpam pay.
 | Review, correct, and publish Pekarya attendance | scoped `satker_head` |
 | Publish/edit future Satpam duty plan | `ketua_shift_satpam` |
 | Correct started Satpam plan dates / review absence | scoped `satker_head` |
-| Open payroll period | `super_admin`, `finance_verifier` |
+| Set period red dates | `super_admin` |
 | Permanently close payroll period | `super_admin`, `finance_verifier` |
 | Submit Pekarya activity | Linked `honorer` account |
 | Submit Satpam shift | `ketua_shift_satpam` |
@@ -237,7 +252,8 @@ independently create or remove Satpam pay.
 | Verify payroll | `finance_verifier`, `super_admin` |
 | Authorize payroll | `payroll_authorizer`, `super_admin` |
 
-Every period opening or closure requires a reason between 8 and 500 characters.
+Every period closure and every red-date edit requires a reason between 8 and
+500 characters.
 
 The operation creates an immutable record in:
 
@@ -264,7 +280,7 @@ The audit record contains the actor, action, entity, timestamp, reason, previous
 
 ## What Opening a Period Does Not Do
 
-Opening a period does not:
+An open period does not by itself:
 
 - Generate every employee's payslip automatically.
 - Approve pending activities automatically.
@@ -289,9 +305,8 @@ src/app/dashboard/payroll/page.tsx
 Responsibilities:
 
 - Reads the selected `PayrollPeriods` document.
-- Displays `BELUM DIATUR`, `DIBUKA`, or `DITUTUP`.
-- Provides the **Buka Periode** and **Tutup Permanen** controls.
-- Provides the **Kalender Libur** control.
+- Displays `DIBUKA` or `DITUTUP`.
+- Provides the **Tutup Permanen** and **Tanggal Merah Periode** controls.
 - Creates and refreshes draft payslips.
 - Starts finance verification, authorization, locking, and payment after closure.
 
@@ -385,8 +400,9 @@ Responsibilities:
 - Allows only `open` and `closed` states.
 - Requires a reason.
 - Requires a configured holiday calendar before opening.
-- Prevents a period from being closed before it is opened.
+- Materializes a never-opened period on closure so its calendar is pinned.
 - Permanently prevents reopening a closed period.
+- Rejects explicit open requests, which are no longer required.
 - Stores the period state transactionally.
 - Creates a financial audit record.
 
@@ -411,7 +427,7 @@ src/app/api/pekarya/activities/route.ts
 Responsibilities:
 
 - Resolves the payroll period from the activity date.
-- Rejects submission unless `attendanceStatus === "open"`.
+- Rejects submission only when that period is permanently closed.
 - Rejects modifications when the employee's payslip is already immutable.
 - Writes the report transactionally and idempotently.
 
@@ -423,8 +439,8 @@ src/app/api/pekarya/activities/review/route.ts
 
 Responsibilities:
 
-- Verifies that every reviewed report belongs to an open period.
-- Rejects reviews after period closure.
+- Rejects reviews only after period closure.
+- Materializes the period and freezes its calendar on the first approval.
 - Rejects reviews when a payslip is already immutable.
 - Writes approvals, ledger entries, and audit records transactionally.
 
@@ -437,8 +453,8 @@ src/app/api/satpam/shifts/route.ts
 Responsibilities:
 
 - Resolves the period from the Satpam duty date.
-- Requires an open period.
-- Requires the relevant holiday calendar.
+- Rejects submission only for a permanently closed period.
+- Derives the pay calendar even when the period is not yet materialized.
 - Prevents duplicate shift occurrences.
 - Stores the verified shift and audit information transactionally.
 
@@ -450,7 +466,7 @@ src/app/api/pekarya/spj-events/route.ts
 
 Responsibilities:
 
-- Requires an open payroll period.
+- Rejects a permanently closed payroll period.
 - Rejects inactive or category-mismatched recipients.
 - Rejects changes involving immutable payslips.
 - Prevents duplicate or conflicting SPJ event revisions.
@@ -487,14 +503,22 @@ Client applications cannot directly create or modify payroll period documents. A
 
 ## Operational Procedure
 
-### Opening
+### Starting a Month
+
+No action is required. Reporting and review are available as soon as the month
+begins.
+
+The one recommended step is to record nationally declared holidays before the
+first approval in that month:
 
 1. Select the required month on **Payroll Bulanan**.
-2. Configure the annual holiday calendar if it does not exist.
-3. Click **Buka Periode**.
+2. Click **Tanggal Merah Periode**.
+3. Tick the nationally declared dates. Fridays are always premium and cannot be
+   unticked.
 4. Enter a meaningful reason of at least 8 characters.
-5. Confirm that the status changes to **DIBUKA**.
-6. Notify operational users that reporting and review are available.
+
+Doing this before the first approval avoids a mid-month calendar revision, which
+would return already-approved regular Satpam assignments to auditor review.
 
 ### Before Permanent Closure
 

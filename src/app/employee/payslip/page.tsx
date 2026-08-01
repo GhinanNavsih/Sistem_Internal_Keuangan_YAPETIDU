@@ -1335,6 +1335,19 @@ export default function EmployeePayslipPage() {
               </Link>
             )}
 
+            {(profile.role as string) === 'ketua_shift_satpam' && (
+              <Link href="/employee/satpam-duty-plan">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
+                  title="Jadwal Regu"
+                >
+                  <CalendarDays className="w-4.5 h-4.5 text-indigo-500" />
+                </Button>
+              </Link>
+            )}
+
             {profile.role === 'loyalis' && (
               <Link href="/employee/presensi-correction">
                 <Button

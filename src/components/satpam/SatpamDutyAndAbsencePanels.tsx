@@ -43,20 +43,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-type EmployeeOption = {
+export type EmployeeOption = {
   id: string;
   name: string;
   isActive?: boolean;
 };
 
-type OpenPeriod = {
+export type OpenPeriod = {
   period: string;
   startDate: string;
   endDate: string;
   planningOnly?: boolean;
 };
 
-type Team = {
+export type Team = {
   id: string;
   ketuaShiftId: string;
   memberEmployeeIds: string[];
@@ -231,8 +231,10 @@ export function SatpamDutyPlanPanel(props: {
   team: Team | null;
   employees: EmployeeOption[];
   openPeriods: OpenPeriod[];
+  /** Drop the Card chrome when a page or dialog already supplies its own. */
+  embedded?: boolean;
 }) {
-  const { team, employees, openPeriods } = props;
+  const { team, employees, openPeriods, embedded } = props;
   const [selectedPeriod, setPeriod] = useState('');
   const period =
     selectedPeriod || openPeriods[openPeriods.length - 1]?.period || '';
@@ -544,19 +546,8 @@ export function SatpamDutyPlanPanel(props: {
 
   if (!team) return null;
 
-  return (
-    <Card className="overflow-hidden rounded-2xl border-indigo-200 bg-white shadow-sm">
-      <CardHeader className="border-b border-indigo-100 bg-indigo-50/70 p-5">
-        <CardTitle className="flex items-center gap-2 text-xl">
-          <CalendarDays className="h-6 w-6 text-indigo-700" />
-          Jadwal Regu Satu Periode
-        </CardTitle>
-        <p className="text-base text-slate-600">
-          Pilih petugas tetap Pos 9 dan susunan awal. Sistem melanjutkan
-          rotasi delapan hari untuk seluruh jendela payroll.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-5 p-4 sm:p-5">
+  const body = (
+    <CardContent className="space-y-5 p-4 sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="min-w-0 flex-1 space-y-2">
             <Label htmlFor="satpam-plan-period">Periode payroll</Label>
@@ -922,8 +913,11 @@ export function SatpamDutyPlanPanel(props: {
           </>
         )}
       </CardContent>
+  );
 
-      {editingDay && (
+  // A fixed-position overlay escapes the Card either way, so the embedded and
+  // card-wrapped renders can share it verbatim.
+  const dayEditor = editingDay && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 p-3">
           <div className="mx-auto my-4 max-w-xl rounded-2xl bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
@@ -1027,7 +1021,31 @@ export function SatpamDutyPlanPanel(props: {
             </div>
           </div>
         </div>
-      )}
+  );
+
+  if (embedded) {
+    return (
+      <>
+        {body}
+        {dayEditor}
+      </>
+    );
+  }
+
+  return (
+    <Card className="overflow-hidden rounded-2xl border-indigo-200 bg-white shadow-sm">
+      <CardHeader className="border-b border-indigo-100 bg-indigo-50/70 p-5">
+        <CardTitle className="flex items-center gap-2 text-xl">
+          <CalendarDays className="h-6 w-6 text-indigo-700" />
+          Jadwal Regu Satu Periode
+        </CardTitle>
+        <p className="text-base text-slate-600">
+          Pilih petugas tetap Pos 9 dan susunan awal. Sistem melanjutkan
+          rotasi delapan hari untuk seluruh jendela payroll.
+        </p>
+      </CardHeader>
+      {body}
+      {dayEditor}
     </Card>
   );
 }
@@ -1035,8 +1053,10 @@ export function SatpamDutyPlanPanel(props: {
 export function SatpamAbsencePanel(props: {
   employeeId: string;
   openPeriods: OpenPeriod[];
+  /** Drop the Card chrome when a page or dialog already supplies its own. */
+  embedded?: boolean;
 }) {
-  const { employeeId, openPeriods } = props;
+  const { employeeId, openPeriods, embedded } = props;
   const [selectedPeriod, setPeriod] = useState('');
   const period =
     selectedPeriod || openPeriods[openPeriods.length - 1]?.period || '';
@@ -1152,19 +1172,8 @@ export function SatpamAbsencePanel(props: {
     }
   };
 
-  return (
-    <Card className="overflow-hidden rounded-2xl border-amber-200 bg-white shadow-sm">
-      <CardHeader className="border-b border-amber-100 bg-amber-50/70 p-5">
-        <CardTitle className="flex items-center gap-2 text-xl">
-          <ShieldCheck className="h-6 w-6 text-amber-700" />
-          Ajukan Izin Satpam
-        </CardTitle>
-        <p className="text-base text-slate-600">
-          Anda sendiri yang mengajukan alasan kepada Kepala SatKer. Bukti foto
-          boleh dikosongkan.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-5 p-4 sm:p-5">
+  const body = (
+    <CardContent className="space-y-5 p-4 sm:p-5">
         {(message || error) && (
           <div
             role="status"
@@ -1305,6 +1314,23 @@ export function SatpamAbsencePanel(props: {
           </section>
         )}
       </CardContent>
+  );
+
+  if (embedded) return body;
+
+  return (
+    <Card className="overflow-hidden rounded-2xl border-amber-200 bg-white shadow-sm">
+      <CardHeader className="border-b border-amber-100 bg-amber-50/70 p-5">
+        <CardTitle className="flex items-center gap-2 text-xl">
+          <ShieldCheck className="h-6 w-6 text-amber-700" />
+          Ajukan Izin Satpam
+        </CardTitle>
+        <p className="text-base text-slate-600">
+          Anda sendiri yang mengajukan alasan kepada Kepala SatKer. Bukti foto
+          boleh dikosongkan.
+        </p>
+      </CardHeader>
+      {body}
     </Card>
   );
 }

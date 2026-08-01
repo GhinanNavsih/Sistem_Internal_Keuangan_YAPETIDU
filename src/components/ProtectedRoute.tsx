@@ -5,6 +5,17 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { Loader2 } from 'lucide-react';
 
+/**
+ * Ketua Shift reports daily work, maintains the once-per-period duty plan, and
+ * can view their own payslip (the page already resolves this role against
+ * Employees_BlueCollar the same way it does 'honorer').
+ */
+const KETUA_SHIFT_SATPAM_ROUTES = [
+  '/employee/activities',
+  '/employee/satpam-duty-plan',
+  '/employee/payslip',
+];
+
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, activeProfile, loading } = useAuth();
   const router = useRouter();
@@ -134,7 +145,10 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   if (profile.role === 'honorer' && !pathname.startsWith('/employee/')) {
     return null;
   }
-  if (profile.role === 'ketua_shift_satpam' && pathname !== '/employee/activities') {
+  if (
+    profile.role === 'ketua_shift_satpam' &&
+    !KETUA_SHIFT_SATPAM_ROUTES.includes(pathname)
+  ) {
     return null;
   }
   if (

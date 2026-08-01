@@ -291,27 +291,21 @@ export default function PayrollValidationDashboard() {
     getDoc(doc(db, 'PayrollPeriods', period))
       .then((snapshot) => {
         if (cancelled) return;
-        const status = snapshot.data()?.attendanceStatus;
+        // Anything that is not an explicit permanent closure is collecting,
+        // including a month with no period document at all.
         setAttendancePeriodStatus(
-          status === 'open' || status === 'closed' ? status : 'unconfigured',
+          snapshot.data()?.attendanceStatus === 'closed' ? 'closed' : 'open',
         );
       })
       .catch(() => {
-        if (!cancelled) setAttendancePeriodStatus('unconfigured');
+        if (!cancelled) setAttendancePeriodStatus('open');
       });
     return () => {
       cancelled = true;
     };
   }, [profile, targetDate]);
 
-  const handleSetAttendancePeriod = async (attendanceStatus: 'open' | 'closed') => {
-    if (attendanceStatus === 'open') {
-      setCalendarEditMode(false);
-      setCalendarEditReason('');
-      setShowOpenPeriodModal(true);
-      return;
-    }
-
+  const handleSetAttendancePeriod = async (_attendanceStatus: 'closed') => {
     const period = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
     if (!window.confirm(`Apakah Anda yakin ingin menutup periode ${period} secara permanen?`)) return;
 
@@ -2756,21 +2750,18 @@ export default function PayrollValidationDashboard() {
                   <div>
                     <span className="text-slate-500 block mb-1">Cutoff Kehadiran</span>
                     <div className="flex items-center gap-2">
+                      {/* Periods collect input by default; only a permanent
+                          closure ends them, so there is no "not configured"
+                          state for an operator to act on any more. */}
                       <Badge
                         variant="outline"
                         className={
                           attendancePeriodStatus === 'closed'
                             ? 'border-rose-200 bg-rose-50 text-rose-700'
-                            : attendancePeriodStatus === 'open'
-                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                              : 'border-amber-200 bg-amber-50 text-amber-700'
+                            : 'border-emerald-200 bg-emerald-50 text-emerald-700'
                         }
                       >
-                        {attendancePeriodStatus === 'closed'
-                          ? 'DITUTUP'
-                          : attendancePeriodStatus === 'open'
-                            ? 'DIBUKA'
-                            : 'BELUM DIATUR'}
+                        {attendancePeriodStatus === 'closed' ? 'DITUTUP' : 'DIBUKA'}
                       </Badge>
                       {(profile?.role === 'super_admin' || profile?.role === 'finance_verifier') &&
                         attendancePeriodStatus !== 'closed' && (
@@ -2778,17 +2769,13 @@ export default function PayrollValidationDashboard() {
                             type="button"
                             variant="outline"
                             className="h-7 rounded-lg px-2 text-[11px]"
-                            onClick={() =>
-                              handleSetAttendancePeriod(
-                                attendancePeriodStatus === 'open' ? 'closed' : 'open',
-                              )
-                            }
+                            onClick={() => handleSetAttendancePeriod('closed')}
                           >
-                            {attendancePeriodStatus === 'open' ? 'Tutup Permanen' : 'Buka Periode'}
+                            Tutup Permanen
                           </Button>
                         )}
                       {profile?.role === 'super_admin' &&
-                        attendancePeriodStatus === 'open' && (
+                        attendancePeriodStatus !== 'closed' && (
                           <Button
                             type="button"
                             variant="outline"
@@ -2797,7 +2784,7 @@ export default function PayrollValidationDashboard() {
                             disabled={isSubmittingModal}
                           >
                             <CalendarDays className="mr-1 h-3.5 w-3.5" />
-                            Edit Kalender Periode
+                            Tanggal Merah Periode
                           </Button>
                         )}
                     </div>
@@ -3870,8 +3857,8 @@ export default function PayrollValidationDashboard() {
                 <div>
                   <h2 className="text-lg sm:text-xl font-black tracking-tight">
                     {calendarEditMode
-                      ? 'Edit Kalender Periode Aktif'
-                      : 'Konfigurasi Tanggal Merah & Buka Periode'}
+                      ? 'Tanggal Merah Periode'
+                      : 'Konfigurasi Tanggal Merah Periode'}
                   </h2>
                   <p className="text-xs text-indigo-100 font-medium mt-0.5">
                     {targetDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
@@ -4059,7 +4046,7 @@ export default function PayrollValidationDashboard() {
                     <span>
                       {calendarEditMode
                         ? 'Tinjau Dampak & Simpan'
-                        : 'Simpan & Buka Periode'}
+                        : 'Simpan Tanggal Merah'}
                     </span>
                   </>
                 )}

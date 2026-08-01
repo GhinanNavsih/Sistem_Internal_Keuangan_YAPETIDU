@@ -26,12 +26,20 @@ export type SatpamPayType =
 export type SatpamReportKind =
   | 'satpam_spj'
   | 'satpam_found_item'
+  | 'satpam_reprimand'
   | 'satpam_shift_assignment';
 
 export function isSatpamPersonalSpjReportKind(
   value: unknown,
-): value is Extract<SatpamReportKind, 'satpam_spj' | 'satpam_found_item'> {
-  return value === 'satpam_spj' || value === 'satpam_found_item';
+): value is Extract<
+  SatpamReportKind,
+  'satpam_spj' | 'satpam_found_item' | 'satpam_reprimand'
+> {
+  return (
+    value === 'satpam_spj' ||
+    value === 'satpam_found_item' ||
+    value === 'satpam_reprimand'
+  );
 }
 
 export type SatpamShiftAnomalyCode =
@@ -150,6 +158,7 @@ export function inferLegacySatpamReportKind(
   if (
     report.reportKind === 'satpam_spj' ||
     report.reportKind === 'satpam_found_item' ||
+    report.reportKind === 'satpam_reprimand' ||
     report.reportKind === 'satpam_shift_assignment'
   ) {
     return report.reportKind;

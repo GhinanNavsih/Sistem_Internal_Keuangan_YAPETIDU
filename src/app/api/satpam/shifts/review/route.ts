@@ -28,6 +28,12 @@ import {
   requireRole,
 } from '@/lib/server/auth';
 import {
+  annualCalendarRef,
+  annualDatesFrom,
+  assertPeriodAcceptsInput,
+  buildPeriodMaterialization,
+} from '@/lib/server/payrollPeriod';
+import {
   classifySatpamDutyAssignments,
   isSatpamDutyPlanRequired,
   satpamDutyKey,
@@ -420,9 +426,7 @@ export async function POST(request: NextRequest) {
         guardIndexStart + reports.length + 1,
       );
 
-      if (!periodSnapshot.exists || periodSnapshot.data()?.attendanceStatus !== 'open') {
-        throw new HttpError(409, 'Periode payroll belum dibuka atau sudah ditutup.');
-      }
+      assertPeriodAcceptsInput(periodSnapshot.data());
       if (
         hasApprovals &&
         isSatpamDutyPlanRequired(period, periodSnapshot.data() || null)
@@ -479,9 +483,23 @@ export async function POST(request: NextRequest) {
           : [];
       const periodCalendar = periodCalendarFromData(
         period,
-        periodSnapshot.data()!,
+        periodSnapshot.exists ? periodSnapshot.data()! : null,
         annualHolidayDates,
       );
+      // An approval may be the first money committed against a month that was
+      // never explicitly opened. Freeze its calendar before rating the shift.
+      if (hasApprovals) {
+        const periodMaterialization = buildPeriodMaterialization({
+          period,
+          periodData: periodSnapshot.exists ? periodSnapshot.data()! : null,
+          annualDates: annualHolidayDates,
+          actorUid: actor.uid,
+          reason: `Kalender periode dibekukan saat persetujuan shift Satpam ${period}`,
+        });
+        if (periodMaterialization) {
+          transaction.set(periodRef, periodMaterialization, { merge: true });
+        }
+      }
       if (
         hasApprovals &&
         Number(occurrence.calendarRevision || periodCalendar.revision) !==
@@ -945,9 +963,7 @@ export async function PUT(request: NextRequest) {
       );
       const employeeSnapshots = secondarySnapshots.slice(4 + oldReportRefs.length);
 
-      if (!periodSnapshot.exists || periodSnapshot.data()?.attendanceStatus !== 'open') {
-        throw new HttpError(409, 'Periode payroll belum dibuka atau sudah ditutup.');
-      }
+      assertPeriodAcceptsInput(periodSnapshot.data());
       if (!teamSnapshot.exists) {
         throw new HttpError(409, 'Regu Satpam tidak ditemukan.');
       }
@@ -993,9 +1009,19 @@ export async function PUT(request: NextRequest) {
           : [];
       const periodCalendar = periodCalendarFromData(
         period,
-        periodSnapshot.data()!,
+        periodSnapshot.exists ? periodSnapshot.data()! : null,
         annualHolidayDates,
       );
+      const periodMaterialization = buildPeriodMaterialization({
+        period,
+        periodData: periodSnapshot.exists ? periodSnapshot.data()! : null,
+        annualDates: annualHolidayDates,
+        actorUid: actor.uid,
+        reason: `Kalender periode dibekukan saat koreksi auditor shift Satpam ${period}`,
+      });
+      if (periodMaterialization) {
+        transaction.set(periodRef, periodMaterialization, { merge: true });
+      }
       const holidayDates = new Set<string>(periodCalendar.premiumDates);
       const expectedRegularPayType = getRegularSatpamPayType(
         command.dutyDate,

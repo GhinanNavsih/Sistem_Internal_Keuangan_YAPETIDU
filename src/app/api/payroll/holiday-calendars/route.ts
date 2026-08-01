@@ -8,6 +8,10 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import {
+  isPeriodClosed,
+  isPeriodMaterialized,
+} from '@/lib/server/payrollPeriod';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,15 +40,22 @@ export async function POST(request: NextRequest) {
 
     const calendarRef = adminDb.collection('PayrollHolidayCalendars').doc(year);
     const after = await adminDb.runTransaction(async (transaction) => {
-      const openPeriodsQuery = adminDb
-        .collection('PayrollPeriods')
-        .where('attendanceStatus', '==', 'open');
+      // Only a period that already froze its calendar can be invalidated by an
+      // annual rewrite. Under open-by-default every future month is implicitly
+      // open, so keying this lock on status alone would freeze the annual
+      // calendar permanently. Filtering in memory also avoids the inequality
+      // query, which would skip materialized periods that carry no
+      // attendanceStatus field at all.
+      const openPeriodsQuery = adminDb.collection('PayrollPeriods');
       const [beforeSnapshot, openPeriodsSnapshot] = await Promise.all([
         transaction.get(calendarRef),
         transaction.get(openPeriodsQuery),
       ]);
       const openPeriodInYear = openPeriodsSnapshot.docs.find(
-        (snapshot) => String(snapshot.data().period || snapshot.id).startsWith(`${year}-`),
+        (snapshot) =>
+          String(snapshot.data().period || snapshot.id).startsWith(`${year}-`) &&
+          isPeriodMaterialized(snapshot.data()) &&
+          !isPeriodClosed(snapshot.data()),
       );
       if (openPeriodInYear) {
         throw new HttpError(

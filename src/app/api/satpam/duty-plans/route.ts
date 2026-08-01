@@ -41,6 +41,8 @@ import {
   type AuthenticatedProfile,
 } from '@/lib/server/auth';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
+import { isPeriodClosed, jakartaToday } from '@/lib/server/payrollPeriod';
+import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
 
 export const dynamic = 'force-dynamic';
 
@@ -478,17 +480,18 @@ export async function POST(request: NextRequest) {
         .where('period', '==', period.replace('-', '_'))
         .get(),
     ]);
+    const currentPeriod = pekaryaPayrollPeriodForDate(jakartaToday());
     const advancePlanning = isSatpamAdvancePlanningPeriod(period);
+    // Periods are open by default: the live current period (and any past
+    // period nobody has closed yet) accepts a duty plan without ever being
+    // explicitly opened. Only the immediately following month is advance-only.
     const openCanonicalPeriod =
-      periodSnapshot.exists &&
-      periodSnapshot.data()?.attendanceStatus === 'open' &&
-      isSatpamDutyPlanRequired(period, periodSnapshot.data() || null);
+      period <= currentPeriod &&
+      !isPeriodClosed(periodSnapshot.data()) &&
+      isSatpamDutyPlanRequired(period, periodSnapshot.exists ? periodSnapshot.data() : null);
     if (
       !openCanonicalPeriod &&
-      !(
-        advancePlanning &&
-        periodSnapshot.data()?.attendanceStatus !== 'closed'
-      )
+      !(advancePlanning && !isPeriodClosed(periodSnapshot.data()))
     ) {
       throw new HttpError(
         409,
@@ -669,9 +672,7 @@ export async function POST(request: NextRequest) {
         publishedAt: now,
         publishedBy: actor.uid,
         updatedAt: now,
-        advancePublished:
-          !periodSnapshot.exists ||
-          periodSnapshot.data()?.attendanceStatus !== 'open',
+        advancePublished: !openCanonicalPeriod,
         schemaVersion: SATPAM_DUTY_PLAN_SCHEMA_VERSION,
       };
       transaction.set(planRef, after);
@@ -795,13 +796,13 @@ export async function PATCH(request: NextRequest) {
       throw new HttpError(400, 'Alasan auditor minimal delapan karakter.');
     }
     const periodSnapshot = await adminDb.collection('PayrollPeriods').doc(period).get();
+    const currentPeriod = pekaryaPayrollPeriodForDate(jakartaToday());
     const advancePlanning = isSatpamAdvancePlanningPeriod(period);
+    const isLiveOrPastPeriod =
+      period <= currentPeriod && !isPeriodClosed(periodSnapshot.data());
     if (
-      periodSnapshot.data()?.attendanceStatus !== 'open' &&
-      !(
-        advancePlanning &&
-        periodSnapshot.data()?.attendanceStatus !== 'closed'
-      )
+      !isLiveOrPastPeriod &&
+      !(advancePlanning && !isPeriodClosed(periodSnapshot.data()))
     ) {
       throw new HttpError(
         409,

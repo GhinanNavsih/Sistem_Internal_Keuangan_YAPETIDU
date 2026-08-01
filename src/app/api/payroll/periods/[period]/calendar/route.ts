@@ -24,6 +24,11 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import {
+  isPeriodClosed,
+  isPeriodMaterialized,
+} from '@/lib/server/payrollPeriod';
+import { ATTENDANCE_PAYROLL_START_PERIOD } from '@/lib/payroll/attendance';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,20 +75,24 @@ async function loadCalendarContext(period: string) {
     periodRef.get(),
     annualRef.get(),
   ]);
-  if (!periodSnapshot.exists) {
-    throw new HttpError(404, 'Periode payroll tidak ditemukan.');
-  }
   const annualDates =
     annualSnapshot.exists && Array.isArray(annualSnapshot.data()?.dates)
       ? annualSnapshot
           .data()!
           .dates.filter((date: unknown): date is string => typeof date === 'string')
       : [];
+  // Periods are open by default, so a month with no document still has a usable
+  // calendar: every Friday is premium automatically and nationally declared
+  // dates come from the annual accumulator until an administrator edits them.
   return {
     periodRef,
     periodSnapshot,
     annualSnapshot,
-    calendar: periodCalendarFromData(period, periodSnapshot.data()!, annualDates),
+    calendar: periodCalendarFromData(
+      period,
+      periodSnapshot.exists ? periodSnapshot.data()! : null,
+      annualDates,
+    ),
   };
 }
 
@@ -177,7 +186,11 @@ export async function GET(
     return Response.json(
       {
         period,
-        attendanceStatus: current.periodSnapshot.data()?.attendanceStatus,
+        attendanceStatus:
+          current.periodSnapshot.data()?.attendanceStatus === 'closed'
+            ? 'closed'
+            : 'open',
+        materialized: isPeriodMaterialized(current.periodSnapshot.data()),
         calendar: current.calendar,
         fridayDates: periodFridayDates(period),
       },
@@ -270,8 +283,8 @@ export async function PATCH(
     }
 
     const current = await loadCalendarContext(period);
-    if (current.periodSnapshot.data()?.attendanceStatus !== 'open') {
-      throw new HttpError(409, 'Hanya kalender periode terbuka yang dapat diubah.');
+    if (isPeriodClosed(current.periodSnapshot.data())) {
+      throw new HttpError(409, 'Kalender periode yang sudah ditutup tidak dapat diubah.');
     }
     if (current.calendar.revision !== expectedRevision) {
       throw new HttpError(409, 'Kalender telah berubah. Muat ulang sebelum menyimpan.');
@@ -314,30 +327,55 @@ export async function PATCH(
       }
       const latestCalendar = periodCalendarFromData(
         period,
-        latestPeriod.data()!,
+        latestPeriod.exists ? latestPeriod.data()! : null,
         current.calendar.premiumDates,
       );
       if (
-        latestPeriod.data()?.attendanceStatus !== 'open' ||
+        isPeriodClosed(latestPeriod.data()) ||
         latestCalendar.revision !== expectedRevision
       ) {
         throw new HttpError(409, 'Kalender atau status periode telah berubah.');
       }
+      // Setting a month's premium dates is the other way a period becomes
+      // materialized. Nothing can have been approved against it yet -- an
+      // approval would have materialized it first -- so this is revision 1 and
+      // there is no prior rating left to reconcile.
+      const isFirstCalendar = !isPeriodMaterialized(latestPeriod.data());
       const next = {
-        revision: nextRevision,
+        revision: isFirstCalendar ? 1 : nextRevision,
         annualVersion: current.calendar.annualVersion,
         premiumDates,
         reason,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedBy: actor.uid,
       };
-      transaction.update(current.periodRef, {
-        workCalendar: next,
-        holidays: premiumDates,
-        calendarReconciliationStatus: 'pending',
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedBy: actor.uid,
-      });
+      transaction.set(
+        current.periodRef,
+        {
+          period,
+          datePolicy: 'shift_start_date',
+          timeZone: 'Asia/Jakarta',
+          ...(current.calendar.annualVersion
+            ? { holidayCalendarVersion: current.calendar.annualVersion }
+            : {}),
+          ...(isFirstCalendar
+            ? {
+                materializedAt: admin.firestore.FieldValue.serverTimestamp(),
+                materializedBy: actor.uid,
+                ...(period >= ATTENDANCE_PAYROLL_START_PERIOD
+                  ? { satpamDutyPlanRequired: true, satpamDutyPlanSchemaVersion: 1 }
+                  : {}),
+              }
+            : {}),
+          workCalendar: next,
+          holidays: premiumDates,
+          calendarReconciliationStatus: isFirstCalendar ? 'complete' : 'pending',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedBy: actor.uid,
+          schemaVersion: 1,
+        },
+        { merge: true },
+      );
       transaction.create(
         newFinancialAuditRef(),
         buildFinancialAuditRecord(actor, {
@@ -359,10 +397,10 @@ export async function PATCH(
         requestHash,
         entityType: 'PayrollPeriodCalendar',
         entityId: period,
-        revision: nextRevision,
+        revision: next.revision,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-      return { revision: nextRevision, idempotent: false };
+      return { revision: next.revision, idempotent: false };
     });
 
     if (!transactionResult.idempotent) {

@@ -6,7 +6,7 @@ import {
   payrollPeriodForDutyDate,
 } from '@/lib/payroll/domain';
 import { periodCalendarFromData } from '@/lib/payroll/calendar';
-import { pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
+import { pekaryaPayrollPeriodForDate, pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import {
   isSatpamDutyPlanRequired,
   satpamAdvancePlanningPeriod,
@@ -14,6 +14,7 @@ import {
 import { isSatpamFlexibilityEnabled } from '@/lib/server/satpamFlexibility';
 import { loadSatpamDutyPlanContext } from '@/lib/server/satpamDutyPlan';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
+import { isPeriodClosed, jakartaToday } from '@/lib/server/payrollPeriod';
 import {
   errorResponse,
   HttpError,
@@ -117,31 +118,46 @@ export async function GET(request: NextRequest) {
     if (![1, 2, 3].includes(teamNumber)) {
       throw new HttpError(409, 'Nomor regu Satpam tidak valid.');
     }
-    const openPeriodSnapshot = await adminDb
-      .collection('PayrollPeriods')
-      .where('attendanceStatus', '==', 'open')
-      .get();
-    const openPeriods = openPeriodSnapshot.docs
-      .flatMap((snapshot) => {
-        if (!/^\d{4}-\d{2}$/.test(snapshot.id)) return [];
-        const window = pekaryaPayrollWindow(snapshot.id);
-        return [{
-          period: snapshot.id,
+    // Periods are open by default; only an explicit permanent closure removes
+    // one from service. The current period is therefore always open even when
+    // it has no PayrollPeriods document yet -- a straggling past period stays
+    // open only if its document exists and was never closed. The immediately
+    // following month remains advance-planning-only, matching the existing
+    // duty-plan-ahead workflow.
+    const currentPeriod = pekaryaPayrollPeriodForDate(jakartaToday());
+    const advancePeriod = satpamAdvancePlanningPeriod();
+    const allPeriodsSnapshot = await adminDb.collection('PayrollPeriods').get();
+    const periodDataById = new Map(
+      allPeriodsSnapshot.docs
+        .filter((snapshot) => /^\d{4}-\d{2}$/.test(snapshot.id))
+        .map((snapshot) => [snapshot.id, snapshot.data()]),
+    );
+
+    const openPeriodIds = new Set<string>(
+      Array.from(periodDataById.entries())
+        .filter(([period, data]) => period <= currentPeriod && !isPeriodClosed(data))
+        .map(([period]) => period),
+    );
+    openPeriodIds.add(currentPeriod);
+    if (dutyPeriod <= currentPeriod && !isPeriodClosed(periodDataById.get(dutyPeriod))) {
+      openPeriodIds.add(dutyPeriod);
+    }
+
+    const openPeriods = Array.from(openPeriodIds)
+      .map((period) => {
+        const window = pekaryaPayrollWindow(period);
+        return {
+          period,
           startDate: window.startsOn,
           endDate: window.endsOn,
           planningOnly: false,
-        }];
+        };
       })
       .sort((left, right) => left.startDate.localeCompare(right.startDate));
-    const advancePeriod = satpamAdvancePlanningPeriod();
-    const advancePeriodSnapshot = await adminDb
-      .collection('PayrollPeriods')
-      .doc(advancePeriod)
-      .get();
     const planningPeriods = [...openPeriods];
     if (
       !planningPeriods.some((item) => item.period === advancePeriod) &&
-      advancePeriodSnapshot.data()?.attendanceStatus !== 'closed'
+      !isPeriodClosed(periodDataById.get(advancePeriod))
     ) {
       const advanceWindow = pekaryaPayrollWindow(advancePeriod);
       planningPeriods.push({

@@ -42,6 +42,7 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import { isPeriodClosed } from '@/lib/server/payrollPeriod';
 
 export const dynamic = 'force-dynamic';
 
@@ -705,10 +706,10 @@ async function mutateShift(
         idempotent: true,
       };
     }
-    if (!periodSnapshot.exists || periodSnapshot.data()?.attendanceStatus !== 'open') {
+    if (isPeriodClosed(periodSnapshot.data())) {
       throw new HttpError(
         409,
-        'Tanggal ini berada di periode payroll yang belum dibuka atau sudah ditutup.',
+        'Tanggal ini berada di periode payroll yang sudah ditutup permanen.',
       );
     }
     const canonicalPlanEnabled = isSatpamDutyPlanRequired(
@@ -788,7 +789,7 @@ async function mutateShift(
         : [];
     const periodCalendar = periodCalendarFromData(
       period,
-      periodSnapshot.data()!,
+      periodSnapshot.exists ? periodSnapshot.data()! : null,
       annualHolidayDates,
     );
     const holidayDates = new Set<string>(periodCalendar.premiumDates);
