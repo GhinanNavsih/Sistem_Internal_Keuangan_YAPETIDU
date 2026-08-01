@@ -120,58 +120,43 @@ export function generateSatpamDutyPlanPdf(
   doc.setLineWidth(0.5);
   doc.line(12, 34, pageWidth - 12, 34);
 
-  // ── 2. Schedule Table Generation ──────────────────────────────────────────
-  const tableHeaders = [
-    'No',
-    'Tanggal',
-    'Hari',
-    'Shift',
-    'Pos 1 IC',
-    'Pos 8 Parkiran FIK',
-    'Pos 6 Gor',
-    'Pos 5 Masjid Induk',
-    'Pos 7 Saintek',
-    'Pos 4 Plaza',
-    'Pos 3 ATM Graha',
-    'Pos 9 Hurun-inn',
-    'Pos 2 Stasiun',
-    'Libur',
+  // ── 2. Schedule Table Generation (Post x Date Matrix) ────────────────────
+  const dateHeaders = days.map(
+    (d) => `${d.dutyDate.slice(8, 10)}/${d.dutyDate.slice(5, 7)}`,
+  );
+  const tableHeaders = ['No. Pos', ...dateHeaders];
+
+  const postDefinitions = [
+    { id: 'Pos 1', label: 'Pos 1 IC' },
+    { id: 'Pos 8', label: 'Pos 8 Parkiran FIK' },
+    { id: 'Pos 6', label: 'Pos 6 Gor' },
+    { id: 'Pos 5', label: 'Pos 5 Masjid Induk' },
+    { id: 'Pos 7', label: 'Pos 7 Saintek' },
+    { id: 'Pos 4', label: 'Pos 4 Plaza' },
+    { id: 'Pos 3', label: 'Pos 3 ATM Graha' },
+    { id: 'Pos 9', label: 'Pos 9 Hurun-inn' },
+    { id: 'Pos 2', label: 'Pos 2 Stasiun' },
+    { id: 'Off-Duty', label: 'Libur' },
   ];
 
-  const tableRows = days.map((day, index) => {
-    const dayName = getIndonesianDayName(day.dutyDate);
-    const postMap = new Map<string, string>();
-    day.assignments.forEach((assignment) => {
-      postMap.set(assignment.postId, assignment.employeeId);
+  const tableRows = postDefinitions.map((postDef) => {
+    const rowValues = days.map((day) => {
+      if (postDef.id === 'Off-Duty') {
+        const name = getEmployeeName(employees, day.offDutyEmployeeId || '');
+        return name.toUpperCase();
+      }
+      const assignment = day.assignments.find(
+        (a) =>
+          a.postId === postDef.id ||
+          a.postId === postDef.label ||
+          (postDef.id === 'Pos 1' && a.postId === 'Pos 1 IC') ||
+          (postDef.id === 'Pos 9' && a.postId === 'Pos 9 IC'),
+      );
+      const name = getEmployeeName(employees, assignment?.employeeId || '');
+      return name.toUpperCase();
     });
 
-    const pos1 = getEmployeeName(employees, postMap.get('Pos 1') || postMap.get('Pos 1 IC') || '');
-    const pos8 = getEmployeeName(employees, postMap.get('Pos 8') || '');
-    const pos6 = getEmployeeName(employees, postMap.get('Pos 6') || '');
-    const pos5 = getEmployeeName(employees, postMap.get('Pos 5') || '');
-    const pos7 = getEmployeeName(employees, postMap.get('Pos 7') || '');
-    const pos4 = getEmployeeName(employees, postMap.get('Pos 4') || '');
-    const pos3 = getEmployeeName(employees, postMap.get('Pos 3') || '');
-    const pos9 = getEmployeeName(employees, postMap.get('Pos 9') || postMap.get('Pos 9 IC') || '');
-    const pos2 = getEmployeeName(employees, postMap.get('Pos 2') || '');
-    const offDuty = getEmployeeName(employees, day.offDutyEmployeeId || '');
-
-    return [
-      String(index + 1),
-      day.dutyDate,
-      dayName,
-      `Shift ${day.shiftName}`,
-      pos1,
-      pos8,
-      pos6,
-      pos5,
-      pos7,
-      pos4,
-      pos3,
-      pos9,
-      pos2,
-      offDuty,
-    ];
+    return [postDef.label, ...rowValues];
   });
 
   autoTable(doc, {
@@ -180,43 +165,27 @@ export function generateSatpamDutyPlanPdf(
     body: tableRows,
     theme: 'grid',
     headStyles: {
-      fillColor: [30, 41, 59], // Slate-800
-      textColor: 255,
-      fontSize: 7,
+      fillColor: [77, 208, 225], // Cyan / Light Teal header matching screenshot
+      textColor: [0, 0, 0],
+      fontSize: 6.5,
       fontStyle: 'bold',
       halign: 'center',
       valign: 'middle',
     },
     bodyStyles: {
-      fontSize: 6.8,
-      textColor: [30, 41, 59],
+      fontSize: 5.5,
+      textColor: [0, 0, 0],
       valign: 'middle',
-      cellPadding: 1.2,
+      halign: 'center',
+      cellPadding: 0.8,
     },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 7 }, // No
-      1: { halign: 'center', cellWidth: 17 }, // Tanggal
-      2: { halign: 'center', cellWidth: 14 }, // Hari
-      3: { halign: 'center', cellWidth: 15, fontStyle: 'bold' }, // Shift
-      4: { cellWidth: 22 }, // Pos 1 IC
-      5: { cellWidth: 24 }, // Pos 8 Parkiran FIK
-      6: { cellWidth: 20 }, // Pos 6 Gor
-      7: { cellWidth: 24 }, // Pos 5 Masjid Induk
-      8: { cellWidth: 20 }, // Pos 7 Saintek
-      9: { cellWidth: 20 }, // Pos 4 Plaza
-      10: { cellWidth: 22 }, // Pos 3 ATM Graha
-      11: { cellWidth: 22 }, // Pos 9 Hurun-inn
-      12: { cellWidth: 22 }, // Pos 2 Stasiun
-      13: {
-        cellWidth: 24,
-        fontStyle: 'italic',
-        fillColor: [254, 243, 199], // Amber-100 highlight for Off-Duty
-      },
+      0: { fontStyle: 'bold', halign: 'left', cellWidth: 32 }, // No. Pos column
     },
     alternateRowStyles: {
-      fillColor: [248, 250, 252], // Slate-50
+      fillColor: [240, 253, 250], // Soft cyan tint
     },
-    margin: { left: 12, right: 12, top: 37, bottom: 25 },
+    margin: { left: 10, right: 10, top: 37, bottom: 15 },
     didDrawPage: (data) => {
       // Footer page numbering
       const totalPages = (doc as any).internal.getNumberOfPages();
@@ -225,14 +194,14 @@ export function generateSatpamDutyPlanPdf(
       doc.setTextColor(148, 163, 184); // Slate-400
       doc.text(
         `Halaman ${data.pageNumber} dari ${totalPages}`,
-        pageWidth - 12,
-        pageHeight - 8,
+        pageWidth - 10,
+        pageHeight - 6,
         { align: 'right' },
       );
       doc.text(
         'Sistem Keuangan & Operasional Satpam — YAPETIDU',
-        12,
-        pageHeight - 8,
+        10,
+        pageHeight - 6,
       );
     },
   });
