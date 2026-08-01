@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Loader2,
   LogOut,
+  Printer,
   RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';

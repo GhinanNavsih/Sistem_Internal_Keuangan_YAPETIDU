@@ -5,8 +5,10 @@ import {
   AlertTriangle,
   CalendarDays,
   ClipboardList,
+  FileText,
   Loader2,
   Pencil,
+  Printer,
   RefreshCw,
   Save,
   Send,
@@ -30,6 +32,7 @@ import {
   authenticatedJson,
   createFinancialRequestId,
 } from '@/lib/payroll/client';
+import { generateSatpamDutyPlanPdf } from '@/utils/generateSatpamDutyPlanPdf';
 import { compressProofImage } from '@/lib/photoEvidence';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -629,21 +632,41 @@ export function SatpamDutyPlanPanel(props: {
         ) : hasPublishedPlan && plan ? (
           <>
             <div
-              className={`rounded-xl border p-4 ${
+              className={`rounded-xl border p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${
                 plan.status === 'published'
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
                   : 'border-amber-200 bg-amber-50 text-amber-900'
               }`}
             >
-              <p className="font-bold">
-                {statusLabel(plan.status)} · revisi {plan.revision}
-              </p>
-              {plan.status === 'pending_backfill_review' && (
-                <p className="mt-1 text-sm">
-                  {plan.lateBackfillDates?.length || 0} tanggal yang sudah
-                  dimulai menunggu konfirmasi Kepala SatKer.
+              <div>
+                <p className="font-bold">
+                  {statusLabel(plan.status)} · revisi {plan.revision}
                 </p>
-              )}
+                {plan.status === 'pending_backfill_review' && (
+                  <p className="mt-1 text-sm">
+                    {plan.lateBackfillDates?.length || 0} tanggal yang sudah
+                    dimulai menunggu konfirmasi Kepala SatKer.
+                  </p>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 px-3.5 gap-2 rounded-xl border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100 font-bold text-xs shadow-xs shrink-0 cursor-pointer"
+                onClick={() => {
+                  generateSatpamDutyPlanPdf({
+                    period,
+                    ketuaShiftName: employeeName(rosterEmployees, team?.ketuaShiftId || ''),
+                    status: plan.status,
+                    revision: plan.revision,
+                    employees: rosterEmployees,
+                    days: plan.generatedDays || [],
+                  });
+                }}
+              >
+                <Printer className="h-4 w-4 text-emerald-600" />
+                Cetak PDF (Horizontal)
+              </Button>
             </div>
             <div className="space-y-3">
               {(plan.generatedDays || []).map((day) => {
@@ -885,7 +908,7 @@ export function SatpamDutyPlanPanel(props: {
             <p className="font-bold text-slate-900">
               Langkah 4 · Periksa semua tanggal lalu terbitkan
             </p>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <Button
                 type="button"
                 variant="outline"
@@ -898,11 +921,30 @@ export function SatpamDutyPlanPanel(props: {
                 ) : (
                   <ClipboardList className="h-5 w-5" />
                 )}
-                Periksa Rotasi 8 Hari
+                Periksa Rotasi
               </Button>
               <Button
                 type="button"
-                className="min-h-12 gap-2 bg-indigo-600 hover:bg-indigo-700"
+                variant="outline"
+                className="min-h-12 gap-2 text-indigo-700 border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100 font-bold"
+                disabled={working || previewDays.length === 0}
+                onClick={() => {
+                  generateSatpamDutyPlanPdf({
+                    period,
+                    ketuaShiftName: employeeName(rosterEmployees, team?.ketuaShiftId || ''),
+                    status: 'Draft Pratinjau',
+                    revision: (plan?.revision || 0) + 1,
+                    employees: rosterEmployees,
+                    days: previewDays,
+                  });
+                }}
+              >
+                <Printer className="h-5 w-5 text-indigo-600" />
+                Cetak PDF
+              </Button>
+              <Button
+                type="button"
+                className="min-h-12 gap-2 bg-indigo-600 hover:bg-indigo-700 font-bold"
                 disabled={working || !previewHash}
                 onClick={() => void publish()}
               >
