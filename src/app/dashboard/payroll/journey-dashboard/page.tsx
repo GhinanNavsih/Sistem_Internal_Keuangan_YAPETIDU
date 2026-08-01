@@ -340,7 +340,11 @@ function JourneyDashboardContent() {
 
           <Select value={selectedMonth} onValueChange={(m) => handlePeriodChange(m || 'all', selectedYear)}>
             <SelectTrigger className="w-36 h-9 text-xs font-bold bg-white rounded-xl border-slate-200">
-              <SelectValue />
+              <SelectValue>
+                {selectedMonth === 'all'
+                  ? 'Semua Bulan'
+                  : MONTHS_ID[parseInt(selectedMonth, 10) - 1] || selectedMonth}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
               <SelectItem value="all">Semua Bulan</SelectItem>
@@ -354,7 +358,9 @@ function JourneyDashboardContent() {
 
           <Select value={selectedYear} onValueChange={(y) => handlePeriodChange(selectedMonth, y || 'all')}>
             <SelectTrigger className="w-28 h-9 text-xs font-bold bg-white rounded-xl border-slate-200">
-              <SelectValue />
+              <SelectValue>
+                {selectedYear === 'all' ? 'Semua Tahun' : selectedYear}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
               <SelectItem value="all">Semua Tahun</SelectItem>

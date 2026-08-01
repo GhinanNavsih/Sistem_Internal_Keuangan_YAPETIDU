@@ -351,7 +351,7 @@ function DriverHistoryContent() {
               <div className="flex items-center gap-2 flex-1">
                 <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
                   <SelectTrigger className="text-sm font-bold text-slate-700 bg-slate-50 rounded-xl border border-slate-200 h-10 px-3 flex-1">
-                    <SelectValue />
+                    <SelectValue>{MONTHS_ID[month - 1]}</SelectValue>
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
                     {MONTHS_ID.map((m, i) => (
@@ -363,7 +363,7 @@ function DriverHistoryContent() {
                 </Select>
                 <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
                   <SelectTrigger className="text-sm font-bold text-slate-700 bg-slate-50 rounded-xl border border-slate-200 h-10 px-3 w-24">
-                    <SelectValue />
+                    <SelectValue>{year}</SelectValue>
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
                     {YEARS.map(y => (

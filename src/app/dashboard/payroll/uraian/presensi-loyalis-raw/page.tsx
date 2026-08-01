@@ -1822,7 +1822,9 @@ export default function PresensiLoyalisRawPage() {
                                                   onValueChange={(val) => handleUpdateDailyLog(row.excelName, log.Tanggal, 'Jam kerja', val)}
                                                 >
                                                   <SelectTrigger className="h-8 text-[11px] rounded-lg border-slate-200 bg-white">
-                                                    <SelectValue />
+                                                    <SelectValue>
+                                                      {log['Jam kerja'] || 'MASUK'}
+                                                    </SelectValue>
                                                   </SelectTrigger>
                                                   <SelectContent className="bg-white rounded-lg border border-slate-100 shadow-lg">
                                                     <SelectItem value="MASUK">MASUK</SelectItem>

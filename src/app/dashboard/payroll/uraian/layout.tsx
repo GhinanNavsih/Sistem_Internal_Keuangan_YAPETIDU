@@ -359,7 +359,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
             </Select>
             <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v, 10))}>
               <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
-                <SelectValue />
+                <SelectValue>{year}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {YEARS.filter(y => {
@@ -378,7 +378,9 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
             {showCategorySelector && category && allowedCategories.length > 0 && (
               <Select value={category} onValueChange={(v) => v && setCategory(v)}>
                 <SelectTrigger className="w-48 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
-                  <SelectValue />
+                  <SelectValue>
+                    {category.replace('_', ' ').toUpperCase()}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {allowedCategories.map(c => (

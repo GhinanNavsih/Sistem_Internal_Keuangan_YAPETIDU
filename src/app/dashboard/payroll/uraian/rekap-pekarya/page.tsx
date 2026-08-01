@@ -1340,7 +1340,13 @@ export default function RekapPekaryaPage() {
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Tipe Input data</label>
                 <Select value={newColType} onValueChange={(v: any) => setNewColType(v)}>
-                  <SelectTrigger className="w-full bg-white border-slate-200 rounded-xl font-semibold"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full bg-white border-slate-200 rounded-xl font-semibold">
+                    <SelectValue>
+                      {newColType === 'currency'
+                        ? 'Mata Uang (Rupiah Langsung)'
+                        : 'Frekuensi (Jumlah x Rate Pengali)'}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="currency">Mata Uang (Rupiah Langsung)</SelectItem>
                     <SelectItem value="count">Frekuensi (Jumlah x Rate Pengali)</SelectItem>

@@ -1469,7 +1469,9 @@ export default function EmployeePayslipPage() {
             <div className="grid grid-cols-2 gap-3 w-full md:flex md:w-auto md:items-center">
               <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
                 <SelectTrigger className="text-sm font-bold text-slate-700 bg-white rounded-2xl border border-slate-200 h-11 px-4 w-full md:w-40 shadow-sm focus:ring-indigo-500/20">
-                  <SelectValue />
+                  <SelectValue>
+                    {availableMonths.find((m) => m.value === month)?.label || MONTHS_ID[month - 1]}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="rounded-2xl border-slate-100 shadow-2xl bg-white z-40">
                   {availableMonths.map((m) => (
@@ -1481,7 +1483,7 @@ export default function EmployeePayslipPage() {
               </Select>
               <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
                 <SelectTrigger className="text-sm font-bold text-slate-700 bg-white rounded-2xl border border-slate-200 h-11 px-4 w-full md:w-28 shadow-sm focus:ring-indigo-500/20">
-                  <SelectValue />
+                  <SelectValue>{year}</SelectValue>
                 </SelectTrigger>
                 <SelectContent className="rounded-2xl border-slate-100 shadow-2xl bg-white z-40">
                   {availableYears.map(y => (

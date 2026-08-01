@@ -775,7 +775,7 @@ function DriverJourneysContent() {
             router.push(`${pathname}?${params.toString()}`);
           }}>
             <SelectTrigger className="w-28 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
-              <SelectValue />
+              <SelectValue>{year}</SelectValue>
             </SelectTrigger>
             <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
               {YEARS.filter(y => {
@@ -1449,7 +1449,13 @@ function DriverJourneysContent() {
                   }}
                 >
                   <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
-                    <SelectValue />
+                    <SelectValue>
+                      {selectedVehicle === 'Ndalem'
+                        ? 'Ndalem — Tanpa Uang Jalan'
+                        : selectedVehicle
+                          ? `${selectedVehicle} — ${fmtRp(VEHICLE_RATES[selectedVehicle as keyof typeof VEHICLE_RATES])}/km`
+                          : ''}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
                     {Object.keys(VEHICLE_RATES).map((name) => (

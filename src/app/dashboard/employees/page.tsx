@@ -2806,7 +2806,11 @@ export default function EmployeesPage() {
                     <div className="space-y-2">
                       <Label>Kategori</Label>
                       <Select value={formData.employment?.jobCategory} onValueChange={val => setFormData((prev: any) => ({ ...prev, employment: { ...(prev.employment || { status: 'active', startDate: '', endDate: null }), jobCategory: val } as any }))}>
-                        <SelectTrigger className="rounded-xl border-slate-200"><SelectValue /></SelectTrigger>
+                        <SelectTrigger className="rounded-xl border-slate-200">
+                          <SelectValue>
+                            {formData.employment?.jobCategory || 'Pilih Kategori'}
+                          </SelectValue>
+                        </SelectTrigger>
                         <SelectContent>{JOB_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
