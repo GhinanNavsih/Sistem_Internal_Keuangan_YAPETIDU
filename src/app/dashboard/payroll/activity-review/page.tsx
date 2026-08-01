@@ -418,6 +418,14 @@ const SATPAM_ANOMALY_LABELS: Record<string, string> = {
   HOLIDAY_CALENDAR_MISSING: 'Kalender upah belum tersedia',
   PAY_CLASSIFICATION_MISMATCH: 'Klasifikasi upah perlu diperbaiki',
   FUTURE_WORK_NOT_FINISHED: 'Pekerjaan belum selesai',
+  DUTY_PLAN_MISSING: 'Rencana dinas belum ada',
+  DUTY_PLAN_STALE: 'Rencana dinas perlu diperbarui',
+  DUTY_PLAN_BACKFILL_PENDING: 'Jadwal dinas belum disetujui',
+  ACTUAL_ROSTER_DIFFERS: 'Petugas beda dari rencana',
+  EXTRA_NOT_OFF_DUTY: 'Lembur di luar hari libur',
+  EXTRA_WITH_INCOMPLETE_PRIMARY_ROSTER: 'Lembur saat regu belum lengkap',
+  ABSENCE_WORK_CONFLICT: 'Konflik izin & tugas',
+  DUTY_PLAN_CHANGED_AFTER_REPORT: 'Rencana diubah setelah laporan',
 };
 
 // ─── Inline Photo with Stored Audit Metadata Overlay ──────────────────────────
