@@ -5148,7 +5148,11 @@ function ActivitiesContent() {
                 disabled={Boolean(editingActivity)}
               >
                 <SelectTrigger id="foundItemCategory" className="h-14 w-full rounded-xl border border-slate-300 bg-white px-4 text-base font-bold text-slate-700">
-                  <SelectValue />
+                  <SelectValue>
+                    {foundItemCategory === 'satpam_reprimand'
+                      ? 'Teguran Pengendara (Rp15.000)'
+                      : 'Penemuan Barang (Rp5.000)'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
                   <SelectItem value="satpam_found_item" className="text-base py-3">
