@@ -604,6 +604,28 @@ function getInitialSatpamDateISO(): string {
   return getTodayISO();
 }
 
+/**
+ * A locally queued Satpam draft only counts as work in progress once it holds a
+ * real assignment. An empty payload must read as "no draft", otherwise the
+ * autosave would keep the published duty plan from ever prefilling the form.
+ */
+function satpamDraftHasContent(raw: string | null): boolean {
+  if (!raw) return false;
+  try {
+    const parsed = JSON.parse(raw);
+    const assignments = parsed?.payload?.assignments;
+    return (
+      (Array.isArray(assignments) &&
+        assignments.some(
+          (assignment: { employeeId?: string }) => assignment?.employeeId,
+        )) ||
+      Boolean(parsed?.payload?.extraAssignment?.employeeId)
+    );
+  } catch {
+    return false;
+  }
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 const YEARS = Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i);
@@ -2379,7 +2401,9 @@ function ActivitiesContent() {
         if (satpamPendingStorageKey) {
           try {
             const rawPending = window.localStorage.getItem(satpamPendingStorageKey);
-            const pending = rawPending ? JSON.parse(rawPending) : null;
+            const pending = satpamDraftHasContent(rawPending)
+              ? JSON.parse(rawPending!)
+              : null;
             if (
               pending &&
               pending?.payload?.dutyDate === satpamReportDate &&
@@ -2465,7 +2489,9 @@ function ActivitiesContent() {
     }
     if (
       satpamPendingStorageKey &&
-      window.localStorage.getItem(satpamPendingStorageKey)
+      satpamDraftHasContent(
+        window.localStorage.getItem(satpamPendingStorageKey),
+      )
     ) {
       return;
     }
@@ -2506,6 +2532,34 @@ function ActivitiesContent() {
     ) {
       return;
     }
+    const assignments = Object.entries(postAssignments)
+      .filter(([, assignment]) => Boolean(assignment.employeeId))
+      .map(([postId, assignment]) => ({
+        postId,
+        employeeId: assignment.employeeId,
+        shiftType: assignment.shiftType,
+        coveredEmployeeId: assignment.coveredEmployeeId,
+        overtimeReason: assignment.overtimeReason,
+        photoUrl: assignment.photoUrl,
+        photoAuditMetadata: assignment.photoAuditMetadata,
+      }));
+    const extraAssignment =
+      isExtraPostVisible && extraEmployeeId
+        ? {
+            postId: extraPostName,
+            employeeId: extraEmployeeId,
+            overtimeReason: extraOvertimeReason,
+            photoUrl: extraPhotoUrl,
+            photoAuditMetadata: extraPhotoAuditMetadata,
+          }
+        : null;
+    // A blank form is not a draft. Storing one would both raise a spurious
+    // "draft restored" notice and permanently block the duty-plan prefill,
+    // which treats any stored draft as work the guard already started.
+    if (assignments.length === 0 && !extraAssignment) {
+      window.localStorage.removeItem(satpamPendingStorageKey);
+      return;
+    }
     const payload = {
       dutyDate: satpamReportDate,
       shiftName: activeShift,
@@ -2515,28 +2569,8 @@ function ActivitiesContent() {
             dutyPlanRevision: satpamDutyPlan.revision,
           }
         : {}),
-      assignments: Object.entries(postAssignments)
-        .filter(([, assignment]) => Boolean(assignment.employeeId))
-        .map(([postId, assignment]) => ({
-          postId,
-          employeeId: assignment.employeeId,
-          shiftType: assignment.shiftType,
-          coveredEmployeeId: assignment.coveredEmployeeId,
-          overtimeReason: assignment.overtimeReason,
-          photoUrl: assignment.photoUrl,
-          photoAuditMetadata: assignment.photoAuditMetadata,
-        })),
-      ...(isExtraPostVisible && extraEmployeeId
-        ? {
-            extraAssignment: {
-              postId: extraPostName,
-              employeeId: extraEmployeeId,
-              overtimeReason: extraOvertimeReason,
-              photoUrl: extraPhotoUrl,
-              photoAuditMetadata: extraPhotoAuditMetadata,
-            },
-          }
-        : {}),
+      assignments,
+      ...(extraAssignment ? { extraAssignment } : {}),
     };
     window.localStorage.setItem(
       satpamPendingStorageKey,

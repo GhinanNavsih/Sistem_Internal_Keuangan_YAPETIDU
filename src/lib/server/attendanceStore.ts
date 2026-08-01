@@ -155,10 +155,10 @@ export async function loadPeriodPremiumDates(period: string): Promise<{
   periodData: Record<string, unknown>;
 }> {
   const periodSnapshot = await adminDb.collection('PayrollPeriods').doc(period).get();
-  if (!periodSnapshot.exists) {
-    throw new Error(`Periode ${period} belum dikonfigurasi.`);
-  }
-  const periodData = periodSnapshot.data()!;
+  // Periods are open by default. An unmaterialized month still resolves a
+  // correct calendar: Fridays are derived automatically and nationally declared
+  // dates come from the annual accumulator below.
+  const periodData = periodSnapshot.exists ? periodSnapshot.data()! : {};
   const year = period.slice(0, 4);
   const annualSnapshot = await adminDb
     .collection('PayrollHolidayCalendars')

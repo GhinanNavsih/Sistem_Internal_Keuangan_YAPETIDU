@@ -153,12 +153,9 @@ export async function POST(request: NextRequest) {
         'record_email_sent',
         'request_correction',
       ].includes(command.action);
-      if (requiresConfiguredPeriod && !periodSnapshot.exists) {
-        throw new HttpError(
-          409,
-          'Periode payroll belum dikonfigurasi. Buka periode sebelum membuat draf.',
-        );
-      }
+      // Periods are open by default, so drafting never waits on an
+      // administrator. Verification, locking, and payment still require an
+      // explicit closure, which the attendanceStatus check below enforces.
       const periodData = periodSnapshot.data();
       if (
         requiresConfiguredPeriod &&

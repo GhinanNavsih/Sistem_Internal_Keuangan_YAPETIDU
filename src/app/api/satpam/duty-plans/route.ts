@@ -278,9 +278,9 @@ export async function GET(request: NextRequest) {
     assertPeriod(period);
     const periodSnapshot = await adminDb.collection('PayrollPeriods').doc(period).get();
     const advancePlanning = isSatpamAdvancePlanningPeriod(period);
-    if (!periodSnapshot.exists && !advancePlanning) {
-      throw new HttpError(404, 'Periode payroll tidak ditemukan.');
-    }
+    // Periods are open by default. A month with no PayrollPeriods document has
+    // simply never been materialized -- it is still fully reportable, and a
+    // closed one stays readable so past plans remain auditable.
     let teamIds: string[] = [];
     let ketuaTeamSnapshot: FirebaseFirestore.DocumentSnapshot | null = null;
     if (actor.role === 'ketua_shift_satpam') {
@@ -346,9 +346,11 @@ export async function GET(request: NextRequest) {
             period,
             periodSnapshot.data() || null,
           ),
-        attendanceStatus:
-          periodSnapshot.data()?.attendanceStatus ||
-          (advancePlanning ? 'advance_planning' : null),
+        attendanceStatus: isPeriodClosed(periodSnapshot.data())
+          ? 'closed'
+          : advancePlanning
+            ? 'advance_planning'
+            : 'open',
         advancePlanning,
         window: pekaryaPayrollWindow(period),
         continuation,
