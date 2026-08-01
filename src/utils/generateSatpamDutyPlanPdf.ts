@@ -176,6 +176,10 @@ export function generateSatpamDutyPlanPdf(
       head: [tableHeaders],
       body: tableRows,
       theme: 'grid',
+      styles: {
+        lineColor: [0, 0, 0],
+        lineWidth: 0.35,
+      },
       headStyles: {
         fillColor: [77, 208, 225], // Cyan / Light Teal header
         textColor: [0, 0, 0],
@@ -184,6 +188,8 @@ export function generateSatpamDutyPlanPdf(
         halign: 'center',
         valign: 'middle',
         cellPadding: 2.2,
+        lineColor: [0, 0, 0],
+        lineWidth: 0.7, // Thick cell outline for header columns
       },
       bodyStyles: {
         fontSize: 8,
@@ -191,6 +197,8 @@ export function generateSatpamDutyPlanPdf(
         valign: 'middle',
         halign: 'center',
         cellPadding: 3.2,
+        lineColor: [0, 0, 0],
+        lineWidth: 0.35, // Crisp black row outlines
       },
       columnStyles: {
         0: { fontStyle: 'bold', halign: 'left', cellWidth: 48 }, // No. Pos column
@@ -198,6 +206,8 @@ export function generateSatpamDutyPlanPdf(
       alternateRowStyles: {
         fillColor: [240, 253, 250], // Soft cyan tint
       },
+      tableLineColor: [0, 0, 0],
+      tableLineWidth: 0.7,
       margin: { left: 12, right: 12, top: 32.5, bottom: 12 },
       didDrawPage: (data) => {
         // Footer page numbering
