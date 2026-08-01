@@ -13,11 +13,12 @@ import {
   SelectValue
 } from '@/components/ui/select';
 import { LogOut, ArrowLeft } from 'lucide-react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { SUPPORTED_CATEGORIES, MONTHS_ID } from '@/utils/rekapConfig';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import UraianNavToggles from '@/components/UraianNavToggles';
+import { defaultPayrollPeriodToken, previousPayrollPeriodToken } from '@/lib/payroll/domain';
 
 const YEARS = Array.from({ length: 9 }, (_, i) => new Date().getFullYear() + 3 - i);
 
@@ -31,6 +32,53 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
   const month = parseInt(searchParams.get('month') || String(new Date().getMonth() + 1), 10);
   const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()), 10);
   const category = searchParams.get('category') || "";
+
+  // Land on the month being compiled: before the 6th that is still the
+  // previous period, unless it has already been closed. Only kicks in when
+  // the URL carries no period at all — a manual pick or a bookmarked deep
+  // link is always honored exactly as given.
+  const hasExplicitPeriod = searchParams.has('month') || searchParams.has('year');
+  useEffect(() => {
+    if (!profile || hasExplicitPeriod) return;
+    const now = new Date();
+    const previousPeriod = previousPayrollPeriodToken(now);
+    if (defaultPayrollPeriodToken(now, false) !== previousPeriod) {
+      // Past the cutoff day; every page's own fallback already lands on the
+      // current month, so there's nothing to correct.
+      return;
+    }
+    let cancelled = false;
+    const landOnPreviousPeriod = () => {
+      if (cancelled) return;
+      const [y, m] = previousPeriod.split('-').map(Number);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('month', String(m));
+      params.set('year', String(y));
+      router.replace(`${pathname}?${params.toString()}`);
+    };
+    getDoc(doc(db, 'PayrollPeriods', previousPeriod))
+      .then((snapshot) => {
+        if (cancelled) return;
+        const previousClosed = snapshot.data()?.attendanceStatus === 'closed';
+        if (defaultPayrollPeriodToken(now, previousClosed) !== previousPeriod) return;
+        landOnPreviousPeriod();
+      })
+      .catch(() => {
+        // Most viewers here (Kepala SatKer) cannot read PayrollPeriods at
+        // all. Periods are open by default throughout this app, so an
+        // unreadable closure state is treated the same as "not closed"
+        // rather than falling back to the current month.
+        landOnPreviousPeriod();
+      });
+    return () => {
+      cancelled = true;
+    };
+    // router is a stable Next.js reference, and the only part of searchParams
+    // that should re-trigger this effect is hasExplicitPeriod (already
+    // listed) — reacting to every param change here would also re-fire it on
+    // an unrelated category pick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, hasExplicitPeriod, pathname]);
 
   const [dynamicCategories, setDynamicCategories] = useState<string[]>(SUPPORTED_CATEGORIES);
 

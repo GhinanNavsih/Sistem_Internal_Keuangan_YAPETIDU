@@ -77,23 +77,31 @@ export interface SlipFieldChange {
   newValue: number | null;
 }
 
+/** Decides whether a given label belongs to the source doing the propagating. */
+export type OwnedLabelPredicate = (label: string) => boolean;
+
 /**
- * Overlay the profile-owned subset of `fresh` onto `stored`.
+ * Overlay the owned subset of `fresh` onto `stored`.
  *
  * Mirrors the merge the Refresh Massal flow already applies, so automatic
  * propagation and a manual refresh can never produce different arrays:
  * owned label in both -> overwrite; in fresh only -> append; in stored only ->
  * remove; anything else -> untouched, including its position in the array.
+ *
+ * The ownership predicate is supplied by the caller so every propagation
+ * source (employee profile, Uraian rekap, Loyalis presence) shares one merge
+ * implementation and can only ever touch the rows it is authoritative for.
  */
-export function mergeProfileOwnedFields(
+export function mergeOwnedFields(
   stored: readonly MoneyField[],
   fresh: readonly MoneyField[],
+  isOwned: OwnedLabelPredicate,
   kind: SlipFieldKind,
 ): { merged: MoneyField[]; changes: SlipFieldChange[] } {
   const changes: SlipFieldChange[] = [];
   const freshOwned = new Map<string, MoneyField>();
   for (const field of fresh) {
-    if (isProfileOwnedLabel(kind, field.label)) {
+    if (isOwned(field.label)) {
       freshOwned.set(normalizeLabel(field.label), field);
     }
   }
@@ -101,14 +109,14 @@ export function mergeProfileOwnedFields(
   const merged: MoneyField[] = [];
   const seen = new Set<string>();
   for (const field of stored) {
-    if (!isProfileOwnedLabel(kind, field.label)) {
+    if (!isOwned(field.label)) {
       merged.push(field);
       continue;
     }
     const key = normalizeLabel(field.label);
     const replacement = freshOwned.get(key);
     if (!replacement) {
-      // The profile no longer produces this row — a removed structural
+      // The source no longer produces this row — a removed structural
       // position, or an allowance that dropped to zero and is no longer pushed.
       changes.push({ kind, label: field.label, oldValue: field.amount, newValue: null });
       continue;
@@ -136,29 +144,45 @@ export function mergeProfileOwnedFields(
 
 /**
  * Last line of defence, run inside the write transaction: if a gathering bug
- * ever moved a row the profile does not own, abort rather than corrupt the slip.
+ * ever moved a row the source does not own, abort rather than corrupt the slip.
  */
+export function assertOnlyOwnedChanged(
+  stored: readonly MoneyField[],
+  merged: readonly MoneyField[],
+  isOwned: OwnedLabelPredicate,
+): void {
+  const mergedByLabel = new Map<string, number>();
+  for (const field of merged) {
+    if (!isOwned(field.label)) {
+      mergedByLabel.set(normalizeLabel(field.label), field.amount);
+    }
+  }
+  for (const field of stored) {
+    if (isOwned(field.label)) continue;
+    const key = normalizeLabel(field.label);
+    if (!mergedByLabel.has(key)) {
+      throw new Error(`Propagasi menghapus baris di luar sumbernya: ${field.label}`);
+    }
+    if (mergedByLabel.get(key) !== field.amount) {
+      throw new Error(`Propagasi mengubah nilai di luar sumbernya: ${field.label}`);
+    }
+  }
+}
+
+export function mergeProfileOwnedFields(
+  stored: readonly MoneyField[],
+  fresh: readonly MoneyField[],
+  kind: SlipFieldKind,
+): { merged: MoneyField[]; changes: SlipFieldChange[] } {
+  return mergeOwnedFields(stored, fresh, (label) => isProfileOwnedLabel(kind, label), kind);
+}
+
 export function assertOnlyProfileOwnedChanged(
   stored: readonly MoneyField[],
   merged: readonly MoneyField[],
   kind: SlipFieldKind,
 ): void {
-  const mergedByLabel = new Map<string, number>();
-  for (const field of merged) {
-    if (!isProfileOwnedLabel(kind, field.label)) {
-      mergedByLabel.set(normalizeLabel(field.label), field.amount);
-    }
-  }
-  for (const field of stored) {
-    if (isProfileOwnedLabel(kind, field.label)) continue;
-    const key = normalizeLabel(field.label);
-    if (!mergedByLabel.has(key)) {
-      throw new Error(`Propagasi menghapus baris di luar profil: ${field.label}`);
-    }
-    if (mergedByLabel.get(key) !== field.amount) {
-      throw new Error(`Propagasi mengubah nilai di luar profil: ${field.label}`);
-    }
-  }
+  assertOnlyOwnedChanged(stored, merged, (label) => isProfileOwnedLabel(kind, label));
 }
 
 export type PropagationOutcome =

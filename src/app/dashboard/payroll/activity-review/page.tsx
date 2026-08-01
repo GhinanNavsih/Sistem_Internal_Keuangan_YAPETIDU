@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import GlobalHeader from '@/components/GlobalHeader';
 import UraianNavToggles from '@/components/UraianNavToggles';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
@@ -549,22 +549,17 @@ function InlinePhotoWithExif({
 
 export default function ActivityReviewPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { profile, user } = useAuth();
 
   // ── Period ──
-  const requestedMonth = Number(searchParams.get('month'));
-  const requestedYear = Number(searchParams.get('year'));
-  const [month, setMonth] = useState(
-    requestedMonth >= 1 && requestedMonth <= 12
-      ? requestedMonth
-      : new Date().getMonth() + 1,
-  );
-  const [year, setYear] = useState(
-    requestedYear >= 2020 && requestedYear <= 2100
-      ? requestedYear
-      : new Date().getFullYear(),
-  );
+  // Always the current calendar month, regardless of any month/year a link
+  // into this page happens to carry (e.g. from a Rekap Uraian page that is
+  // itself defaulted to the prior month before the payroll cutoff day).
+  // Reviewing activity reports is a day-to-day task, not tied to which
+  // payroll period is currently being compiled, so this page intentionally
+  // does not follow that "previous month before the 6th" rule.
+  const [month, setMonth] = useState(() => new Date().getMonth() + 1);
+  const [year, setYear] = useState(() => new Date().getFullYear());
 
   // Enforce no future periods
   useEffect(() => {

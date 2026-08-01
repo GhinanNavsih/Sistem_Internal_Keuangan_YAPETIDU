@@ -14,6 +14,33 @@ export interface SlipField {
 }
 
 /**
+ * The rekap columns a blue-collar slip is built from, for one Uraian entry.
+ *
+ * Which column set applies depends on the entry itself: once attendance is
+ * published, `presensi` is replaced by the `harian` / `jumatLibur` pair. Both
+ * the builder below and the Uraian propagation route resolve it through here,
+ * so the set of labels the rekap owns can never drift from the set the builder
+ * actually emits.
+ */
+export function resolveRekapColumnsForSlip(
+  jobCategory: string,
+  uraian?: UraianEntry,
+  customColumns?: RekapColumn[],
+): RekapColumn[] {
+  const attendanceDerived =
+    Boolean((uraian as { attendanceSource?: unknown } | undefined)?.attendanceSource) ||
+    Boolean(
+      uraian?.values &&
+        ('harian' in uraian.values || 'jumatLibur' in uraian.values) &&
+        !('presensi' in uraian.values),
+    );
+  return [
+    ...getRekapColumns(jobCategory, attendanceDerived ? '2026-08' : undefined),
+    ...(customColumns || []),
+  ];
+}
+
+/**
  * Build initial earnings rows from whatever we know about the employee.
  */
 export function buildInitialEarnings(
@@ -118,18 +145,7 @@ export function buildInitialEarnings(
     }
   } else {
     const jobCategory = emp.employment?.jobCategory || '';
-    const attendanceDerived =
-      Boolean((uraian as any)?.attendanceSource) ||
-      Boolean(
-        uraian?.values &&
-          ('harian' in uraian.values || 'jumatLibur' in uraian.values) &&
-          !('presensi' in uraian.values),
-      );
-    const columns = getRekapColumns(
-      jobCategory,
-      attendanceDerived ? '2026-08' : undefined,
-    );
-    const allCols = [...columns, ...(customColumns || [])];
+    const allCols = resolveRekapColumnsForSlip(jobCategory, uraian, customColumns);
 
     // Gaji Pokok – always known
     earnings.push({ label: 'Gaji Pokok', amount: gapok });

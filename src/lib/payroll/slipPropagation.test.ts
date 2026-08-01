@@ -126,12 +126,12 @@ test('the transaction guard rejects collateral damage', () => {
   );
   assert.throws(
     () => assertOnlyProfileOwnedChanged(storedEarnings, tampered, 'earnings'),
-    /di luar profil/,
+    /di luar sumbernya/,
   );
   const dropped = storedEarnings.filter((field) => field.label !== 'Presensi');
   assert.throws(
     () => assertOnlyProfileOwnedChanged(storedEarnings, dropped, 'earnings'),
-    /menghapus baris di luar profil/,
+    /menghapus baris di luar sumbernya/,
   );
   const legitimate = storedEarnings.map((field) =>
     field.label === 'Beras' ? { ...field, amount: 300_000 } : field,

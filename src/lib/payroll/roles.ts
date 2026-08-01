@@ -30,6 +30,21 @@ export const EMPLOYEE_PROFILE_EDITOR_ROLES: readonly UserRole[] = [
   'employee_admin',
 ];
 
+/**
+ * Who may save an Uraian rekap or the Loyalis presence calculator, and can
+ * therefore trigger propagation of those numbers onto draft slips. Mirrors the
+ * Firestore rules for `UraianGaji` (finance roles plus the Satker heads).
+ * Satker heads are additionally confined to their own permittedCategories by
+ * the propagation route.
+ */
+export const URAIAN_EDITOR_ROLES: readonly UserRole[] = [
+  'super_admin',
+  'finance_verifier',
+  'payroll_authorizer',
+  'satker_head',
+  'satker_head_loyalis',
+];
+
 export function isUserRole(value: unknown): value is UserRole {
   return typeof value === 'string' && (USER_ROLES as readonly string[]).includes(value);
 }

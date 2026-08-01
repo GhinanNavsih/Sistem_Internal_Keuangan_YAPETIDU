@@ -89,8 +89,11 @@ export default function Sidebar() {
       icon: Users
     },
     {
+      // No month/year here: the uraian layout resolves its own default period
+      // (previous month before the 6th, unless closed) when the URL carries
+      // none. Forcing "now" here would pre-empt that on every fresh visit.
       name: 'Rekap & Vakasi',
-      path: `/dashboard/payroll/uraian?month=${currentMonth}&year=${currentYear}`,
+      path: '/dashboard/payroll/uraian',
       icon: FileSpreadsheet,
       activePattern: '/dashboard/payroll/uraian'
     },

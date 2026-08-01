@@ -303,11 +303,19 @@ export default function PayrollValidationDashboard() {
       defaultPeriodResolvedRef.current = true;
       return;
     }
-    defaultPeriodResolvedRef.current = true;
+    // The ref is only marked resolved once this specific fetch actually lands
+    // (below). Firebase Auth can fire onAuthStateChanged more than once in
+    // production (token refresh, multi-tab negotiation — see AuthContext),
+    // each time producing a new `profile` object that re-runs this effect. If
+    // the ref were set here, a re-run before this getDoc resolves would see
+    // "already resolved" and skip retrying, while this call's own result gets
+    // silently dropped by the cancelled check below — permanently stuck on
+    // the initial month.
     let cancelled = false;
     getDoc(doc(db, 'PayrollPeriods', previousPeriod))
       .then((snapshot) => {
         if (cancelled) return;
+        defaultPeriodResolvedRef.current = true;
         const previousClosed = snapshot.data()?.attendanceStatus === 'closed';
         if (defaultPayrollPeriodToken(now, previousClosed) !== previousPeriod) return;
         const [year, month] = previousPeriod.split('-').map(Number);
@@ -319,7 +327,10 @@ export default function PayrollValidationDashboard() {
         });
       })
       .catch(() => {
-        // Closure state unknown: stay on the current month rather than guess.
+        if (cancelled) return;
+        // Closure state unknown: stay on the current month rather than guess,
+        // and leave the ref unset so a later re-run (e.g. the next auth
+        // callback) can retry instead of getting stuck.
       });
     return () => {
       cancelled = true;

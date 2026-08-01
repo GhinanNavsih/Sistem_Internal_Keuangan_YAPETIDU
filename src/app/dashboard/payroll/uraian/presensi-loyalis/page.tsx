@@ -23,6 +23,7 @@ import {
 import { db } from '@/lib/firebase';
 import { MONTHS_ID, REKAP_COLUMNS, SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
+import { propagateUraianToSlips } from '@/lib/payroll/client';
 import * as XLSX from 'xlsx';
 
 export default function PresensiLoyalisPage() {
@@ -448,10 +449,19 @@ export default function PresensiLoyalisPage() {
 
       await setDoc(doc(db, 'LoyalisPresence', periodToken), payload);
 
-      // Do not mutate PayrollSlipStates here. Finance refreshes and saves draft
-      // snapshots through the protected API after reviewing attendance changes.
+      // Draft slips are refreshed through the protected API, which re-derives
+      // every amount server-side and refuses to touch anything past draft.
+      // Employees cannot read LoyalisPresence, so without this their payslip
+      // keeps showing the pre-calculation figures.
+      const propagationNote = await propagateUraianToSlips({
+        scope: 'loyalis',
+        period: periodToken,
+      });
 
-      setMessage({ type: 'success', text: 'Data bonus presensi berhasil disimpan.' });
+      setMessage({
+        type: 'success',
+        text: `Data bonus presensi berhasil disimpan.${propagationNote}`,
+      });
       setUploadedData(null);
       fetchExistingPresence();
     } catch (err) {
@@ -524,9 +534,14 @@ export default function PresensiLoyalisPage() {
       };
 
       await setDoc(docRef, payload, { merge: true });
+      const propagationNote = await propagateUraianToSlips({
+        scope: 'pekarya',
+        period: `${year}-${String(month).padStart(2, '0')}`,
+        jobCategory: selectedPekaryaCategory,
+      });
       setMessage({
         type: 'success',
-        text: `Berhasil menerapkan presensi (Hari Kerja: ${pekaryaWorkingDays}, Hari Libur: ${pekaryaHolidays}) untuk ${empsList.length} pegawai pada Uraian ${selectedPekaryaCategory}.`
+        text: `Berhasil menerapkan presensi (Hari Kerja: ${pekaryaWorkingDays}, Hari Libur: ${pekaryaHolidays}) untuk ${empsList.length} pegawai pada Uraian ${selectedPekaryaCategory}.${propagationNote}`
       });
     } catch (err) {
       console.error('Error applying Pekarya presence:', err);

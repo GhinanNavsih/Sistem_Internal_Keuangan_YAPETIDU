@@ -43,7 +43,7 @@ import type {
 import { generateRekapPresensiKebersihanyPdf } from '@/utils/generateRekapPresensiKebersihan';
 import { dedupeSatpamActivityReports } from '@/lib/payroll/domain';
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
-import { authenticatedJson } from '@/lib/payroll/client';
+import { authenticatedJson, propagateUraianToSlips } from '@/lib/payroll/client';
 import {
   allowsManualSpjEntry,
   pekaryaPayrollWindow,
@@ -700,7 +700,17 @@ export default function RekapPekaryaPage() {
       const payload = generateSavePayload();
       await setDoc(doc(db, 'UraianGaji', docId), { ...payload, isLocked: true, status: 'locked', updatedAt: serverTimestamp() }, { merge: true });
       const catLabel = category.replace('_', ' ').toUpperCase();
-      setMessage({ type: 'success', text: `Data rekapitulasi presensi ${catLabel} berhasil disimpan dan dikunci.` });
+      // Employees cannot read UraianGaji, so the locked figures have to be
+      // pushed onto their draft slips or the payslip keeps showing Rp 0.
+      const propagationNote = await propagateUraianToSlips({
+        scope: 'pekarya',
+        period,
+        jobCategory: category,
+      });
+      setMessage({
+        type: 'success',
+        text: `Data rekapitulasi presensi ${catLabel} berhasil disimpan dan dikunci.${propagationNote}`,
+      });
       setSaved(true);
       setIsLocked(true);
     } catch (err) {

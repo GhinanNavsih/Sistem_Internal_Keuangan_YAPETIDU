@@ -60,6 +60,62 @@ export async function authenticatedJson<T>(
   return payload as T;
 }
 
+export interface UraianPropagationSummary {
+  updated?: number;
+  unchanged?: number;
+  no_slip?: number;
+  period_closed?: number;
+  blocked_status?: number;
+  immutable?: number;
+}
+
+/**
+ * Pushes a just-saved Uraian rekap (or Loyalis presence run) onto the draft
+ * slips for that period and returns a sentence to append to the save toast.
+ *
+ * Never throws: a propagation failure must not make a successful save look
+ * like a failed one. The Refresh Massal flow on the payroll page remains the
+ * manual fallback, so the note points there when something goes wrong.
+ */
+export async function propagateUraianToSlips(command: {
+  scope: 'pekarya' | 'loyalis';
+  period: string;
+  jobCategory?: string;
+}): Promise<string> {
+  try {
+    const result = await authenticatedJson<{ summary: UraianPropagationSummary }>(
+      '/api/payroll/uraian-propagation',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          scope: command.scope,
+          period: command.period,
+          jobCategory: command.jobCategory,
+          requestId: createFinancialRequestId('uraian-sync'),
+        }),
+      },
+    );
+    const summary = result.summary || {};
+    const updated = summary.updated || 0;
+    const blocked = (summary.blocked_status || 0) + (summary.immutable || 0);
+
+    const sentences: string[] = [];
+    if (updated > 0) sentences.push(`${updated} slip draf ikut diperbarui.`);
+    if (blocked > 0) {
+      sentences.push(
+        `${blocked} slip sudah diverifikasi/dikunci sehingga tidak diubah — perubahan ditandai untuk ditinjau Badan Keuangan.`,
+      );
+    }
+    if (summary.period_closed) {
+      sentences.push('Periode sudah ditutup, slip tidak diubah.');
+    }
+    return sentences.length > 0 ? ` ${sentences.join(' ')}` : '';
+  } catch (err) {
+    console.error('Gagal menerapkan rekap uraian ke slip gaji:', err);
+    return ' Namun slip gaji belum diperbarui — buka Payroll › Refresh Massal.';
+  }
+}
+
 export async function authenticatedFormData<T>(
   input: string,
   body: FormData,

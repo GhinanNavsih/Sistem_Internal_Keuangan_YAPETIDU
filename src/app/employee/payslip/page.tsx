@@ -52,7 +52,9 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
-import { MONTHS_ID, getRekapColumns } from '@/utils/rekapConfig';
+import { MONTHS_ID, computeSlipAmount } from '@/utils/rekapConfig';
+import { resolveRekapColumnsForSlip } from '@/lib/payroll/slipBuilders';
+import type { RekapColumn, UraianEntry, UraianGajiDocument } from '@/types';
 import { sumApprovedActivitySpj } from '@/lib/payroll/pekaryaSpj';
 import {
   composeKoperasiLoanHistoryTrail,
@@ -821,6 +823,29 @@ export default function EmployeePayslipPage() {
           periodToken,
         );
 
+        // Attendance/vakasi figures live in the locked Uraian rekap. A missing
+        // or unreadable document simply leaves the rows at zero, exactly as
+        // before, so this can never make the page fail to render.
+        let uraianEntry: UraianEntry | undefined;
+        let uraianCustomColumns: RekapColumn[] = [];
+        if (!isLoyalis) {
+          try {
+            const uraianSnap = await getDoc(
+              doc(db, 'UraianGaji', `${periodKey}_${jobCategory}`),
+            );
+            if (cancelled) return;
+            if (uraianSnap.exists()) {
+              const uraianData = uraianSnap.data() as UraianGajiDocument;
+              uraianEntry = uraianData?.entries?.[empId];
+              if (Array.isArray(uraianData?.customColumns)) {
+                uraianCustomColumns = uraianData.customColumns;
+              }
+            }
+          } catch (uraianErr) {
+            console.warn('Rekap uraian tidak dapat dibaca:', uraianErr);
+          }
+        }
+
         const rawCooperativeLoans = (loanSnapshot?.docs || [])
           .map((loanDoc) => ({ id: loanDoc.id, ...loanDoc.data() as any }));
         const periodLoans = rawCooperativeLoans
@@ -858,13 +883,35 @@ export default function EmployeePayslipPage() {
             amount: money(employee.salaryProfile?.baseSalaryAmount),
           });
 
-          const columns = getRekapColumns(jobCategory, periodToken);
+          // The rekap is the source of truth for these rows and is readable by
+          // any signed-in user, so read it directly rather than rendering
+          // zeros. Without this an employee sees "-" for Vakasi Harian and
+          // Bonus Presensi whenever Finance has not saved a slip yet, even
+          // though the Uraian has been locked.
+          const columns = resolveRekapColumnsForSlip(
+            jobCategory,
+            uraianEntry,
+            uraianCustomColumns,
+          );
           for (const column of columns) {
             if (!column.slipLabel) continue;
-            fallbackEarnings.push({
-              label: column.slipLabel,
-              amount: column.key === 'spj' ? approvedSpj : 0,
-            });
+            let amount = 0;
+            if (uraianEntry) {
+              if (
+                column.type === 'count' &&
+                uraianEntry.counts &&
+                uraianEntry.counts[column.key] !== undefined
+              ) {
+                amount = computeSlipAmount(column, uraianEntry.counts[column.key]);
+              } else if (
+                uraianEntry.values &&
+                uraianEntry.values[column.key] !== undefined
+              ) {
+                amount = uraianEntry.values[column.key] ?? 0;
+              }
+            }
+            if (column.key === 'spj' && amount === 0) amount = approvedSpj;
+            fallbackEarnings.push({ label: column.slipLabel, amount });
           }
 
           fallbackEarnings.push({
