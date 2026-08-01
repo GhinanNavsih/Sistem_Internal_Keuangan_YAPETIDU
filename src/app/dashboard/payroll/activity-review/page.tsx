@@ -2026,7 +2026,13 @@ export default function ActivityReviewPage() {
                   }
                 >
                   <SelectTrigger className="h-12 w-full min-w-56 rounded-xl border-slate-200 bg-white text-base font-bold md:w-64">
-                    <SelectValue />
+                    <SelectValue>
+                      {reportTypeFilter === 'all' && 'Semua Jenis Laporan'}
+                      {reportTypeFilter === 'activity' && 'SPJ / Kegiatan Pribadi'}
+                      {reportTypeFilter === 'found_item' && 'Penemuan Barang'}
+                      {reportTypeFilter === 'reprimand' && 'Teguran Pengendara'}
+                      {reportTypeFilter === 'shift' && 'Shift Regu Satpam'}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="rounded-xl bg-white">
                     <SelectItem value="all" className="min-h-11 text-base">Semua Jenis Laporan</SelectItem>
@@ -3674,7 +3680,11 @@ export default function ActivityReviewPage() {
                         value={row.assignmentKind}
                         onValueChange={(value) => value && updateAuditorEditRow(index, { assignmentKind: value as 'primary' | 'extra' })}
                       >
-                        <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
+                        <SelectTrigger className="h-10 rounded-lg">
+                          <SelectValue>
+                            {row.assignmentKind === 'primary' ? 'Pos utama' : 'Tambahan'}
+                          </SelectValue>
+                        </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="primary">Pos utama</SelectItem>
                           <SelectItem value="extra">Tambahan</SelectItem>
