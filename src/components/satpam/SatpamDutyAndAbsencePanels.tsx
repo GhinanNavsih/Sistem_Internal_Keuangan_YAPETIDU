@@ -239,8 +239,14 @@ export function SatpamDutyPlanPanel(props: {
 }) {
   const { team, employees, openPeriods, embedded } = props;
   const [selectedPeriod, setPeriod] = useState('');
-  const period =
-    selectedPeriod || openPeriods[openPeriods.length - 1]?.period || '';
+  const defaultPeriod = useMemo(() => {
+    const activePeriods = openPeriods.filter((p) => !p.planningOnly);
+    if (activePeriods.length > 0) {
+      return activePeriods[activePeriods.length - 1].period;
+    }
+    return openPeriods[openPeriods.length - 1]?.period || '';
+  }, [openPeriods]);
+  const period = selectedPeriod || defaultPeriod;
   const [view, setView] = useState<DutyPlanResponse | null>(null);
   const [fixedPost9EmployeeId, setFixedPost9EmployeeId] = useState('');
   const [rotationStartMode, setRotationStartMode] = useState<
