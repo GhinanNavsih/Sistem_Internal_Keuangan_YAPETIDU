@@ -158,6 +158,25 @@ export function pekaryaPayrollWindow(period: string): {
   };
 }
 
+/**
+ * Sopir and Satpam only started reporting activities in this system after the
+ * July 2026 transition period (26 June – 31 July 2026). For that period their
+ * SPJ was still accumulated on paper, so the Kepala Satker types the total into
+ * the Rekap Uraian and that number — not the activity sum — is authoritative.
+ */
+export const MANUAL_SPJ_ENTRY_PERIOD = '2026-07';
+export const MANUAL_SPJ_ENTRY_CATEGORIES: readonly string[] = ['SOPIR', 'SATPAM'];
+
+export function allowsManualSpjEntry(
+  jobCategory: string,
+  period: string,
+): boolean {
+  return (
+    period === MANUAL_SPJ_ENTRY_PERIOD &&
+    MANUAL_SPJ_ENTRY_CATEGORIES.includes(jobCategory)
+  );
+}
+
 export function approvedActivitySpjAmount(
   report: PekaryaActivityFinancialLike,
 ): number {

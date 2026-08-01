@@ -6,7 +6,9 @@
  */
 import { adminDb } from '../src/lib/firebase-admin';
 import {
+  allowsManualSpjEntry,
   isPekaryaJobCategory,
+  MANUAL_SPJ_ENTRY_CATEGORIES,
   normalizeActivityIdentityPart,
   pekaryaPayrollWindow,
   sumApprovedActivitySpj,
@@ -63,6 +65,25 @@ async function main() {
   const events = eventSnapshot.docs.map(
     (document) => ({ id: document.id, ...document.data() }) as AuditDocument,
   );
+  // Categories still on paper SPJ for this period take their canonical value
+  // from the manually entered Rekap Uraian instead of the activity sum.
+  const manualSpj = new Map<string, number>();
+  for (const jobCategory of MANUAL_SPJ_ENTRY_CATEGORIES) {
+    if (!allowsManualSpjEntry(jobCategory, period)) continue;
+    const uraianSnapshot = await adminDb
+      .collection('UraianGaji')
+      .doc(`${period.replace('-', '_')}_${jobCategory}`)
+      .get();
+    const entries = (uraianSnapshot.data()?.entries || {}) as Record<
+      string,
+      { values?: Record<string, unknown> }
+    >;
+    for (const [employeeId, entry] of Object.entries(entries)) {
+      const value = Number(entry?.values?.spj);
+      if (Number.isFinite(value)) manualSpj.set(employeeId, value);
+    }
+  }
+
   const findings: Finding[] = [];
   const semanticIdentities = new Map<string, string>();
 
@@ -145,8 +166,16 @@ async function main() {
     const employee = employees.get(employeeId);
     if (!employee || !isPekaryaJobCategory(employee.category)) continue;
     const canonical =
-      sumApprovedActivitySpj(reports, employeeId, employee.category, period) +
-      sumApprovedEventSpj(events, employeeId, employee.category, period);
+      allowsManualSpjEntry(employee.category, period) &&
+      manualSpj.has(employeeId)
+        ? manualSpj.get(employeeId)!
+        : sumApprovedActivitySpj(
+            reports,
+            employeeId,
+            employee.category,
+            period,
+          ) +
+          sumApprovedEventSpj(events, employeeId, employee.category, period);
     const earnings = Array.isArray(slip.earnings) ? slip.earnings : [];
     const slipSpj = earnings
       .filter(

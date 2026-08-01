@@ -7,6 +7,7 @@ import {
   validateMoneyFields,
 } from '@/lib/payroll/domain';
 import {
+  allowsManualSpjEntry,
   isPekaryaJobCategory,
   pekaryaPayrollWindow,
   sumApprovedActivitySpj,
@@ -218,6 +219,24 @@ export async function POST(request: NextRequest) {
             periodToken,
           ) +
           sumApprovedEventSpj(events, command.employeeId, jobCategory, periodToken);
+
+        if (allowsManualSpjEntry(jobCategory, periodToken)) {
+          // Sopir & Satpam had no digital activity reporting in the July 2026
+          // transition period, so the Kepala Satker's manual rekap entry — not
+          // the activity sum — is the official SPJ.
+          const manualSpjSnapshot = await transaction.get(
+            adminDb
+              .collection('UraianGaji')
+              .doc(`${command.period}_${jobCategory}`),
+          );
+          const storedSpj = Number(
+            manualSpjSnapshot.data()?.entries?.[command.employeeId]?.values
+              ?.spj,
+          );
+          if (Number.isFinite(storedSpj) && storedSpj >= 0) {
+            canonicalPekaryaSpj = storedSpj;
+          }
+        }
 
         if (periodToken >= '2026-08' && jobCategory !== 'SATPAM') {
           const publicationRef = adminDb

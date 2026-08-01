@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   activityDurationMinutes,
+  allowsManualSpjEntry,
   assertSatpamFoundItemPhotoCount,
   pekaryaPayrollPeriodForDate,
   pekaryaPayrollWindow,
@@ -182,4 +183,19 @@ test('event totals are period/category scoped and legacy compatible', () => {
     },
   ];
   assert.equal(sumApprovedEventSpj(events, 'E1', 'TEKNISI', '2026-08'), 50_000);
+});
+
+test('manual SPJ entry is limited to Sopir & Satpam in the July 2026 period', () => {
+  // Paper-based reporting: the Kepala Satker types the accumulated SPJ in.
+  assert.equal(allowsManualSpjEntry('SOPIR', '2026-07'), true);
+  assert.equal(allowsManualSpjEntry('SATPAM', '2026-07'), true);
+  // Other categories were already reporting activities in that period.
+  assert.equal(allowsManualSpjEntry('PEKARYA', '2026-07'), false);
+  assert.equal(allowsManualSpjEntry('TEKNISI', '2026-07'), false);
+  assert.equal(allowsManualSpjEntry('KEBERSIHAN', '2026-07'), false);
+  // Neighbouring periods stay on the computed activity sum.
+  assert.equal(allowsManualSpjEntry('SOPIR', '2026-06'), false);
+  assert.equal(allowsManualSpjEntry('SOPIR', '2026-08'), false);
+  assert.equal(allowsManualSpjEntry('SATPAM', '2026-08'), false);
+  assert.equal(allowsManualSpjEntry('SATPAM', '2027-07'), false);
 });

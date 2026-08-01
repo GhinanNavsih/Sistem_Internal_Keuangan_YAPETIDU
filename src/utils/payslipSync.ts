@@ -7,6 +7,7 @@ import {
 } from '@/lib/payroll/domain';
 import {
   activityBelongsToPayrollPeriod,
+  allowsManualSpjEntry,
   approvedActivitySpjAmount,
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
@@ -109,6 +110,10 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
     }
     totalSpj = spjEventsTotal + activityTotal;
 
+    // Sopir & Satpam SPJ for the July 2026 transition is entered by hand from
+    // paper records, so activity syncing must never overwrite that column.
+    const spjIsManual = allowsManualSpjEntry(jobCategory, period);
+
     await runTransaction(db, async transaction => {
       const uraianSnap = await transaction.get(uraianRef);
       if (!uraianSnap.exists()) return;
@@ -144,7 +149,7 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
                   canonicalBonusCount * 100_000,
               }
             : {}),
-          spj: totalSpj,
+          ...(spjIsManual ? {} : { spj: totalSpj }),
         };
         updatedCounts = {
           ...updatedCounts,
@@ -155,9 +160,9 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
           ...(currentEntry.satpamDutySource
             ? { bonusPresensiBulanan: canonicalBonusCount }
             : {}),
-          spj: 0,
+          ...(spjIsManual ? {} : { spj: 0 }),
         };
-      } else {
+      } else if (!spjIsManual) {
         updatedValues = {
           ...updatedValues,
           spj: totalSpj,

@@ -45,6 +45,7 @@ import { dedupeSatpamActivityReports } from '@/lib/payroll/domain';
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
 import { authenticatedJson } from '@/lib/payroll/client';
 import {
+  allowsManualSpjEntry,
   pekaryaPayrollWindow,
   sumApprovedActivitySpj,
   sumApprovedEventSpj,
@@ -307,6 +308,18 @@ export default function RekapPekaryaPage() {
 
     return kegiatanTotal + activityTotal;
   }, [spjEvents, approvedActivityReports, category, month, year]);
+
+  // Juli 2026 (26 Jun–31 Jul) predates activity reporting for Sopir & Satpam,
+  // so the Kepala Satker types the paper-based SPJ total in by hand and that
+  // entry wins over the computed sum.
+  const manualSpjEnabled = allowsManualSpjEntry(category, period);
+
+  // Helper: the SPJ value that belongs on the rekap, slip, and PDF
+  const getSpjValue = useCallback((empId: string) => {
+    const manualValue = tableData[empId]?.spj;
+    if (manualSpjEnabled && manualValue !== undefined) return manualValue;
+    return getComputedSpj(empId);
+  }, [manualSpjEnabled, tableData, getComputedSpj]);
 
   const getComputedSatpamShiftCount = useCallback((empId: string, shiftTypeKey: string) => {
     let targetShiftType = '';
@@ -627,7 +640,7 @@ export default function RekapPekaryaPage() {
       const rawValues = tableData[emp.employeeId] ?? {};
       const storedValues: Record<string, number> = {
         ...rawValues,
-        spj: getComputedSpj(emp.employeeId),
+        spj: getSpjValue(emp.employeeId),
       };
       if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7))) {
         const satpamShiftKeys = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'];
@@ -758,7 +771,7 @@ export default function RekapPekaryaPage() {
       const fields = empCols.map(col => {
         let rawVal = rawValues[col.key] ?? 0;
         if (col.key === 'spj') {
-          rawVal = getComputedSpj(emp.employeeId);
+          rawVal = getSpjValue(emp.employeeId);
         }
         if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'].includes(col.key)) {
           if (rawValues[col.key] === undefined) {
@@ -796,7 +809,7 @@ export default function RekapPekaryaPage() {
       const rawValues = tableData[emp.employeeId] ?? {};
       const computedValues: Record<string, number> = {
         ...rawValues,
-        spj: getComputedSpj(emp.employeeId),
+        spj: getSpjValue(emp.employeeId),
       };
       if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7))) {
         const satpamShiftKeys = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'];
@@ -914,6 +927,9 @@ export default function RekapPekaryaPage() {
   }, [category, period, detectedColumnOrder, customColumns]);
 
   const spjDiscrepancies = useMemo(() => {
+    // A manual entry is the intended source for the paper-based period, so a
+    // gap against the computed sum is expected rather than a warning.
+    if (manualSpjEnabled) return [];
     return employees.map(emp => {
       const rawVal = tableData[emp.employeeId]?.spj;
       const computedVal = getComputedSpj(emp.employeeId);
@@ -927,7 +943,7 @@ export default function RekapPekaryaPage() {
       }
       return null;
     }).filter(Boolean) as { name: string; employeeId: string; manual: number; computed: number }[];
-  }, [employees, tableData, getComputedSpj]);
+  }, [employees, tableData, getComputedSpj, manualSpjEnabled]);
 
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
@@ -1120,6 +1136,16 @@ export default function RekapPekaryaPage() {
           ) : loadingEmps ? (
             <div className="p-20 flex-1 flex flex-col items-center justify-center text-slate-400"><Loader2 className="w-8 h-8 animate-spin mb-3 text-indigo-400" /><p className="font-medium animate-pulse">Memuat data...</p></div>
           ) : (
+            <>
+            {manualSpjEnabled && !isLocked && (
+              <div className="mx-5 mt-4 p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-indigo-900 text-xs flex gap-2 font-medium">
+                <AlertCircle className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                <span>
+                  Periode <strong>Juli 2026 (26 Juni – 31 Juli)</strong> mendahului pelaporan kegiatan digital untuk {category === 'SOPIR' ? 'Sopir' : 'Satpam'}.
+                  Kolom <strong>SPJ</strong> dapat diisi manual dengan akumulasi SPJ berbasis kertas. Kosongkan sel jika ingin memakai hasil kalkulasi kegiatan.
+                </span>
+              </div>
+            )}
             <div className={`overflow-x-auto max-h-[700px] overflow-y-auto ${hasScanData ? 'bg-slate-50/50 p-6' : ''} transition-all duration-500`}>
               <table className={`w-full text-left ${hasScanData ? 'border-separate border-spacing-y-4' : 'border-collapse'}`}>
                 <thead className="sticky top-0 z-20 bg-[#F8FAFC]">
@@ -1201,7 +1227,9 @@ export default function RekapPekaryaPage() {
                             category === 'SATPAM' &&
                             col.key === 'bonusPresensiBulanan';
                           const cellValue = isSpj
-                            ? (getComputedSpj(emp.employeeId) || 0)
+                            ? (manualSpjEnabled
+                                ? (tableData[emp.employeeId]?.spj ?? getComputedSpj(emp.employeeId) ?? 0)
+                                : (getComputedSpj(emp.employeeId) || 0))
                             : (isSatpamShift && tableData[emp.employeeId]?.[col.key] === undefined)
                               ? (getComputedSatpamShiftCount(emp.employeeId, col.key) || 0)
                               : (isTunjanganJabatan && tableData[emp.employeeId]?.[col.key] === undefined)
@@ -1222,7 +1250,7 @@ export default function RekapPekaryaPage() {
                                 onChange={(e) => updateCell(emp.employeeId, col.key, e.target.value)}
                                 disabled={
                                   isLocked ||
-                                  isSpj ||
+                                  (isSpj && !manualSpjEnabled) ||
                                   isAttendanceDerived ||
                                   isDutyPlanDerived
                                 }
@@ -1234,7 +1262,9 @@ export default function RekapPekaryaPage() {
                                     : isLocked
                                       ? 'Tabel rekap sedang dikunci. Klik "Buka Kunci" jika ingin mengubah data.'
                                       : isSpj
-                                        ? 'SPJ dihitung otomatis dari kegiatan yang disetujui.'
+                                        ? manualSpjEnabled
+                                          ? 'Periode Juli 2026 (26 Jun–31 Jul) masih berbasis kertas. Isi akumulasi SPJ secara manual; kosongkan untuk memakai nilai kegiatan.'
+                                          : 'SPJ dihitung otomatis dari kegiatan yang disetujui.'
                                         : undefined
                                 }
                                 className={`h-10 text-center font-extrabold transition-all ${isLocked
@@ -1271,6 +1301,7 @@ export default function RekapPekaryaPage() {
                 })}
               </table>
             </div>
+            </>
           )}
         </Card>
       </div>
