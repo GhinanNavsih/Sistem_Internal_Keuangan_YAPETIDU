@@ -249,27 +249,6 @@ export function generateSatpamDutyPlanPdf(
     },
   });
 
-  // ── 3. Signatures Section ──────────────────────────────────────────────
-  const finalY = (doc as any).lastAutoTable.finalY || 160;
-  const signatureY = Math.min(finalY + 12, pageHeight - 35);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(30, 41, 59);
-
-  // Left Signature: Ketua Shift Satpam
-  doc.text('Dibuat oleh,', 40, signatureY);
-  doc.text('Ketua Shift Satpam', 40, signatureY + 5);
-  doc.setFont('helvetica', 'bold');
-  doc.text(ketuaShiftName || '(....................................)', 40, signatureY + 22);
-
-  // Right Signature: Kepala SatKer Satpam
-  doc.setFont('helvetica', 'normal');
-  doc.text('Mengetahui / Menyetujui,', pageWidth - 80, signatureY);
-  doc.text('Kepala SatKer Satpam', pageWidth - 80, signatureY + 5);
-  doc.setFont('helvetica', 'bold');
-  doc.text('(....................................)', pageWidth - 80, signatureY + 22);
-
   if (saveToFile) {
     const filename = `Jadwal_Regu_Satpam_${period.replace('-', '_')}.pdf`;
     doc.save(filename);
