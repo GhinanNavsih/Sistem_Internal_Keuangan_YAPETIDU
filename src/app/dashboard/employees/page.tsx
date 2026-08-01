@@ -81,6 +81,7 @@ import { db } from '@/lib/firebase';
 import { BlueCollarEmployee } from '@/types';
 import { useDashboardData } from '@/lib/DashboardDataContext';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import { MONTHS_ID } from '@/utils/rekapConfig';
 
 const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI'];
 
@@ -316,6 +317,45 @@ interface PendingEdit {
   changes: FieldChange[];
 }
 
+interface PropagationResult {
+  period: string;
+  outcome:
+    | 'updated'
+    | 'unchanged'
+    | 'no_slip'
+    | 'period_closed'
+    | 'blocked_status'
+    | 'immutable';
+}
+
+function formatPeriodLabel(period: string): string {
+  const [year, month] = period.split('-').map(Number);
+  return `${MONTHS_ID[month - 1]} ${year}`;
+}
+
+/**
+ * Says what happened to each open period's slip. Skipped periods are named
+ * explicitly — a silently stale verified slip is exactly the failure this
+ * feature exists to prevent.
+ */
+function describePropagation(results: PropagationResult[]): string {
+  const updated = results.filter(r => r.outcome === 'updated').map(r => formatPeriodLabel(r.period));
+  const blocked = results
+    .filter(r => r.outcome === 'blocked_status' || r.outcome === 'immutable')
+    .map(r => formatPeriodLabel(r.period));
+
+  const sentences: string[] = [];
+  if (updated.length > 0) {
+    sentences.push(`Slip ${updated.join(' & ')} ikut diperbarui.`);
+  }
+  if (blocked.length > 0) {
+    sentences.push(
+      `Slip ${blocked.join(' & ')} sudah diverifikasi/dikunci sehingga tidak diubah — perubahan ditandai untuk ditinjau Badan Keuangan.`,
+    );
+  }
+  return sentences.length > 0 ? ` ${sentences.join(' ')}` : '';
+}
+
 function getObjectDiff(oldObj: any, newObj: any, prefix = ''): FieldChange[] {
   const diffs: FieldChange[] = [];
 
@@ -541,7 +581,7 @@ export default function EmployeesPage() {
     if (tab === 'loyalis') {
       return {
         nipy: '',
-        personal_info: { name: '', employee_id_niy: '', tax_id_npwp: '', status: 'AKTIF', phone: '', email: '' },
+        personal_info: { name: '', employee_id_niy: '', nik: '', tax_id_npwp: '', status: 'AKTIF', phone: '', email: '' },
         banking_info: { bank_name: 'BSI', account_number: '' },
         employment_profile: { job_role: '', department_unit: '', date_of_hire: '', date_recognized: '', date_exit: '', structural_positions: [] },
         academic_and_tier: { education_level: '', education_code: '', functional_tier: '', level_code: '', base_salary_tier: '' },
@@ -845,18 +885,24 @@ export default function EmployeesPage() {
         };
 
         final = {
+          ...formData,
           personal_info: {
+            ...(formData.personal_info || {}),
             name: formData.personal_info?.name || '',
+            employee_id_niy: formData.personal_info?.employee_id_niy || null,
+            nik: formData.personal_info?.nik || null,
             tax_id_npwp: formData.personal_info?.tax_id_npwp || null,
             status: formData.personal_info?.status || 'AKTIF',
             phone: formData.personal_info?.phone || '',
             email: formData.personal_info?.email || '',
           },
           banking_info: {
+            ...(formData.banking_info || {}),
             bank_name: formData.banking_info?.bank_name || null,
             account_number: formData.banking_info?.account_number || null,
           },
           employment_profile: {
+            ...(formData.employment_profile || {}),
             job_role: formData.employment_profile?.job_role || null,
             department_unit: isCustomDept ? customDeptValue.trim().toUpperCase() : (formData.employment_profile?.department_unit || null),
             date_of_hire: toTimestamp(formData.employment_profile?.date_of_hire || ''),
@@ -865,6 +911,7 @@ export default function EmployeesPage() {
             structural_positions: formData.employment_profile?.structural_positions || [],
           },
           academic_and_tier: {
+            ...(formData.academic_and_tier || {}),
             education_level: formData.academic_and_tier?.education_level || null,
             education_code: formData.academic_and_tier?.education_code !== undefined && formData.academic_and_tier?.education_code !== '' ? Number(formData.academic_and_tier.education_code) : null,
             functional_tier: formData.academic_and_tier?.functional_tier !== undefined && formData.academic_and_tier?.functional_tier !== '' ? Number(formData.academic_and_tier.functional_tier) : null,
@@ -872,6 +919,7 @@ export default function EmployeesPage() {
             base_salary_tier: formData.academic_and_tier?.base_salary_tier !== undefined && formData.academic_and_tier?.base_salary_tier !== '' ? Number(formData.academic_and_tier.base_salary_tier) : null,
           },
           family_allowance_metrics: {
+            ...(formData.family_allowance_metrics || {}),
             spouse_count: Number(formData.family_allowance_metrics?.spouse_count) || 0,
             children_sd: Number(formData.family_allowance_metrics?.children_sd) || 0,
             children_sltp: Number(formData.family_allowance_metrics?.children_sltp) || 0,
@@ -879,60 +927,70 @@ export default function EmployeesPage() {
             children_pt: Number(formData.family_allowance_metrics?.children_pt) || 0,
           },
           ziz: {
+            ...(formData.ziz || {}),
             deductionAmount: Number(formData.ziz?.deductionAmount) || 0,
           },
           savings: {
+            ...(formData.savings || {}),
             deductionAmount: Number(formData.savings?.deductionAmount) || 0,
           },
           pinlu: {
+            ...(formData.pinlu || {}),
             deductionAmount: Number(formData.pinlu?.deductionAmount) || 0,
           },
           tht: {
+            ...(formData.tht || {}),
             deductionAmount: Number(formData.tht?.deductionAmount) || 0,
           },
           bpjs: {
+            ...(formData.bpjs || {}),
             t_bpjs_tk: Number(formData.bpjs?.t_bpjs_tk) || 0,
             t_bpjs_kes: Number(formData.bpjs?.t_bpjs_kes) || 0,
             deductionAmount: Number(formData.bpjs?.deductionAmount) || 0,
           },
           salaryProfile: {
+            ...(formData.salaryProfile || {}),
             tunjanganBeras: Number(formData.salaryProfile?.tunjanganBeras) || 0,
           },
           kepangkatan: {
-            ...formData.kepangkatan,
+            ...(formData.kepangkatan || {}),
             cummulativeCredit: Number(formData.kepangkatan?.cummulativeCredit) || 0,
           },
           t_instruksional: Number(formData.t_instruksional) || 0,
           koperasiUserId: formData.koperasiUserId !== undefined ? formData.koperasiUserId : null,
           koperasiAuthUid: formData.koperasiAuthUid !== undefined ? formData.koperasiAuthUid : null,
           audit: {
+            ...(formData.audit || {}),
             updatedAt: serverTimestamp(),
             ...(editingEmployee ? {} : { createdAt: serverTimestamp(), sourceFile: 'Web Dashboard' }),
           }
         };
       } else {
-        const { nipy: _nipy, ...blueCollarForm } = formData as BlueCollarEmployee;
         final = {
-          ...blueCollarForm,
+          ...formData,
           employeeId,
           collarType: 'blue_collar',
           bankAccount: {
-            ...formData.bankAccount!,
             accountHolderName: formData.name || '',
+            ...(formData.bankAccount || {}),
           },
           flags: {
+            ...(formData.flags || {}),
             isActive: formData.flags?.isActive ?? true,
             isPayrollEligible: formData.flags?.isActive ?? true,
           },
           audit: {
+            ...(formData.audit || {}),
             updatedAt: serverTimestamp(),
             ...(editingEmployee ? {} : { createdAt: serverTimestamp(), sourceFile: 'Web Dashboard' }),
           },
         };
       }
 
+      let changedFields: string[] = [];
       if (editingEmployee) {
         const diffs = getObjectDiff(editingEmployee, final);
+        changedFields = diffs.map(diff => diff.field);
         if (diffs.length > 0) {
           const pendingChange: PendingEdit = {
             employeeId,
@@ -1028,10 +1086,37 @@ export default function EmployeesPage() {
         }
       }
 
-      setMessage({ type: 'success', text: `Karyawan ${editingEmployee ? 'diperbarui' : 'ditambahkan'}!` });
+      // Push the edit onto any draft slip in an open period. Amounts are
+      // derived server-side from the profile, so this call carries none.
+      let propagationNote = '';
+      if (editingEmployee && changedFields.length > 0) {
+        try {
+          const propagation = await authenticatedJson<{ results: PropagationResult[] }>(
+            '/api/payroll/employee-profile-propagation',
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                employeeId,
+                requestId: createFinancialRequestId('profile-sync'),
+                changedFields,
+              }),
+            },
+          );
+          propagationNote = describePropagation(propagation.results);
+        } catch (propagationErr) {
+          console.error('Gagal menerapkan perubahan ke slip gaji:', propagationErr);
+          propagationNote =
+            ' Namun slip gaji belum diperbarui — buka Payroll › Refresh Massal.';
+        }
+      }
+
+      setMessage({
+        type: 'success',
+        text: `Karyawan ${editingEmployee ? 'diperbarui' : 'ditambahkan'}!${propagationNote}`,
+      });
       setIsDialogOpen(false);
       fetchEmployees();
-      setTimeout(() => setMessage(null), 3000);
+      setTimeout(() => setMessage(null), propagationNote ? 8000 : 3000);
     } catch (err) {
       console.error('Error saving employee:', err);
       setMessage({
@@ -1120,7 +1205,7 @@ export default function EmployeesPage() {
 
       // Revert each pending edit in Firestore
       for (const edit of pendingEdits) {
-        const collectionName = edit.tab === 'loyalis' ? 'Employees_Loyalis' : 'Employees_Pekarya';
+        const collectionName = edit.tab === 'loyalis' ? 'Employees_Loyalis' : 'Employees_BlueCollar';
         const docRef = doc(db, collectionName, edit.employeeId);
         const revertPayload = reconstructNestedObject(edit.changes);
         await setDoc(docRef, revertPayload, { merge: true });
@@ -2108,6 +2193,15 @@ export default function EmployeesPage() {
                         }
                         className="rounded-xl border-slate-200 font-mono"
                         placeholder="Harus sama persis dengan NIPY/PIN pada file presensi"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>NIK (Nomor Induk Kependudukan)</Label>
+                      <Input
+                        value={formData.personal_info?.nik || ''}
+                        onChange={e => updateNestedField('personal_info', 'nik', e.target.value)}
+                        className="rounded-xl border-slate-200"
+                        placeholder="Contoh: 351710..."
                       />
                     </div>
                     <div className="space-y-2"><Label>NPWP</Label><Input value={formData.personal_info?.tax_id_npwp || ''} onChange={e => updateNestedField('personal_info', 'tax_id_npwp', e.target.value)} className="rounded-xl border-slate-200" /></div>

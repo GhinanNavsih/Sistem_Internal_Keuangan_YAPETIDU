@@ -19,6 +19,17 @@ export const FINANCE_ROLES: readonly UserRole[] = [
   'payroll_authorizer',
 ];
 
+/**
+ * Who may edit an employee profile, and therefore trigger propagation of that
+ * profile onto open-period payslips. Narrower than payroll authority: the
+ * propagation route derives every amount server-side, so these roles never get
+ * to name a figure.
+ */
+export const EMPLOYEE_PROFILE_EDITOR_ROLES: readonly UserRole[] = [
+  'super_admin',
+  'employee_admin',
+];
+
 export function isUserRole(value: unknown): value is UserRole {
   return typeof value === 'string' && (USER_ROLES as readonly string[]).includes(value);
 }

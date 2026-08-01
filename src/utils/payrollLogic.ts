@@ -1,42 +1,16 @@
-import { differenceInYears } from 'date-fns';
-import { Employee, SalaryMatrix } from '@/types';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
-export function calculateYearsOfService(joinDate: Date, targetDate: Date): number {
-  const nextMonth5th = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 5);
-  
-  // Normalize both dates to midnight local time to avoid time of day / timezone mismatches
-  const d1 = new Date(joinDate.getFullYear(), joinDate.getMonth(), joinDate.getDate());
-  const d2 = new Date(nextMonth5th.getFullYear(), nextMonth5th.getMonth(), nextMonth5th.getDate());
-  
-  return differenceInYears(d2, d1);
-}
-
-export function calculateGapok(
-  employee: Employee,
-  matrix: SalaryMatrix,
-  targetDate: Date
-): number {
-  const baseDate = employee.dateRecognized || employee.joinDate;
-  const years = calculateYearsOfService(baseDate, targetDate);
-  const gradeKey = employee.gradeLevel ? employee.gradeLevel.replace(/^Gol\.\s*/i, '') : '';
-  const gradeMatrix = matrix[gradeKey] || matrix[employee.gradeLevel];
-  
-  if (!gradeMatrix) return 0;
-  
-  const availableYears = Object.keys(gradeMatrix).map(Number).sort((a, b) => b - a);
-  const minYear = Math.min(...availableYears);
-  const effectiveYears = years < minYear ? minYear : years;
-  
-  const applicableYear = availableYears.find((y) => effectiveYears >= y);
-
-  if (applicableYear !== undefined) {
-    return gradeMatrix[applicableYear];
-  }
-  
-  return 0;
-}
+// The pure salary math lives in @/lib/payroll/salaryMatrix so server code can
+// use it without pulling in the client Firebase SDK. Re-exported here so every
+// existing importer of this module keeps working.
+export {
+  calculateYearsOfService,
+  calculateGapok,
+  matchFunctionalAllowance,
+  toSlipEmployeeView,
+} from '@/lib/payroll/salaryMatrix';
+export type { SlipEmployeeView } from '@/lib/payroll/salaryMatrix';
 
 export async function getBaseSalary(tahun: number, gradeCode: string): Promise<number | null> {
   try {
@@ -111,45 +85,6 @@ export async function getActiveEmployeesByJobCategory(
     console.error(`Error fetching active employees for category ${jobCategory}:`, error);
     throw error;
   }
-}
-
-export function matchFunctionalAllowance(
-  educationLevel: string | undefined | null,
-  functionalTier: number | string | undefined | null,
-  functionalMatrix: Record<string, { base_value: number; functional_tiers: Record<string, number> }>
-): number {
-  if (!educationLevel) return 0;
-  
-  // Clean educationLevel and take 6-char prefix
-  const cleanEmpPrefix = educationLevel.trim().substring(0, 6).toUpperCase();
-  
-  // Find matching row in matrix
-  const matchedKey = Object.keys(functionalMatrix).find(key => 
-    key.trim().substring(0, 6).toUpperCase() === cleanEmpPrefix
-  );
-  
-  if (!matchedKey) return 0;
-  
-  const row = functionalMatrix[matchedKey];
-  const tierStr = String(functionalTier !== undefined && functionalTier !== null ? functionalTier : '').trim();
-  
-  // If functionalTier is specifically '0', return 0
-  if (tierStr === '0') {
-    return 0;
-  }
-
-  // If functionalTier is empty/null, default to base_value
-  if (!tierStr || tierStr === 'null' || tierStr === 'undefined') {
-    return row.base_value;
-  }
-  
-  // If tier is in functional_tiers, return it
-  if (row.functional_tiers[tierStr] !== undefined) {
-    return row.functional_tiers[tierStr];
-  }
-  
-  // Fallback to base_value
-  return row.base_value;
 }
 
 const TITLE_PATTERN = /^(KH\.?|Hj\.?|HJ\.?|H\.?|Ust\.?|Ustadz|Ustadzah|Gus|Nyai|Ning|Lora|Prof\.?|Dr\.?|DR\.?|Drs\.?|DRS\.?|Dra\.?|DRA\.?|Ir\.?|IR\.?)$/i;

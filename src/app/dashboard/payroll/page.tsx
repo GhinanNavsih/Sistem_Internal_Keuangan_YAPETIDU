@@ -81,7 +81,11 @@ import CetakRekapDialog from '@/components/CetakRekapDialog';
 import CetakKebutuhanDanaGajiDialog from '@/components/CetakKebutuhanDanaGajiDialog';
 import { generatePayrollStatementPdf, PayrollStatementData, PayrollStatementEmployee } from '@/utils/generatePayrollStatementPdf';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
-import { isTransferEligibleStatus } from '@/lib/payroll/domain';
+import {
+  defaultPayrollPeriodToken,
+  isTransferEligibleStatus,
+  previousPayrollPeriodToken,
+} from '@/lib/payroll/domain';
 
 import {
   calculateTotalEarnings,
@@ -199,6 +203,9 @@ export default function PayrollValidationDashboard() {
   });
   const [attendancePeriodStatus, setAttendancePeriodStatus] =
     useState<'unconfigured' | 'open' | 'closed'>('unconfigured');
+  // Runs once: the landing period is resolved from the previous period's
+  // closure, and an operator's own choice must never be overwritten by it.
+  const defaultPeriodResolvedRef = useRef(false);
   const [activeTab, setActiveTab] = useState('Tagihan');
   const [notification, setNotification] = useState<{
     show: boolean;
@@ -281,6 +288,43 @@ export default function PayrollValidationDashboard() {
       setSelectedHolidays(initialHolidays);
     }
   }, [showOpenPeriodModal, calendarEditMode, modalYear, modalMonth, modalDaysInMonth]);
+
+  // Land on the month being compiled: before the 6th that is still the previous
+  // period, unless it has already been closed permanently.
+  useEffect(() => {
+    if (defaultPeriodResolvedRef.current) return;
+    if (!profile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(profile.role)) {
+      return;
+    }
+    const now = new Date();
+    const previousPeriod = previousPayrollPeriodToken(now);
+    if (defaultPayrollPeriodToken(now, false) !== previousPeriod) {
+      // Past the cutoff day; the current month is already the right landing.
+      defaultPeriodResolvedRef.current = true;
+      return;
+    }
+    defaultPeriodResolvedRef.current = true;
+    let cancelled = false;
+    getDoc(doc(db, 'PayrollPeriods', previousPeriod))
+      .then((snapshot) => {
+        if (cancelled) return;
+        const previousClosed = snapshot.data()?.attendanceStatus === 'closed';
+        if (defaultPayrollPeriodToken(now, previousClosed) !== previousPeriod) return;
+        const [year, month] = previousPeriod.split('-').map(Number);
+        setTargetDate((current) => {
+          const currentToken = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`;
+          const nowToken = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+          // The operator may already have picked a period while this resolved.
+          return currentToken === nowToken ? new Date(year, month - 1, 1) : current;
+        });
+      })
+      .catch(() => {
+        // Closure state unknown: stay on the current month rather than guess.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile]);
 
   useEffect(() => {
     if (!profile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(profile.role)) {

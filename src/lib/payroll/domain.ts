@@ -354,6 +354,31 @@ export function payrollPeriodForDutyDate(dateOnly: string): string {
   return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
+/**
+ * Payment falls on the 5th, so during the first days of a month the operator is
+ * still compiling the month that just ended. The payroll page therefore opens
+ * on the previous period until the 6th — unless that period has already been
+ * closed permanently, in which case the current month is the one still live.
+ */
+export const PAYROLL_COMPILATION_CUTOFF_DAY = 6;
+
+export function defaultPayrollPeriodToken(
+  now: Date,
+  previousPeriodClosed: boolean,
+): string {
+  const currentToken = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  if (now.getDate() >= PAYROLL_COMPILATION_CUTOFF_DAY || previousPeriodClosed) {
+    return currentToken;
+  }
+  const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function previousPayrollPeriodToken(now: Date): string {
+  const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export function getRegularSatpamPayType(
   dateOnly: string,
   nationalHolidayDates: ReadonlySet<string>,

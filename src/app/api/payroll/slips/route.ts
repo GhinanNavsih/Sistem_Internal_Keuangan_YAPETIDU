@@ -14,6 +14,7 @@ import {
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
+import { DRIFT_NOTICES_COLLECTION } from '@/lib/payroll/slipPropagation';
 import {
   canAuthorizePayroll,
   canOperatePayments,
@@ -400,6 +401,11 @@ export async function POST(request: NextRequest) {
           };
           reason = command.reason?.trim() || 'Penyimpanan draf payroll';
           transaction.set(slipRef, after);
+          // A manual save re-derives from current data, so any profile drift
+          // recorded against this slip has now been dealt with.
+          transaction.delete(
+            adminDb.collection(DRIFT_NOTICES_COLLECTION).doc(slipId),
+          );
           break;
         }
 

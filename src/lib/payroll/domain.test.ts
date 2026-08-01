@@ -5,6 +5,7 @@ import {
   analyzeSatpamShiftSubmission,
   calculatePayrollTotals,
   dedupeSatpamActivityReports,
+  defaultPayrollPeriodToken,
   getRegularSatpamPayType,
   getShiftIsoBounds,
   hasActivityEnded,
@@ -412,5 +413,37 @@ test('Ketua edit uses optimistic revision locking and auditor ownership', () => 
       expectedRevision: 4,
     }),
     'auditor_locked',
+  );
+});
+
+test('payroll lands on the month being compiled until the 6th', () => {
+  // Before the 6th the previous period is still being compiled for the 5th-of-
+  // month payment, so an open previous period wins over the current month.
+  assert.equal(
+    defaultPayrollPeriodToken(new Date(2026, 7, 1), false),
+    '2026-07',
+  );
+  assert.equal(
+    defaultPayrollPeriodToken(new Date(2026, 7, 5), false),
+    '2026-07',
+  );
+  // Once that period is closed there is nothing left to compile in it.
+  assert.equal(
+    defaultPayrollPeriodToken(new Date(2026, 7, 1), true),
+    '2026-08',
+  );
+  // From the 6th onward the current month is the live period either way.
+  assert.equal(
+    defaultPayrollPeriodToken(new Date(2026, 7, 6), false),
+    '2026-08',
+  );
+  assert.equal(
+    defaultPayrollPeriodToken(new Date(2026, 7, 20), false),
+    '2026-08',
+  );
+  // January rolls back across the year boundary.
+  assert.equal(
+    defaultPayrollPeriodToken(new Date(2027, 0, 3), false),
+    '2026-12',
   );
 });

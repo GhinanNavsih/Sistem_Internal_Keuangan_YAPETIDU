@@ -197,6 +197,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Raised when an employee-profile edit could not be applied to a slip that
+    // was already verified or locked. Written only by
+    // /api/payroll/employee-profile-propagation via the Admin SDK.
+    match /PayrollProfileDriftNotices/{docId} {
+      allow read: if isFinanceRole() || isEmployeeAdmin();
+      allow write: if false;
+    }
+
     match /PayrollLedgerEntries/{docId} {
       allow read: if isFinanceRole();
       allow write: if false;
