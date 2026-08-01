@@ -198,7 +198,7 @@ export function generateSatpamDutyPlanPdf(
       1: { halign: 'center', cellWidth: 17 }, // Tanggal
       2: { halign: 'center', cellWidth: 14 }, // Hari
       3: { halign: 'center', cellWidth: 15, fontStyle: 'bold' }, // Shift
-      4: { cellWidth: 22, fontStyle: 'bold' }, // Pos 1 IC
+      4: { cellWidth: 22 }, // Pos 1 IC
       5: { cellWidth: 24 }, // Pos 8 Parkiran FIK
       6: { cellWidth: 20 }, // Pos 6 Gor
       7: { cellWidth: 24 }, // Pos 5 Masjid Induk
