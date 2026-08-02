@@ -14,6 +14,21 @@ export interface SlipField {
 }
 
 /**
+ * Use the saved slip's Gaji Pokok when one exists, including an explicit zero.
+ * The fallback is used for slips that have not been saved yet.
+ */
+export function resolveGapokFromSlip(
+  earnings: ReadonlyArray<Pick<SlipField, 'label' | 'amount'>>,
+  fallback: number,
+): number {
+  const gapokField = earnings.find(
+    (field) => field.label === 'Gaji Pokok' || field.label === 'Gapok',
+  );
+
+  return gapokField?.amount ?? fallback;
+}
+
+/**
  * The rekap columns a blue-collar slip is built from, for one Uraian entry.
  *
  * Which column set applies depends on the entry itself: once attendance is

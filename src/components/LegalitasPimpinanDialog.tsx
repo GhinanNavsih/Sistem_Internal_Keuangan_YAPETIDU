@@ -18,6 +18,7 @@ import { PaySlipField } from '@/utils/generatePaySlipPdf';
 import { generateLegalitasPimpinanPdf, LegalitasEmployeeData, LegalitasPimpinanData } from '@/utils/generateLegalitasPimpinanPdf';
 import { generateLegalitasPimpinanXlsx } from '@/utils/generateLegalitasPimpinanXlsx';
 import { calculateGapok } from '@/utils/payrollLogic';
+import { resolveGapokFromSlip } from '@/lib/payroll/slipBuilders';
 
 interface EmployeeRow {
   id: string;
@@ -245,7 +246,6 @@ export default function LegalitasPimpinanDialog({
       let totalEarnings = 0;
       let totalDeductions = 0;
       let netSalary = 0;
-      let gapokVal = gapok;
 
       if (slip && slip.earnings && slip.earnings.length > 0) {
         earnings = slip.earnings;
@@ -263,7 +263,9 @@ export default function LegalitasPimpinanDialog({
       totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
       totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
       netSalary = totalEarnings - totalDeductions;
-      gapokVal = gapok;
+      // Keep Legalitas aligned with the payslip modal. A saved slip may
+      // intentionally override the matrix value, including setting Gapok to 0.
+      const gapokVal = resolveGapokFromSlip(earnings, gapok);
 
       return {
         employeeNo: idx + 1,

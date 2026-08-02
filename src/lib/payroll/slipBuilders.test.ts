@@ -1,9 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildInitialEarnings, buildInitialDeductions } from './slipBuilders';
+import {
+  buildInitialEarnings,
+  buildInitialDeductions,
+  resolveGapokFromSlip,
+} from './slipBuilders';
 
 const amountOf = (fields: { label: string; amount: number }[], label: string) =>
   fields.find((field) => field.label === label)?.amount;
+
+test('a saved zero Gaji Pokok overrides the calculated fallback', () => {
+  assert.equal(
+    resolveGapokFromSlip([{ label: 'Gaji Pokok', amount: 0 }], 139_750),
+    0,
+  );
+});
 
 test('a Loyalis BPJS deduction on the profile lands on the slip', () => {
   const deductions = buildInitialDeductions(
