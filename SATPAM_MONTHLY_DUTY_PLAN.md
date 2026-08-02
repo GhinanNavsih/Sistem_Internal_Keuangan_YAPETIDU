@@ -49,6 +49,28 @@ The plan is saved with a revision and a roster snapshot. A team-roster change
 marks affected future dates stale and requires the plan to be regenerated or
 corrected.
 
+### Pos 9 Satpam across teams
+
+Each published team plan names one monthly **Pos 9 Satpam Regu** for Pos 9
+Hurun-inn. The three non-stale team plans therefore form the period's complete
+set of three Pos 9 Satpam. The Ketua normally selects the Pos 9 Satpam from
+their own regu, but the daily report also allows any active Satpam as a
+substitute so an unexpected replacement can be recorded. Pos 2 remains the
+Ketua Shift / Keliling assignment.
+
+When a Ketua selects one of the other two designated Pos 9 Satpam, the report
+defaults to **Harian**. The Ketua may explicitly choose **Lembur Sendiri** or
+**Lembur Cover** for that cross-team Pos 9 assignment. Harian is retained even
+on a Friday or holiday for this special cross-team case, as requested by the
+operational rule. Lembur Cover must identify the member being covered, normally
+the regu's own planned Pos 9 Satpam.
+
+An employee who is not one of the three designated Pos 9 Satpam receives a
+**Pos 9 guard mismatch** warning for Kepala SatKer review; the report can still
+be submitted and the auditor decides whether the substitution is acceptable.
+These Pos 9 rules do not change the nine-post uniqueness check or the separate
+bonus-duty reconciliation.
+
 ## Daily reporting and payment classification
 
 The Ketua Shift submits the actual roster for each date. The form is deliberately

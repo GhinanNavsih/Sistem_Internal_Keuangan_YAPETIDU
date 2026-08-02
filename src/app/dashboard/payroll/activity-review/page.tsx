@@ -251,6 +251,7 @@ interface ActivityReport {
   coveredEmployeeId?: string | null;
   overtimeReason?: string | null;
   absenceKind?: string;
+  scheduleRelation?: string | null;
 }
 
 interface SatpamShiftGroup {
@@ -422,6 +423,7 @@ const SATPAM_ANOMALY_LABELS: Record<string, string> = {
   DUTY_PLAN_STALE: 'Rencana dinas perlu diperbarui',
   DUTY_PLAN_BACKFILL_PENDING: 'Jadwal dinas belum disetujui',
   ACTUAL_ROSTER_DIFFERS: 'Petugas beda dari rencana',
+  POS9_GUARD_MISMATCH: 'Pos 9 memakai petugas pengganti',
   EXTRA_NOT_OFF_DUTY: 'Lembur di luar hari libur',
   EXTRA_WITH_INCOMPLETE_PRIMARY_ROSTER: 'Lembur saat regu belum lengkap',
   ABSENCE_WORK_CONFLICT: 'Konflik izin & tugas',
@@ -2393,7 +2395,12 @@ export default function ActivityReviewPage() {
                                                 )}
                                                 {item.postId === 'Pos 9' && (
                                                   <span className="mt-1 block text-[10px] font-bold text-violet-700">
-                                                    Petugas Tetap
+                                                    Pos 9 Satpam Regu
+                                                  </span>
+                                                )}
+                                                {item.scheduleRelation === 'cross_team_pos9' && (
+                                                  <span className="mt-1 block text-[10px] font-bold text-amber-700">
+                                                    Pengganti lintas regu — periksa klasifikasi
                                                   </span>
                                                 )}
                                               </div>

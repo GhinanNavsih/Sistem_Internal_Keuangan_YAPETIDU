@@ -672,6 +672,9 @@ function ActivitiesContent() {
   // ── Satpam Shift Teams States ──
   const [myShiftTeam, setMyShiftTeam] = useState<any | null>(null);
   const [allSatpamEmployees, setAllSatpamEmployees] = useState<any[]>([]);
+  const [satpamPos9Guards, setSatpamPos9Guards] = useState<
+    Array<{ employeeId: string; teamId: string; name: string }>
+  >([]);
   const [loadingSatpamConfig, setLoadingSatpamConfig] = useState(false);
   const [satpamReportDate, setSatpamReportDate] = useState<string>(getInitialSatpamDateISO());
   const [satpamSubmitting, setSatpamSubmitting] = useState(false);
@@ -699,6 +702,7 @@ function ActivitiesContent() {
     revision: number;
     status: string;
     warning: string | null;
+    fixedPost9EmployeeId: string | null;
     day: null | {
       dutyDate: string;
       shiftName: 'Pagi' | 'Sore' | 'Malam';
@@ -1480,6 +1484,7 @@ function ActivitiesContent() {
         const config = await authenticatedJson<{
           team: any;
           employees: { id: string; name: string; isActive?: boolean }[];
+          pos9Guards: Array<{ employeeId: string; teamId: string; name: string }>;
           shiftName: 'Pagi' | 'Sore' | 'Malam';
           regularPayType: 'Harian' | 'Jumat & Libur';
           holidayCalendarConfigured: boolean;
@@ -1497,6 +1502,7 @@ function ActivitiesContent() {
             revision: number;
             status: string;
             warning: string | null;
+            fixedPost9EmployeeId: string | null;
             day: null | {
               dutyDate: string;
               shiftName: 'Pagi' | 'Sore' | 'Malam';
@@ -1509,6 +1515,7 @@ function ActivitiesContent() {
         });
         setMyShiftTeam(config.team);
         setAllSatpamEmployees(config.employees);
+        setSatpamPos9Guards(config.pos9Guards || []);
         setSatpamSuggestedShiftName(config.shiftName);
         setSatpamRegularPayType(config.regularPayType);
         setHolidayCalendarConfigured(config.holidayCalendarConfigured);
@@ -2205,6 +2212,17 @@ function ActivitiesContent() {
     return allSatpamEmployees.filter(emp => !groupEmployeeIds.includes(emp.id) && emp.isActive !== false);
   }, [allSatpamEmployees, groupEmployeeIds]);
 
+  const pos9GuardIds = useMemo(
+    () => new Set(satpamPos9Guards.map((guard) => guard.employeeId)),
+    [satpamPos9Guards],
+  );
+  const pos9Employees = useMemo(
+    () => allSatpamEmployees.filter(
+      (employee) => pos9GuardIds.has(employee.id) && employee.isActive !== false,
+    ),
+    [allSatpamEmployees, pos9GuardIds],
+  );
+
   const visibleGroupEmployees = useMemo(() => {
     const search = satpamEmployeeSearch.trim().toLocaleLowerCase('id');
     if (!search) return groupEmployees;
@@ -2221,10 +2239,37 @@ function ActivitiesContent() {
     );
   }, [externalEmployees, satpamEmployeeSearch]);
 
+  const visiblePos9Employees = useMemo(() => {
+    const search = satpamEmployeeSearch.trim().toLocaleLowerCase('id');
+    if (!search) return pos9Employees;
+    return pos9Employees.filter((employee) =>
+      String(employee.name || '').toLocaleLowerCase('id').includes(search),
+    );
+  }, [pos9Employees, satpamEmployeeSearch]);
+
+  const visibleAllSatpamEmployees = useMemo(() => {
+    const search = satpamEmployeeSearch.trim().toLocaleLowerCase('id');
+    if (!search) return allSatpamEmployees.filter((employee) => employee.isActive !== false);
+    return allSatpamEmployees.filter(
+      (employee) =>
+        employee.isActive !== false &&
+        String(employee.name || '').toLocaleLowerCase('id').includes(search),
+    );
+  }, [allSatpamEmployees, satpamEmployeeSearch]);
+
   const teamNumber = useMemo(() => {
     if (!myShiftTeam) return 1;
     return parseInt(myShiftTeam.id.split('_')[1], 10) || 1;
   }, [myShiftTeam]);
+
+  const isCrossTeamPos9Guard = useCallback(
+    (postId: string, employeeId: string) =>
+      postId === 'Pos 9' &&
+      Boolean(employeeId) &&
+      pos9GuardIds.has(employeeId) &&
+      employeeId !== satpamDutyPlan?.fixedPost9EmployeeId,
+    [pos9GuardIds, satpamDutyPlan?.fixedPost9EmployeeId],
+  );
 
   const activeShift = useMemo(() => {
     if (!isKetuaShiftSatpam) return 'Pagi';
@@ -2688,6 +2733,14 @@ function ActivitiesContent() {
     if (assigned.length < POSTS_CONFIG.length) {
       warnings.push(`${POSTS_CONFIG.length - assigned.length} pos belum diisi.`);
     }
+    const pos9Assignment = postAssignments['Pos 9'];
+    if (
+      pos9Assignment?.employeeId &&
+      pos9GuardIds.size > 0 &&
+      !pos9GuardIds.has(pos9Assignment.employeeId)
+    ) {
+      warnings.push('Pos 9 diisi petugas pengganti, bukan salah satu dari tiga Pos 9 Satpam. Kepala SatKer perlu memeriksa substitusi ini.');
+    }
     if (new Set(assignedIds).size !== assignedIds.length || (extraEmployeeId && assignedIds.includes(extraEmployeeId))) {
       warnings.push('Ada nama petugas yang dipilih lebih dari satu kali.');
     }
@@ -2781,8 +2834,11 @@ function ActivitiesContent() {
   const handleSelectGuard = (postId: string, employeeId: string) => {
     setPostAssignments(prev => {
       const isExternal = !groupEmployeeIds.includes(employeeId) && employeeId !== '';
-      const defaultType = isExternal
-        ? 'Lembur Cover'
+      const isCrossTeamPos9 = isCrossTeamPos9Guard(postId, employeeId);
+      const defaultType = isCrossTeamPos9
+        ? 'Harian'
+        : isExternal
+          ? 'Lembur Cover'
         : getDefaultShiftTypeForDate(satpamReportDate);
 
       return {
@@ -3780,11 +3836,25 @@ function ActivitiesContent() {
                     <h3 className="text-base font-bold text-slate-600 border-b border-slate-100 pb-2">
                       Penugasan Pos Keamanan (9 Pos)
                     </h3>
+                    {pos9GuardIds.size < 3 && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                        Tiga petugas Pos 9 belum lengkap dari rencana regu periode ini. Pos 9 tetap dapat dilaporkan, tetapi perlu diperiksa Kepala SatKer.
+                      </div>
+                    )}
 
                     <div className="space-y-3.5">
                       {POSTS_CONFIG.map((post) => {
                         const defaultShiftTypeForRender = getDefaultShiftTypeForDate(satpamReportDate);
                         const val = postAssignments[post.id] || { employeeId: '', shiftType: defaultShiftTypeForRender };
+                        const isCrossTeamPos9 = isCrossTeamPos9Guard(post.id, val.employeeId);
+                        const selectedShiftType = isCrossTeamPos9
+                          ? (['Harian', 'Lembur Sendiri', 'Lembur Cover'].includes(val.shiftType)
+                            ? val.shiftType
+                            : 'Harian')
+                          : (val.shiftType === 'Lembur Cover' ? 'Lembur Cover' : defaultShiftTypeForRender);
+                        const coverCandidates = isCrossTeamPos9 && satpamDutyPlan?.fixedPost9EmployeeId
+                          ? groupEmployees.filter((employee) => employee.id === satpamDutyPlan.fixedPost9EmployeeId)
+                          : visibleGroupEmployees.filter((employee) => !assignedEmployeeIds.includes(employee.id));
                         const isPlannedRegular = Boolean(
                           val.employeeId &&
                           satpamDutyPlan?.day?.assignments.some(
@@ -3809,7 +3879,7 @@ function ActivitiesContent() {
                               )}
                               {post.id === 'Pos 9' && satpamDutyPlan?.day && (
                                 <span className="mt-1 block text-sm font-bold text-violet-700">
-                                  Petugas Tetap
+                                  Pos 9 Satpam Regu
                                 </span>
                               )}
                             </div>
@@ -3830,44 +3900,66 @@ function ActivitiesContent() {
                                   <SelectItem value="none" className="text-base py-3 pl-3 text-slate-500 italic">
                                     -- Kosongkan Pos --
                                   </SelectItem>
-                                  <SelectGroup>
-                                    <SelectLabel className="text-base font-black text-purple-700 px-2 py-2 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
-                                    {visibleGroupEmployees.map(emp => (
-                                      <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
-                                        {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectGroup>
-                                  <SelectSeparator className="my-1" />
-                                  <SelectGroup>
-                                    <SelectLabel className="text-base font-black text-slate-600 px-2 py-2 bg-slate-50">Satpam Regu Lain (Lembur Cover)</SelectLabel>
-                                    {visibleExternalEmployees.map(emp => (
-                                      <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
-                                        {emp.name} {emp.isActive === false ? '· perlu verifikasi' : ''}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectGroup>
+                                  {post.id === 'Pos 9' ? (
+                                    <SelectGroup>
+                                      <SelectLabel className="text-base font-black text-violet-700 px-2 py-2 bg-violet-50/50">
+                                        Tiga Pos 9 Satpam
+                                      </SelectLabel>
+                                      {visiblePos9Employees.map(emp => (
+                                        <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                          {emp.name}
+                                        </SelectItem>
+                                      ))}
+                                      <SelectSeparator className="my-1" />
+                                      <SelectLabel className="text-base font-black text-slate-600 px-2 py-2 bg-slate-50">
+                                        Petugas Satpam Lain (pengganti)
+                                      </SelectLabel>
+                                      {visibleAllSatpamEmployees
+                                        .filter((employee) => !pos9GuardIds.has(employee.id))
+                                        .map((emp) => (
+                                          <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                            {emp.name} {groupEmployeeIds.includes(emp.id) ? '· Regu Anda' : '· Regu lain'}
+                                          </SelectItem>
+                                        ))}
+                                    </SelectGroup>
+                                  ) : (
+                                    <>
+                                      <SelectGroup>
+                                        <SelectLabel className="text-base font-black text-purple-700 px-2 py-2 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
+                                        {visibleGroupEmployees.map(emp => (
+                                          <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                            {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectGroup>
+                                      <SelectSeparator className="my-1" />
+                                      <SelectGroup>
+                                        <SelectLabel className="text-base font-black text-slate-600 px-2 py-2 bg-slate-50">Satpam Regu Lain (Lembur Cover)</SelectLabel>
+                                        {visibleExternalEmployees.map(emp => (
+                                          <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
+                                            {emp.name} {emp.isActive === false ? '· perlu verifikasi' : ''}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectGroup>
+                                    </>
+                                  )}
                                 </SelectContent>
                               </Select>
                             </div>
 
-                            {/* Shift / Pay Type Selection.
-                                Only two options are real: the guard's ordinary
-                                duty rate for this date (server-derived from the
-                                holiday calendar — never freely selectable,
-                                since neither Friday/holiday pay nor Lembur
-                                Sendiri can be claimed on an arbitrary day) and
-                                Lembur Cover, which requires naming who is being
-                                covered. Offering more than that would promise a
-                                rate the backend will never actually pay. */}
+                            {/* Shift / pay type is normally derived from the work
+                                calendar. The Pos 9 Satpam exception is explicit:
+                                a designated guard from another team defaults to
+                                Harian, with optional Lembur Sendiri or Lembur
+                                Cover classification. */}
                             <div className="md:col-span-4">
-                              {satpamDutyPlan?.enabled && satpamDutyPlan.day ? (
+                              {satpamDutyPlan?.enabled && satpamDutyPlan.day && !isCrossTeamPos9 ? (
                                 <div className="flex min-h-12 w-full items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-base font-extrabold text-indigo-800">
                                   {plannedPayLabel}
                                 </div>
                               ) : (
                               <Select
-                                value={val.shiftType === 'Lembur Cover' ? 'Lembur Cover' : defaultShiftTypeForRender}
+                                value={selectedShiftType}
                                 onValueChange={(type: string | null) => {
                                   if (type) handleShiftTypeChange(post.id, type);
                                 }}
@@ -3877,9 +3969,16 @@ function ActivitiesContent() {
                                   <SelectValue placeholder="Pilih Jenis Shift" />
                                 </SelectTrigger>
                                 <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
-                                  <SelectItem value={defaultShiftTypeForRender} className="text-base font-bold">
-                                    {defaultShiftTypeForRender} ({defaultShiftTypeForRender === 'Jumat & Libur' ? 'Rp25.000' : 'Rp12.500'})
-                                  </SelectItem>
+                                  {isCrossTeamPos9 ? (
+                                    <>
+                                      <SelectItem value="Harian" className="text-base font-bold">Harian (Rp12.500)</SelectItem>
+                                      <SelectItem value="Lembur Sendiri" className="text-base font-bold">Lembur Sendiri (Rp30.000)</SelectItem>
+                                    </>
+                                  ) : (
+                                    <SelectItem value={defaultShiftTypeForRender} className="text-base font-bold">
+                                      {defaultShiftTypeForRender} ({defaultShiftTypeForRender === 'Jumat & Libur' ? 'Rp25.000' : 'Rp12.500'})
+                                    </SelectItem>
+                                  )}
                                   <SelectItem value="Lembur Cover" className="text-base font-bold">
                                     Lembur Cover (Rp50.000)
                                   </SelectItem>
@@ -3903,9 +4002,7 @@ function ActivitiesContent() {
                                   </SelectTrigger>
                                   <SelectContent className="w-[var(--radix-select-trigger-width)] min-w-[240px] rounded-xl border border-slate-100 shadow-xl bg-white p-1 z-50">
                                     <SelectItem value="none">-- Pilih anggota --</SelectItem>
-                                    {visibleGroupEmployees
-                                      .filter(emp => !assignedEmployeeIds.includes(emp.id))
-                                      .map(emp => (
+                                    {coverCandidates.map(emp => (
                                         <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
                                       ))}
                                   </SelectContent>

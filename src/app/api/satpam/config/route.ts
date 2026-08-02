@@ -12,7 +12,10 @@ import {
   satpamAdvancePlanningPeriod,
 } from '@/lib/payroll/satpamDutyPlan';
 import { isSatpamFlexibilityEnabled } from '@/lib/server/satpamFlexibility';
-import { loadSatpamDutyPlanContext } from '@/lib/server/satpamDutyPlan';
+import {
+  SATPAM_DUTY_PLANS_COLLECTION,
+  loadSatpamDutyPlanContext,
+} from '@/lib/server/satpamDutyPlan';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { isPeriodClosed, jakartaToday } from '@/lib/server/payrollPeriod';
 import {
@@ -90,6 +93,10 @@ export async function GET(request: NextRequest) {
       .sort((left, right) => left.name.localeCompare(right.name, 'id'));
 
     const dutyPeriod = payrollPeriodForDutyDate(dutyDate);
+    const pos9PlansSnapshot = await adminDb
+      .collection(SATPAM_DUTY_PLANS_COLLECTION)
+      .where('period', '==', dutyPeriod)
+      .get();
     const [holidaysSnapshot, dutyPeriodSnapshot] = await Promise.all([
       year
         ? adminDb.collection('PayrollHolidayCalendars').doc(year).get()
@@ -113,6 +120,24 @@ export async function GET(request: NextRequest) {
       teamSnapshot.id,
       dutyDate,
     );
+    const pos9Guards = pos9PlansSnapshot.docs
+      .filter((snapshot) => snapshot.data()?.status !== 'stale')
+      .map((snapshot) => {
+        const data = snapshot.data();
+        const employeeId = String(data.fixedPost9EmployeeId || '');
+        const employee = employeeDocuments.get(employeeId);
+        return employeeId
+          ? {
+              employeeId,
+              teamId: String(data.teamId || snapshot.id),
+              name: String(employee?.data()?.name || employeeId),
+            }
+          : null;
+      })
+      .filter(
+        (value): value is { employeeId: string; teamId: string; name: string } =>
+          value !== null,
+      );
 
     const teamNumber = Number(teamSnapshot.id.split('_')[1]);
     if (![1, 2, 3].includes(teamNumber)) {
@@ -187,6 +212,7 @@ export async function GET(request: NextRequest) {
         openPeriods,
         planningPeriods,
         flexibilityEnabled: isSatpamFlexibilityEnabled(teamSnapshot.id),
+        pos9Guards,
         dutyPlan: {
           enabled: isSatpamDutyPlanRequired(
             dutyPeriod,
@@ -201,6 +227,8 @@ export async function GET(request: NextRequest) {
             : dutyPlanContext.plan.status !== 'published'
               ? 'Rencana dinas masih memerlukan pemeriksaan Kepala SatKer.'
               : null,
+          fixedPost9EmployeeId:
+            dutyPlanContext.plan?.fixedPost9EmployeeId || null,
         },
       },
       {

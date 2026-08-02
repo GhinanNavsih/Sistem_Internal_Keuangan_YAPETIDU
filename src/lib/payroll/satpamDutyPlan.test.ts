@@ -233,6 +233,66 @@ test('server classification distinguishes regular, Cover, and Lembur Sendiri', (
   assert.deepEqual(extraResult.anomalyCodes, []);
 });
 
+test('a cross-team Pos 9 guard defaults to Harian and may use either overtime type', () => {
+  const [planDay] = generatePlan('2026-08-01', '2026-08-08').generatedDays;
+  const otherTeamPos9 = 'SAT-99';
+  const pos9Replaced = planDay.assignments.map((assignment) =>
+    assignment.postId === SATPAM_FIXED_POST_ID
+      ? { ...assignment, employeeId: otherTeamPos9, shiftType: 'Harian' as const }
+      : assignment,
+  );
+  const pos9Guards = new Set([fixedPost9EmployeeId, otherTeamPos9]);
+
+  const regular = classifySatpamDutyAssignments({
+    planDay,
+    primaryAssignments: pos9Replaced,
+    regularPayType: 'Jumat & Libur',
+    teamRosterEmployeeIds: new Set(roster),
+    pos9GuardIds: pos9Guards,
+  });
+  assert.equal(
+    regular.assignments.find((assignment) => assignment.postId === SATPAM_FIXED_POST_ID)?.payType,
+    'Harian',
+  );
+
+  const self = classifySatpamDutyAssignments({
+    planDay,
+    primaryAssignments: pos9Replaced.map((assignment) =>
+      assignment.postId === SATPAM_FIXED_POST_ID
+        ? { ...assignment, shiftType: 'Lembur Sendiri' as const }
+        : assignment,
+    ),
+    regularPayType: 'Harian',
+    teamRosterEmployeeIds: new Set(roster),
+    pos9GuardIds: pos9Guards,
+  });
+  assert.equal(
+    self.assignments.find((assignment) => assignment.postId === SATPAM_FIXED_POST_ID)?.payType,
+    'Lembur Sendiri',
+  );
+
+  const cover = classifySatpamDutyAssignments({
+    planDay,
+    primaryAssignments: pos9Replaced.map((assignment) =>
+      assignment.postId === SATPAM_FIXED_POST_ID
+        ? {
+            ...assignment,
+            shiftType: 'Lembur Cover' as const,
+            coveredEmployeeId: fixedPost9EmployeeId,
+          }
+        : assignment,
+    ),
+    regularPayType: 'Harian',
+    teamRosterEmployeeIds: new Set(roster),
+    pos9GuardIds: pos9Guards,
+  });
+  const covered = cover.assignments.find(
+    (assignment) => assignment.postId === SATPAM_FIXED_POST_ID,
+  );
+  assert.equal(covered?.payType, 'Lembur Cover');
+  assert.equal(covered?.coveredEmployeeId, fixedPost9EmployeeId);
+});
+
 test('off-day overtime cannot replace a missed scheduled duty for bonus', () => {
   const planDays: SatpamDutyPlanDay[] = [
     {

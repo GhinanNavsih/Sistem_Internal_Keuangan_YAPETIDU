@@ -758,11 +758,11 @@ export function SatpamDutyPlanPanel(props: {
             </div>
             <div className="space-y-3">
               <p className="font-bold text-slate-900">
-                Langkah 2 · Pilih petugas tetap Pos 9
+                Langkah 2 · Pilih Pos 9 Satpam Regu
               </p>
               <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
                 <Label htmlFor="satpam-fixed-pos-9">
-                  Pos 9 Hurun-inn — Petugas Tetap
+                  Pos 9 Hurun-inn — Pos 9 Satpam Regu
                 </Label>
                 <div className="mt-2">
                   <LargeSelect
@@ -778,7 +778,7 @@ export function SatpamDutyPlanPanel(props: {
                   />
                 </div>
                 <p className="mt-2 text-sm text-violet-800">
-                  Petugas ini dijadwalkan di Pos 9 pada setiap tanggal periode.
+                  Petugas ini menjadi Pos 9 Satpam Regu Anda pada setiap tanggal periode.
                 </p>
               </div>
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
@@ -994,7 +994,7 @@ export function SatpamDutyPlanPanel(props: {
                       <span className="mt-1 block text-sm font-medium text-slate-500">
                         {assignment.postId === 'Pos 2'
                           ? 'Ketua Shift / Keliling'
-                          : 'Petugas tetap periode ini'}
+                          : 'Pos 9 Satpam Regu ini'}
                       </span>
                     </div>
                   ) : (
@@ -1088,7 +1088,7 @@ export function SatpamDutyPlanPanel(props: {
           Jadwal Regu Satu Periode
         </CardTitle>
         <p className="text-base text-slate-600">
-          Pilih petugas tetap Pos 9 dan susunan awal. Sistem melanjutkan
+          Pilih Pos 9 Satpam Regu dan susunan awal. Sistem melanjutkan
           rotasi delapan hari untuk seluruh jendela payroll.
         </p>
       </CardHeader>

@@ -10,6 +10,7 @@ import {
   getRegularSatpamPayType,
   getShiftIsoBounds,
   payrollPeriodForDutyDate,
+  resolveCrossTeamPos9PayType,
   resolveSatpamAssignmentPayType,
   SATPAM_POSTS,
   SATPAM_RATES,
@@ -200,6 +201,12 @@ function parseCommand(raw: unknown, ketuaShiftId: string, requireEditFields: boo
   }
 
   const validPostIds = new Set<string>(SATPAM_POSTS.map((post) => post.id));
+  const validAssignmentTypes = new Set<string>([
+    'Harian',
+    'Jumat & Libur',
+    'Lembur Sendiri',
+    'Lembur Cover',
+  ]);
   const assignments = input.assignments.map((rawAssignment) => {
     if (!rawAssignment || typeof rawAssignment !== 'object' || Array.isArray(rawAssignment)) {
       throw new HttpError(400, 'Baris penugasan tidak valid.');
@@ -212,6 +219,13 @@ function parseCommand(raw: unknown, ketuaShiftId: string, requireEditFields: boo
       !assignment.employeeId.trim()
     ) {
       throw new HttpError(400, 'Data pos atau petugas tidak valid.');
+    }
+    if (
+      assignment.shiftType !== undefined &&
+      (typeof assignment.shiftType !== 'string' ||
+        !validAssignmentTypes.has(assignment.shiftType))
+    ) {
+      throw new HttpError(400, 'Jenis shift penugasan tidak valid.');
     }
     if (
       assignment.coveredEmployeeId !== undefined &&
@@ -229,8 +243,10 @@ function parseCommand(raw: unknown, ketuaShiftId: string, requireEditFields: boo
     return {
       postId: assignment.postId as SatpamPostId,
       employeeId: assignment.employeeId.trim(),
-      ...(assignment.shiftType === 'Lembur Cover'
-        ? { shiftType: 'Lembur Cover' as const }
+      ...(assignment.shiftType !== undefined
+        ? {
+            shiftType: assignment.shiftType as Exclude<SatpamPayType, 'Off-Duty'>,
+          }
         : {}),
       ...(typeof assignment.coveredEmployeeId === 'string' &&
       assignment.coveredEmployeeId.trim()
@@ -331,6 +347,7 @@ function buildAssignmentRecords(input: {
   regularPayType: 'Harian' | 'Jumat & Libur';
   planDay: SatpamDutyPlanDay | null;
   canonicalPlanEnabled: boolean;
+  pos9GuardIds: ReadonlySet<string>;
 }): AssignmentRecord[] {
   if (input.canonicalPlanEnabled) {
     const classified = classifySatpamDutyAssignments({
@@ -338,6 +355,8 @@ function buildAssignmentRecords(input: {
       primaryAssignments: input.command.assignments.map((assignment) => ({
         postId: assignment.postId,
         employeeId: assignment.employeeId,
+        shiftType: assignment.shiftType,
+        coveredEmployeeId: assignment.coveredEmployeeId || null,
       })),
       extraAssignment: input.command.extraAssignment
         ? {
@@ -347,6 +366,7 @@ function buildAssignmentRecords(input: {
         : null,
       regularPayType: input.regularPayType,
       teamRosterEmployeeIds: new Set(input.roster),
+      pos9GuardIds: input.pos9GuardIds,
     });
     return classified.assignments.map((assignment, index) => {
       const source =
@@ -394,11 +414,17 @@ function buildAssignmentRecords(input: {
   }
   const primary = input.command.assignments.map((assignment, index) => {
     const isExternal = !input.roster.includes(assignment.employeeId);
-    const payType = resolveSatpamAssignmentPayType(
-      assignment.shiftType,
-      isExternal,
-      input.regularPayType,
-    );
+    const isCrossTeamPos9 =
+      assignment.postId === 'Pos 9' &&
+      input.pos9GuardIds.has(assignment.employeeId) &&
+      isExternal;
+    const payType = isCrossTeamPos9
+      ? resolveCrossTeamPos9PayType(assignment.shiftType)
+      : resolveSatpamAssignmentPayType(
+          assignment.shiftType,
+          isExternal,
+          input.regularPayType,
+        );
     const employee = input.employeeById.get(assignment.employeeId);
     return {
       assignmentKey: `primary_${assignment.postId}_${index}`,
@@ -415,7 +441,7 @@ function buildAssignmentRecords(input: {
         payType === 'Lembur Cover' ? assignment.overtimeReason?.trim() || null : null,
       photoUrl: assignment.photoUrl || null,
       photoAuditMetadata: assignment.photoAuditMetadata || null,
-      scheduleRelation: null,
+      scheduleRelation: isCrossTeamPos9 ? 'cross_team_pos9' : null,
     };
   });
   if (!input.command.extraAssignment) return primary;
@@ -449,6 +475,7 @@ function buildAnomalies(input: {
   roster: string[];
   employeeById: Map<string, FirebaseFirestore.DocumentSnapshot>;
   holidayCalendarConfigured: boolean;
+  pos9GuardIds: ReadonlySet<string>;
 }): SatpamShiftAnomaly[] {
   const activeSatpamIds = new Set(
     Array.from(input.employeeById.entries())
@@ -457,7 +484,8 @@ function buildAnomalies(input: {
   );
   const normalizedAssignments = input.command.assignments.map((assignment) => ({
     ...assignment,
-    ...(!input.roster.includes(assignment.employeeId)
+    ...(!input.roster.includes(assignment.employeeId) &&
+    !(assignment.postId === 'Pos 9' && input.pos9GuardIds.has(assignment.employeeId))
       ? { shiftType: 'Lembur Cover' as const }
       : {}),
   }));
@@ -468,6 +496,7 @@ function buildAnomalies(input: {
     ketuaShiftId: input.ketuaShiftId,
     assignments: normalizedAssignments,
     activeSatpamIds,
+    pos9GuardIds: input.pos9GuardIds,
     holidayCalendarConfigured: input.holidayCalendarConfigured,
   });
 
@@ -664,6 +693,9 @@ async function mutateShift(
     const dutyPlanRef = adminDb
       .collection(SATPAM_DUTY_PLANS_COLLECTION)
       .doc(satpamDutyPlanId(period, teamSnapshot.id));
+    const pos9PlansQuery = adminDb
+      .collection(SATPAM_DUTY_PLANS_COLLECTION)
+      .where('period', '==', period);
     const selectedEmployeeIds = Array.from(
       new Set([
         ...roster,
@@ -681,6 +713,7 @@ async function mutateShift(
       holidaySnapshot,
       idempotencySnapshot,
       dutyPlanSnapshot,
+      pos9PlanSnapshots,
       ...employeeSnapshots
     ] = await Promise.all([
       transaction.get(occurrenceRef),
@@ -688,6 +721,7 @@ async function mutateShift(
       transaction.get(holidayRef),
       transaction.get(idempotencyRef),
       transaction.get(dutyPlanRef),
+      transaction.get(pos9PlansQuery),
       ...employeeRefs.map((ref) => transaction.get(ref)),
     ]);
 
@@ -781,6 +815,12 @@ async function mutateShift(
     const employeeById = new Map(
       employeeSnapshots.map((snapshot) => [snapshot.id, snapshot]),
     );
+    const pos9GuardIds = new Set<string>(
+      pos9PlanSnapshots.docs
+        .filter((snapshot) => snapshot.data()?.status !== 'stale')
+        .map((snapshot) => String(snapshot.data()?.fixedPost9EmployeeId || ''))
+        .filter(Boolean),
+    );
     const annualHolidayDates =
       holidaySnapshot.exists && Array.isArray(holidaySnapshot.data()?.dates)
         ? holidaySnapshot
@@ -801,6 +841,7 @@ async function mutateShift(
       regularPayType,
       planDay,
       canonicalPlanEnabled,
+      pos9GuardIds,
     });
     const anomalies = buildAnomalies({
       command,
@@ -811,6 +852,7 @@ async function mutateShift(
       employeeById,
       holidayCalendarConfigured:
         Boolean(periodSnapshot.data()?.workCalendar) || holidaySnapshot.exists,
+      pos9GuardIds,
     });
     if (canonicalPlanEnabled) {
       const classification = classifySatpamDutyAssignments({
@@ -818,6 +860,8 @@ async function mutateShift(
         primaryAssignments: command.assignments.map((assignment) => ({
           postId: assignment.postId,
           employeeId: assignment.employeeId,
+          shiftType: assignment.shiftType,
+          coveredEmployeeId: assignment.coveredEmployeeId || null,
         })),
         extraAssignment: command.extraAssignment
           ? {
@@ -827,12 +871,13 @@ async function mutateShift(
           : null,
         regularPayType,
         teamRosterEmployeeIds: new Set(roster),
+        pos9GuardIds,
       });
       for (const code of classification.anomalyCodes) {
         if (anomalies.some((anomaly) => anomaly.code === code)) continue;
-        const blocking = [
-          'DUTY_PLAN_STALE',
-          'EXTRA_NOT_OFF_DUTY',
+          const blocking = [
+            'DUTY_PLAN_STALE',
+            'EXTRA_NOT_OFF_DUTY',
           'EXTRA_WITH_INCOMPLETE_PRIMARY_ROSTER',
           'ABSENCE_WORK_CONFLICT',
         ].includes(code);
@@ -844,9 +889,11 @@ async function mutateShift(
               ? 'Rencana dinas belum tersedia. Laporan tetap diterima dan harus direkonsiliasi.'
               : code === 'ACTUAL_ROSTER_DIFFERS'
                 ? 'Petugas aktual berbeda dari rencana dinas.'
-                : code === 'EXTRA_NOT_OFF_DUTY'
-                  ? 'Petugas tambahan bukan anggota yang dijadwalkan Libur.'
-                  : 'Penugasan tambahan belum memiliki sembilan pos utama yang unik.',
+                : code === 'POS9_GUARD_MISMATCH'
+                  ? 'Pos 9 diisi petugas pengganti. Kepala SatKer perlu memeriksa substitusi ini.'
+                  : code === 'EXTRA_NOT_OFF_DUTY'
+                    ? 'Petugas tambahan bukan anggota yang dijadwalkan Libur.'
+                    : 'Penugasan tambahan belum memiliki sembilan pos utama yang unik.',
         });
       }
       if (

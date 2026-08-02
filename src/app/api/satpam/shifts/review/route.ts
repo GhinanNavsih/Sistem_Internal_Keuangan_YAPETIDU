@@ -933,6 +933,9 @@ export async function PUT(request: NextRequest) {
           String(before.dutyPlanId || '') ||
             satpamDutyPlanId(period, String(before.teamId || '')),
         );
+      const pos9PlansQuery = adminDb
+        .collection(SATPAM_DUTY_PLANS_COLLECTION)
+        .where('period', '==', period);
       const oldReportIds = Array.isArray(before.reportIds)
         ? before.reportIds.filter((id: unknown): id is string => typeof id === 'string')
         : [];
@@ -950,18 +953,22 @@ export async function PUT(request: NextRequest) {
         transaction.get(holidayRef),
         transaction.get(teamRef),
         transaction.get(dutyPlanRef),
+        transaction.get(pos9PlansQuery),
         ...oldReportRefs.map((reference) => transaction.get(reference)),
         ...employeeRefs.map((reference) => transaction.get(reference)),
       ]);
-      const periodSnapshot = secondarySnapshots[0];
-      const holidaySnapshot = secondarySnapshots[1];
-      const teamSnapshot = secondarySnapshots[2];
-      const dutyPlanSnapshot = secondarySnapshots[3];
+      const periodSnapshot = secondarySnapshots[0] as FirebaseFirestore.DocumentSnapshot;
+      const holidaySnapshot = secondarySnapshots[1] as FirebaseFirestore.DocumentSnapshot;
+      const teamSnapshot = secondarySnapshots[2] as FirebaseFirestore.DocumentSnapshot;
+      const dutyPlanSnapshot = secondarySnapshots[3] as FirebaseFirestore.DocumentSnapshot;
+      const pos9PlanSnapshots = secondarySnapshots[4] as FirebaseFirestore.QuerySnapshot;
       const oldReportSnapshots = secondarySnapshots.slice(
-        4,
-        4 + oldReportRefs.length,
-      );
-      const employeeSnapshots = secondarySnapshots.slice(4 + oldReportRefs.length);
+        5,
+        5 + oldReportRefs.length,
+      ) as FirebaseFirestore.DocumentSnapshot[];
+      const employeeSnapshots = secondarySnapshots.slice(
+        5 + oldReportRefs.length,
+      ) as FirebaseFirestore.DocumentSnapshot[];
 
       assertPeriodAcceptsInput(periodSnapshot.data());
       if (!teamSnapshot.exists) {
@@ -1036,6 +1043,12 @@ export async function PUT(request: NextRequest) {
             )
           : []),
       ]);
+      const pos9GuardIds = new Set<string>(
+        pos9PlanSnapshots.docs
+          .filter((snapshot) => snapshot.data()?.status !== 'stale')
+          .map((snapshot) => String(snapshot.data()?.fixedPost9EmployeeId || ''))
+          .filter(Boolean),
+      );
       const planDay: SatpamDutyPlanDay | null =
         dutyPlanSnapshot.exists &&
         Array.isArray(dutyPlanSnapshot.data()?.generatedDays)
@@ -1063,6 +1076,8 @@ export async function PUT(request: NextRequest) {
               (assignment) => ({
                 postId: assignment.postId,
                 employeeId: assignment.employeeId,
+                shiftType: assignment.shiftType,
+                coveredEmployeeId: assignment.coveredEmployeeId || null,
               }),
             ),
             extraAssignment: extraCommandAssignments[0]
@@ -1073,6 +1088,7 @@ export async function PUT(request: NextRequest) {
               : null,
             regularPayType: expectedRegularPayType,
             teamRosterEmployeeIds: teamRoster,
+            pos9GuardIds,
           })
         : null;
       let primaryClassificationIndex = 0;
@@ -1127,6 +1143,7 @@ export async function PUT(request: NextRequest) {
         ketuaShiftId: String(before.ketuaShiftId || ''),
         assignments: primaryAssignments,
         activeSatpamIds,
+        pos9GuardIds,
         holidayCalendarConfigured: periodCalendar.premiumDates.length > 0,
       });
       const extraAssignments = canonicalAssignments.filter(
@@ -1161,6 +1178,13 @@ export async function PUT(request: NextRequest) {
             assignment.assignmentKind === 'primary' &&
             (assignment.shiftType === 'Harian' ||
               assignment.shiftType === 'Jumat & Libur') &&
+            !(
+              assignment.postId === 'Pos 9' &&
+              pos9GuardIds.has(assignment.employeeId) &&
+              assignment.employeeId !==
+                planDay?.assignments.find((planned) => planned.postId === 'Pos 9')
+                  ?.employeeId
+            ) &&
             assignment.shiftType !== expectedRegularPayType,
         )
       ) {
@@ -1186,7 +1210,9 @@ export async function PUT(request: NextRequest) {
                 ? 'Rencana dinas belum tersedia.'
                 : code === 'ACTUAL_ROSTER_DIFFERS'
                   ? 'Roster aktual berbeda dari rencana dinas.'
-                  : 'Klasifikasi penugasan tambahan belum sesuai rencana dinas.',
+                  : code === 'POS9_GUARD_MISMATCH'
+                    ? 'Pos 9 diisi petugas pengganti. Kepala SatKer perlu memeriksa substitusi ini.'
+                    : 'Klasifikasi penugasan tambahan belum sesuai rencana dinas.',
           });
         }
         if (

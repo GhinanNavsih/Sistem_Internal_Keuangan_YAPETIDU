@@ -239,6 +239,24 @@ test('flexible Satpam submission records warnings without rejecting partial rost
   );
 });
 
+test('Pos 9 accepts an ad-hoc replacement but flags it for auditor review', () => {
+  const anomalies = analyzeSatpamShiftSubmission({
+    dutyDate: '2026-08-05',
+    reportedShiftName: 'Pagi',
+    suggestedShiftName: 'Pagi',
+    ketuaShiftId: 'KETUA001',
+    assignments: [{ postId: 'Pos 9', employeeId: 'OTHER-SATPAM' }],
+    activeSatpamIds: new Set(['OTHER-SATPAM', 'KETUA001']),
+    pos9GuardIds: new Set(['POS9-TEAM-1', 'POS9-TEAM-2', 'POS9-TEAM-3']),
+    holidayCalendarConfigured: true,
+  });
+
+  assert.equal(
+    anomalies.find((item) => item.code === 'POS9_GUARD_MISMATCH')?.severity,
+    'warning',
+  );
+});
+
 test('future work can be captured but does not become reviewable early', () => {
   assert.equal(
     hasSatpamShiftEnded(

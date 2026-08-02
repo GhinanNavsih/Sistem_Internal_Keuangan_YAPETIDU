@@ -58,6 +58,7 @@ export type SatpamShiftAnomalyCode =
   | 'DUTY_PLAN_STALE'
   | 'DUTY_PLAN_BACKFILL_PENDING'
   | 'ACTUAL_ROSTER_DIFFERS'
+  | 'POS9_GUARD_MISMATCH'
   | 'EXTRA_NOT_OFF_DUTY'
   | 'EXTRA_WITH_INCOMPLETE_PRIMARY_ROSTER'
   | 'ABSENCE_WORK_CONFLICT'
@@ -103,7 +104,7 @@ export interface PhotoEvidence {
 export interface SatpamPrimaryAssignmentInput {
   postId: SatpamPostId;
   employeeId: string;
-  shiftType?: SatpamPayType;
+  shiftType?: Exclude<SatpamPayType, 'Off-Duty'>;
   coveredEmployeeId?: string;
   overtimeReason?: string;
   photoUrl?: string;
@@ -410,6 +411,21 @@ export function resolveSatpamAssignmentPayType(
   return isCoverAssignment ? 'Lembur Cover' : regularPayType;
 }
 
+/**
+ * Pos 9 is staffed by one guard from each published team plan. If a Ketua
+ * selects one of the other teams' Pos 9 guards, the form defaults to Harian,
+ * but the guard may explicitly be paid as Lembur Sendiri or Lembur Cover.
+ * This exception is intentionally limited to Pos 9 so ordinary external
+ * guards keep the existing Cover classification.
+ */
+export function resolveCrossTeamPos9PayType(
+  requestedShiftType: string | undefined,
+): Exclude<SatpamPayType, 'Off-Duty'> {
+  if (requestedShiftType === 'Lembur Sendiri') return 'Lembur Sendiri';
+  if (requestedShiftType === 'Lembur Cover') return 'Lembur Cover';
+  return 'Harian';
+}
+
 export function getShiftIsoBounds(
   dutyDate: string,
   shiftName: SatpamShiftName,
@@ -471,6 +487,7 @@ export function analyzeSatpamShiftSubmission(input: {
   ketuaShiftId: string;
   assignments: readonly SatpamPrimaryAssignmentInput[];
   activeSatpamIds?: ReadonlySet<string>;
+  pos9GuardIds?: ReadonlySet<string>;
   holidayCalendarConfigured?: boolean;
   now?: Date;
 }): SatpamShiftAnomaly[] {
@@ -484,6 +501,22 @@ export function analyzeSatpamShiftSubmission(input: {
     if (!guardIndexes.has(assignment.employeeId)) guardIndexes.set(assignment.employeeId, []);
     guardIndexes.get(assignment.employeeId)!.push(index);
   });
+
+  if (input.pos9GuardIds && input.pos9GuardIds.size > 0) {
+    const invalidPos9Indexes = input.assignments.flatMap((assignment, index) =>
+      assignment.postId === 'Pos 9' && !input.pos9GuardIds!.has(assignment.employeeId)
+        ? [index]
+        : [],
+    );
+    if (invalidPos9Indexes.length > 0) {
+      anomalies.push({
+        code: 'POS9_GUARD_MISMATCH',
+        severity: 'warning',
+        message: 'Pos 9 diisi petugas pengganti, bukan salah satu dari tiga Pos 9 Satpam yang ditetapkan dalam rencana regu. Periksa substitusi ini.',
+        assignmentIndexes: invalidPos9Indexes,
+      });
+    }
+  }
 
   const suppliedPosts = new Set(input.assignments.map((assignment) => assignment.postId));
   const missingPosts = SATPAM_POSTS.filter((post) => !suppliedPosts.has(post.id));
