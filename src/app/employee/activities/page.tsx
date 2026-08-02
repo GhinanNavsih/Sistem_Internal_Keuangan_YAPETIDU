@@ -4044,7 +4044,7 @@ function ActivitiesContent() {
                         const isCrossTeamPos9 = isCrossTeamPos9Guard(post.id, val.employeeId);
                         const isPos9 = post.id === 'Pos 9';
                         const selectedShiftType = (isCrossTeamPos9 || isPos9)
-                          ? (['Harian', 'Jumat & Libur', 'Lembur Sendiri', 'Lembur Cover'].includes(val.shiftType)
+                          ? (['Harian', 'Jumat & Libur', 'Lembur Sendiri'].includes(val.shiftType)
                             ? val.shiftType
                             : defaultShiftTypeForRender)
                           : (val.shiftType === 'Lembur Cover' ? 'Lembur Cover' : defaultShiftTypeForRender);
@@ -4178,9 +4178,11 @@ function ActivitiesContent() {
                                       {defaultShiftTypeForRender} ({defaultShiftTypeForRender === 'Jumat & Libur' ? 'Rp25.000' : 'Rp12.500'})
                                     </SelectItem>
                                   )}
-                                  <SelectItem value="Lembur Cover" className="text-base font-bold">
-                                    Lembur Cover (Rp50.000)
-                                  </SelectItem>
+                                  {!isPos9 && (
+                                    <SelectItem value="Lembur Cover" className="text-base font-bold">
+                                      Lembur Cover (Rp50.000)
+                                    </SelectItem>
+                                  )}
                                 </SelectContent>
                               </Select>
                               )}
