@@ -104,6 +104,30 @@ covering a post.
 The report may be submitted with fewer than nine primary guards, but the
 classification remains subject to auditor review before approval.
 
+### Menukar tanggal Libur
+
+When the Ketua selects the member who is marked **Libur** to replace a planned
+guard, the app offers two choices:
+
+- **Tukar Libur** searches the rest of the same payroll period for the first
+  later date where the replaced guard is Libur and the replacement guard is
+  working. Both dates are changed atomically: the replacement guard works on
+  the first date, and the original guard works the replacement guard's post on
+  the later date. Their total working and Libur counts remain unchanged.
+- **Lembur Cover** leaves the duty plan unchanged. The replacement is recorded
+  only in the actual report, names the planned guard being covered, and pays
+  Rp50,000 after approval.
+
+If no eligible later date remains, the app explains that the Libur cannot be
+swapped and automatically prepares Lembur Cover. A swap never crosses a payroll
+period. Both plan dates are written in one revision-checked transaction and one
+financial audit record; a stale plan or a reported replacement date cancels the
+swap safely.
+
+In the planning screen, selecting Lembur Cover does not alter the schedule
+because overtime is actual-work evidence rather than a planned assignment. The
+Ketua records that Cover choice when submitting the relevant daily report.
+
 ### Lembur Sendiri
 
 `Lembur Sendiri` is paid at **Rp30,000** only when:

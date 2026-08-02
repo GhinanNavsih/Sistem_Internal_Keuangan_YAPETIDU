@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   CalendarDays,
   ClipboardList,
-  FileText,
   Loader2,
   Pencil,
   Printer,
@@ -24,10 +23,15 @@ import {
   type SatpamShiftName,
 } from '@/lib/payroll/domain';
 import {
+  findFirstUpcomingSwapDate,
   SATPAM_ROTATION_SLOTS,
   type SatpamRotationSlot,
   type SatpamRotationSlotAssignment,
 } from '@/lib/payroll/satpamDutyPlan';
+import {
+  SwapLiburConfirmModal,
+  type SwapLiburPrompt,
+} from '@/components/satpam/SwapLiburConfirmModal';
 import {
   authenticatedJson,
   createFinancialRequestId,
@@ -75,9 +79,9 @@ type PlanDay = {
   shiftName: SatpamShiftName;
   assignments: PlannedAssignment[];
   offDutyEmployeeId: string;
-  sourceSeedDate?: string;
-  sourceSeedIndex?: number;
-  cycleNumber?: number;
+  sourceSeedDate: string;
+  sourceSeedIndex: number;
+  cycleNumber: number;
   overridden?: boolean;
   started?: boolean;
 };
@@ -114,6 +118,12 @@ type DutyPlanResponse = {
     firstDayAssignments: SatpamRotationSlotAssignment[];
   } | null;
   plans: Array<DutyPlan | { id: string; teamId: string; status: 'missing' }>;
+};
+
+type PendingPlanLiburSwap = SwapLiburPrompt & {
+  guardAId: string;
+  guardBId: string;
+  postXId: SatpamPostId;
 };
 
 type AbsenceRequest = {
@@ -261,6 +271,9 @@ export function SatpamDutyPlanPanel(props: {
     string[]
   >([]);
   const [editingDay, setEditingDay] = useState<PlanDay | null>(null);
+  const [pendingLiburSwap, setPendingLiburSwap] =
+    useState<PendingPlanLiburSwap | null>(null);
+  const [liburSwapError, setLiburSwapError] = useState('');
   const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState('');
@@ -547,6 +560,104 @@ export function SatpamDutyPlanPanel(props: {
         cause instanceof Error
           ? cause.message
           : 'Jadwal tidak dapat diperbarui.',
+      );
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const selectEditingDayGuard = (
+    postId: SatpamPostId,
+    employeeId: string,
+  ) => {
+    if (!editingDay || !plan) return;
+    const assignment = editingDay.assignments.find(
+      (item) => item.postId === postId,
+    );
+    if (!assignment || assignment.employeeId === employeeId) return;
+    if (employeeId === editingDay.offDutyEmployeeId) {
+      const guardAId = assignment.employeeId;
+      const guardBId = employeeId;
+      const dateY = findFirstUpcomingSwapDate(
+        plan.generatedDays || [],
+        editingDay.dutyDate,
+        guardAId,
+        guardBId,
+      );
+      setLiburSwapError('');
+      setPendingLiburSwap({
+        dateX: editingDay.dutyDate,
+        dateY,
+        guardAId,
+        guardBId,
+        postXId: postId,
+        guardAName: employeeName(rosterEmployees, guardAId),
+        guardBName: employeeName(rosterEmployees, guardBId),
+      });
+      return;
+    }
+    setEditingDay((current) =>
+      current
+        ? {
+            ...current,
+            assignments: current.assignments.map((item) =>
+              item.postId === postId ? { ...item, employeeId } : item,
+            ),
+          }
+        : current,
+    );
+  };
+
+  const keepPlanAndUseCover = () => {
+    const prompt = pendingLiburSwap;
+    setPendingLiburSwap(null);
+    setLiburSwapError('');
+    if (prompt) {
+      setMessage(
+        `Rencana tidak diubah. Saat membuat laporan ${prompt.dateX}, catat ${prompt.guardBName} sebagai Lembur Cover untuk ${prompt.guardAName}.`,
+      );
+    }
+  };
+
+  const confirmPlanLiburSwap = async () => {
+    if (!pendingLiburSwap?.dateY || !plan || !period) return;
+    setWorking(true);
+    setLiburSwapError('');
+    try {
+      const result = await authenticatedJson<{
+        revision: number;
+        swapDateY: string | null;
+      }>('/api/satpam/duty-plans', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          action: 'swap_libur_days',
+          period,
+          teamId: plan.teamId,
+          expectedRevision: plan.revision,
+          requestId: createFinancialRequestId('satpam-plan-libur-swap'),
+          reason: '',
+          dateX: pendingLiburSwap.dateX,
+          expectedDateY: pendingLiburSwap.dateY,
+          guardAId: pendingLiburSwap.guardAId,
+          guardBId: pendingLiburSwap.guardBId,
+          postXId: pendingLiburSwap.postXId,
+        }),
+      });
+      const prompt = pendingLiburSwap;
+      setPendingLiburSwap(null);
+      setEditingDay(null);
+      setMessage(
+        `Libur berhasil ditukar: ${prompt.dateX} dengan ${result.swapDateY || prompt.dateY}.`,
+      );
+      await load();
+    } catch (cause) {
+      setLiburSwapError(
+        cause instanceof Error
+          ? cause.message
+          : 'Tanggal Libur tidak dapat ditukar. Gunakan Lembur Cover.',
+      );
+      setPendingLiburSwap((current) =>
+        current ? { ...current, dateY: null } : current,
       );
     } finally {
       setWorking(false);
@@ -1001,21 +1112,7 @@ export function SatpamDutyPlanPanel(props: {
                     <LargeSelect
                       value={assignment.employeeId}
                       onValueChange={(employeeId) =>
-                        setEditingDay((current) =>
-                          current
-                            ? {
-                                ...current,
-                                assignments: current.assignments.map((item) =>
-                                  item.postId === assignment.postId
-                                    ? {
-                                        ...item,
-                                        employeeId,
-                                      }
-                                    : item,
-                                ),
-                              }
-                            : current,
-                        )
+                        selectEditingDayGuard(assignment.postId, employeeId)
                       }
                       options={rosterEmployees
                         .filter(
@@ -1033,29 +1130,16 @@ export function SatpamDutyPlanPanel(props: {
               ))}
               <div className="space-y-2 rounded-xl bg-amber-50 p-3">
                 <Label>Libur</Label>
-                <LargeSelect
-                  value={editingDay.offDutyEmployeeId}
-                  onValueChange={(employeeId) =>
-                    setEditingDay((current) =>
-                      current
-                        ? {
-                            ...current,
-                            offDutyEmployeeId: employeeId,
-                          }
-                        : current,
-                    )
-                  }
-                  options={rosterEmployees
-                    .filter(
-                      (employee) =>
-                        employee.id !== team.ketuaShiftId &&
-                        employee.id !== plan?.fixedPost9EmployeeId,
-                    )
-                    .map((employee) => ({
-                      value: employee.id,
-                      label: employee.name,
-                    }))}
-                />
+                <div className="min-h-14 rounded-xl border border-amber-200 bg-white px-4 py-4 text-base font-bold text-amber-950">
+                  {employeeName(
+                    rosterEmployees,
+                    editingDay.offDutyEmployeeId,
+                  )}
+                </div>
+                <p className="text-sm leading-5 text-amber-900">
+                  Untuk menukar Libur, pilih petugas ini pada salah satu pos di
+                  atas. Sistem akan mencari tanggal pengganti secara otomatis.
+                </p>
               </div>
               <Button
                 type="button"
@@ -1070,12 +1154,30 @@ export function SatpamDutyPlanPanel(props: {
           </div>
         </div>
   );
+  const cancelPlanLiburSwap = () => {
+    setPendingLiburSwap(null);
+    setLiburSwapError('');
+  };
+
+  const liburSwapModal = (
+    <SwapLiburConfirmModal
+      open={Boolean(pendingLiburSwap)}
+      prompt={pendingLiburSwap}
+      working={working}
+      error={liburSwapError}
+      planningMode
+      onSwap={() => void confirmPlanLiburSwap()}
+      onCover={keepPlanAndUseCover}
+      onCancel={cancelPlanLiburSwap}
+    />
+  );
 
   if (embedded) {
     return (
       <>
         {body}
         {dayEditor}
+        {liburSwapModal}
       </>
     );
   }
@@ -1094,6 +1196,7 @@ export function SatpamDutyPlanPanel(props: {
       </CardHeader>
       {body}
       {dayEditor}
+      {liburSwapModal}
     </Card>
   );
 }

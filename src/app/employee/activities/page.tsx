@@ -75,12 +75,18 @@ import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import {
+  payrollPeriodForDutyDate,
   SatpamPostId,
   SatpamPayType,
   type PhotoAuditMetadata,
   type PhotoEvidence,
   type SatpamShiftAnomaly,
 } from '@/lib/payroll/domain';
+import {
+  applyLiburDateSwap,
+  findFirstUpcomingSwapDate,
+  type SatpamDutyPlanDay,
+} from '@/lib/payroll/satpamDutyPlan';
 import { prepareProofImage } from '@/lib/photoEvidence';
 import {
   calculateDriverNetWage,
@@ -94,6 +100,10 @@ import {
 import { parseImageExif } from '@/lib/exif';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
 import { SatpamAbsencePanel } from '@/components/satpam/SatpamDutyAndAbsencePanels';
+import {
+  SwapLiburConfirmModal,
+  type SwapLiburPrompt,
+} from '@/components/satpam/SwapLiburConfirmModal';
 import {
   Select,
   SelectContent,
@@ -255,6 +265,18 @@ interface SatpamPostAssignment {
   photoUrl?: string;
   photoAuditMetadata?: PhotoAuditMetadata;
 }
+
+type PendingDailyLiburSwap = SwapLiburPrompt & {
+  guardAId: string;
+  guardBId: string;
+  postXId: SatpamPostId;
+  previousAssignment?: {
+    employeeId: string;
+    shiftType: string;
+    coveredEmployeeId?: string;
+    overtimeReason?: string;
+  };
+};
 
 const getPlacesSearchQuery = (endPoint: string): string => {
   const firstSegment = endPoint.split(',')[0].trim();
@@ -703,12 +725,8 @@ function ActivitiesContent() {
     status: string;
     warning: string | null;
     fixedPost9EmployeeId: string | null;
-    day: null | {
-      dutyDate: string;
-      shiftName: 'Pagi' | 'Sore' | 'Malam';
-      assignments: Array<{ postId: SatpamPostId; employeeId: string }>;
-      offDutyEmployeeId: string;
-    };
+    day: SatpamDutyPlanDay | null;
+    generatedDays: SatpamDutyPlanDay[];
   } | null>(null);
   const [satpamSuggestedShiftName, setSatpamSuggestedShiftName] = useState<'Pagi' | 'Sore' | 'Malam'>('Pagi');
   const [satpamReportedShiftName, setSatpamReportedShiftName] = useState<'Pagi' | 'Sore' | 'Malam'>('Pagi');
@@ -726,6 +744,10 @@ function ActivitiesContent() {
   const [loadingSubmittedSatpam, setLoadingSubmittedSatpam] = useState(false);
   const [isSatpamReportSubmitted, setIsSatpamReportSubmitted] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingDailyLiburSwap, setPendingDailyLiburSwap] =
+    useState<PendingDailyLiburSwap | null>(null);
+  const [dailyLiburSwapWorking, setDailyLiburSwapWorking] = useState(false);
+  const [dailyLiburSwapError, setDailyLiburSwapError] = useState('');
   // Guard-post proof photos, keyed by post id ('Pos 1'..'Pos 9', 'extra').
   const [postPhotoUploading, setPostPhotoUploading] = useState<Record<string, boolean>>({});
   const [extraPhotoUrl, setExtraPhotoUrl] = useState('');
@@ -1503,12 +1525,8 @@ function ActivitiesContent() {
             status: string;
             warning: string | null;
             fixedPost9EmployeeId: string | null;
-            day: null | {
-              dutyDate: string;
-              shiftName: 'Pagi' | 'Sore' | 'Malam';
-              assignments: Array<{ postId: SatpamPostId; employeeId: string }>;
-              offDutyEmployeeId: string;
-            };
+            day: SatpamDutyPlanDay | null;
+            generatedDays: SatpamDutyPlanDay[];
           };
         }>(`/api/satpam/config?dutyDate=${encodeURIComponent(satpamReportDate)}`, {
           method: 'GET',
@@ -2831,15 +2849,25 @@ function ActivitiesContent() {
     }));
   };
 
-  const handleSelectGuard = (postId: string, employeeId: string) => {
+  const applyGuardSelection = (
+    postId: string,
+    employeeId: string,
+    forced?: {
+      shiftType: string;
+      coveredEmployeeId?: string;
+      overtimeReason?: string;
+    },
+  ) => {
     setPostAssignments(prev => {
       const isExternal = !groupEmployeeIds.includes(employeeId) && employeeId !== '';
       const isCrossTeamPos9 = isCrossTeamPos9Guard(postId, employeeId);
-      const defaultType = isCrossTeamPos9
-        ? 'Harian'
-        : isExternal
-          ? 'Lembur Cover'
-        : getDefaultShiftTypeForDate(satpamReportDate);
+      const defaultType =
+        forced?.shiftType ||
+        (isCrossTeamPos9
+          ? 'Harian'
+          : isExternal
+            ? 'Lembur Cover'
+            : getDefaultShiftTypeForDate(satpamReportDate));
 
       return {
         ...prev,
@@ -2850,14 +2878,181 @@ function ActivitiesContent() {
           // previous guard's 'Lembur Cover' + coveredEmployeeId would let a
           // regular in-roster guard silently inherit the Rp50.000 cover rate
           // meant for whoever was assigned to this post before.
-          coveredEmployeeId: '',
-          overtimeReason: '',
+          coveredEmployeeId: forced?.coveredEmployeeId || '',
+          overtimeReason: forced?.overtimeReason || '',
           // Keep any photo already taken at this post; a mis-tap on the guard
           // dropdown should not force the Ketua Shift back out to re-shoot it.
           photoUrl: prev[postId]?.photoUrl || '',
         }
       };
     });
+  };
+
+  const handleSelectGuard = (postId: string, employeeId: string) => {
+    const planDay = satpamDutyPlan?.day;
+    const plannedAssignment = planDay?.assignments.find(
+      (assignment) => assignment.postId === postId,
+    );
+    const isOffDutyReplacement = Boolean(
+      employeeId &&
+        planDay &&
+        plannedAssignment &&
+        employeeId === planDay.offDutyEmployeeId &&
+        employeeId !== plannedAssignment.employeeId,
+    );
+    if (!isOffDutyReplacement || !planDay || !plannedAssignment) {
+      applyGuardSelection(postId, employeeId);
+      return;
+    }
+
+    const guardAId = plannedAssignment.employeeId;
+    const guardBId = employeeId;
+    const dateY = findFirstUpcomingSwapDate(
+      satpamDutyPlan?.generatedDays || [],
+      planDay.dutyDate,
+      guardAId,
+      guardBId,
+    );
+    const previousAssignment = postAssignments[postId];
+    setDailyLiburSwapError('');
+    setPendingDailyLiburSwap({
+      dateX: planDay.dutyDate,
+      dateY,
+      guardAId,
+      guardBId,
+      postXId: postId as SatpamPostId,
+      guardAName:
+        allSatpamEmployees.find((employee) => employee.id === guardAId)?.name ||
+        guardAId,
+      guardBName:
+        allSatpamEmployees.find((employee) => employee.id === guardBId)?.name ||
+        guardBId,
+      previousAssignment: previousAssignment
+        ? {
+            employeeId: previousAssignment.employeeId,
+            shiftType: previousAssignment.shiftType,
+            coveredEmployeeId: previousAssignment.coveredEmployeeId,
+            overtimeReason: previousAssignment.overtimeReason,
+          }
+        : undefined,
+    });
+    if (dateY) {
+      applyGuardSelection(postId, employeeId, { shiftType: 'Harian' });
+    } else {
+      applyGuardSelection(postId, employeeId, {
+        shiftType: 'Lembur Cover',
+        coveredEmployeeId: guardAId,
+        overtimeReason: 'Menggantikan petugas yang dijadwalkan pada pos ini.',
+      });
+    }
+  };
+
+  const cancelDailyLiburSwap = () => {
+    const prompt = pendingDailyLiburSwap;
+    if (prompt?.previousAssignment) {
+      applyGuardSelection(prompt.postXId, prompt.previousAssignment.employeeId, {
+        shiftType: prompt.previousAssignment.shiftType,
+        coveredEmployeeId: prompt.previousAssignment.coveredEmployeeId,
+        overtimeReason: prompt.previousAssignment.overtimeReason,
+      });
+    }
+    setPendingDailyLiburSwap(null);
+    setDailyLiburSwapError('');
+  };
+
+  const useDailyLemburCover = () => {
+    const prompt = pendingDailyLiburSwap;
+    if (prompt) {
+      applyGuardSelection(prompt.postXId, prompt.guardBId, {
+        shiftType: 'Lembur Cover',
+        coveredEmployeeId: prompt.guardAId,
+        overtimeReason: 'Menggantikan petugas yang dijadwalkan pada pos ini.',
+      });
+    }
+    setPendingDailyLiburSwap(null);
+    setDailyLiburSwapError('');
+  };
+
+  const confirmDailyLiburSwap = async () => {
+    const requestedDateY = pendingDailyLiburSwap?.dateY;
+    if (
+      !requestedDateY ||
+      !satpamDutyPlan?.planId ||
+      !myShiftTeam?.id
+    ) {
+      useDailyLemburCover();
+      return;
+    }
+    setDailyLiburSwapWorking(true);
+    setDailyLiburSwapError('');
+    try {
+      const prompt = pendingDailyLiburSwap;
+      const result = await authenticatedJson<{
+        revision: number;
+        swapDateY: string | null;
+      }>('/api/satpam/duty-plans', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          action: 'swap_libur_days',
+          period: payrollPeriodForDutyDate(prompt.dateX),
+          teamId: myShiftTeam.id,
+          expectedRevision: satpamDutyPlan.revision,
+          requestId: createFinancialRequestId('satpam-report-libur-swap'),
+          reason: '',
+          dateX: prompt.dateX,
+          expectedDateY: prompt.dateY,
+          guardAId: prompt.guardAId,
+          guardBId: prompt.guardBId,
+          postXId: prompt.postXId,
+        }),
+      });
+      const swappedDays = applyLiburDateSwap(
+        satpamDutyPlan.generatedDays,
+        prompt.dateX,
+        result.swapDateY || requestedDateY,
+        prompt.guardAId,
+        prompt.guardBId,
+        prompt.postXId,
+      );
+      const updatedDay = swappedDays.find(
+        (day) => day.dutyDate === prompt.dateX,
+      ) || null;
+      setSatpamDutyPlan((current) =>
+        current
+          ? {
+              ...current,
+              revision: result.revision,
+              day: updatedDay,
+              generatedDays: swappedDays,
+            }
+          : current,
+      );
+      applyGuardSelection(prompt.postXId, prompt.guardBId, {
+        shiftType: 'Harian',
+      });
+      setPendingDailyLiburSwap(null);
+      setMessage({
+        type: 'success',
+        text: `Tanggal Libur berhasil ditukar dengan ${result.swapDateY || prompt.dateY}. Laporan ini tetap penugasan reguler.`,
+      });
+    } catch (cause) {
+      const prompt = pendingDailyLiburSwap;
+      applyGuardSelection(prompt.postXId, prompt.guardBId, {
+        shiftType: 'Lembur Cover',
+        coveredEmployeeId: prompt.guardAId,
+        overtimeReason: 'Menggantikan petugas yang dijadwalkan pada pos ini.',
+      });
+      setDailyLiburSwapError(
+        cause instanceof Error
+          ? `${cause.message} Shift otomatis diubah menjadi Lembur Cover.`
+          : 'Tanggal Libur tidak dapat ditukar. Shift otomatis diubah menjadi Lembur Cover.',
+      );
+      setPendingDailyLiburSwap((current) =>
+        current ? { ...current, dateY: null } : current,
+      );
+    } finally {
+      setDailyLiburSwapWorking(false);
+    }
   };
 
   const handleUploadPostPhoto = async (postId: string, file: File) => {
@@ -3847,10 +4042,11 @@ function ActivitiesContent() {
                         const defaultShiftTypeForRender = getDefaultShiftTypeForDate(satpamReportDate);
                         const val = postAssignments[post.id] || { employeeId: '', shiftType: defaultShiftTypeForRender };
                         const isCrossTeamPos9 = isCrossTeamPos9Guard(post.id, val.employeeId);
-                        const selectedShiftType = isCrossTeamPos9
-                          ? (['Harian', 'Lembur Sendiri', 'Lembur Cover'].includes(val.shiftType)
+                        const isPos9 = post.id === 'Pos 9';
+                        const selectedShiftType = (isCrossTeamPos9 || isPos9)
+                          ? (['Harian', 'Jumat & Libur', 'Lembur Sendiri', 'Lembur Cover'].includes(val.shiftType)
                             ? val.shiftType
-                            : 'Harian')
+                            : defaultShiftTypeForRender)
                           : (val.shiftType === 'Lembur Cover' ? 'Lembur Cover' : defaultShiftTypeForRender);
                         const coverCandidates = isCrossTeamPos9 && satpamDutyPlan?.fixedPost9EmployeeId
                           ? groupEmployees.filter((employee) => employee.id === satpamDutyPlan.fixedPost9EmployeeId)
@@ -3951,9 +4147,10 @@ function ActivitiesContent() {
                                 calendar. The Pos 9 Satpam exception is explicit:
                                 a designated guard from another team defaults to
                                 Harian, with optional Lembur Sendiri or Lembur
-                                Cover classification. */}
+                                Cover classification. Pos 9 also permits shift type
+                                selection even when worked by a team member. */}
                             <div className="md:col-span-4">
-                              {satpamDutyPlan?.enabled && satpamDutyPlan.day && !isCrossTeamPos9 ? (
+                              {satpamDutyPlan?.enabled && satpamDutyPlan.day && !isCrossTeamPos9 && !isPos9 ? (
                                 <div className="flex min-h-12 w-full items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-base font-extrabold text-indigo-800">
                                   {plannedPayLabel}
                                 </div>
@@ -3969,9 +4166,11 @@ function ActivitiesContent() {
                                   <SelectValue placeholder="Pilih Jenis Shift" />
                                 </SelectTrigger>
                                 <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
-                                  {isCrossTeamPos9 ? (
+                                  {isCrossTeamPos9 || isPos9 ? (
                                     <>
-                                      <SelectItem value="Harian" className="text-base font-bold">Harian (Rp12.500)</SelectItem>
+                                      <SelectItem value={defaultShiftTypeForRender} className="text-base font-bold">
+                                        {defaultShiftTypeForRender} ({defaultShiftTypeForRender === 'Jumat & Libur' ? 'Rp25.000' : 'Rp12.500'})
+                                      </SelectItem>
                                       <SelectItem value="Lembur Sendiri" className="text-base font-bold">Lembur Sendiri (Rp30.000)</SelectItem>
                                     </>
                                   ) : (
@@ -6684,6 +6883,16 @@ function ActivitiesContent() {
           </div>
         </div>
       )}
+
+      <SwapLiburConfirmModal
+        open={Boolean(pendingDailyLiburSwap)}
+        prompt={pendingDailyLiburSwap}
+        working={dailyLiburSwapWorking}
+        error={dailyLiburSwapError}
+        onSwap={() => void confirmDailyLiburSwap()}
+        onCover={useDailyLemburCover}
+        onCancel={cancelDailyLiburSwap}
+      />
 
       {/* Guard-post photo preview. Metadata stays hidden here; the EXIF audit
           view belongs to the Kepala SatKer, mirroring the driver receipt flow. */}

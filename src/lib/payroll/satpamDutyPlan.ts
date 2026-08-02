@@ -436,6 +436,112 @@ export function validateSatpamDutyPlanDay(
   }
 }
 
+/**
+ * Finds the first later date where Guard A is Libur and Guard B is working.
+ * Date X itself is intentionally excluded; swaps never cross a payroll plan.
+ */
+export function findFirstUpcomingSwapDate(
+  days: readonly SatpamDutyPlanDay[],
+  dateX: string,
+  guardAId: string,
+  guardBId: string,
+): string | null {
+  assertDateOnly(dateX);
+  if (!guardAId.trim() || !guardBId.trim() || guardAId === guardBId) {
+    return null;
+  }
+  return (
+    [...days]
+      .filter(
+        (day) =>
+          day.dutyDate > dateX &&
+          day.offDutyEmployeeId === guardAId &&
+          day.assignments.some(
+            (assignment) => assignment.employeeId === guardBId,
+          ),
+      )
+      .sort((left, right) => left.dutyDate.localeCompare(right.dutyDate))[0]
+      ?.dutyDate || null
+  );
+}
+
+/**
+ * Exchanges Guard B's Libur on Date X with Guard A's Libur on Date Y.
+ * The input is never mutated. Only the two selected dates are overridden.
+ */
+export function applyLiburDateSwap(
+  days: readonly SatpamDutyPlanDay[],
+  dateX: string,
+  dateY: string,
+  guardAId: string,
+  guardBId: string,
+  postXId: SatpamPostId,
+): SatpamDutyPlanDay[] {
+  assertDateOnly(dateX);
+  assertDateOnly(dateY);
+  if (dateY <= dateX) {
+    throw new Error('Tanggal libur pengganti harus setelah tanggal tugas awal.');
+  }
+  if (!guardAId.trim() || !guardBId.trim() || guardAId === guardBId) {
+    throw new Error('Dua petugas yang ditukar harus berbeda dan valid.');
+  }
+  if (!VALID_POST_IDS.has(postXId)) {
+    throw new Error('Pos yang akan ditukar tidak valid.');
+  }
+
+  const dayX = days.find((day) => day.dutyDate === dateX);
+  const dayY = days.find((day) => day.dutyDate === dateY);
+  if (!dayX || !dayY) {
+    throw new Error('Tanggal penukaran harus berada dalam rencana payroll yang sama.');
+  }
+  const assignmentX = dayX.assignments.find(
+    (assignment) => assignment.postId === postXId,
+  );
+  const assignmentY = dayY.assignments.find(
+    (assignment) => assignment.employeeId === guardBId,
+  );
+  if (
+    assignmentX?.employeeId !== guardAId ||
+    dayX.offDutyEmployeeId !== guardBId
+  ) {
+    throw new Error('Susunan tanggal awal sudah berubah dan tidak dapat ditukar.');
+  }
+  if (dayY.offDutyEmployeeId !== guardAId || !assignmentY) {
+    throw new Error('Tanggal libur pengganti sudah berubah dan tidak dapat ditukar.');
+  }
+
+  return days.map((day) => {
+    if (day.dutyDate === dateX) {
+      return {
+        ...day,
+        assignments: day.assignments.map((assignment) =>
+          assignment.postId === postXId
+            ? { ...assignment, employeeId: guardBId }
+            : { ...assignment },
+        ),
+        offDutyEmployeeId: guardAId,
+        overridden: true,
+      };
+    }
+    if (day.dutyDate === dateY) {
+      return {
+        ...day,
+        assignments: day.assignments.map((assignment) =>
+          assignment.employeeId === guardBId
+            ? { ...assignment, employeeId: guardAId }
+            : { ...assignment },
+        ),
+        offDutyEmployeeId: guardBId,
+        overridden: true,
+      };
+    }
+    return {
+      ...day,
+      assignments: day.assignments.map((assignment) => ({ ...assignment })),
+    };
+  });
+}
+
 export function classifySatpamDutyAssignments(input: {
   planDay: SatpamDutyPlanDay | null;
   primaryAssignments: readonly SatpamActualPrimaryAssignment[];

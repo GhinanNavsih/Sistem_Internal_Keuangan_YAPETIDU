@@ -229,6 +229,9 @@ export async function GET(request: NextRequest) {
               : null,
           fixedPost9EmployeeId:
             dutyPlanContext.plan?.fixedPost9EmployeeId || null,
+          generatedDays: Array.isArray(dutyPlanContext.plan?.generatedDays)
+            ? dutyPlanContext.plan.generatedDays
+            : [],
         },
       },
       {

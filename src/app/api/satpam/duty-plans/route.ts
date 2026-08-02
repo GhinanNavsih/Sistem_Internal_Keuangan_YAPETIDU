@@ -3,15 +3,19 @@ import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   addCalendarDays,
+  assertDateOnly,
   assertRequestId,
   guardDutyIndexId,
   isImmutablePayrollStatus,
   SATPAM_POSTS,
+  shiftOccurrenceId,
   type SatpamPostId,
   type SatpamShiftName,
 } from '@/lib/payroll/domain';
 import { pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import {
+  applyLiburDateSwap,
+  findFirstUpcomingSwapDate,
   isSatpamAdvancePlanningPeriod,
   isSatpamDutyPlanRequired,
   isSatpamPlanDayStarted,
@@ -813,6 +817,16 @@ export async function PATCH(request: NextRequest) {
     }
 
     let replacementDay: SatpamDutyPlanSeedDay | null = null;
+    let swapRequest: {
+      dateX: string;
+      expectedDateY: string;
+      guardAId: string;
+      guardBId: string;
+      postXId: SatpamPostId;
+    } | null = null;
+    let swapDateY = '';
+    let affectedDutyDates: string[] = [];
+    let swapOccurrenceRefs: FirebaseFirestore.DocumentReference[] = [];
     let dutyDate = '';
     if (action === 'edit_day') {
       replacementDay = parseDay(body.day);
@@ -869,6 +883,144 @@ export async function PATCH(request: NextRequest) {
           );
         }
       }
+      affectedDutyDates = [dutyDate];
+    } else if (action === 'swap_libur_days') {
+      const dateX = String(body.dateX || '');
+      const expectedDateY = String(body.expectedDateY || '');
+      const guardAId = String(body.guardAId || '').trim();
+      const guardBId = String(body.guardBId || '').trim();
+      const postXId = String(body.postXId || '') as SatpamPostId;
+      try {
+        assertDateOnly(dateX);
+        if (expectedDateY) assertDateOnly(expectedDateY);
+      } catch {
+        throw new HttpError(400, 'Tanggal penukaran Libur tidak valid.');
+      }
+      const roster = Array.isArray(current.rosterEmployeeIds)
+        ? current.rosterEmployeeIds.filter(
+            (value: unknown): value is string => typeof value === 'string',
+          )
+        : [];
+      if (
+        !guardAId ||
+        !guardBId ||
+        guardAId === guardBId ||
+        !roster.includes(guardAId) ||
+        !roster.includes(guardBId) ||
+        !SATPAM_POSTS.some((post) => post.id === postXId)
+      ) {
+        throw new HttpError(400, 'Petugas atau pos penukaran Libur tidak valid.');
+      }
+      const currentDays = Array.isArray(current.generatedDays)
+        ? (current.generatedDays as SatpamDutyPlanDay[])
+        : [];
+      swapDateY =
+        findFirstUpcomingSwapDate(
+          currentDays,
+          dateX,
+          guardAId,
+          guardBId,
+        ) || '';
+      if (!swapDateY) {
+        throw new HttpError(
+          409,
+          'Tidak ada tanggal Libur tersisa untuk ditukar pada periode ini. Gunakan Lembur Cover.',
+        );
+      }
+      if (expectedDateY && expectedDateY !== swapDateY) {
+        throw new HttpError(
+          409,
+          'Tanggal Libur pengganti telah berubah. Muat ulang rencana lalu coba lagi.',
+        );
+      }
+      let swappedDays: SatpamDutyPlanDay[];
+      try {
+        swappedDays = applyLiburDateSwap(
+          currentDays,
+          dateX,
+          swapDateY,
+          guardAId,
+          guardBId,
+          postXId,
+        );
+        for (const changedDate of [dateX, swapDateY]) {
+          const changedDay = swappedDays.find(
+            (day) => day.dutyDate === changedDate,
+          );
+          if (!changedDay) throw new Error('Tanggal hasil penukaran tidak ditemukan.');
+          validateSatpamDutyPlanDay(changedDay, roster, {
+            ketuaShiftId: String(current.ketuaShiftId || ''),
+            fixedPost9EmployeeId: String(current.fixedPost9EmployeeId || ''),
+          });
+        }
+      } catch (error) {
+        throw new HttpError(
+          409,
+          error instanceof Error
+            ? error.message
+            : 'Tanggal Libur tidak dapat ditukar.',
+        );
+      }
+      const [dateXOccurrences, dateYOccurrences] = await Promise.all([
+        adminDb
+          .collection('ShiftOccurrences')
+          .where('payrollPeriod', '==', period)
+          .where('teamId', '==', teamId)
+          .where('dutyDate', '==', dateX)
+          .get(),
+        adminDb
+          .collection('ShiftOccurrences')
+          .where('payrollPeriod', '==', period)
+          .where('teamId', '==', teamId)
+          .where('dutyDate', '==', swapDateY)
+          .get(),
+      ]);
+      const dateYDay = currentDays.find((day) => day.dutyDate === swapDateY)!;
+      if (
+        actor.role === 'ketua_shift_satpam' &&
+        (!dateXOccurrences.empty ||
+          !dateYOccurrences.empty ||
+          isSatpamPlanDayStarted(dateYDay))
+      ) {
+        throw new HttpError(
+          409,
+          'Tanggal pengganti sudah dimulai atau dilaporkan. Gunakan Lembur Cover untuk laporan ini.',
+        );
+      }
+      if (actor.role !== 'ketua_shift_satpam') {
+        const immutableSlips = await adminDb
+          .collection('PayrollSlipStates')
+          .where('period', '==', period.replace('-', '_'))
+          .get();
+        if (
+          immutableSlips.docs.some((snapshot) =>
+            isImmutablePayrollStatus(snapshot.data().status),
+          )
+        ) {
+          throw new HttpError(
+            409,
+            'Ada slip immutable; gunakan alur koreksi finansial.',
+          );
+        }
+      }
+      dutyDate = dateX;
+      affectedDutyDates = [dateX, swapDateY];
+      if (actor.role === 'ketua_shift_satpam') {
+        swapOccurrenceRefs = affectedDutyDates.flatMap((affectedDate) =>
+          (['Pagi', 'Sore', 'Malam'] as const).map((shiftName) =>
+            adminDb
+              .collection('ShiftOccurrences')
+              .doc(shiftOccurrenceId(teamId, affectedDate, shiftName)),
+          ),
+        );
+      }
+      swapRequest = {
+        dateX,
+        expectedDateY: swapDateY,
+        guardAId,
+        guardBId,
+        postXId,
+      };
     } else if (action !== 'acknowledge_backfill') {
       throw new HttpError(400, 'Aksi perubahan rencana tidak valid.');
     }
@@ -885,27 +1037,39 @@ export async function PATCH(request: NextRequest) {
       teamId,
       expectedRevision,
       replacementDay,
+      swapRequest,
       reason,
     });
     const idempotencyRef = adminDb
       .collection('FinancialIdempotencyKeys')
       .doc(`${actor.uid}__${requestId}`);
     const result = await adminDb.runTransaction(async (transaction) => {
-      const [latestPlan, idempotency] = await Promise.all([
+      const transactionReads = await Promise.all([
         transaction.get(planRef),
         transaction.get(idempotencyRef),
+        ...swapOccurrenceRefs.map((reference) => transaction.get(reference)),
       ]);
+      const latestPlan = transactionReads[0] as FirebaseFirestore.DocumentSnapshot;
+      const idempotency = transactionReads[1] as FirebaseFirestore.DocumentSnapshot;
+      const swapOccurrences = transactionReads.slice(2) as FirebaseFirestore.DocumentSnapshot[];
       if (idempotency.exists) {
         if (idempotency.data()?.requestHash !== requestHash) {
           throw new HttpError(409, 'requestId sudah digunakan untuk perubahan lain.');
         }
         return {
           revision: Number(idempotency.data()?.revision || expectedRevision),
+          swapDateY: String(idempotency.data()?.swapDateY || '') || null,
           idempotent: true,
         };
       }
       if (Number(latestPlan.data()?.revision || 0) !== expectedRevision) {
         throw new HttpError(409, 'Rencana telah berubah. Muat ulang lalu coba lagi.');
+      }
+      if (swapOccurrences.some((snapshot) => snapshot.exists)) {
+        throw new HttpError(
+          409,
+          'Salah satu tanggal sudah dilaporkan. Gunakan Lembur Cover atau muat ulang rencana.',
+        );
       }
       const before = latestPlan.data()!;
       const revision = expectedRevision + 1;
@@ -916,6 +1080,27 @@ export async function PATCH(request: NextRequest) {
           day.dutyDate === replacementDay!.dutyDate
             ? { ...day, ...replacementDay, overridden: true }
             : day,
+        );
+      } else if (swapRequest) {
+        const latestSwapDateY = findFirstUpcomingSwapDate(
+          generatedDays,
+          swapRequest.dateX,
+          swapRequest.guardAId,
+          swapRequest.guardBId,
+        );
+        if (latestSwapDateY !== swapRequest.expectedDateY) {
+          throw new HttpError(
+            409,
+            'Rencana telah berubah. Muat ulang sebelum menukar tanggal Libur.',
+          );
+        }
+        generatedDays = applyLiburDateSwap(
+          generatedDays,
+          swapRequest.dateX,
+          latestSwapDateY,
+          swapRequest.guardAId,
+          swapRequest.guardBId,
+          swapRequest.postXId,
         );
       } else {
         acknowledgedBackfillDates = Array.from(
@@ -949,7 +1134,13 @@ export async function PATCH(request: NextRequest) {
         revision,
         action,
         dutyDate: dutyDate || null,
-        reason: reason || 'Ketua Shift memperbarui jadwal mendatang.',
+        dutyDates: affectedDutyDates,
+        swap: swapRequest,
+        reason:
+          reason ||
+          (swapRequest
+            ? 'Ketua Shift menukar tanggal Libur dua anggota regu.'
+            : 'Ketua Shift memperbarui jadwal mendatang.'),
         before,
         after,
         actorUid: actor.uid,
@@ -962,14 +1153,25 @@ export async function PATCH(request: NextRequest) {
           action:
             action === 'acknowledge_backfill'
               ? 'SATPAM_DUTY_PLAN_BACKFILL_ACKNOWLEDGED'
-              : 'SATPAM_DUTY_PLAN_DAY_EDITED',
+              : action === 'swap_libur_days'
+                ? 'SATPAM_DUTY_PLAN_LIBUR_SWAPPED'
+                : 'SATPAM_DUTY_PLAN_DAY_EDITED',
           entityType: 'SatpamDutyPlan',
           entityId: planRef.id,
           requestId,
-          reason: reason || 'Perubahan jadwal mendatang oleh Ketua Shift.',
+          reason:
+            reason ||
+            (swapRequest
+              ? 'Penukaran tanggal Libur oleh Ketua Shift.'
+              : 'Perubahan jadwal mendatang oleh Ketua Shift.'),
           before,
           after,
-          metadata: { dutyDate: dutyDate || null, revision },
+          metadata: {
+            dutyDate: dutyDate || null,
+            dutyDates: affectedDutyDates,
+            swap: swapRequest,
+            revision,
+          },
         }),
       );
       transaction.create(idempotencyRef, {
@@ -979,16 +1181,25 @@ export async function PATCH(request: NextRequest) {
         entityType: 'SatpamDutyPlan',
         entityId: planRef.id,
         revision,
+        swapDateY: swapRequest?.expectedDateY || null,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-      return { revision, status: after.status, idempotent: false };
+      return {
+        revision,
+        status: after.status,
+        swapDateY: swapRequest?.expectedDateY || null,
+        idempotent: false,
+      };
     });
 
-    if (replacementDay && actor.role !== 'ketua_shift_satpam') {
+    if (
+      (replacementDay || swapRequest) &&
+      actor.role !== 'ketua_shift_satpam'
+    ) {
       await reopenAffectedOccurrences({
         period,
         teamId,
-        dutyDates: [replacementDay.dutyDate],
+        dutyDates: affectedDutyDates,
         actor,
         requestId,
         reason,

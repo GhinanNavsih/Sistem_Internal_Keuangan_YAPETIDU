@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SATPAM_POSTS } from './domain';
 import {
+  applyLiburDateSwap,
   classifySatpamDutyAssignments,
+  findFirstUpcomingSwapDate,
   isSatpamAdvancePlanningPeriod,
   isSatpamDutyPlanRequired,
   nextSatpamRotationAssignments,
@@ -179,6 +181,76 @@ test('fixed roles must be valid and cannot be changed by a daily plan edit', () 
         fixedPost9EmployeeId,
       }),
     /Pos 2 wajib tetap diisi Ketua Shift/,
+  );
+});
+
+test('Libur swap uses the first eligible upcoming date and preserves duty counts', () => {
+  const original = generatePlan('2026-08-01', '2026-08-16').generatedDays;
+  const dateXDay = original[0];
+  const guardAId = dateXDay.assignments.find(
+    (assignment) => assignment.postId === 'Pos 1',
+  )!.employeeId;
+  const guardBId = dateXDay.offDutyEmployeeId;
+  const dateY = findFirstUpcomingSwapDate(
+    original,
+    dateXDay.dutyDate,
+    guardAId,
+    guardBId,
+  );
+
+  assert.equal(dateY, '2026-08-08');
+  const dateYBefore = original.find((day) => day.dutyDate === dateY)!;
+  const guardBPostOnDateY = dateYBefore.assignments.find(
+    (assignment) => assignment.employeeId === guardBId,
+  )!.postId;
+  const workCount = (days: readonly SatpamDutyPlanDay[], employeeId: string) =>
+    days.filter((day) =>
+      day.assignments.some((assignment) => assignment.employeeId === employeeId),
+    ).length;
+
+  const swapped = applyLiburDateSwap(
+    original,
+    dateXDay.dutyDate,
+    dateY!,
+    guardAId,
+    guardBId,
+    'Pos 1',
+  );
+  const dateXAfter = swapped[0];
+  const dateYAfter = swapped.find((day) => day.dutyDate === dateY)!;
+
+  assert.equal(
+    dateXAfter.assignments.find((assignment) => assignment.postId === 'Pos 1')
+      ?.employeeId,
+    guardBId,
+  );
+  assert.equal(dateXAfter.offDutyEmployeeId, guardAId);
+  assert.equal(
+    dateYAfter.assignments.find(
+      (assignment) => assignment.postId === guardBPostOnDateY,
+    )?.employeeId,
+    guardAId,
+  );
+  assert.equal(dateYAfter.offDutyEmployeeId, guardBId);
+  assert.equal(workCount(swapped, guardAId), workCount(original, guardAId));
+  assert.equal(workCount(swapped, guardBId), workCount(original, guardBId));
+  assert.equal(original[0].offDutyEmployeeId, guardBId, 'input must stay immutable');
+});
+
+test('Libur swap returns no candidate when Guard A has no later Libur date', () => {
+  const days = generatePlan('2026-08-01', '2026-08-08').generatedDays;
+  const dateXDay = days.at(-1)!;
+  const guardAId = dateXDay.assignments.find(
+    (assignment) => assignment.postId === 'Pos 1',
+  )!.employeeId;
+  assert.equal(
+    findFirstUpcomingSwapDate(
+      days,
+      dateXDay.dutyDate,
+      guardAId,
+      dateXDay.offDutyEmployeeId,
+    ),
+    null,
   );
 });
 
