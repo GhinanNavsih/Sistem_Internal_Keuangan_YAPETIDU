@@ -314,6 +314,17 @@ export default function RekapPekaryaPage() {
   // entry wins over the computed sum.
   const manualSpjEnabled = allowsManualSpjEntry(category, period);
 
+  // July 2026 is the Satpam pilot period. Its monthly attendance bonus was
+  // not captured by the paper roster, so the Satker head (or Superadmin) may
+  // enter the 0/1 bonus count manually. Later periods remain duty-plan
+  // derived and read-only here.
+  const canEditSatpamMonthlyBonus =
+    category === 'SATPAM' &&
+    period === '2026-07' &&
+    (profile?.role === 'super_admin' ||
+      (profile?.role === 'satker_head' &&
+        profile.permittedCategories?.includes('SATPAM')));
+
   // Helper: the SPJ value that belongs on the rekap, slip, and PDF
   const getSpjValue = useCallback((empId: string) => {
     const manualValue = tableData[empId]?.spj;
@@ -610,7 +621,8 @@ export default function RekapPekaryaPage() {
     if (
       satpamDutyPlanRequired &&
       category === 'SATPAM' &&
-      key === 'bonusPresensiBulanan'
+      key === 'bonusPresensiBulanan' &&
+      !canEditSatpamMonthlyBonus
     ) {
       return;
     }
@@ -627,7 +639,11 @@ export default function RekapPekaryaPage() {
       setSaved(false);
       return;
     }
-    const num = parseInt(value, 10) || 0;
+    const parsed = parseInt(value, 10) || 0;
+    const num =
+      key === 'bonusPresensiBulanan' && canEditSatpamMonthlyBonus
+        ? Math.min(1, Math.max(0, parsed))
+        : parsed;
     setTableData(prev => ({ ...prev, [employeeId]: { ...prev[employeeId], [key]: num } }));
     setSaved(false);
   };
@@ -652,6 +668,14 @@ export default function RekapPekaryaPage() {
         if (storedValues.tunjanganJabatan === undefined) {
           storedValues.tunjanganJabatan = ketuaShiftIds.has(emp.employeeId) ? 100000 : 0;
         }
+      }
+      // An empty July pilot cell is an explicit "no bonus" value, rather than
+      // an invitation for a later duty-plan reconciliation to fill it in.
+      if (
+        canEditSatpamMonthlyBonus &&
+        storedValues.bonusPresensiBulanan === undefined
+      ) {
+        storedValues.bonusPresensiBulanan = 0;
       }
       if (category === 'SOPIR' && storedValues.piket === undefined) {
         storedValues.piket = getComputedSopirPiketCount(emp.employeeId);
@@ -684,7 +708,23 @@ export default function RekapPekaryaPage() {
       return cleaned;
     });
 
-    return { period, periodLabel, jobCategory: category, entries, customColumns: sanitizedCustomCols, isLocked: true, status: 'locked', updatedAt: "ServerTimestamp" };
+    return {
+      period,
+      periodLabel,
+      jobCategory: category,
+      entries,
+      customColumns: sanitizedCustomCols,
+      isLocked: true,
+      status: 'locked',
+      ...(canEditSatpamMonthlyBonus
+        ? {
+            satpamMonthlyBonusManualOverride: true,
+            satpamMonthlyBonusManualOverrideBy: profile?.uid,
+            satpamMonthlyBonusManualOverrideAt: serverTimestamp(),
+          }
+        : {}),
+      updatedAt: "ServerTimestamp",
+    };
   };
 
   const handleSave = () => {
@@ -1156,6 +1196,16 @@ export default function RekapPekaryaPage() {
                 </span>
               </div>
             )}
+            {canEditSatpamMonthlyBonus && !isLocked && (
+              <div className="mx-5 mt-4 p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-amber-950 text-xs flex gap-2 font-medium">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Bonus Presensi Bulanan Satpam — Juli 2026:</strong>{' '}
+                  isi <strong>0</strong> atau <strong>1</strong> sesuai keputusan Kepala Satker.
+                  Nilai 1 berarti bonus Rp100.000. Kolom ini manual khusus periode pilot Juli.
+                </span>
+              </div>
+            )}
             <div className={`overflow-x-auto max-h-[700px] overflow-y-auto ${hasScanData ? 'bg-slate-50/50 p-6' : ''} transition-all duration-500`}>
               <table className={`w-full text-left ${hasScanData ? 'border-separate border-spacing-y-4' : 'border-collapse'}`}>
                 <thead className="sticky top-0 z-20 bg-[#F8FAFC]">
@@ -1235,6 +1285,10 @@ export default function RekapPekaryaPage() {
                           const isDutyPlanDerived =
                             satpamDutyPlanRequired &&
                             category === 'SATPAM' &&
+                            col.key === 'bonusPresensiBulanan' &&
+                            !canEditSatpamMonthlyBonus;
+                          const isManualSatpamBonus =
+                            canEditSatpamMonthlyBonus &&
                             col.key === 'bonusPresensiBulanan';
                           const cellValue = isSpj
                             ? (manualSpjEnabled
@@ -1255,7 +1309,11 @@ export default function RekapPekaryaPage() {
                             >
                               <Input
                                 id={`cell-${empIdx}-${colIdx}`}
-                                type="text"
+                                type={isManualSatpamBonus ? 'number' : 'text'}
+                                min={isManualSatpamBonus ? 0 : undefined}
+                                max={isManualSatpamBonus ? 1 : undefined}
+                                step={isManualSatpamBonus ? 1 : undefined}
+                                inputMode={isManualSatpamBonus ? 'numeric' : undefined}
                                 value={cellValue}
                                 onChange={(e) => updateCell(emp.employeeId, col.key, e.target.value)}
                                 disabled={
@@ -1265,7 +1323,9 @@ export default function RekapPekaryaPage() {
                                   isDutyPlanDerived
                                 }
                                 title={
-                                  isDutyPlanDerived
+                                  isManualSatpamBonus
+                                    ? 'Bonus manual khusus Satpam periode Juli 2026. Isi 0 atau 1.'
+                                    : isDutyPlanDerived
                                     ? 'Bonus dihitung otomatis dari pemenuhan rencana dinas Satpam.'
                                   : isAttendanceDerived
                                     ? 'Nilai ini bersumber dari publikasi Presensi Pekarya.'
@@ -1281,7 +1341,7 @@ export default function RekapPekaryaPage() {
                                   ? 'bg-slate-50/60 border-slate-200/80 text-slate-900 disabled:opacity-100 cursor-default shadow-2xs'
                                   : isAttendanceDerived || isDutyPlanDerived
                                     ? 'bg-indigo-50 border-indigo-200 text-indigo-800 disabled:opacity-100 cursor-not-allowed'
-                                  : isSpj || isSatpamShift || isSopirPiket || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
+                                  : isManualSatpamBonus || isSpj || isSatpamShift || isSopirPiket || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
                                     ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
                                     : hasScanData
                                       ? 'rounded-xl border-slate-400 bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'

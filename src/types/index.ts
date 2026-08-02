@@ -137,6 +137,10 @@ export interface UraianGajiDocument {
   workingDaysInMonth: number;
   entries: Record<string, UraianEntry>; // employeeId → entry
   customColumns?: RekapColumn[];
+  /** July 2026 Satpam pilot: bonus count entered by an authorised Satker user. */
+  satpamMonthlyBonusManualOverride?: boolean;
+  satpamMonthlyBonusManualOverrideBy?: string;
+  satpamMonthlyBonusManualOverrideAt?: unknown;
   isLocked?: boolean;
   status?: 'draft' | 'locked';
   createdAt?: any;

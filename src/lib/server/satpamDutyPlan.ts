@@ -505,6 +505,12 @@ export async function syncSatpamDutyReconciliation(
     const uraianSnapshot = await transaction.get(uraianRef);
     if (!uraianSnapshot.exists) return;
     const uraian = uraianSnapshot.data()!;
+    // July 2026 is a paper-based Satpam pilot. Once an authorised Satker
+    // user saves the manual bonus column, later duty-plan reconciliation must
+    // refresh shift counts without replacing that explicit 0/1 decision.
+    const manualSatpamBonusOverride =
+      period === '2026-07' &&
+      uraian.satpamMonthlyBonusManualOverride === true;
     const entries =
       uraian.entries && typeof uraian.entries === 'object'
         ? { ...(uraian.entries as Record<string, Record<string, unknown>>) }
@@ -541,8 +547,20 @@ export async function syncSatpamDutyReconciliation(
         counts.lemburCover = shiftCounts.lemburCover;
         values.lemburCover =
           shiftCounts.lemburCover * SATPAM_RATES['Lembur Cover'];
-        counts.bonusPresensiBulanan = employee.bonusCount;
-        values.bonusPresensiBulanan = employee.bonusAmount;
+        if (!manualSatpamBonusOverride) {
+          counts.bonusPresensiBulanan = employee.bonusCount;
+          values.bonusPresensiBulanan = employee.bonusAmount;
+        } else {
+          const preservedBonusCount = Math.max(
+            0,
+            Number(
+              counts.bonusPresensiBulanan ??
+                Number(values.bonusPresensiBulanan || 0) / 100_000,
+            ),
+          );
+          counts.bonusPresensiBulanan = preservedBonusCount;
+          values.bonusPresensiBulanan = preservedBonusCount * 100_000;
+        }
         entries[employee.employeeId] = {
           ...existing,
           employeeId: employee.employeeId,
@@ -594,8 +612,17 @@ export async function syncSatpamDutyReconciliation(
       counts.lemburCover = shiftCounts.lemburCover;
       values.lemburCover =
         shiftCounts.lemburCover * SATPAM_RATES['Lembur Cover'];
-      counts.bonusPresensiBulanan = 0;
-      values.bonusPresensiBulanan = 0;
+      const preservedBonusCount = manualSatpamBonusOverride
+        ? Math.max(
+            0,
+            Number(
+              counts.bonusPresensiBulanan ??
+                Number(values.bonusPresensiBulanan || 0) / 100_000,
+            ),
+          )
+        : 0;
+      counts.bonusPresensiBulanan = preservedBonusCount;
+      values.bonusPresensiBulanan = preservedBonusCount * 100_000;
       entries[external.employeeId] = {
         ...existing,
         employeeId: external.employeeId,

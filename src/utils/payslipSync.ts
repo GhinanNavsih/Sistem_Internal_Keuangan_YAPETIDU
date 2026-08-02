@@ -120,6 +120,10 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
       const uraianData = uraianSnap.data();
       const entries = { ...(uraianData.entries || {}) };
       const currentEntry = entries[employeeId] || { employeeId, name: employeeName };
+      const manualSatpamBonusOverride =
+        jobCategory === 'SATPAM' &&
+        period === '2026-07' &&
+        uraianData.satpamMonthlyBonusManualOverride === true;
 
       let updatedValues = { ...(currentEntry.values || {}) };
       let updatedCounts = { ...(currentEntry.counts || {}) };
@@ -143,7 +147,7 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
           jumatLibur: jumatCount * SATPAM_RATES['Jumat & Libur'],
           lemburSendiri: lemburSendiriCount * SATPAM_RATES['Lembur Sendiri'],
           lemburCover: lemburCoverCount * SATPAM_RATES['Lembur Cover'],
-          ...(currentEntry.satpamDutySource
+          ...(currentEntry.satpamDutySource && !manualSatpamBonusOverride
             ? {
                 bonusPresensiBulanan:
                   canonicalBonusCount * 100_000,
@@ -157,7 +161,7 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
           jumatLibur: jumatCount,
           lemburSendiri: lemburSendiriCount,
           lemburCover: lemburCoverCount,
-          ...(currentEntry.satpamDutySource
+          ...(currentEntry.satpamDutySource && !manualSatpamBonusOverride
             ? { bonusPresensiBulanan: canonicalBonusCount }
             : {}),
           ...(spjIsManual ? {} : { spj: 0 }),
