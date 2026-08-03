@@ -78,9 +78,9 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { BlueCollarEmployee } from '@/types';
 import { useDashboardData } from '@/lib/DashboardDataContext';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import { normalizeNipy } from '@/lib/payroll/attendance';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 
 const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI'];
@@ -140,9 +140,7 @@ const getEmpId = (emp: any) => emp.employeeId || emp.id || '';
 const getEmpName = (emp: any) => emp.personal_info?.name || emp.name || '';
 const getEmpNikOrNiy = (emp: any) => emp.personal_info?.employee_id_niy || emp.nik || '';
 const getEmpNipy = (emp: any) =>
-  String(emp.nipy || emp.personal_info?.employee_id_niy || '')
-    .trim()
-    .toUpperCase();
+  normalizeNipy(emp.nipy || emp.personal_info?.employee_id_niy || '');
 const getEmpCategory = (emp: any) => emp.employment_profile?.job_role || emp.employment?.jobCategory || '';
 const getPekaryaNipyGroup = (category: unknown) => {
   const normalized = String(category || '').trim().toUpperCase();
@@ -576,6 +574,7 @@ export default function EmployeesPage() {
   }, []);
 
   const currentTab = COLLAR_TABS.find(t => t.key === activeTab)!;
+  const canEditNipy = profile?.role === 'super_admin' || profile?.role === 'employee_admin';
 
   const resetForm = (tab: string): any => {
     if (tab === 'loyalis') {
@@ -861,11 +860,8 @@ export default function EmployeesPage() {
       }
 
       let final: any;
-      const desiredNipy = String(
-        formData.personal_info?.employee_id_niy || '',
-      )
-        .trim()
-        .toUpperCase();
+      const desiredNipy = normalizeNipy(formData.personal_info?.employee_id_niy);
+      const previousNipy = editingEmployee ? getEmpNipy(editingEmployee) : '';
       if (
         activeTab === 'blue' &&
         !editingEmployee &&
@@ -889,7 +885,7 @@ export default function EmployeesPage() {
           personal_info: {
             ...(formData.personal_info || {}),
             name: formData.personal_info?.name || '',
-            employee_id_niy: formData.personal_info?.employee_id_niy || null,
+            employee_id_niy: desiredNipy || null,
             nik: formData.personal_info?.nik || null,
             tax_id_npwp: formData.personal_info?.tax_id_npwp || null,
             status: formData.personal_info?.status || 'AKTIF',
@@ -966,8 +962,9 @@ export default function EmployeesPage() {
           }
         };
       } else {
+        const { nipy: _nipy, nipyAssignment: _nipyAssignment, ...blueCollarForm } = formData;
         final = {
-          ...formData,
+          ...blueCollarForm,
           employeeId,
           collarType: 'blue_collar',
           bankAccount: {
@@ -1042,8 +1039,24 @@ export default function EmployeesPage() {
         }
       }
 
-      await setDoc(doc(db, currentTab.collection, employeeId), final, { merge: true });
-      const previousNipy = editingEmployee ? getEmpNipy(editingEmployee) : '';
+      // NIPY is protected from direct client writes by Firestore rules. Keep
+      // the existing protected values in the normal profile write, then let
+      // the audited identity endpoint update the NIPY and its index atomically.
+      let employeeWritePayload = final;
+      if (activeTab === 'loyalis') {
+        const { nipy: _nipy, ...loyalisPayload } = final;
+        employeeWritePayload = {
+          ...loyalisPayload,
+          personal_info: {
+            ...loyalisPayload.personal_info,
+            employee_id_niy: editingEmployee
+              ? editingEmployee.personal_info?.employee_id_niy ?? null
+              : null,
+          },
+        };
+      }
+
+      await setDoc(doc(db, currentTab.collection, employeeId), employeeWritePayload, { merge: true });
       if (activeTab === 'loyalis' && desiredNipy !== previousNipy) {
         await authenticatedJson('/api/admin/attendance-identities', {
           method: 'PATCH',
@@ -2188,9 +2201,10 @@ export default function EmployeesPage() {
                           updateNestedField(
                             'personal_info',
                             'employee_id_niy',
-                            e.target.value.toUpperCase(),
+                            normalizeNipy(e.target.value),
                           )
                         }
+                        disabled={!canEditNipy || saving}
                         className="rounded-xl border-slate-200 font-mono"
                         placeholder="Harus sama persis dengan NIPY/PIN pada file presensi"
                       />

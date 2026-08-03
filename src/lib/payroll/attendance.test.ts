@@ -33,6 +33,7 @@ test('NIPY is preferred and conflicting PIN is reported', () => {
 });
 
 test('existing Loyalis NIY is accepted as the attendance NIPY', () => {
+  assert.equal(normalizeNipy('11 041010 174'), '11041010174');
   assert.equal(
     resolveEmployeeAttendanceNipy({
       personal_info: { employee_id_niy: ' 11010901001 ' },

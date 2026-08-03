@@ -24,114 +24,20 @@ import {
 import { db } from '@/lib/firebase';
 import { MONTHS_ID, REKAP_COLUMNS, SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
-import * as XLSX from 'xlsx';
+import { normalizeNipy } from '@/lib/payroll/attendance';
+import { parseLoyalisPresenceWorkbook } from '@/lib/payroll/loyalisPresenceWorkbook';
 import {
   authenticatedFormData,
   authenticatedJson,
   createFinancialRequestId,
 } from '@/lib/payroll/client';
 
-import Link from 'next/link'; const normalizeExcelDate = (val: any): string => {
-  if (val === undefined || val === null) return '';
-  const str = String(val).trim();
-  if (!str) return '';
-
-  // 1. If it's a numeric string or number (Excel serialized date)
-  if (/^\d+(\.\d+)?$/.test(str)) {
-    const num = Math.floor(parseFloat(str));
-    const base = Date.UTC(1899, 11, 30);
-    const target = new Date(base + num * 24 * 60 * 60 * 1000);
-    if (!isNaN(target.getTime())) {
-      const day = String(target.getUTCDate()).padStart(2, '0');
-      const month = String(target.getUTCMonth() + 1).padStart(2, '0');
-      const year = target.getUTCFullYear();
-      return `${day}-${month}-${year}`;
-    }
-  }
-
-  // 2. Try to parse ISO date string (YYYY-MM-DD or YYYY/MM/DD)
-  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(str)) {
-    const parts = str.split(/[-/]/);
-    if (parts.length >= 3) {
-      const y = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10);
-      const d = parseInt(parts[2], 10);
-      const day = String(d).padStart(2, '0');
-      const month = String(m).padStart(2, '0');
-      const year = y < 100 ? (y < 50 ? 2000 + y : 1900 + y) : y;
-      return `${day}-${month}-${year}`;
-    }
-  }
-
-  // 3. Try to parse DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY or DD-MM-YY
-  if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/.test(str)) {
-    const parts = str.split(/[-/.]/);
-    if (parts.length >= 3) {
-      const d = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10);
-      const y = parseInt(parts[2], 10);
-      const day = String(d).padStart(2, '0');
-      const month = String(m).padStart(2, '0');
-      const year = y < 100 ? (y < 50 ? 2000 + y : 1900 + y) : y;
-      return `${day}-${month}-${year}`;
-    }
-  }
-
-  // 4. Try parsing solid numeric patterns ddmmyy or ddmmyyyy
-  if (/^\d{6}$/.test(str)) {
-    const d = parseInt(str.substring(0, 2), 10);
-    const m = parseInt(str.substring(2, 4), 10);
-    const y = parseInt(str.substring(4, 6), 10);
-    const day = String(d).padStart(2, '0');
-    const month = String(m).padStart(2, '0');
-    const year = 2000 + y;
-    return `${day}-${month}-${year}`;
-  }
-  if (/^\d{8}$/.test(str)) {
-    const d = parseInt(str.substring(0, 2), 10);
-    const m = parseInt(str.substring(2, 4), 10);
-    const y = parseInt(str.substring(4, 8), 10);
-    const day = String(d).padStart(2, '0');
-    const month = String(m).padStart(2, '0');
-    return `${day}-${month}-${y}`;
-  }
-
-  // Fallback: try JS Native Date parsing
-  const parsedMs = Date.parse(str);
-  if (!isNaN(parsedMs)) {
-    const d = new Date(parsedMs);
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    return `${day}-${month}-${d.getFullYear()}`;
-  }
-
-  return str;
-};
+import Link from 'next/link';
 
 const parseDateToDDMMYYYY = (dateStr: string) => {
   if (!dateStr || !dateStr.includes('-')) return dateStr;
   const [y, m, d] = dateStr.split('-');
   return `${d}-${m}-${y}`;
-};
-
-const normalizeExcelTime = (value: unknown): string => {
-  if (value === undefined || value === null || value === '') return '';
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const seconds = Math.round((((value % 1) + 1) % 1) * 86_400) % 86_400;
-    return [
-      Math.floor(seconds / 3_600),
-      Math.floor((seconds % 3_600) / 60),
-      seconds % 60,
-    ]
-      .map((part) => String(part).padStart(2, '0'))
-      .join(':');
-  }
-  const match = /^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(
-    String(value).trim(),
-  );
-  return match
-    ? `${match[1].padStart(2, '0')}:${match[2]}:${match[3] || '00'}`
-    : '';
 };
 
 const recalculateSummary = (dailyLogs: any[], expHours: number) => {
@@ -315,11 +221,9 @@ export default function PresensiLoyalisRawPage() {
           const data = d.data();
           return {
             id: d.id,
-            nipy: String(
+            nipy: normalizeNipy(
               data.nipy || data.personal_info?.employee_id_niy || '',
-            )
-              .trim()
-              .toUpperCase(),
+            ),
             name: data.personal_info?.name || '',
             role: data.employment_profile?.job_role || '',
             department: data.employment_profile?.department_unit || '',
@@ -451,6 +355,91 @@ export default function PresensiLoyalisRawPage() {
     });
 
     return found || null;
+  }, []);
+
+  const getUnmatchedReason = useCallback((
+    excelName: string,
+    sourceNipy: string,
+    employees: any[],
+    isSharedImport: boolean
+  ): { reason: string; detail: string; suggestedEmp: any | null } => {
+    if (isSharedImport) {
+      if (!sourceNipy) {
+        return {
+          reason: 'NIPY Kosong di Excel',
+          detail: 'Kolom NIPY/PIN pada baris Excel ini tidak terisi. Sistem memerlukan NIPY untuk menghubungkan data secara otomatis.',
+          suggestedEmp: null,
+        };
+      }
+      return {
+        reason: 'NIPY Tidak Ditemukan',
+        detail: `NIPY "${sourceNipy}" dari file Excel tidak cocok dengan data NIPY pegawai Loyalis aktif mana pun di sistem.`,
+        suggestedEmp: null,
+      };
+    }
+
+    if (!excelName || excelName === '-') {
+      return {
+        reason: 'Baris Kosong',
+        detail: 'Tidak ada nama pegawai pada baris data ini.',
+        suggestedEmp: null,
+      };
+    }
+
+    const cleanExcel = normalizeName(excelName).toLowerCase();
+    const excelBase = excelName.split(',')[0].trim().toLowerCase();
+    const excelWords = excelBase.split(/\s+/).filter((w: string) => w.length >= 3);
+
+    let bestCandidate: any = null;
+    let maxScore = 0;
+
+    employees.forEach(emp => {
+      const empName = emp.name || '';
+      const cleanDb = normalizeName(empName).toLowerCase();
+      const dbBase = empName.split(',')[0].trim().toLowerCase();
+      const dbWords = dbBase.split(/\s+/).filter((w: string) => w.length >= 3);
+
+      if (excelBase === dbBase || cleanExcel === cleanDb) {
+        if (maxScore < 10) {
+          maxScore = 10;
+          bestCandidate = emp;
+        }
+        return;
+      }
+
+      const matchingWords = excelWords.filter((w: string) =>
+        dbWords.some((dw: string) => dw.includes(w) || w.includes(dw))
+      );
+
+      if (matchingWords.length > maxScore) {
+        maxScore = matchingWords.length;
+        bestCandidate = emp;
+      }
+    });
+
+    if (bestCandidate) {
+      const hasDegreeInExcel = excelName.includes(',');
+      const hasDegreeInDb = (bestCandidate.name || '').includes(',');
+      let detailMsg = `Nama di Excel "${excelName}" berbeda penulisan dengan data di sistem.`;
+
+      if (hasDegreeInExcel || hasDegreeInDb) {
+        detailMsg = `Terdapat perbedaan penulisan gelar/tanda baca antara Excel ("${excelName}") dan master pegawai ("${bestCandidate.name}").`;
+      } else {
+        detailMsg = `Terdapat perbedaan ejaan/spasi antara Excel ("${excelName}") dan master pegawai ("${bestCandidate.name}").`;
+      }
+
+      return {
+        reason: 'Perbedaan Gelar / Ejaan Nama',
+        detail: detailMsg,
+        suggestedEmp: bestCandidate,
+      };
+    }
+
+    return {
+      reason: 'Pegawai Belum Terdaftar / Nama Berbeda',
+      detail: `Nama "${excelName}" di file Excel tidak cocok dengan data pegawai Loyalis aktif mana pun di sistem. Kemungkinan pegawai belum diinput ke database master.`,
+      suggestedEmp: null,
+    };
   }, []);
 
   const calculatePresenceStratum = useCallback((
@@ -698,54 +687,29 @@ export default function PresensiLoyalisRawPage() {
     if (!file) return;
 
     const reader = new FileReader();
+    reader.onerror = () => {
+      setSavingPresence(false);
+      setMessage({ type: 'error', text: 'Gagal membaca file Excel. Pastikan file tidak rusak dan coba lagi.' });
+    };
     reader.onload = (evt) => {
       try {
         const data = evt.target?.result;
-        const workbook = XLSX.read(data, { type: 'binary' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(worksheet) as any[];
-
-        if (rows.length === 0) {
-          setMessage({ type: 'error', text: 'File Excel kosong.' });
-          return;
+        if (!(data instanceof ArrayBuffer)) {
+          throw new Error('File Excel tidak dapat dibaca sebagai data biner.');
         }
 
-        // Validate raw headers
-        const sampleRow = rows[0];
-        if (!sampleRow || !('Nama' in sampleRow) || !('Jam kerja' in sampleRow)) {
-          setMessage({ type: 'error', text: 'Format Excel tidak cocok. Pastikan memiliki kolom "Nama" dan "Jam kerja".' });
+        const parsedWorkbook = parseLoyalisPresenceWorkbook(data, canonicalPeriod);
+        const calculationRows = parsedWorkbook.rows.filter(
+          (row) => !usesSharedImport || Boolean(row.nipy),
+        );
+
+        if (calculationRows.length === 0) {
+          setMessage({
+            type: 'error',
+            text: `Tidak ada baris presensi untuk periode ${canonicalPeriod} pada file ini.`,
+          });
           return;
         }
-        const calculationRows = usesSharedImport
-          ? rows.filter((row) => {
-              const normalizedDate = normalizeExcelDate(row['Tanggal']);
-              const [dayPart, monthPart, yearPart] = normalizedDate
-                .split('-')
-                .map(Number);
-              const dedicatedNipy = String(row['NIPY'] || '')
-                .trim()
-                .toUpperCase();
-              const pin = String(row['PIN'] || '').trim().toUpperCase();
-              const validTime = (value: unknown) =>
-                value === undefined ||
-                value === null ||
-                value === '' ||
-                typeof value === 'number' ||
-                /^([01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(
-                  String(value).trim(),
-                );
-              return (
-                dayPart >= 1 &&
-                monthPart === month &&
-                yearPart === year &&
-                Boolean(dedicatedNipy || pin) &&
-                !(dedicatedNipy && pin && dedicatedNipy !== pin) &&
-                validTime(row['Scan masuk']) &&
-                validTime(row['Scan pulang'])
-              );
-            })
-          : rows;
 
         // Auto-detect working days count from the uploaded raw logs using robust algorithm:
         // - A date is NOT a working day if:
@@ -754,8 +718,8 @@ export default function PresensiLoyalisRawPage() {
         // - Otherwise, it is a working day.
         const dateStats: Record<string, { total: number; tidakHadir: number; liburRutin: number }> = {};
         calculationRows.forEach(row => {
-          const tgl = normalizeExcelDate(row['Tanggal']);
-          const jk = String(row['Jam kerja'] || '').trim().toUpperCase();
+          const tgl = row.date;
+          const jk = row.workStatus.toUpperCase();
           if (!tgl) return;
           if (!dateStats[tgl]) {
             dateStats[tgl] = { total: 0, tidakHadir: 0, liburRutin: 0 };
@@ -781,50 +745,48 @@ export default function PresensiLoyalisRawPage() {
           setWorkingDays(deducedDays);
         }
 
-        // Starting August 2026, NIPY is the only payroll identity connector.
-        // Historical periods retain the old display-name matching path.
-        const grouped: Record<string, any[]> = {};
+        const employeesByNipy = new Map(
+          loyalisEmployees
+            .filter((employee) => employee.nipy)
+            .map((employee) => [employee.nipy, employee] as const),
+        );
+        const grouped: Record<string, { rows: typeof calculationRows; match: any | null }> = {};
         calculationRows.forEach(row => {
-          const name = String(row['Nama'] || '').trim();
-          const dedicatedNipy = String(row['NIPY'] || '').trim().toUpperCase();
-          const pin = String(row['PIN'] || '').trim().toUpperCase();
-          if (usesSharedImport && dedicatedNipy && pin && dedicatedNipy !== pin) {
-            return;
-          }
-          const connector = dedicatedNipy || pin;
-          const groupKey = usesSharedImport ? connector : name;
-          if (!groupKey) return;
-          if (!grouped[groupKey]) grouped[groupKey] = [];
-          grouped[groupKey].push(row);
+          const matchByNipy = row.nipy ? employeesByNipy.get(row.nipy) || null : null;
+          const matchByName = matchExcelName(row.name, loyalisEmployees);
+          // Newer imports are NIPY-only. Historical uploads may contain an
+          // old/stale NIPY, so use it when it resolves and fall back to the
+          // existing name/override matcher otherwise.
+          const match = usesSharedImport ? matchByNipy : matchByNipy || matchByName;
+          const groupKey = match
+            ? `employee:${match.id}`
+            : row.nipy
+              ? `nipy:${row.nipy}`
+              : `name:${row.name}`;
+
+          if (!grouped[groupKey]) grouped[groupKey] = { rows: [], match };
+          grouped[groupKey].rows.push(row);
+          if (!grouped[groupKey].match && match) grouped[groupKey].match = match;
         });
 
         const parsedData: any[] = [];
-        Object.entries(grouped).forEach(([groupKey, empRows]) => {
-          const excelName = String(empRows[0]?.['Nama'] || groupKey).trim();
-          const sourceNipy = usesSharedImport ? groupKey : '';
-          const dailyLogs: any[] = [];
-          empRows.forEach(dayRow => {
-            dailyLogs.push({
-              Tanggal: normalizeExcelDate(dayRow['Tanggal']),
-              'Jam kerja': String(dayRow['Jam kerja'] || ''),
-              'Scan masuk': normalizeExcelTime(dayRow['Scan masuk']),
-              'Scan pulang': normalizeExcelTime(dayRow['Scan pulang']),
-            });
-          });
+        Object.values(grouped).forEach(({ rows: empRows, match }) => {
+          if (usesSharedImport && !match) return;
 
-          // Sort logs by date DD-MM-YYYY
-          dailyLogs.sort((a, b) => {
-            const [d1, m1, y1] = a.Tanggal.split('-').map(Number);
-            const [d2, m2, y2] = b.Tanggal.split('-').map(Number);
-            return (y1 * 365 + m1 * 31 + d1) - (y2 * 365 + m2 * 31 + d2);
-          });
+          const excelName = empRows[0]?.name || empRows[0]?.nipy || '-';
+          const sourceNipy = empRows.find((row) => row.nipy)?.nipy || '';
+          // Sort logs by ISO date before converting them to the display format.
+          const dailyLogs = [...empRows]
+            .sort((a, b) => a.dateIso.localeCompare(b.dateIso))
+            .map((dayRow) => ({
+              Tanggal: dayRow.date,
+              'Jam kerja': dayRow.workStatus,
+              'Scan masuk': dayRow.scanIn,
+              'Scan pulang': dayRow.scanOut,
+            }));
 
           // Run recalculation to get total worked minutes, active days, etc.
           const summary = recalculateSummary(dailyLogs, expectedHours);
-          const match = usesSharedImport
-            ? loyalisEmployees.find((employee) => employee.nipy === sourceNipy) || null
-            : matchExcelName(excelName, loyalisEmployees);
-          if (usesSharedImport && !match) return;
 
           parsedData.push({
             excelName,
@@ -835,19 +797,51 @@ export default function PresensiLoyalisRawPage() {
           });
         });
 
+        if (parsedData.length === 0) {
+          setMessage({
+            type: 'error',
+            text: 'Tidak ada pegawai Loyalis yang dapat dihubungkan dari file Excel ini.',
+          });
+          return;
+        }
+
+        const warningParts: string[] = [];
+        if (parsedWorkbook.outsidePeriodCount > 0) {
+          warningParts.push(`${parsedWorkbook.outsidePeriodCount} baris di luar periode diabaikan.`);
+        }
+        if (parsedWorkbook.invalidDateCount > 0) {
+          warningParts.push(`${parsedWorkbook.invalidDateCount} baris dengan tanggal tidak valid diabaikan.`);
+        }
+        if (parsedWorkbook.invalidTimeCount > 0) {
+          warningParts.push(`${parsedWorkbook.invalidTimeCount} baris memiliki jam scan tidak valid.`);
+        }
+        if (parsedWorkbook.invalidStatusCount > 0) {
+          warningParts.push(`${parsedWorkbook.invalidStatusCount} baris tanpa status diabaikan.`);
+        }
+        if (parsedWorkbook.missingIdentityCount > 0) {
+          warningParts.push(`${parsedWorkbook.missingIdentityCount} baris tanpa identitas pegawai diabaikan.`);
+        }
+        const unmatchedCount = parsedData.filter((row) => !row.employeeId).length;
+        if (unmatchedCount > 0) {
+          warningParts.push(`${unmatchedCount} pegawai perlu dihubungkan manual.`);
+        }
+
         setUploadedData(parsedData);
         setMessage({
           type: 'success',
-          text: `Berhasil mengunggah ${parsedData.length} data pegawai dari logs presensi. Jumlah hari kerja otomatis diatur menjadi ${deducedDays} hari.`
+          text: `Berhasil mengunggah ${parsedData.length} data pegawai dari ${parsedWorkbook.rows.length} baris logs presensi. Jumlah hari kerja otomatis diatur menjadi ${deducedDays} hari.${warningParts.length > 0 ? ` ${warningParts.join(' ')}` : ''}`
         });
       } catch (err) {
         console.error(err);
-        setMessage({ type: 'error', text: 'Gagal membaca file Excel. Pastikan format benar.' });
+        setMessage({
+          type: 'error',
+          text: err instanceof Error ? err.message : 'Gagal membaca file Excel. Pastikan format benar.',
+        });
       }
     };
     const prepareAndRead = async () => {
       if (!usesSharedImport) {
-        reader.readAsBinaryString(file);
+        reader.readAsArrayBuffer(file);
         return;
       }
       setSavingPresence(true);
@@ -910,7 +904,7 @@ export default function PresensiLoyalisRawPage() {
           activeRevision: activated.activeRevision,
           activeRevisionId: activated.activeRevisionId,
         });
-        reader.readAsBinaryString(file);
+        reader.readAsArrayBuffer(file);
       } catch (error) {
         setMessage({
           type: 'error',
@@ -1503,12 +1497,20 @@ export default function PresensiLoyalisRawPage() {
                             <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 font-mono shrink-0">
                               {idx + 1}
                             </div>
-                            <div className="space-y-0.5">
-                              <h4 className="font-bold text-slate-800 text-xs tracking-wide">{row.excelName}</h4>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="font-bold text-slate-800 text-xs tracking-wide">{row.excelName}</h4>
+                                {!row.isMatched && row.excelName !== '-' && (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-200/80 px-2 py-0.5 rounded-full">
+                                    <AlertCircle className="w-3 h-3 text-rose-500 shrink-0" />
+                                    Belum Terhubung
+                                  </span>
+                                )}
+                              </div>
                               <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                                 {uploadedData && row.excelName !== '-' && !usesSharedImport ? (
                                   activeSearchRowIdx === row.idx ? (
-                                    <div className="relative w-full max-w-[200px] z-20">
+                                    <div className="relative w-full max-w-[240px] z-20">
                                       <Input
                                         type="text"
                                         placeholder="Cari nama pegawai..."
@@ -1522,7 +1524,10 @@ export default function PresensiLoyalisRawPage() {
                                         }}
                                         className="h-7 rounded-lg border-indigo-300 font-semibold text-slate-800 text-[10px] w-full bg-white pr-7"
                                       />
-                                      <div className="absolute left-0 right-0 top-8 max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 divide-y divide-slate-50">
+                                      <div className="absolute left-0 right-0 top-8 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 divide-y divide-slate-50">
+                                        <div className="p-2 bg-indigo-50/50 border-b border-indigo-100 text-[9px] font-semibold text-indigo-900">
+                                          Hubungkan <strong className="font-bold">{row.excelName}</strong> ke:
+                                        </div>
                                         {(() => {
                                           const search = searchQuery.toLowerCase();
                                           const filtered = loyalisEmployees.filter(emp =>
@@ -1571,11 +1576,11 @@ export default function PresensiLoyalisRawPage() {
                                       }}
                                       className={`text-left px-2 py-1 rounded-lg border transition-all text-[9px] font-bold flex items-center gap-1 cursor-pointer ${row.isMatched
                                           ? 'bg-indigo-50/40 text-indigo-700 border-indigo-100/50 hover:bg-indigo-50 hover:border-indigo-200'
-                                          : 'bg-rose-50 border-rose-100 text-rose-600 hover:bg-rose-100/50'
+                                          : 'bg-rose-50 border-rose-200/80 text-rose-700 hover:bg-rose-100/60'
                                         }`}
                                     >
-                                      <span className="truncate max-w-[150px]">
-                                        {row.isMatched ? row.employeeName : "Hubungkan Pegawai..."}
+                                      <span className="truncate max-w-[170px]">
+                                        {row.isMatched ? row.employeeName : "Hubungkan Pegawai Manual..."}
                                       </span>
                                       <Edit className="w-2.5 h-2.5 opacity-60 shrink-0" />
                                     </button>
@@ -1599,6 +1604,38 @@ export default function PresensiLoyalisRawPage() {
                                   </span>
                                 )}
                               </div>
+
+                              {/* Explanation info box for why data hasn't connected */}
+                              {!row.isMatched && row.excelName !== '-' && (() => {
+                                const reasonInfo = getUnmatchedReason(row.excelName, row.nipy, loyalisEmployees, usesSharedImport);
+                                return (
+                                  <div className="mt-1.5 text-[10px] bg-rose-50/70 border border-rose-150/80 rounded-lg p-2 space-y-1 text-slate-700 max-w-sm">
+                                    <div className="flex items-center gap-1.5 font-bold text-rose-700 text-[10px]">
+                                      <Info className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                      <span>Alasan: {reasonInfo.reason}</span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-600 leading-normal">
+                                      {reasonInfo.detail}
+                                    </p>
+                                    {reasonInfo.suggestedEmp && uploadedData && !usesSharedImport && (
+                                      <div className="flex items-center gap-1.5 pt-0.5">
+                                        <span className="text-[9px] font-semibold text-slate-500">Saran:</span>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleLinkEmployee(row.excelName, reasonInfo.suggestedEmp.id);
+                                          }}
+                                          className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-md transition-all cursor-pointer shadow-xs active:scale-95"
+                                        >
+                                          <CheckCircle2 className="w-3 h-3 text-indigo-600" />
+                                          Hubungkan ke "{reasonInfo.suggestedEmp.name}"
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
 

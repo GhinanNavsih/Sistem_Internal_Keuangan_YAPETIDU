@@ -1145,6 +1145,10 @@ function JourneyReportContent() {
     );
   }, [activeReportingJourney]);
 
+  const canEditMainDestination = useMemo(() => {
+    return activeReportingJourney?.status === 'claimed';
+  }, [activeReportingJourney?.status]);
+
   const handleOpenCancelModal = () => {
     setShowCancelModal(true);
   };
@@ -1640,7 +1644,7 @@ function JourneyReportContent() {
                         🎯 {activeReportingJourney.endPoint}
                       </div>
                     </div>
-                    {isSelfCreatedJourney && (
+                    {canEditMainDestination && (
                       <Button
                         type="button"
                         variant="outline"

@@ -45,6 +45,8 @@ interface CetakPayrollDialogProps {
   getLoyalisPresenceDeduction?: (empId: string) => number;
   getLoyalisPresensiEarning?: (empId: string) => number;
   getLoyalisPresensiDeduction?: (empId: string) => number;
+  isSuperAdmin?: boolean;
+  getFreshSlipData?: (emp: EmployeeRow) => { earnings: any[]; deductions: any[] };
 }
 
 export default function CetakPayrollDialog({
@@ -66,14 +68,16 @@ export default function CetakPayrollDialog({
   getLoyalisPresenceDeduction,
   getLoyalisPresensiEarning,
   getLoyalisPresensiDeduction,
+  isSuperAdmin,
+  getFreshSlipData,
 }: CetakPayrollDialogProps) {
 
   const handleExportXlsx = () => {
     const activeEmployees = employees.filter(e =>
-      isTransferEligibleStatus(slipStates?.[e.id]?.status),
+      isSuperAdmin ? e.isActive : isTransferEligibleStatus(slipStates?.[e.id]?.status),
     );
     if (activeEmployees.length === 0) {
-      window.alert('Tidak ada slip terkunci yang dapat diekspor.');
+      window.alert('Tidak ada slip karyawan yang dapat diekspor.');
       return;
     }
     
@@ -117,16 +121,22 @@ export default function CetakPayrollDialog({
       const presDeduction = getLoyalisPresensiDeduction ? getLoyalisPresensiDeduction(emp.id) : 0;
 
       let netSalary = 0;
-      const savedSlip = slipStates?.[emp.id];
-      if (
-        savedSlip &&
-        isTransferEligibleStatus(savedSlip.status) &&
-        savedSlip.earnings &&
-        savedSlip.earnings.length > 0
-      ) {
-        const totalEarnings = savedSlip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-        const totalDeductions = (savedSlip.deductions || []).reduce((sum: number, d: any) => sum + (d.amount || 0), 0);
+      const freshData = getFreshSlipData ? getFreshSlipData(emp) : null;
+      if (freshData) {
+        const totalEarnings = freshData.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+        const totalDeductions = (freshData.deductions || []).reduce((sum: number, d: any) => sum + (d.amount || 0), 0);
         netSalary = totalEarnings - totalDeductions;
+      } else {
+        const savedSlip = slipStates?.[emp.id];
+        if (
+          savedSlip &&
+          savedSlip.earnings &&
+          savedSlip.earnings.length > 0
+        ) {
+          const totalEarnings = savedSlip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+          const totalDeductions = (savedSlip.deductions || []).reduce((sum: number, d: any) => sum + (d.amount || 0), 0);
+          netSalary = totalEarnings - totalDeductions;
+        }
       }
 
       let satker = cat;

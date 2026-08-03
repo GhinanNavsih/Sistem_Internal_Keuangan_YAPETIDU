@@ -903,11 +903,12 @@ export default function PayrollValidationDashboard() {
   };
 
   const handlePrintPayrollStatement = () => {
+    const isSuperAdmin = profile?.role === 'super_admin';
     const activeEmployees = employees.filter(e =>
-      isTransferEligibleStatus(slipStates[e.id]?.status),
+      isSuperAdmin ? e.isActive : isTransferEligibleStatus(slipStates[e.id]?.status),
     );
     if (activeEmployees.length === 0) {
-      alert('Tidak ada slip terkunci yang dapat dimasukkan ke surat pengantar transfer.');
+      alert('Tidak ada slip karyawan yang dapat dimasukkan ke surat pengantar transfer.');
       return;
     }
 
@@ -932,9 +933,9 @@ export default function PayrollValidationDashboard() {
     let totalNetSalary = 0;
     const stmtEmployees: PayrollStatementEmployee[] = sortedEmployees.map((emp, idx) => {
       const cat = emp.role;
-      const lockedSlip = slipStates[emp.id];
-      const totalEarnings = lockedSlip.earnings.reduce((sum, e) => sum + e.amount, 0);
-      const totalDeductions = (lockedSlip.deductions || []).reduce((sum, d) => sum + d.amount, 0);
+      const freshData = buildFreshSlipData(emp);
+      const totalEarnings = freshData.earnings.reduce((sum, e) => sum + e.amount, 0);
+      const totalDeductions = (freshData.deductions || []).reduce((sum, d) => sum + d.amount, 0);
       const netSalary = totalEarnings - totalDeductions;
 
       totalNetSalary += netSalary;
@@ -3202,6 +3203,8 @@ export default function PayrollValidationDashboard() {
         getLoyalisPresenceDeduction={getLoyalisPresenceDeduction}
         getLoyalisPresensiEarning={getLoyalisPresensiEarning}
         getLoyalisPresensiDeduction={getLoyalisPresensiDeduction}
+        isSuperAdmin={profile?.role === 'super_admin'}
+        getFreshSlipData={buildFreshSlipData}
       />
 
       <CetakRekapDialog
