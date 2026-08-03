@@ -110,7 +110,7 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
     }
     totalSpj = spjEventsTotal + activityTotal;
 
-    // Sopir & Satpam SPJ for the July 2026 transition is entered by hand from
+    // Manual-category SPJ for the July 2026 transition is entered by hand from
     // paper records, so activity syncing must never overwrite that column.
     const spjIsManual = allowsManualSpjEntry(jobCategory, period);
 

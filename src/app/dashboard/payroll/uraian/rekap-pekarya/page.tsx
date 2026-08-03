@@ -309,10 +309,19 @@ export default function RekapPekaryaPage() {
     return kegiatanTotal + activityTotal;
   }, [spjEvents, approvedActivityReports, category, month, year]);
 
-  // Juli 2026 (26 Jun–31 Jul) predates activity reporting for Sopir & Satpam,
-  // so the Kepala Satker types the paper-based SPJ total in by hand and that
-  // entry wins over the computed sum.
+  // Juli 2026 (26 Jun–31 Jul) predates activity reporting for the manual-SPJ
+  // categories, so the Kepala Satker types the paper-based SPJ total in by
+  // hand and that entry wins over the computed sum.
   const manualSpjEnabled = allowsManualSpjEntry(category, period);
+
+  const manualSpjCategoryLabel =
+    category === 'SOPIR'
+      ? 'Sopir'
+      : category === 'SATPAM'
+        ? 'Satpam'
+        : category === 'KEBERSIHAN_IC'
+          ? 'Kebersihan IC'
+          : category;
 
   // July 2026 is the Satpam pilot period. Its monthly attendance bonus was
   // not captured by the paper roster, so the Satker head (or Superadmin) may
@@ -1191,7 +1200,7 @@ export default function RekapPekaryaPage() {
               <div className="mx-5 mt-4 p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-indigo-900 text-xs flex gap-2 font-medium">
                 <AlertCircle className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                 <span>
-                  Periode <strong>Juli 2026 (26 Juni – 31 Juli)</strong> mendahului pelaporan kegiatan digital untuk {category === 'SOPIR' ? 'Sopir' : 'Satpam'}.
+                  Periode <strong>Juli 2026 (26 Juni – 31 Juli)</strong> mendahului pelaporan kegiatan digital untuk {manualSpjCategoryLabel}.
                   Kolom <strong>SPJ</strong> dapat diisi manual dengan akumulasi SPJ berbasis kertas. Kosongkan sel jika ingin memakai hasil kalkulasi kegiatan.
                 </span>
               </div>
