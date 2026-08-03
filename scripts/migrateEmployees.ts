@@ -49,7 +49,7 @@ function normalizeJobCategory(jabatan: string): string {
   if (clean.includes('SOPIR')) return 'SOPIR';
   if (clean.includes('TEKNISI')) return 'TEKNISI';
   if (clean.includes('KEBERSIHAN PONTI') || clean === 'KEBERSIHAN_PONTI') return 'KEBERSIHAN_PONTI';
-  if (clean.includes('KEBERSIHAN IC') || clean === 'KEBERSIHAN_IC') return 'KEBERSIHAN_IC';
+  if (clean === 'IC' || clean.includes('KEBERSIHAN IC') || clean === 'KEBERSIHAN_IC') return 'KEBERSIHAN';
   if (clean.includes('KEBERSIHAN')) return 'KEBERSIHAN';
   return clean || 'OTHER';
 }

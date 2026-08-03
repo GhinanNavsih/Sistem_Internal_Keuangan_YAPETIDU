@@ -16,7 +16,7 @@ test('Pekarya NIPY formula maps every supported category', () => {
     generatePekaryaNipy('KEBERSIHAN_PONTI', '1989-02-01', 15),
     '13010289015',
   );
-  assert.equal(pekaryaNipyGroup('KEBERSIHAN_IC'), 'KEBERSIHAN');
+  assert.equal(pekaryaNipyGroup('KEBERSIHAN'), 'KEBERSIHAN');
   assert.equal(formatPekaryaNipyDate('2000-10-01'), '011000');
 });
 
@@ -94,7 +94,7 @@ test('missing dates reserve cleaning positions without shifting later employees'
     {
       employeeId: 'BC_053',
       name: 'Dua Belas',
-      category: 'KEBERSIHAN_IC',
+      category: 'KEBERSIHAN',
       startDate: null,
       active: true,
       nipy: '',
@@ -106,7 +106,7 @@ test('missing dates reserve cleaning positions without shifting later employees'
     {
       employeeId: 'BC_054',
       name: 'Tiga Belas',
-      category: 'KEBERSIHAN_IC',
+      category: 'KEBERSIHAN',
       startDate: null,
       active: true,
       nipy: '',

@@ -394,7 +394,7 @@ function getStatusConfig(status: string) {
 }
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
-const CLEANING_CATEGORIES = ['KEBERSIHAN', 'KEBERSIHAN_IC', 'TEKNISI', 'SOPIR', 'KEBERSIHAN_PONTI', 'SATPAM', 'PEKARYA', 'PONTI'];
+const CLEANING_CATEGORIES = ['KEBERSIHAN', 'TEKNISI', 'SOPIR', 'KEBERSIHAN_PONTI', 'SATPAM', 'PEKARYA', 'PONTI'];
 const SATPAM_POST_OPTIONS = [
   'Pos 1',
   'Pos 2',

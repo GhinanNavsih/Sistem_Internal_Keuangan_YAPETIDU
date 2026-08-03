@@ -1178,7 +1178,10 @@ export async function PUT(request: NextRequest) {
             assignment.assignmentKind === 'primary' &&
             (assignment.shiftType === 'Harian' ||
               assignment.shiftType === 'Jumat & Libur') &&
+            // An outside-team substitution defaults to Harian by design. It
+            // is a reviewable schedule deviation, not a calendar-pay error.
             !(
+              !teamRoster.has(assignment.employeeId) ||
               assignment.postId === 'Pos 9' &&
               pos9GuardIds.has(assignment.employeeId) &&
               assignment.employeeId !==

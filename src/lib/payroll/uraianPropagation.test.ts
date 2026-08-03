@@ -22,14 +22,14 @@ test('the rekap owns its own slip columns and nothing else', () => {
 });
 
 test('a published attendance entry swaps Presensi for the Harian pair', () => {
-  const legacy = uraianOwnedEarningPredicate('KEBERSIHAN_IC', {
+  const legacy = uraianOwnedEarningPredicate('KEBERSIHAN', {
     employeeId: 'BC_1',
     name: 'x',
     values: { presensi: 500_000 },
   });
   assert.equal(legacy('Presensi'), true);
 
-  const published = uraianOwnedEarningPredicate('KEBERSIHAN_IC', {
+  const published = uraianOwnedEarningPredicate('KEBERSIHAN', {
     employeeId: 'BC_1',
     name: 'x',
     values: { harian: 30, jumatLibur: 1 },

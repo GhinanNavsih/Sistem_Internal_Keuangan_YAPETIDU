@@ -152,7 +152,6 @@ const GROUP_COLOR_MAP: Record<string, { hex: string; bg: string }> = {
   'PEKARYA': { hex: '#f43f5e', bg: 'bg-rose-500' },
   'TEKNISI': { hex: '#f59e0b', bg: 'bg-amber-500' },
   'KEBERSIHAN': { hex: '#3b82f6', bg: 'bg-blue-500' },
-  'KEBERSIHAN_IC': { hex: '#0ea5e9', bg: 'bg-sky-500' },
   'KEBERSIHAN_PONTI': { hex: '#a855f7', bg: 'bg-purple-500' },
   'PONTI': { hex: '#ec4899', bg: 'bg-pink-500' },
 };

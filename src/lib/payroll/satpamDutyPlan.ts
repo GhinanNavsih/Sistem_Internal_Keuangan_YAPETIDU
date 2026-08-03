@@ -4,6 +4,7 @@ import {
   getShiftIsoBounds,
   SATPAM_POSTS,
   resolveCrossTeamPos9PayType,
+  resolveExternalSatpamPayType,
   type SatpamPayType,
   type SatpamPostId,
   type SatpamShiftName,
@@ -129,6 +130,7 @@ export interface SatpamClassifiedAssignment extends SatpamActualPrimaryAssignmen
     | 'planned_other_post'
     | 'off_duty_cover'
     | 'external_cover'
+    | 'external_substitution'
     | 'cross_team_pos9'
     | 'off_duty_extra'
     | 'unresolved_extra';
@@ -567,22 +569,25 @@ export function classifySatpamDutyAssignments(input: {
       assignments: [
         ...input.primaryAssignments.map((assignment) => {
           const crossTeamPos9 = isCrossTeamPos9(assignment);
+          const isExternal = !input.teamRosterEmployeeIds.has(assignment.employeeId);
+          const payType = crossTeamPos9
+            ? resolveCrossTeamPos9PayType(assignment.shiftType)
+            : isExternal
+              ? resolveExternalSatpamPayType(assignment.shiftType)
+              : input.regularPayType;
           return {
             ...assignment,
             assignmentKind: 'primary' as const,
-            payType: crossTeamPos9
-              ? resolveCrossTeamPos9PayType(assignment.shiftType)
-              : input.teamRosterEmployeeIds.has(assignment.employeeId)
-                ? input.regularPayType
-                : ('Lembur Cover' as const),
-            coveredEmployeeId: crossTeamPos9
-              ? assignment.coveredEmployeeId || null
-              : null,
+            payType,
+            coveredEmployeeId:
+              payType === 'Lembur Cover'
+                ? assignment.coveredEmployeeId || null
+                : null,
             scheduleRelation: crossTeamPos9
               ? ('cross_team_pos9' as const)
-              : input.teamRosterEmployeeIds.has(assignment.employeeId)
+              : !isExternal
                 ? ('planned_other_post' as const)
-                : ('external_cover' as const),
+                : ('external_substitution' as const),
           };
         }),
         ...(input.extraAssignment
@@ -637,6 +642,25 @@ export function classifySatpamDutyAssignments(input: {
             ? assignment.coveredEmployeeId || null
             : null,
         scheduleRelation: 'cross_team_pos9',
+      };
+    }
+    const isExternal = !input.teamRosterEmployeeIds.has(assignment.employeeId);
+    if (isExternal) {
+      const payType = resolveExternalSatpamPayType(assignment.shiftType);
+      const plannedEmployeeForPost = plannedByPost.get(assignment.postId) || null;
+      anomalies.push('ACTUAL_ROSTER_DIFFERS');
+      return {
+        ...assignment,
+        assignmentKind: 'primary' as const,
+        payType,
+        coveredEmployeeId:
+          payType === 'Lembur Cover'
+            ? assignment.coveredEmployeeId ||
+              (plannedEmployeeForPost && !actualEmployeeIds.has(plannedEmployeeForPost)
+                ? plannedEmployeeForPost
+                : null)
+            : null,
+        scheduleRelation: 'external_substitution',
       };
     }
     const plannedPost = plannedPostByEmployee.get(assignment.employeeId);

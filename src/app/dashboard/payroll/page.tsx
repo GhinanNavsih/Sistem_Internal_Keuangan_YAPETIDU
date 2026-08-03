@@ -922,7 +922,7 @@ export default function PayrollValidationDashboard() {
         'PASCASARJANA',
         'UPT & LEMBAGA'
       ]
-      : ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI', 'PONTI'];
+      : ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN', 'KEBERSIHAN_PONTI', 'PONTI'];
     const sortedEmployees = [...activeEmployees].sort((a, b) => {
       const roleA = roleOrder.indexOf(a.role) !== -1 ? roleOrder.indexOf(a.role) : 99;
       const roleB = roleOrder.indexOf(b.role) !== -1 ? roleOrder.indexOf(b.role) : 99;
@@ -941,7 +941,6 @@ export default function PayrollValidationDashboard() {
       totalNetSalary += netSalary;
 
       let satker = cat;
-      if (satker === 'KEBERSIHAN_IC') satker = 'KEBERSIHAN IC';
       if (satker === 'KEBERSIHAN_PT') satker = 'KEBERSIHAN PONDOK TINGGI';
       if (satker === 'KEBERSIHAN_PONTI') satker = 'KEBERSIHAN PONTI';
 
@@ -1139,7 +1138,7 @@ export default function PayrollValidationDashboard() {
         'PASCASARJANA',
         'UPT & LEMBAGA'
       ]
-      : ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI', 'PONTI'];
+      : ['SATPAM', 'SOPIR', 'PEKARYA', 'TEKNISI', 'KEBERSIHAN', 'KEBERSIHAN_PONTI', 'PONTI'];
     const idxA = roleOrder.indexOf(a);
     const idxB = roleOrder.indexOf(b);
     if (idxA !== -1 && idxB !== -1) return idxA - idxB;

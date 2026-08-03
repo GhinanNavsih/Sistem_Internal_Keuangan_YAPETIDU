@@ -11,6 +11,7 @@ import {
   getShiftIsoBounds,
   payrollPeriodForDutyDate,
   resolveCrossTeamPos9PayType,
+  resolveExternalSatpamPayType,
   resolveSatpamAssignmentPayType,
   SATPAM_POSTS,
   SATPAM_RATES,
@@ -420,11 +421,13 @@ function buildAssignmentRecords(input: {
       isExternal;
     const payType = isCrossTeamPos9
       ? resolveCrossTeamPos9PayType(assignment.shiftType)
-      : resolveSatpamAssignmentPayType(
-          assignment.shiftType,
-          isExternal,
-          input.regularPayType,
-        );
+      : isExternal
+        ? resolveExternalSatpamPayType(assignment.shiftType)
+        : resolveSatpamAssignmentPayType(
+            assignment.shiftType,
+            false,
+            input.regularPayType,
+          );
     const employee = input.employeeById.get(assignment.employeeId);
     return {
       assignmentKey: `primary_${assignment.postId}_${index}`,
@@ -484,9 +487,13 @@ function buildAnomalies(input: {
   );
   const normalizedAssignments = input.command.assignments.map((assignment) => ({
     ...assignment,
+    // An outside-team guard is a valid substitution and starts as Harian.
+    // Preserve an explicit Lembur Cover choice so the analyzer can require
+    // the covered guard details instead of silently rewriting the request.
     ...(!input.roster.includes(assignment.employeeId) &&
-    !(assignment.postId === 'Pos 9' && input.pos9GuardIds.has(assignment.employeeId))
-      ? { shiftType: 'Lembur Cover' as const }
+    !(assignment.postId === 'Pos 9' && input.pos9GuardIds.has(assignment.employeeId)) &&
+    !assignment.shiftType
+      ? { shiftType: 'Harian' as const }
       : {}),
   }));
   const anomalies = analyzeSatpamShiftSubmission({

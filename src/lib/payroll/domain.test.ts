@@ -14,6 +14,7 @@ import {
   guardDutyIndexId,
   isTransferEligibleStatus,
   payrollPeriodForDutyDate,
+  resolveExternalSatpamPayType,
   resolveSatpamAssignmentPayType,
   SATPAM_RATES,
   shiftOccurrenceId,
@@ -157,10 +158,13 @@ test('a Ketua Shift cannot pick an arbitrary pay rate for a regular post', () =>
     'Lembur Cover',
     'an in-roster guard may still be marked as covering, with proof required upstream',
   );
-  // An external (non-roster) guard is always paid the cover rate, regardless
-  // of what shiftType the client sends — their presence alone proves cover.
-  assert.equal(resolveSatpamAssignmentPayType('Harian', true, 'Harian'), 'Lembur Cover');
-  assert.equal(resolveSatpamAssignmentPayType(undefined, true, 'Jumat & Libur'), 'Lembur Cover');
+  // An external (non-roster) guard starts as ordinary Harian. The Ketua may
+  // explicitly choose Cover when the assignment is genuinely replacing a
+  // missing team member.
+  assert.equal(resolveSatpamAssignmentPayType('Harian', true, 'Harian'), 'Harian');
+  assert.equal(resolveSatpamAssignmentPayType(undefined, true, 'Jumat & Libur'), 'Harian');
+  assert.equal(resolveExternalSatpamPayType('Lembur Cover'), 'Lembur Cover');
+  assert.equal(resolveExternalSatpamPayType('Jumat & Libur'), 'Harian');
 });
 
 test('guard post photo URLs must live in the submitting Ketua Shift folder', () => {

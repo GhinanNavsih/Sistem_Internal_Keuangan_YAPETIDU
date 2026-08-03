@@ -25,7 +25,6 @@ export const PEKARYA_JOB_CATEGORIES = [
   'PEKARYA',
   'TEKNISI',
   'KEBERSIHAN',
-  'KEBERSIHAN_IC',
   'KEBERSIHAN_PONTI',
   'PONTI',
 ] as const;
@@ -159,17 +158,16 @@ export function pekaryaPayrollWindow(period: string): {
 }
 
 /**
- * Sopir, Satpam, and Kebersihan IC only started reporting activities in this
- * system after the July 2026 transition period (26 June – 31 July 2026). For
- * that period their SPJ was still accumulated on paper, so the Kepala Satker
- * types the total into the Rekap Uraian and that number — not the activity sum
- * — is authoritative.
+ * Sopir and Satpam only started reporting activities in this system after the
+ * July 2026 transition period (26 June – 31 July 2026). For that period their
+ * SPJ was still accumulated on paper, so the Kepala Satker types the total
+ * into the Rekap Uraian and that number — not the activity sum — is
+ * authoritative.
  */
 export const MANUAL_SPJ_ENTRY_PERIOD = '2026-07';
 export const MANUAL_SPJ_ENTRY_CATEGORIES: readonly string[] = [
   'SOPIR',
   'SATPAM',
-  'KEBERSIHAN_IC',
 ];
 
 export function allowsManualSpjEntry(

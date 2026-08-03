@@ -90,7 +90,6 @@ export function pekaryaNipyGroup(
   const normalized = String(category || '').trim().toUpperCase();
   if (
     normalized === 'KEBERSIHAN' ||
-    normalized === 'KEBERSIHAN_IC' ||
     normalized === 'KEBERSIHAN_PONTI'
   ) {
     return 'KEBERSIHAN';

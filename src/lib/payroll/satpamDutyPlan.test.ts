@@ -365,6 +365,44 @@ test('a cross-team Pos 9 guard defaults to Harian and may use either overtime ty
   assert.equal(covered?.coveredEmployeeId, fixedPost9EmployeeId);
 });
 
+test('an outside-team guard on any post defaults to Harian and can opt into Cover', () => {
+  const [planDay] = generatePlan('2026-08-01', '2026-08-08').generatedDays;
+  const outsideGuard = 'SAT-OUTSIDE';
+  const replaced = planDay.assignments.map((assignment) =>
+    assignment.postId === 'Pos 1'
+      ? { ...assignment, employeeId: outsideGuard, shiftType: 'Harian' as const }
+      : assignment,
+  );
+  const regular = classifySatpamDutyAssignments({
+    planDay,
+    primaryAssignments: replaced,
+    regularPayType: 'Jumat & Libur',
+    teamRosterEmployeeIds: new Set(roster),
+  });
+  const regularAssignment = regular.assignments.find((a) => a.postId === 'Pos 1');
+  assert.equal(regularAssignment?.payType, 'Harian');
+  assert.equal(regularAssignment?.scheduleRelation, 'external_substitution');
+  assert.equal(regularAssignment?.coveredEmployeeId, null);
+
+  const cover = classifySatpamDutyAssignments({
+    planDay,
+    primaryAssignments: replaced.map((assignment) =>
+      assignment.postId === 'Pos 1'
+        ? {
+            ...assignment,
+            shiftType: 'Lembur Cover' as const,
+            coveredEmployeeId: roster[2],
+          }
+        : assignment,
+    ),
+    regularPayType: 'Harian',
+    teamRosterEmployeeIds: new Set(roster),
+  });
+  const coverAssignment = cover.assignments.find((a) => a.postId === 'Pos 1');
+  assert.equal(coverAssignment?.payType, 'Lembur Cover');
+  assert.equal(coverAssignment?.coveredEmployeeId, roster[2]);
+});
+
 test('off-day overtime cannot replace a missed scheduled duty for bonus', () => {
   const planDays: SatpamDutyPlanDay[] = [
     {

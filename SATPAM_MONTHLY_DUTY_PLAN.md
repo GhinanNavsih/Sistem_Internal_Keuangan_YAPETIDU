@@ -94,12 +94,20 @@ If a scheduled guard moves to another post, the guard still receives one
 regular payment. The move is recorded as a schedule difference for audit; it
 does not become Cover pay.
 
-### Lembur Cover
+### Outside-team substitutions and Lembur Cover
 
-`Lembur Cover` is paid at **Rp50,000** when a guard who was not scheduled for the
-primary post fills a missing primary post. This includes the planned Libur guard
-covering for a planned guard who did not work, and an external or unusual guard
-covering a post.
+Any active Satpam from another regu may be selected for a post when the actual
+team needs a replacement. The report defaults to **Harian (Rp12,500)**, even on
+a Friday or holiday, and the schedule difference is shown to Kepala SatKer for
+review. The Ketua may change that assignment to **Lembur Cover (Rp50,000)** when
+the person is covering a named missing guard; the covered guard must be selected
+in the form. This rule applies to every post. The three designated Pos 9 Satpam
+retain the additional **Lembur Sendiri (Rp30,000)** option on Pos 9.
+
+`Lembur Cover` is paid when a guard who was not scheduled for the primary post
+fills a missing primary post. This includes the planned Libur guard covering for
+a planned guard who did not work, and an external guard whose Ketua explicitly
+selects Cover.
 
 The report may be submitted with fewer than nine primary guards, but the
 classification remains subject to auditor review before approval.

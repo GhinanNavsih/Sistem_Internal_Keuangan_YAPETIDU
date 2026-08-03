@@ -34,12 +34,12 @@ export const REKAP_COLUMNS: Record<string, RekapColumn[]> = {
     { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
     { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
     { key: 'bonusPresensi',      label: 'Bonus Presensi',         type: 'currency',                                  slipLabel: 'Bonus Presensi' },
-    { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
-    { key: 'tunjanganKhusus',    label: 'Tunjangan Khusus',       type: 'currency',                                  slipLabel: 'Tunjangan Khusus' },
-  ],
-  KEBERSIHAN_IC: [
+    // Retain the legacy attendance earning while historical records are
+    // merged into KEBERSIHAN. New attendance publications replace this field
+    // with harian/jumatLibur through the existing propagation rule.
     { key: 'presensi',           label: 'Presensi',               type: 'currency',                                  slipLabel: 'Presensi' },
     { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
+    { key: 'tunjanganKhusus',    label: 'Tunjangan Khusus',       type: 'currency',                                  slipLabel: 'Tunjangan Khusus' },
   ],
   KEBERSIHAN_PONTI: [
     { key: 'presensi',           label: 'Presensi',               type: 'currency',                                  slipLabel: 'Presensi' },

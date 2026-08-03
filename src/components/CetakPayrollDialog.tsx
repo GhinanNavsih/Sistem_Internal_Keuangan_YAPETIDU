@@ -93,7 +93,7 @@ export default function CetakPayrollDialog({
       'SOPIR',
       'PEKARYA',
       'TEKNISI',
-      'KEBERSIHAN_IC',
+      'KEBERSIHAN',
       'KEBERSIHAN_PONTI',
       'PONTI'
     ];
@@ -140,7 +140,6 @@ export default function CetakPayrollDialog({
       }
 
       let satker = cat;
-      if (satker === 'KEBERSIHAN_IC') satker = 'KEBERSIHAN IC';
       if (satker === 'KEBERSIHAN_PT') satker = 'KEBERSIHAN PONDOK TINGGI';
       if (satker === 'KEBERSIHAN_PONTI') satker = 'KEBERSIHAN PONTI';
 

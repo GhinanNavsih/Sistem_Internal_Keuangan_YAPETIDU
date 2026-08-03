@@ -319,9 +319,7 @@ export default function RekapPekaryaPage() {
       ? 'Sopir'
       : category === 'SATPAM'
         ? 'Satpam'
-        : category === 'KEBERSIHAN_IC'
-          ? 'Kebersihan IC'
-          : category;
+        : category;
 
   // July 2026 is the Satpam pilot period. Its monthly attendance bonus was
   // not captured by the paper roster, so the Satker head (or Superadmin) may

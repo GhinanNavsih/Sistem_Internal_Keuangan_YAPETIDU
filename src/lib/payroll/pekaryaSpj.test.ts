@@ -189,7 +189,6 @@ test('manual SPJ entry is limited to the July 2026 paper-based categories', () =
   // Paper-based reporting: the Kepala Satker types the accumulated SPJ in.
   assert.equal(allowsManualSpjEntry('SOPIR', '2026-07'), true);
   assert.equal(allowsManualSpjEntry('SATPAM', '2026-07'), true);
-  assert.equal(allowsManualSpjEntry('KEBERSIHAN_IC', '2026-07'), true);
   // Other categories were already reporting activities in that period.
   assert.equal(allowsManualSpjEntry('PEKARYA', '2026-07'), false);
   assert.equal(allowsManualSpjEntry('TEKNISI', '2026-07'), false);
@@ -199,6 +198,5 @@ test('manual SPJ entry is limited to the July 2026 paper-based categories', () =
   assert.equal(allowsManualSpjEntry('SOPIR', '2026-06'), false);
   assert.equal(allowsManualSpjEntry('SOPIR', '2026-08'), false);
   assert.equal(allowsManualSpjEntry('SATPAM', '2026-08'), false);
-  assert.equal(allowsManualSpjEntry('KEBERSIHAN_IC', '2026-08'), false);
   assert.equal(allowsManualSpjEntry('SATPAM', '2027-07'), false);
 });

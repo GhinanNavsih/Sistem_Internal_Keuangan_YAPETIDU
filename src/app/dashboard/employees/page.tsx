@@ -83,7 +83,7 @@ import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/clien
 import { normalizeNipy } from '@/lib/payroll/attendance';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 
-const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_IC', 'KEBERSIHAN_PONTI'];
+const JOB_CATEGORIES = ['SATPAM', 'SOPIR', 'KEBERSIHAN', 'TEKNISI', 'KEBERSIHAN_PONTI'];
 
 
 
@@ -92,7 +92,6 @@ const JOB_ICONS: Record<string, React.ReactNode> = {
   SOPIR: <Truck className="w-3.5 h-3.5" />,
   TEKNISI: <Wrench className="w-3.5 h-3.5" />,
   KEBERSIHAN: <Wind className="w-3.5 h-3.5" />,
-  KEBERSIHAN_IC: <Wind className="w-3.5 h-3.5" />,
   KEBERSIHAN_PONTI: <Wind className="w-3.5 h-3.5" />,
 };
 

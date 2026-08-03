@@ -398,32 +398,45 @@ export function getRegularSatpamPayType(
  * comes straight from client input and must be treated as untrusted: any
  * value other than the literal string 'Lembur Cover' is ignored.
  *
- * `isExternalGuard` (the assignee is not one of this team's 10 roster
- * members) always forces 'Lembur Cover' regardless of what was requested,
- * since an external guard's presence is itself proof of a substitution.
+ * An external Satpam substitution defaults to the ordinary `Harian` rate.
+ * The Ketua Shift may explicitly choose `Lembur Cover` when the assignment
+ * is genuinely covering a missing team member. The request is still treated
+ * as untrusted: no other client-supplied rate can override the calendar.
  */
 export function resolveSatpamAssignmentPayType(
   requestedShiftType: string | undefined,
   isExternalGuard: boolean,
   regularPayType: 'Harian' | 'Jumat & Libur',
 ): SatpamPayType {
-  const isCoverAssignment = isExternalGuard || requestedShiftType === 'Lembur Cover';
+  if (isExternalGuard) return resolveExternalSatpamPayType(requestedShiftType);
+  const isCoverAssignment = requestedShiftType === 'Lembur Cover';
   return isCoverAssignment ? 'Lembur Cover' : regularPayType;
+}
+
+/**
+ * Pay classification for a Satpam who is not in the Ketua Shift's roster.
+ * Cross-team substitutions are intentionally flexible: they begin as
+ * Harian, while a Ketua may opt into Lembur Cover. Lembur Sendiri remains a
+ * Pos 9-only exception and is handled by `resolveCrossTeamPos9PayType`.
+ */
+export function resolveExternalSatpamPayType(
+  requestedShiftType: string | undefined,
+): Exclude<SatpamPayType, 'Off-Duty'> {
+  return requestedShiftType === 'Lembur Cover' ? 'Lembur Cover' : 'Harian';
 }
 
 /**
  * Pos 9 is staffed by one guard from each published team plan. If a Ketua
  * selects one of the other teams' Pos 9 guards, the form defaults to Harian,
  * but the guard may explicitly be paid as Lembur Sendiri or Lembur Cover.
- * This exception is intentionally limited to Pos 9 so ordinary external
- * guards keep the existing Cover classification.
+ * This exception retains the Pos 9-only Lembur Sendiri option while all
+ * other external substitutions use Harian or Lembur Cover.
  */
 export function resolveCrossTeamPos9PayType(
   requestedShiftType: string | undefined,
 ): Exclude<SatpamPayType, 'Off-Duty'> {
   if (requestedShiftType === 'Lembur Sendiri') return 'Lembur Sendiri';
-  if (requestedShiftType === 'Lembur Cover') return 'Lembur Cover';
-  return 'Harian';
+  return resolveExternalSatpamPayType(requestedShiftType);
 }
 
 export function getShiftIsoBounds(
