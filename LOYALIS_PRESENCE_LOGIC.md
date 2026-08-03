@@ -32,6 +32,10 @@ The current implementation is defined in:
 
 - `src/app/dashboard/payroll/uraian/presensi-loyalis-raw/page.tsx` — input,
   matching, stratum calculation, and persistence.
+- `src/app/dashboard/payroll/uraian/presence-corrections/page.tsx` — approved
+  correction application and recalculation using the same work-time window.
+- `src/lib/payroll/loyalisPresenceWindow.ts` — official time-window bounds,
+  duration calculation, and single-scan auto-fill behavior.
 - `src/lib/payroll/uraianPropagation.ts` — payroll amount calculation and
   propagation rules.
 - `src/app/dashboard/payroll/page.tsx` — payroll dashboard display logic.
@@ -40,6 +44,33 @@ The current implementation is defined in:
 
 The calculator first determines the employee's absence minutes, represented by
 `x`.
+
+### Official daily work-time window
+
+Only work time inside the official Loyalis window from **07:30:00 through
+14:00:00** contributes to the daily duration. Scans outside the window remain
+available in the daily log for audit, but they do not add work minutes.
+
+For a valid scan-in and scan-out, the calculation is:
+
+```text
+effectiveIn  = max(07:30, scanIn)
+effectiveOut = min(14:00, scanOut)
+
+dailyDuration = effectiveOut > effectiveIn
+  ? ceil(min(expectedHours × 60, effectiveOut - effectiveIn))
+  : 0
+```
+
+Seconds are included before rounding up to the next whole minute. For example,
+`08:45:58` to `14:08:04` is bounded to `08:45:58` to `14:00:00`, which is
+314 minutes and 2 seconds, or **315 minutes**.
+
+If only one scan is present and auto-fill is enabled, the missing scan is
+generated 150 minutes away from the supplied scan. The generated timestamp is
+then clamped to the same `07:30:00`–`14:00:00` window, and the resulting pair is
+processed by the formula above. This means a single scan near either boundary
+can produce less than 150 payable minutes.
 
 ### Worked-minutes mode
 
@@ -193,4 +224,5 @@ by a later presence edit.
 ## Related tests
 
 The behavior is covered by the payroll propagation tests, especially the
-Loyalis presence cases in `src/lib/payroll/uraianPropagation.test.ts`.
+Loyalis presence cases in `src/lib/payroll/uraianPropagation.test.ts`, and by
+the official-window cases in `src/lib/payroll/loyalisPresenceWindow.test.ts`.

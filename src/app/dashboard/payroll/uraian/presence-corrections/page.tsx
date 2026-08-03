@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { MONTHS_ID } from '@/utils/rekapConfig';
+import { calculateLoyalisDailyDuration } from '@/lib/payroll/loyalisPresenceWindow';
 
 const parseDateToDDMMYYYY = (dateStr: string) => {
   const [y, m, d] = dateStr.split('-');
@@ -137,7 +138,7 @@ export default function PresenceCorrectionsAdminPage() {
     }
   };
 
-  // Recalculate helper functions copied directly from presensi-loyalis-raw
+  // Keep correction calculations aligned with the raw Loyalis attendance page.
   const recalculateSummary = (dailyLogs: any[], expHours: number) => {
     let totalWorkedMinutes = 0;
     let activeDaysCount = 0;
@@ -153,14 +154,10 @@ export default function PresenceCorrectionsAdminPage() {
       let dailyDuration = 0;
       if (statusUpper === 'MASUK') {
         if (inStr && outStr) {
-          const [hIn, mIn] = inStr.split(':').map(Number);
-          const [hOut, mOut] = outStr.split(':').map(Number);
+          const duration = calculateLoyalisDailyDuration(inStr, outStr, expHours);
 
-          if (!isNaN(hIn) && !isNaN(hOut)) {
-            const minutesIn = hIn * 60 + mIn;
-            const minutesOut = hOut * 60 + mOut;
-            const duration = Math.max(0, minutesOut - minutesIn);
-            dailyDuration = Math.min(expHours * 60, duration);
+          if (duration !== null) {
+            dailyDuration = duration;
             totalWorkedMinutes += dailyDuration;
             activeDaysCount += 1;
           } else {

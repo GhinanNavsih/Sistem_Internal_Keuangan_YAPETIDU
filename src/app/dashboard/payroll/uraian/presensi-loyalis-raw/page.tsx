@@ -27,6 +27,10 @@ import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
 import { normalizeNipy } from '@/lib/payroll/attendance';
 import { parseLoyalisPresenceWorkbook } from '@/lib/payroll/loyalisPresenceWorkbook';
 import {
+  autoFillLoyalisScan,
+  calculateLoyalisDailyDuration,
+} from '@/lib/payroll/loyalisPresenceWindow';
+import {
   authenticatedFormData,
   authenticatedJson,
   createFinancialRequestId,
@@ -58,14 +62,10 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
 
     if (statusUpper === 'MASUK') {
       if (inStr && outStr) {
-        const [hIn, mIn, sIn = 0] = inStr.split(':').map(Number);
-        const [hOut, mOut, sOut = 0] = outStr.split(':').map(Number);
+        const duration = calculateLoyalisDailyDuration(inStr, outStr, expHours);
 
-        if (!isNaN(hIn) && !isNaN(hOut)) {
-          const minutesIn = hIn * 60 + mIn + sIn / 60;
-          const minutesOut = hOut * 60 + mOut + sOut / 60;
-          const duration = Math.max(0, minutesOut - minutesIn);
-          dailyDuration = Math.ceil(Math.min(expHours * 60, duration));
+        if (duration !== null) {
+          dailyDuration = duration;
           totalWorkedMinutes += dailyDuration;
           activeDaysCount += 1;
         } else {
@@ -73,18 +73,18 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
         }
       } else if (inStr && !outStr) {
         if (dayRow.scanPulangAuto !== false) {
-          const [hIn, mIn, sIn = 0] = inStr.split(':').map(Number);
-          if (!isNaN(hIn)) {
-            const totalSecondsIn = hIn * 3600 + mIn * 60 + sIn;
-            const totalSecondsOut = totalSecondsIn + 9000;
-            const hOut = Math.floor(totalSecondsOut / 3600) % 24;
-            const mOut = Math.floor((totalSecondsOut % 3600) / 60);
-            const sOut = totalSecondsOut % 60;
-            outStr = `${String(hOut).padStart(2, '0')}:${String(mOut).padStart(2, '0')}:${String(sOut).padStart(2, '0')}`;
+          const autoFilledOut = autoFillLoyalisScan(inStr, 'out');
+          if (autoFilledOut) {
+            outStr = autoFilledOut;
             scanPulangAuto = true;
-            dailyDuration = Math.min(expHours * 60, 150);
-            totalWorkedMinutes += dailyDuration;
-            activeDaysCount += 1;
+            const duration = calculateLoyalisDailyDuration(inStr, outStr, expHours);
+            if (duration !== null) {
+              dailyDuration = duration;
+              totalWorkedMinutes += dailyDuration;
+              activeDaysCount += 1;
+            } else {
+              incompleteDaysCount += 1;
+            }
           } else {
             incompleteDaysCount += 1;
           }
@@ -93,19 +93,18 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
         }
       } else if (!inStr && outStr) {
         if (dayRow.scanMasukAuto !== false) {
-          const [hOut, mOut, sOut = 0] = outStr.split(':').map(Number);
-          if (!isNaN(hOut)) {
-            const totalSecondsOut = hOut * 3600 + mOut * 60 + sOut;
-            let totalSecondsIn = totalSecondsOut - 9000;
-            if (totalSecondsIn < 0) totalSecondsIn = 0;
-            const hIn = Math.floor(totalSecondsIn / 3600) % 24;
-            const mIn = Math.floor((totalSecondsIn % 3600) / 60);
-            const sIn = totalSecondsIn % 60;
-            inStr = `${String(hIn).padStart(2, '0')}:${String(mIn).padStart(2, '0')}:${String(sIn).padStart(2, '0')}`;
+          const autoFilledIn = autoFillLoyalisScan(outStr, 'in');
+          if (autoFilledIn) {
+            inStr = autoFilledIn;
             scanMasukAuto = true;
-            dailyDuration = Math.min(expHours * 60, 150);
-            totalWorkedMinutes += dailyDuration;
-            activeDaysCount += 1;
+            const duration = calculateLoyalisDailyDuration(inStr, outStr, expHours);
+            if (duration !== null) {
+              dailyDuration = duration;
+              totalWorkedMinutes += dailyDuration;
+              activeDaysCount += 1;
+            } else {
+              incompleteDaysCount += 1;
+            }
           } else {
             incompleteDaysCount += 1;
           }
