@@ -139,7 +139,6 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     if (pathname.includes('/proposal-kegiatan')) return 'proposal_kegiatan';
     if (pathname.includes('/pelaporan-kegiatan')) return 'pelaporan_kegiatan';
     if (pathname.includes('/presensi-loyalis-raw')) return 'presensi_loyalis_raw';
-    if (pathname.includes('/presensi-loyalis')) return 'presensi_loyalis';
     if (pathname.includes('/presence-corrections')) return 'presence_corrections';
     if (pathname.includes('/spj-pekarya')) return 'kegiatan_spj';
     return '';
@@ -151,7 +150,6 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       tab === 'vakasi_loyalis' ||
       tab === 'proposal_kegiatan' ||
       tab === 'pelaporan_kegiatan' ||
-      tab === 'presensi_loyalis' ||
       tab === 'presensi_loyalis_raw' ||
       tab === 'presence_corrections' ||
       tab === 'driver-journeys'
@@ -213,7 +211,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         return 'Presensi Pekarya';
       case 'vakasi_loyalis':
         return 'Vakasi Tambahan (Loyalis)';
-      case 'presensi_loyalis':
+      case 'presensi_loyalis_raw':
         return 'Kalkulator Presensi Loyalis';
       case 'proposal_kegiatan':
         return 'Pengajuan Anggaran Event';
@@ -236,7 +234,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         return 'Tinjau scan NIPY, peringatan, koreksi, dan publikasi upah kehadiran';
       case 'vakasi_loyalis':
         return 'Kelola pembayaran kegiatan variabel loyalis bulanan';
-      case 'presensi_loyalis':
+      case 'presensi_loyalis_raw':
         return 'Hitung strata dan bonus presensi loyalis';
       case 'proposal_kegiatan':
         return 'Buat dan ajukan proposal anggaran kegiatan loyalis sebelum pelaksanaan';
@@ -304,7 +302,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v, 10))}>
               <SelectTrigger className="w-56 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
                 <SelectValue>
-                  {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' || activeTab === 'presence_corrections' ? (
+                  {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' || activeTab === 'presence_corrections' ? (
                     `${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`
                   ) : (
                     year > 2026 || (year === 2026 && month > 7) ? (
@@ -340,7 +338,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
                       <SelectItem key={val} value={String(val)}>
                         <div className="flex flex-col py-0.5">
                           <span className="font-semibold">{m}</span>
-                          {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' || activeTab === 'presence_corrections' ? (
+                          {activeTab === 'vakasi_loyalis' || activeTab === 'presensi_loyalis_raw' || activeTab === 'pelaporan_kegiatan' || activeTab === 'presence_corrections' ? (
                             <span className="text-[11px] text-slate-400">1 – {lastDay} {m}</span>
                           ) : (
                             year > 2026 || (year === 2026 && val > 7) ? (

@@ -7,7 +7,6 @@ import {
   ScanLine,
   Banknote,
   ClipboardCheck,
-  FileSpreadsheet,
   Clock,
   Car,
   FileText,
@@ -37,7 +36,6 @@ export default function UraianNavToggles() {
     if (pathname.includes('/proposal-kegiatan')) return 'proposal_kegiatan';
     if (pathname.includes('/pelaporan-kegiatan')) return 'pelaporan_kegiatan';
     if (pathname.includes('/presensi-loyalis-raw')) return 'presensi_loyalis_raw';
-    if (pathname.includes('/presensi-loyalis')) return 'presensi_loyalis';
     if (pathname.includes('/presence-corrections')) return 'presence_corrections';
     if (pathname.includes('/spj-pekarya')) return 'kegiatan_spj';
     if (pathname.includes('/activity-review')) return 'activity_review';
@@ -56,7 +54,6 @@ export default function UraianNavToggles() {
       tab === 'vakasi_loyalis' ||
       tab === 'proposal_kegiatan' ||
       tab === 'pelaporan_kegiatan' ||
-      tab === 'presensi_loyalis' ||
       tab === 'presensi_loyalis_raw' ||
       tab === 'presence_corrections' ||
       tab === 'driver-journeys' ||
@@ -117,13 +114,6 @@ export default function UraianNavToggles() {
                 <ClipboardCheck className="w-4 h-4" />
                 Pelaporan Kegiatan
               </button>
-              <button
-                onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis${getCleanParamsString('presensi_loyalis')}`)}
-                className={btnCls(activeTab === 'presensi_loyalis')}
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                Presensi Loyalis
-              </button>
             </>
           )}
 
@@ -134,7 +124,7 @@ export default function UraianNavToggles() {
                 className={btnCls(activeTab === 'presensi_loyalis_raw')}
               >
                 <Clock className="w-4 h-4" />
-                Presensi Loyalis (Raw)
+                Presensi Loyalis
               </button>
               <button
                 onClick={() => router.push(`/dashboard/payroll/uraian/presence-corrections${getCleanParamsString('presence_corrections')}`)}

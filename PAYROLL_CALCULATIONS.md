@@ -111,6 +111,10 @@ Yayasan-subsidized allowances for employee health and work security programs.
 
 ## 10. Presensi & Bonus Presensi (Attendance Earning)
 
+For the complete Loyalis workflow, input modes, strata thresholds, missing
+employee handling, and worked examples, see
+[LOYALIS_PRESENCE_LOGIC.md](LOYALIS_PRESENCE_LOGIC.md).
+
 Attendance earnings are set to maximum values under Penerimaan (Earnings), and any shortfalls are deducted under Potongan (Deductions).
 
 *   **Presensi (Attendance Hours Earning):**
