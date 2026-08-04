@@ -9,7 +9,11 @@ import {
   DEFAULT_DRIVER_VEHICLE_NAME,
   isDriverVehicleName,
 } from '@/lib/payroll/driverJourney';
-import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
+import { hasClaimedDriverJourney } from '@/lib/payroll/driverPiket';
+import {
+  buildPekaryaActivityIdentity,
+  pekaryaPayrollPeriodForDate,
+} from '@/lib/payroll/pekaryaSpj';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
@@ -313,7 +317,10 @@ export async function POST(request: NextRequest) {
         if (!hasSchedule) {
           throw new HttpError(409, 'Anda tidak memiliki jadwal Piket aktif untuk hari ini.');
         }
-        if (activeJourneySnapshot.docs.some((journey) => journey.data().status === 'claimed')) {
+        // Read the driver's complete journey set in this transaction. A
+        // submitted journey is deliberately not a blocker; only an unresolved
+        // claimed journey prevents overlapping reports.
+        if (hasClaimedDriverJourney(activeJourneySnapshot.docs.map((journey) => journey.data()))) {
           throw new HttpError(409, 'Anda masih memiliki perjalanan aktif yang belum diselesaikan.');
         }
 
@@ -380,7 +387,7 @@ export async function POST(request: NextRequest) {
           transaction.get(activeQuery),
         ]);
         if (!journeySnapshot.exists) throw new HttpError(404, 'Perjalanan dinas tidak ditemukan.');
-        if (activeSnapshot.docs.some((journey) => journey.data().status === 'claimed')) {
+        if (hasClaimedDriverJourney(activeSnapshot.docs.map((journey) => journey.data()))) {
           throw new HttpError(409, 'Anda masih memiliki perjalanan aktif yang belum diselesaikan.');
         }
         const journey = journeySnapshot.data()!;
@@ -613,14 +620,13 @@ export async function DELETE(request: NextRequest) {
 
           // Clean up PekaryaActivityIndex if present
           const reportData = reportSnapshot.data()!;
-          const identity = [
-            reportData.employeeId,
-            reportData.payrollPeriod,
-            reportData.activityDate,
-            reportData.activityName,
-            reportData.timeStart || '',
-            reportData.timeEnd || '',
-          ].join('__');
+          const identity = buildPekaryaActivityIdentity(
+            String(reportData.employeeId || ''),
+            String(reportData.activityDate || ''),
+            String(reportData.timeStart || ''),
+            reportData.timeEnd ? String(reportData.timeEnd) : undefined,
+            String(reportData.activityName || ''),
+          );
           const indexRef = adminDb.collection('PekaryaActivityIndexes').doc(identity);
           transaction.delete(indexRef);
         }

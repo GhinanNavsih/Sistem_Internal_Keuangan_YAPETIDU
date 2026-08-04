@@ -278,6 +278,30 @@ export function sumApprovedEventSpj(
   return total;
 }
 
+/**
+ * Stable idempotency key for an employee activity. Keeping the date, both
+ * timestamps, and normalized activity name in the key allows multiple trips
+ * on one day while preventing an accidental duplicate of the same report.
+ */
+export function buildPekaryaActivityIdentity(
+  employeeId: string,
+  activityDate: string,
+  timeStart: string,
+  timeEnd: string | undefined,
+  activityName: string,
+): string {
+  const safeEmployeeId = employeeId
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .slice(0, 72);
+  return [
+    safeEmployeeId,
+    activityDate.replaceAll('-', ''),
+    timeStart.replace(':', ''),
+    (timeEnd || 'none').replace(':', ''),
+    normalizeActivityIdentityPart(activityName),
+  ].join('__');
+}
+
 export function normalizeActivityIdentityPart(value: string): string {
   return value
     .normalize('NFKC')

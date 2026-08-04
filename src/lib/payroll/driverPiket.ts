@@ -25,6 +25,65 @@ export interface DriverPiketSchedule {
   createdAt?: any;
 }
 
+export interface DriverPiketJourneyLike {
+  id?: string;
+  status?: unknown;
+  employeeId?: string;
+  activityDate?: string;
+  journeyDate?: string;
+  isSelfCreatedPiketSpj?: boolean;
+}
+
+const SUBMITTED_DRIVER_JOURNEY_STATUSES = new Set([
+  'submitted',
+  'completed',
+  'approved',
+  'declined',
+]);
+
+/**
+ * Self-authorized journeys carry an explicit marker. The ID fallback keeps
+ * the counter compatible with records created before that marker was added.
+ */
+export function isSelfCreatedDriverPiketJourney(
+  journey: DriverPiketJourneyLike,
+): boolean {
+  return Boolean(
+    journey.isSelfCreatedPiketSpj === true ||
+      (typeof journey.id === 'string' && journey.id.startsWith('JRN-PIKET-')),
+  );
+}
+
+/** Only an unresolved claimed journey blocks the next self-authorized trip. */
+export function hasClaimedDriverJourney(
+  journeys: readonly DriverPiketJourneyLike[],
+): boolean {
+  return journeys.some((journey) => journey.status === 'claimed');
+}
+
+/**
+ * Counts resolved self-authorized journeys for the driver's Piket date. A
+ * currently claimed journey is intentionally excluded because it has not been
+ * submitted yet.
+ */
+export function countSubmittedSelfPiketJourneysOnDate(
+  dateStr: string,
+  driverId: string,
+  journeys: readonly DriverPiketJourneyLike[],
+): number {
+  if (!dateStr || !driverId || !journeys || journeys.length === 0) return 0;
+  return journeys.filter((journey) => {
+    const journeyDate = journey.activityDate || journey.journeyDate;
+    return (
+      journey.employeeId === driverId &&
+      journeyDate === dateStr &&
+      isSelfCreatedDriverPiketJourney(journey) &&
+      typeof journey.status === 'string' &&
+      SUBMITTED_DRIVER_JOURNEY_STATUSES.has(journey.status)
+    );
+  }).length;
+}
+
 /**
  * Gets today's date in YYYY-MM-DD format based on local timezone (default Asia/Jakarta).
  */

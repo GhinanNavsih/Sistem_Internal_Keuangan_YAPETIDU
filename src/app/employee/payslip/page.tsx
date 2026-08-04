@@ -1873,7 +1873,7 @@ export default function EmployeePayslipPage() {
                                             >
                                               <div className="flex items-center gap-2">
                                                 <Calendar className="w-4 h-4 text-indigo-500" />
-                                                <span>Detail Presensi Harian {dailyPresenceLogs.length > 0 ? `(${dailyPresenceLogs.length} Log Scan)` : ''}</span>
+                                                <span>Detail Presensi Harian</span>
                                               </div>
                                               <div className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-600">
                                                 <span>{showDailyLogs ? 'Sembunyikan' : 'Tampilkan Detail'}</span>
@@ -1914,7 +1914,7 @@ export default function EmployeePayslipPage() {
                                                                 <span className="text-black font-medium">
                                                                   In: {scanIn}
                                                                 </span>
-                                                                <span className="text-slate-600 font-medium">
+                                                                <span className="text-black font-medium">
                                                                   Out: {scanOut}
                                                                 </span>
                                                               </div>

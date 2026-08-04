@@ -8,6 +8,8 @@ import {
   countDriverPiketInPeriod,
   getDriverPiketDatesInPeriod,
   getTodayDateString,
+  hasClaimedDriverJourney,
+  countSubmittedSelfPiketJourneysOnDate,
 } from './driverPiket';
 
 const mockSchedules: DriverPiketSchedule[] = [
@@ -83,4 +85,85 @@ test('getDriverPiketDatesInPeriod returns sorted date list', () => {
 test('getTodayDateString returns valid YYYY-MM-DD string', () => {
   const today = getTodayDateString();
   assert.match(today, /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test('only a claimed journey blocks the next self-authorized Piket journey', () => {
+  const journeys = [
+    {
+      id: 'JRN-PIKET-20260801-FIRST',
+      employeeId: 'D1',
+      status: 'claimed',
+      activityDate: '2026-08-01',
+      isSelfCreatedPiketSpj: true,
+    },
+  ];
+
+  assert.equal(hasClaimedDriverJourney(journeys), true);
+
+  journeys[0].status = 'submitted';
+  assert.equal(hasClaimedDriverJourney(journeys), false);
+  assert.equal(
+    countSubmittedSelfPiketJourneysOnDate('2026-08-01', 'D1', journeys),
+    1,
+  );
+
+  journeys.push({
+    id: 'JRN-PIKET-20260801-SECOND',
+    employeeId: 'D1',
+    status: 'claimed',
+    activityDate: '2026-08-01',
+    isSelfCreatedPiketSpj: true,
+  });
+  assert.equal(hasClaimedDriverJourney(journeys), true);
+  assert.equal(
+    countSubmittedSelfPiketJourneysOnDate('2026-08-01', 'D1', journeys),
+    1,
+  );
+});
+
+test('Piket SPJ count is date, driver, and journey-type scoped', () => {
+  const journeys = [
+    {
+      id: 'JRN-PIKET-20260801-FIRST',
+      employeeId: 'D1',
+      status: 'submitted',
+      activityDate: '2026-08-01',
+    },
+    {
+      id: 'JRN-PIKET-20260801-SECOND',
+      employeeId: 'D1',
+      status: 'approved',
+      journeyDate: '2026-08-01',
+    },
+    {
+      id: 'JRN-PIKET-20260802-OTHER-DATE',
+      employeeId: 'D1',
+      status: 'submitted',
+      activityDate: '2026-08-02',
+    },
+    {
+      id: 'JRN-PIKET-20260801-OTHER-DRIVER',
+      employeeId: 'D2',
+      status: 'submitted',
+      activityDate: '2026-08-01',
+    },
+    {
+      id: 'REGULAR-JOURNEY',
+      employeeId: 'D1',
+      status: 'submitted',
+      activityDate: '2026-08-01',
+      isSelfCreatedPiketSpj: false,
+    },
+    {
+      id: 'JRN-PIKET-20260801-CANCELLED',
+      employeeId: 'D1',
+      status: 'cancelled',
+      activityDate: '2026-08-01',
+    },
+  ];
+
+  assert.equal(
+    countSubmittedSelfPiketJourneysOnDate('2026-08-01', 'D1', journeys),
+    2,
+  );
 });

@@ -20,7 +20,7 @@ import {
   assertSatpamFoundItemPhotoCount,
   assertPekaryaActivityType,
   isPekaryaJobCategory,
-  normalizeActivityIdentityPart,
+  buildPekaryaActivityIdentity,
   pekaryaPayrollPeriodForDate,
   SATPAM_FOUND_ITEM_RECOMMENDED_FEE,
   SATPAM_REPRIMAND_RECOMMENDED_FEE,
@@ -523,13 +523,13 @@ export async function POST(request: NextRequest) {
     const reportId = command.reportId || `PEK-${safeEmployeeId}-${command.requestId}`;
     const identity = isPhotoOnlyReport
       ? [isFoundItem ? 'found_item' : 'reprimand', reportId].join('__')
-      : [
-          safeEmployeeId,
-          command.activityDate.replaceAll('-', ''),
-          command.timeStart.replace(':', ''),
-          (command.timeEnd || 'none').replace(':', ''),
-          normalizeActivityIdentityPart(command.activityName),
-        ].join('__');
+      : buildPekaryaActivityIdentity(
+          employeeId,
+          command.activityDate,
+          command.timeStart,
+          command.timeEnd,
+          command.activityName,
+        );
 
     const result = await adminDb.runTransaction(async (transaction) => {
       const employeeRef = adminDb.collection('Employees_BlueCollar').doc(employeeId);
@@ -1063,14 +1063,13 @@ export async function DELETE(request: NextRequest) {
       // ── WRITE PHASE ──
       if (reportData && targetReportRef) {
         transaction.delete(targetReportRef);
-        const safeEmployeeId = employeeId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 72);
-        const identity = [
-          safeEmployeeId,
-          String(reportData.activityDate || '').replaceAll('-', ''),
-          String(reportData.timeStart || '').replace(':', ''),
-          String(reportData.timeEnd || 'none').replace(':', ''),
-          normalizeActivityIdentityPart(String(reportData.activityName || '')),
-        ].join('__');
+        const identity = buildPekaryaActivityIdentity(
+          employeeId,
+          String(reportData.activityDate || ''),
+          String(reportData.timeStart || ''),
+          reportData.timeEnd ? String(reportData.timeEnd) : undefined,
+          String(reportData.activityName || ''),
+        );
         transaction.delete(adminDb.collection('PekaryaActivityIndexes').doc(identity));
         // Remove the old collection entry as a compatibility cleanup for data
         // written before the index collection was renamed.

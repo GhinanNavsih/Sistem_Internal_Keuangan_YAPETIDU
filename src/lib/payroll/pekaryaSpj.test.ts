@@ -4,6 +4,7 @@ import {
   activityDurationMinutes,
   allowsManualSpjEntry,
   assertSatpamFoundItemPhotoCount,
+  buildPekaryaActivityIdentity,
   pekaryaPayrollPeriodForDate,
   pekaryaPayrollWindow,
   satpamFoundItemFeeNeedsAdjustmentReason,
@@ -92,6 +93,59 @@ test('counts approved non-Satpam activity once and does not double driver wage',
     },
   ];
   assert.equal(sumApprovedActivitySpj(reports, 'E1', 'SOPIR', '2026-07'), 70_000);
+});
+
+test('approved driver wages from multiple journeys are accumulated independently', () => {
+  const reports = [
+    {
+      id: 'JOURNEY-1-REPORT',
+      employeeId: 'E1',
+      jobCategory: 'SOPIR',
+      activityDate: '2026-08-10',
+      status: 'approved',
+      fee: 60_000,
+      upahBersih: 60_000,
+    },
+    {
+      id: 'JOURNEY-2-REPORT',
+      employeeId: 'E1',
+      jobCategory: 'SOPIR',
+      activityDate: '2026-08-10',
+      status: 'approved',
+      fee: 80_000,
+      upahBersih: 80_000,
+    },
+  ];
+
+  assert.equal(sumApprovedActivitySpj(reports, 'E1', 'SOPIR', '2026-08'), 140_000);
+});
+
+test('activity index identity keeps same-day journeys distinct by time or activity', () => {
+  const first = buildPekaryaActivityIdentity(
+    'driver/1',
+    '2026-08-10',
+    '08:00',
+    '10:00',
+    'Antar tamu',
+  );
+  const differentTime = buildPekaryaActivityIdentity(
+    'driver/1',
+    '2026-08-10',
+    '11:00',
+    '13:00',
+    'Antar tamu',
+  );
+  const differentActivity = buildPekaryaActivityIdentity(
+    'driver/1',
+    '2026-08-10',
+    '08:00',
+    '10:00',
+    'Ambil dokumen',
+  );
+
+  assert.equal(first, 'driver_1__20260810__0800__1000__antar_tamu');
+  assert.notEqual(first, differentTime);
+  assert.notEqual(first, differentActivity);
 });
 
 test('personal Satpam SPJ is payable while shift assignments stay separate', () => {

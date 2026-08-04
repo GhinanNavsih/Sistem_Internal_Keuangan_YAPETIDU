@@ -58,7 +58,10 @@ import {
 } from 'lucide-react';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getTodayDateString } from '@/lib/payroll/driverPiket';
+import {
+  countSubmittedSelfPiketJourneysOnDate,
+  getTodayDateString,
+} from '@/lib/payroll/driverPiket';
 import {
   collection,
   getDocs,
@@ -835,6 +838,7 @@ function ActivitiesContent() {
   const [unassignedJourneys, setUnassignedJourneys] = useState<any[]>([]);
   const [myAssignedJourneys, setMyAssignedJourneys] = useState<any[]>([]);
   const [myClaimedJourneys, setMyClaimedJourneys] = useState<any[]>([]);
+  const [myDriverJourneys, setMyDriverJourneys] = useState<any[]>([]);
   const [loadingJourneys, setLoadingJourneys] = useState(false);
   const [activeReportingJourney, setActiveReportingJourney] = useState<any | null>(null);
   const [isClaiming, setIsClaiming] = useState<boolean>(false);
@@ -877,6 +881,39 @@ function ActivitiesContent() {
     selfPiketVehicleName,
     selfPiketTollFeeValue,
   ]);
+
+  const submittedSelfPiketSpjCount = useMemo(
+    () => countSubmittedSelfPiketJourneysOnDate(
+      getTodayDateString('Asia/Jakarta'),
+      profile?.linkedEmployeeId || '',
+      myDriverJourneys,
+    ),
+    [myDriverJourneys, profile?.linkedEmployeeId],
+  );
+
+  const resetSelfPiketForm = useCallback(() => {
+    setSelfPiketActivityName('');
+    setSelfPiketStartPoint('UNIPDU Jombang, Jawa Timur');
+    setSelfPiketEndPoint('');
+    setSelfPiketVehicleName(DEFAULT_DRIVER_VEHICLE_NAME);
+    setSelfPiketCalcDistance(null);
+    setSelfPiketCalcDuration(null);
+    setSelfPiketCalculating(false);
+    setSelfPiketCalcError('');
+    setSelfPiketTollFee('');
+    setMapTargetMode(null);
+    lastSelfPiketCalculatedRef.current = { start: '', end: '' };
+  }, []);
+
+  const openSelfPiketSpjModal = useCallback(() => {
+    resetSelfPiketForm();
+    setShowSelfPiketSpjModal(true);
+  }, [resetSelfPiketForm]);
+
+  const closeSelfPiketSpjModal = useCallback(() => {
+    setShowSelfPiketSpjModal(false);
+    resetSelfPiketForm();
+  }, [resetSelfPiketForm]);
 
   // Real-time listener to check if current driver has an active piket schedule today
   useEffect(() => {
@@ -1001,14 +1038,7 @@ function ActivitiesContent() {
         }),
       });
 
-      setShowSelfPiketSpjModal(false);
-      setSelfPiketActivityName('');
-      setSelfPiketEndPoint('');
-      setSelfPiketVehicleName(DEFAULT_DRIVER_VEHICLE_NAME);
-      setSelfPiketCalcDistance(null);
-      setSelfPiketCalcDuration(null);
-      setSelfPiketTollFee('');
-      lastSelfPiketCalculatedRef.current = { start: '', end: '' };
+      closeSelfPiketSpjModal();
       router.push(`/employee/activities/journey-report?id=${createdJourney.journeyId}`);
     } catch (err: any) {
       console.error('Error creating self piket SPJ:', err);
