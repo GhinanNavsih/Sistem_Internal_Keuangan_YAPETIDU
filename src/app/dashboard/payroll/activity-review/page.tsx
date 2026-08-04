@@ -1139,7 +1139,7 @@ export default function ActivityReviewPage() {
         ...d.data(),
       } as ActivityReport));
 
-      // Sort descending by submittedAt (newest submission first)
+      // Sort ascending by submittedAt (oldest submission first)
       list.sort((a, b) => {
         const getMs = (ts: any): number => {
           if (!ts) return 0;
@@ -1147,10 +1147,10 @@ export default function ActivityReviewPage() {
           if (typeof ts.seconds === 'number') return ts.seconds * 1000;
           return 0;
         };
-        const diff = getMs(b.submittedAt) - getMs(a.submittedAt);
+        const diff = getMs(a.submittedAt) - getMs(b.submittedAt);
         if (diff !== 0) return diff;
-        // Fallback: newer activity date first
-        return b.activityDate.localeCompare(a.activityDate);
+        // Fallback: older activity date first
+        return a.activityDate.localeCompare(b.activityDate);
       });
 
       // Prefill pending activities with default calculated fees, merging with existing inputs
@@ -1307,7 +1307,7 @@ export default function ActivityReviewPage() {
       }))
       .sort((a, b) =>
         b.anomalyCodes.length - a.anomalyCodes.length ||
-        b.dutyDate.localeCompare(a.dutyDate) ||
+        a.dutyDate.localeCompare(b.dutyDate) ||
         a.shiftName.localeCompare(b.shiftName),
       );
   }, [filteredActivities]);

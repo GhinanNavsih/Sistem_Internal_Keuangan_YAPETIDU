@@ -221,6 +221,14 @@ dashboard calculation so that refreshed draft payslips and propagated draft
 payslips produce the same amounts. Finalized payslips are not silently changed
 by a later presence edit.
 
+When **Simpan Data Presensi** is used on the raw Loyalis page, the attendance
+document is saved first and then `/api/payroll/uraian-propagation` synchronizes
+the four owned rows onto eligible draft payslips for the canonical `YYYY-MM`
+period. Verified, locked, or paid slips are left unchanged; any difference is
+recorded as a Finance drift notice. If propagation is temporarily unavailable,
+the attendance save remains successful and Finance can use **Refresh Massal** as
+the fallback.
+
 ## Related tests
 
 The behavior is covered by the payroll propagation tests, especially the

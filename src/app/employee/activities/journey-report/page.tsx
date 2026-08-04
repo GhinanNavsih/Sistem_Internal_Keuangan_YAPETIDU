@@ -481,8 +481,6 @@ function JourneyReportContent() {
   const [formTollReceiptUrls, setFormTollReceiptUrls] = useState<string[]>([]);
   const [formFuelReceiptEvidence, setFormFuelReceiptEvidence] = useState<PhotoEvidence[]>([]);
   const [formTollReceiptEvidence, setFormTollReceiptEvidence] = useState<PhotoEvidence[]>([]);
-  const hasCompleteFuelReceiptEvidence = formFuelReceiptEvidence.length === formFuelReceiptUrls.length;
-  const hasCompleteTollReceiptEvidence = formTollReceiptEvidence.length === formTollReceiptUrls.length;
   const [uploadingFuelReceipt, setUploadingFuelReceipt] = useState(false);
   const [uploadingTollReceipt, setUploadingTollReceipt] = useState(false);
   const [selectedExifImage, setSelectedExifImage] = useState<{ url: string; title: string; auditMetadata?: PhotoAuditMetadata | null } | null>(null);
@@ -1003,6 +1001,18 @@ function JourneyReportContent() {
       const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
       const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
       const ndalemMealMoneyVal = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
+      const draftFuelReceiptUrls = fuelVal > 0 ? formFuelReceiptUrls.filter(Boolean) : [];
+      const draftTollReceiptUrls = tollVal > 0 ? formTollReceiptUrls.filter(Boolean) : [];
+      const draftFuelReceiptEvidence =
+        draftFuelReceiptUrls.length > 0 && formFuelReceiptEvidence.length === draftFuelReceiptUrls.length
+          ? formFuelReceiptEvidence
+          : [];
+      const draftTollReceiptEvidence =
+        draftTollReceiptUrls.length > 0 && formTollReceiptEvidence.length === draftTollReceiptUrls.length
+          ? formTollReceiptEvidence
+          : [];
+      const draftDateEnd = formIsMultiDay ? (formDateEnd || formDate) : formDate;
+      const draftNightCount = formIsMultiDay ? formNightCount : 0;
       await authenticatedJson('/api/driver-journeys', {
         method: 'POST',
         body: JSON.stringify({
@@ -1010,18 +1020,18 @@ function JourneyReportContent() {
           journeyId: activeReportingJourney.id,
           draft: {
             date: formDate,
-            dateEnd: formDateEnd,
+            dateEnd: draftDateEnd,
             isMultiDay: formIsMultiDay,
             timeStart: formTimeStart,
             timeEnd: formTimeEnd,
-            nightCount: formNightCount,
+            nightCount: draftNightCount,
             ndalemMealMoneyReceived: ndalemMealMoneyVal,
             fuelFee: fuelVal,
             tollParkingFee: tollVal,
-            fuelReceiptUrl: formFuelReceiptUrls.join(','),
-            tollReceiptUrl: formTollReceiptUrls.join(','),
-            ...(hasCompleteFuelReceiptEvidence ? { fuelReceiptEvidence: formFuelReceiptEvidence } : {}),
-            ...(hasCompleteTollReceiptEvidence ? { tollReceiptEvidence: formTollReceiptEvidence } : {}),
+            fuelReceiptUrl: draftFuelReceiptUrls.join(','),
+            tollReceiptUrl: draftTollReceiptUrls.join(','),
+            ...(draftFuelReceiptEvidence.length > 0 ? { fuelReceiptEvidence: draftFuelReceiptEvidence } : {}),
+            ...(draftTollReceiptEvidence.length > 0 ? { tollReceiptEvidence: draftTollReceiptEvidence } : {}),
             extraActivities,
             calculatedDistanceKm,
             calculatedDurationHours,
@@ -1034,18 +1044,18 @@ function JourneyReportContent() {
       const localDraftKey = `journey_draft_${activeReportingJourney.id}`;
       localStorage.setItem(localDraftKey, JSON.stringify({
         formDate,
-        formDateEnd,
+        formDateEnd: draftDateEnd,
         formIsMultiDay,
         formTimeStart,
         formTimeEnd,
-        formNightCount,
+        formNightCount: draftNightCount,
         formNdalemMealMoneyFee,
         formFuelFee,
         formTollParkingFee,
-        formFuelReceiptUrls,
-        formTollReceiptUrls,
-        formFuelReceiptEvidence,
-        formTollReceiptEvidence,
+        formFuelReceiptUrls: draftFuelReceiptUrls,
+        formTollReceiptUrls: draftTollReceiptUrls,
+        formFuelReceiptEvidence: draftFuelReceiptEvidence,
+        formTollReceiptEvidence: draftTollReceiptEvidence,
         extraActivities,
         calculatedDistanceKm,
         calculatedDurationHours,
@@ -1213,9 +1223,9 @@ function JourneyReportContent() {
     const checkTimings = calculateJourneyDateTimeTimings({
       dateStart: formDate,
       timeStart: formTimeStart,
-      dateEnd: (formIsMultiDay || (formDateEnd && formDateEnd > formDate)) ? (formDateEnd || formDate) : formDate,
+      dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
       timeEnd: formTimeEnd,
-      isMultiDay: formIsMultiDay || (Boolean(formDateEnd) && formDateEnd > formDate),
+      isMultiDay: formIsMultiDay,
     });
 
     if (isInvalidSingleDayTime) {
@@ -1240,15 +1250,40 @@ function JourneyReportContent() {
     try {
       const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
       const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
+      const submittedFuelReceiptUrls = fuelVal > 0
+        ? formFuelReceiptUrls.filter(Boolean)
+        : [];
+      const submittedTollReceiptUrls = tollVal > 0
+        ? formTollReceiptUrls.filter(Boolean)
+        : [];
+      const submittedFuelReceiptEvidence =
+        submittedFuelReceiptUrls.length > 0 &&
+        formFuelReceiptEvidence.length === submittedFuelReceiptUrls.length
+          ? formFuelReceiptEvidence
+          : [];
+      const submittedTollReceiptEvidence =
+        submittedTollReceiptUrls.length > 0 &&
+        formTollReceiptEvidence.length === submittedTollReceiptUrls.length
+          ? formTollReceiptEvidence
+          : [];
 
-      if (fuelVal > 0 && formFuelReceiptUrls.length === 0) {
+      if (fuelVal <= 0 || submittedFuelReceiptUrls.length === 0) {
+        setFormFuelReceiptUrls([]);
+        setFormFuelReceiptEvidence([]);
+      }
+      if (tollVal <= 0 || submittedTollReceiptUrls.length === 0) {
+        setFormTollReceiptUrls([]);
+        setFormTollReceiptEvidence([]);
+      }
+
+      if (fuelVal > 0 && submittedFuelReceiptUrls.length === 0) {
         setMessage({ type: 'error', text: 'Mohon unggah bukti reimburse BBM terlebih dahulu.' });
         isSubmittingRef.current = false;
         setSubmitting(false);
         skipSaveDraftRef.current = false;
         return;
       }
-      if (tollVal > 0 && formTollReceiptUrls.length === 0) {
+      if (tollVal > 0 && submittedTollReceiptUrls.length === 0) {
         setMessage({ type: 'error', text: 'Mohon unggah bukti tol & parkir terlebih dahulu.' });
         isSubmittingRef.current = false;
         setSubmitting(false);
@@ -1285,8 +1320,11 @@ function JourneyReportContent() {
         timeEnd: formTimeEnd,
         isMultiDay: formIsMultiDay,
       });
-      const effectiveNightCount = formIsMultiDay ? timings.nightCount : formNightCount;
+      const effectiveDateEnd = formIsMultiDay ? (formDateEnd || formDate) : formDate;
+      const effectiveNightCount = formIsMultiDay ? timings.nightCount : 0;
       const elapsedHours = timings.durationHours > 0 ? timings.durationHours : calculateElapsedHours(formTimeStart, formTimeEnd, effectiveNightCount);
+      const routeDurationHours = calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours;
+      const submittedDurationHours = elapsedHours > 0 ? elapsedHours : routeDurationHours;
 
       const ndalemMealMoneyVal = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
       const actualMealAllowance = getMealAllowanceForDuration(
@@ -1308,7 +1346,7 @@ function JourneyReportContent() {
       const nightPremium = calculateNightPremium(effectiveNightCount);
       const baseDriverWage = calculateDriverNetWage(
         calculatedDistanceKm,
-        calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
+        submittedDurationHours,
         effectiveNightCount,
       );
       const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
@@ -1339,18 +1377,19 @@ function JourneyReportContent() {
             vehicleType: activeReportingJourney.vehicleName,
             nightCount: effectiveNightCount,
             dateStart: formDate,
-            dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+            dateEnd: effectiveDateEnd,
             isMultiDay: formIsMultiDay,
             fuelFee: fuelVal,
             tollParkingFee: tollVal,
-            fuelReceiptUrl: formFuelReceiptUrls.join(','),
-            tollReceiptUrl: formTollReceiptUrls.join(','),
-            ...(hasCompleteFuelReceiptEvidence ? { fuelReceiptEvidence: formFuelReceiptEvidence } : {}),
-            ...(hasCompleteTollReceiptEvidence ? { tollReceiptEvidence: formTollReceiptEvidence } : {}),
+            fuelReceiptUrl: submittedFuelReceiptUrls.join(','),
+            tollReceiptUrl: submittedTollReceiptUrls.join(','),
+            ...(submittedFuelReceiptEvidence.length > 0 ? { fuelReceiptEvidence: submittedFuelReceiptEvidence } : {}),
+            ...(submittedTollReceiptEvidence.length > 0 ? { tollReceiptEvidence: submittedTollReceiptEvidence } : {}),
             points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
             reportedEndPoint: activeReportingJourney.endPoint,
             distanceKm: calculatedDistanceKm,
-            durationHours: calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
+            durationHours: submittedDurationHours,
+            routeDurationHours,
             journeyId: activeReportingJourney.id,
             extraActivities,
             extraDistanceKm,
@@ -1373,8 +1412,8 @@ function JourneyReportContent() {
             totalActualSpent,
             totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
             vehicleRate: activeReportingJourney.vehicleRate ?? 1000,
-            componentJarak: calculatedDistanceKm * 300,
-            componentWaktu: calculatedDurationHours * 5000,
+            componentJarak: Math.ceil(calculatedDistanceKm * 300),
+            componentWaktu: Math.ceil(submittedDurationHours * 5000),
             nightPremium,
           },
         }),
@@ -1747,7 +1786,8 @@ function JourneyReportContent() {
                     const checked = e.target.checked;
                     setFormIsMultiDay(checked);
                     if (!checked) {
-                      setFormDateEnd('');
+                      setFormNightCount(0);
+                      setFormDateEnd(formDate);
                     } else {
                       const startMins = parseInt((formTimeStart || '00:00').split(':')[0], 10) * 60 + parseInt((formTimeStart || '00:00').split(':')[1], 10);
                       const endMins = parseInt((formTimeEnd || '00:00').split(':')[0], 10) * 60 + parseInt((formTimeEnd || '00:00').split(':')[1], 10);
@@ -1965,7 +2005,7 @@ function JourneyReportContent() {
                 timeEnd: formTimeEnd,
                 isMultiDay: formIsMultiDay,
               });
-              const effectiveNights = timings.nightCount > 0 ? timings.nightCount : formNightCount;
+              const effectiveNights = formIsMultiDay ? timings.nightCount : 0;
               const isNextDayArriveBefore5AM = (formDateEnd && formDateEnd > formDate) && parseInt(formTimeEnd.split(':')[0], 10) < 5;
 
               return (
@@ -2006,7 +2046,7 @@ function JourneyReportContent() {
                   timeEnd: formTimeEnd,
                   isMultiDay: formIsMultiDay,
                 });
-                const effectiveNightCount = formIsMultiDay ? timings.nightCount : formNightCount;
+                const effectiveNightCount = formIsMultiDay ? timings.nightCount : 0;
                 const elapsedHours = timings.durationHours > 0 ? timings.durationHours : calculateElapsedHours(formTimeStart, formTimeEnd, effectiveNightCount);
                 const totalHakUangMakan = getMealAllowanceForDuration(elapsedHours, 'Suzuki XL7');
                 const qtyHakMakan = Math.round(totalHakUangMakan / 20000);
@@ -2281,12 +2321,13 @@ function JourneyReportContent() {
               timeEnd: formTimeEnd,
               isMultiDay: formIsMultiDay,
             });
-            const effectiveTableNights = tableTimings.nightCount > 0 ? tableTimings.nightCount : formNightCount;
+            const effectiveTableNights = formIsMultiDay ? tableTimings.nightCount : 0;
             const elapsedHours = tableTimings.durationHours > 0 ? tableTimings.durationHours : calculateElapsedHours(
               formTimeStart,
               formTimeEnd,
               effectiveTableNights,
             );
+            const submittedDurationHours = elapsedHours > 0 ? elapsedHours : calculatedDurationHours;
             const ndalemMealMoneyVal = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
             const actualMealAllowance =
               elapsedHours > 0
@@ -2440,7 +2481,7 @@ function JourneyReportContent() {
 
                   const baseDriverWage = calculateDriverNetWage(
                     calculatedDistanceKm,
-                    calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
+                    submittedDurationHours,
                     effectiveTableNights,
                   );
                   const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
@@ -2463,7 +2504,7 @@ function JourneyReportContent() {
                         <span className="text-emerald-700 font-black">{fmtRp(Math.ceil(calculatedDistanceKm * 300))}</span>
                       </div>
                       {(() => {
-                        const activeHours = calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours;
+                        const activeHours = submittedDurationHours;
                         const shortTripMeal = getShortTripMealWageComponent(activeHours);
                         return (
                           <>
@@ -2660,7 +2701,7 @@ function JourneyReportContent() {
                   <div className="p-3.5 bg-rose-50/80 border border-rose-200/80 rounded-2xl space-y-1.5 text-rose-950 font-semibold text-xs">
                     <div className="font-extrabold text-rose-900 flex items-center gap-1.5">
                       <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                      Catatan SPJ Piket Mandiri (Ndalem):
+                      Catatan SPJ Piket Mandiri:
                     </div>
                     <div className="text-rose-900 text-[11.5px] leading-normal">
                       Perjalanan ini diotorisasi mandiri oleh Anda. Jika Anda membatalkan, perjalanan ini akan <strong>dihapus secara permanen</strong> dan <strong>tidak akan dimasukkan ke Pool</strong> sopir lain.

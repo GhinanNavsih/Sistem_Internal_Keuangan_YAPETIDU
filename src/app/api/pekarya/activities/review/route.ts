@@ -308,6 +308,7 @@ export async function POST(request: NextRequest) {
             throw new HttpError(409, 'Audit Sopir hanya berlaku untuk kategori SOPIR.');
           }
           const review = validateDriverReview(item.driverReview);
+          const effectiveNightCount = before.isMultiDay === true ? review.nightCount : 0;
           const authorizedJourney = journeySnapshots[index]?.data();
           const rate = vehicleRate(review.vehicleType);
           const baseOperationalCost =
@@ -319,7 +320,7 @@ export async function POST(request: NextRequest) {
           const upahBersih = calculateDriverNetWage(
             review.distanceKm,
             review.durationHours,
-            review.nightCount,
+            effectiveNightCount,
           );
           const preAuthorizedMeal =
             review.vehicleType === 'Ndalem'
@@ -343,7 +344,7 @@ export async function POST(request: NextRequest) {
             actualJourneyDurationHours = calculateJourneyElapsedHours(
               String(before.timeStart || ''),
               String(before.timeEnd || ''),
-              review.nightCount,
+              effectiveNightCount,
             );
           } catch (error) {
             throw new HttpError(
@@ -394,9 +395,12 @@ export async function POST(request: NextRequest) {
             status: 'approved',
             fee: upahBersih,
             upahBersih,
+            baseDriverWage: upahBersih,
             totalOperationalCost,
             distanceKm: review.distanceKm,
             durationHours: review.durationHours,
+            componentJarak: Math.ceil(review.distanceKm * 300),
+            componentWaktu: Math.ceil(review.durationHours * 5_000),
             fuelFee: actualFuel,
             extraFuelCost: review.fuelDelta,
             tollParkingFee: actualToll,
@@ -413,8 +417,8 @@ export async function POST(request: NextRequest) {
             vehicleType: review.vehicleType,
             vehicleRate: rate,
             baseOperationalCost,
-            nightCount: review.nightCount,
-            nightPremium: calculateNightPremium(review.nightCount),
+            nightCount: effectiveNightCount,
+            nightPremium: calculateNightPremium(effectiveNightCount),
             points: review.points,
             tripType: review.distanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
             declineReason: '',
@@ -530,11 +534,34 @@ export async function POST(request: NextRequest) {
                   points: after.points || [],
                 }
               : {};
+          const shouldClearFuelReceiptEvidence =
+            Number(after.fuelFee || 0) <= 0 || !String(after.fuelReceiptUrl || '').trim();
+          const shouldClearTollReceiptEvidence =
+            Number(after.tollParkingFee || 0) <= 0 || !String(after.tollReceiptUrl || '').trim();
           transaction.update(journeyRefs[index]!, {
             ...driverReviewUpdate,
             status: command.action === 'decline' ? 'declined' : 'completed',
             fee: command.action === 'decline' ? 0 : (after.totalOperationalCost || 0),
             upahBersih: command.action === 'decline' ? 0 : (after.upahBersih || 0),
+            dateStart: after.dateStart || after.activityDate || before.activityDate,
+            dateEnd: after.dateEnd || after.dateStart || after.activityDate || before.activityDate,
+            isMultiDay: after.isMultiDay === true,
+            nightCount: after.nightCount ?? 0,
+            nightPremium: after.nightPremium ?? 0,
+            timeStart: after.timeStart || '',
+            timeEnd: after.timeEnd || '',
+            submittedDurationHours: after.durationHours || 0,
+            newTotalDurationHours: after.durationHours || 0,
+            componentJarak: after.componentJarak ?? Math.ceil(Number(after.distanceKm || 0) * 300),
+            componentWaktu: after.componentWaktu ?? Math.ceil(Number(after.durationHours || 0) * 5_000),
+            points: after.points || [],
+            extraActivities: after.extraActivities || [],
+            fuelReceiptEvidence: shouldClearFuelReceiptEvidence
+              ? admin.firestore.FieldValue.delete()
+              : (after.fuelReceiptEvidence ?? admin.firestore.FieldValue.delete()),
+            tollReceiptEvidence: shouldClearTollReceiptEvidence
+              ? admin.firestore.FieldValue.delete()
+              : (after.tollReceiptEvidence ?? admin.firestore.FieldValue.delete()),
             declineReason: command.action === 'decline' ? after.declineReason : '',
             reviewedAt: now,
             reviewedBy: actor.uid,

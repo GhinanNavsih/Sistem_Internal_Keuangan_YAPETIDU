@@ -3,14 +3,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
 import { useDashboardData } from '@/lib/DashboardDataContext';
-import { calculateYearsOfService, calculateGapok } from '@/utils/payrollLogic';
-import { calculateTotalEarnings, calculateTotalDeductions, calculateNetSalary } from '@/utils/salaryCalculator';
-import { buildInitialEarnings } from '@/components/PaySlipDialog';
+import {
+  buildDashboardSlipData,
+  DashboardPeriodInputs,
+  DashboardVakasiItem,
+  sumSlipFields,
+} from '@/lib/payroll/dashboardSlipData';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -211,6 +213,48 @@ interface PeriodAggregate {
   loyalisEarningsBreakdown: Record<string, number>;
   pekaryaEarningsBreakdown: Record<string, number>;
 }
+
+interface DashboardPeriodData {
+  uraianMap: Record<string, any>;
+  loyalisPresenceData: any | null;
+  vakasiTambahanMap: Record<string, number>;
+  vakasiTambahanListMap: Record<string, DashboardVakasiItem[]>;
+  vakasiEvents: string[];
+}
+
+const EMPTY_PERIOD_DATA: DashboardPeriodData = {
+  uraianMap: {},
+  loyalisPresenceData: null,
+  vakasiTambahanMap: {},
+  vakasiTambahanListMap: {},
+  vakasiEvents: [],
+};
+
+const createEmptyPeriodAggregate = (period: string): PeriodAggregate => ({
+  period,
+  label: formatPeriodLabel(period),
+  totalGross: 0,
+  totalDeductions: 0,
+  totalNet: 0,
+  loyalisGross: 0,
+  loyalisDeductions: 0,
+  loyalisNet: 0,
+  loyalisCount: 0,
+  confirmedLoyalisCount: 0,
+  pekaryaGross: 0,
+  pekaryaDeductions: 0,
+  pekaryaNet: 0,
+  pekaryaCount: 0,
+  confirmedPekaryaCount: 0,
+  totalSlipsCount: 0,
+  confirmedSlipsCount: 0,
+  deductionsBreakdown: {},
+  loyalisDeductionsBreakdown: {},
+  pekaryaDeductionsBreakdown: {},
+  earningsBreakdown: {},
+  loyalisEarningsBreakdown: {},
+  pekaryaEarningsBreakdown: {},
+});
 
 interface EarningShareSectionProps {
   title: string;
@@ -473,7 +517,6 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
 
 export default function TreasuryDashboard() {
   const { user, profile, loading: authLoading } = useAuth();
-  const router = useRouter();
 
   const {
     employeesLoyalis,
@@ -503,11 +546,9 @@ export default function TreasuryDashboard() {
   const [animateShareOfEarningListBars, setAnimateShareOfEarningListBars] = useState(false);
   const [selectedShareGroup, setSelectedShareGroup] = useState<{ type: 'loyalis' | 'pekarya'; name: string } | null>(null);
 
-  // Period-specific draft calculation states
-  const [selectedPeriodUraianMap, setSelectedPeriodUraianMap] = useState<Record<string, any>>({});
-  const [selectedPeriodLoyalisPresence, setSelectedPeriodLoyalisPresence] = useState<any | null>(null);
-  const [selectedPeriodVakasiTambahanMap, setSelectedPeriodVakasiTambahanMap] = useState<Record<string, number>>({});
-  const [selectedPeriodVakasiEvents, setSelectedPeriodVakasiEvents] = useState<string[]>([]);
+  // Period-specific payroll inputs are cached for every report period so the
+  // cumulative trend uses the same fallback calculations as the payroll page.
+  const [periodDataByPeriod, setPeriodDataByPeriod] = useState<Record<string, DashboardPeriodData>>({});
 
   // Hydration prevention & starting animation trigger on mount
   useEffect(() => {
@@ -589,58 +630,85 @@ export default function TreasuryDashboard() {
     fetchSlips();
   }, [profile]);
 
-  // Load selected period's draft variables when period changes
+  // Load all period-specific payroll inputs. The payroll page rebuilds missing
+  // slips from these inputs, so the dashboard must retain them for historical
+  // periods as well as the currently selected period.
   useEffect(() => {
-    if (!profile || profile.role !== 'super_admin' || !selectedPeriod) return;
+    if (!profile || profile.role !== 'super_admin') return;
 
-    const fetchSelectedPeriodData = async () => {
+    let cancelled = false;
+
+    const fetchPeriodData = async () => {
       try {
-        // 1. Fetch UraianGaji for selected period
-        const uraianSnapshot = await getDocs(collection(db, 'UraianGaji'));
-        const uMap: Record<string, any> = {};
-        uraianSnapshot.docs.forEach(d => {
-          if (d.id.startsWith(selectedPeriod)) {
-            uMap[d.id] = d.data();
+        const [uraianSnapshot, presenceSnapshot, vakasiSnapshot] = await Promise.all([
+          getDocs(collection(db, 'UraianGaji')),
+          getDocs(collection(db, 'LoyalisPresence')),
+          getDocs(collection(db, 'VakasiTambahan')),
+        ]);
+
+        const nextPeriodData: Record<string, DashboardPeriodData> = {};
+        const getPeriodData = (period: string): DashboardPeriodData => {
+          if (!nextPeriodData[period]) {
+            nextPeriodData[period] = {
+              uraianMap: {},
+              loyalisPresenceData: null,
+              vakasiTambahanMap: {},
+              vakasiTambahanListMap: {},
+              vakasiEvents: [],
+            };
           }
+          return nextPeriodData[period];
+        };
+
+        uraianSnapshot.docs.forEach(d => {
+          const period = d.id.substring(0, 7);
+          if (!/^\d{4}_\d{2}$/.test(period)) return;
+          getPeriodData(period).uraianMap[d.id] = d.data();
         });
-        setSelectedPeriodUraianMap(uMap);
 
-        // 2. Fetch LoyalisPresence for selected period
-        const presenceSnap = await getDoc(doc(db, 'LoyalisPresence', selectedPeriod));
-        if (presenceSnap.exists()) {
-          setSelectedPeriodLoyalisPresence(presenceSnap.data());
-        } else {
-          setSelectedPeriodLoyalisPresence(null);
-        }
-
-        // 3. Fetch VakasiTambahan for selected period
-        const periodToken = selectedPeriod.replace('_', '-');
-        const vakasiSnapshot = await getDocs(collection(db, 'VakasiTambahan'));
-        const vMap: Record<string, number> = {};
-        const eventsList: string[] = [];
+        presenceSnapshot.docs.forEach(d => {
+          if (!/^\d{4}_\d{2}$/.test(d.id)) return;
+          getPeriodData(d.id).loyalisPresenceData = d.data();
+        });
 
         vakasiSnapshot.docs.forEach(d => {
           const data = d.data();
-          if (data.period === periodToken && (!data.status || data.status === 'approved')) {
-            if (data.eventName) {
-              eventsList.push(data.eventName);
-            }
-            const workers = data.eventWorkers || {};
-            Object.entries(workers).forEach(([empId, w]: [string, any]) => {
-              vMap[empId] = (vMap[empId] || 0) + (w.payGiven || 0);
-            });
-          }
-        });
-        setSelectedPeriodVakasiTambahanMap(vMap);
-        setSelectedPeriodVakasiEvents(eventsList);
+          if (!data.period || (data.status && data.status !== 'approved')) return;
+          const period = String(data.period).replace('-', '_');
+          if (!/^\d{4}_\d{2}$/.test(period)) return;
 
+          const periodData = getPeriodData(period);
+          if (data.eventName) periodData.vakasiEvents.push(data.eventName);
+
+          const workers = data.eventWorkers || {};
+          Object.entries(workers).forEach(([employeeId, worker]: [string, any]) => {
+            periodData.vakasiTambahanMap[employeeId] =
+              (periodData.vakasiTambahanMap[employeeId] || 0) + (worker.payGiven || 0);
+            if (!periodData.vakasiTambahanListMap[employeeId]) {
+              periodData.vakasiTambahanListMap[employeeId] = [];
+            }
+            periodData.vakasiTambahanListMap[employeeId].push({
+              eventName: data.eventName || '',
+              payGiven: worker.payGiven || 0,
+              isEndOfMonth: !!data.isEndOfMonth,
+            });
+          });
+        });
+
+        if (!cancelled) setPeriodDataByPeriod(nextPeriodData);
       } catch (err) {
-        console.error('Error fetching selected period data:', err);
+        console.error('Error fetching dashboard period data:', err);
       }
     };
 
-    fetchSelectedPeriodData();
-  }, [selectedPeriod, profile]);
+    fetchPeriodData();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile]);
+
+  const selectedPeriodData = periodDataByPeriod[selectedPeriod] || EMPTY_PERIOD_DATA;
+  const selectedPeriodVakasiEvents = selectedPeriodData.vakasiEvents;
 
   // Master Active Counts
   const activeStaffCounts = useMemo(() => {
@@ -659,466 +727,138 @@ export default function TreasuryDashboard() {
     };
   }, [employeesLoyalis, employeesBlueCollar]);
 
-  // Map employee ID to category
-  const employeeCategoryMap = useMemo(() => {
-    const map: Record<string, 'loyalis' | 'pekarya'> = {};
-    employeesLoyalis.forEach(e => {
-      map[e.id] = 'loyalis';
-    });
-    employeesBlueCollar.forEach(e => {
-      map[e.id] = 'pekarya';
-    });
-    return map;
-  }, [employeesLoyalis, employeesBlueCollar]);
-
-  // Aggregation of Slip States by Period (includes live dynamic draft fallback for selectedPeriod)
+  // Aggregate the same employee-level values that the payroll page displays.
+  // Missing slips are rebuilt for every period, not only for selectedPeriod.
   const periodAggregates = useMemo(() => {
     const aggregates: Record<string, PeriodAggregate> = {};
-
-    // 1. Generate and initialize all periods from 2026_06 to the current year/month
     const startYear = 2026;
     const startMonth = 6;
-
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1;
-
     const endYear = Math.max(startYear, currentYear);
-    const endMonth = currentYear === startYear ? Math.max(startMonth, currentMonth) : currentMonth;
+    const endMonth = currentYear === startYear
+      ? Math.max(startMonth, currentMonth)
+      : currentMonth;
 
-    for (let y = startYear; y <= endYear; y++) {
-      const sM = y === startYear ? startMonth : 1;
-      const eM = y === endYear ? endMonth : 12;
-      for (let m = sM; m <= eM; m++) {
-        const period = `${y}_${String(m).padStart(2, '0')}`;
-        aggregates[period] = {
-          period,
-          label: formatPeriodLabel(period),
-          totalGross: 0,
-          totalDeductions: 0,
-          totalNet: 0,
-          loyalisGross: 0,
-          loyalisDeductions: 0,
-          loyalisNet: 0,
-          loyalisCount: 0,
-          confirmedLoyalisCount: 0,
-          pekaryaGross: 0,
-          pekaryaDeductions: 0,
-          pekaryaNet: 0,
-          pekaryaCount: 0,
-          confirmedPekaryaCount: 0,
-          totalSlipsCount: 0,
-          confirmedSlipsCount: 0,
-          deductionsBreakdown: {},
-          loyalisDeductionsBreakdown: {},
-          pekaryaDeductionsBreakdown: {},
-          earningsBreakdown: {},
-          loyalisEarningsBreakdown: {},
-          pekaryaEarningsBreakdown: {},
-        };
+    for (let year = startYear; year <= endYear; year++) {
+      const firstMonth = year === startYear ? startMonth : 1;
+      const lastMonth = year === endYear ? endMonth : 12;
+      for (let month = firstMonth; month <= lastMonth; month++) {
+        const period = `${year}_${String(month).padStart(2, '0')}`;
+        aggregates[period] = createEmptyPeriodAggregate(period);
       }
     }
 
-    // Initialize aggregates for all other periods present in slips that are >= '2026_06'
-    slips.forEach(d => {
-      const period = d.period || d.id.substring(0, 7);
-      if (period < '2026_06') return; // Filter out periods before June 2026
-
-      if (!aggregates[period]) {
-        aggregates[period] = {
-          period,
-          label: formatPeriodLabel(period),
-          totalGross: 0,
-          totalDeductions: 0,
-          totalNet: 0,
-          loyalisGross: 0,
-          loyalisDeductions: 0,
-          loyalisNet: 0,
-          loyalisCount: 0,
-          confirmedLoyalisCount: 0,
-          pekaryaGross: 0,
-          pekaryaDeductions: 0,
-          pekaryaNet: 0,
-          pekaryaCount: 0,
-          confirmedPekaryaCount: 0,
-          totalSlipsCount: 0,
-          confirmedSlipsCount: 0,
-          deductionsBreakdown: {},
-          loyalisDeductionsBreakdown: {},
-          pekaryaDeductionsBreakdown: {},
-          earningsBreakdown: {},
-          loyalisEarningsBreakdown: {},
-          pekaryaEarningsBreakdown: {},
-        };
+    slips.forEach(slip => {
+      const period = slip.period || slip.id?.substring(0, 7);
+      if (period && period >= '2026_06' && !aggregates[period]) {
+        aggregates[period] = createEmptyPeriodAggregate(period);
       }
     });
-
-    // Add selectedPeriod to aggregates if not already present
     if (selectedPeriod && selectedPeriod >= '2026_06' && !aggregates[selectedPeriod]) {
-      aggregates[selectedPeriod] = {
-        period: selectedPeriod,
-        label: formatPeriodLabel(selectedPeriod),
-        totalGross: 0,
-        totalDeductions: 0,
-        totalNet: 0,
-        loyalisGross: 0,
-        loyalisDeductions: 0,
-        loyalisNet: 0,
-        loyalisCount: 0,
-        confirmedLoyalisCount: 0,
-        pekaryaGross: 0,
-        pekaryaDeductions: 0,
-        pekaryaNet: 0,
-        pekaryaCount: 0,
-        confirmedPekaryaCount: 0,
-        totalSlipsCount: 0,
-        confirmedSlipsCount: 0,
-        deductionsBreakdown: {},
-        loyalisDeductionsBreakdown: {},
-        pekaryaDeductionsBreakdown: {},
-        earningsBreakdown: {},
-        loyalisEarningsBreakdown: {},
-        pekaryaEarningsBreakdown: {},
-      };
+      aggregates[selectedPeriod] = createEmptyPeriodAggregate(selectedPeriod);
     }
 
-    // Helper to compute draft deductions list dynamically
-    const getDraftDeductionsList = (emp: any, isLoyalis: boolean) => {
-      const list: { label: string; amount: number }[] = [];
-      const kopUnipduAmount = koperasiDeductions[emp.id] || 0;
-      const kopSaving = koperasiSavings[emp.id] || 0;
+    const slipsByPeriod: Record<string, Record<string, any>> = {};
+    slips.forEach(slip => {
+      const period = slip.period || slip.id?.substring(0, 7);
+      if (!period) return;
+      const employeeId = slip.employeeId || slip.id?.substring(period.length + 1);
+      if (!employeeId) return;
+      if (!slipsByPeriod[period]) slipsByPeriod[period] = {};
+      slipsByPeriod[period][employeeId] = slip;
+    });
 
-      if (isLoyalis) {
-        const getLoyalisPresenceDeduction = (empId: string): number => {
-          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-            const entry = selectedPeriodLoyalisPresence.entries[empId];
-            if (entry) {
-              return entry.deduction || 0;
-            }
-          }
-          return 0;
-        };
+    const addEmployeeToAggregate = (
+      aggregate: PeriodAggregate,
+      employee: any,
+      collar: 'loyalis' | 'pekarya',
+      slip: any | undefined,
+    ) => {
+      const [year, month] = aggregate.period.split('_').map(Number);
+      const periodData = periodDataByPeriod[aggregate.period] || EMPTY_PERIOD_DATA;
+      const inputs: DashboardPeriodInputs = {
+        targetDate: new Date(year, month - 1, 1),
+        salaryMatrix: collar === 'loyalis' ? salaryMatrixWhite : salaryMatrixBlue,
+        uraianMap: periodData.uraianMap,
+        vakasiTambahanMap: periodData.vakasiTambahanMap,
+        vakasiTambahanListMap: periodData.vakasiTambahanListMap,
+        functionalAllowanceMap,
+        kepangkatanAllowanceMap,
+        koperasiDeductions,
+        koperasiSavings,
+        loyalisPresenceData: periodData.loyalisPresenceData,
+      };
+      const data = buildDashboardSlipData(employee, collar, slip, inputs);
+      const gross = sumSlipFields(data.earnings);
+      const deductions = sumSlipFields(data.deductions);
+      const net = gross - deductions;
 
-        const getLoyalisPresensiDeduction = (empId: string): number => {
-          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-            const entry = selectedPeriodLoyalisPresence.entries[empId];
-            if (entry) {
-              const absenceMinutes = entry.absenceMinutes || 0;
-              return Math.round((absenceMinutes / 60) * 1650);
-            }
-          }
-          return 0;
-        };
+      aggregate.totalGross += gross;
+      aggregate.totalDeductions += deductions;
+      aggregate.totalNet += net;
+      aggregate.totalSlipsCount++;
+      aggregate.confirmedSlipsCount++;
 
-        const bpjsAmt = emp.bpjs?.deductionAmount || 0;
-        const thtAmt = emp.tht?.deductionAmount || 0;
-        const savingsAmt = emp.savings?.deductionAmount || 0;
-        const zizAmt = emp.ziz?.deductionAmount || 0;
-        const pinluAmt = emp.pinlu?.deductionAmount || 0;
-        const presDeduct = getLoyalisPresensiDeduction(emp.id);
-        const presBonusDeduct = getLoyalisPresenceDeduction(emp.id);
-
-        if (bpjsAmt) list.push({ label: 'BPJS', amount: bpjsAmt });
-        if (thtAmt) list.push({ label: 'Tabungan Hari Tua BNI Simponi', amount: thtAmt });
-        if (savingsAmt) list.push({ label: 'Tabungan', amount: savingsAmt });
-        if (zizAmt) list.push({ label: 'Zakat Infaq Sodaqoh', amount: zizAmt });
-        if (pinluAmt) list.push({ label: 'Pinlu/Tagihan', amount: pinluAmt });
-        if (kopUnipduAmount) list.push({ label: 'Pinjaman Kop. UNIPDU', amount: kopUnipduAmount });
-        if (presDeduct) list.push({ label: 'Potongan Presensi', amount: presDeduct });
-        if (presBonusDeduct) list.push({ label: 'Potongan Bonus Presensi', amount: presBonusDeduct });
-        if (kopSaving) list.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: kopSaving });
+      if (collar === 'loyalis') {
+        aggregate.loyalisGross += gross;
+        aggregate.loyalisDeductions += deductions;
+        aggregate.loyalisNet += net;
+        aggregate.loyalisCount++;
+        aggregate.confirmedLoyalisCount++;
       } else {
-        const bpjsAmt = emp.bpjs?.deductionAmount ? Math.round(emp.bpjs.deductionAmount) : 0;
-        const kopRochmadAmount = emp.deductions?.koperasiRochmad || 0;
-
-        if (bpjsAmt) list.push({ label: 'BPJS', amount: bpjsAmt });
-        if (kopRochmadAmount) list.push({ label: 'Kop. Rochmad', amount: kopRochmadAmount });
-        if (kopUnipduAmount) list.push({ label: 'Pinjaman Kop. UNIPDU', amount: kopUnipduAmount });
-        if (kopSaving) list.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: kopSaving });
+        aggregate.pekaryaGross += gross;
+        aggregate.pekaryaDeductions += deductions;
+        aggregate.pekaryaNet += net;
+        aggregate.pekaryaCount++;
+        aggregate.confirmedPekaryaCount++;
       }
-      return list;
+
+      data.deductions.forEach(field => {
+        const label = field.label || 'Lain-lain';
+        aggregate.deductionsBreakdown[label] =
+          (aggregate.deductionsBreakdown[label] || 0) + (field.amount || 0);
+        const breakdown = collar === 'loyalis'
+          ? aggregate.loyalisDeductionsBreakdown
+          : aggregate.pekaryaDeductionsBreakdown;
+        breakdown[label] = (breakdown[label] || 0) + (field.amount || 0);
+      });
+
+      data.earnings.forEach(field => {
+        const label = field.label || 'Lain-lain';
+        aggregate.earningsBreakdown[label] =
+          (aggregate.earningsBreakdown[label] || 0) + (field.amount || 0);
+        const breakdown = collar === 'loyalis'
+          ? aggregate.loyalisEarningsBreakdown
+          : aggregate.pekaryaEarningsBreakdown;
+        breakdown[label] = (breakdown[label] || 0) + (field.amount || 0);
+      });
     };
 
-    // Calculate details for all periods from existing slip states (except the currently selected period)
-    slips.forEach(d => {
-      const period = d.period || d.id.substring(0, 7);
-      const employeeId = d.employeeId || d.id.substring(period.length + 1);
-
-      if (period === selectedPeriod) return; // skip selected period, calculated dynamically next
-      if (period < '2026_06') return; // Filter out periods before June 2026
-
-      const agg = aggregates[period];
-      if (!agg) return;
-
-      agg.totalSlipsCount++;
-
-      // Include locked, confirmed, printed, and draft slips in historical sums
-      const isEligible = !d.status || d.status === 'locked' || d.status === 'confirmed' || d.status === 'printed' || d.status === 'draft';
-      if (isEligible) {
-        const isConfirmed = !d.status || d.status === 'locked' || d.status === 'confirmed' || d.status === 'printed' || d.status === 'draft';
-        if (isConfirmed) {
-          agg.confirmedSlipsCount++;
-        }
-
-        const gross = (d.earnings || []).reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-        const deductions = (d.deductions || []).reduce((sum: number, de: any) => sum + (de.amount || 0), 0);
-        const net = gross - deductions;
-
-        agg.totalGross += gross;
-        agg.totalDeductions += deductions;
-        agg.totalNet += net;
-
-        const category = employeeCategoryMap[employeeId] || (employeeId.startsWith('Loyalis_') ? 'loyalis' : 'pekarya');
-
-        if (category === 'loyalis') {
-          agg.loyalisGross += gross;
-          agg.loyalisDeductions += deductions;
-          agg.loyalisNet += net;
-          agg.loyalisCount++;
-          if (isConfirmed) {
-            agg.confirmedLoyalisCount++;
-          }
-        } else {
-          agg.pekaryaGross += gross;
-          agg.pekaryaDeductions += deductions;
-          agg.pekaryaNet += net;
-          agg.pekaryaCount++;
-          if (isConfirmed) {
-            agg.confirmedPekaryaCount++;
-          }
-        }
-
-        (d.deductions || []).forEach((de: any) => {
-          const label = de.label || 'Lain-lain';
-          agg.deductionsBreakdown[label] = (agg.deductionsBreakdown[label] || 0) + (de.amount || 0);
-          if (category === 'loyalis') {
-            agg.loyalisDeductionsBreakdown[label] = (agg.loyalisDeductionsBreakdown[label] || 0) + (de.amount || 0);
-          } else {
-            agg.pekaryaDeductionsBreakdown[label] = (agg.pekaryaDeductionsBreakdown[label] || 0) + (de.amount || 0);
-          }
-        });
-
-        (d.earnings || []).forEach((e: any) => {
-          const label = e.label || 'Lain-lain';
-          agg.earningsBreakdown[label] = (agg.earningsBreakdown[label] || 0) + (e.amount || 0);
-          if (category === 'loyalis') {
-            agg.loyalisEarningsBreakdown[label] = (agg.loyalisEarningsBreakdown[label] || 0) + (e.amount || 0);
-          } else {
-            agg.pekaryaEarningsBreakdown[label] = (agg.pekaryaEarningsBreakdown[label] || 0) + (e.amount || 0);
-          }
-        });
-      }
+    Object.entries(aggregates).forEach(([period, aggregate]) => {
+      const periodSlips = slipsByPeriod[period] || {};
+      employeesLoyalis
+        .filter(employee => employee.personal_info?.status === 'AKTIF')
+        .forEach(employee => addEmployeeToAggregate(
+          aggregate,
+          employee,
+          'loyalis',
+          periodSlips[employee.id],
+        ));
+      employeesBlueCollar
+        .filter(employee => employee.flags?.isActive !== false)
+        .forEach(employee => addEmployeeToAggregate(
+          aggregate,
+          employee,
+          'pekarya',
+          periodSlips[employee.id],
+        ));
     });
-
-    // Dynamically calculate the selectedPeriod aggregate using either slips or fallback draft calculations
-    if (selectedPeriod && aggregates[selectedPeriod]) {
-      const agg = aggregates[selectedPeriod];
-
-      // Slips lookup for selectedPeriod
-      const selectedPeriodSlipsMap: Record<string, any> = {};
-      slips.forEach(d => {
-        const period = d.period || d.id.substring(0, 7);
-        const employeeId = d.employeeId || d.id.substring(period.length + 1);
-        if (period === selectedPeriod) {
-          selectedPeriodSlipsMap[employeeId] = d;
-        }
-      });
-
-      // targetDate object for selectedPeriod month
-      const parts = selectedPeriod.split('_');
-      const targetDateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
-
-      const activeLoyalis = employeesLoyalis.filter(e => e.personal_info?.status === 'AKTIF');
-      const activePekarya = employeesBlueCollar.filter(e => e.flags?.isActive !== false);
-
-      // Loop Loyalis
-      activeLoyalis.forEach(emp => {
-        const slip = selectedPeriodSlipsMap[emp.id];
-        agg.totalSlipsCount++;
-
-        let gross = 0;
-        let deductions = 0;
-        let net = 0;
-        let deductionsList: { label: string; amount: number }[] = [];
-        let earningsList: { label: string; amount: number }[] = [];
-
-        if (!slip || !slip.status || slip.status === 'draft' || slip.status === 'locked' || slip.status === 'confirmed' || slip.status === 'printed') {
-          agg.confirmedSlipsCount++;
-          agg.confirmedLoyalisCount++;
-        }
-        
-        if (slip && slip.earnings && slip.earnings.length > 0) {
-          earningsList = slip.earnings;
-          deductionsList = slip.deductions || [];
-          gross = earningsList.reduce((sum: number, e: any) => sum + e.amount, 0);
-          deductions = deductionsList.reduce((sum: number, d: any) => sum + d.amount, 0);
-          net = gross - deductions;
-        } else {
-          // Dynamic calculation
-          const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
-                              (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
-          const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
-                                    (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
-          const gradeLevel = emp.academic_and_tier?.level_code || '';
-
-          const mappedEmp = {
-            joinDate: joinDateVal,
-            dateRecognized: dateRecognizedVal,
-            gradeLevel: gradeLevel
-          } as any;
-
-          const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
-
-          const getLoyalisPresenceBonus = (empId: string): number => {
-            if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-              const entry = selectedPeriodLoyalisPresence.entries[empId];
-              if (!entry) return 0;
-            }
-            return 250000;
-          };
-
-          const getLoyalisPresensiEarning = (empId: string): number => {
-            const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
-            const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
-            if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-              const entry = selectedPeriodLoyalisPresence.entries[empId];
-              if (!entry) return 0;
-            }
-            return Math.round(workingDays * expectedHours * 1650);
-          };
-
-          gross = calculateTotalEarnings(
-            emp,
-            gapokVal,
-            undefined,
-            selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
-            functionalAllowanceMap[emp.id] ?? 0,
-            getLoyalisPresenceBonus(emp.id),
-            getLoyalisPresensiEarning(emp.id),
-            kepangkatanAllowanceMap[emp.id] ?? 0
-          );
-
-          earningsList = buildInitialEarnings(
-            emp,
-            gapokVal,
-            'loyalis',
-            undefined,
-            selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
-            undefined,
-            functionalAllowanceMap[emp.id] ?? 0,
-            kepangkatanAllowanceMap[emp.id] ?? 0,
-            undefined,
-            getLoyalisPresenceBonus(emp.id),
-            getLoyalisPresensiEarning(emp.id)
-          );
-
-          deductionsList = getDraftDeductionsList(emp, true);
-          deductions = deductionsList.reduce((sum, d) => sum + d.amount, 0);
-          net = gross - deductions;
-        }
-
-        agg.totalGross += gross;
-        agg.totalDeductions += deductions;
-        agg.totalNet += net;
-
-        agg.loyalisGross += gross;
-        agg.loyalisDeductions += deductions;
-        agg.loyalisNet += net;
-        agg.loyalisCount++;
-
-        deductionsList.forEach((de: any) => {
-          const label = de.label || 'Lain-lain';
-          agg.deductionsBreakdown[label] = (agg.deductionsBreakdown[label] || 0) + (de.amount || 0);
-          agg.loyalisDeductionsBreakdown[label] = (agg.loyalisDeductionsBreakdown[label] || 0) + (de.amount || 0);
-        });
-
-        earningsList.forEach((e: any) => {
-          const label = e.label || 'Lain-lain';
-          agg.earningsBreakdown[label] = (agg.earningsBreakdown[label] || 0) + (e.amount || 0);
-          agg.loyalisEarningsBreakdown[label] = (agg.loyalisEarningsBreakdown[label] || 0) + (e.amount || 0);
-        });
-      });
-
-      // Loop Pekarya
-      activePekarya.forEach(emp => {
-        const slip = selectedPeriodSlipsMap[emp.id];
-        agg.totalSlipsCount++;
-
-        let gross = 0;
-        let deductions = 0;
-        let net = 0;
-        let deductionsList: { label: string; amount: number }[] = [];
-        let earningsList: { label: string; amount: number }[] = [];
-
-        if (!slip || !slip.status || slip.status === 'draft' || slip.status === 'locked' || slip.status === 'confirmed' || slip.status === 'printed') {
-          agg.confirmedSlipsCount++;
-          agg.confirmedPekaryaCount++;
-        }
-        
-        if (slip && slip.earnings && slip.earnings.length > 0) {
-          earningsList = slip.earnings;
-          deductionsList = slip.deductions || [];
-          gross = earningsList.reduce((sum: number, e: any) => sum + e.amount, 0);
-          deductions = deductionsList.reduce((sum: number, d: any) => sum + d.amount, 0);
-          net = gross - deductions;
-        } else {
-          // Dynamic calculation
-          const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
-          const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
-
-          const mappedEmp = {
-            joinDate: joinDateVal,
-            gradeLevel: gradeLevel
-          } as any;
-
-          const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
-
-          const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
-          gross = calculateTotalEarnings(
-            emp,
-            gapokVal,
-            uraianEntry
-          );
-
-          earningsList = buildInitialEarnings(
-            emp,
-            gapokVal,
-            'pekarya',
-            uraianEntry
-          );
-
-          deductionsList = getDraftDeductionsList(emp, false);
-          deductions = deductionsList.reduce((sum, d) => sum + d.amount, 0);
-          net = gross - deductions;
-        }
-
-        agg.totalGross += gross;
-        agg.totalDeductions += deductions;
-        agg.totalNet += net;
-
-        agg.pekaryaGross += gross;
-        agg.pekaryaDeductions += deductions;
-        agg.pekaryaNet += net;
-        agg.pekaryaCount++;
-
-        deductionsList.forEach((de: any) => {
-          const label = de.label || 'Lain-lain';
-          agg.deductionsBreakdown[label] = (agg.deductionsBreakdown[label] || 0) + (de.amount || 0);
-          agg.pekaryaDeductionsBreakdown[label] = (agg.pekaryaDeductionsBreakdown[label] || 0) + (de.amount || 0);
-        });
-
-        earningsList.forEach((e: any) => {
-          const label = e.label || 'Lain-lain';
-          agg.earningsBreakdown[label] = (agg.earningsBreakdown[label] || 0) + (e.amount || 0);
-          agg.pekaryaEarningsBreakdown[label] = (agg.pekaryaEarningsBreakdown[label] || 0) + (e.amount || 0);
-        });
-      });
-    }
 
     return aggregates;
   }, [
     slips,
-    employeeCategoryMap,
     selectedPeriod,
     employeesLoyalis,
     employeesBlueCollar,
@@ -1128,9 +868,7 @@ export default function TreasuryDashboard() {
     kepangkatanAllowanceMap,
     koperasiDeductions,
     koperasiSavings,
-    selectedPeriodUraianMap,
-    selectedPeriodLoyalisPresence,
-    selectedPeriodVakasiTambahanMap,
+    periodDataByPeriod,
   ]);
 
   // Sorted Periods list
@@ -1225,105 +963,69 @@ export default function TreasuryDashboard() {
 
   // Selected Period Share of Earning Data
   const shareOfEarningData = useMemo(() => {
-    if (!selectedPeriod) return { loyalis: [], pekarya: [], combined: [], totalLoyalisGross: 0, totalPekaryaGross: 0, totalCombinedGross: 0 };
+    if (!selectedPeriod) {
+      return {
+        loyalis: [],
+        pekarya: [],
+        combined: [],
+        totalLoyalisGross: 0,
+        totalPekaryaGross: 0,
+        totalCombinedGross: 0,
+      };
+    }
 
+    const periodData = periodDataByPeriod[selectedPeriod] || EMPTY_PERIOD_DATA;
+    const selectedPeriodSlipsMap: Record<string, any> = {};
+    slips.forEach(slip => {
+      const period = slip.period || slip.id?.substring(0, 7);
+      const employeeId = slip.employeeId || slip.id?.substring((period || '').length + 1);
+      if (period === selectedPeriod && employeeId) {
+        selectedPeriodSlipsMap[employeeId] = slip;
+      }
+    });
+
+    const [year, month] = selectedPeriod.split('_').map(Number);
+    const targetDate = new Date(year, month - 1, 1);
     const loyalisMap: Record<string, number> = {};
     const pekaryaMap: Record<string, number> = {};
     let totalLoyalisGross = 0;
     let totalPekaryaGross = 0;
 
-    // Slips lookup for selectedPeriod
-    const selectedPeriodSlipsMap: Record<string, any> = {};
-    slips.forEach(d => {
-      const period = d.period || d.id.substring(0, 7);
-      const employeeId = d.employeeId || d.id.substring(period.length + 1);
-      if (period === selectedPeriod) {
-        selectedPeriodSlipsMap[employeeId] = d;
-      }
-    });
+    const getData = (employee: any, collar: 'loyalis' | 'pekarya') => buildDashboardSlipData(
+      employee,
+      collar,
+      selectedPeriodSlipsMap[employee.id],
+      {
+        targetDate,
+        salaryMatrix: collar === 'loyalis' ? salaryMatrixWhite : salaryMatrixBlue,
+        uraianMap: periodData.uraianMap,
+        vakasiTambahanMap: periodData.vakasiTambahanMap,
+        vakasiTambahanListMap: periodData.vakasiTambahanListMap,
+        functionalAllowanceMap,
+        kepangkatanAllowanceMap,
+        koperasiDeductions,
+        koperasiSavings,
+        loyalisPresenceData: periodData.loyalisPresenceData,
+      },
+    );
 
-    const parts = selectedPeriod.split('_');
-    const targetDateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+    employeesLoyalis
+      .filter(employee => employee.personal_info?.status === 'AKTIF')
+      .forEach(employee => {
+        const gross = sumSlipFields(getData(employee, 'loyalis').earnings);
+        const department = employee.employment_profile?.department_unit || 'LAIN-LAIN';
+        loyalisMap[department] = (loyalisMap[department] || 0) + gross;
+        totalLoyalisGross += gross;
+      });
 
-    const activeLoyalis = employeesLoyalis.filter(e => e.personal_info?.status === 'AKTIF');
-    const activePekarya = employeesBlueCollar.filter(e => e.flags?.isActive !== false);
-
-    // 1. Process Loyalis
-    activeLoyalis.forEach(emp => {
-      const slip = selectedPeriodSlipsMap[emp.id];
-      let gross = 0;
-
-      if (slip && slip.earnings && slip.earnings.length > 0) {
-        gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-      } else {
-        const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
-                            (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
-        const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
-                                  (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
-        const gradeLevel = emp.academic_and_tier?.level_code || '';
-        const mappedEmp = { joinDate: joinDateVal, dateRecognized: dateRecognizedVal, gradeLevel } as any;
-        const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
-
-        const getLoyalisPresenceBonus = (empId: string): number => {
-          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-            const entry = selectedPeriodLoyalisPresence.entries[empId];
-            if (!entry) return 0;
-          }
-          return 250000;
-        };
-
-        const getLoyalisPresensiEarning = (empId: string): number => {
-          const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
-          const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
-          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-            const entry = selectedPeriodLoyalisPresence.entries[empId];
-            if (!entry) return 0;
-          }
-          return Math.round(workingDays * expectedHours * 1650);
-        };
-
-        gross = calculateTotalEarnings(
-          emp,
-          gapokVal,
-          undefined,
-          selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
-          functionalAllowanceMap[emp.id] ?? 0,
-          getLoyalisPresenceBonus(emp.id),
-          getLoyalisPresensiEarning(emp.id),
-          kepangkatanAllowanceMap[emp.id] ?? 0
-        );
-      }
-
-      const dept = emp.employment_profile?.department_unit || 'LAIN-LAIN';
-      loyalisMap[dept] = (loyalisMap[dept] || 0) + gross;
-      totalLoyalisGross += gross;
-    });
-
-    // 2. Process Pekarya
-    activePekarya.forEach(emp => {
-      const slip = selectedPeriodSlipsMap[emp.id];
-      let gross = 0;
-
-      if (slip && slip.earnings && slip.earnings.length > 0) {
-        gross = slip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-      } else {
-        const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
-        const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
-        const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
-        const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
-        const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
-
-        gross = calculateTotalEarnings(
-          emp,
-          gapokVal,
-          uraianEntry
-        );
-      }
-
-      const category = emp.employment?.jobCategory || 'LAIN-LAIN';
-      pekaryaMap[category] = (pekaryaMap[category] || 0) + gross;
-      totalPekaryaGross += gross;
-    });
+    employeesBlueCollar
+      .filter(employee => employee.flags?.isActive !== false)
+      .forEach(employee => {
+        const gross = sumSlipFields(getData(employee, 'pekarya').earnings);
+        const category = employee.employment?.jobCategory || 'LAIN-LAIN';
+        pekaryaMap[category] = (pekaryaMap[category] || 0) + gross;
+        totalPekaryaGross += gross;
+      });
 
     const loyalisList = Object.entries(loyalisMap)
       .map(([name, value]) => ({
@@ -1376,230 +1078,80 @@ export default function TreasuryDashboard() {
     salaryMatrixWhite,
     functionalAllowanceMap,
     kepangkatanAllowanceMap,
-    selectedPeriodLoyalisPresence,
-    selectedPeriodVakasiTambahanMap,
-    selectedPeriodUraianMap,
+    koperasiDeductions,
+    koperasiSavings,
+    periodDataByPeriod,
   ]);
 
   // Selected Group Composition (Drilldown details when a share group is selected)
   const selectedGroupComposition = useMemo(() => {
-    if (!selectedPeriod || !selectedShareGroup) {
-      return null;
-    }
+    if (!selectedPeriod || !selectedShareGroup) return null;
 
-    const earningsMap: Record<string, number> = {};
-    const deductionsMap: Record<string, number> = {};
-    let totalGross = 0;
-    let totalDeductions = 0;
-
-    // Slips lookup for selectedPeriod
+    const periodData = periodDataByPeriod[selectedPeriod] || EMPTY_PERIOD_DATA;
     const selectedPeriodSlipsMap: Record<string, any> = {};
-    slips.forEach(d => {
-      const period = d.period || d.id.substring(0, 7);
-      const employeeId = d.employeeId || d.id.substring(period.length + 1);
-      if (period === selectedPeriod) {
-        selectedPeriodSlipsMap[employeeId] = d;
+    slips.forEach(slip => {
+      const period = slip.period || slip.id?.substring(0, 7);
+      const employeeId = slip.employeeId || slip.id?.substring((period || '').length + 1);
+      if (period === selectedPeriod && employeeId) {
+        selectedPeriodSlipsMap[employeeId] = slip;
       }
     });
 
-    const parts = selectedPeriod.split('_');
-    const targetDateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
-
-    const getDraftDeductionsList = (emp: any, isLoyalis: boolean) => {
-      const list: { label: string; amount: number }[] = [];
-      const kopUnipduAmount = koperasiDeductions[emp.id] || 0;
-      const kopSaving = koperasiSavings[emp.id] || 0;
-
-      if (isLoyalis) {
-        const getLoyalisPresenceDeduction = (empId: string): number => {
-          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-            const entry = selectedPeriodLoyalisPresence.entries[empId];
-            if (entry) {
-              return entry.deduction || 0;
-            }
-          }
-          return 0;
-        };
-
-        const getLoyalisPresensiDeduction = (empId: string): number => {
-          if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-            const entry = selectedPeriodLoyalisPresence.entries[empId];
-            if (entry) {
-              const absenceMinutes = entry.absenceMinutes || 0;
-              return Math.round((absenceMinutes / 60) * 1650);
-            }
-          }
-          return 0;
-        };
-
-        const bpjsAmt = emp.bpjs?.deductionAmount || 0;
-        const thtAmt = emp.tht?.deductionAmount || 0;
-        const savingsAmt = emp.savings?.deductionAmount || 0;
-        const zizAmt = emp.ziz?.deductionAmount || 0;
-        const pinluAmt = emp.pinlu?.deductionAmount || 0;
-        const presDeduct = getLoyalisPresensiDeduction(emp.id);
-        const presBonusDeduct = getLoyalisPresenceDeduction(emp.id);
-
-        if (bpjsAmt) list.push({ label: 'BPJS', amount: bpjsAmt });
-        if (thtAmt) list.push({ label: 'Tabungan Hari Tua BNI Simponi', amount: thtAmt });
-        if (savingsAmt) list.push({ label: 'Tabungan', amount: savingsAmt });
-        if (zizAmt) list.push({ label: 'Zakat Infaq Sodaqoh', amount: zizAmt });
-        if (pinluAmt) list.push({ label: 'Pinlu/Tagihan', amount: pinluAmt });
-        if (kopUnipduAmount) list.push({ label: 'Pinjaman Kop. UNIPDU', amount: kopUnipduAmount });
-        if (presDeduct) list.push({ label: 'Potongan Presensi', amount: presDeduct });
-        if (presBonusDeduct) list.push({ label: 'Potongan Bonus Presensi', amount: presBonusDeduct });
-        if (kopSaving) list.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: kopSaving });
-      } else {
-        const bpjsAmt = emp.bpjs?.deductionAmount ? Math.round(emp.bpjs.deductionAmount) : 0;
-        const kopRochmadAmount = emp.deductions?.koperasiRochmad || 0;
-
-        if (bpjsAmt) list.push({ label: 'BPJS', amount: bpjsAmt });
-        if (kopRochmadAmount) list.push({ label: 'Kop. Rochmad', amount: kopRochmadAmount });
-        if (kopUnipduAmount) list.push({ label: 'Pinjaman Kop. UNIPDU', amount: kopUnipduAmount });
-        if (kopSaving) list.push({ label: 'Iuran Wajib Kop. UNIPDU', amount: kopSaving });
-      }
-      return list;
-    };
-
-    if (selectedShareGroup.type === 'loyalis') {
-      const activeLoyalis = employeesLoyalis.filter(
-        e => e.personal_info?.status === 'AKTIF' && (e.employment_profile?.department_unit || 'LAIN-LAIN') === selectedShareGroup.name
+    const [year, month] = selectedPeriod.split('_').map(Number);
+    const targetDate = new Date(year, month - 1, 1);
+    const isLoyalis = selectedShareGroup.type === 'loyalis';
+    const employees = isLoyalis
+      ? employeesLoyalis.filter(employee =>
+        employee.personal_info?.status === 'AKTIF' &&
+        (employee.employment_profile?.department_unit || 'LAIN-LAIN') === selectedShareGroup.name,
+      )
+      : employeesBlueCollar.filter(employee =>
+        employee.flags?.isActive !== false &&
+        (employee.employment?.jobCategory || 'LAIN-LAIN') === selectedShareGroup.name,
       );
 
-      activeLoyalis.forEach(emp => {
-        const slip = selectedPeriodSlipsMap[emp.id];
-        let gross = 0;
-        let deductionsList: { label: string; amount: number }[] = [];
-        let earningsList: { label: string; amount: number }[] = [];
+    const earningsBreakdown: Record<string, number> = {};
+    const deductionsBreakdown: Record<string, number> = {};
+    let totalGross = 0;
+    let totalDeductions = 0;
+    const collar = isLoyalis ? 'loyalis' : 'pekarya';
 
-        if (slip && slip.earnings && slip.earnings.length > 0) {
-          earningsList = slip.earnings;
-          deductionsList = slip.deductions || [];
-          gross = earningsList.reduce((sum: number, e: any) => sum + e.amount, 0);
-        } else {
-          const joinDateVal = emp.employment_profile?.date_of_hire?.toDate?.() || 
-                              (emp.employment_profile?.date_of_hire ? new Date(emp.employment_profile.date_of_hire) : new Date());
-          const dateRecognizedVal = emp.employment_profile?.date_recognized?.toDate?.() || 
-                                    (emp.employment_profile?.date_recognized ? new Date(emp.employment_profile.date_recognized) : undefined);
-          const gradeLevel = emp.academic_and_tier?.level_code || '';
-          const mappedEmp = { joinDate: joinDateVal, dateRecognized: dateRecognizedVal, gradeLevel } as any;
-          const gapokVal = calculateGapok(mappedEmp, salaryMatrixWhite, targetDateObj);
-
-          const getLoyalisPresenceBonus = (empId: string): number => {
-            if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-              const entry = selectedPeriodLoyalisPresence.entries[empId];
-              if (!entry) return 0;
-            }
-            return 250000;
-          };
-
-          const getLoyalisPresensiEarning = (empId: string): number => {
-            const workingDays = selectedPeriodLoyalisPresence?.workingDays || 25;
-            const expectedHours = selectedPeriodLoyalisPresence?.expectedHours || 6.5;
-            if (selectedPeriodLoyalisPresence?.entries && Object.keys(selectedPeriodLoyalisPresence.entries).length > 0) {
-              const entry = selectedPeriodLoyalisPresence.entries[empId];
-              if (!entry) return 0;
-            }
-            return Math.round(workingDays * expectedHours * 1650);
-          };
-
-          gross = calculateTotalEarnings(
-            emp,
-            gapokVal,
-            undefined,
-            selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
-            functionalAllowanceMap[emp.id] ?? 0,
-            getLoyalisPresenceBonus(emp.id),
-            getLoyalisPresensiEarning(emp.id),
-            kepangkatanAllowanceMap[emp.id] ?? 0
-          );
-
-          earningsList = buildInitialEarnings(
-            emp,
-            gapokVal,
-            'loyalis',
-            undefined,
-            selectedPeriodVakasiTambahanMap[emp.id] ?? 0,
-            undefined,
-            functionalAllowanceMap[emp.id] ?? 0,
-            kepangkatanAllowanceMap[emp.id] ?? 0,
-            undefined,
-            getLoyalisPresenceBonus(emp.id),
-            getLoyalisPresensiEarning(emp.id)
-          );
-
-          deductionsList = getDraftDeductionsList(emp, true);
-        }
-
-        totalGross += gross;
-        earningsList.forEach((e: any) => {
-          const label = e.label || 'Lain-lain';
-          earningsMap[label] = (earningsMap[label] || 0) + (e.amount || 0);
-        });
-
-        deductionsList.forEach((de: any) => {
-          const label = de.label || 'Lain-lain';
-          deductionsMap[label] = (deductionsMap[label] || 0) + (de.amount || 0);
-          totalDeductions += (de.amount || 0);
-        });
-      });
-    } else if (selectedShareGroup.type === 'pekarya') {
-      const activePekarya = employeesBlueCollar.filter(
-        e => e.flags?.isActive !== false && (e.employment?.jobCategory || 'LAIN-LAIN') === selectedShareGroup.name
+    employees.forEach(employee => {
+      const data = buildDashboardSlipData(
+        employee,
+        collar,
+        selectedPeriodSlipsMap[employee.id],
+        {
+          targetDate,
+          salaryMatrix: isLoyalis ? salaryMatrixWhite : salaryMatrixBlue,
+          uraianMap: periodData.uraianMap,
+          vakasiTambahanMap: periodData.vakasiTambahanMap,
+          vakasiTambahanListMap: periodData.vakasiTambahanListMap,
+          functionalAllowanceMap,
+          kepangkatanAllowanceMap,
+          koperasiDeductions,
+          koperasiSavings,
+          loyalisPresenceData: periodData.loyalisPresenceData,
+        },
       );
+      totalGross += sumSlipFields(data.earnings);
+      totalDeductions += sumSlipFields(data.deductions);
 
-      activePekarya.forEach(emp => {
-        const slip = selectedPeriodSlipsMap[emp.id];
-        let gross = 0;
-        let deductionsList: { label: string; amount: number }[] = [];
-        let earningsList: { label: string; amount: number }[] = [];
-
-        if (slip && slip.earnings && slip.earnings.length > 0) {
-          earningsList = slip.earnings;
-          deductionsList = slip.deductions || [];
-          gross = earningsList.reduce((sum: number, e: any) => sum + e.amount, 0);
-        } else {
-          const joinDateVal = emp.employment?.startDate ? new Date(emp.employment.startDate) : new Date();
-          const gradeLevel = emp.salaryProfile?.salaryGradeCode || '';
-          const mappedEmp = { joinDate: joinDateVal, gradeLevel } as any;
-          const gapokVal = calculateGapok(mappedEmp, salaryMatrixBlue, targetDateObj);
-          const uraianEntry = selectedPeriodUraianMap[`${selectedPeriod}_${emp.employment?.jobCategory}`]?.entries?.[emp.id];
-
-          gross = calculateTotalEarnings(
-            emp,
-            gapokVal,
-            uraianEntry
-          );
-
-          earningsList = buildInitialEarnings(
-            emp,
-            gapokVal,
-            'pekarya',
-            uraianEntry
-          );
-
-          deductionsList = getDraftDeductionsList(emp, false);
-        }
-
-        totalGross += gross;
-        earningsList.forEach((e: any) => {
-          const label = e.label || 'Lain-lain';
-          earningsMap[label] = (earningsMap[label] || 0) + (e.amount || 0);
-        });
-
-        deductionsList.forEach((de: any) => {
-          const label = de.label || 'Lain-lain';
-          deductionsMap[label] = (deductionsMap[label] || 0) + (de.amount || 0);
-          totalDeductions += (de.amount || 0);
-        });
+      data.earnings.forEach(field => {
+        const label = field.label || 'Lain-lain';
+        earningsBreakdown[label] = (earningsBreakdown[label] || 0) + (field.amount || 0);
       });
-    }
+      data.deductions.forEach(field => {
+        const label = field.label || 'Lain-lain';
+        deductionsBreakdown[label] = (deductionsBreakdown[label] || 0) + (field.amount || 0);
+      });
+    });
 
     return {
-      earningsBreakdown: earningsMap,
-      deductionsBreakdown: deductionsMap,
+      earningsBreakdown,
+      deductionsBreakdown,
       totalGross,
-      totalDeductions
+      totalDeductions,
     };
   }, [
     selectedPeriod,
@@ -1613,9 +1165,7 @@ export default function TreasuryDashboard() {
     kepangkatanAllowanceMap,
     koperasiDeductions,
     koperasiSavings,
-    selectedPeriodLoyalisPresence,
-    selectedPeriodVakasiTambahanMap,
-    selectedPeriodUraianMap
+    periodDataByPeriod,
   ]);
 
   // Selected Period Deduction Breakdown (Sorted)

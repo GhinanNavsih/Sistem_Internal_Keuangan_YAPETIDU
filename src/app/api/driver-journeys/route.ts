@@ -4,11 +4,13 @@ import admin from '@/lib/firebase-admin';
 import { adminDb } from '@/lib/firebase-admin';
 import { assertDateOnly } from '@/lib/payroll/domain';
 import {
-  DRIVER_VEHICLE_RATES,
+  calculateDriverJourneyOperationalCosts,
   calculateEstimatedDriverWage,
-  getMealAllowanceForDuration,
+  DEFAULT_DRIVER_VEHICLE_NAME,
+  isDriverVehicleName,
 } from '@/lib/payroll/driverJourney';
 import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
+import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
   HttpError,
@@ -164,10 +166,11 @@ export async function POST(request: NextRequest) {
       }
       const startPoint = stringField(body?.startPoint, 'Titik awal', 300);
       const endPoint = stringField(body?.endPoint, 'Tujuan perjalanan', 300);
-      const vehicleName = stringField(body?.vehicleName, 'Jenis kendaraan', 80);
-      if (!(vehicleName in DRIVER_VEHICLE_RATES)) {
+      const requestedVehicleName = stringField(body?.vehicleName, 'Jenis kendaraan', 80);
+      if (!isDriverVehicleName(requestedVehicleName)) {
         throw new HttpError(400, 'Jenis kendaraan tidak dikenal.');
       }
+      const vehicleName = requestedVehicleName;
       const distanceKm = numberField(body?.distanceKm, 'Jarak satu arah', { min: 0.001, max: 10_000 });
       const durationHours = numberField(body?.durationHours, 'Durasi satu arah', { min: 0.001, max: 10_000 });
       const customDurationPP = numberField(
@@ -215,12 +218,12 @@ export async function POST(request: NextRequest) {
           assignedToName = String(driverSnapshot.data()?.name || 'Sopir');
         }
 
-        const rate = DRIVER_VEHICLE_RATES[vehicleName as keyof typeof DRIVER_VEHICLE_RATES];
-        const baseOperationalCost = distanceKm * 2 * rate;
-        const mealAllowance = vehicleName === 'Ndalem'
-          ? 0
-          : getMealAllowanceForDuration(customDurationPP, vehicleName);
-        const totalOperationalCost = baseOperationalCost + mealAllowance + tollParkingFee;
+        const operationalCosts = calculateDriverJourneyOperationalCosts(
+          distanceKm,
+          customDurationPP,
+          vehicleName,
+          tollParkingFee,
+        );
         const status = assignedTo ? 'assigned' : 'unassigned';
         const now = admin.firestore.FieldValue.serverTimestamp();
         const journeyData: Record<string, unknown> = {
@@ -230,15 +233,15 @@ export async function POST(request: NextRequest) {
           startPoint,
           endPoint,
           vehicleName,
-          vehicleRate: rate,
+          vehicleRate: operationalCosts.vehicleRate,
           distanceKm,
           totalDistanceKm: distanceKm * 2,
           durationHours,
           customDurationPP,
-          baseOperationalCost,
-          mealAllowance,
+          baseOperationalCost: operationalCosts.baseOperationalCost,
+          mealAllowance: operationalCosts.mealAllowance,
           tollParkingFee,
-          totalOperationalCost,
+          totalOperationalCost: operationalCosts.totalOperationalCost,
           estimatedComponentJarak: wageEst.compJarak,
           estimatedComponentWaktu: wageEst.compWaktu,
           estimatedBaseDriverWage: wageEst.baseWage,
@@ -272,6 +275,21 @@ export async function POST(request: NextRequest) {
       const activityName = stringField(body?.activityName, 'Nama kegiatan', 180);
       const startPoint = stringField(body?.startPoint, 'Titik awal', 300);
       const endPoint = stringField(body?.endPoint, 'Tujuan perjalanan', 300);
+      if (
+        body?.vehicleName !== undefined &&
+        body?.vehicleName !== null &&
+        typeof body.vehicleName !== 'string'
+      ) {
+        throw new HttpError(400, 'Jenis kendaraan tidak valid.');
+      }
+      const requestedVehicleName =
+        typeof body?.vehicleName === 'string' && body.vehicleName.trim()
+          ? body.vehicleName.trim()
+          : DEFAULT_DRIVER_VEHICLE_NAME;
+      if (!isDriverVehicleName(requestedVehicleName)) {
+        throw new HttpError(400, 'Jenis kendaraan tidak dikenal.');
+      }
+      const vehicleName = requestedVehicleName;
       const distanceKm = numberField(body?.distanceKm, 'Jarak satu arah', { min: 0.001, max: 10_000 });
       const durationHours = numberField(body?.durationHours, 'Durasi satu arah', { min: 0.001, max: 10_000 });
       const tollParkingFee = numberField(body?.tollParkingFee ?? 0, 'Tol & parkir', { min: 0, max: MAX_MONEY });
@@ -300,6 +318,12 @@ export async function POST(request: NextRequest) {
         }
 
         const selfWageEst = calculateEstimatedDriverWage(distanceKm * 2, durationHours * 2);
+        const operationalCosts = calculateDriverJourneyOperationalCosts(
+          distanceKm,
+          durationHours * 2,
+          vehicleName,
+          tollParkingFee,
+        );
         const now = admin.firestore.FieldValue.serverTimestamp();
         transaction.create(journeyRef, {
           id: journeyId,
@@ -308,16 +332,16 @@ export async function POST(request: NextRequest) {
           journeyDate: activityDate,
           startPoint,
           endPoint,
-          vehicleName: 'Ndalem',
-          vehicleRate: 0,
+          vehicleName,
+          vehicleRate: operationalCosts.vehicleRate,
           distanceKm,
           totalDistanceKm: distanceKm * 2,
           durationHours,
           customDurationPP: durationHours * 2,
-          baseOperationalCost: 0,
-          mealAllowance: 0,
+          baseOperationalCost: operationalCosts.baseOperationalCost,
+          mealAllowance: operationalCosts.mealAllowance,
           tollParkingFee,
-          totalOperationalCost: tollParkingFee,
+          totalOperationalCost: operationalCosts.totalOperationalCost,
           estimatedComponentJarak: selfWageEst.compJarak,
           estimatedComponentWaktu: selfWageEst.compWaktu,
           estimatedBaseDriverWage: selfWageEst.baseWage,
@@ -331,6 +355,9 @@ export async function POST(request: NextRequest) {
           isSelfCreatedPiketSpj: true,
           createdAt: now,
           authorizedAt: now,
+          authorizedBy: actor.uid,
+          authorizedByName: actor.displayName,
+          authorizationMode: 'driver_piket_self',
           createdBy: actor.uid,
           period,
           payrollPeriod: period,
@@ -423,20 +450,76 @@ export async function POST(request: NextRequest) {
       }
       const draft = body.draft as Record<string, unknown>;
       const draftData: Record<string, unknown> = {};
-      if (draft.date !== undefined) draftData.draftDate = dateField(draft.date, 'Tanggal draft');
-      if (draft.dateEnd !== undefined && draft.dateEnd !== '') draftData.draftDateEnd = dateField(draft.dateEnd, 'Tanggal selesai draft');
       if (draft.isMultiDay !== undefined && typeof draft.isMultiDay !== 'boolean') throw new HttpError(400, 'Status multi-hari tidak valid.');
-      if (draft.isMultiDay !== undefined) draftData.draftIsMultiDay = draft.isMultiDay;
+      const draftIsMultiDay = draft.isMultiDay === true;
+      const draftDate = draft.date !== undefined ? dateField(draft.date, 'Tanggal draft') : '';
+      if (draft.date !== undefined) draftData.draftDate = draftDate;
+      if (!draftIsMultiDay && draftDate) {
+        draftData.draftDateEnd = draftDate;
+      } else if (draft.dateEnd !== undefined && draft.dateEnd !== '') {
+        draftData.draftDateEnd = dateField(draft.dateEnd, 'Tanggal selesai draft');
+      }
+      if (draft.isMultiDay !== undefined) draftData.draftIsMultiDay = draftIsMultiDay;
       for (const [source, target] of [['timeStart', 'draftTimeStart'], ['timeEnd', 'draftTimeEnd']] as const) {
         if (draft[source] !== undefined) draftData[target] = stringField(draft[source], source, 5);
       }
-      if (draft.nightCount !== undefined) draftData.draftNightCount = numberField(draft.nightCount, 'Jumlah malam', { min: 0, max: 365, integer: true });
+      if (draft.nightCount !== undefined) {
+        draftData.draftNightCount = draftIsMultiDay
+          ? numberField(draft.nightCount, 'Jumlah malam', { min: 0, max: 365, integer: true })
+          : 0;
+      }
       for (const [source, target] of [['ndalemMealMoneyReceived', 'draftNdalemMealMoneyReceived'], ['fuelFee', 'draftFuelFee'], ['tollParkingFee', 'draftTollParkingFee']] as const) {
         if (draft[source] !== undefined) draftData[target] = numberField(draft[source], source, { min: 0, max: MAX_MONEY });
       }
-      for (const [source, target] of [['fuelReceiptUrl', 'draftFuelReceiptUrl'], ['tollReceiptUrl', 'draftTollReceiptUrl']] as const) {
-        if (draft[source] !== undefined) draftData[target] = typeof draft[source] === 'string' ? draft[source].slice(0, 20_000) : '';
-      }
+      const normalizeDraftReceipt = (
+        feeSource: 'fuelFee' | 'tollParkingFee',
+        urlSource: 'fuelReceiptUrl' | 'tollReceiptUrl',
+        evidenceSource: 'fuelReceiptEvidence' | 'tollReceiptEvidence',
+        urlTarget: 'draftFuelReceiptUrl' | 'draftTollReceiptUrl',
+        evidenceTarget: 'draftFuelReceiptEvidence' | 'draftTollReceiptEvidence',
+      ) => {
+        if (
+          draft[feeSource] === undefined &&
+          draft[urlSource] === undefined &&
+          draft[evidenceSource] === undefined
+        ) {
+          return;
+        }
+        const fee = draft[feeSource] === undefined
+          ? 0
+          : numberField(draft[feeSource], feeSource, { min: 0, max: MAX_MONEY });
+        const url = typeof draft[urlSource] === 'string'
+          ? draft[urlSource].split(',').map((item) => item.trim()).filter(Boolean).join(',')
+          : '';
+        if (fee <= 0 || !url) {
+          draftData[urlTarget] = '';
+          draftData[evidenceTarget] = admin.firestore.FieldValue.delete();
+          return;
+        }
+        draftData[urlTarget] = url.slice(0, 20_000);
+        if (draft[evidenceSource] !== undefined) {
+          if (!Array.isArray(draft[evidenceSource]) || draft[evidenceSource].length > 20) {
+            throw new HttpError(400, `${evidenceSource} tidak valid.`);
+          }
+          draftData[evidenceTarget] = draft[evidenceSource];
+        } else {
+          draftData[evidenceTarget] = admin.firestore.FieldValue.delete();
+        }
+      };
+      normalizeDraftReceipt(
+        'fuelFee',
+        'fuelReceiptUrl',
+        'fuelReceiptEvidence',
+        'draftFuelReceiptUrl',
+        'draftFuelReceiptEvidence',
+      );
+      normalizeDraftReceipt(
+        'tollParkingFee',
+        'tollReceiptUrl',
+        'tollReceiptEvidence',
+        'draftTollReceiptUrl',
+        'draftTollReceiptEvidence',
+      );
       if (draft.extraActivities !== undefined) {
         if (!Array.isArray(draft.extraActivities) || draft.extraActivities.length > 30) throw new HttpError(400, 'Lokasi tambahan tidak valid.');
         draftData.draftExtraActivities = draft.extraActivities;
@@ -469,6 +552,108 @@ export async function POST(request: NextRequest) {
     }
 
     throw new HttpError(400, 'Aksi perjalanan tidak dikenal.');
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const actor = await requireAuthenticatedProfile(request);
+    requireJourneyManager(actor);
+
+    const { searchParams } = new URL(request.url);
+    const requestedJourneyId = searchParams.get('journeyId');
+    let journeyId = requestedJourneyId ? requestedJourneyId.trim() : '';
+
+    if (!journeyId) {
+      try {
+        const body = await request.json();
+        if (typeof body?.journeyId === 'string') {
+          journeyId = body.journeyId.trim();
+        }
+      } catch { }
+    }
+
+    if (!journeyId || !SAFE_JOURNEY_ID.test(journeyId)) {
+      throw new HttpError(400, 'ID perjalanan tidak valid.');
+    }
+
+    const journeyRef = adminDb.collection('DriverJourneys').doc(journeyId);
+
+    const result = await adminDb.runTransaction(async (transaction) => {
+      const journeySnapshot = await transaction.get(journeyRef);
+      if (!journeySnapshot.exists) {
+        throw new HttpError(404, 'Perjalanan dinas tidak ditemukan.');
+      }
+
+      const journey = journeySnapshot.data()!;
+      const status = String(journey.status || '');
+
+      if (status === 'claimed') {
+        throw new HttpError(
+          409,
+          'Perjalanan yang sedang aktif jalan tidak dapat dihapus. Batalkan klaim terlebih dahulu.',
+        );
+      }
+      if (status === 'completed') {
+        throw new HttpError(
+          409,
+          'Perjalanan yang sudah selesai tidak dapat dihapus.',
+        );
+      }
+
+      // Check if there is an ActivityReport linked to this journey
+      const activityDocId = typeof journey.activityDocId === 'string' ? journey.activityDocId : null;
+      if (activityDocId) {
+        const reportRef = adminDb.collection('ActivityReports').doc(activityDocId);
+        const reportSnapshot = await transaction.get(reportRef);
+        if (reportSnapshot.exists) {
+          transaction.delete(reportRef);
+
+          // Clean up PekaryaActivityIndex if present
+          const reportData = reportSnapshot.data()!;
+          const identity = [
+            reportData.employeeId,
+            reportData.payrollPeriod,
+            reportData.activityDate,
+            reportData.activityName,
+            reportData.timeStart || '',
+            reportData.timeEnd || '',
+          ].join('__');
+          const indexRef = adminDb.collection('PekaryaActivityIndexes').doc(identity);
+          transaction.delete(indexRef);
+        }
+      } else {
+        // Also check if any report has journeyId == journeyId
+        const reportQuery = adminDb.collection('ActivityReports').where('journeyId', '==', journeyId);
+        const reportSnapshots = await transaction.get(reportQuery);
+        reportSnapshots.docs.forEach((doc) => {
+          transaction.delete(doc.ref);
+        });
+      }
+
+      // Delete the DriverJourney document
+      transaction.delete(journeyRef);
+
+      // Add financial audit record
+      transaction.create(
+        newFinancialAuditRef(),
+        buildFinancialAuditRecord(actor, {
+          action: 'DRIVER_JOURNEY_DELETED',
+          entityType: 'DriverJourney',
+          entityId: journeyId,
+          reason: 'Penghapusan perjalanan dinas oleh Kepala SatKer / Admin',
+          before: journey,
+          after: null,
+          metadata: { status, journeyId },
+        }),
+      );
+
+      return { journeyId, deleted: true };
+    });
+
+    return NextResponse.json(result);
   } catch (error) {
     return errorResponse(error);
   }

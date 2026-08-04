@@ -152,6 +152,23 @@ test('Loyalis presence amounts match the payroll dashboard formulas', () => {
     presenceDeduction: 0,
   });
 
+  // The raw save materializes an entry for an employee absent from the
+  // workbook, so the full attendance shortfall and full bonus deduction are
+  // preserved in the propagated slip.
+  const absent = loyalisPresenceAmounts(
+    {
+      workingDays: 25,
+      expectedHours: 6.5,
+      entries: {
+        ABSENT: { absenceMinutes: 25 * 6.5 * 60, deduction: 250_000 },
+      },
+    },
+    'ABSENT',
+  );
+  assert.equal(absent.presensiEarning, Math.round(25 * 6.5 * 1650));
+  assert.equal(absent.presensiDeduction, Math.round(25 * 6.5 * 1650));
+  assert.equal(absent.presenceBonus - absent.presenceDeduction, 0);
+
   // No presence document yet: everyone is credited in full, matching the
   // dashboard's deliberate pre-calculation default.
   assert.deepEqual(loyalisPresenceAmounts(null, 'L1'), {

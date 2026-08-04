@@ -67,26 +67,14 @@ export default function Sidebar() {
       exact: true
     },
     {
-      name: 'Dashboard',
-      path: '/dashboard',
-      icon: LayoutDashboard,
-      exact: true
-    },
-    {
-      name: 'Dashboard Perjalanan',
-      path: `/dashboard/payroll/journey-dashboard?month=${currentMonth}&year=${currentYear}`,
-      icon: Car,
-      activePattern: '/dashboard/payroll/journey-dashboard'
+      name: 'Data Pegawai',
+      path: '/dashboard/employees',
+      icon: Users
     },
     {
       name: 'Manajemen Akses',
       path: '/dashboard/users',
       icon: UserCog
-    },
-    {
-      name: 'Data Pegawai',
-      path: '/dashboard/employees',
-      icon: Users
     },
     {
       // No month/year here: the uraian layout resolves its own default period
@@ -101,6 +89,18 @@ export default function Sidebar() {
       name: 'Simpan Pinjam',
       path: '/dashboard/payroll/simpan-pinjam',
       icon: Banknote
+    },
+    {
+      name: 'Dashboard',
+      path: '/dashboard',
+      icon: LayoutDashboard,
+      exact: true
+    },
+    {
+      name: 'Dashboard Perjalanan',
+      path: `/dashboard/payroll/journey-dashboard?month=${currentMonth}&year=${currentYear}`,
+      icon: Car,
+      activePattern: '/dashboard/payroll/journey-dashboard'
     }
   ].filter(item => {
     if (currentProfile.role === 'super_admin') return true;

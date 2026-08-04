@@ -15,6 +15,17 @@ export const DRIVER_VEHICLE_RATES = Object.freeze({
 } as const);
 
 export type DriverVehicleName = keyof typeof DRIVER_VEHICLE_RATES;
+export const DEFAULT_DRIVER_VEHICLE_NAME: DriverVehicleName = 'Ndalem';
+export const DRIVER_VEHICLE_NAMES = Object.freeze(
+  Object.keys(DRIVER_VEHICLE_RATES) as DriverVehicleName[],
+);
+
+export function isDriverVehicleName(value: unknown): value is DriverVehicleName {
+  return (
+    typeof value === 'string' &&
+    Object.prototype.hasOwnProperty.call(DRIVER_VEHICLE_RATES, value)
+  );
+}
 
 export function getDriverVehicleRate(vehicleName: string): number {
   return DRIVER_VEHICLE_RATES[vehicleName as DriverVehicleName] ?? 1_000;
@@ -29,6 +40,53 @@ export function assertNightCount(value: unknown): asserts value is number {
   ) {
     throw new Error(`Jumlah malam harus berupa bilangan bulat antara 0 dan ${MAX_NIGHT_COUNT}.`);
   }
+}
+
+export interface CanonicalDriverJourneyTimeline {
+  dateStart: string;
+  dateEnd: string;
+  isMultiDay: boolean;
+  nightCount: number;
+  nightPremium: number;
+}
+
+/**
+ * Normalizes timeline fields shared by the driver form, ActivityReports, and
+ * DriverJourneys. A single-day journey can never retain an old overnight
+ * count from a previous draft.
+ */
+export function canonicalizeDriverJourneyTimeline(input: {
+  activityDate: string;
+  dateStart?: unknown;
+  dateEnd?: unknown;
+  isMultiDay?: unknown;
+  nightCount?: unknown;
+}): CanonicalDriverJourneyTimeline {
+  const dateStart =
+    typeof input.dateStart === 'string' && input.dateStart.trim()
+      ? input.dateStart.trim()
+      : input.activityDate;
+  if (!dateStart) throw new Error('Tanggal mulai perjalanan wajib diisi.');
+
+  const isMultiDay = input.isMultiDay === true;
+  let nightCount = 0;
+  if (isMultiDay) {
+    assertNightCount(input.nightCount);
+    nightCount = input.nightCount;
+  }
+
+  const dateEnd =
+    isMultiDay && typeof input.dateEnd === 'string' && input.dateEnd.trim()
+      ? input.dateEnd.trim()
+      : dateStart;
+
+  return {
+    dateStart,
+    dateEnd,
+    isMultiDay,
+    nightCount,
+    nightPremium: calculateNightPremium(nightCount),
+  };
 }
 
 export function getMealTierCount(hours: number): number {
@@ -76,6 +134,52 @@ export function getMealAllowanceForDuration(
   }
 
   return totalRights;
+}
+
+export interface DriverJourneyOperationalCostResult {
+  vehicleName: DriverVehicleName;
+  vehicleRate: number;
+  baseOperationalCost: number;
+  mealAllowance: number;
+  tollParkingFee: number;
+  totalOperationalCost: number;
+}
+
+/**
+ * Calculates the operational allowance attached to an authorized journey.
+ * This is shared by Kepala Satker authorization and driver self-authorization
+ * during a piket shift so both paths produce the same budget baseline.
+ */
+export function calculateDriverJourneyOperationalCosts(
+  distanceKmOneWay: number,
+  durationHoursPP: number,
+  vehicleName: DriverVehicleName,
+  tollParkingFee: number = 0,
+): DriverJourneyOperationalCostResult {
+  if (!Number.isFinite(distanceKmOneWay) || distanceKmOneWay < 0) {
+    throw new Error('Jarak perjalanan tidak valid.');
+  }
+  if (!Number.isFinite(durationHoursPP) || durationHoursPP < 0) {
+    throw new Error('Durasi perjalanan tidak valid.');
+  }
+  if (!Number.isFinite(tollParkingFee) || tollParkingFee < 0) {
+    throw new Error('Tol & parkir tidak valid.');
+  }
+
+  const vehicleRate = DRIVER_VEHICLE_RATES[vehicleName];
+  const baseOperationalCost = distanceKmOneWay * 2 * vehicleRate;
+  const mealAllowance = vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
+    ? 0
+    : getMealAllowanceForDuration(durationHoursPP, vehicleName);
+
+  return {
+    vehicleName,
+    vehicleRate,
+    baseOperationalCost,
+    mealAllowance,
+    tollParkingFee,
+    totalOperationalCost: baseOperationalCost + mealAllowance + tollParkingFee,
+  };
 }
 
 export function calculateNightPremium(nightCount: number): number {
@@ -238,4 +342,3 @@ export function calculateEstimatedDriverWage(
     maxWage,
   };
 }
-

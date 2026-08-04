@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/lib/payroll/attendance.test.ts src/lib/payroll/loyalisPresenceWorkbook.test.ts src/lib/payroll/loyalisPresenceWindow.test.ts src/lib/payroll/calendar.test.ts src/lib/payroll/domain.test.ts src/lib/payroll/driverJourney.test.ts src/lib/payroll/koperasiLoan.test.ts src/lib/payroll/nipy.test.ts src/lib/payroll/pekaryaSpj.test.ts src/lib/payroll/periodGating.test.ts src/lib/payroll/slipBuilders.test.ts src/lib/payroll/slipPropagation.test.ts src/lib/payroll/uraianPropagation.test.ts src/lib/payroll/satpamDutyPlan.test.ts src/lib/photoEvidence.test.ts src/utils/satpamRotation.test.ts",
+    "test": "tsx --test src/lib/payroll/attendance.test.ts src/lib/payroll/loyalisPresenceWorkbook.test.ts src/lib/payroll/loyalisPresenceWindow.test.ts src/lib/payroll/calendar.test.ts src/lib/payroll/domain.test.ts src/lib/payroll/driverJourney.test.ts src/lib/payroll/koperasiLoan.test.ts src/lib/payroll/nipy.test.ts src/lib/payroll/pekaryaSpj.test.ts src/lib/payroll/periodGating.test.ts src/lib/payroll/slipBuilders.test.ts src/lib/payroll/dashboardSlipData.test.ts src/lib/payroll/slipPropagation.test.ts src/lib/payroll/uraianPropagation.test.ts src/lib/payroll/satpamDutyPlan.test.ts src/lib/photoEvidence.test.ts src/utils/satpamRotation.test.ts",
     "audit:satpam-payroll": "tsx scripts/auditSatpamPayrollReadOnly.ts",
     "reconcile:satpam-flexible": "tsx scripts/reconcileSatpamFlexibleReports.ts",
     "audit:pekarya-spj": "tsx scripts/auditPekaryaSpjReadOnly.ts",

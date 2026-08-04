@@ -89,13 +89,18 @@ import {
 } from '@/lib/payroll/satpamDutyPlan';
 import { prepareProofImage } from '@/lib/photoEvidence';
 import {
+  DEFAULT_DRIVER_VEHICLE_NAME,
+  DRIVER_VEHICLE_NAMES,
+  DRIVER_VEHICLE_RATES,
   calculateDriverNetWage,
+  calculateDriverJourneyOperationalCosts,
   calculateJourneyElapsedHours,
   calculateNightPremium,
   calculateJourneyDateTimeTimings,
   calculateEstimatedDriverWage,
   getMealAllowanceForDuration as calculateMealAllowanceForDuration,
   getShortTripMealWageComponent,
+  type DriverVehicleName,
 } from '@/lib/payroll/driverJourney';
 import { parseImageExif } from '@/lib/exif';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
@@ -843,6 +848,7 @@ function ActivitiesContent() {
   const [selfPiketActivityName, setSelfPiketActivityName] = useState('');
   const [selfPiketStartPoint, setSelfPiketStartPoint] = useState('UNIPDU Jombang, Jawa Timur');
   const [selfPiketEndPoint, setSelfPiketEndPoint] = useState('');
+  const [selfPiketVehicleName, setSelfPiketVehicleName] = useState<DriverVehicleName>(DEFAULT_DRIVER_VEHICLE_NAME);
   const [creatingPiketSpj, setCreatingPiketSpj] = useState(false);
 
   // Self Piket SPJ calculation states
@@ -853,6 +859,24 @@ function ActivitiesContent() {
   const [selfPiketTollFee, setSelfPiketTollFee] = useState<string>('');
   const [mapTargetMode, setMapTargetMode] = useState<'piketStart' | 'piketEnd' | 'extra' | null>(null);
   const lastSelfPiketCalculatedRef = useRef<{ start: string; end: string }>({ start: '', end: '' });
+
+  const selfPiketTollFeeValue = selfPiketTollFee
+    ? parseInt(selfPiketTollFee.replace(/\D/g, ''), 10) || 0
+    : 0;
+  const selfPiketOperationalCosts = useMemo(() => {
+    if (selfPiketCalcDistance === null || selfPiketCalcDuration === null) return null;
+    return calculateDriverJourneyOperationalCosts(
+      selfPiketCalcDistance,
+      selfPiketCalcDuration * 2,
+      selfPiketVehicleName,
+      selfPiketTollFeeValue,
+    );
+  }, [
+    selfPiketCalcDistance,
+    selfPiketCalcDuration,
+    selfPiketVehicleName,
+    selfPiketTollFeeValue,
+  ]);
 
   // Real-time listener to check if current driver has an active piket schedule today
   useEffect(() => {
@@ -963,8 +987,6 @@ function ActivitiesContent() {
 
     setCreatingPiketSpj(true);
     try {
-      const tollFeeVal = selfPiketTollFee ? parseInt(selfPiketTollFee.replace(/\D/g, ''), 10) || 0 : 0;
-
       const createdJourney = await authenticatedJson<{ journeyId: string }>('/api/driver-journeys', {
         method: 'POST',
         body: JSON.stringify({
@@ -972,15 +994,17 @@ function ActivitiesContent() {
           activityName: selfPiketActivityName.trim(),
           startPoint: selfPiketStartPoint.trim(),
           endPoint: selfPiketEndPoint.trim(),
+          vehicleName: selfPiketVehicleName,
           distanceKm: selfPiketCalcDistance,
           durationHours: selfPiketCalcDuration,
-          tollParkingFee: tollFeeVal,
+          tollParkingFee: selfPiketTollFeeValue,
         }),
       });
 
       setShowSelfPiketSpjModal(false);
       setSelfPiketActivityName('');
       setSelfPiketEndPoint('');
+      setSelfPiketVehicleName(DEFAULT_DRIVER_VEHICLE_NAME);
       setSelfPiketCalcDistance(null);
       setSelfPiketCalcDuration(null);
       setSelfPiketTollFee('');
@@ -997,6 +1021,20 @@ function ActivitiesContent() {
   // Reset states and initialize original distance/duration when reporting journey changes
   useEffect(() => {
     if (activeReportingJourney) {
+      const journeyDate =
+        activeReportingJourney.draftDate ||
+        activeReportingJourney.activityDate ||
+        activeReportingJourney.dateStart ||
+        activeReportingJourney.journeyDate ||
+        getTodayISO();
+      const journeyIsMultiDay = activeReportingJourney.draftIsMultiDay ?? activeReportingJourney.isMultiDay ?? false;
+      setFormDate(journeyDate);
+      setFormIsMultiDay(Boolean(journeyIsMultiDay));
+      setFormDateEnd(
+        journeyIsMultiDay
+          ? (activeReportingJourney.draftDateEnd || activeReportingJourney.dateEnd || journeyDate)
+          : journeyDate,
+      );
       setExtraActivities(activeReportingJourney.draftExtraActivities || []);
       setFormTimeStart(activeReportingJourney.draftTimeStart || '08:00');
       setFormTimeEnd(activeReportingJourney.draftTimeEnd || '17:00');
@@ -1007,10 +1045,13 @@ function ActivitiesContent() {
       const rawToll = activeReportingJourney.draftTollReceiptUrl || activeReportingJourney.tollReceiptUrl || '';
       setFormTollReceiptUrls(rawToll ? rawToll.split(',').filter(Boolean) : []);
       setFormNightCount(
+        journeyIsMultiDay &&
         Number.isSafeInteger(activeReportingJourney.draftNightCount) &&
           activeReportingJourney.draftNightCount >= 0
           ? activeReportingJourney.draftNightCount
-          : 0,
+          : journeyIsMultiDay && Number.isSafeInteger(activeReportingJourney.nightCount) && activeReportingJourney.nightCount >= 0
+            ? activeReportingJourney.nightCount
+            : 0,
       );
       setCalculatedDistanceKm(
         activeReportingJourney.draftCalculatedDistanceKm !== undefined
@@ -1395,19 +1436,23 @@ function ActivitiesContent() {
     try {
       const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
       const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
+      const draftDateEnd = formIsMultiDay ? (formDateEnd || formDate) : formDate;
       await authenticatedJson('/api/driver-journeys', {
         method: 'POST',
         body: JSON.stringify({
           action: 'save_draft',
           journeyId,
           draft: {
+            date: formDate,
+            dateEnd: draftDateEnd,
+            isMultiDay: formIsMultiDay,
             timeStart: formTimeStart,
             timeEnd: formTimeEnd,
-            nightCount: formNightCount,
+            nightCount: formIsMultiDay ? formNightCount : 0,
             fuelFee: fuelVal,
             tollParkingFee: tollVal,
-            fuelReceiptUrl: formFuelReceiptUrls.join(','),
-            tollReceiptUrl: formTollReceiptUrls.join(','),
+            fuelReceiptUrl: fuelVal > 0 ? formFuelReceiptUrls.filter(Boolean).join(',') : '',
+            tollReceiptUrl: tollVal > 0 ? formTollReceiptUrls.filter(Boolean).join(',') : '',
             extraActivities,
             calculatedDistanceKm,
             calculatedDurationHours,
@@ -1751,6 +1796,8 @@ function ActivitiesContent() {
     setFormDate(getTodayISO());
     setFormTimeStart('');
     setFormTimeEnd('');
+    setFormIsMultiDay(false);
+    setFormDateEnd('');
     setFormTripType('Dalam Kota');
     setFormVehicleType('Mobil Kecil');
     setFormNightCount(0);
@@ -2055,7 +2102,7 @@ function ActivitiesContent() {
       skipSaveDraftRef.current = false;
       return;
     }
-    if (calculateElapsedHours(formTimeStart, formTimeEnd, formNightCount) <= 0) {
+    if (calculateElapsedHours(formTimeStart, formTimeEnd, formIsMultiDay ? formNightCount : 0) <= 0) {
       setMessage({ type: 'error', text: 'Jam tiba dan jumlah malam tidak membentuk durasi perjalanan yang valid.' });
       isSubmittingRef.current = false;
       setSubmitting(false);
@@ -2066,15 +2113,24 @@ function ActivitiesContent() {
     try {
       const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
       const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
+      const submittedFuelReceiptUrls = fuelVal > 0 ? formFuelReceiptUrls.filter(Boolean) : [];
+      const submittedTollReceiptUrls = tollVal > 0 ? formTollReceiptUrls.filter(Boolean) : [];
 
-      if (fuelVal > 0 && formFuelReceiptUrls.length === 0) {
+      if (fuelVal <= 0 || submittedFuelReceiptUrls.length === 0) {
+        setFormFuelReceiptUrls([]);
+      }
+      if (tollVal <= 0 || submittedTollReceiptUrls.length === 0) {
+        setFormTollReceiptUrls([]);
+      }
+
+      if (fuelVal > 0 && submittedFuelReceiptUrls.length === 0) {
         setMessage({ type: 'error', text: 'Mohon unggah bukti reimburse BBM terlebih dahulu.' });
         isSubmittingRef.current = false;
         setSubmitting(false);
         skipSaveDraftRef.current = false;
         return;
       }
-      if (tollVal > 0 && formTollReceiptUrls.length === 0) {
+      if (tollVal > 0 && submittedTollReceiptUrls.length === 0) {
         setMessage({ type: 'error', text: 'Mohon unggah bukti tol & parkir terlebih dahulu.' });
         isSubmittingRef.current = false;
         setSubmitting(false);
@@ -2109,12 +2165,15 @@ function ActivitiesContent() {
         timeEnd: formTimeEnd,
         isMultiDay: formIsMultiDay,
       });
-      const effectiveNightCount = formIsMultiDay ? timings.nightCount : formNightCount;
+      const effectiveDateEnd = formIsMultiDay ? (formDateEnd || formDate) : formDate;
+      const effectiveNightCount = formIsMultiDay ? timings.nightCount : 0;
       const elapsedHours = timings.durationHours > 0 ? timings.durationHours : calculateElapsedHours(
         formTimeStart,
         formTimeEnd,
         effectiveNightCount,
       );
+      const routeDurationHours = calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours;
+      const submittedDurationHours = elapsedHours > 0 ? elapsedHours : routeDurationHours;
       const actualMealAllowance = getMealAllowanceForDuration(
         elapsedHours,
         activeReportingJourney.vehicleName,
@@ -2138,7 +2197,7 @@ function ActivitiesContent() {
       const nightPremium = calculateNightPremium(effectiveNightCount);
       const baseDriverWage = calculateDriverNetWage(
         calculatedDistanceKm,
-        calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
+        submittedDurationHours,
         effectiveNightCount,
       );
       const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
@@ -2162,15 +2221,16 @@ function ActivitiesContent() {
           driverData: {
             nightCount: effectiveNightCount,
             dateStart: formDate,
-            dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+            dateEnd: effectiveDateEnd,
             isMultiDay: formIsMultiDay,
             fuelFee: fuelVal,
             tollParkingFee: tollVal,
-            fuelReceiptUrl: formFuelReceiptUrls.join(','),
-            tollReceiptUrl: formTollReceiptUrls.join(','),
+            fuelReceiptUrl: submittedFuelReceiptUrls.join(','),
+            tollReceiptUrl: submittedTollReceiptUrls.join(','),
             points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
             distanceKm: calculatedDistanceKm,
-            durationHours: calculatedDurationHours > 0 ? calculatedDurationHours : elapsedHours,
+            durationHours: submittedDurationHours,
+            routeDurationHours,
             journeyId: activeReportingJourney.id,
             extraActivities,
             extraDistanceKm,
@@ -2193,8 +2253,8 @@ function ActivitiesContent() {
             totalActualSpent,
             totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
             vehicleRate: activeReportingJourney.vehicleRate ?? 1000,
-            componentJarak: calculatedDistanceKm * 300,
-            componentWaktu: calculatedDurationHours * 5000,
+            componentJarak: Math.ceil(calculatedDistanceKm * 300),
+            componentWaktu: Math.ceil(submittedDurationHours * 5000),
             nightPremium,
           },
         }),
@@ -4595,7 +4655,7 @@ function ActivitiesContent() {
                       Anda Bertugas Piket Hari Ini!
                     </h3>
                     <p className="text-xs text-emerald-100/90 mt-0.5">
-                      Karena jadwal piket Anda aktif hari ini, Anda dapat membuat SPJ (Surat Perintah Jalan) sendiri khusus kendaraan <strong>Ndalem</strong>.
+                      Karena jadwal piket Anda aktif hari ini, Anda dapat mengotorisasi SPJ (Surat Perintah Jalan) sendiri. Kendaraan default adalah <strong>Ndalem</strong>, tetapi Anda dapat memilih kendaraan lain bila diperlukan.
                     </p>
                     {myClaimedJourneys.length > 0 && (
                       <p className="text-[11px] font-bold text-amber-200 mt-1 flex items-center gap-1.5 bg-amber-950/40 p-2.5 rounded-xl border border-amber-400/30">
@@ -4611,7 +4671,7 @@ function ActivitiesContent() {
                     className="shrink-0 rounded-xl bg-white text-emerald-900 hover:bg-emerald-50 font-extrabold text-xs h-10 px-4 gap-2 cursor-pointer shadow-md border-none disabled:opacity-50"
                   >
                     <Plus className="w-4 h-4 text-emerald-700" />
-                    Buat SPJ Piket (Ndalem)
+                    Buat SPJ Piket
                   </Button>
                 </div>
               </div>
@@ -5966,7 +6026,8 @@ function ActivitiesContent() {
                         const checked = e.target.checked;
                         setFormIsMultiDay(checked);
                         if (!checked) {
-                          setFormDateEnd('');
+                          setFormNightCount(0);
+                          setFormDateEnd(formDate);
                         } else {
                           const startMins = parseInt((formTimeStart || '00:00').split(':')[0], 10) * 60 + parseInt((formTimeStart || '00:00').split(':')[1], 10);
                           const endMins = parseInt((formTimeEnd || '00:00').split(':')[0], 10) * 60 + parseInt((formTimeEnd || '00:00').split(':')[1], 10);
@@ -6097,7 +6158,7 @@ function ActivitiesContent() {
                     timeEnd: formTimeEnd,
                     isMultiDay: formIsMultiDay,
                   });
-                  const effectiveNights = formIsMultiDay ? timings.nightCount : formNightCount;
+                  const effectiveNights = formIsMultiDay ? timings.nightCount : 0;
                   return (
                     <div className="text-xs font-bold text-slate-600 flex items-center gap-1.5 pt-1">
                       <span>💡 Durasi Terhitung:</span>
@@ -6618,13 +6679,19 @@ function ActivitiesContent() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog for Self-Creating Piket SPJ (Rich Otorisasi SPJ Modal - Ndalem locked, No Operational Cost Calculation) */}
-      <Dialog open={showSelfPiketSpjModal} onOpenChange={setShowSelfPiketSpjModal}>
+      {/* Dialog for self-authorizing a journey during an active piket shift. */}
+      <Dialog
+        open={showSelfPiketSpjModal}
+        onOpenChange={(open) => {
+          setShowSelfPiketSpjModal(open);
+          if (!open) setSelfPiketVehicleName(DEFAULT_DRIVER_VEHICLE_NAME);
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl p-6 sm:p-7">
           <DialogHeader className="border-b border-slate-100 pb-4">
             <DialogTitle className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2">
               <Compass className="w-5 h-5 text-emerald-600 animate-spin-slow" />
-              Otorisasi SPJ Piket Mandiri (Ndalem)
+              Otorisasi SPJ Piket Mandiri
             </DialogTitle>
           </DialogHeader>
 
@@ -6755,18 +6822,40 @@ function ActivitiesContent() {
               </div>
             </div>
 
-            {/* Kendaraan */}
+            {/* Kendaraan: Ndalem remains the default, but other vehicles use the same
+                operational allowance rules as a Kepala Satker authorization. */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+              <Label htmlFor="selfPiketVehicle" className="text-xs font-bold text-slate-600 uppercase tracking-wider">
                 Jenis Kendaraan
               </Label>
-              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 text-xs font-extrabold flex items-center justify-between h-10">
-                <span className="flex items-center gap-2">
-                  <Car className="w-4 h-4 text-amber-600 shrink-0" />
-                  Ndalem — Tanpa Uang Jalan Operasional
-                </span>
-                <Badge className="bg-amber-200 text-amber-950 border-none text-[9px] font-black shrink-0">Terkunci</Badge>
-              </div>
+              <Select
+                value={selfPiketVehicleName}
+                onValueChange={(value) => {
+                  if (value && DRIVER_VEHICLE_NAMES.includes(value as DriverVehicleName)) {
+                    setSelfPiketVehicleName(value as DriverVehicleName);
+                  }
+                }}
+              >
+                <SelectTrigger id="selfPiketVehicle" className="w-full text-xs font-extrabold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                  <SelectValue>
+                    {selfPiketVehicleName === DEFAULT_DRIVER_VEHICLE_NAME
+                      ? 'Ndalem — Default, tanpa BBM'
+                      : `${selfPiketVehicleName} — Rp${DRIVER_VEHICLE_RATES[selfPiketVehicleName].toLocaleString('id-ID')}/km`}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+                  {DRIVER_VEHICLE_NAMES.map((vehicleName) => (
+                    <SelectItem key={vehicleName} value={vehicleName}>
+                      {vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
+                        ? 'Ndalem — Default, tanpa BBM'
+                        : `${vehicleName} — Rp${DRIVER_VEHICLE_RATES[vehicleName].toLocaleString('id-ID')}/km`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-slate-500 font-semibold">
+                Ndalem dipilih otomatis. Kendaraan lain mendapat anggaran BBM dan uang makan sesuai otorisasi Kepala SatKer.
+              </p>
             </div>
 
             {/* Calculation Loader */}
@@ -6798,7 +6887,7 @@ function ActivitiesContent() {
               </div>
             )}
 
-            {/* Calculation Summary Preview (WITHOUT Operational Cost Calculation) */}
+            {/* Calculation Summary Preview */}
             {selfPiketCalcDistance !== null && (
               <div className="p-4 bg-gradient-to-br from-emerald-50/80 to-teal-50/50 border border-emerald-200/80 rounded-2xl space-y-3 animate-in fade-in duration-200">
                 <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2">
@@ -6847,6 +6936,20 @@ function ActivitiesContent() {
                     </div>
                   );
                 })()}
+
+                {selfPiketOperationalCosts && (
+                  <div className="bg-white p-3 rounded-xl border border-blue-200/80 space-y-1.5 shadow-xs">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-extrabold text-slate-700">Biaya Operasional SPJ:</span>
+                      <span className="text-xs sm:text-sm font-black text-blue-700">
+                        {fmtRp(selfPiketOperationalCosts.totalOperationalCost)}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100 font-semibold">
+                      BBM {fmtRp(selfPiketOperationalCosts.baseOperationalCost)} + Uang makan {fmtRp(selfPiketOperationalCosts.mealAllowance)} + Tol/parkir {fmtRp(selfPiketOperationalCosts.tollParkingFee)}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

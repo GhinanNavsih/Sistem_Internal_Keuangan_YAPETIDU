@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  canonicalizeDriverJourneyTimeline,
+  DEFAULT_DRIVER_VEHICLE_NAME,
   DRIVER_VEHICLE_RATES,
+  calculateDriverJourneyOperationalCosts,
   calculateDriverNetWage,
   calculateEstimatedDriverWage,
   calculateJourneyElapsedHours,
@@ -15,6 +18,29 @@ test('vehicle rates stay centralized for authorization and review calculations',
   assert.equal(DRIVER_VEHICLE_RATES.Bis, 2_500);
   assert.equal(DRIVER_VEHICLE_RATES['Suzuki XL7'], 1_000);
   assert.equal(DRIVER_VEHICLE_RATES.Ndalem, 0);
+  assert.equal(DEFAULT_DRIVER_VEHICLE_NAME, 'Ndalem');
+});
+
+test('authorized journey operational costs use the same baseline for every authorization path', () => {
+  const ndalem = calculateDriverJourneyOperationalCosts(10, 6, 'Ndalem', 15_000);
+  assert.deepEqual(ndalem, {
+    vehicleName: 'Ndalem',
+    vehicleRate: 0,
+    baseOperationalCost: 0,
+    mealAllowance: 0,
+    tollParkingFee: 15_000,
+    totalOperationalCost: 15_000,
+  });
+
+  const suzuki = calculateDriverJourneyOperationalCosts(10, 6, 'Suzuki XL7', 15_000);
+  assert.deepEqual(suzuki, {
+    vehicleName: 'Suzuki XL7',
+    vehicleRate: 1_000,
+    baseOperationalCost: 20_000,
+    mealAllowance: 20_000,
+    tollParkingFee: 15_000,
+    totalOperationalCost: 55_000,
+  });
 });
 
 test('meal allowance supports 24-hour cycles and partial-day strata', () => {
@@ -107,6 +133,25 @@ test('calculateJourneyDateTimeTimings enforces 05:00 AM cutoff threshold for ove
   assert.equal(wage, 237_020);
 });
 
+test('canonicalizeDriverJourneyTimeline clears stale overnight data for a single-day journey', () => {
+  assert.deepEqual(
+    canonicalizeDriverJourneyTimeline({
+      activityDate: '2026-08-03',
+      dateStart: '2026-08-03',
+      dateEnd: '2026-08-04',
+      isMultiDay: false,
+      nightCount: 1,
+    }),
+    {
+      dateStart: '2026-08-03',
+      dateEnd: '2026-08-03',
+      isMultiDay: false,
+      nightCount: 0,
+      nightPremium: 0,
+    },
+  );
+});
+
 test('calculateEstimatedDriverWage includes short-trip meal allowance when duration PP <= 2 hours', () => {
   // 9.2 km PP, 0.2 hours PP (12 min)
   const estShort = calculateEstimatedDriverWage(9.2, 0.2);
@@ -124,4 +169,3 @@ test('calculateEstimatedDriverWage includes short-trip meal allowance when durat
   assert.equal(estLong.baseWage, 18_000);
   assert.equal(estLong.maxWage, 22_500);
 });
-

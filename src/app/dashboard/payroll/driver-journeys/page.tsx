@@ -664,13 +664,44 @@ function DriverJourneysContent() {
     }
   };
 
-  // ── Delete Journey (Only unassigned ones) ──
+  // ── Delete Journey (Allowed if not active / claimed) ──
   const handleDeleteJourney = async (id: string) => {
-    void id;
-    setMessage({
-      type: 'error',
-      text: 'Penghapusan perjalanan dinonaktifkan agar riwayat tetap utuh. Gunakan pembatalan beralasan.',
-    });
+    const journey = journeys.find((j) => j.id === id);
+    if (!journey) return;
+    if (journey.status === 'claimed') {
+      setMessage({
+        type: 'error',
+        text: 'Perjalanan yang sedang aktif jalan tidak dapat dihapus.',
+      });
+      return;
+    }
+    if (journey.status === 'completed') {
+      setMessage({
+        type: 'error',
+        text: 'Perjalanan yang sudah selesai tidak dapat dihapus.',
+      });
+      return;
+    }
+
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus perjalanan "${journey.activityName || id}"?`)) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await authenticatedJson(`/api/driver-journeys?journeyId=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      setMessage({ type: 'success', text: 'Perjalanan dinas berhasil dihapus.' });
+    } catch (err: any) {
+      console.error(err);
+      setMessage({
+        type: 'error',
+        text: err?.message || 'Gagal menghapus perjalanan. Coba lagi.',
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── Filtered list ──
@@ -986,8 +1017,8 @@ function DriverJourneysContent() {
                               )}
                             </TableCell>
                             <TableCell className="text-right pr-6">
-                              {j.status === 'unassigned' ? (
-                                <div className="flex items-center justify-end gap-1.5">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {['unassigned', 'assigned'].includes(j.status) && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -1011,6 +1042,8 @@ function DriverJourneysContent() {
                                   >
                                     <Pencil className="w-4 h-4" />
                                   </Button>
+                                )}
+                                {!['claimed', 'completed'].includes(j.status) ? (
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -1020,10 +1053,14 @@ function DriverJourneysContent() {
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </Button>
-                                </div>
-                              ) : (
-                                <span className="text-[10px] font-semibold text-slate-300 select-none">—</span>
-                              )}
+                                ) : j.status === 'claimed' ? (
+                                  <span className="text-[10px] font-semibold text-amber-600/70 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60" title="Perjalanan aktif sedang berjalan">
+                                    Sedang Jalan
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-semibold text-slate-300 select-none">—</span>
+                                )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1045,7 +1082,7 @@ function DriverJourneysContent() {
                 Jadwal Standby / Piket Sopir ({periodToken})
               </CardTitle>
               <CardDescription className="text-xs mt-0.5">
-                Klik pada tanggal di bawah untuk menentukan sopir piket yang bertugas. Driver yang memiliki piket aktif dapat membuat SPJ sendiri (Ndalem).
+                Klik pada tanggal di bawah untuk menentukan sopir piket yang bertugas. Driver yang memiliki piket aktif dapat mengotorisasi SPJ sendiri dengan Ndalem sebagai kendaraan default.
               </CardDescription>
             </div>
           </CardHeader>

@@ -9,10 +9,10 @@ import {
   type PhotoEvidence,
 } from '@/lib/payroll/domain';
 import {
-  assertNightCount,
+  calculateJourneyDateTimeTimings,
   calculateDriverNetWage,
-  calculateJourneyElapsedHours,
   calculateNightPremium,
+  canonicalizeDriverJourneyTimeline,
   getMealAllowanceForDuration,
 } from '@/lib/payroll/driverJourney';
 import {
@@ -68,6 +68,7 @@ const ALLOWED_DRIVER_FIELDS = [
   'points',
   'distanceKm',
   'durationHours',
+  'routeDurationHours',
   'journeyId',
   'extraActivities',
   'extraDistanceKm',
@@ -275,6 +276,7 @@ function parseCommand(raw: unknown): SubmitActivityCommand {
 function sanitizeDriverData(
   value: Record<string, unknown> | undefined,
   category: string,
+  activityDate: string,
 ): Record<string, unknown> {
   if (category !== 'SOPIR') return {};
   if (!value) throw new HttpError(400, 'Rincian perjalanan Sopir wajib diisi.');
@@ -282,18 +284,22 @@ function sanitizeDriverData(
   for (const key of ALLOWED_DRIVER_FIELDS) {
     if (value[key] !== undefined) result[key] = value[key];
   }
-  if (result.fuelReceiptEvidence !== undefined) {
-    result.fuelReceiptEvidence = parseReceiptEvidence(
-      result.fuelReceiptEvidence,
-      result.fuelReceiptUrl,
-      'Metadata bukti BBM',
+
+  try {
+    Object.assign(
+      result,
+      canonicalizeDriverJourneyTimeline({
+        activityDate,
+        dateStart: result.dateStart,
+        dateEnd: result.dateEnd,
+        isMultiDay: result.isMultiDay,
+        nightCount: result.nightCount,
+      }),
     );
-  }
-  if (result.tollReceiptEvidence !== undefined) {
-    result.tollReceiptEvidence = parseReceiptEvidence(
-      result.tollReceiptEvidence,
-      result.tollReceiptUrl,
-      'Metadata bukti Tol & Parkir',
+  } catch (error) {
+    throw new HttpError(
+      400,
+      error instanceof Error ? error.message : 'Timeline perjalanan tidak valid.',
     );
   }
 
@@ -334,6 +340,38 @@ function sanitizeDriverData(
       throw new HttpError(400, `Nilai ${key} tidak valid.`);
     }
   }
+
+  const normalizeReceipt = (
+    feeKey: 'fuelFee' | 'tollParkingFee',
+    urlKey: 'fuelReceiptUrl' | 'tollReceiptUrl',
+    evidenceKey: 'fuelReceiptEvidence' | 'tollReceiptEvidence',
+    evidenceLabel: string,
+  ) => {
+    const fee = typeof result[feeKey] === 'number' ? result[feeKey] as number : 0;
+    const receiptUrl = typeof result[urlKey] === 'string'
+      ? result[urlKey].split(',').map((url) => url.trim()).filter(Boolean).join(',')
+      : '';
+
+    if (fee <= 0 || !receiptUrl) {
+      result[feeKey] = 0;
+      result[urlKey] = '';
+      delete result[evidenceKey];
+      return;
+    }
+
+    result[urlKey] = receiptUrl;
+    if (result[evidenceKey] !== undefined) {
+      result[evidenceKey] = parseReceiptEvidence(
+        result[evidenceKey],
+        receiptUrl,
+        evidenceLabel,
+      );
+    }
+  };
+
+  normalizeReceipt('fuelFee', 'fuelReceiptUrl', 'fuelReceiptEvidence', 'Metadata bukti BBM');
+  normalizeReceipt('tollParkingFee', 'tollReceiptUrl', 'tollReceiptEvidence', 'Metadata bukti Tol & Parkir');
+
   for (const key of ['distanceKm', 'durationHours', 'extraDistanceKm', 'customDurationPP']) {
     const number = result[key];
     if (
@@ -342,14 +380,6 @@ function sanitizeDriverData(
     ) {
       throw new HttpError(400, `Nilai ${key} tidak valid.`);
     }
-  }
-  try {
-    assertNightCount(result.nightCount);
-  } catch (error) {
-    throw new HttpError(
-      400,
-      error instanceof Error ? error.message : 'Jumlah malam tidak valid.',
-    );
   }
   if (result.points !== undefined) {
     if (
@@ -376,13 +406,15 @@ function sanitizeDriverData(
 
   const distanceKm = typeof result.distanceKm === 'number' ? result.distanceKm : 0;
   const durationHours = typeof result.durationHours === 'number' ? result.durationHours : 0;
+  const nightCount = typeof result.nightCount === 'number' ? result.nightCount : 0;
+  result.routeDurationHours = durationHours;
   result.componentJarak = Math.ceil(distanceKm * 300);
   result.componentWaktu = Math.ceil(durationHours * 5_000);
-  result.nightPremium = calculateNightPremium(result.nightCount);
+  result.nightPremium = calculateNightPremium(nightCount);
   result.baseDriverWage = calculateDriverNetWage(
     distanceKm,
     durationHours,
-    result.nightCount,
+    nightCount,
   );
   result.upahBersih = result.baseDriverWage;
   return result;
@@ -617,14 +649,35 @@ export async function POST(request: NextRequest) {
         throw new HttpError(409, 'Kegiatan yang sama sudah pernah dilaporkan.');
       }
 
-      const driverData = sanitizeDriverData(command.driverData, jobCategory);
+      const driverData = sanitizeDriverData(
+        command.driverData,
+        jobCategory,
+        command.activityDate,
+      );
       if (jobCategory === 'SOPIR') {
         try {
-          const actualJourneyDurationHours = calculateJourneyElapsedHours(
-            command.timeStart,
-            command.timeEnd || '',
-            driverData.nightCount as number,
+          const journeyTimings = calculateJourneyDateTimeTimings({
+            dateStart: String(driverData.dateStart || command.activityDate),
+            dateEnd: String(driverData.dateEnd || driverData.dateStart || command.activityDate),
+            timeStart: command.timeStart,
+            timeEnd: command.timeEnd || '',
+            isMultiDay: driverData.isMultiDay === true,
+          });
+          if (journeyTimings.durationHours <= 0) {
+            throw new Error('Jam tiba dan tanggal tidak membentuk durasi perjalanan yang valid.');
+          }
+          const actualJourneyDurationHours = journeyTimings.durationHours;
+          const distanceKm = typeof driverData.distanceKm === 'number' ? driverData.distanceKm : 0;
+          const nightCount = typeof driverData.nightCount === 'number' ? driverData.nightCount : 0;
+          driverData.durationHours = actualJourneyDurationHours;
+          driverData.componentWaktu = Math.ceil(actualJourneyDurationHours * 5_000);
+          driverData.nightPremium = calculateNightPremium(nightCount);
+          driverData.baseDriverWage = calculateDriverNetWage(
+            distanceKm,
+            actualJourneyDurationHours,
+            nightCount,
           );
+          driverData.upahBersih = driverData.baseDriverWage;
           const vehicleType =
             typeof driverData.vehicleType === 'string' ? driverData.vehicleType : '';
           const ndalemMealMoneyReceived = Number(driverData.ndalemMealMoneyReceived ?? 0);
@@ -848,6 +901,18 @@ export async function POST(request: NextRequest) {
         delete journeyEvidence.vehicleType;
         delete journeyEvidence.tripType;
         delete journeyEvidence.reportedEndPoint;
+        delete journeyEvidence.fuelReceiptEvidence;
+        delete journeyEvidence.tollReceiptEvidence;
+        const submittedPoints = Array.isArray(driverData.points) ? driverData.points : [];
+        const submittedExtraActivities = Array.isArray(driverData.extraActivities)
+          ? driverData.extraActivities
+          : [];
+        const shouldClearFuelReceiptEvidence =
+          Number(driverData.fuelFee || 0) <= 0 ||
+          !String(driverData.fuelReceiptUrl || '').trim();
+        const shouldClearTollReceiptEvidence =
+          Number(driverData.tollParkingFee || 0) <= 0 ||
+          !String(driverData.tollReceiptUrl || '').trim();
         const journeyUpdate: Record<string, unknown> = {
           ...journeyEvidence,
           status: 'submitted',
@@ -857,6 +922,18 @@ export async function POST(request: NextRequest) {
           activityDate: command.activityDate,
           timeStart: command.timeStart,
           timeEnd: command.timeEnd,
+          dateStart: driverData.dateStart,
+          dateEnd: driverData.dateEnd,
+          isMultiDay: driverData.isMultiDay === true,
+          nightCount: driverData.nightCount,
+          nightPremium: driverData.nightPremium,
+          baseDriverWage: driverData.baseDriverWage,
+          upahBersih: submittedUpahEstimate,
+          componentJarak: driverData.componentJarak,
+          componentWaktu: driverData.componentWaktu,
+          routeDurationHours: driverData.routeDurationHours,
+          points: submittedPoints,
+          extraActivities: submittedExtraActivities,
           submittedUpahEstimate,
           submittedDistanceKm,
           submittedDurationHours,
@@ -866,18 +943,30 @@ export async function POST(request: NextRequest) {
           newTotalDurationHours: submittedDurationHours,
           submittedAt: now,
           updatedAt: now,
+          draftDate: admin.firestore.FieldValue.delete(),
+          draftDateEnd: admin.firestore.FieldValue.delete(),
+          draftIsMultiDay: admin.firestore.FieldValue.delete(),
           draftTimeStart: admin.firestore.FieldValue.delete(),
           draftTimeEnd: admin.firestore.FieldValue.delete(),
           draftNightCount: admin.firestore.FieldValue.delete(),
+          draftNdalemMealMoneyReceived: admin.firestore.FieldValue.delete(),
           draftFuelFee: admin.firestore.FieldValue.delete(),
           draftTollParkingFee: admin.firestore.FieldValue.delete(),
           draftFuelReceiptUrl: admin.firestore.FieldValue.delete(),
           draftTollReceiptUrl: admin.firestore.FieldValue.delete(),
+          draftFuelReceiptEvidence: admin.firestore.FieldValue.delete(),
+          draftTollReceiptEvidence: admin.firestore.FieldValue.delete(),
           draftExtraActivities: admin.firestore.FieldValue.delete(),
           draftCalculatedDistanceKm: admin.firestore.FieldValue.delete(),
           draftCalculatedDurationHours: admin.firestore.FieldValue.delete(),
           draftEndPoint: admin.firestore.FieldValue.delete(),
         };
+        journeyUpdate.fuelReceiptEvidence = shouldClearFuelReceiptEvidence
+          ? admin.firestore.FieldValue.delete()
+          : (driverData.fuelReceiptEvidence ?? admin.firestore.FieldValue.delete());
+        journeyUpdate.tollReceiptEvidence = shouldClearTollReceiptEvidence
+          ? admin.firestore.FieldValue.delete()
+          : (driverData.tollReceiptEvidence ?? admin.firestore.FieldValue.delete());
         if (submittedEndPoint) journeyUpdate.endPoint = submittedEndPoint;
         transaction.update(journeyRef, {
           ...journeyUpdate,

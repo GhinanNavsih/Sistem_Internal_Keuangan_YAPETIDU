@@ -34,6 +34,7 @@ import {
   authenticatedFormData,
   authenticatedJson,
   createFinancialRequestId,
+  propagateUraianToSlips,
 } from '@/lib/payroll/client';
 
 import Link from 'next/link';
@@ -145,8 +146,12 @@ export default function PresensiLoyalisRawPage() {
   const month = parseInt(searchParams.get('month') || String(new Date().getMonth() + 1), 10);
   const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()), 10);
 
-  const periodToken = `${year}_${String(month).padStart(2, '0')}`;
   const canonicalPeriod = `${year}-${String(month).padStart(2, '0')}`;
+  // API commands and document metadata use the canonical YYYY-MM token. The
+  // source document ID remains YYYY_MM for compatibility with existing
+  // LoyalisPresence records and the payroll dashboard's legacy read path.
+  const periodToken = canonicalPeriod;
+  const presenceDocId = periodToken.replace('-', '_');
   const usesSharedImport = canonicalPeriod >= '2026-08';
 
   // ── States ──
@@ -187,6 +192,7 @@ export default function PresensiLoyalisRawPage() {
 
   const [activeSearchRowIdx, setActiveSearchRowIdx] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [strataFilter, setStrataFilter] = useState<'all' | '1' | '2' | '3' | '4' | '5'>('all');
 
   // Sync Categories from DB Blue Collar
   useEffect(() => {
@@ -281,7 +287,7 @@ export default function PresensiLoyalisRawPage() {
   const fetchExistingPresence = useCallback(async () => {
     setLoadingPresence(true);
     try {
-      const docRef = doc(db, 'LoyalisPresence', periodToken);
+      const docRef = doc(db, 'LoyalisPresence', presenceDocId);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -297,7 +303,7 @@ export default function PresensiLoyalisRawPage() {
     } finally {
       setLoadingPresence(false);
     }
-  }, [periodToken]);
+  }, [presenceDocId]);
 
   useEffect(() => {
     fetchExistingPresence();
@@ -681,6 +687,13 @@ export default function PresensiLoyalisRawPage() {
     return null;
   }, [uploadedData, loyalisEmployees, existingPresence, calcMode, workingDays, expectedHours, calculatePresenceStratum, corrections]);
 
+  const filteredDisplayRows = useMemo(() => {
+    if (!displayRows) return null;
+    if (strataFilter === 'all') return displayRows;
+    const targetStratum = Number(strataFilter);
+    return displayRows.filter((r) => Number(r.stratum) === targetStratum);
+  }, [displayRows, strataFilter]);
+
   const handleExcelUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -972,7 +985,7 @@ export default function PresensiLoyalisRawPage() {
         updatedAt: serverTimestamp(),
       };
 
-      await setDoc(doc(db, 'LoyalisPresence', periodToken), payload, { merge: true });
+      await setDoc(doc(db, 'LoyalisPresence', presenceDocId), payload, { merge: true });
       setMessage({ type: 'success', text: `Konfigurasi hari kerja (${activeWorkingDays} hari) berhasil disimpan.` });
       fetchExistingPresence();
     } catch (err) {
@@ -1058,10 +1071,23 @@ export default function PresensiLoyalisRawPage() {
         updatedAt: serverTimestamp(),
       };
 
-      await setDoc(doc(db, 'LoyalisPresence', periodToken), payload);
+      await setDoc(doc(db, 'LoyalisPresence', presenceDocId), payload);
 
-      // Do not mutate PayrollSlipStates here. Drafts are refreshed and saved by
-      // Finance through the protected lifecycle API; final slips stay immutable.
+      let propagationNote = '';
+      try {
+        propagationNote = await propagateUraianToSlips({
+          scope: 'loyalis',
+          period: periodToken,
+        });
+      } catch (propagationError) {
+        // The attendance document is already safely saved. A propagation
+        // outage must not turn that successful save into a false failure.
+        console.error('Gagal menyinkronkan presensi Loyalis ke slip draf:', propagationError);
+        propagationNote = ' Namun slip gaji belum diperbarui — buka Payroll › Refresh Massal.';
+      }
+
+      // The propagation above updates only eligible draft slips. Verified,
+      // locked, and paid slips remain immutable and receive drift notices.
 
       // Update correction requests
       try {
@@ -1081,7 +1107,10 @@ export default function PresensiLoyalisRawPage() {
         console.error("Gagal memperbarui status pengajuan koreksi presensi:", err);
       }
 
-      setMessage({ type: 'success', text: 'Data bonus presensi berhasil disimpan.' });
+      setMessage({
+        type: 'success',
+        text: `Data bonus presensi berhasil disimpan.${propagationNote}`,
+      });
       setUploadedData(null);
       fetchExistingPresence();
     } catch (err) {
@@ -1462,24 +1491,73 @@ export default function PresensiLoyalisRawPage() {
 
             {displayRows && (
               <div className="space-y-4 pt-4 border-t border-slate-100 animate-in fade-in">
-                <div className="flex flex-wrap justify-between items-center gap-4">
+                <div className="flex flex-wrap justify-between items-center gap-4 bg-slate-50/70 p-3 rounded-2xl border border-slate-200/70">
                   <div className="flex flex-col gap-1.5">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                       {uploadedData ? 'Preview Hasil Perhitungan Presensi (Raw Daily Logs)' : 'Data Perhitungan Presensi Tersimpan'}
                     </span>
-                    <div className="flex flex-wrap items-center gap-2 mt-1">
-                      <span className="text-[10px] bg-slate-50 text-slate-600 border border-slate-200/60 px-2 py-0.5 rounded-full font-semibold">
+                    <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                      <span className="text-[10px] bg-white text-slate-600 border border-slate-200/80 px-2.5 py-0.5 rounded-full font-semibold shadow-2xs">
                         Target Menit Kerja Kehadiran Penuh: {(activeWorkingDays * expectedHours * 60).toLocaleString('id-ID')} menit
                       </span>
                     </div>
                   </div>
-                  <span className="text-[10px] text-slate-400 font-semibold">
-                    Total Data: {displayRows.length} baris ({displayRows.filter(r => r.employeeId).length} Terhubung)
+
+                  {/* Filter Strata */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-slate-600">Filter Strata:</span>
+                    <div className="inline-flex bg-white p-1 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs">
+                      {(['all', '1', '2', '3', '4', '5'] as const).map((val) => {
+                        const isActive = strataFilter === val;
+                        const label = val === 'all' ? 'Semua' : `Strata ${val}`;
+                        const count = val === 'all' ? displayRows.length : displayRows.filter(r => Number(r.stratum) === Number(val)).length;
+                        return (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setStrataFilter(val)}
+                            className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer text-[11px] flex items-center gap-1.5 ${
+                              isActive
+                                ? 'bg-indigo-600 text-white shadow-xs font-extrabold'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                            }`}
+                          >
+                            <span>{label}</span>
+                            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
+                              isActive ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-100 text-slate-500'
+                            }`}>
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center px-1">
+                  <span className="text-[11px] text-slate-500 font-bold">
+                    Menampilkan <strong className="text-indigo-600 font-mono">{filteredDisplayRows?.length || 0}</strong> dari total {displayRows.length} data
+                    ({displayRows.filter(r => r.employeeId).length} Terhubung)
                   </span>
                 </div>
 
                 <div className="space-y-3.5 pr-1">
-                  {displayRows.map((row, idx) => {
+                  {filteredDisplayRows && filteredDisplayRows.length === 0 ? (
+                    <div className="text-center py-10 bg-slate-50/50 rounded-2xl border-2 border-dashed border-slate-200 space-y-2">
+                      <p className="text-xs font-bold text-slate-500">
+                        Tidak ada pegawai pada <strong className="text-indigo-600">Strata {strataFilter}</strong>.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setStrataFilter('all')}
+                        className="text-xs text-indigo-600 font-bold hover:underline cursor-pointer"
+                      >
+                        Tampilkan Semua Strata
+                      </button>
+                    </div>
+                  ) : (
+                    filteredDisplayRows?.map((row, idx) => {
                     const isExpanded = expandedRowIdx === idx;
                     return (
                       <Card
@@ -1489,24 +1567,24 @@ export default function PresensiLoyalisRawPage() {
                       >
                         <div
                           onClick={() => setExpandedRowIdx(isExpanded ? null : idx)}
-                          className="p-4 flex flex-wrap items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/20 transition-colors"
+                          className="p-4 flex flex-wrap lg:flex-nowrap items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/20 transition-colors"
                         >
                           {/* Left: Index & Name */}
-                          <div className="flex items-center gap-3 min-w-[240px]">
+                          <div className="flex items-center gap-3 w-full lg:w-[260px] xl:w-[280px] shrink-0 min-w-0">
                             <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 font-mono shrink-0">
                               {idx + 1}
                             </div>
-                            <div className="space-y-1">
+                            <div className="space-y-1 min-w-0 flex-1">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <h4 className="font-bold text-slate-800 text-xs tracking-wide">{row.excelName}</h4>
+                                <h4 className="font-bold text-slate-800 text-xs tracking-wide truncate max-w-full" title={row.excelName}>{row.excelName}</h4>
                                 {!row.isMatched && row.excelName !== '-' && (
-                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-200/80 px-2 py-0.5 rounded-full">
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-200/80 px-2 py-0.5 rounded-full shrink-0">
                                     <AlertCircle className="w-3 h-3 text-rose-500 shrink-0" />
                                     Belum Terhubung
                                   </span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center gap-1.5 min-w-0" onClick={(e) => e.stopPropagation()}>
                                 {uploadedData && row.excelName !== '-' && !usesSharedImport ? (
                                   activeSearchRowIdx === row.idx ? (
                                     <div className="relative w-full max-w-[240px] z-20">
@@ -1585,17 +1663,17 @@ export default function PresensiLoyalisRawPage() {
                                     </button>
                                   )
                                 ) : row.isMatched ? (
-                                  <div className="flex items-center gap-1">
-                                    <span className="font-bold text-indigo-600 text-[10px]">{row.employeeName}</span>
-                                    <span className="text-[9px] text-slate-400 font-mono">(ID: {row.employeeId})</span>
+                                  <div className="flex items-center gap-1 min-w-0 truncate">
+                                    <span className="font-bold text-indigo-600 text-[10px] truncate">{row.employeeName}</span>
+                                    <span className="text-[9px] text-slate-400 font-mono shrink-0">(ID: {row.employeeId})</span>
                                     {usesSharedImport && row.nipy && (
-                                      <span className="text-[9px] text-emerald-600 font-mono">
+                                      <span className="text-[9px] text-emerald-600 font-mono shrink-0">
                                         NIPY {row.nipy}
                                       </span>
                                     )}
                                   </div>
                                 ) : (
-                                  <span className="inline-flex items-center gap-0.5 text-rose-500 bg-rose-50 border border-rose-100 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                                  <span className="inline-flex items-center gap-0.5 text-rose-500 bg-rose-50 border border-rose-100 text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
                                     <AlertCircle className="w-2.5 h-2.5" />
                                     {usesSharedImport
                                       ? `NIPY ${row.nipy || 'kosong'} tidak cocok`
@@ -1638,18 +1716,18 @@ export default function PresensiLoyalisRawPage() {
                             </div>
                           </div>
 
-                          {/* Middle: Metrics */}
-                          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                          {/* Middle: Metrics Grid (Fixed X Positions) */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-x-2 gap-y-2 flex-1 items-center justify-items-center min-w-0">
                             {/* Hari Aktif */}
-                            <div className="flex flex-col text-center min-w-[70px]">
+                            <div className="flex flex-col text-center w-full">
                               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Hari Aktif</span>
                               <span className="text-xs font-bold text-slate-700 mt-0.5 font-mono">{row.activeDaysCount} hari</span>
                             </div>
 
                             {/* Punch Tidak Lengkap */}
-                            <div className="flex flex-col text-center min-w-[120px]">
+                            <div className="flex flex-col text-center w-full">
                               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Hari Tidak Lengkap</span>
-                              <div className="mt-0.5 font-mono">
+                              <div className="mt-0.5 font-mono flex justify-center">
                                 {row.incompleteDaysCount > 0 ? (
                                   <span className="inline-flex items-center gap-1 text-[9px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full font-bold">
                                     <AlertCircle className="w-3 h-3 shrink-0" />
@@ -1662,9 +1740,9 @@ export default function PresensiLoyalisRawPage() {
                             </div>
 
                             {/* Total Menit Kerja */}
-                            <div className="flex flex-col text-center min-w-[120px]" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex flex-col text-center w-full" onClick={(e) => e.stopPropagation()}>
                               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total Menit Kerja</span>
-                              <div className="mt-0.5">
+                              <div className="mt-0.5 flex justify-center">
                                 {uploadedData && row.excelName !== '-' ? (
                                   <div className="flex items-center justify-center gap-1">
                                     <Input
@@ -1683,16 +1761,46 @@ export default function PresensiLoyalisRawPage() {
                             </div>
 
                             {/* Kekurangan */}
-                            <div className="flex flex-col text-center min-w-[110px]">
+                            <div className="flex flex-col text-center w-full">
                               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Kekurangan (Menit)</span>
                               <span className="text-xs font-bold text-slate-700 mt-0.5 font-mono">
                                 {row.isMatched ? `${row.absenceMinutes} menit` : '-'}
                               </span>
                             </div>
+
+                            {/* Total Upah Presensi */}
+                            <div className="flex flex-col text-center w-full">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total Upah Presensi</span>
+                              <span className="text-xs font-bold text-indigo-700 mt-0.5 font-mono">
+                                {row.isMatched ? fmtRp(Math.max(0, Math.round(((row.minutes || 0) / 60) * 1650))) : '-'}
+                              </span>
+                            </div>
+
+                            {/* Bonus Presensi */}
+                            <div className="flex flex-col text-center w-full">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Bonus Presensi</span>
+                              <span className="text-xs font-bold text-emerald-700 mt-0.5 font-mono">
+                                {row.isMatched ? fmtRp(row.netBonus || 0) : '-'}
+                              </span>
+                            </div>
+
+                            {/* Strata Bonus */}
+                            <div className="flex flex-col text-center w-full">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Strata Bonus</span>
+                              <div className="mt-0.5 flex justify-center">
+                                {row.isMatched ? (
+                                  <span className="inline-flex items-center text-[9px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                    Strata {row.stratum || 5}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-slate-400 font-semibold">-</span>
+                                )}
+                              </div>
+                            </div>
                           </div>
 
                           {/* Right: Expand Icon */}
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center justify-end shrink-0 pl-1">
                             {isExpanded ? (
                               <ChevronUp className="w-4 h-4 text-slate-400 hover:text-slate-600" />
                             ) : (
@@ -1959,7 +2067,7 @@ export default function PresensiLoyalisRawPage() {
                         )}
                       </Card>
                     );
-                  })}
+                  }))}
                 </div>
 
                 {/* Actions Footer */}

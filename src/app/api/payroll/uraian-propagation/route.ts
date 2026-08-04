@@ -162,11 +162,18 @@ async function collectPekaryaTargets(command: PropagationCommand): Promise<SlipT
 
 /** Loyalis targets, built from the presence calculator's saved document. */
 async function collectLoyalisTargets(command: PropagationCommand): Promise<SlipTarget[]> {
-  const [presenceSnapshot, employeeSnapshot] = await Promise.all([
+  const [canonicalPresenceSnapshot, legacyPresenceSnapshot, employeeSnapshot] = await Promise.all([
     adminDb.collection('LoyalisPresence').doc(command.periodToken).get(),
+    // LoyalisPresence was historically stored with the payroll document key
+    // (YYYY_MM). Keep reading it while new commands use the canonical YYYY-MM
+    // period token, so existing attendance runs remain propagatable.
+    adminDb.collection('LoyalisPresence').doc(command.periodKey).get(),
     adminDb.collection('Employees_Loyalis').get(),
   ]);
-  const presence = (presenceSnapshot.data() || null) as LoyalisPresenceDocument | null;
+  const presenceData = canonicalPresenceSnapshot.exists
+    ? canonicalPresenceSnapshot.data()
+    : legacyPresenceSnapshot.data();
+  const presence = (presenceData || null) as LoyalisPresenceDocument | null;
 
   const earningsOwned = loyalisPresenceOwnedPredicate('earnings');
   const deductionsOwned = loyalisPresenceOwnedPredicate('deductions');
