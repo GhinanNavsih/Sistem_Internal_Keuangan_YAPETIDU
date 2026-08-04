@@ -1891,11 +1891,10 @@ export default function EmployeePayslipPage() {
                                                   <table className="w-full table-fixed border-collapse text-[10px] sm:text-[11px]">
                                                     <thead className="bg-slate-50 border-b border-slate-200 font-bold text-black">
                                                       <tr>
-                                                        <th className="px-1.5 sm:px-3 py-2 text-left w-[26%]">TANGGAL</th>
-                                                        <th className="px-1.5 sm:px-3 py-2 text-center w-[20%]">MASUK</th>
-                                                        <th className="px-1.5 sm:px-3 py-2 text-center w-[20%]">PULANG</th>
+                                                        <th className="px-1.5 sm:px-3 py-2 text-left w-[28%]">TANGGAL</th>
+                                                        <th className="px-1.5 sm:px-3 py-2 text-center w-[36%]">JAM SCAN (IN / OUT)</th>
                                                         <th className="px-1.5 sm:px-3 py-2 text-center w-[16%]">DURASI</th>
-                                                        <th className="px-1.5 sm:px-3 py-2 text-right w-[18%]">PENDAPATAN</th>
+                                                        <th className="px-1.5 sm:px-3 py-2 text-right w-[20%]">PENDAPATAN</th>
                                                       </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-100 font-medium">
@@ -1909,21 +1908,23 @@ export default function EmployeePayslipPage() {
 
                                                         return (
                                                           <tr key={logIdx} className="hover:bg-slate-50/50">
-                                                            <td className="px-1.5 sm:px-3 py-1.5 font-bold text-black font-mono text-[10px] sm:text-[11px] truncate">
+                                                            <td className="px-1.5 sm:px-3 py-2 font-bold text-black font-mono text-[10px] sm:text-[11px] truncate">
                                                               {log.Tanggal || log.tanggal}
                                                             </td>
                                                             <td className="px-1.5 sm:px-3 py-1.5 text-center font-mono text-[10px] sm:text-[11px]">
-                                                              {scanIn}
-                                                              {isAutoIn && <span className="ml-0.5 text-[8px] text-amber-600 font-semibold">(Auto)</span>}
+                                                              <div className="flex flex-col items-center leading-tight gap-0.5">
+                                                                <span className="text-emerald-700 font-bold">
+                                                                  In: {scanIn} {isAutoIn && <span className="text-[8px] text-amber-600 font-semibold">(Auto)</span>}
+                                                                </span>
+                                                                <span className="text-slate-600 font-medium">
+                                                                  Out: {scanOut} {isAutoOut && <span className="text-[8px] text-amber-600 font-semibold">(Auto)</span>}
+                                                                </span>
+                                                              </div>
                                                             </td>
-                                                            <td className="px-1.5 sm:px-3 py-1.5 text-center font-mono text-[10px] sm:text-[11px]">
-                                                              {scanOut}
-                                                              {isAutoOut && <span className="ml-0.5 text-[8px] text-amber-600 font-semibold">(Auto)</span>}
-                                                            </td>
-                                                            <td className="px-1.5 sm:px-3 py-1.5 text-center font-mono text-[10px] sm:text-[11px]">
+                                                            <td className="px-1.5 sm:px-3 py-2 text-center font-mono text-[10px] sm:text-[11px]">
                                                               {duration > 0 ? `${duration}m` : '-'}
                                                             </td>
-                                                            <td className="px-1.5 sm:px-3 py-1.5 text-right font-bold font-mono text-black text-[10px] sm:text-[11px]">
+                                                            <td className="px-1.5 sm:px-3 py-2 text-right font-bold font-mono text-black text-[10px] sm:text-[11px]">
                                                               {earningsVal > 0 ? formatIDR(earningsVal) : '-'}
                                                             </td>
                                                           </tr>
