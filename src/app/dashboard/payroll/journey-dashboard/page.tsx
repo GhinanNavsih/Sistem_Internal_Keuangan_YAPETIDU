@@ -6,12 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import {
   Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
 } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -36,32 +31,63 @@ import {
   Award,
   BarChart3,
   Calendar,
-  Fuel,
   Banknote,
-  MapPin,
-  Clock,
-  ShieldCheck,
   CheckCircle2,
-  ChevronRight,
   Sparkles,
-  ArrowUpRight,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import {
   collection,
   query,
-  getDocs,
   where,
   onSnapshot,
 } from 'firebase/firestore';
+import type { DocumentData, QuerySnapshot } from 'firebase/firestore';
 import { MONTHS_ID } from '@/utils/rekapConfig';
+import { PEKARYA_JOB_CATEGORIES } from '@/lib/payroll/pekaryaSpj';
 
 function fmtRp(val: number): string {
   return 'Rp' + Math.round(val || 0).toLocaleString('id-ID');
 }
 
+const ALL_CATEGORY_VALUE = 'all';
+
+const CATEGORY_LABELS: Record<string, string> = {
+  SATPAM: 'Satpam',
+  SOPIR: 'Sopir',
+  PEKARYA: 'Pekarya',
+  TEKNISI: 'Teknisi',
+  KEBERSIHAN: 'Kebersihan',
+  KEBERSIHAN_PONTI: 'Kebersihan Ponti',
+  PONTI: 'Ponti',
+};
+
+function categoryLabel(category: string): string {
+  return CATEGORY_LABELS[category] || category;
+}
+
+function numberValue(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeJobCategory(value: unknown, fallback = ''): string {
+  if (typeof value !== 'string') return fallback;
+  const normalized = value.trim().toUpperCase();
+  return normalized || fallback;
+}
+
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
 function dateOnlyFromValue(value: unknown): string {
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') {
+    const isoDate = value.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+    return isoDate || value;
+  }
   if (value && typeof value === 'object') {
     const timestamp = value as { toDate?: () => Date; seconds?: number };
     const date = timestamp.toDate?.() || (typeof timestamp.seconds === 'number' ? new Date(timestamp.seconds * 1000) : null);
@@ -72,6 +98,7 @@ function dateOnlyFromValue(value: unknown): string {
 
 interface CompletedJourney {
   id: string;
+  jobCategory: string;
   activityName: string;
   employeeName: string;
   employeeId: string;
@@ -99,105 +126,191 @@ function JourneyDashboardContent() {
   const currentMonth = String(new Date().getMonth() + 1);
   const currentYear = String(new Date().getFullYear());
 
-  const [selectedMonth, setSelectedMonth] = useState<string>(
-    searchParams.get('month') || currentMonth
-  );
-  const [selectedYear, setSelectedYear] = useState<string>(
-    searchParams.get('year') || currentYear
-  );
+  const selectedMonth = searchParams.get('month') || currentMonth;
+  const selectedYear = searchParams.get('year') || currentYear;
+  const selectedCategory = searchParams.get('category') || ALL_CATEGORY_VALUE;
 
   const [journeys, setJourneys] = useState<CompletedJourney[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Sync state when URL params change
-  useEffect(() => {
-    const m = searchParams.get('month');
-    const y = searchParams.get('year');
-    if (m) setSelectedMonth(m);
-    if (y) setSelectedYear(y);
-  }, [searchParams]);
+  const allowedCategories = useMemo<string[]>(() => {
+    if (!profile) return [];
+    if (profile.role === 'super_admin') return Array.from(PEKARYA_JOB_CATEGORIES);
 
-  // Fetch completed journeys from Firestore
-  useEffect(() => {
-    setLoading(true);
+    const permitted = new Set(
+      (profile.permittedCategories || []).map((category) => normalizeJobCategory(category)),
+    );
+    return PEKARYA_JOB_CATEGORIES.filter((category) => permitted.has(category));
+  }, [profile]);
 
-    // Fetch from DriverJourneys (status: completed or approved) and ActivityReports (jobCategory: SOPIR)
+  const normalizedSelectedCategory =
+    selectedCategory === ALL_CATEGORY_VALUE
+      ? ALL_CATEGORY_VALUE
+      : normalizeJobCategory(selectedCategory);
+  const activeCategory =
+    normalizedSelectedCategory === ALL_CATEGORY_VALUE ||
+    allowedCategories.includes(normalizedSelectedCategory)
+      ? normalizedSelectedCategory
+      : ALL_CATEGORY_VALUE;
+
+  // Fetch completed journeys and approved activity reports for every category
+  // the current user is allowed to audit. DriverJourneys are legacy SOPIR
+  // records, while ActivityReports is the source for all Pekarya categories.
+  useEffect(() => {
+    if (!profile || allowedCategories.length === 0) {
+      return;
+    }
+
     const journeysRef = collection(db, 'DriverJourneys');
     const reportsRef = collection(db, 'ActivityReports');
+    const reportsQuery = query(
+      reportsRef,
+      where('jobCategory', 'in', allowedCategories),
+    );
+    let cancelled = false;
+    let journeysSnapshot: QuerySnapshot<DocumentData> | null = null;
+    let reportsSnapshot: QuerySnapshot<DocumentData> | null = null;
+    let reportsSettled = false;
 
-    const unsubJourneys = onSnapshot(journeysRef, (journeysSnap) => {
+    const rebuildDashboardData = () => {
+      if (cancelled || !journeysSnapshot || !reportsSettled) return;
+
       const journeyList: CompletedJourney[] = [];
-      const seenIds = new Set<string>();
+      const seenJourneyIds = new Set<string>();
+      const seenReportIds = new Set<string>();
 
-      journeysSnap.forEach((docSnap) => {
+      journeysSnapshot.forEach((docSnap) => {
         const d = docSnap.data();
-        if (d.status === 'completed' || d.status === 'approved') {
-          seenIds.add(docSnap.id);
-          const jDate = dateOnlyFromValue(d.journeyDate || d.activityDate || d.createdAt);
-          journeyList.push({
-            id: docSnap.id,
-            activityName: d.activityName || d.purpose || 'Perjalanan Dinas',
-            employeeName: d.employeeName || d.driverName || 'Sopir',
-            employeeId: d.employeeId || d.driverId || '',
-            vehicleName: d.vehicleName || d.vehicleType || 'Suzuki XL7',
-            journeyDate: jDate,
-            activityDate: jDate,
-            distanceKm: d.newTotalDistanceKm || d.distanceKm || 0,
-            durationHours: d.newTotalDurationHours || d.durationHours || 0,
-            operationalCost: d.totalOperationalCost || d.operationalCost || d.fee || 0,
-            upahBersih: d.upahBersih || 0,
-            fuelFee: d.fuelFee || 0,
-            tollParkingFee: d.tollParkingFee || 0,
-            reimburseDelta: d.reimburseDelta || 0,
-            nightCount: Number(d.nightCount || 0),
-            points: d.points || [],
-            status: d.status,
-          });
+        const status = String(d.status || '');
+        if (status !== 'completed' && status !== 'approved') return;
+
+        // DriverJourneys predates jobCategory and is created only for SOPIR.
+        const jobCategory = normalizeJobCategory(d.jobCategory, 'SOPIR');
+        if (!allowedCategories.includes(jobCategory)) return;
+
+        seenJourneyIds.add(docSnap.id);
+        if (typeof d.activityDocId === 'string') {
+          seenReportIds.add(d.activityDocId);
         }
-      });
 
-      // Also check ActivityReports for any completed SOPIR journeys
-      getDocs(query(reportsRef, where('jobCategory', '==', 'SOPIR'))).then((reportsSnap) => {
-        reportsSnap.forEach((rSnap) => {
-          const rd = rSnap.data();
-          if ((rd.status === 'approved' || rd.status === 'completed') && !seenIds.has(rSnap.id) && !seenIds.has(rd.journeyId)) {
-            const rDate = rd.activityDate || rd.journeyDate || '';
-            journeyList.push({
-              id: rSnap.id,
-              activityName: rd.activityName || 'Perjalanan Dinas',
-              employeeName: rd.employeeName || 'Sopir',
-              employeeId: rd.employeeId || '',
-              vehicleName: rd.vehicleType || rd.vehicleName || 'Suzuki XL7',
-              journeyDate: rDate,
-              activityDate: rDate,
-              distanceKm: rd.distanceKm || 0,
-              durationHours: rd.durationHours || 0,
-              operationalCost: rd.totalOperationalCost || rd.fee || 0,
-              upahBersih: rd.upahBersih || 0,
-              fuelFee: rd.fuelFee || 0,
-              tollParkingFee: rd.tollParkingFee || 0,
-              reimburseDelta: rd.reimburseDelta || 0,
-              nightCount: Number(rd.nightCount || 0),
-              points: rd.points || [],
-              status: rd.status,
-            });
-          }
+        const jDate = dateOnlyFromValue(d.journeyDate || d.activityDate || d.createdAt);
+        journeyList.push({
+          id: docSnap.id,
+          jobCategory,
+          activityName: String(d.activityName || d.purpose || 'Perjalanan Dinas'),
+          employeeName: String(d.employeeName || d.driverName || 'Sopir'),
+          employeeId: String(d.employeeId || d.driverId || ''),
+          vehicleName: String(d.vehicleName || d.vehicleType || ''),
+          journeyDate: jDate,
+          activityDate: jDate,
+          distanceKm: numberValue(d.newTotalDistanceKm || d.totalDistanceKm || d.distanceKm),
+          durationHours: numberValue(d.newTotalDurationHours || d.durationHours),
+          operationalCost: numberValue(d.totalOperationalCost || d.operationalCost || d.fee),
+          upahBersih: numberValue(d.upahBersih),
+          fuelFee: numberValue(d.fuelFee),
+          tollParkingFee: numberValue(d.tollParkingFee),
+          reimburseDelta: numberValue(d.reimburseDelta),
+          nightCount: numberValue(d.nightCount),
+          points: stringArrayValue(d.points),
+          status,
         });
-
-        setJourneys(journeyList);
-        setLoading(false);
       });
-    });
 
-    return () => unsubJourneys();
-  }, []);
+      reportsSnapshot?.forEach((rSnap) => {
+        const rd = rSnap.data();
+        const status = String(rd.status || '');
+        if (status !== 'approved' && status !== 'completed') return;
+
+        const jobCategory = normalizeJobCategory(rd.jobCategory);
+        if (!allowedCategories.includes(jobCategory)) return;
+
+        const linkedJourneyId = typeof rd.journeyId === 'string' ? rd.journeyId : '';
+        if (
+          seenJourneyIds.has(rSnap.id) ||
+          (linkedJourneyId && seenJourneyIds.has(linkedJourneyId)) ||
+          seenReportIds.has(rSnap.id)
+        ) {
+          return;
+        }
+
+        const isSopir = jobCategory === 'SOPIR';
+        const rDate = dateOnlyFromValue(rd.activityDate || rd.journeyDate || rd.createdAt);
+        journeyList.push({
+          id: rSnap.id,
+          jobCategory,
+          activityName: String(rd.activityName || (isSopir ? 'Perjalanan Dinas' : 'Kegiatan Pekarya')),
+          employeeName: String(rd.employeeName || (isSopir ? 'Sopir' : 'Pekarya')),
+          employeeId: String(rd.employeeId || ''),
+          vehicleName: String(rd.vehicleType || rd.vehicleName || ''),
+          journeyDate: rDate,
+          activityDate: rDate,
+          distanceKm: numberValue(rd.distanceKm),
+          durationHours: numberValue(rd.durationHours),
+          // Non-SOPIR fees are approved wages, not operational SPJ costs.
+          operationalCost: isSopir
+            ? numberValue(rd.totalOperationalCost || rd.operationalCost || rd.fee)
+            : 0,
+          upahBersih: isSopir ? numberValue(rd.upahBersih) : numberValue(rd.fee),
+          fuelFee: numberValue(rd.fuelFee),
+          tollParkingFee: numberValue(rd.tollParkingFee),
+          reimburseDelta: numberValue(rd.reimburseDelta),
+          nightCount: numberValue(rd.nightCount),
+          points: stringArrayValue(rd.points),
+          status,
+        });
+      });
+
+      journeyList.sort((a, b) => (b.journeyDate || '').localeCompare(a.journeyDate || ''));
+      setJourneys(journeyList);
+      setLoading(false);
+    };
+
+    const unsubscribeJourneys = onSnapshot(
+      journeysRef,
+      (snapshot) => {
+        journeysSnapshot = snapshot;
+        rebuildDashboardData();
+      },
+      (error) => {
+        console.error('Error listening to completed DriverJourneys:', error);
+        if (!cancelled) {
+          setJourneys([]);
+          setLoading(false);
+        }
+      },
+    );
+
+    const unsubscribeReports = onSnapshot(
+      reportsQuery,
+      (snapshot) => {
+        reportsSnapshot = snapshot;
+        reportsSettled = true;
+        rebuildDashboardData();
+      },
+      (error) => {
+        console.error('Error listening to approved Pekarya activity reports:', error);
+        reportsSnapshot = null;
+        reportsSettled = true;
+        rebuildDashboardData();
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribeJourneys();
+      unsubscribeReports();
+    };
+  }, [profile, allowedCategories]);
 
   // Filter journeys by selected month and year (or ALL)
   const filteredJourneys = useMemo(() => {
     return journeys.filter((j) => {
-      if (!j.journeyDate) return selectedMonth === 'all';
+      if (activeCategory !== ALL_CATEGORY_VALUE && j.jobCategory !== activeCategory) {
+        return false;
+      }
+      if (!j.journeyDate) return selectedMonth === 'all' && selectedYear === 'all';
       const parts = j.journeyDate.split('-');
-      if (parts.length < 2) return selectedMonth === 'all';
+      if (parts.length < 2) return selectedMonth === 'all' && selectedYear === 'all';
       const jYear = parts[0];
       const jMonth = String(parseInt(parts[1], 10));
 
@@ -205,7 +318,7 @@ function JourneyDashboardContent() {
       if (selectedMonth !== 'all' && jMonth !== selectedMonth) return false;
       return true;
     });
-  }, [journeys, selectedMonth, selectedYear]);
+  }, [journeys, selectedMonth, selectedYear, activeCategory]);
 
   // Overall KPI Aggregation
   const overallKPI = useMemo(() => {
@@ -226,7 +339,8 @@ function JourneyDashboardContent() {
     };
   }, [filteredJourneys]);
 
-  // Car Stats Aggregation
+  // Vehicle/activity stats aggregation. Non-SOPIR categories are grouped by
+  // activity because they do not represent vehicle journeys.
   const carStats = useMemo(() => {
     const map: Record<string, {
       vehicleName: string;
@@ -235,34 +349,46 @@ function JourneyDashboardContent() {
       totalDurationHours: number;
       totalFuelCost: number;
       totalSPJCost: number;
+      totalUpahBersih: number;
+      totalReimburse: number;
       totalNights: number;
     }> = {};
 
     filteredJourneys.forEach((j) => {
-      const vName = j.vehicleName || 'Suzuki XL7';
-      if (!map[vName]) {
-        map[vName] = {
-          vehicleName: vName,
+      const isSopir = activeCategory === 'SOPIR';
+      const groupKey = isSopir
+        ? j.vehicleName || 'Kendaraan tidak tercatat'
+        : j.jobCategory + ':' + (j.activityName || 'Kegiatan lainnya');
+      const displayName = isSopir
+        ? j.vehicleName || 'Kendaraan tidak tercatat'
+        : categoryLabel(j.jobCategory) + ' · ' + (j.activityName || 'Kegiatan lainnya');
+      if (!map[groupKey]) {
+        map[groupKey] = {
+          vehicleName: displayName,
           trips: 0,
           totalDistanceKm: 0,
           totalDurationHours: 0,
           totalFuelCost: 0,
           totalSPJCost: 0,
+          totalUpahBersih: 0,
+          totalReimburse: 0,
           totalNights: 0,
         };
       }
-      map[vName].trips += 1;
-      map[vName].totalDistanceKm += j.distanceKm || 0;
-      map[vName].totalDurationHours += j.durationHours || 0;
-      map[vName].totalFuelCost += j.fuelFee || 0;
-      map[vName].totalSPJCost += j.operationalCost || 0;
-      map[vName].totalNights += j.nightCount || 0;
+      map[groupKey].trips += 1;
+      map[groupKey].totalDistanceKm += j.distanceKm || 0;
+      map[groupKey].totalDurationHours += j.durationHours || 0;
+      map[groupKey].totalFuelCost += j.fuelFee || 0;
+      map[groupKey].totalSPJCost += j.operationalCost || 0;
+      map[groupKey].totalUpahBersih += j.upahBersih || 0;
+      map[groupKey].totalReimburse += j.reimburseDelta || 0;
+      map[groupKey].totalNights += j.nightCount || 0;
     });
 
     const list = Object.values(map);
     list.sort((a, b) => b.trips - a.trips);
     return list;
-  }, [filteredJourneys]);
+  }, [filteredJourneys, activeCategory]);
 
   // Driver Stats Aggregation
   const driverStats = useMemo(() => {
@@ -278,7 +404,7 @@ function JourneyDashboardContent() {
     }> = {};
 
     filteredJourneys.forEach((j) => {
-      const dName = j.employeeName || 'Sopir';
+      const dName = j.employeeName || (activeCategory === 'SOPIR' ? 'Sopir' : 'Pekarya');
       const dId = j.employeeId || dName;
       if (!map[dId]) {
         map[dId] = {
@@ -303,12 +429,29 @@ function JourneyDashboardContent() {
     const list = Object.values(map);
     list.sort((a, b) => b.totalUpahBersih - a.totalUpahBersih);
     return list;
-  }, [filteredJourneys]);
+  }, [filteredJourneys, activeCategory]);
 
-  const handlePeriodChange = (m: string, y: string) => {
-    setSelectedMonth(m);
-    setSelectedYear(y);
-    router.push(`/dashboard/payroll/journey-dashboard?month=${m}&year=${y}`);
+  const isSopirView = activeCategory === 'SOPIR';
+  const categoryTitle =
+    activeCategory === ALL_CATEGORY_VALUE ? 'Semua Pekarya' : categoryLabel(activeCategory);
+  const workerLabel = isSopirView ? 'Sopir' : 'Pekarya';
+  const completedItemLabel = isSopirView ? 'Perjalanan' : 'Aktivitas';
+
+  const handleFilterChange = (
+    m: string,
+    y: string,
+    category: string = activeCategory,
+  ) => {
+    const nextCategory =
+      category === ALL_CATEGORY_VALUE
+        ? ALL_CATEGORY_VALUE
+        : normalizeJobCategory(category);
+
+    const params = new URLSearchParams();
+    params.set('month', m);
+    params.set('year', y);
+    if (nextCategory !== ALL_CATEGORY_VALUE) params.set('category', nextCategory);
+    router.push('/dashboard/payroll/journey-dashboard?' + params.toString());
   };
 
   return (
@@ -322,23 +465,42 @@ function JourneyDashboardContent() {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-lg border border-indigo-200">
-              Analitik Perjalanan Dinamis
+              Analitik Pekarya Dinamis
             </Badge>
             <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
+            {loading && (
+              <span className="text-[10px] font-bold text-slate-400">Memuat data...</span>
+            )}
           </div>
           <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-            Dashboard Perjalanan Driver
+            Dashboard Pekarya · {categoryTitle}
           </h1>
           <p className="text-xs text-slate-500 font-medium">
-            Statistik lengkap performa armada kendaraan (Car Stats) & kinerja upah bersih sopir (Driver Stats).
+            Statistik kegiatan terverifikasi, kinerja {workerLabel.toLowerCase()}, biaya operasional, dan upah bersih.
           </p>
         </div>
 
-        {/* Period Filter Dropdowns */}
-        <div className="flex items-center gap-2.5 bg-slate-50 p-2 rounded-2xl border border-slate-200/80">
+        {/* Category and period filter dropdowns */}
+        <div className="flex flex-wrap items-center justify-end gap-2.5 bg-slate-50 p-2 rounded-2xl border border-slate-200/80">
+          <Select value={activeCategory} onValueChange={(category) => handleFilterChange(selectedMonth, selectedYear, category || ALL_CATEGORY_VALUE)}>
+            <SelectTrigger className="w-44 h-9 text-xs font-bold bg-white rounded-xl border-slate-200">
+              <SelectValue>
+                {activeCategory === ALL_CATEGORY_VALUE ? 'Semua Kategori' : categoryLabel(activeCategory)}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+              <SelectItem value={ALL_CATEGORY_VALUE}>Semua Kategori</SelectItem>
+              {allowedCategories.map((category) => (
+                <SelectItem key={category} value={category}>
+                  {categoryLabel(category)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Calendar className="w-4 h-4 text-indigo-500 shrink-0 ml-1" />
 
-          <Select value={selectedMonth} onValueChange={(m) => handlePeriodChange(m || 'all', selectedYear)}>
+          <Select value={selectedMonth} onValueChange={(m) => handleFilterChange(m || 'all', selectedYear)}>
             <SelectTrigger className="w-36 h-9 text-xs font-bold bg-white rounded-xl border-slate-200">
               <SelectValue>
                 {selectedMonth === 'all'
@@ -356,7 +518,7 @@ function JourneyDashboardContent() {
             </SelectContent>
           </Select>
 
-          <Select value={selectedYear} onValueChange={(y) => handlePeriodChange(selectedMonth, y || 'all')}>
+          <Select value={selectedYear} onValueChange={(y) => handleFilterChange(selectedMonth, y || 'all')}>
             <SelectTrigger className="w-28 h-9 text-xs font-bold bg-white rounded-xl border-slate-200">
               <SelectValue>
                 {selectedYear === 'all' ? 'Semua Tahun' : selectedYear}
@@ -379,18 +541,22 @@ function JourneyDashboardContent() {
         {/* Card 1: Total Completed Journeys */}
         <Card className="rounded-2xl border-none shadow-sm bg-gradient-to-br from-indigo-500 to-purple-600 text-white p-5 space-y-3 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-widest text-indigo-100">Total Perjalanan Selesai</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-indigo-100">Total {completedItemLabel} Selesai</span>
             <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center">
               <Compass className="w-5 h-5 text-white" />
             </div>
           </div>
           <div>
             <span className="text-3xl font-black">{overallKPI.totalTrips}</span>
-            <span className="text-xs text-indigo-100 font-semibold ml-2">Perjalanan</span>
+            <span className="text-xs text-indigo-100 font-semibold ml-2">{completedItemLabel}</span>
           </div>
           <div className="text-[10px] text-indigo-100/80 font-medium pt-1 border-t border-white/10 flex justify-between">
-            <span>Total Kilometrase:</span>
-            <span className="font-extrabold text-white">{overallKPI.totalMileage.toFixed(1)} KM</span>
+            <span>{isSopirView ? 'Total Kilometrase:' : 'Total Durasi:'}</span>
+            <span className="font-extrabold text-white">
+              {isSopirView
+                ? overallKPI.totalMileage.toFixed(1) + ' KM'
+                : overallKPI.totalHours.toFixed(1) + ' Jam'}
+            </span>
           </div>
         </Card>
 
@@ -406,15 +572,15 @@ function JourneyDashboardContent() {
             <span className="text-2xl font-black text-slate-800">{fmtRp(overallKPI.totalSPJCost)}</span>
           </div>
           <div className="text-[10px] text-slate-500 font-medium pt-1 border-t border-slate-100 flex justify-between">
-            <span>Aggregat BBM + Tol + Makan</span>
+            <span>{isSopirView ? 'Aggregat BBM + Tol + Makan' : 'Biaya operasional tercatat'}</span>
             <span className="font-bold text-blue-600">Terverifikasi</span>
           </div>
         </Card>
 
-        {/* Card 3: Total Upah Bersih Sopir */}
+        {/* Card 3: Total net wage */}
         <Card className="rounded-2xl border-none shadow-sm bg-white p-5 space-y-3 border border-slate-100">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Upah Bersih Sopir</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Upah Bersih {workerLabel}</span>
             <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
               <Award className="w-5 h-5" />
             </div>
@@ -423,7 +589,7 @@ function JourneyDashboardContent() {
             <span className="text-2xl font-black text-emerald-600">{fmtRp(overallKPI.totalUpahBersih)}</span>
           </div>
           <div className="text-[10px] text-slate-500 font-medium pt-1 border-t border-slate-100 flex justify-between">
-            <span>Komponen Jarak + Waktu + Premi</span>
+            <span>{isSopirView ? 'Komponen Jarak + Waktu + Premi' : 'Fee kegiatan yang disetujui'}</span>
             <span className="font-bold text-emerald-600">Sudah Diaudit</span>
           </div>
         </Card>
@@ -440,34 +606,38 @@ function JourneyDashboardContent() {
             <span className="text-2xl font-black text-amber-600">+{fmtRp(overallKPI.totalReimburse)}</span>
           </div>
           <div className="text-[10px] text-slate-500 font-medium pt-1 border-t border-slate-100 flex justify-between">
-            <span>Talangan Driver Terganti</span>
+            <span>{isSopirView ? 'Talangan Driver Terganti' : 'Reimburse kegiatan tercatat'}</span>
             <span className="font-bold text-amber-600">Biaya Tambahan</span>
           </div>
         </Card>
       </div>
 
-      {/* ── Main Section: Car Stats & Driver Stats ──────────────────────── */}
+      {/* ── Main Section: Category-specific work stats & worker stats ─────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 🚗 CAR STATS SECTION */}
+        {/* 🚗 Vehicle stats for SOPIR, activity stats for other categories */}
         <Card className="rounded-3xl border-none shadow-sm bg-white p-6 space-y-5">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <Car className="w-5 h-5" />
+                {isSopirView ? <Car className="w-5 h-5" /> : <BarChart3 className="w-5 h-5" />}
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-slate-800">Statistik Kendaraan (Car Stats)</h3>
-                <p className="text-[11px] text-slate-400 font-semibold">Performa kilometrase & penggunaan armada</p>
+                <h3 className="text-base font-extrabold text-slate-800">
+                  {isSopirView ? 'Statistik Kendaraan (Car Stats)' : 'Statistik Kegiatan (Activity Stats)'}
+                </h3>
+                <p className="text-[11px] text-slate-400 font-semibold">
+                  {isSopirView ? 'Performa kilometrase & penggunaan armada' : 'Kegiatan terverifikasi menurut kategori'}
+                </p>
               </div>
             </div>
             <Badge variant="outline" className="bg-indigo-50 border-indigo-200 text-indigo-700 text-[10px] font-bold">
-              {carStats.length} Kendaraan Terpakai
+              {carStats.length} {isSopirView ? 'Kendaraan Terpakai' : 'Kegiatan Tercatat'}
             </Badge>
           </div>
 
           {carStats.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400 font-medium">
-              Belum ada data perjalanan kendaraan pada periode ini.
+              Belum ada data {isSopirView ? 'perjalanan kendaraan' : 'kegiatan'} pada periode ini.
             </div>
           ) : (
             <div className="space-y-4 max-h-[460px] overflow-y-auto pr-1">
@@ -487,7 +657,7 @@ function JourneyDashboardContent() {
                         )}
                       </div>
                       <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-100">
-                        {car.trips} Perjalanan ({usagePct}%)
+                        {car.trips} {completedItemLabel} ({usagePct}%)
                       </span>
                     </div>
 
@@ -501,16 +671,32 @@ function JourneyDashboardContent() {
 
                     <div className="grid grid-cols-3 gap-2 pt-1 text-xs">
                       <div className="bg-white p-2.5 rounded-xl border border-slate-100">
-                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Total Jarak</span>
-                        <span className="font-extrabold text-slate-800">{car.totalDistanceKm.toFixed(1)} KM</span>
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">
+                          {isSopirView ? 'Total Jarak' : 'Total Durasi'}
+                        </span>
+                        <span className="font-extrabold text-slate-800">
+                          {isSopirView
+                            ? car.totalDistanceKm.toFixed(1) + ' KM'
+                            : car.totalDurationHours.toFixed(1) + ' Jam'}
+                        </span>
                       </div>
                       <div className="bg-white p-2.5 rounded-xl border border-slate-100">
-                        <span className="text-[9px] text-slate-400 font-bold block uppercase">Total BBM</span>
-                        <span className="font-extrabold text-slate-800">{fmtRp(car.totalFuelCost)}</span>
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">
+                          {isSopirView ? 'Total BBM' : 'Upah Bersih'}
+                        </span>
+                        <span className="font-extrabold text-slate-800">
+                          {fmtRp(isSopirView ? car.totalFuelCost : car.totalUpahBersih)}
+                        </span>
                       </div>
                       <div className="bg-white p-2.5 rounded-xl border border-slate-100">
-                        <span className="text-[9px] text-slate-400 font-bold block uppercase">BBM / KM</span>
-                        <span className="font-extrabold text-emerald-600">{avgFuelPerKm > 0 ? fmtRp(avgFuelPerKm) : '—'}</span>
+                        <span className="text-[9px] text-slate-400 font-bold block uppercase">
+                          {isSopirView ? 'BBM / KM' : 'Total Reimburse'}
+                        </span>
+                        <span className="font-extrabold text-emerald-600">
+                          {isSopirView
+                            ? (avgFuelPerKm > 0 ? fmtRp(avgFuelPerKm) : '—')
+                            : '+' + fmtRp(car.totalReimburse)}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -520,7 +706,7 @@ function JourneyDashboardContent() {
           )}
         </Card>
 
-        {/* 👤 DRIVER STATS SECTION */}
+        {/* 👤 Worker stats section */}
         <Card className="rounded-3xl border-none shadow-sm bg-white p-6 space-y-5">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2.5">
@@ -528,18 +714,22 @@ function JourneyDashboardContent() {
                 <Users className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-slate-800">Statistik Sopir (Driver Stats)</h3>
-                <p className="text-[11px] text-slate-400 font-semibold">Leaderboard upah bersih & total trip sopir</p>
+                <h3 className="text-base font-extrabold text-slate-800">
+                  Statistik {workerLabel} ({isSopirView ? 'Driver' : 'Worker'} Stats)
+                </h3>
+                <p className="text-[11px] text-slate-400 font-semibold">
+                  Leaderboard upah bersih & total {completedItemLabel.toLowerCase()}
+                </p>
               </div>
             </div>
             <Badge variant="outline" className="bg-emerald-50 border-emerald-200 text-emerald-700 text-[10px] font-bold">
-              {driverStats.length} Driver Aktif
+              {driverStats.length} {workerLabel} Terlibat
             </Badge>
           </div>
 
           {driverStats.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400 font-medium">
-              Belum ada data perjalanan sopir pada periode ini.
+              Belum ada data {completedItemLabel.toLowerCase()} {workerLabel.toLowerCase()} pada periode ini.
             </div>
           ) : (
             <div className="space-y-4 max-h-[460px] overflow-y-auto pr-1">
@@ -552,7 +742,9 @@ function JourneyDashboardContent() {
                       </div>
                       <div>
                         <span className="font-extrabold text-slate-800 text-sm block leading-tight">{drv.driverName}</span>
-                        <span className="text-[10px] text-slate-400 font-semibold">{drv.trips} Trip Selesai</span>
+                        <span className="text-[10px] text-slate-400 font-semibold">
+                          {drv.trips} {isSopirView ? 'Trip' : 'Aktivitas'} Selesai
+                        </span>
                       </div>
                     </div>
 
@@ -564,12 +756,22 @@ function JourneyDashboardContent() {
 
                   <div className="grid grid-cols-3 gap-2 pt-1 text-xs">
                     <div className="bg-white p-2.5 rounded-xl border border-slate-100">
-                      <span className="text-[9px] text-slate-400 font-bold block uppercase">Jarak Ditempuh</span>
-                      <span className="font-extrabold text-slate-800">{drv.totalDistanceKm.toFixed(1)} KM</span>
+                      <span className="text-[9px] text-slate-400 font-bold block uppercase">
+                        {isSopirView ? 'Jarak Ditempuh' : 'Total Durasi'}
+                      </span>
+                      <span className="font-extrabold text-slate-800">
+                        {isSopirView
+                          ? drv.totalDistanceKm.toFixed(1) + ' KM'
+                          : drv.totalDurationHours.toFixed(1) + ' Jam'}
+                      </span>
                     </div>
                     <div className="bg-white p-2.5 rounded-xl border border-slate-100">
-                      <span className="text-[9px] text-slate-400 font-bold block uppercase">Jam Mengemudi</span>
-                      <span className="font-extrabold text-slate-800">{drv.totalDurationHours.toFixed(1)} Jam</span>
+                      <span className="text-[9px] text-slate-400 font-bold block uppercase">
+                        {isSopirView ? 'Jam Mengemudi' : 'Upah Bersih'}
+                      </span>
+                      <span className="font-extrabold text-slate-800">
+                        {isSopirView ? drv.totalDurationHours.toFixed(1) + ' Jam' : fmtRp(drv.totalUpahBersih)}
+                      </span>
                     </div>
                     <div className="bg-white p-2.5 rounded-xl border border-slate-100">
                       <span className="text-[9px] text-slate-400 font-bold block uppercase">Total Reimburse</span>
@@ -583,15 +785,15 @@ function JourneyDashboardContent() {
         </Card>
       </div>
 
-      {/* ── Bottom Section: Completed Journeys Log Table ──────────────────── */}
+      {/* ── Bottom Section: Completed activity log table ──────────────────── */}
       <Card className="rounded-3xl border-none shadow-sm bg-white p-6 space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div>
             <h3 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-              Daftar Riwayat Perjalanan Terverifikasi
+              Daftar Riwayat Kegiatan Terverifikasi
             </h3>
-            <p className="text-xs text-slate-400 font-semibold">Rincian perjalanan dinas yang sudah disetujui & diaudit</p>
+            <p className="text-xs text-slate-400 font-semibold">Rincian kegiatan yang sudah disetujui & diaudit</p>
           </div>
           <Badge variant="outline" className="bg-slate-50 text-slate-600 text-[10px] font-bold">
             {filteredJourneys.length} Record Log
@@ -600,7 +802,7 @@ function JourneyDashboardContent() {
 
         {filteredJourneys.length === 0 ? (
           <div className="p-8 text-center text-xs text-slate-400 font-medium">
-            Tidak ada data riwayat perjalanan pada filter ini.
+            Tidak ada data kegiatan pada filter ini.
           </div>
         ) : (
           <div className="overflow-x-auto rounded-2xl border border-slate-100">
@@ -610,7 +812,7 @@ function JourneyDashboardContent() {
                   <TableHead className="py-3 px-4">Tanggal</TableHead>
                   <TableHead className="py-3 px-4">Kegiatan & Rute</TableHead>
                   <TableHead className="py-3 px-4">Kendaraan</TableHead>
-                  <TableHead className="py-3 px-4">Sopir</TableHead>
+                  <TableHead className="py-3 px-4">Pekarya</TableHead>
                   <TableHead className="py-3 px-4 text-right">Jarak / Durasi</TableHead>
                   <TableHead className="py-3 px-4 text-right">Biaya SPJ</TableHead>
                   <TableHead className="py-3 px-4 text-right">Upah Bersih</TableHead>
@@ -624,6 +826,11 @@ function JourneyDashboardContent() {
                     </TableCell>
                     <TableCell className="py-3 px-4">
                       <div className="font-extrabold text-slate-800 leading-snug max-w-xs">{j.activityName}</div>
+                      {activeCategory === ALL_CATEGORY_VALUE && (
+                        <div className="text-[10px] text-indigo-500 font-bold mt-0.5">
+                          {categoryLabel(j.jobCategory)}
+                        </div>
+                      )}
                       {j.points && j.points.length > 0 && (
                         <div className="text-[10px] text-slate-400 truncate max-w-xs mt-0.5">
                           📍 {j.points.join(' → ')}
@@ -631,18 +838,22 @@ function JourneyDashboardContent() {
                       )}
                     </TableCell>
                     <TableCell className="py-3 px-4">
-                      <Badge variant="outline" className="bg-indigo-50/60 border-indigo-100 text-indigo-700 text-[10px] font-bold">
-                        {j.vehicleName}
-                      </Badge>
+                      {j.vehicleName ? (
+                        <Badge variant="outline" className="bg-indigo-50/60 border-indigo-100 text-indigo-700 text-[10px] font-bold">
+                          {j.vehicleName}
+                        </Badge>
+                      ) : '—'}
                     </TableCell>
                     <TableCell className="py-3 px-4 font-extrabold text-slate-800">
                       {j.employeeName}
                     </TableCell>
                     <TableCell className="py-3 px-4 text-right font-bold text-slate-600 whitespace-nowrap">
-                      {j.distanceKm} km ({j.durationHours} jam)
+                      {j.distanceKm > 0 || j.durationHours > 0
+                        ? j.distanceKm.toFixed(1) + ' km (' + j.durationHours.toFixed(1) + ' jam)'
+                        : '—'}
                     </TableCell>
                     <TableCell className="py-3 px-4 text-right font-extrabold text-blue-700 whitespace-nowrap">
-                      {fmtRp(j.operationalCost)}
+                      {j.operationalCost > 0 ? fmtRp(j.operationalCost) : '—'}
                     </TableCell>
                     <TableCell className="py-3 px-4 text-right font-black text-emerald-600 whitespace-nowrap">
                       {fmtRp(j.upahBersih)}
