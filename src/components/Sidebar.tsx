@@ -12,7 +12,7 @@ import {
   FileSpreadsheet,
   Banknote,
   Coins,
-  Car,
+  BarChart3,
   LogOut,
   Menu,
   X,
@@ -99,7 +99,7 @@ export default function Sidebar() {
     {
       name: 'Dashboard Pekarya',
       path: `/dashboard/payroll/journey-dashboard?month=${currentMonth}&year=${currentYear}`,
-      icon: Car,
+      icon: BarChart3,
       activePattern: '/dashboard/payroll/journey-dashboard'
     }
   ].filter(item => {
