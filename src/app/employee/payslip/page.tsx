@@ -1725,8 +1725,8 @@ export default function EmployeePayslipPage() {
                   return (
                     <div className="animate-in fade-in slide-in-from-top-2 duration-200 space-y-6 pt-2">
                       {/* ── Penerimaan ── */}
-                      <div className="bg-emerald-50/50 border border-emerald-100/80 rounded-2xl p-4 sm:p-6 shadow-sm space-y-6 mt-3">
-                        <div className="flex items-center gap-2 pb-3 border-b border-emerald-200/60">
+                      <div className="bg-emerald-50/30 p-4 sm:p-5 rounded-xl space-y-6 mt-3">
+                        <div className="flex items-center gap-2 pb-2.5 border-b border-emerald-200/50">
                           <TrendingUp className="w-4 h-4 text-emerald-600" />
                           <span className="text-xs font-bold text-emerald-800 uppercase tracking-widest">Penerimaan</span>
                         </div>
@@ -2034,8 +2034,8 @@ export default function EmployeePayslipPage() {
 
                       {/* ── Potongan ── */}
                       {activeDeductionDocs.length > 0 && (
-                        <div className="bg-rose-50/50 border border-rose-100/80 rounded-2xl p-4 sm:p-6 shadow-sm space-y-6">
-                          <div className="flex items-center gap-2 pb-3 border-b border-rose-200/60">
+                        <div className="bg-rose-50/30 p-4 sm:p-5 rounded-xl space-y-6 mt-4">
+                          <div className="flex items-center gap-2 pb-2.5 border-b border-rose-200/50">
                             <TrendingDown className="w-4 h-4 text-rose-600" />
                             <span className="text-xs font-bold text-rose-800 uppercase tracking-widest">Potongan</span>
                           </div>
