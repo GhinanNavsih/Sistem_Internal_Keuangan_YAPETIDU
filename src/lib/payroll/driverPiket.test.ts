@@ -74,12 +74,24 @@ test('countDriverPiketInPeriod counts assigned piket shifts for a driver in a pe
   assert.equal(countDriverPiketInPeriod('D1', '2026-08', mockSchedules), 2);
   assert.equal(countDriverPiketInPeriod('D2', '2026-08', mockSchedules), 1);
   assert.equal(countDriverPiketInPeriod('D3', '2026-08', mockSchedules), 0);
+
+  const duplicateSchedule = { ...mockSchedules[0], id: 'PIKET-DUPLICATE' };
+  assert.equal(
+    countDriverPiketInPeriod('D1', '2026-08', [...mockSchedules, duplicateSchedule]),
+    2,
+  );
 });
 
 test('getDriverPiketDatesInPeriod returns sorted date list', () => {
   assert.deepEqual(getDriverPiketDatesInPeriod('D1', '2026-08', mockSchedules), ['2026-08-01', '2026-08-15']);
   assert.deepEqual(getDriverPiketDatesInPeriod('D2', '2026-08', mockSchedules), ['2026-08-01']);
   assert.deepEqual(getDriverPiketDatesInPeriod('D3', '2026-08', mockSchedules), []);
+
+  const duplicateSchedule = { ...mockSchedules[0], id: 'PIKET-DUPLICATE' };
+  assert.deepEqual(
+    getDriverPiketDatesInPeriod('D1', '2026-08', [...mockSchedules, duplicateSchedule]),
+    ['2026-08-01', '2026-08-15'],
+  );
 });
 
 test('getTodayDateString returns valid YYYY-MM-DD string', () => {

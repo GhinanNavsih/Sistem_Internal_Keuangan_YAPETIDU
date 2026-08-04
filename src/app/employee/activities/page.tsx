@@ -1722,23 +1722,24 @@ function ActivitiesContent() {
       console.error('Error listening to assigned journeys:', err);
     });
 
-    // 3. Active claimed journeys for this driver
-    const qMyClaimed = query(
+    // 3. All journeys for this driver. The same feed drives both the active
+    // claimed guard and the daily count of already submitted Piket SPJs.
+    const qMyJourneys = query(
       collection(db, 'DriverJourneys'),
-      where('employeeId', '==', profile.linkedEmployeeId),
-      where('status', '==', 'claimed')
+      where('employeeId', '==', profile.linkedEmployeeId)
     );
-    const unsubMyClaimed = onSnapshot(qMyClaimed, (snap) => {
+    const unsubMyJourneys = onSnapshot(qMyJourneys, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setMyClaimedJourneys(list);
+      setMyDriverJourneys(list);
+      setMyClaimedJourneys(list.filter((journey: any) => journey.status === 'claimed'));
     }, (err) => {
-      console.error('Error listening to claimed journeys:', err);
+      console.error('Error listening to driver journeys:', err);
     });
 
     return () => {
       unsubUnassigned();
       unsubMyAssigned();
-      unsubMyClaimed();
+      unsubMyJourneys();
     };
   }, [isSopir, profile?.linkedEmployeeId]);
 
@@ -4734,6 +4735,17 @@ function ActivitiesContent() {
                     <p className="text-xs text-emerald-100/90 mt-0.5">
                       Karena jadwal piket Anda aktif hari ini, Anda dapat mengotorisasi SPJ (Surat Perintah Jalan) sendiri. Kendaraan default adalah <strong>Ndalem</strong>, tetapi Anda dapat memilih kendaraan lain bila diperlukan.
                     </p>
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 border border-white/20 px-2.5 py-1 text-[11px] font-extrabold text-white">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                        SPJ Piket Terbuat Hari Ini: {submittedSelfPiketSpjCount} SPJ
+                      </span>
+                      {myClaimedJourneys.length === 0 && (
+                        <span className="text-[11px] font-semibold text-emerald-100">
+                          Anda dapat membuat SPJ Piket berikutnya setelah perjalanan sebelumnya selesai.
+                        </span>
+                      )}
+                    </div>
                     {myClaimedJourneys.length > 0 && (
                       <p className="text-[11px] font-bold text-amber-200 mt-1 flex items-center gap-1.5 bg-amber-950/40 p-2.5 rounded-xl border border-amber-400/30">
                         <AlertCircle className="w-4 h-4 text-amber-300 shrink-0" />
@@ -4744,7 +4756,7 @@ function ActivitiesContent() {
 
                   <Button
                     disabled={myClaimedJourneys.length > 0}
-                    onClick={() => setShowSelfPiketSpjModal(true)}
+                    onClick={openSelfPiketSpjModal}
                     className="shrink-0 rounded-xl bg-white text-emerald-900 hover:bg-emerald-50 font-extrabold text-xs h-10 px-4 gap-2 cursor-pointer shadow-md border-none disabled:opacity-50"
                   >
                     <Plus className="w-4 h-4 text-emerald-700" />
@@ -6760,8 +6772,8 @@ function ActivitiesContent() {
       <Dialog
         open={showSelfPiketSpjModal}
         onOpenChange={(open) => {
-          setShowSelfPiketSpjModal(open);
-          if (!open) setSelfPiketVehicleName(DEFAULT_DRIVER_VEHICLE_NAME);
+          if (open) openSelfPiketSpjModal();
+          else closeSelfPiketSpjModal();
         }}
       >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl p-6 sm:p-7">
@@ -7034,7 +7046,7 @@ function ActivitiesContent() {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => setShowSelfPiketSpjModal(false)}
+                onClick={closeSelfPiketSpjModal}
                 className="rounded-xl font-bold text-slate-500 text-xs px-4 cursor-pointer hover:bg-slate-100"
               >
                 Batal

@@ -134,9 +134,11 @@ export function countDriverPiketInPeriod(
   schedules: readonly DriverPiketSchedule[]
 ): number {
   if (!driverId || !period || !schedules || schedules.length === 0) return 0;
-  return schedules.filter(
-    s => s.driverId === driverId && (s.period === period || s.date.startsWith(period))
-  ).length;
+  return new Set(
+    schedules
+      .filter(s => s.driverId === driverId && (s.period === period || s.date.startsWith(period)))
+      .map(s => s.date),
+  ).size;
 }
 
 /**
@@ -148,8 +150,9 @@ export function getDriverPiketDatesInPeriod(
   schedules: readonly DriverPiketSchedule[]
 ): string[] {
   if (!driverId || !period || !schedules || schedules.length === 0) return [];
-  return schedules
-    .filter(s => s.driverId === driverId && (s.period === period || s.date.startsWith(period)))
-    .map(s => s.date)
-    .sort();
+  return [...new Set(
+    schedules
+      .filter(s => s.driverId === driverId && (s.period === period || s.date.startsWith(period)))
+      .map(s => s.date),
+  )].sort();
 }

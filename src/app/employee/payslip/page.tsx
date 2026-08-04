@@ -1725,10 +1725,10 @@ export default function EmployeePayslipPage() {
                   return (
                     <div className="animate-in fade-in slide-in-from-top-2 duration-200 space-y-6 pt-2">
                       {/* ── Penerimaan ── */}
-                      <div className="py-4 space-y-6">
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="text-xs font-bold text-emerald-700 uppercase tracking-widest">Penerimaan</span>
+                      <div className="bg-emerald-50/50 border border-emerald-100/80 rounded-2xl p-4 sm:p-6 shadow-sm space-y-6 mt-3">
+                        <div className="flex items-center gap-2 pb-3 border-b border-emerald-200/60">
+                          <TrendingUp className="w-4 h-4 text-emerald-600" />
+                          <span className="text-xs font-bold text-emerald-800 uppercase tracking-widest">Penerimaan</span>
                         </div>
                         {earningsDocs.map((item: any, idx: number) => (
                           <div key={item.id}>
@@ -2034,10 +2034,10 @@ export default function EmployeePayslipPage() {
 
                       {/* ── Potongan ── */}
                       {activeDeductionDocs.length > 0 && (
-                        <div className="py-6 border-t border-slate-200 space-y-6">
-                          <div className="flex items-center gap-2">
-                            <TrendingDown className="w-3.5 h-3.5 text-rose-600" />
-                            <span className="text-xs font-bold text-rose-700 uppercase tracking-widest">Potongan</span>
+                        <div className="bg-rose-50/50 border border-rose-100/80 rounded-2xl p-4 sm:p-6 shadow-sm space-y-6">
+                          <div className="flex items-center gap-2 pb-3 border-b border-rose-200/60">
+                            <TrendingDown className="w-4 h-4 text-rose-600" />
+                            <span className="text-xs font-bold text-rose-800 uppercase tracking-widest">Potongan</span>
                           </div>
                           {activeDeductionDocs.map((item: any, idx: number) => (
                             <div key={item.id}>
