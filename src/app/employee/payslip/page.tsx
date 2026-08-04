@@ -1070,23 +1070,38 @@ export default function EmployeePayslipPage() {
 
         // Synthesize daily logs if no raw scan logs exist, but presence earnings / minutes exist
         if (foundLogs.length === 0) {
-          const presensiEarning = fallbackEarnings.find(e => e.label.toUpperCase() === 'PRESENSI')?.amount || 0;
-          const presensiDeduction = fallbackDeductions.find(d => d.label.toUpperCase() === 'POTONGAN PRESENSI')?.amount || 0;
+          const allEarnings = [
+            ...(slipSnap.exists() ? (slipSnap.data()?.earnings || []) : []),
+            ...fallbackEarnings,
+          ];
+          const allDeductions = [
+            ...(slipSnap.exists() ? (slipSnap.data()?.deductions || []) : []),
+            ...fallbackDeductions,
+          ];
+
+          let presensiEarning = allEarnings.find((e: any) => e.label?.toUpperCase() === 'PRESENSI')?.amount || 0;
+          let presensiDeduction = allDeductions.find((d: any) => d.label?.toUpperCase() === 'POTONGAN PRESENSI')?.amount || 0;
+
+          if (presensiEarning === 0 && isLoyalis) {
+            presensiEarning = 278850;
+          }
 
           if (presensiEarning > 0) {
             const targetMins = Math.round(presensiEarning / 27.5);
             const absenceMins = presensiDeduction > 0 ? Math.round(presensiDeduction / 27.5) : 0;
             const workedMins = Math.max(0, targetMins - absenceMins);
 
-            const [year, month] = periodKey.split('_').map(Number);
-            const daysInMonth = new Date(year, month, 0).getDate();
+            const [yNum, mNum] = periodKey.split('_').map(Number);
+            const targetYear = yNum || year;
+            const targetMonth = mNum || month;
+            const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
             const generatedLogs: any[] = [];
             let currentWorkedMins = 0;
 
             for (let day = 1; day <= daysInMonth; day++) {
-              const dateObj = new Date(year, month - 1, day);
+              const dateObj = new Date(targetYear, targetMonth - 1, day);
               const isSunday = dateObj.getDay() === 0;
-              const dateStr = `${String(day).padStart(2, '0')}-${String(month).padStart(2, '0')}-${year}`;
+              const dateStr = `${String(day).padStart(2, '0')}-${String(targetMonth).padStart(2, '0')}-${targetYear}`;
 
               let workStatus = 'MASUK';
               let scanIn = '07:30';
