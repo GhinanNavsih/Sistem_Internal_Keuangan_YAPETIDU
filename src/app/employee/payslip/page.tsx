@@ -1902,8 +1902,6 @@ export default function EmployeePayslipPage() {
                                                         const scanIn = log['Scan masuk'] || log.scanMasuk || '-';
                                                         const scanOut = log['Scan pulang'] || log.scanPulang || '-';
                                                         const duration = typeof log.duration === 'number' ? log.duration : 0;
-                                                        const isAutoIn = log.scanMasukAuto;
-                                                        const isAutoOut = log.scanPulangAuto;
                                                         const earningsVal = duration > 0 ? duration * 27.5 : 0;
 
                                                         return (
@@ -1913,11 +1911,11 @@ export default function EmployeePayslipPage() {
                                                             </td>
                                                             <td className="px-1.5 sm:px-3 py-1.5 text-center font-mono text-[10px] sm:text-[11px]">
                                                               <div className="flex flex-col items-center leading-tight gap-0.5">
-                                                                <span className="text-emerald-700 font-bold">
-                                                                  In: {scanIn} {isAutoIn && <span className="text-[8px] text-amber-600 font-semibold">(Auto)</span>}
+                                                                <span className="text-black font-medium">
+                                                                  In: {scanIn}
                                                                 </span>
                                                                 <span className="text-slate-600 font-medium">
-                                                                  Out: {scanOut} {isAutoOut && <span className="text-[8px] text-amber-600 font-semibold">(Auto)</span>}
+                                                                  Out: {scanOut}
                                                                 </span>
                                                               </div>
                                                             </td>
