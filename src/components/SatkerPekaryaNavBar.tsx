@@ -135,7 +135,7 @@ export default function SatkerPekaryaNavBar() {
                 className={navBtnClass(isDashboard)}
               >
                 <BarChart3 className="w-4 h-4" />
-                <span>Dashboard Perjalanan</span>
+                <span>Dashboard Pekarya</span>
               </button>
               <button
                 onClick={() => router.push(attendanceUrl)}

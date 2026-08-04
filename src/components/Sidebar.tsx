@@ -97,7 +97,7 @@ export default function Sidebar() {
       exact: true
     },
     {
-      name: 'Dashboard Perjalanan',
+      name: 'Dashboard Pekarya',
       path: `/dashboard/payroll/journey-dashboard?month=${currentMonth}&year=${currentYear}`,
       icon: Car,
       activePattern: '/dashboard/payroll/journey-dashboard'
