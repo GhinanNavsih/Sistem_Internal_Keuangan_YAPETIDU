@@ -38,6 +38,7 @@ import {
 } from '@/lib/payroll/client';
 
 import Link from 'next/link';
+import { generatePresensiLoyalisXlsx } from '@/utils/generatePresensiLoyalisXlsx';
 
 const parseDateToDDMMYYYY = (dateStr: string) => {
   if (!dateStr || !dateStr.includes('-')) return dateStr;
@@ -693,6 +694,23 @@ export default function PresensiLoyalisRawPage() {
     const targetStratum = Number(strataFilter);
     return displayRows.filter((r) => Number(r.stratum) === targetStratum);
   }, [displayRows, strataFilter]);
+
+  const handleExportXlsx = useCallback(() => {
+    const rowsToExport = filteredDisplayRows || displayRows;
+    if (!rowsToExport || rowsToExport.length === 0) {
+      setMessage({ type: 'error', text: 'Tidak ada data presensi yang dapat diexport.' });
+      return;
+    }
+    generatePresensiLoyalisXlsx({
+      month,
+      year,
+      workingDays: activeWorkingDays,
+      expectedHours,
+      rows: rowsToExport,
+      strataFilter,
+    });
+    setMessage({ type: 'success', text: 'Berhasil mengunduh Data Perhitungan Presensi Tersimpan (.xlsx)' });
+  }, [filteredDisplayRows, displayRows, month, year, activeWorkingDays, expectedHours, strataFilter]);
 
   const handleExcelUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1503,35 +1521,46 @@ export default function PresensiLoyalisRawPage() {
                     </div>
                   </div>
 
-                  {/* Filter Strata */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-bold text-slate-600">Filter Strata:</span>
-                    <div className="inline-flex bg-white p-1 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs">
-                      {(['all', '1', '2', '3', '4', '5'] as const).map((val) => {
-                        const isActive = strataFilter === val;
-                        const label = val === 'all' ? 'Semua' : `Strata ${val}`;
-                        const count = val === 'all' ? displayRows.length : displayRows.filter(r => Number(r.stratum) === Number(val)).length;
-                        return (
-                          <button
-                            key={val}
-                            type="button"
-                            onClick={() => setStrataFilter(val)}
-                            className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer text-[11px] flex items-center gap-1.5 ${
-                              isActive
-                                ? 'bg-indigo-600 text-white shadow-xs font-extrabold'
-                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                            }`}
-                          >
-                            <span>{label}</span>
-                            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
-                              isActive ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-100 text-slate-500'
-                            }`}>
-                              {count}
-                            </span>
-                          </button>
-                        );
-                      })}
+                  {/* Filter Strata & Export Button */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-slate-600">Filter Strata:</span>
+                      <div className="inline-flex bg-white p-1 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs">
+                        {(['all', '1', '2', '3', '4', '5'] as const).map((val) => {
+                          const isActive = strataFilter === val;
+                          const label = val === 'all' ? 'Semua' : `Strata ${val}`;
+                          const count = val === 'all' ? displayRows.length : displayRows.filter(r => Number(r.stratum) === Number(val)).length;
+                          return (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setStrataFilter(val)}
+                              className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer text-[11px] flex items-center gap-1.5 ${
+                                isActive
+                                  ? 'bg-indigo-600 text-white shadow-xs font-extrabold'
+                                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                              }`}
+                            >
+                              <span>{label}</span>
+                              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
+                                isActive ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-100 text-slate-500'
+                              }`}>
+                                {count}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
+
+                    <Button
+                      type="button"
+                      onClick={handleExportXlsx}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs h-9 px-3.5 flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
+                    >
+                      <FileSpreadsheet className="w-4 h-4" />
+                      <span>Export XLSX</span>
+                    </Button>
                   </div>
                 </div>
 

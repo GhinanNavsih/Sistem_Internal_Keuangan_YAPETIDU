@@ -171,7 +171,12 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         router.replace(`/dashboard/payroll/uraian/presensi-loyalis-raw?${params.toString()}`);
       }
     } else if (profile.role === 'satker_head_loyalis') {
-      if (activeTab !== 'vakasi_loyalis' && activeTab !== 'pelaporan_kegiatan' && activeTab !== 'proposal_kegiatan') {
+      if (
+        activeTab !== 'vakasi_loyalis' &&
+        activeTab !== 'pelaporan_kegiatan' &&
+        activeTab !== 'proposal_kegiatan' &&
+        activeTab !== 'presensi_loyalis_raw'
+      ) {
         router.replace(`/dashboard/payroll/uraian/vakasi-loyalis${getCleanParamsString('vakasi_loyalis')}`);
       }
     } else if (

@@ -70,6 +70,8 @@ export default function UraianNavToggles() {
   if (
     profile.role !== 'super_admin' &&
     profile.role !== 'loyalis_presence_admin' &&
+    profile.role !== 'satker_head_loyalis' &&
+    profile.role !== 'satker_head' &&
     profile.role !== 'finance_verifier' &&
     profile.role !== 'payroll_authorizer'
   ) {
@@ -117,23 +119,27 @@ export default function UraianNavToggles() {
             </>
           )}
 
+          {(profile.role === 'super_admin' ||
+            profile.role === 'loyalis_presence_admin' ||
+            profile.role === 'satker_head_loyalis' ||
+            profile.role === 'satker_head') && (
+            <button
+              onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis-raw${getCleanParamsString('presensi_loyalis_raw')}`)}
+              className={btnCls(activeTab === 'presensi_loyalis_raw')}
+            >
+              <Clock className="w-4 h-4" />
+              Presensi Loyalis
+            </button>
+          )}
+
           {(profile.role === 'super_admin' || profile.role === 'loyalis_presence_admin') && (
-            <>
-              <button
-                onClick={() => router.push(`/dashboard/payroll/uraian/presensi-loyalis-raw${getCleanParamsString('presensi_loyalis_raw')}`)}
-                className={btnCls(activeTab === 'presensi_loyalis_raw')}
-              >
-                <Clock className="w-4 h-4" />
-                Presensi Loyalis
-              </button>
-              <button
-                onClick={() => router.push(`/dashboard/payroll/uraian/presence-corrections${getCleanParamsString('presence_corrections')}`)}
-                className={btnCls(activeTab === 'presence_corrections')}
-              >
-                <ClipboardCheck className="w-4 h-4" />
-                Review Koreksi Presensi
-              </button>
-            </>
+            <button
+              onClick={() => router.push(`/dashboard/payroll/uraian/presence-corrections${getCleanParamsString('presence_corrections')}`)}
+              className={btnCls(activeTab === 'presence_corrections')}
+            >
+              <ClipboardCheck className="w-4 h-4" />
+              Review Koreksi Presensi
+            </button>
           )}
         </div>
       </div>
