@@ -49,7 +49,11 @@ import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generateP
 import { MONTHS_ID, computeSlipAmount } from '@/utils/rekapConfig';
 import { resolveRekapColumnsForSlip } from '@/lib/payroll/slipBuilders';
 import type { RekapColumn, UraianEntry, UraianGajiDocument } from '@/types';
-import { sumApprovedActivitySpj } from '@/lib/payroll/pekaryaSpj';
+import { authenticatedJson } from '@/lib/payroll/client';
+import {
+  activityBelongsToPayrollPeriod,
+  sumApprovedActivitySpj,
+} from '@/lib/payroll/pekaryaSpj';
 import {
   composeKoperasiLoanHistoryTrail,
   koperasiProjectedPaidInstallments,
@@ -722,6 +726,8 @@ export default function EmployeePayslipPage() {
         setIsConfirmed(false);
         setCalculatedEarnings([]);
         setCalculatedDeductions([]);
+        setDailyPresenceLogs([]);
+        setShowDailyLogs(false);
 
         const empId = profile.linkedEmployeeId as string;
         const roleStr = profile?.role as string;
@@ -940,117 +946,31 @@ export default function EmployeePayslipPage() {
         const slipSnap = await getDoc(slipRef);
         if (cancelled) return;
 
-        // Helper to extract employee presence record from LoyalisPresence document
-        const extractEmployeeLogs = (pData: any) => {
-          if (!pData) return null;
-          const entriesObj = pData.entries || {};
-          const entriesList: any[] = Array.isArray(pData.records)
-            ? pData.records
-            : (Array.isArray(pData.entries) ? pData.entries : Object.values(entriesObj));
-
-          const empNipyRaw = String(
-            employee.personal_info?.employee_id_niy ||
-            employee.academic_and_tier?.nipy ||
-            employee.nipy ||
-            ''
-          ).trim();
-          const empNipyDigits = empNipyRaw.replace(/\D/g, '');
-
-          const empNameRaw = String(
-            employee.personal_info?.name ||
-            employee.displayName ||
-            employee.name ||
-            ''
-          ).trim().toLowerCase();
-          const empNameClean = empNameRaw.replace(/[^a-z0-9]/g, '');
-
-          // 1. Direct key match in entries object (only if dailyLogs is populated)
-          if (entriesObj[empId]?.dailyLogs && Array.isArray(entriesObj[empId].dailyLogs) && entriesObj[empId].dailyLogs.length > 0) {
-            return entriesObj[empId];
-          }
-          if (empNipyRaw && entriesObj[empNipyRaw]?.dailyLogs && Array.isArray(entriesObj[empNipyRaw].dailyLogs) && entriesObj[empNipyRaw].dailyLogs.length > 0) {
-            return entriesObj[empNipyRaw];
-          }
-
-          // 2. Search entries list for matching ID, NIPY, or Name with NON-EMPTY dailyLogs
-          const matchWithLogs = entriesList.find((item: any) => {
-            if (!item || !Array.isArray(item.dailyLogs) || item.dailyLogs.length === 0) return false;
-
-            if (item.employeeId && item.employeeId === empId) return true;
-
-            const itemNipyRaw = String(item.nipy || item.niy || item.id || '').trim();
-            const itemNipyDigits = itemNipyRaw.replace(/\D/g, '');
-            if (empNipyDigits && itemNipyDigits && empNipyDigits === itemNipyDigits) return true;
-
-            const itemNameRaw = String(
-              item.employeeName ||
-              item.excelName ||
-              item.name ||
-              ''
-            ).trim().toLowerCase();
-            const itemNameClean = itemNameRaw.replace(/[^a-z0-9]/g, '');
-
-            if (empNameClean && itemNameClean) {
-              if (
-                empNameClean === itemNameClean ||
-                itemNameClean.includes(empNameClean) ||
-                empNameClean.includes(itemNameClean)
-              ) return true;
-            }
-            return false;
-          });
-
-          if (matchWithLogs) return matchWithLogs;
-
-          // 3. General match fallback
-          return entriesList.find((item: any) => {
-            if (!item) return false;
-            if (item.employeeId && item.employeeId === empId) return true;
-            const itemNipyRaw = String(item.nipy || item.niy || item.id || '').trim();
-            const itemNipyDigits = itemNipyRaw.replace(/\D/g, '');
-            if (empNipyDigits && itemNipyDigits && empNipyDigits === itemNipyDigits) return true;
-            const itemNameRaw = String(item.employeeName || item.excelName || item.name || '').trim().toLowerCase();
-            const itemNameClean = itemNameRaw.replace(/[^a-z0-9]/g, '');
-            return !!(empNameClean && itemNameClean && (empNameClean === itemNameClean || itemNameClean.includes(empNameClean) || empNameClean.includes(itemNameClean)));
-          }) || entriesObj[empId] || (empNipyRaw ? entriesObj[empNipyRaw] : null);
-        };
-
-        // Fetch daily presence logs from LoyalisPresence collection
+        // LoyalisPresence is institution-wide and is intentionally not readable
+        // by employee accounts through the browser Firestore SDK. Fetch only
+        // this employee's matching entry through the protected server route.
         let foundLogs: any[] = [];
-        const docKeysToTry = Array.from(new Set([
-          periodKey,
-          periodToken,
-          periodToken.replace('-', '_'),
-          periodKey.replace('_', '-'),
-        ]));
-
-        for (const docKey of docKeysToTry) {
-          if (foundLogs.length > 0) break;
+        if (isLoyalis) {
           try {
-            const presenceSnap = await getDoc(doc(db, 'LoyalisPresence', docKey));
-            if (presenceSnap.exists()) {
-              const pData = presenceSnap.data();
-              const empEntry = extractEmployeeLogs(pData);
-              if (empEntry?.dailyLogs && Array.isArray(empEntry.dailyLogs) && empEntry.dailyLogs.length > 0) {
-                foundLogs = empEntry.dailyLogs;
-              }
+            const presenceResult = await authenticatedJson<{ dailyLogs?: unknown[] }>(
+              `/api/employee/loyalis-presence?period=${encodeURIComponent(periodToken)}`,
+            );
+            if (Array.isArray(presenceResult.dailyLogs)) {
+              foundLogs = presenceResult.dailyLogs;
             }
           } catch (pErr) {
-            console.warn(`Unable to load LoyalisPresence daily logs for key ${docKey}:`, pErr);
+            console.warn('Unable to load LoyalisPresence daily logs:', pErr);
           }
         }
 
-        // Fallback: Check if saved slip data has dailyLogs
-        if (foundLogs.length === 0 && slipSnap.exists()) {
-          const sData = slipSnap.data();
-          if (sData?.dailyLogs && Array.isArray(sData.dailyLogs) && sData.dailyLogs.length > 0) {
-            foundLogs = sData.dailyLogs;
-          }
-        }
-
-        // Fallback for Pekarya/Honorer: Format from ActivityReports if no LoyalisPresence logs exist
-        if (foundLogs.length === 0 && activityReports.length > 0) {
-          foundLogs = activityReports.map((act: any) => {
+        // Non-Loyalis employees do not use LoyalisPresence. Their authentic
+        // daily activity records come from approved ActivityReports in the
+        // selected payroll window instead.
+        const periodActivityReports = activityReports.filter((report: any) =>
+          report.status === 'approved' && activityBelongsToPayrollPeriod(report, periodToken),
+        );
+        if (!isLoyalis && foundLogs.length === 0 && periodActivityReports.length > 0) {
+          foundLogs = periodActivityReports.map((act: any) => {
             let dateStr = '-';
             if (act.date) {
               if (typeof act.date === 'string') dateStr = act.date;
@@ -1066,76 +986,6 @@ export default function EmployeePayslipPage() {
               earningsVal: act.wageAmount || act.nominal || 0,
             };
           });
-        }
-
-        // Synthesize daily logs if no raw scan logs exist, but presence earnings / minutes exist
-        if (foundLogs.length === 0) {
-          const allEarnings = [
-            ...(slipSnap.exists() ? (slipSnap.data()?.earnings || []) : []),
-            ...fallbackEarnings,
-          ];
-          const allDeductions = [
-            ...(slipSnap.exists() ? (slipSnap.data()?.deductions || []) : []),
-            ...fallbackDeductions,
-          ];
-
-          let presensiEarning = allEarnings.find((e: any) => e.label?.toUpperCase() === 'PRESENSI')?.amount || 0;
-          let presensiDeduction = allDeductions.find((d: any) => d.label?.toUpperCase() === 'POTONGAN PRESENSI')?.amount || 0;
-
-          if (presensiEarning === 0 && isLoyalis) {
-            presensiEarning = 278850;
-          }
-
-          if (presensiEarning > 0) {
-            const targetMins = Math.round(presensiEarning / 27.5);
-            const absenceMins = presensiDeduction > 0 ? Math.round(presensiDeduction / 27.5) : 0;
-            const workedMins = Math.max(0, targetMins - absenceMins);
-
-            const [yNum, mNum] = periodKey.split('_').map(Number);
-            const targetYear = yNum || year;
-            const targetMonth = mNum || month;
-            const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
-            const generatedLogs: any[] = [];
-            let currentWorkedMins = 0;
-
-            for (let day = 1; day <= daysInMonth; day++) {
-              const dateObj = new Date(targetYear, targetMonth - 1, day);
-              const isSunday = dateObj.getDay() === 0;
-              const dateStr = `${String(day).padStart(2, '0')}-${String(targetMonth).padStart(2, '0')}-${targetYear}`;
-
-              let workStatus = 'MASUK';
-              let scanIn = '07:30';
-              let scanOut = '14:00';
-              let dayDuration = 390;
-
-              if (isSunday) {
-                workStatus = 'Libur Rutin';
-                scanIn = '-';
-                scanOut = '-';
-                dayDuration = 0;
-              } else if (currentWorkedMins + 390 <= workedMins) {
-                currentWorkedMins += 390;
-              } else if (currentWorkedMins < workedMins) {
-                dayDuration = workedMins - currentWorkedMins;
-                currentWorkedMins += dayDuration;
-                scanOut = `${Math.floor(7 + (30 + dayDuration) / 60).toString().padStart(2, '0')}:${((30 + dayDuration) % 60).toString().padStart(2, '0')}`;
-              } else {
-                workStatus = 'Tidak Hadir';
-                scanIn = '-';
-                scanOut = '-';
-                dayDuration = 0;
-              }
-
-              generatedLogs.push({
-                Tanggal: dateStr,
-                'Jam kerja': workStatus,
-                'Scan masuk': scanIn,
-                'Scan pulang': scanOut,
-                duration: dayDuration,
-              });
-            }
-            foundLogs = generatedLogs;
-          }
         }
 
         setDailyPresenceLogs(foundLogs);
@@ -2038,21 +1888,18 @@ export default function EmployeePayslipPage() {
                                             {showDailyLogs && (
                                               <div className="mt-2.5 overflow-x-auto border border-slate-200/80 rounded-xl bg-white text-xs animate-in fade-in duration-200 shadow-sm">
                                                 {dailyPresenceLogs && dailyPresenceLogs.length > 0 ? (
-                                                  <table className="w-full text-left border-collapse text-[11px]">
+                                                  <table className="w-full table-fixed border-collapse text-[10px] sm:text-[11px]">
                                                     <thead className="bg-slate-50 border-b border-slate-200 font-bold text-black">
                                                       <tr>
-                                                        <th className="px-3 py-2 text-center w-10">NO</th>
-                                                        <th className="px-3 py-2">TANGGAL</th>
-                                                        <th className="px-3 py-2">STATUS</th>
-                                                        <th className="px-3 py-2 text-center">SCAN MASUK</th>
-                                                        <th className="px-3 py-2 text-center">SCAN PULANG</th>
-                                                        <th className="px-3 py-2 text-center">DURASI</th>
-                                                        <th className="px-3 py-2 text-right">PENDAPATAN</th>
+                                                        <th className="px-1.5 sm:px-3 py-2 text-left w-[26%]">TANGGAL</th>
+                                                        <th className="px-1.5 sm:px-3 py-2 text-center w-[20%]">MASUK</th>
+                                                        <th className="px-1.5 sm:px-3 py-2 text-center w-[20%]">PULANG</th>
+                                                        <th className="px-1.5 sm:px-3 py-2 text-center w-[16%]">DURASI</th>
+                                                        <th className="px-1.5 sm:px-3 py-2 text-right w-[18%]">PENDAPATAN</th>
                                                       </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-100 font-medium">
                                                       {dailyPresenceLogs.map((log: any, logIdx: number) => {
-                                                        const status = log['Jam kerja'] || log.status || 'MASUK';
                                                         const scanIn = log['Scan masuk'] || log.scanMasuk || '-';
                                                         const scanOut = log['Scan pulang'] || log.scanPulang || '-';
                                                         const duration = typeof log.duration === 'number' ? log.duration : 0;
@@ -2062,29 +1909,21 @@ export default function EmployeePayslipPage() {
 
                                                         return (
                                                           <tr key={logIdx} className="hover:bg-slate-50/50">
-                                                            <td className="px-3 py-2 text-center text-slate-400 font-mono">{logIdx + 1}</td>
-                                                            <td className="px-3 py-2 font-bold text-black font-mono">{log.Tanggal || log.tanggal}</td>
-                                                            <td className="px-3 py-2">
-                                                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                                                status === 'MASUK' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80' :
-                                                                status === 'Tidak Hadir' ? 'bg-rose-50 text-rose-700 border border-rose-200/80' :
-                                                                'bg-slate-100 text-slate-700 border border-slate-200'
-                                                              }`}>
-                                                                {status}
-                                                              </span>
+                                                            <td className="px-1.5 sm:px-3 py-1.5 font-bold text-black font-mono text-[10px] sm:text-[11px] truncate">
+                                                              {log.Tanggal || log.tanggal}
                                                             </td>
-                                                            <td className="px-3 py-2 text-center font-mono">
+                                                            <td className="px-1.5 sm:px-3 py-1.5 text-center font-mono text-[10px] sm:text-[11px]">
                                                               {scanIn}
-                                                              {isAutoIn && <span className="ml-1 text-[9px] text-amber-600 font-semibold">(Auto)</span>}
+                                                              {isAutoIn && <span className="ml-0.5 text-[8px] text-amber-600 font-semibold">(Auto)</span>}
                                                             </td>
-                                                            <td className="px-3 py-2 text-center font-mono">
+                                                            <td className="px-1.5 sm:px-3 py-1.5 text-center font-mono text-[10px] sm:text-[11px]">
                                                               {scanOut}
-                                                              {isAutoOut && <span className="ml-1 text-[9px] text-amber-600 font-semibold">(Auto)</span>}
+                                                              {isAutoOut && <span className="ml-0.5 text-[8px] text-amber-600 font-semibold">(Auto)</span>}
                                                             </td>
-                                                            <td className="px-3 py-2 text-center font-mono">
-                                                              {duration > 0 ? `${duration} mnt` : '-'}
+                                                            <td className="px-1.5 sm:px-3 py-1.5 text-center font-mono text-[10px] sm:text-[11px]">
+                                                              {duration > 0 ? `${duration}m` : '-'}
                                                             </td>
-                                                            <td className="px-3 py-2 text-right font-bold font-mono text-black">
+                                                            <td className="px-1.5 sm:px-3 py-1.5 text-right font-bold font-mono text-black text-[10px] sm:text-[11px]">
                                                               {earningsVal > 0 ? formatIDR(earningsVal) : '-'}
                                                             </td>
                                                           </tr>
