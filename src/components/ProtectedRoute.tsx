@@ -17,7 +17,7 @@ const KETUA_SHIFT_SATPAM_ROUTES = [
 ];
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, profile, activeProfile, loading } = useAuth();
+  const { user, profile, activeProfile, loading, uiPreviewHydrated } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -25,7 +25,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    if (loading) {
+    if (loading || !uiPreviewHydrated) {
       setProgress(0);
       const timer = setInterval(() => {
         setProgress((prev) => {
@@ -38,10 +38,10 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     } else {
       setProgress(100);
     }
-  }, [loading]);
+  }, [loading, uiPreviewHydrated]);
 
   useEffect(() => {
-    if (!loading) {
+    if (!loading && uiPreviewHydrated) {
       if (!user) {
         router.replace('/login');
       } else if (currentProfile) {
@@ -101,9 +101,9 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
         }
       }
     }
-  }, [user, profile, currentProfile, loading, router, pathname]);
+  }, [user, profile, currentProfile, loading, uiPreviewHydrated, router, pathname]);
 
-  if (loading) {
+  if (loading || !uiPreviewHydrated) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">

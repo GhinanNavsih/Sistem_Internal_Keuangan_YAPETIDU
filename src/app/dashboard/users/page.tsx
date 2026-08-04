@@ -57,7 +57,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocsFromServer } from 'firebase/firestore';
 import { SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { UserRole } from '@/lib/payroll/roles';
@@ -101,6 +101,7 @@ export default function UserManagementPage() {
   } = useAuth();
 
   const [impersonatingUid, setImpersonatingUid] = useState<string | null>(null);
+  const [previewingUid, setPreviewingUid] = useState<string | null>(null);
 
   const actualRole = realProfile?.role || profile?.role;
 
@@ -122,23 +123,32 @@ export default function UserManagementPage() {
     }
   };
 
-  const handleStartUiImpersonation = (targetUser: ManagedUser) => {
-    startUiImpersonation(targetUser as any);
-    const roleStr = targetUser.role as string;
-    if (roleStr === 'honorer' || roleStr === 'ketua_shift_satpam') {
-      router.push('/employee/activities');
-    } else if (roleStr === 'loyalis') {
-      router.push('/employee/payslip');
-    } else if (roleStr === 'satker_head') {
-      router.push('/dashboard/payroll/activity-review');
-    } else if (roleStr === 'satker_head_loyalis') {
-      router.push('/dashboard/payroll/uraian');
-    } else if (roleStr === 'loyalis_presence_admin') {
-      router.push('/dashboard/payroll/uraian/presensi-loyalis-raw');
-    } else if (roleStr === 'employee_admin') {
-      router.push('/dashboard/employees');
-    } else {
-      router.push('/dashboard/payroll');
+  const handleStartUiImpersonation = async (targetUser: ManagedUser) => {
+    try {
+      setPreviewingUid(targetUser.uid);
+      const previewProfile = await startUiImpersonation(targetUser as any);
+
+      const roleStr = (previewProfile?.role || targetUser.role) as string;
+      if (roleStr === 'honorer' || roleStr === 'ketua_shift_satpam') {
+        router.push('/employee/activities');
+      } else if (roleStr === 'loyalis') {
+        router.push('/employee/payslip');
+      } else if (roleStr === 'satker_head') {
+        router.push('/dashboard/payroll/activity-review');
+      } else if (roleStr === 'satker_head_loyalis') {
+        router.push('/dashboard/payroll/uraian');
+      } else if (roleStr === 'loyalis_presence_admin') {
+        router.push('/dashboard/payroll/uraian/presensi-loyalis-raw');
+      } else if (roleStr === 'employee_admin') {
+        router.push('/dashboard/employees');
+      } else {
+        router.push('/dashboard/payroll');
+      }
+    } catch (error) {
+      console.error('Unable to start UI preview:', error);
+      setErrorMsg(error instanceof Error ? error.message : 'Gagal memulai Preview UI.');
+    } finally {
+      setPreviewingUid(null);
     }
   };
 
@@ -204,8 +214,8 @@ export default function UserManagementPage() {
     try {
       // 1. Fetch available categories from Employees and build dropdown choices
       const [empSnapshot, loyalisSnapshot] = await Promise.all([
-        getDocs(collection(db, 'Employees_BlueCollar')),
-        getDocs(collection(db, 'Employees_Loyalis'))
+        getDocsFromServer(collection(db, 'Employees_BlueCollar')),
+        getDocsFromServer(collection(db, 'Employees_Loyalis'))
       ]);
 
       const cats = new Set<string>(SUPPORTED_CATEGORIES);
@@ -273,7 +283,7 @@ export default function UserManagementPage() {
       setUsers(data.users || []);
 
       // 3. Fetch Satpam shift teams
-      const shiftTeamsSnap = await getDocs(collection(db, 'SatpamShiftTeams'));
+      const shiftTeamsSnap = await getDocsFromServer(collection(db, 'SatpamShiftTeams'));
       const teamsList = shiftTeamsSnap.docs.map(docSnap => ({
         id: docSnap.id,
         ...docSnap.data()
@@ -1373,12 +1383,16 @@ export default function UserManagementPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                disabled={isMe || u.disabled}
+                                disabled={isMe || u.disabled || previewingUid === u.uid}
                                 onClick={() => handleStartUiImpersonation(u)}
                                 title={`Preview UI/UX sebagai ${u.displayName || u.email}`}
                                 className="h-8 w-8 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 border border-amber-200/60 shadow-2xs transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
                               >
-                                <Eye className="w-4 h-4" />
+                                {previewingUid === u.uid ? (
+                                  <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+                                ) : (
+                                  <Eye className="w-4 h-4" />
+                                )}
                               </Button>
 
                               {/* Custom Token Real Session Button */}

@@ -245,6 +245,17 @@ export function selectKoperasiLineageHeads<T extends KoperasiLoanLike>(
 }
 
 /**
+ * Loans visible as current employee obligations. Rejected, cancelled, and
+ * superseded restructuring applications stay in the audit source but are not
+ * employee-facing active-loan cards.
+ */
+export function selectKoperasiActiveLoans<T extends KoperasiLoanLike>(
+  loans: readonly T[],
+): T[] {
+  return loans.filter(loan => resolveKoperasiLoanStatus(loan) === 'Disetujui dan Aktif');
+}
+
+/**
  * Walk the restructuredFromLoanId chain exactly as the audit modal does.  The
  * visited set makes malformed/cyclic references safe to render.
  */

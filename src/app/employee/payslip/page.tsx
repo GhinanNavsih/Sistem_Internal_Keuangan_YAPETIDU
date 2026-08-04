@@ -6,8 +6,8 @@ import { auth, db, secondaryDb } from '@/lib/firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import {
   doc,
-  getDoc,
-  getDocs,
+  getDocFromServer,
+  getDocsFromServer,
   collection,
   query,
   where,
@@ -60,7 +60,7 @@ import {
   koperasiProjectedRemainingBalance,
   projectKoperasiLoanForPeriod,
   resolveKoperasiLoanStatus,
-  selectKoperasiLineageHeads,
+  selectKoperasiActiveLoans,
 } from '@/lib/payroll/koperasiLoan';
 import {
   calculateYearsOfService,
@@ -207,7 +207,13 @@ function mergeSlipFields(fallback: PaySlipField[], saved: unknown): PaySlipField
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function EmployeePayslipPage() {
-  const { profile: rawProfile, activeProfile, logout } = useAuth();
+  const {
+    profile: rawProfile,
+    activeProfile,
+    logout,
+    isImpersonatingUi,
+    uiPreviewRevision,
+  } = useAuth();
   const profile = activeProfile || rawProfile;
 
   const [resetLoading, setResetLoading] = useState(false);
@@ -453,7 +459,7 @@ export default function EmployeePayslipPage() {
           where('employeeId', '==', empId),
           where('status', 'in', ['confirmed', 'locked', 'payment_created', 'paid'])
         );
-        const querySnapshot = await getDocs(q);
+        const querySnapshot = await getDocsFromServer(q);
 
         let targetYear = 2026;
         let targetMonth = 6;
@@ -735,11 +741,11 @@ export default function EmployeePayslipPage() {
 
         // 1. Fetch main Employee document (checking both collections to guarantee resolution)
         let empRef = doc(db, isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar', empId);
-        let empSnap = await getDoc(empRef);
+        let empSnap = await getDocFromServer(empRef);
 
         if (!empSnap.exists()) {
           const altRef = doc(db, !isLoyalis ? 'Employees_Loyalis' : 'Employees_BlueCollar', empId);
-          empSnap = await getDoc(altRef);
+          empSnap = await getDocFromServer(altRef);
         }
 
         if (!empSnap.exists()) {
@@ -781,13 +787,13 @@ export default function EmployeePayslipPage() {
         );
         const activityPromise = isLoyalis
           ? Promise.resolve(null)
-          : getDocs(activityQuery).catch((error) => {
+          : getDocsFromServer(activityQuery).catch((error) => {
             console.warn('Unable to load approved activity reports for payslip draft:', error);
             return null;
           });
 
         const loanPromise = employee.koperasiAuthUid
-          ? getDocs(query(
+          ? getDocsFromServer(query(
             collection(secondaryDb, 'simpanPinjam'),
             where('userId', '==', employee.koperasiAuthUid),
           )).catch((error) => {
@@ -797,7 +803,7 @@ export default function EmployeePayslipPage() {
           : Promise.resolve(null);
 
         const memberPromise = employee.koperasiAuthUid
-          ? getDocs(query(
+          ? getDocsFromServer(query(
             collection(secondaryDb, 'users'),
             where('uid', '==', employee.koperasiAuthUid),
           )).catch((error) => {
@@ -832,7 +838,7 @@ export default function EmployeePayslipPage() {
         let uraianCustomColumns: RekapColumn[] = [];
         if (!isLoyalis) {
           try {
-            const uraianSnap = await getDoc(
+            const uraianSnap = await getDocFromServer(
               doc(db, 'UraianGaji', `${periodKey}_${jobCategory}`),
             );
             if (cancelled) return;
@@ -861,14 +867,16 @@ export default function EmployeePayslipPage() {
             // Simpan Pinjam, limited to the selected period cutoff.
             composedTrail: composeKoperasiLoanHistoryTrail(loan, periodLoans, periodEndDate),
           }));
-        const activeLoans = processedCooperativeLoans.filter((loan) => isLoanActiveForPeriod(loan, targetDate));
+        const activeLoans = selectKoperasiActiveLoans(
+          processedCooperativeLoans.filter((loan) => isLoanActiveForPeriod(loan, targetDate)),
+        );
         const koperasiDeduction = activeLoans.reduce((total, loan) => total + money(loan.cicilan), 0);
-        // Keep the head of each restructuring lineage for the timeline.  Its
-        // composedTrail still contains every ancestor, matching the Audit
-        // modal without rendering the same old loan twice.  The deduction
-        // itself still follows the active-loan payroll policy above.
-        const timelineLoans = selectKoperasiLineageHeads(processedCooperativeLoans);
-        setKoperasiLoansInfo(timelineLoans);
+        // The payslip answers which loan is being deducted this period, not
+        // which restructuring applications were ever submitted. Rejected or
+        // cancelled proposals remain available in the Koperasi admin audit,
+        // but must not appear as employee-facing loan cards. The active loan's
+        // composedTrail still retains its legitimate restructuring ancestry.
+        setKoperasiLoansInfo(activeLoans);
 
         const memberData = memberSnapshot?.docs[0]?.data() as any;
         const memberApproved = memberData?.status === 'approved' || memberData?.membershipStatus === 'approved';
@@ -876,8 +884,15 @@ export default function EmployeePayslipPage() {
           ? money(memberData?.iuranWajib) || 25000
           : 0;
 
-        const fallbackEarnings: PaySlipField[] = [];
-        const fallbackDeductions: PaySlipField[] = [];
+        let fallbackEarnings: PaySlipField[] = [];
+        let fallbackDeductions: PaySlipField[] = [];
+        let loadedPresenceInfo = {
+          workingDays: 0,
+          expectedHours: 0,
+          absenceMinutes: 0,
+          bonusDeduction: 0,
+        };
+        let loadedVakasiEvents: { eventName: string; payGiven: number }[] = [];
 
         if (!isLoyalis) {
           fallbackEarnings.push({
@@ -943,23 +958,86 @@ export default function EmployeePayslipPage() {
         // Check for saved slip in PayrollSlipStates (Format: {periodKey}_{linkedEmployeeId})
         const slipDocId = `${periodKey}_${empId}`;
         const slipRef = doc(db, 'PayrollSlipStates', slipDocId);
-        const slipSnap = await getDoc(slipRef);
+        const slipSnap = await getDocFromServer(slipRef);
         if (cancelled) return;
 
-        // LoyalisPresence is institution-wide and is intentionally not readable
-        // by employee accounts through the browser Firestore SDK. Fetch only
-        // this employee's matching entry through the protected server route.
+        // LoyalisPresence and the salary matrices are institution-owned data.
+        // Fetch only this employee's daily logs and calculated draft rows
+        // through scoped server routes. This keeps UI Preview aligned with the
+        // Finance dashboard without granting the browser collection-wide
+        // access to payroll inputs.
         let foundLogs: any[] = [];
         if (isLoyalis) {
+          const previewEmployeeId = isImpersonatingUi ? empId : undefined;
+          const buildEmployeeParams = () => {
+            const params = new URLSearchParams({ period: periodToken });
+            if (previewEmployeeId) params.set('employeeId', previewEmployeeId);
+            return params;
+          };
+
           try {
+            const presenceParams = buildEmployeeParams();
             const presenceResult = await authenticatedJson<{ dailyLogs?: unknown[] }>(
-              `/api/employee/loyalis-presence?period=${encodeURIComponent(periodToken)}`,
+              `/api/employee/loyalis-presence?${presenceParams.toString()}`,
             );
             if (Array.isArray(presenceResult.dailyLogs)) {
               foundLogs = presenceResult.dailyLogs;
             }
           } catch (pErr) {
             console.warn('Unable to load LoyalisPresence daily logs:', pErr);
+          }
+
+          try {
+            const payslipParams = buildEmployeeParams();
+            const payslipResult = await authenticatedJson<{
+              earnings?: unknown;
+              deductions?: unknown;
+              presenceInfo?: {
+                workingDays?: unknown;
+                expectedHours?: unknown;
+                absenceMinutes?: unknown;
+                bonusDeduction?: unknown;
+              };
+              vakasiEvents?: unknown;
+            }>(
+              `/api/employee/loyalis-payslip?${payslipParams.toString()}`,
+            );
+
+            fallbackEarnings = normalizeSlipFields(payslipResult.earnings);
+            fallbackDeductions = normalizeSlipFields(payslipResult.deductions);
+
+            // Cooperative data lives in the separate Koperasi project and is
+            // already loaded through the employee-scoped queries above. Merge
+            // those two values into the server-calculated Loyalis rows.
+            fallbackDeductions = mergeSlipFields(fallbackDeductions, [
+              { label: 'Pinjaman Kop. UNIPDU', amount: koperasiDeduction },
+              { label: 'Iuran Wajib Kop. UNIPDU', amount: koperasiSaving },
+            ]);
+
+            const rawPresenceInfo = payslipResult.presenceInfo;
+            if (rawPresenceInfo) {
+              const numeric = (value: unknown): number => {
+                const parsed = Number(value);
+                return Number.isFinite(parsed) ? parsed : 0;
+              };
+              loadedPresenceInfo = {
+                workingDays: numeric(rawPresenceInfo.workingDays),
+                expectedHours: numeric(rawPresenceInfo.expectedHours),
+                absenceMinutes: numeric(rawPresenceInfo.absenceMinutes),
+                bonusDeduction: numeric(rawPresenceInfo.bonusDeduction),
+              };
+            }
+            if (Array.isArray(payslipResult.vakasiEvents)) {
+              loadedVakasiEvents = payslipResult.vakasiEvents.filter(
+                (event): event is { eventName: string; payGiven: number } =>
+                  Boolean(event) &&
+                  typeof event === 'object' &&
+                  typeof (event as any).eventName === 'string' &&
+                  typeof (event as any).payGiven === 'number',
+              );
+            }
+          } catch (payslipErr) {
+            console.warn('Unable to load Loyalis draft payslip fallback:', payslipErr);
           }
         }
 
@@ -997,13 +1075,8 @@ export default function EmployeePayslipPage() {
           setCalculatedEarnings(normalizeSlipFields(slipData.earnings));
           setCalculatedDeductions(normalizeSlipFields(slipData.deductions));
 
-          setPresenceInfo({
-            workingDays: 0,
-            expectedHours: 0,
-            absenceMinutes: 0,
-            bonusDeduction: 0,
-          });
-          setVakasiEvents([]);
+          setPresenceInfo(loadedPresenceInfo);
+          setVakasiEvents(loadedVakasiEvents);
           setKepangkatanDesignations({});
 
           setLoading(false);
@@ -1020,13 +1093,8 @@ export default function EmployeePayslipPage() {
         setIsConfirmed(false);
         setCalculatedEarnings(mergeSlipFields(fallbackEarnings, savedSlip?.earnings));
         setCalculatedDeductions(mergeSlipFields(fallbackDeductions, savedSlip?.deductions));
-        setPresenceInfo({
-          workingDays: 0,
-          expectedHours: 0,
-          absenceMinutes: 0,
-          bonusDeduction: 0,
-        });
-        setVakasiEvents([]);
+        setPresenceInfo(loadedPresenceInfo);
+        setVakasiEvents(loadedVakasiEvents);
         setKepangkatanDesignations({});
         setLoading(false);
         return;
@@ -1065,7 +1133,10 @@ export default function EmployeePayslipPage() {
     };
   }, [
     profile?.linkedEmployeeId,
+    profile?.uid,
     profile?.role,
+    isImpersonatingUi,
+    uiPreviewRevision,
     periodKey,
     periodToken,
     periodEndDate,
@@ -1725,10 +1796,10 @@ export default function EmployeePayslipPage() {
                   return (
                     <div className="animate-in fade-in slide-in-from-top-2 duration-200 space-y-6 pt-2">
                       {/* ── Penerimaan ── */}
-                      <div className="bg-emerald-50/30 p-4 sm:p-5 rounded-xl space-y-6 mt-3">
-                        <div className="flex items-center gap-2 pb-2.5 border-b border-emerald-200/50">
-                          <TrendingUp className="w-4 h-4 text-emerald-600" />
-                          <span className="text-xs font-bold text-emerald-800 uppercase tracking-widest">Penerimaan</span>
+                      <div className="py-4 space-y-6">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-xs font-bold text-emerald-700 uppercase tracking-widest">Penerimaan</span>
                         </div>
                         {earningsDocs.map((item: any, idx: number) => (
                           <div key={item.id}>
@@ -2034,10 +2105,10 @@ export default function EmployeePayslipPage() {
 
                       {/* ── Potongan ── */}
                       {activeDeductionDocs.length > 0 && (
-                        <div className="bg-rose-50/30 p-4 sm:p-5 rounded-xl space-y-6 mt-4">
-                          <div className="flex items-center gap-2 pb-2.5 border-b border-rose-200/50">
-                            <TrendingDown className="w-4 h-4 text-rose-600" />
-                            <span className="text-xs font-bold text-rose-800 uppercase tracking-widest">Potongan</span>
+                        <div className="py-6 border-t border-slate-200 space-y-6">
+                          <div className="flex items-center gap-2">
+                            <TrendingDown className="w-3.5 h-3.5 text-rose-600" />
+                            <span className="text-xs font-bold text-rose-700 uppercase tracking-widest">Potongan</span>
                           </div>
                           {activeDeductionDocs.map((item: any, idx: number) => (
                             <div key={item.id}>

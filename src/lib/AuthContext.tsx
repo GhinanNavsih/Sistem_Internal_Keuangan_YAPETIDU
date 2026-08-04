@@ -39,12 +39,14 @@ interface AuthContextType {
   realProfile: UserProfile | null;
   loading: boolean;
   isImpersonatingUi: boolean;
+  uiPreviewHydrated: boolean;
+  uiPreviewRevision: number;
   isCustomTokenImpersonating: boolean;
   impersonationSessionInfo: ImpersonationSession | null;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
-  startUiImpersonation: (targetUser: UserProfile) => void;
+  startUiImpersonation: (targetUser: UserProfile) => Promise<UserProfile | null>;
   stopUiImpersonation: () => void;
   startCustomTokenImpersonation: (targetUid: string) => Promise<void>;
   stopCustomTokenImpersonation: () => Promise<void>;
@@ -132,6 +134,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [impersonatedUiProfile, setImpersonatedUiProfile] = useState<UserProfile | null>(null);
+  const [uiPreviewHydrated, setUiPreviewHydrated] = useState(false);
+  const [uiPreviewRevision, setUiPreviewRevision] = useState(0);
   const [impersonationSessionInfo, setImpersonationSessionInfo] = useState<ImpersonationSession | null>(null);
   const [loading, setLoading] = useState(true);
   const authCallIdRef = useRef(0);
@@ -142,6 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const storedUiUser = sessionStorage.getItem(UI_IMPERSONATION_KEY);
       if (storedUiUser) {
         setImpersonatedUiProfile(JSON.parse(storedUiUser));
+        setUiPreviewRevision((revision) => revision + 1);
       }
       const storedSession = localStorage.getItem(CUSTOM_TOKEN_SESSION_KEY);
       if (storedSession) {
@@ -149,6 +154,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (e) {
       console.warn('Failed to parse stored impersonation state:', e);
+    } finally {
+      setUiPreviewHydrated(true);
     }
   }, []);
 
@@ -195,15 +202,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const activeProfile = isImpersonatingUi ? impersonatedUiProfile : profile;
 
-  const startUiImpersonation = (targetUser: UserProfile) => {
-    if (!isSuperAdmin) return;
-    setImpersonatedUiProfile(targetUser);
-    sessionStorage.setItem(UI_IMPERSONATION_KEY, JSON.stringify(targetUser));
+  const startUiImpersonation = async (targetUser: UserProfile) => {
+    if (!isSuperAdmin) return null;
+
+    // The users page normally passes a fresh API result, but refresh the
+    // profile at the hand-off as well. This prevents a previously loaded user
+    // row or sessionStorage snapshot from carrying an old role/linkage into
+    // the preview.
+    let latestTarget = targetUser;
+    try {
+      const targetSnapshot = await getDocFromServer(doc(db, 'users', targetUser.uid));
+      if (targetSnapshot.exists()) {
+        latestTarget = {
+          ...targetUser,
+          ...targetSnapshot.data(),
+          uid: targetUser.uid,
+        } as UserProfile;
+      }
+    } catch (error) {
+      console.warn('Unable to refresh target profile before UI preview; using the selected row:', error);
+    }
+
+    setImpersonatedUiProfile(latestTarget);
+    sessionStorage.setItem(UI_IMPERSONATION_KEY, JSON.stringify(latestTarget));
+    setUiPreviewRevision((revision) => revision + 1);
+    return latestTarget;
   };
 
   const stopUiImpersonation = () => {
     setImpersonatedUiProfile(null);
     sessionStorage.removeItem(UI_IMPERSONATION_KEY);
+    setUiPreviewRevision((revision) => revision + 1);
   };
 
   const startCustomTokenImpersonation = async (targetUid: string) => {
@@ -348,6 +377,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         realProfile: profile,
         loading,
         isImpersonatingUi,
+        uiPreviewHydrated,
+        uiPreviewRevision,
         isCustomTokenImpersonating,
         impersonationSessionInfo,
         signInWithEmail,
@@ -369,4 +400,3 @@ export function useAuth() {
   if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
   return ctx;
 }
-

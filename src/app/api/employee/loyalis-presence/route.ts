@@ -4,7 +4,6 @@ import {
   errorResponse,
   HttpError,
   requireAuthenticatedProfile,
-  requireRole,
 } from '@/lib/server/auth';
 
 export const dynamic = 'force-dynamic';
@@ -119,10 +118,25 @@ function serializableDailyLogs(logs: unknown[]): unknown[] {
 export async function GET(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['loyalis']);
-
-    if (!actor.linkedEmployeeId) {
-      throw new HttpError(409, 'Akun Loyalis belum terhubung ke data pegawai.');
+    const requestedEmployeeId = request.nextUrl.searchParams.get('employeeId')?.trim() || '';
+    let employeeId: string;
+    if (actor.role === 'loyalis') {
+      if (!actor.linkedEmployeeId) {
+        throw new HttpError(409, 'Akun Loyalis belum terhubung ke data pegawai.');
+      }
+      // A real Loyalis session is always scoped to its own linked employee.
+      employeeId = actor.linkedEmployeeId;
+    } else if (actor.role === 'super_admin') {
+      // UI Preview intentionally keeps the Super Admin Firebase token. Allow
+      // that trusted role to request the selected employee, but require the
+      // employee ID explicitly so this endpoint never guesses or returns a
+      // collection-wide payload.
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestedEmployeeId)) {
+        throw new HttpError(400, 'employeeId preview wajib diisi dengan format yang valid.');
+      }
+      employeeId = requestedEmployeeId;
+    } else {
+      throw new HttpError(403, 'Anda tidak memiliki akses ke presensi Loyalis.');
     }
 
     const period = request.nextUrl.searchParams.get('period') || '';
@@ -133,7 +147,7 @@ export async function GET(request: NextRequest) {
 
     const employeeSnapshot = await adminDb
       .collection('Employees_Loyalis')
-      .doc(actor.linkedEmployeeId)
+      .doc(employeeId)
       .get();
     if (!employeeSnapshot.exists) {
       return Response.json({ period, dailyLogs: [] }, { headers: { 'Cache-Control': 'no-store' } });
@@ -162,7 +176,7 @@ export async function GET(request: NextRequest) {
     for (const snapshot of presenceSnapshots) {
       if (!snapshot.exists) continue;
       const entry = findEmployeeEntry(snapshot.data() as PresenceEntry, {
-        employeeId: actor.linkedEmployeeId,
+        employeeId,
         nipys,
         name,
       });

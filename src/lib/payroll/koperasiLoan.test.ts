@@ -8,6 +8,7 @@ import {
   koperasiProjectedRemainingBalance,
   projectKoperasiLoanForPeriod,
   resolveKoperasiLoanStatus,
+  selectKoperasiActiveLoans,
   selectKoperasiLineageHeads,
 } from './koperasiLoan';
 
@@ -91,6 +92,26 @@ test('future restructuring does not hide the historical loan head', () => {
 
   assert.deepEqual(selectKoperasiLineageHeads([oldLoan]), [oldLoan]);
   assert.deepEqual(selectKoperasiLineageHeads([oldLoan, futureLoan]), [futureLoan]);
+});
+
+test('employee loan cards exclude rejected restructuring applications', () => {
+  const rejectedProposal = {
+    id: 'rejected-proposal',
+    status: 'Ditolak BAK',
+    restructuredFromLoanId: 'previous-loan',
+    history: [{ status: 'Ditolak BAK', timestamp: timestamp(200) }],
+  };
+  const activeLoan = {
+    id: 'active-loan',
+    status: 'Disetujui dan Aktif',
+    restructuredFromLoanId: 'previous-loan',
+    history: [{ status: 'Disetujui dan Aktif', timestamp: timestamp(200) }],
+  };
+
+  assert.deepEqual(
+    selectKoperasiActiveLoans([rejectedProposal, activeLoan]),
+    [activeLoan],
+  );
 });
 
 test('selected-period installment projection advances June from 10/12 to 11/12', () => {
