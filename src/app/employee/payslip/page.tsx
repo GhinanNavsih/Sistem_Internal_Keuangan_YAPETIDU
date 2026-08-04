@@ -1031,6 +1031,26 @@ export default function EmployeePayslipPage() {
           }
         }
 
+        // Fallback for Pekarya/Honorer: Format from ActivityReports if no LoyalisPresence logs exist
+        if (foundLogs.length === 0 && activityReports.length > 0) {
+          foundLogs = activityReports.map((act: any) => {
+            let dateStr = '-';
+            if (act.date) {
+              if (typeof act.date === 'string') dateStr = act.date;
+              else if (act.date?.toDate) dateStr = new Date(act.date.toDate()).toLocaleDateString('id-ID');
+              else dateStr = new Date(act.date).toLocaleDateString('id-ID');
+            }
+            return {
+              Tanggal: dateStr,
+              'Jam kerja': act.activityType || act.activityTitle || act.shift || 'KEGIATAN',
+              'Scan masuk': act.startTime || act.checkInTime || '-',
+              'Scan pulang': act.endTime || act.checkOutTime || '-',
+              duration: typeof act.durationMinutes === 'number' ? act.durationMinutes : (act.hours ? Math.round(act.hours * 60) : 0),
+              earningsVal: act.wageAmount || act.nominal || 0,
+            };
+          });
+        }
+
         setDailyPresenceLogs(foundLogs);
 
         if (slipSnap.exists() && isTransferEligibleStatus(slipSnap.data()?.status)) {
