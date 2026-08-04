@@ -767,10 +767,10 @@ function JourneyDashboardContent() {
                     </div>
                     <div className="bg-white p-2.5 rounded-xl border border-slate-100">
                       <span className="text-[9px] text-slate-400 font-bold block uppercase">
-                        {isSopirView ? 'Jam Mengemudi' : 'Upah Bersih'}
+                        {isSopirView ? 'Jam Mengemudi' : 'Jumlah Menginap'}
                       </span>
                       <span className="font-extrabold text-slate-800">
-                        {isSopirView ? drv.totalDurationHours.toFixed(1) + ' Jam' : fmtRp(drv.totalUpahBersih)}
+                        {isSopirView ? drv.totalDurationHours.toFixed(1) + ' Jam' : drv.totalNights + ' Malam'}
                       </span>
                     </div>
                     <div className="bg-white p-2.5 rounded-xl border border-slate-100">
