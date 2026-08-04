@@ -584,6 +584,16 @@ export async function POST(request: NextRequest) {
         // Fees are server-derived from the rate table, never client supplied.
         const payType = String(before.shiftType || '') as SatpamPayType;
         const rate = SATPAM_RATES[payType];
+        const isKetuaPrimary =
+          before.assignmentKind !== 'extra' &&
+          String(before.employeeId || '') === String(occurrence.ketuaShiftId || '');
+        const isDesignatedPos9Primary =
+          before.assignmentKind !== 'extra' &&
+          String(before.postId || '') === 'Pos 9' &&
+          ['cross_team_pos9', 'designated_pos9'].includes(
+            String(before.scheduleRelation || ''),
+          );
+        const isSelfPayAllowed = isKetuaPrimary || isDesignatedPos9Primary;
         if (decision.action === 'approve') {
           const employee = employeeSnapshots[index]?.data();
           if (
@@ -616,7 +626,8 @@ export async function POST(request: NextRequest) {
             (before.assignmentKind === 'extra' &&
               payType !== 'Lembur Sendiri') ||
             (before.assignmentKind !== 'extra' &&
-              (payType === 'Lembur Sendiri' || payType === 'Off-Duty'))
+              (payType === 'Off-Duty' ||
+                (payType === 'Lembur Sendiri' && !isSelfPayAllowed)))
           ) {
             throw new HttpError(
               409,
@@ -651,7 +662,7 @@ export async function POST(request: NextRequest) {
             String(occurrence.dutyDate || ''),
             holidayDates,
           );
-          if (payType !== expectedPayType) {
+          if (payType !== expectedPayType && !isSelfPayAllowed) {
             throw new HttpError(
               409,
               `Kategori upah ${String(before.employeeName || '')} tidak sesuai kalender. Gunakan Edit Auditor.`,
@@ -1088,6 +1099,7 @@ export async function PUT(request: NextRequest) {
               : null,
             regularPayType: expectedRegularPayType,
             teamRosterEmployeeIds: teamRoster,
+            ketuaShiftId: String(teamData.ketuaShiftId || ''),
             pos9GuardIds,
           })
         : null;
@@ -1119,6 +1131,36 @@ export async function PUT(request: NextRequest) {
                 : assignment.overtimeReason,
           };
         });
+      if (
+        canonicalAssignments.some(
+          (assignment) =>
+            assignment.assignmentKind === 'primary' &&
+            assignment.employeeId === String(teamData.ketuaShiftId || '') &&
+            !['Harian', 'Lembur Sendiri'].includes(assignment.shiftType),
+        )
+      ) {
+        throw new HttpError(
+          409,
+          'Jenis upah Ketua Shift hanya dapat Harian atau Lembur Sendiri.',
+        );
+      }
+      if (
+        canonicalAssignments.some(
+          (assignment) =>
+            assignment.assignmentKind === 'primary' &&
+            assignment.shiftType === 'Lembur Sendiri' &&
+            assignment.employeeId !== String(teamData.ketuaShiftId || '') &&
+            !(
+              assignment.postId === 'Pos 9' &&
+              pos9GuardIds.has(assignment.employeeId)
+            ),
+        )
+      ) {
+        throw new HttpError(
+          409,
+          'Lembur Sendiri pada pos utama hanya dapat dipilih oleh Ketua Shift.',
+        );
+      }
       const primaryAssignments = canonicalAssignments
         .filter((assignment) => assignment.assignmentKind === 'primary')
         .map((assignment) => {
@@ -1181,12 +1223,10 @@ export async function PUT(request: NextRequest) {
             // An outside-team substitution defaults to Harian by design. It
             // is a reviewable schedule deviation, not a calendar-pay error.
             !(
+              assignment.employeeId === String(teamData.ketuaShiftId || '') ||
               !teamRoster.has(assignment.employeeId) ||
               assignment.postId === 'Pos 9' &&
-              pos9GuardIds.has(assignment.employeeId) &&
-              assignment.employeeId !==
-                planDay?.assignments.find((planned) => planned.postId === 'Pos 9')
-                  ?.employeeId
+              pos9GuardIds.has(assignment.employeeId)
             ) &&
             assignment.shiftType !== expectedRegularPayType,
         )

@@ -58,6 +58,10 @@ their own regu, but the daily report also allows any active Satpam as a
 substitute so an unexpected replacement can be recorded. Pos 2 remains the
 Ketua Shift / Keliling assignment.
 
+The designated Pos 9 Satpam selected for the regu may choose **Harian** or
+**Lembur Sendiri** on that Pos 9 assignment. A designated Pos 9 Satpam from
+another regu additionally has the **Lembur Cover** option.
+
 When a Ketua selects one of the other two designated Pos 9 Satpam, the report
 defaults to **Harian**. The Ketua may explicitly choose **Lembur Sendiri** or
 **Lembur Cover** for that cross-team Pos 9 assignment. Harian is retained even
@@ -79,6 +83,11 @@ the plan can be submitted and will be shown as an auditor warning.
 
 The server counts distinct guards and valid posts. Duplicate rows cannot create
 duplicate payable entries.
+
+The Ketua Shift's own primary assignment is a special, explicit choice in the
+daily form. It starts as **Harian (Rp12,500)** and the Ketua may change it to
+**Lembur Sendiri (Rp30,000)**. This choice is limited to the Ketua's own
+assignment; other in-roster guards keep the server-derived calendar rate.
 
 ### Regular scheduled work
 

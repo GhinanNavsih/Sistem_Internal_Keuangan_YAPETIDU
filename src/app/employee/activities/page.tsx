@@ -2632,7 +2632,11 @@ function ActivitiesContent() {
     satpamDutyPlan.day.assignments.forEach((assignment) => {
       plannedAssignments[assignment.postId] = {
         employeeId: assignment.employeeId,
-        shiftType: satpamRegularPayType,
+        shiftType:
+          assignment.employeeId === myShiftTeam?.ketuaShiftId ||
+          (assignment.postId === 'Pos 9' && pos9GuardIds.has(assignment.employeeId))
+            ? 'Harian'
+            : satpamRegularPayType,
       };
     });
     setPostAssignments(plannedAssignments);
@@ -2644,6 +2648,8 @@ function ActivitiesContent() {
     satpamDutyPlan,
     satpamPendingStorageKey,
     satpamRegularPayType,
+    myShiftTeam?.ketuaShiftId,
+    pos9GuardIds,
   ]);
 
   useEffect(() => {
@@ -2920,10 +2926,12 @@ function ActivitiesContent() {
   ) => {
     setPostAssignments(prev => {
       const isExternal = !groupEmployeeIds.includes(employeeId) && employeeId !== '';
-      const isCrossTeamPos9 = isCrossTeamPos9Guard(postId, employeeId);
+      const isDesignatedPos9 =
+        postId === 'Pos 9' && Boolean(employeeId) && pos9GuardIds.has(employeeId);
+      const isKetua = employeeId !== '' && employeeId === myShiftTeam?.ketuaShiftId;
       const defaultType =
         forced?.shiftType ||
-        (isCrossTeamPos9
+        (isKetua || isDesignatedPos9
           ? 'Harian'
           : isExternal
             ? 'Harian'
@@ -4105,11 +4113,25 @@ function ActivitiesContent() {
                         const isExternalGuard = Boolean(
                           val.employeeId && !groupEmployeeIds.includes(val.employeeId),
                         );
+        const isKetuaGuard = Boolean(
+                          val.employeeId && val.employeeId === myShiftTeam?.ketuaShiftId,
+                        );
                         const isPos9 = post.id === 'Pos 9';
-                        const selectedShiftType = isCrossTeamPos9
+                        const isDesignatedPos9 = Boolean(
+                          isPos9 && val.employeeId && pos9GuardIds.has(val.employeeId),
+                        );
+                        const selectedShiftType = isKetuaGuard
+                          ? (['Harian', 'Lembur Sendiri'].includes(val.shiftType)
+                            ? val.shiftType
+                            : 'Harian')
+                          : isCrossTeamPos9
                           ? (['Harian', 'Lembur Sendiri', 'Lembur Cover'].includes(val.shiftType)
                             ? val.shiftType
                             : defaultShiftTypeForRender)
+                          : isDesignatedPos9
+                            ? (['Harian', 'Jumat & Libur', 'Lembur Sendiri'].includes(val.shiftType)
+                              ? val.shiftType
+                              : 'Harian')
                           : isExternalGuard
                             ? (['Harian', 'Lembur Cover'].includes(val.shiftType)
                               ? val.shiftType
@@ -4218,12 +4240,14 @@ function ActivitiesContent() {
                             </div>
 
                             {/* Shift / pay type is normally derived from the work
-                                calendar. Any Satpam from another regu defaults
-                                to Harian, with an explicit Lembur Cover option.
+                                calendar. Ketua Shift defaults to Harian and can
+                                choose Lembur Sendiri. Any Satpam from another
+                                regu defaults to Harian, with an explicit
+                                Lembur Cover option.
                                 The designated cross-team Pos 9 guards additionally
                                 retain the Lembur Sendiri option. */}
                             <div className="md:col-span-4">
-                              {satpamDutyPlan?.enabled && satpamDutyPlan.day && !isExternalGuard && !isPos9 ? (
+                              {satpamDutyPlan?.enabled && satpamDutyPlan.day && !isExternalGuard && !isPos9 && !isKetuaGuard ? (
                                 <div className="flex min-h-12 w-full items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-base font-extrabold text-indigo-800">
                                   {plannedPayLabel}
                                 </div>
@@ -4239,13 +4263,36 @@ function ActivitiesContent() {
                                   <SelectValue placeholder="Pilih Jenis Shift" />
                                 </SelectTrigger>
                                 <SelectContent className="rounded-xl border border-slate-100 shadow-xl bg-white">
-                                  {isCrossTeamPos9 ? (
+                                  {isKetuaGuard ? (
+                                    <>
+                                      <SelectItem value="Harian" className="text-base font-bold">
+                                        Harian (Rp12.500)
+                                      </SelectItem>
+                                      <SelectItem value="Lembur Sendiri" className="text-base font-bold">
+                                        Lembur Sendiri (Rp30.000)
+                                      </SelectItem>
+                                    </>
+                                  ) : isCrossTeamPos9 ? (
                                     <>
                                       <SelectItem value="Harian" className="text-base font-bold">
                                         Harian (Rp12.500)
                                       </SelectItem>
                                       <SelectItem value="Lembur Sendiri" className="text-base font-bold">Lembur Sendiri (Rp30.000)</SelectItem>
                                       <SelectItem value="Lembur Cover" className="text-base font-bold">Lembur Cover (Rp50.000)</SelectItem>
+                                    </>
+                                  ) : isDesignatedPos9 ? (
+                                    <>
+                                      <SelectItem value="Harian" className="text-base font-bold">
+                                        Harian (Rp12.500)
+                                      </SelectItem>
+                                      {defaultShiftTypeForRender === 'Jumat & Libur' && (
+                                        <SelectItem value="Jumat & Libur" className="text-base font-bold">
+                                          Jumat &amp; Libur (Rp25.000)
+                                        </SelectItem>
+                                      )}
+                                      <SelectItem value="Lembur Sendiri" className="text-base font-bold">
+                                        Lembur Sendiri (Rp30.000)
+                                      </SelectItem>
                                     </>
                                   ) : isExternalGuard ? (
                                     <>

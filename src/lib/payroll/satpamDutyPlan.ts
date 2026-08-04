@@ -4,7 +4,9 @@ import {
   getShiftIsoBounds,
   SATPAM_POSTS,
   resolveCrossTeamPos9PayType,
+  resolveDesignatedPos9PayType,
   resolveExternalSatpamPayType,
+  resolveKetuaSatpamPayType,
   type SatpamPayType,
   type SatpamPostId,
   type SatpamShiftName,
@@ -132,6 +134,7 @@ export interface SatpamClassifiedAssignment extends SatpamActualPrimaryAssignmen
     | 'external_cover'
     | 'external_substitution'
     | 'cross_team_pos9'
+    | 'designated_pos9'
     | 'off_duty_extra'
     | 'unresolved_extra';
 }
@@ -550,6 +553,7 @@ export function classifySatpamDutyAssignments(input: {
   extraAssignment?: SatpamActualPrimaryAssignment | null;
   regularPayType: 'Harian' | 'Jumat & Libur';
   teamRosterEmployeeIds: ReadonlySet<string>;
+  ketuaShiftId?: string;
   pos9GuardIds?: ReadonlySet<string>;
 }): {
   assignments: SatpamClassifiedAssignment[];
@@ -559,9 +563,17 @@ export function classifySatpamDutyAssignments(input: {
   const plannedPos9EmployeeId = input.planDay?.assignments.find(
     (assignment) => assignment.postId === SATPAM_FIXED_POST_ID,
   )?.employeeId;
-  const isCrossTeamPos9 = (assignment: SatpamActualPrimaryAssignment) =>
+  const ketuaShiftId =
+    input.ketuaShiftId ||
+    input.planDay?.assignments.find(
+      (assignment) => assignment.postId === SATPAM_KETUA_POST_ID,
+    )?.employeeId;
+  const isDesignatedPos9 = (assignment: SatpamActualPrimaryAssignment) =>
     assignment.postId === SATPAM_FIXED_POST_ID &&
-    Boolean(input.pos9GuardIds?.has(assignment.employeeId)) &&
+    Boolean(input.pos9GuardIds?.has(assignment.employeeId));
+  const isCrossTeamPos9 = (assignment: SatpamActualPrimaryAssignment) =>
+    isDesignatedPos9(assignment) &&
+    !input.teamRosterEmployeeIds.has(assignment.employeeId) &&
     assignment.employeeId !== plannedPos9EmployeeId;
 
   if (!input.planDay) {
@@ -569,12 +581,21 @@ export function classifySatpamDutyAssignments(input: {
       assignments: [
         ...input.primaryAssignments.map((assignment) => {
           const crossTeamPos9 = isCrossTeamPos9(assignment);
+          const designatedPos9 = isDesignatedPos9(assignment);
           const isExternal = !input.teamRosterEmployeeIds.has(assignment.employeeId);
+          const isKetua = Boolean(ketuaShiftId) && assignment.employeeId === ketuaShiftId;
           const payType = crossTeamPos9
             ? resolveCrossTeamPos9PayType(assignment.shiftType)
             : isExternal
               ? resolveExternalSatpamPayType(assignment.shiftType)
-              : input.regularPayType;
+              : designatedPos9
+                ? resolveDesignatedPos9PayType(
+                    assignment.shiftType,
+                    input.regularPayType,
+                  )
+              : isKetua
+                ? resolveKetuaSatpamPayType(assignment.shiftType)
+                : input.regularPayType;
           return {
             ...assignment,
             assignmentKind: 'primary' as const,
@@ -585,6 +606,8 @@ export function classifySatpamDutyAssignments(input: {
                 : null,
             scheduleRelation: crossTeamPos9
               ? ('cross_team_pos9' as const)
+              : designatedPos9
+                ? ('designated_pos9' as const)
               : !isExternal
                 ? ('planned_other_post' as const)
                 : ('external_substitution' as const),
@@ -668,14 +691,25 @@ export function classifySatpamDutyAssignments(input: {
       if (plannedPost !== assignment.postId) {
         anomalies.push('ACTUAL_ROSTER_DIFFERS');
       }
+      const isKetua = Boolean(ketuaShiftId) && assignment.employeeId === ketuaShiftId;
+      const designatedPos9 = isDesignatedPos9(assignment);
       return {
         ...assignment,
         assignmentKind: 'primary' as const,
-        payType: input.regularPayType,
+        payType: designatedPos9
+          ? resolveDesignatedPos9PayType(
+              assignment.shiftType,
+              input.regularPayType,
+            )
+          : isKetua
+            ? resolveKetuaSatpamPayType(assignment.shiftType)
+            : input.regularPayType,
         coveredEmployeeId: null,
         scheduleRelation:
           plannedPost === assignment.postId
-            ? ('planned_post' as const)
+            ? designatedPos9
+              ? ('designated_pos9' as const)
+              : ('planned_post' as const)
             : ('planned_other_post' as const),
       };
     }

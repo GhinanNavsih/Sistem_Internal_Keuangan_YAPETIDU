@@ -13,13 +13,6 @@ import {
   where,
   onSnapshot,
 } from 'firebase/firestore';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription
-} from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -1263,11 +1256,11 @@ export default function EmployeePayslipPage() {
     const valueColor = tone === 'negative' ? 'text-rose-600' : 'text-emerald-600';
     return (
       <>
-        <div className={`pr-4 font-semibold text-xs sm:text-sm ${highlight ? 'text-indigo-600 font-bold' : 'text-slate-500'}`}>
+        <div className={`pr-4 font-semibold text-xs sm:text-sm ${highlight ? 'text-indigo-600 font-bold' : 'text-black'}`}>
           {label}
         </div>
         <div className="text-center text-indigo-600 font-bold text-xs sm:text-sm">:</div>
-        <div className={`pl-2 text-xs sm:text-sm ${highlight ? `${valueColor} font-extrabold` : 'text-slate-800 font-bold'}`}>
+        <div className={`pl-2 text-xs sm:text-sm ${highlight ? `${valueColor} font-extrabold` : 'text-black font-bold'}`}>
           {value}
         </div>
       </>
@@ -1323,49 +1316,41 @@ export default function EmployeePayslipPage() {
   // Error: Account not linked
   if (!profile.linkedEmployeeId) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 flex items-center justify-center p-6 relative overflow-hidden">
-        {/* Decorative blobs */}
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
-        <Card className="max-w-md w-full rounded-3xl border-none shadow-xl bg-white relative z-10 animate-in zoom-in-95 duration-200">
-          <CardContent className="p-8 text-center space-y-4">
-            <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-50 flex items-center justify-center">
-              <AlertCircle className="w-8 h-8 text-rose-500" />
-            </div>
-            <h2 className="text-xl font-bold text-slate-900">Akun Belum Dihubungkan</h2>
-            <p className="text-sm text-slate-500 leading-relaxed">
-              Akun Loyalis Anda belum dihubungkan dengan data pegawai di sistem. Silakan hubungi administrator BAK untuk menghubungkan akun Anda.
-            </p>
-            <Button
-              onClick={() => logout()}
-              variant="outline"
-              className="rounded-xl mt-4"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Keluar
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 relative overflow-hidden">
+        <div className="max-w-md w-full rounded-2xl border border-slate-200 bg-white p-8 text-center space-y-4 relative z-10 animate-in zoom-in-95 duration-200">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-50 flex items-center justify-center">
+            <AlertCircle className="w-8 h-8 text-rose-500" />
+          </div>
+          <h2 className="text-xl font-bold text-black">Akun Belum Dihubungkan</h2>
+          <p className="text-sm text-black leading-relaxed">
+            Akun Loyalis Anda belum dihubungkan dengan data pegawai di sistem. Silakan hubungi administrator BAK untuk menghubungkan akun Anda.
+          </p>
+          <Button
+            onClick={() => logout()}
+            variant="outline"
+            className="rounded-xl mt-4"
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Keluar
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800 pb-16">
-      {/* Decorative background blobs */}
-      <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />
+    <div className="min-h-screen bg-white font-sans selection:bg-indigo-100 relative text-black pb-16">
 
       {/* ── Header Navbar ──────────────────────────────────────────────── */}
       <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-100 shadow-sm relative z-20">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-6 sm:px-8 md:px-12 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5 sm:gap-3">
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-lg shadow-indigo-200 shrink-0">
               <FileText className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-white" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-sm sm:text-base font-bold text-slate-900 leading-tight truncate">Slip Gaji</h1>
-              <p className="text-[10px] sm:text-xs text-slate-400 font-semibold truncate max-w-[120px] sm:max-w-none">{profile.displayName || 'Karyawan'}</p>
+              <h1 className="text-sm sm:text-base font-bold text-black leading-tight truncate">Slip Gaji</h1>
+              <p className="text-[10px] sm:text-xs text-black font-semibold truncate max-w-[120px] sm:max-w-none">{profile.displayName || 'Karyawan'}</p>
             </div>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
@@ -1374,7 +1359,7 @@ export default function EmployeePayslipPage() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
+                  className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
                   title="Laporan Kegiatan"
                 >
                   <ClipboardList className="w-4.5 h-4.5 text-indigo-500" />
@@ -1387,7 +1372,7 @@ export default function EmployeePayslipPage() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
+                  className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
                   title="Jadwal Regu"
                 >
                   <CalendarDays className="w-4.5 h-4.5 text-indigo-500" />
@@ -1400,7 +1385,7 @@ export default function EmployeePayslipPage() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
+                  className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
                   title="Koreksi Presensi"
                 >
                   <MessageCircle className="w-4.5 h-4.5 text-indigo-500" />
@@ -1427,7 +1412,7 @@ export default function EmployeePayslipPage() {
               onClick={() => logout()}
               variant="ghost"
               size="icon"
-              className="text-slate-400 hover:text-rose-500 rounded-xl h-9 w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer"
+              className="text-black hover:text-rose-500 rounded-xl h-9 w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer"
               title="Keluar"
             >
               <LogOut className="w-4.5 h-4.5" />
@@ -1457,67 +1442,63 @@ export default function EmployeePayslipPage() {
         </div>
       )}
 
-      <div className="max-w-4xl mx-auto px-2 sm:px-4 mt-8 space-y-6 relative z-10">
+      <div className="max-w-4xl mx-auto px-6 sm:px-8 md:px-12 mt-8 space-y-6 relative z-10">
 
         {/* ── Period Selector Control ────────────────────────────────────── */}
-        <Card className="bg-white/80 backdrop-blur-md rounded-3xl shadow-[0_4px_25px_rgba(0,0,0,0.02)] border-none">
-          <CardContent className="p-5 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              <CalendarDays className="w-5 h-5 text-indigo-500 shrink-0" />
-              <span className="text-sm font-semibold text-slate-500">Periode:</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3 w-full md:flex md:w-auto md:items-center">
-              <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
-                <SelectTrigger className="text-sm font-bold text-slate-700 bg-white rounded-2xl border border-slate-200 h-11 px-4 w-full md:w-40 shadow-sm focus:ring-indigo-500/20">
-                  <SelectValue>
-                    {availableMonths.find((m) => m.value === month)?.label || MONTHS_ID[month - 1]}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="rounded-2xl border-slate-100 shadow-2xl bg-white z-40">
-                  {availableMonths.map((m) => (
-                    <SelectItem key={m.value} value={String(m.value)}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
-                <SelectTrigger className="text-sm font-bold text-slate-700 bg-white rounded-2xl border border-slate-200 h-11 px-4 w-full md:w-28 shadow-sm focus:ring-indigo-500/20">
-                  <SelectValue>{year}</SelectValue>
-                </SelectTrigger>
-                <SelectContent className="rounded-2xl border-slate-100 shadow-2xl bg-white z-40">
-                  {availableYears.map(y => (
-                    <SelectItem key={y} value={String(y)}>
-                      {y}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="py-3.5 px-5 bg-slate-50/80 rounded-2xl border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <CalendarDays className="w-5 h-5 text-indigo-500 shrink-0" />
+            <span className="text-sm font-semibold text-black">Periode:</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 w-full md:flex md:w-auto md:items-center">
+            <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
+              <SelectTrigger className="text-sm font-bold text-black bg-white rounded-xl border border-slate-200 h-10 px-4 w-full md:w-40 focus:ring-indigo-500/20">
+                <SelectValue>
+                  {availableMonths.find((m) => m.value === month)?.label || MONTHS_ID[month - 1]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="rounded-xl border-slate-100 shadow-lg bg-white z-40">
+                {availableMonths.map((m) => (
+                  <SelectItem key={m.value} value={String(m.value)}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={String(year)} onValueChange={(v) => v && setYear(parseInt(v))}>
+              <SelectTrigger className="text-sm font-bold text-black bg-white rounded-xl border border-slate-200 h-10 px-4 w-full md:w-28 focus:ring-indigo-500/20">
+                <SelectValue>{year}</SelectValue>
+              </SelectTrigger>
+              <SelectContent className="rounded-xl border-slate-100 shadow-lg bg-white z-40">
+                {availableYears.map(y => (
+                  <SelectItem key={y} value={String(y)}>
+                    {y}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
         {/* ── Loading Spinner ── */}
         {loading ? (
-          <div className="py-24 flex flex-col items-center justify-center text-slate-400">
+          <div className="py-24 flex flex-col items-center justify-center text-black">
             <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-4" />
             <p className="text-sm font-semibold animate-pulse">Memuat rincian slip gaji...</p>
           </div>
         ) : !employeeData ? (
-          <Card className="bg-white rounded-3xl border-none shadow-sm">
-            <CardContent className="py-16 text-center text-slate-400">
-              <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
-              <p className="text-sm font-semibold">Data karyawan gagal dimuat.</p>
-            </CardContent>
-          </Card>
+          <div className="py-16 text-center text-black bg-slate-50/50 rounded-2xl border border-slate-100">
+            <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
+            <p className="text-sm font-semibold">Data karyawan gagal dimuat.</p>
+          </div>
         ) : (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
 
-            {/* ─── FLOATING PAYSLIP DESIGN ─────────────────────────────────── */}
-            <Card className="bg-white rounded-[32px] shadow-[0_15px_50px_rgba(0,0,0,0.06)] border-none overflow-hidden relative">
+            {/* ─── PAYSLIP SCREEN DISPLAY ─────────────────────────────────── */}
+            <div>
 
               {/* Kop Surat Header */}
-              <div className="p-6 md:p-8 bg-gradient-to-r from-slate-50/80 via-indigo-50/20 to-slate-50/80 border-b border-slate-100 flex flex-col items-center text-center relative">
+              <div className="py-6 border-b border-slate-200 flex flex-col items-center text-center relative">
 
                 {/* Floating Status Badge */}
                 <div className="md:absolute top-6 right-6 mb-4 md:mb-0">
@@ -1548,28 +1529,28 @@ export default function EmployeePayslipPage() {
                   />
                 </div>
 
-                <h3 className="text-xs font-bold text-slate-800 tracking-wider uppercase">YAYASAN PESANTREN TINGGI DARUL 'ULUM</h3>
-                <h2 className="text-sm font-extrabold text-slate-900 tracking-wide mt-1 uppercase">UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM</h2>
-                <p className="text-[10px] text-slate-400 font-medium mt-1">Pondok Pesantren Darul 'Ulum Peterongan Jombang 61481 Telp. (0321) 873655</p>
+                <h3 className="text-xs font-bold text-black tracking-wider uppercase">YAYASAN PESANTREN TINGGI DARUL 'ULUM</h3>
+                <h2 className="text-sm font-extrabold text-black tracking-wide mt-1 uppercase">UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM</h2>
+                <p className="text-[10px] text-black font-medium mt-1">Pondok Pesantren Darul 'Ulum Peterongan Jombang 61481 Telp. (0321) 873655</p>
               </div>
 
               {/* Payslip Details Section */}
-              <div className="px-6 md:px-8 py-6 border-b border-slate-100 bg-[#FCFDFE]">
+              <div className="py-6 border-b border-slate-200">
                 <div className="flex flex-col md:flex-row justify-between gap-4">
                   <div className="space-y-1.5">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">NAMA PEGAWAI</span>
-                    <span className="text-base font-extrabold text-slate-800 uppercase tracking-tight">
+                    <span className="text-[10px] font-bold text-black uppercase tracking-widest block">NAMA PEGAWAI</span>
+                    <span className="text-base font-extrabold text-black uppercase tracking-tight">
                       {employeeData.personal_info?.name || profile.displayName || '-'}
                     </span>
-                    <div className="flex items-center gap-2 mt-0.5 text-xs font-semibold text-slate-500">
+                    <div className="flex items-center gap-2 mt-0.5 text-xs font-semibold text-black">
                       <span>NIY: {employeeData.personal_info?.employee_id_niy || '-'}</span>
-                      <span className="text-slate-350">•</span>
+                      <span className="text-black">•</span>
                       <span>NPWP: {employeeData.personal_info?.tax_id_npwp || '-'}</span>
                     </div>
                   </div>
 
                   <div className="space-y-1.5 md:text-right">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">PERIODE SLIP</span>
+                    <span className="text-[10px] font-bold text-black uppercase tracking-widest block">PERIODE SLIP</span>
                     <span className="text-sm font-bold text-indigo-600 block">{periodText.toUpperCase()}</span>
                     <span className="text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full inline-block">
                       {profile?.role === 'loyalis'
@@ -1581,21 +1562,21 @@ export default function EmployeePayslipPage() {
               </div>
 
               {/* Earnings & Deductions Tables */}
-              <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+              <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200 border-b border-slate-200">
 
                 {/* Earnings List */}
-                <div className="p-6 md:p-8 space-y-4 bg-emerald-50/15">
+                <div className="py-6 md:pr-8 space-y-4">
                   <h4 className="text-xs font-bold text-emerald-700 uppercase tracking-widest flex items-center gap-1.5">
                     <TrendingUp className="w-4 h-4 text-emerald-500" />
                     I. PENERIMAAN
                   </h4>
-                  <div className="space-y-2.5 divide-y divide-slate-50">
+                  <div className="space-y-2.5 divide-y divide-slate-100">
                     {earnings.map((item: PaySlipField, idx: number) => (
                       <div key={idx} className="flex justify-between items-center pt-2 text-xs font-medium">
-                        <span className="text-slate-500 uppercase max-w-[200px] truncate" title={item.label}>
+                        <span className="text-black uppercase max-w-[200px] truncate" title={item.label}>
                           {item.label}
                         </span>
-                        <span className="text-slate-700 font-semibold tabular-nums">
+                        <span className="text-black font-semibold tabular-nums">
                           {item.amount > 0 ? formatIDR(item.amount) : '-'}
                         </span>
                       </div>
@@ -1604,26 +1585,26 @@ export default function EmployeePayslipPage() {
                 </div>
 
                 {/* Deductions List */}
-                <div className="p-6 md:p-8 space-y-4 bg-rose-50/15">
+                <div className="py-6 md:pl-8 space-y-4">
                   <h4 className="text-xs font-bold text-rose-700 uppercase tracking-widest flex items-center gap-1.5">
                     <TrendingDown className="w-4 h-4 text-rose-500" />
                     II. POTONGAN
                   </h4>
-                  <div className="space-y-2.5 divide-y divide-slate-50">
+                  <div className="space-y-2.5 divide-y divide-slate-100">
                     {deductions
                       .filter((item: PaySlipField) => item.amount && item.amount > 0)
                       .map((item: PaySlipField, idx: number) => (
                         <div key={idx} className="flex justify-between items-center pt-2 text-xs font-medium">
-                          <span className="text-slate-500 uppercase max-w-[200px] truncate" title={item.label}>
+                          <span className="text-black uppercase max-w-[200px] truncate" title={item.label}>
                             {item.label}
                           </span>
-                          <span className="text-slate-700 font-semibold tabular-nums">
+                          <span className="text-black font-semibold tabular-nums">
                             {formatIDR(item.amount)}
                           </span>
                         </div>
                       ))}
                     {deductions.filter((item: PaySlipField) => item.amount && item.amount > 0).length === 0 && (
-                      <div className="flex justify-between items-center pt-2 text-xs font-medium text-slate-400 italic">
+                      <div className="flex justify-between items-center pt-2 text-xs font-medium text-black italic">
                         <span>TIDAK ADA POTONGAN</span>
                         <span>-</span>
                       </div>
@@ -1634,49 +1615,49 @@ export default function EmployeePayslipPage() {
               </div>
 
               {/* Summary Totals Footer */}
-              <div className="grid grid-cols-1 md:grid-cols-2 bg-slate-50/50 border-t border-slate-100">
-                <div className="px-6 md:px-8 py-4 flex justify-between items-center text-xs font-bold border-b md:border-b-0 divide-x-0 border-slate-100">
+              <div className="grid grid-cols-1 md:grid-cols-2 bg-slate-50/50 border-b border-slate-200 rounded-xl my-4">
+                <div className="px-6 py-4 flex justify-between items-center text-xs font-bold border-b md:border-b-0 divide-x-0 border-slate-200">
                   <span className="text-emerald-700 uppercase">JUMLAH PENERIMAAN</span>
                   <span className="text-emerald-700 tabular-nums">{formatIDR(totalEarnings)}</span>
                 </div>
-                <div className="px-6 md:px-8 py-4 flex justify-between items-center text-xs font-bold">
+                <div className="px-6 py-4 flex justify-between items-center text-xs font-bold">
                   <span className="text-rose-700 uppercase">JUMLAH POTONGAN</span>
                   <span className="text-rose-700 tabular-nums">{formatIDR(totalDeductions)}</span>
                 </div>
               </div>
 
               {/* NET SALARY CARD BOX */}
-              <div className="p-6 md:p-8 bg-gradient-to-r from-indigo-50/30 via-indigo-50/80 to-purple-50/30 border-t border-b border-indigo-100 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="py-6 px-4 sm:px-6 bg-gradient-to-r from-indigo-50/40 via-indigo-50/70 to-purple-50/40 border border-indigo-100/80 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 my-6">
                 <div>
                   <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest block">PENERIMAAN BERSIH</span>
                   <span className="text-3xl font-extrabold text-indigo-800 tracking-tight block mt-0.5 tabular-nums">
                     {formatIDR(netSalary)}
                   </span>
                 </div>
-                <div className="bg-white/80 border border-indigo-100/50 rounded-2xl p-4 shadow-sm max-w-md w-full md:w-auto">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Terbilang</span>
-                  <p className="text-xs font-bold text-slate-600 leading-normal italic">
+                <div className="bg-white/90 border border-indigo-100/50 rounded-2xl p-4 max-w-md w-full md:w-auto">
+                  <span className="text-[9px] font-bold text-black uppercase tracking-widest block mb-1">Terbilang</span>
+                  <p className="text-xs font-bold text-black leading-normal italic">
                     "{terbilang(netSalary)} Rupiah"
                   </p>
                 </div>
               </div>
 
               {/* Documentation Section */}
-              <div className="border-t border-slate-100">
+              <div className="border-t border-slate-200 pt-6">
                 <div
                   onClick={() => setShowDoc(!showDoc)}
-                  className="p-6 md:p-8 flex items-center justify-between cursor-pointer hover:bg-slate-50/80 transition-colors"
+                  className="py-4 flex items-center justify-between cursor-pointer transition-colors"
                 >
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
                       <BookOpen className="w-4.5 h-4.5 text-indigo-500" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Panduan Perhitungan Gaji</h3>
-                      <p className="text-xs text-slate-400 font-medium mt-1">Klik untuk {showDoc ? 'menyembunyikan' : 'melihat'} detail formula dan logika perhitungan</p>
+                      <h3 className="text-sm font-bold text-black uppercase tracking-wider">Panduan Perhitungan Gaji</h3>
+                      <p className="text-xs text-black font-medium mt-1">Klik untuk {showDoc ? 'menyembunyikan' : 'melihat'} detail formula dan logika perhitungan</p>
                     </div>
                   </div>
-                  <div className="shrink-0 text-slate-400">
+                  <div className="shrink-0 text-black">
                     {showDoc ? (
                       <ChevronUp className="w-5 h-5 text-indigo-500" />
                     ) : (
@@ -1689,9 +1670,9 @@ export default function EmployeePayslipPage() {
                   const earningsDocs = profile?.role === 'loyalis' ? payrollDocumentation : pekaryaPayrollDocumentation;
 
                   return (
-                    <div className="animate-in fade-in slide-in-from-top-2 duration-200">
-                      {/* ── Penerimaan ── green background tint */}
-                      <div className="px-6 md:px-8 py-6 bg-emerald-50/40 space-y-6">
+                    <div className="animate-in fade-in slide-in-from-top-2 duration-200 space-y-6 pt-2">
+                      {/* ── Penerimaan ── */}
+                      <div className="py-4 space-y-6">
                         <div className="flex items-center gap-2">
                           <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
                           <span className="text-xs font-bold text-emerald-700 uppercase tracking-widest">Penerimaan</span>
@@ -1700,7 +1681,7 @@ export default function EmployeePayslipPage() {
                           <div key={item.id}>
                             {/* Section Header */}
                             <div className="mb-2">
-                              <h4 className="text-sm font-bold text-slate-800 tracking-wide">
+                              <h4 className="text-sm font-bold text-black tracking-wide">
                                 {idx + 1}. {item.title.toUpperCase()}
                               </h4>
                             </div>
@@ -1709,7 +1690,7 @@ export default function EmployeePayslipPage() {
                             {!item.table && item.bullets && item.bullets.length > 0 && (
                               <ul className="space-y-1 ml-4 pl-0">
                                 {item.bullets.map((bullet: string, bIdx: number) => (
-                                  <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-slate-550 leading-relaxed">
+                                  <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-black leading-relaxed">
                                     <span className="mt-2 w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
                                     <span>{bullet}</span>
                                   </li>
@@ -1724,7 +1705,7 @@ export default function EmployeePayslipPage() {
                                   <thead className="bg-slate-50">
                                     <tr>
                                       {item.table.headers.map((h: string, hIdx: number) => (
-                                        <th key={hIdx} className="px-3 py-2 text-left font-bold text-slate-600 uppercase tracking-wider">{h}</th>
+                                        <th key={hIdx} className="px-3 py-2 text-left font-bold text-black uppercase tracking-wider">{h}</th>
                                       ))}
                                     </tr>
                                   </thead>
@@ -1732,7 +1713,7 @@ export default function EmployeePayslipPage() {
                                     {item.table.rows.map((r: string[], rIdx: number) => (
                                       <tr key={rIdx} className="hover:bg-slate-50/50">
                                         {r.map((cell: string, cIdx: number) => (
-                                          <td key={cIdx} className="px-3 py-2 text-slate-700 font-medium">{cell}</td>
+                                          <td key={cIdx} className="px-3 py-2 text-black font-medium">{cell}</td>
                                         ))}
                                       </tr>
                                     ))}
@@ -1743,7 +1724,7 @@ export default function EmployeePayslipPage() {
 
                             {/* Optional variables display — Loyalis */}
                             {profile?.role === 'loyalis' && userVariables && (
-                              <div className="mt-3.5 ml-0 w-full bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 animate-in fade-in duration-200">
+                              <div className="mt-3 ml-0 w-full py-2 animate-in fade-in duration-200">
                                 {item.id === 'gapok' && (
                                   <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                     <DocRow label="Masa Kerja" value={`${userVariables.years} Tahun`} />
@@ -1776,17 +1757,27 @@ export default function EmployeePayslipPage() {
                                 {item.id === 'presensi' && (
                                   <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                     {(() => {
-                                      const wDays = presenceInfo?.workingDays || 25;
-                                      const expHours = presenceInfo?.expectedHours || 6.5;
-                                      const targetMinutes = Math.round(wDays * expHours * 60);
-                                      const absenceMinutes = presenceInfo?.absenceMinutes || 0;
-                                      const actualMinutes = Math.max(0, targetMinutes - absenceMinutes);
                                       const earning = userVariables.presensiEarningVal;
                                       const deduction = userVariables.potonganPresensiVal;
                                       const netPresensi = Math.max(0, earning - deduction);
                                       const bonusEarning = userVariables.bonusPresensiVal;
                                       const bonusDeduction = userVariables.potonganBonusPresensiVal;
                                       const netBonus = Math.max(0, bonusEarning - bonusDeduction);
+
+                                      const targetMinutes = presenceInfo?.workingDays && presenceInfo?.expectedHours && presenceInfo.workingDays > 0 && presenceInfo.expectedHours > 0
+                                        ? Math.round(presenceInfo.workingDays * presenceInfo.expectedHours * 60)
+                                        : (earning > 0 ? Math.round(earning / 27.5) : 9750);
+
+                                      const absenceMinutes = presenceInfo?.absenceMinutes && presenceInfo.absenceMinutes > 0
+                                        ? presenceInfo.absenceMinutes
+                                        : (deduction > 0 ? Math.round(deduction / 27.5) : 0);
+
+                                      const actualMinutes = Math.max(0, targetMinutes - absenceMinutes);
+
+                                      const wDays = presenceInfo?.workingDays && presenceInfo.workingDays > 0
+                                        ? presenceInfo.workingDays
+                                        : (Math.round(targetMinutes / (6.5 * 60)) || 25);
+
                                       let stratum = 5;
                                       let statusText = '';
                                       if (bonusDeduction === 0) { stratum = 1; statusText = 'Kekurangan = 0 menit'; }
@@ -1797,20 +1788,20 @@ export default function EmployeePayslipPage() {
                                       return (
                                         <>
                                           <DocRow label="Hari Kerja Aktif" value={`${wDays} hari`} />
-                                          <DocRow label="Total Waktu Kerja" value={`${targetMinutes} menit`} />
-                                          <DocRow label="Waktu Dikerjakan" value={`${actualMinutes} menit`} />
+                                          <DocRow label="Total Waktu Kerja" value={`${targetMinutes.toLocaleString('id-ID')} menit`} />
+                                          <DocRow label="Waktu Dikerjakan" value={`${actualMinutes.toLocaleString('id-ID')} menit`} />
                                           <DocRow label="Bersih Presensi" value={formatIDR(netPresensi)} highlight />
-                                          <div style={{ gridColumn: '1 / -1' }} className="text-[11px] text-slate-500 font-mono font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50">
+                                          <div style={{ gridColumn: '1 / -1' }} className="text-[11px] text-black font-mono font-normal mt-1 mb-2 leading-relaxed border-l-2 border-slate-200 pl-3">
                                             = ({targetMinutes.toLocaleString('id-ID')} x Rp27,5) - (({targetMinutes.toLocaleString('id-ID')} - {actualMinutes.toLocaleString('id-ID')}) x Rp27,5)<br />
                                             = {formatIDR(earning).replace(/\s+/g, '')} - ({absenceMinutes.toLocaleString('id-ID')} x Rp27,5)<br />
                                             = {formatIDR(earning).replace(/\s+/g, '')} - {formatIDR(deduction).replace(/\s+/g, '')}<br />
                                             = {formatIDR(netPresensi).replace(/\s+/g, '')}
                                           </div>
                                           <DocRow label="Bersih Bonus Presensi" value={formatIDR(netBonus)} highlight />
-                                          <div style={{ gridColumn: '1 / -1' }} className="text-[11px] text-slate-500 font-normal mt-0.5 mb-2 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200/50">
+                                          <div style={{ gridColumn: '1 / -1' }} className="text-[11px] text-black font-normal mt-1 mb-2 leading-relaxed border-l-2 border-slate-200 pl-3">
                                             Stratum {stratum} ({statusText})<br />
                                             = {formatIDR(bonusEarning).replace(/\s+/g, '')} - {formatIDR(bonusDeduction).replace(/\s+/g, '')}
-                                            <div className="block text-[10px] text-slate-400 mt-2 leading-normal font-light border-t border-slate-200/60 pt-2">
+                                            <div className="block text-[10px] text-black mt-2 leading-normal font-light border-t border-slate-200 pt-2">
                                               <strong>Ketentuan Bonus Presensi:</strong><br />
                                               • Stratum 1 (0 mnt): Potongan Rp0 (Sisa Rp250rb)<br />
                                               • Stratum 2 (≤ {(wDays * 30).toLocaleString('id-ID')} mnt): Potongan Rp100rb (Sisa Rp150rb)<br />
@@ -1848,7 +1839,7 @@ export default function EmployeePayslipPage() {
                                     {vakasiEvents && vakasiEvents.length > 0 ? (
                                       <>{vakasiEvents.map((evt, eIdx) => <DocRow key={eIdx} label={evt.eventName} value={formatIDR(evt.payGiven)} />)}</>
                                     ) : (
-                                      <div className="col-span-3 text-xs text-slate-400 italic mb-1">Tidak ada kegiatan resmi terdaftar pada periode ini</div>
+                                      <div className="col-span-3 text-xs text-black italic mb-1">Tidak ada kegiatan resmi terdaftar pada periode ini</div>
                                     )}
                                     <DocRow label="Total Vakasi Tambahan" value={formatIDR(earnings.filter((e: PaySlipField) => !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:')).reduce((sum: number, e: PaySlipField) => sum + e.amount, 0))} highlight />
                                   </div>
@@ -1858,7 +1849,7 @@ export default function EmployeePayslipPage() {
 
                             {/* Pekarya variables display card */}
                             {profile?.role !== 'loyalis' && (
-                              <div className="mt-3.5 ml-0 w-full bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 animate-in fade-in duration-200">
+                              <div className="mt-3 ml-0 w-full py-2 animate-in fade-in duration-200">
                                 {(() => {
                                   const getEarningAmount = (labels: string[]) => {
                                     const match = earnings.find((e: PaySlipField) => labels.some(l => e.label.toUpperCase() === l.toUpperCase() || e.label.toUpperCase().includes(l.toUpperCase())));
@@ -1913,9 +1904,9 @@ export default function EmployeePayslipPage() {
                         ))}
                       </div>
 
-                      {/* ── Potongan ── red background tint */}
+                      {/* ── Potongan ── */}
                       {activeDeductionDocs.length > 0 && (
-                        <div className="px-6 md:px-8 py-6 bg-rose-50/40 space-y-6">
+                        <div className="py-6 border-t border-slate-200 space-y-6">
                           <div className="flex items-center gap-2">
                             <TrendingDown className="w-3.5 h-3.5 text-rose-600" />
                             <span className="text-xs font-bold text-rose-700 uppercase tracking-widest">Potongan</span>
@@ -1924,7 +1915,7 @@ export default function EmployeePayslipPage() {
                             <div key={item.id}>
                               {/* Section Header */}
                               <div className="mb-2">
-                                <h4 className="text-sm font-bold text-slate-800 tracking-wide">
+                                <h4 className="text-sm font-bold text-black tracking-wide">
                                   {idx + 1}. {item.title.toUpperCase()}
                                 </h4>
                               </div>
@@ -1933,8 +1924,8 @@ export default function EmployeePayslipPage() {
                               {!item.table && item.bullets && item.bullets.length > 0 && (
                                 <ul className="space-y-1 ml-4 pl-0">
                                   {item.bullets.map((bullet: string, bIdx: number) => (
-                                    <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-slate-550 leading-relaxed">
-                                      <span className="mt-2 w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
+                                    <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-black leading-relaxed">
+                                      <span className="mt-2 w-1.5 h-1.5 rounded-full bg-black shrink-0" />
                                       <span>{bullet}</span>
                                     </li>
                                   ))}
@@ -1943,7 +1934,7 @@ export default function EmployeePayslipPage() {
 
                               {/* Standard Deduction Value Card (non-loan items) */}
                               {item.id !== 'pinjaman_kop' && !item.fieldLabel.toUpperCase().includes('PINJAMAN KOP') && (
-                                <div className="mt-3.5 ml-0 w-full bg-[#f8fafc] border border-slate-200/50 rounded-xl p-4.5 animate-in fade-in duration-200">
+                                <div className="mt-3 ml-0 w-full py-2 animate-in fade-in duration-200">
                                   <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                     <DocRow label={item.fieldLabel} value={formatIDR(item.amount)} highlight tone="negative" />
                                   </div>
@@ -1952,7 +1943,7 @@ export default function EmployeePayslipPage() {
 
                               {/* Seamless Integrated Card for Pinjaman Kop. UNIPDU */}
                               {(item.id === 'pinjaman_kop' || item.fieldLabel.toUpperCase().includes('PINJAMAN KOP')) && (
-                                <div className="mt-3.5 ml-0 w-full bg-[#f8fafc] border border-slate-200/50 rounded-2xl p-4.5 sm:p-5 space-y-4 animate-in fade-in duration-200">
+                                <div className="mt-3 ml-0 w-full py-2 space-y-4 animate-in fade-in duration-200">
                                   {/* Primary Deduction Row */}
                                   <div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline">
                                     <DocRow label={item.fieldLabel} value={formatIDR(item.amount)} highlight tone="negative" />
@@ -1964,7 +1955,7 @@ export default function EmployeePayslipPage() {
 
                                     if (loansToRender.length === 0) {
                                       return (
-                                        <div className="pt-3.5 border-t border-slate-200/60 text-xs text-slate-400 italic">
+                                        <div className="pt-3.5 border-t border-slate-200/60 text-xs text-black italic">
                                           Data pinjaman koperasi belum dapat ditemukan pada database Koperasi UNIPDU.
                                         </div>
                                       );
@@ -1994,11 +1985,11 @@ export default function EmployeePayslipPage() {
                                                 <CreditCard className="w-3.5 h-3.5 text-indigo-600" />
                                               </div>
                                               <div>
-                                                <h5 className="text-xs sm:text-sm font-bold text-slate-800">
+                                                <h5 className="text-xs sm:text-sm font-bold text-black">
                                                   Program Pinjaman: {loan.tujuanPinjaman || 'Pinjaman Koperasi UNIPDU'}
                                                 </h5>
                                                 {loan.tanggalDisetujui && (
-                                                  <p className="text-[10px] text-slate-400">
+                                                  <p className="text-[10px] text-black">
                                                     Disetujui: {formatLoanDate(loan.tanggalDisetujui)}
                                                   </p>
                                                 )}
@@ -2015,21 +2006,21 @@ export default function EmployeePayslipPage() {
                                           </div>
 
                                           {/* Key Metrics Grid */}
-                                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-white p-3 rounded-xl border border-slate-200/60 text-xs">
+                                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 border-y border-slate-200 py-3 text-xs">
                                             <div>
-                                              <span className="text-[10px] text-slate-400 block font-medium">Total Pinjaman</span>
-                                              <span className="font-bold text-slate-800">{formatIDR(loan.jumlahPinjaman)}</span>
+                                              <span className="text-[10px] text-black block font-medium">Total Pinjaman</span>
+                                              <span className="font-bold text-black">{formatIDR(loan.jumlahPinjaman)}</span>
                                             </div>
                                             <div>
-                                              <span className="text-[10px] text-slate-400 block font-medium">Sudah Terbayar</span>
+                                              <span className="text-[10px] text-black block font-medium">Sudah Terbayar</span>
                                               <span className="font-bold text-emerald-600">{formatIDR(loan.jumlahPinjaman - loan.sisaHutang)}</span>
                                             </div>
                                             <div>
-                                              <span className="text-[10px] text-slate-400 block font-medium">Cicilan Bulan Ini</span>
+                                              <span className="text-[10px] text-black block font-medium">Cicilan Bulan Ini</span>
                                               <span className="font-bold text-indigo-600">{formatIDR(loan.cicilan)}</span>
                                             </div>
                                             <div>
-                                              <span className="text-[10px] text-slate-400 block font-medium">Sisa Setelah Cicilan</span>
+                                              <span className="text-[10px] text-black block font-medium">Sisa Setelah Cicilan</span>
                                               <span className="font-bold text-rose-600">{formatIDR(projectedRemainingBalance)}</span>
                                             </div>
                                           </div>
@@ -2037,7 +2028,7 @@ export default function EmployeePayslipPage() {
                                           {/* Progress Bar */}
                                           <div className="space-y-1.5">
                                             <div className="flex justify-between items-center text-[11px]">
-                                              <span className="font-medium text-slate-600">Progress Pelunasan</span>
+                                              <span className="font-medium text-black">Progress Pelunasan</span>
                                               <span className="font-bold text-indigo-600">{percentPaid}% Lunas</span>
                                             </div>
                                             <div className="h-2 w-full bg-slate-200/60 rounded-full overflow-hidden p-0.5">
@@ -2051,7 +2042,7 @@ export default function EmployeePayslipPage() {
                                           {/* Monthly Timeline Chips */}
                                           <div>
                                             <div className="flex items-center justify-between mb-2">
-                                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                              <span className="text-[10px] font-bold uppercase tracking-wider text-black">
                                                 Jadwal Angsuran Bulanan ({loan.tenor} Bulan)
                                               </span>
                                             </div>
@@ -2067,7 +2058,7 @@ export default function EmployeePayslipPage() {
                                                       ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm scale-105 font-bold'
                                                       : isPaid
                                                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 font-semibold'
-                                                        : 'bg-white text-slate-400 border-slate-200/60 font-normal'
+                                                        : 'bg-white text-black border-slate-200/60 font-normal'
                                                       }`}
                                                   >
                                                     <span className="text-[9px] opacity-75 uppercase">Bln</span>
@@ -2086,7 +2077,7 @@ export default function EmployeePayslipPage() {
                                               <History className="w-3.5 h-3.5 text-indigo-600" /> Koperasi Loan History Trail
                                             </h6>
 
-                                            <div className="bg-white p-3.5 rounded-xl border border-slate-200/60 max-h-[240px] overflow-y-auto space-y-2.5">
+                                            <div className="border-l-2 border-indigo-200 pl-3.5 py-1 max-h-[240px] overflow-y-auto space-y-2.5">
                                               {trailSegments.map((segment: any, segIdx: number) => (
                                                 <div key={segment.loanId}>
                                                   {/* Ancestry Segment Label */}
@@ -2094,12 +2085,12 @@ export default function EmployeePayslipPage() {
                                                     <div className={`flex items-center gap-2 ${segIdx > 0 ? 'mt-3 pt-2.5 border-t border-dashed border-slate-200' : ''}`}>
                                                       <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${segIdx === trailSegments.length - 1
                                                         ? 'bg-indigo-100 text-indigo-700'
-                                                        : 'bg-slate-200/70 text-slate-500'
+                                                        : 'bg-slate-200/70 text-black'
                                                         }`}>
                                                         {segment.loanLabel}
                                                       </div>
                                                       {segIdx < trailSegments.length - 1 && (
-                                                        <span className="text-[9px] text-slate-400 italic">Direstrukturisasi →</span>
+                                                        <span className="text-[9px] text-black italic">Direstrukturisasi →</span>
                                                       )}
                                                     </div>
                                                   )}
@@ -2113,16 +2104,16 @@ export default function EmployeePayslipPage() {
                                                             }`} />
                                                           <div className="space-y-0.5">
                                                             <div className="flex items-center gap-1.5 flex-wrap">
-                                                              <span className={`font-bold ${segIdx === trailSegments.length - 1 ? 'text-slate-800' : 'text-slate-500'
+                                                              <span className={`font-bold ${segIdx === trailSegments.length - 1 ? 'text-black' : 'text-black'
                                                                 }`}>{h.status}</span>
-                                                              <span className="text-[9px] text-slate-400">{formatLoanDate(h.timestamp || h.createdAt || h.date || loan.tanggalDisetujui)}</span>
+                                                              <span className="text-[9px] text-black">{formatLoanDate(h.timestamp || h.createdAt || h.date || loan.tanggalDisetujui)}</span>
                                                             </div>
-                                                            {h.notes && <p className="text-[11px] text-slate-500">{h.notes}</p>}
+                                                            {h.notes && <p className="text-[11px] text-black">{h.notes}</p>}
                                                           </div>
                                                         </div>
                                                       ))
                                                     ) : (
-                                                      <div className="text-xs text-slate-400 italic">Tidak ada catatan history transaksi.</div>
+                                                      <div className="text-xs text-black italic">Tidak ada catatan history transaksi.</div>
                                                     )}
                                                   </div>
                                                 </div>
@@ -2147,7 +2138,7 @@ export default function EmployeePayslipPage() {
                 })()}
               </div>
 
-            </Card>
+            </div>
 
             {/* ── Download Action Button ────────────────────────────────────── */}
             {isConfirmed ? (

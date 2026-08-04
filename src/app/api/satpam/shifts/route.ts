@@ -11,7 +11,9 @@ import {
   getShiftIsoBounds,
   payrollPeriodForDutyDate,
   resolveCrossTeamPos9PayType,
+  resolveDesignatedPos9PayType,
   resolveExternalSatpamPayType,
+  resolveKetuaSatpamPayType,
   resolveSatpamAssignmentPayType,
   SATPAM_POSTS,
   SATPAM_RATES,
@@ -345,6 +347,7 @@ function buildAssignmentRecords(input: {
   command: ShiftCommand;
   roster: string[];
   employeeById: Map<string, FirebaseFirestore.DocumentSnapshot>;
+  ketuaShiftId: string;
   regularPayType: 'Harian' | 'Jumat & Libur';
   planDay: SatpamDutyPlanDay | null;
   canonicalPlanEnabled: boolean;
@@ -367,6 +370,7 @@ function buildAssignmentRecords(input: {
         : null,
       regularPayType: input.regularPayType,
       teamRosterEmployeeIds: new Set(input.roster),
+      ketuaShiftId: input.ketuaShiftId,
       pos9GuardIds: input.pos9GuardIds,
     });
     return classified.assignments.map((assignment, index) => {
@@ -415,19 +419,30 @@ function buildAssignmentRecords(input: {
   }
   const primary = input.command.assignments.map((assignment, index) => {
     const isExternal = !input.roster.includes(assignment.employeeId);
+    const isKetua = assignment.employeeId === input.ketuaShiftId;
     const isCrossTeamPos9 =
       assignment.postId === 'Pos 9' &&
       input.pos9GuardIds.has(assignment.employeeId) &&
       isExternal;
+    const isDesignatedPos9 =
+      assignment.postId === 'Pos 9' &&
+      input.pos9GuardIds.has(assignment.employeeId);
     const payType = isCrossTeamPos9
       ? resolveCrossTeamPos9PayType(assignment.shiftType)
       : isExternal
         ? resolveExternalSatpamPayType(assignment.shiftType)
-        : resolveSatpamAssignmentPayType(
-            assignment.shiftType,
-            false,
-            input.regularPayType,
-          );
+        : isDesignatedPos9
+          ? resolveDesignatedPos9PayType(
+              assignment.shiftType,
+              input.regularPayType,
+            )
+        : isKetua
+            ? resolveKetuaSatpamPayType(assignment.shiftType)
+            : resolveSatpamAssignmentPayType(
+                assignment.shiftType,
+                false,
+                input.regularPayType,
+              );
     const employee = input.employeeById.get(assignment.employeeId);
     return {
       assignmentKey: `primary_${assignment.postId}_${index}`,
@@ -444,7 +459,11 @@ function buildAssignmentRecords(input: {
         payType === 'Lembur Cover' ? assignment.overtimeReason?.trim() || null : null,
       photoUrl: assignment.photoUrl || null,
       photoAuditMetadata: assignment.photoAuditMetadata || null,
-      scheduleRelation: isCrossTeamPos9 ? 'cross_team_pos9' : null,
+      scheduleRelation: isCrossTeamPos9
+        ? 'cross_team_pos9'
+        : isDesignatedPos9
+          ? 'designated_pos9'
+          : null,
     };
   });
   if (!input.command.extraAssignment) return primary;
@@ -845,6 +864,7 @@ async function mutateShift(
       command,
       roster,
       employeeById,
+      ketuaShiftId: actor.linkedEmployeeId!,
       regularPayType,
       planDay,
       canonicalPlanEnabled,
@@ -878,6 +898,7 @@ async function mutateShift(
           : null,
         regularPayType,
         teamRosterEmployeeIds: new Set(roster),
+        ketuaShiftId: actor.linkedEmployeeId!,
         pos9GuardIds,
       });
       for (const code of classification.anomalyCodes) {

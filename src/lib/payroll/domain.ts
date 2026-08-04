@@ -426,6 +426,33 @@ export function resolveExternalSatpamPayType(
 }
 
 /**
+ * The Ketua Shift may classify their own primary assignment as ordinary
+ * Harian or Lembur Sendiri. Harian is deliberately the safe default and is
+ * independent of the Friday/holiday suggestion shown for ordinary guards.
+ */
+export function resolveKetuaSatpamPayType(
+  requestedShiftType: string | undefined,
+): 'Harian' | 'Lembur Sendiri' {
+  return requestedShiftType === 'Lembur Sendiri'
+    ? 'Lembur Sendiri'
+    : 'Harian';
+}
+
+/**
+ * A designated Pos 9 Satpam may use Lembur Sendiri on their own Pos 9
+ * assignment. When no explicit choice is supplied, retain the calendar rate;
+ * an explicit Harian choice remains Harian even on a premium date.
+ */
+export function resolveDesignatedPos9PayType(
+  requestedShiftType: string | undefined,
+  regularPayType: 'Harian' | 'Jumat & Libur',
+): 'Harian' | 'Jumat & Libur' | 'Lembur Sendiri' {
+  if (requestedShiftType === 'Lembur Sendiri') return 'Lembur Sendiri';
+  if (requestedShiftType === 'Harian') return 'Harian';
+  return regularPayType;
+}
+
+/**
  * Pos 9 is staffed by one guard from each published team plan. If a Ketua
  * selects one of the other teams' Pos 9 guards, the form defaults to Harian,
  * but the guard may explicitly be paid as Lembur Sendiri or Lembur Cover.

@@ -305,6 +305,58 @@ test('server classification distinguishes regular, Cover, and Lembur Sendiri', (
   assert.deepEqual(extraResult.anomalyCodes, []);
 });
 
+test('Ketua Shift may choose Harian or Lembur Sendiri on their own post', () => {
+  const [planDay] = generatePlan('2026-08-01', '2026-08-08').generatedDays;
+  const ketuaAssignments = planDay.assignments.map((assignment) =>
+    assignment.postId === SATPAM_KETUA_POST_ID
+      ? { ...assignment, shiftType: 'Harian' as const }
+      : assignment,
+  );
+  const regular = classifySatpamDutyAssignments({
+    planDay,
+    primaryAssignments: ketuaAssignments,
+    regularPayType: 'Jumat & Libur',
+    teamRosterEmployeeIds: new Set(roster),
+    ketuaShiftId,
+  });
+  const regularKetua = regular.assignments.find(
+    (assignment) => assignment.employeeId === ketuaShiftId,
+  );
+  assert.equal(regularKetua?.payType, 'Harian');
+
+  const self = classifySatpamDutyAssignments({
+    planDay,
+    primaryAssignments: ketuaAssignments.map((assignment) =>
+      assignment.employeeId === ketuaShiftId
+        ? { ...assignment, shiftType: 'Lembur Sendiri' as const }
+        : assignment,
+    ),
+    regularPayType: 'Harian',
+    teamRosterEmployeeIds: new Set(roster),
+    ketuaShiftId,
+  });
+  const selfKetua = self.assignments.find(
+    (assignment) => assignment.employeeId === ketuaShiftId,
+  );
+  assert.equal(selfKetua?.payType, 'Lembur Sendiri');
+  assert.equal(selfKetua?.coveredEmployeeId, null);
+
+  const noPlan = classifySatpamDutyAssignments({
+    planDay: null,
+    primaryAssignments: [
+      {
+        postId: SATPAM_KETUA_POST_ID,
+        employeeId: ketuaShiftId,
+        shiftType: 'Lembur Sendiri',
+      },
+    ],
+    regularPayType: 'Jumat & Libur',
+    teamRosterEmployeeIds: new Set(roster),
+    ketuaShiftId,
+  });
+  assert.equal(noPlan.assignments[0]?.payType, 'Lembur Sendiri');
+});
+
 test('a cross-team Pos 9 guard defaults to Harian and may use either overtime type', () => {
   const [planDay] = generatePlan('2026-08-01', '2026-08-08').generatedDays;
   const otherTeamPos9 = 'SAT-99';
@@ -363,6 +415,23 @@ test('a cross-team Pos 9 guard defaults to Harian and may use either overtime ty
   );
   assert.equal(covered?.payType, 'Lembur Cover');
   assert.equal(covered?.coveredEmployeeId, fixedPost9EmployeeId);
+
+  const ownPos9 = classifySatpamDutyAssignments({
+    planDay,
+    primaryAssignments: planDay.assignments.map((assignment) =>
+      assignment.postId === SATPAM_FIXED_POST_ID
+        ? { ...assignment, shiftType: 'Lembur Sendiri' as const }
+        : assignment,
+    ),
+    regularPayType: 'Jumat & Libur',
+    teamRosterEmployeeIds: new Set(roster),
+    pos9GuardIds: new Set([fixedPost9EmployeeId]),
+  });
+  const ownPos9Assignment = ownPos9.assignments.find(
+    (assignment) => assignment.postId === SATPAM_FIXED_POST_ID,
+  );
+  assert.equal(ownPos9Assignment?.payType, 'Lembur Sendiri');
+  assert.equal(ownPos9Assignment?.scheduleRelation, 'designated_pos9');
 });
 
 test('an outside-team guard on any post defaults to Harian and can opt into Cover', () => {

@@ -15,6 +15,8 @@ import {
   isTransferEligibleStatus,
   payrollPeriodForDutyDate,
   resolveExternalSatpamPayType,
+  resolveDesignatedPos9PayType,
+  resolveKetuaSatpamPayType,
   resolveSatpamAssignmentPayType,
   SATPAM_RATES,
   shiftOccurrenceId,
@@ -165,6 +167,12 @@ test('a Ketua Shift cannot pick an arbitrary pay rate for a regular post', () =>
   assert.equal(resolveSatpamAssignmentPayType(undefined, true, 'Jumat & Libur'), 'Harian');
   assert.equal(resolveExternalSatpamPayType('Lembur Cover'), 'Lembur Cover');
   assert.equal(resolveExternalSatpamPayType('Jumat & Libur'), 'Harian');
+  assert.equal(resolveKetuaSatpamPayType(undefined), 'Harian');
+  assert.equal(resolveKetuaSatpamPayType('Lembur Sendiri'), 'Lembur Sendiri');
+  assert.equal(resolveKetuaSatpamPayType('Lembur Cover'), 'Harian');
+  assert.equal(resolveDesignatedPos9PayType('Lembur Sendiri', 'Jumat & Libur'), 'Lembur Sendiri');
+  assert.equal(resolveDesignatedPos9PayType('Harian', 'Jumat & Libur'), 'Harian');
+  assert.equal(resolveDesignatedPos9PayType(undefined, 'Jumat & Libur'), 'Jumat & Libur');
 });
 
 test('guard post photo URLs must live in the submitting Ketua Shift folder', () => {
