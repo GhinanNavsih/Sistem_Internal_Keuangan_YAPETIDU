@@ -940,27 +940,98 @@ export default function EmployeePayslipPage() {
         const slipSnap = await getDoc(slipRef);
         if (cancelled) return;
 
-        // Fetch daily presence logs from LoyalisPresence collection
-        try {
-          let presenceSnap = await getDoc(doc(db, 'LoyalisPresence', periodToken));
-          if (!presenceSnap.exists()) {
-            presenceSnap = await getDoc(doc(db, 'LoyalisPresence', periodKey));
-          }
-          if (presenceSnap.exists()) {
-            const pData = presenceSnap.data();
-            const empEntry = pData?.entries?.[empId] || (Array.isArray(pData?.records) ? pData?.records?.find((r: any) => r.employeeId === empId || r.nipy === employee.personal_info?.employee_id_niy || r.excelName === employee.personal_info?.name) : null);
-            if (empEntry?.dailyLogs && Array.isArray(empEntry.dailyLogs)) {
-              setDailyPresenceLogs(empEntry.dailyLogs);
-            } else {
-              setDailyPresenceLogs([]);
+        // Helper to extract employee presence record from LoyalisPresence document
+        const extractEmployeeLogs = (pData: any) => {
+          if (!pData) return null;
+          const entriesObj = pData.entries || {};
+          const entriesList: any[] = Array.isArray(pData.records)
+            ? pData.records
+            : (Array.isArray(pData.entries) ? pData.entries : Object.values(entriesObj));
+
+          const empNipyRaw = String(
+            employee.personal_info?.employee_id_niy ||
+            employee.academic_and_tier?.nipy ||
+            employee.nipy ||
+            ''
+          ).trim();
+          const empNipyDigits = empNipyRaw.replace(/\D/g, '');
+
+          const empNameRaw = String(
+            employee.personal_info?.name ||
+            employee.displayName ||
+            employee.name ||
+            ''
+          ).trim().toLowerCase();
+          const empNameClean = empNameRaw.replace(/[^a-z0-9]/g, '');
+
+          // 1. Direct key match in entries object
+          if (entriesObj[empId]?.dailyLogs) return entriesObj[empId];
+          if (empNipyRaw && entriesObj[empNipyRaw]?.dailyLogs) return entriesObj[empNipyRaw];
+
+          // 2. Search entries list for matching ID, NIPY, or Name
+          const match = entriesList.find((item: any) => {
+            if (!item) return false;
+            if (item.employeeId && item.employeeId === empId) return true;
+
+            const itemNipyRaw = String(item.nipy || item.niy || item.id || '').trim();
+            const itemNipyDigits = itemNipyRaw.replace(/\D/g, '');
+            if (empNipyDigits && itemNipyDigits && empNipyDigits === itemNipyDigits) return true;
+
+            const itemNameRaw = String(
+              item.employeeName ||
+              item.excelName ||
+              item.name ||
+              ''
+            ).trim().toLowerCase();
+            const itemNameClean = itemNameRaw.replace(/[^a-z0-9]/g, '');
+
+            if (empNameClean && itemNameClean) {
+              if (
+                empNameClean === itemNameClean ||
+                itemNameClean.includes(empNameClean) ||
+                empNameClean.includes(itemNameClean)
+              ) return true;
             }
-          } else {
-            setDailyPresenceLogs([]);
+            return false;
+          });
+
+          return match || null;
+        };
+
+        // Fetch daily presence logs from LoyalisPresence collection
+        let foundLogs: any[] = [];
+        const docKeysToTry = Array.from(new Set([
+          periodKey,
+          periodToken,
+          periodToken.replace('-', '_'),
+          periodKey.replace('_', '-'),
+        ]));
+
+        for (const docKey of docKeysToTry) {
+          if (foundLogs.length > 0) break;
+          try {
+            const presenceSnap = await getDoc(doc(db, 'LoyalisPresence', docKey));
+            if (presenceSnap.exists()) {
+              const pData = presenceSnap.data();
+              const empEntry = extractEmployeeLogs(pData);
+              if (empEntry?.dailyLogs && Array.isArray(empEntry.dailyLogs) && empEntry.dailyLogs.length > 0) {
+                foundLogs = empEntry.dailyLogs;
+              }
+            }
+          } catch (pErr) {
+            console.warn(`Unable to load LoyalisPresence daily logs for key ${docKey}:`, pErr);
           }
-        } catch (pErr) {
-          console.warn('Unable to load LoyalisPresence daily logs:', pErr);
-          setDailyPresenceLogs([]);
         }
+
+        // Fallback: Check if saved slip data has dailyLogs
+        if (foundLogs.length === 0 && slipSnap.exists()) {
+          const sData = slipSnap.data();
+          if (sData?.dailyLogs && Array.isArray(sData.dailyLogs) && sData.dailyLogs.length > 0) {
+            foundLogs = sData.dailyLogs;
+          }
+        }
+
+        setDailyPresenceLogs(foundLogs);
 
         if (slipSnap.exists() && isTransferEligibleStatus(slipSnap.data()?.status)) {
           const slipData = slipSnap.data();
