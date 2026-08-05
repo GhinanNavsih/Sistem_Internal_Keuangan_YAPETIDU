@@ -1614,7 +1614,7 @@ function JourneyReportContent() {
             extraFuelCost: settlement.extraFuelCost,
             extraTollCost: settlement.extraTollCost,
             extraMealAllowance,
-            ndalemMealMoneyReceived: isNdalem ? (formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0) : 0,
+            ndalemMealMoneyReceived: formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0,
             positiveReimburseDelta: settlement.positiveReimburseDelta,
             baseDriverWage,
             upahBersih: finalUpahBersih,
@@ -2224,62 +2224,62 @@ function JourneyReportContent() {
               </div>
             )}
 
-            {/* Ndalem Meal Evaluation Form Fields (Uncarded) */}
-            {activeReportingJourney.vehicleName === 'Ndalem' ? (
-              (() => {
-                const timings = calculateJourneyDateTimeTimings({
-                  dateStart: formDate,
-                  timeStart: formTimeStart,
-                  dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
-                  timeEnd: formTimeEnd,
-                  isMultiDay: formIsMultiDay,
-                });
-                const effectiveNightCount = formIsMultiDay ? timings.nightCount : 0;
-                const elapsedHours = timings.durationHours > 0 ? timings.durationHours : calculateElapsedHours(formTimeStart, formTimeEnd, effectiveNightCount);
-                const totalHakUangMakan = getMealAllowanceForDuration(elapsedHours, 'Suzuki XL7');
-                const qtyHakMakan = Math.round(totalHakUangMakan / 20000);
-                const ndalemMealMoneyVal = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
-                const unpaidDeltaRp = Math.max(0, totalHakUangMakan - ndalemMealMoneyVal);
+            {/* Meal-money evaluation applies to every vehicle type. */}
+            {(() => {
+              const timings = calculateJourneyDateTimeTimings({
+                dateStart: formDate,
+                timeStart: formTimeStart,
+                dateEnd: formIsMultiDay ? (formDateEnd || formDate) : formDate,
+                timeEnd: formTimeEnd,
+                isMultiDay: formIsMultiDay,
+              });
+              const effectiveNightCount = formIsMultiDay ? timings.nightCount : 0;
+              const elapsedHours = timings.durationHours > 0 ? timings.durationHours : calculateElapsedHours(formTimeStart, formTimeEnd, effectiveNightCount);
+              const totalHakUangMakan = getMealAllowanceForDuration(elapsedHours, activeReportingJourney.vehicleName);
+              const qtyHakMakan = Math.round(totalHakUangMakan / 20000);
+              const mealMoneyProvided = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
+              const unpaidDeltaRp = Math.max(0, totalHakUangMakan - mealMoneyProvided);
 
-                return (
-                  <div className="space-y-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="ndalemMealMoney" className="text-xs font-black text-slate-900 flex items-center justify-between">
-                        <span>Uang Diberikan Selama Perjalanan</span>
-                        <span className="text-slate-900 font-bold normal-case">
-                          (Hak {qtyHakMakan}x Makan: <strong className="text-emerald-700 font-black">{fmtRp(totalHakUangMakan)}</strong>)
-                        </span>
-                      </Label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-blue-700">Rp</span>
-                        <Input
-                          id="ndalemMealMoney"
-                          placeholder="0"
-                          value={formNdalemMealMoneyFee}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/\D/g, '');
-                            setFormNdalemMealMoneyFee(val ? Number(val).toLocaleString('id-ID') : '');
-                          }}
-                          className="pl-8 rounded-xl border-slate-200 focus:border-blue-400 focus:ring-blue-400/20 text-xs font-bold text-blue-700 h-10 w-full"
-                        />
-                      </div>
+              return (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="mealMoneyProvided" className="text-xs font-black text-slate-900 flex items-center justify-between">
+                      <span>Uang Diberikan Selama Perjalanan</span>
+                      <span className="text-slate-900 font-bold normal-case">
+                        (Hak {qtyHakMakan}x Makan: <strong className="text-emerald-700 font-black">{fmtRp(totalHakUangMakan)}</strong>)
+                      </span>
+                    </Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-blue-700">Rp</span>
+                      <Input
+                        id="mealMoneyProvided"
+                        placeholder="0"
+                        value={formNdalemMealMoneyFee}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '');
+                          setFormNdalemMealMoneyFee(val ? Number(val).toLocaleString('id-ID') : '');
+                        }}
+                        className="pl-8 rounded-xl border-slate-200 focus:border-blue-400 focus:ring-blue-400/20 text-xs font-bold text-blue-700 h-10 w-full"
+                      />
                     </div>
-
-                    {unpaidDeltaRp > 0 ? (
-                      <div className="p-3 bg-blue-50 border border-blue-200/80 rounded-xl text-xs font-bold text-blue-900 flex items-center justify-between">
-                        <span>Kekurangan Uang Makan:</span>
-                        <span className="text-sm font-black text-blue-700">+{fmtRp(unpaidDeltaRp)}</span>
-                      </div>
-                    ) : (
-                      <div className="p-3 bg-blue-50 border border-blue-200/80 rounded-xl text-xs font-bold text-blue-900 flex items-center justify-between">
-                        <span>Uang Makan Ndalem Terpenuhi:</span>
-                        <span className="text-xs font-black text-blue-700">Tidak ada selisih (Rp0)</span>
-                      </div>
-                    )}
                   </div>
-                );
-              })()
-            ) : (
+
+                  {unpaidDeltaRp > 0 ? (
+                    <div className="p-3 bg-blue-50 border border-blue-200/80 rounded-xl text-xs font-bold text-blue-900 flex items-center justify-between">
+                      <span>Kekurangan Uang Makan:</span>
+                      <span className="text-sm font-black text-blue-700">+{fmtRp(unpaidDeltaRp)}</span>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-blue-50 border border-blue-200/80 rounded-xl text-xs font-bold text-blue-900 flex items-center justify-between">
+                      <span>Uang Makan Terpenuhi:</span>
+                      <span className="text-xs font-black text-blue-700">Tidak ada selisih (Rp0)</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {activeReportingJourney.vehicleName !== 'Ndalem' ? (
               (() => {
                 const preAuthorizedToll = activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
                   ? Number(activeReportingJourney.preAuthorizedToll)
@@ -2385,7 +2385,7 @@ function JourneyReportContent() {
                   </div>
                 );
               })()
-            )}
+            ) : null}
 
             {/* Tol & Parkir Row */}
             {(() => {

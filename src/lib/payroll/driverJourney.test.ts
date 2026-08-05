@@ -154,6 +154,13 @@ test('Ndalem vehicle calculates meal allowance rights and unpaid meal delta from
   assert.equal(getMealAllowanceForDuration(24, 'Ndalem', 70_000), 0); // Rp 60.000 right - Rp 70.000 = Rp 0 (no negative delta)
 });
 
+test('all vehicle types subtract meal money already provided from the meal right', () => {
+  assert.equal(getMealAllowanceForDuration(12, 'Suzuki XL7', 15_000), 25_000);
+  assert.equal(getMealAllowanceForDuration(12, 'Bis', 40_000), 0);
+  assert.equal(getMealAllowanceForDuration(24, 'Elf', 50_000), 10_000);
+  assert.equal(getMealAllowanceForDuration(24, 'Innova Matic', 70_000), 0);
+});
+
 test('night premium and driver net wage use quantitative night count', () => {
   assert.equal(calculateNightPremium(0), 0);
   assert.equal(calculateNightPremium(3), 150_000);

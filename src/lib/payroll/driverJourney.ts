@@ -112,7 +112,7 @@ export function getNdalemUnpaidMealAllowance(
 export function getMealAllowanceForDuration(
   hours: number,
   vehicleName?: string,
-  ndalemMealMoneyProvided?: number,
+  mealMoneyProvided?: number,
 ): number {
   if (!Number.isFinite(hours) || hours <= 0) return 0;
 
@@ -128,12 +128,11 @@ export function getMealAllowanceForDuration(
   else if (remainingHours <= 12) totalRights = fullDayAllowance + 40_000;
   else totalRights = fullDayAllowance + 60_000;
 
-  if (vehicleName === 'Ndalem') {
-    const moneyReceived = Math.max(0, ndalemMealMoneyProvided ?? 0);
-    return Math.max(0, totalRights - moneyReceived);
-  }
-
-  return totalRights;
+  // Any money already handed to the driver covers part of the meal right,
+  // regardless of the vehicle used. The vehicle name remains an input for
+  // call-site compatibility and future vehicle-specific rules.
+  const moneyReceived = Math.max(0, mealMoneyProvided ?? 0);
+  return Math.max(0, totalRights - moneyReceived);
 }
 
 export interface DriverJourneyOperationalCostResult {
