@@ -170,6 +170,24 @@ function padTime(time: string): string {
   return time;
 }
 
+function getGoogleFormattableText(value: any): string {
+  if (typeof value === 'string') return value;
+  if (typeof value?.text === 'string') return value.text;
+  if (typeof value?.toString === 'function') {
+    const text = value.toString();
+    return text === '[object Object]' ? '' : text;
+  }
+  return '';
+}
+
+function getPlacePredictionLabel(suggestion: any): { label: string; secondary: string } {
+  const prediction = suggestion?.placePrediction;
+  const label = getGoogleFormattableText(prediction?.text)
+    || getGoogleFormattableText(prediction?.mainText);
+  const secondary = getGoogleFormattableText(prediction?.secondaryText);
+  return { label, secondary };
+}
+
 const getPlacesSearchQuery = (endPoint: string): string => {
   if (!endPoint) return '';
   const firstSegment = endPoint.split(',')[0].trim();
@@ -510,12 +528,25 @@ function JourneyReportContent() {
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [mapSearchText, setMapSearchText] = useState('');
   const [mapAddress, setMapAddress] = useState('');
-  const [mapAddressImage, setMapAddressImage] = useState<string | null>(null);
+  const [mapSearchError, setMapSearchError] = useState('');
+  const [placeSuggestions, setPlaceSuggestions] = useState<any[]>([]);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
   const [mapTargetIndex, setMapTargetIndex] = useState<number | null>(null);
 
   const mapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
   const mapElementRef = useRef<HTMLDivElement | null>(null);
+  const mapSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placeSearchRequestRef = useRef(0);
+  const placeSessionTokenRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (mapSearchDebounceRef.current) {
+        clearTimeout(mapSearchDebounceRef.current);
+      }
+    };
+  }, []);
 
   const isDraftLoadedRef = useRef(false);
   const routeHydratedJourneyRef = useRef<string | null>(null);
@@ -1080,8 +1111,185 @@ function JourneyReportContent() {
     router.push('/employee/activities');
   };
 
+  const resetMapSearch = () => {
+    if (mapSearchDebounceRef.current) {
+      clearTimeout(mapSearchDebounceRef.current);
+      mapSearchDebounceRef.current = null;
+    }
+    placeSearchRequestRef.current += 1;
+    placeSessionTokenRef.current = null;
+    setPlaceSuggestions([]);
+    setIsSearchingPlaces(false);
+    setMapSearchError('');
+  };
+
+  const geocodeMapSearch = (queryText: string) => {
+    const normalizedQuery = queryText.trim();
+    if (!normalizedQuery) return;
+
+    const requestId = ++placeSearchRequestRef.current;
+    setPlaceSuggestions([]);
+    setIsSearchingPlaces(false);
+    setMapSearchError('');
+
+    loadGoogleMapsScript(() => {
+      const google = (window as any).google;
+      if (!google?.maps?.Geocoder) {
+        if (requestId === placeSearchRequestRef.current) {
+          setMapSearchError('Layanan peta belum siap. Silakan coba lagi.');
+        }
+        return;
+      }
+
+      try {
+        const geocoder = new google.maps.Geocoder();
+        geocoder.geocode(
+          { address: normalizedQuery, region: 'id' },
+          (results: any[], status: string) => {
+            if (requestId !== placeSearchRequestRef.current) return;
+
+            const firstResult = Array.isArray(results)
+              ? results.find((result: any) => result?.geometry?.location)
+              : null;
+
+            if (status !== 'OK' || !firstResult) {
+              setMapAddress('');
+              setMapSearchError('Lokasi tidak ditemukan. Pilih hasil lain atau geser pin di peta.');
+              return;
+            }
+
+            const location = firstResult.geometry.location;
+            mapRef.current?.setCenter(location);
+            mapRef.current?.setZoom(16);
+            markerRef.current?.setPosition(location);
+
+            const formattedAddress = firstResult.formatted_address || normalizedQuery;
+            const selectedAddress = normalizedQuery.includes(',')
+              ? normalizedQuery
+              : formattedAddress;
+            setMapAddress(selectedAddress);
+            setMapSearchText(selectedAddress);
+            setMapSearchError('');
+          },
+        );
+      } catch (error) {
+        console.warn('Google address search failed:', error);
+        if (requestId === placeSearchRequestRef.current) {
+          setMapAddress('');
+          setMapSearchError('Lokasi tidak dapat dicari. Silakan coba kata kunci lain.');
+        }
+      }
+    });
+  };
+
+  const schedulePlaceSearch = (value: string) => {
+    if (mapSearchDebounceRef.current) {
+      clearTimeout(mapSearchDebounceRef.current);
+      mapSearchDebounceRef.current = null;
+    }
+
+    const normalizedQuery = value.trim();
+    const requestId = ++placeSearchRequestRef.current;
+    setMapAddress('');
+    setMapSearchError('');
+    setPlaceSuggestions([]);
+
+    if (!normalizedQuery) {
+      setIsSearchingPlaces(false);
+      return;
+    }
+
+    setIsSearchingPlaces(true);
+    mapSearchDebounceRef.current = setTimeout(() => {
+      loadGoogleMapsScript(() => {
+        void (async () => {
+          try {
+            const google = (window as any).google;
+            const placesLibrary = google?.maps?.importLibrary
+              ? await google.maps.importLibrary('places')
+              : google?.maps?.places;
+            const autocompleteSuggestion = placesLibrary?.AutocompleteSuggestion
+              || google?.maps?.places?.AutocompleteSuggestion;
+            const sessionTokenConstructor = placesLibrary?.AutocompleteSessionToken
+              || google?.maps?.places?.AutocompleteSessionToken;
+
+            if (!autocompleteSuggestion?.fetchAutocompleteSuggestions) {
+              if (requestId === placeSearchRequestRef.current) {
+                setIsSearchingPlaces(false);
+              }
+              return;
+            }
+
+            if (!placeSessionTokenRef.current && sessionTokenConstructor) {
+              placeSessionTokenRef.current = new sessionTokenConstructor();
+            }
+
+            const response = await autocompleteSuggestion.fetchAutocompleteSuggestions({
+              input: normalizedQuery,
+              language: 'id',
+              region: 'id',
+              includedRegionCodes: ['id'],
+              ...(placeSessionTokenRef.current
+                ? { sessionToken: placeSessionTokenRef.current }
+                : {}),
+            });
+
+            if (requestId !== placeSearchRequestRef.current) return;
+            const suggestions = Array.isArray(response?.suggestions)
+              ? response.suggestions.filter((suggestion: any) => suggestion?.placePrediction).slice(0, 5)
+              : [];
+            setPlaceSuggestions(suggestions);
+            setIsSearchingPlaces(false);
+          } catch (error) {
+            if (requestId !== placeSearchRequestRef.current) return;
+            setPlaceSuggestions([]);
+            setIsSearchingPlaces(false);
+            // Direct address geocoding remains available through Enter/map selection.
+            console.warn('Google Places suggestions unavailable:', error);
+          }
+        })();
+      });
+    }, 250);
+  };
+
+  const handleMapSearchChange = (value: string) => {
+    setMapSearchText(value);
+    schedulePlaceSearch(value);
+  };
+
+  const handlePlaceSuggestionSelect = (suggestion: any) => {
+    const { label, secondary } = getPlacePredictionLabel(suggestion);
+    const queryText = label || secondary;
+    if (!queryText) return;
+
+    if (mapSearchDebounceRef.current) {
+      clearTimeout(mapSearchDebounceRef.current);
+      mapSearchDebounceRef.current = null;
+    }
+    placeSessionTokenRef.current = null;
+    setMapSearchText(queryText);
+    setPlaceSuggestions([]);
+    geocodeMapSearch(queryText);
+  };
+
+  const handleMapSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      setPlaceSuggestions([]);
+      return;
+    }
+    if (event.key !== 'Enter') return;
+
+    event.preventDefault();
+    if (placeSuggestions[0]) {
+      handlePlaceSuggestionSelect(placeSuggestions[0]);
+      return;
+    }
+    geocodeMapSearch(mapSearchText);
+  };
+
   const handleAddLocation = () => {
     const newIdx = extraActivities.length;
+    resetMapSearch();
     setExtraActivities([...extraActivities, { type: 'tambah_lokasi', destination: '' }]);
     setMapTargetIndex(newIdx);
     setMapSearchText('');
@@ -1102,6 +1310,7 @@ function JourneyReportContent() {
         ...prev,
         endPoint: newEndPoint
       }));
+      resetMapSearch();
       setShowMapSelector(false);
       setMapTargetIndex(null);
       await recalculateRouteChain(extraActivities, newEndPoint);
@@ -1115,6 +1324,7 @@ function JourneyReportContent() {
       destination: mapAddress
     };
     setExtraActivities(updated);
+    resetMapSearch();
     setShowMapSelector(false);
     setMapTargetIndex(null);
     await recalculateRouteChain(updated);
@@ -1471,53 +1681,41 @@ function JourneyReportContent() {
 
       const geocoder = new google.maps.Geocoder();
 
-      const updateAddressImage = (query: string) => {
-        try {
-          const service = new google.maps.places.PlacesService(map || document.createElement('div'));
-          service.textSearch({ query }, (results: any, status: any) => {
-            if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-              const matchWithPhoto = results.find((r: any) => r.photos && r.photos.length > 0);
-              if (matchWithPhoto) {
-                setMapAddressImage(matchWithPhoto.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
-                return;
-              }
-            }
-            setMapAddressImage(null);
-          });
-        } catch (e) {
-          console.error(e);
-          setMapAddressImage(null);
-        }
-      };
-
-      const updateAddress = (latLng: any) => {
+      const updateAddress = (latLng: any, syncSearchText = true) => {
+        placeSearchRequestRef.current += 1;
+        setPlaceSuggestions([]);
+        setIsSearchingPlaces(false);
+        setMapSearchError('');
         geocoder.geocode({ location: latLng }, (results: any, status: any) => {
-          if (status === 'OK' && results[0]) {
+          if (status === 'OK' && results?.[0]) {
             setMapAddress(results[0].formatted_address);
-            updateAddressImage(results[0].formatted_address);
+            if (syncSearchText) setMapSearchText(results[0].formatted_address);
+            setMapSearchError('');
           } else {
-            setMapAddress(`${latLng.lat().toFixed(5)}, ${latLng.lng().toFixed(5)}`);
-            setMapAddressImage(null);
+            const coordinates = `${latLng.lat().toFixed(5)}, ${latLng.lng().toFixed(5)}`;
+            setMapAddress(coordinates);
+            if (syncSearchText) setMapSearchText(coordinates);
+            setMapSearchError('');
           }
         });
       };
 
       const existingAddress = mapAddress;
       if (existingAddress && existingAddress !== 'UNIPDU Jombang, Jawa Timur' && existingAddress !== 'UNIPDU Jombang') {
-        geocoder.geocode({ address: existingAddress }, (results: any, status: any) => {
+        geocoder.geocode({ address: existingAddress, region: 'id' }, (results: any, status: any) => {
           if (status === 'OK' && results[0] && results[0].geometry && results[0].geometry.location) {
             const loc = results[0].geometry.location;
             map.setCenter(loc);
             map.setZoom(15);
             marker.setPosition(loc);
             setMapAddress(results[0].formatted_address);
-            updateAddressImage(results[0].formatted_address);
+            setMapSearchText(existingAddress);
           } else {
-            updateAddress(unipduCoords);
+            updateAddress(unipduCoords, false);
           }
         });
       } else {
-        updateAddress(unipduCoords);
+        updateAddress(unipduCoords, false);
       }
 
       marker.addListener('dragend', () => {
@@ -1531,33 +1729,6 @@ function JourneyReportContent() {
           updateAddress(e.latLng);
         }
       });
-    });
-  };
-
-  const initAutocomplete = (inputEl: HTMLInputElement) => {
-    loadGoogleMapsScript(() => {
-      const google = (window as any).google;
-      if (!google || !mapRef.current) return;
-      try {
-        const autocomplete = new google.maps.places.Autocomplete(inputEl, {
-          fields: ['formatted_address', 'geometry', 'name'],
-        });
-        autocomplete.addListener('place_changed', () => {
-          const place = autocomplete.getPlace();
-          if (place.geometry && place.geometry.location) {
-            mapRef.current.setCenter(place.geometry.location);
-            mapRef.current.setZoom(16);
-            if (markerRef.current) markerRef.current.setPosition(place.geometry.location);
-            const addr = place.formatted_address || place.name || inputEl.value;
-            setMapAddress(addr);
-            if (place.photos && place.photos.length > 0) {
-              setMapAddressImage(place.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
-            }
-          }
-        });
-      } catch (autoErr) {
-        console.warn('Google Places Autocomplete initialization failed:', autoErr);
-      }
     });
   };
 
@@ -1703,6 +1874,7 @@ function JourneyReportContent() {
                         type="button"
                         variant="outline"
                         onClick={() => {
+                          resetMapSearch();
                           setMapTargetIndex(-1);
                           setMapSearchText(activeReportingJourney.endPoint || '');
                           setMapAddress(activeReportingJourney.endPoint || '');
@@ -1747,6 +1919,7 @@ function JourneyReportContent() {
                             type="button"
                             variant="ghost"
                             onClick={() => {
+                              resetMapSearch();
                               setMapTargetIndex(index);
                               setMapSearchText(act.destination || '');
                               setMapAddress(act.destination || '');
@@ -2619,7 +2792,11 @@ function JourneyReportContent() {
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-extrabold text-slate-900">Pilih Lokasi Tambahan</h3>
                   <button
-                    onClick={() => setShowMapSelector(false)}
+                    type="button"
+                    onClick={() => {
+                      resetMapSearch();
+                      setShowMapSelector(false);
+                    }}
                     className="text-slate-900 hover:text-black p-1 rounded-full hover:bg-slate-100"
                   >
                     <XCircle className="w-5 h-5" />
@@ -2630,17 +2807,62 @@ function JourneyReportContent() {
                   <Label className="text-xs font-black text-slate-900">Cari Nama Tempat / Alamat</Label>
                   <div className="relative">
                     <Input
-                      ref={(el) => {
-                        if (el) initAutocomplete(el);
-                      }}
                       type="text"
                       value={mapSearchText}
-                      onChange={(e) => setMapSearchText(e.target.value)}
+                      onChange={(e) => handleMapSearchChange(e.target.value)}
+                      onKeyDown={handleMapSearchKeyDown}
+                      onBlur={() => {
+                        window.setTimeout(() => setPlaceSuggestions([]), 150);
+                      }}
+                      autoComplete="off"
                       placeholder="Contoh: Rest Area KM 57, Unair Kampus C..."
                       className="rounded-xl border-slate-200 pl-9 text-xs font-bold text-slate-900 h-10"
                     />
                     <Search className="w-4 h-4 text-slate-900 absolute left-3 top-3" />
+
+                    {(isSearchingPlaces || placeSuggestions.length > 0) && (
+                      <div className="absolute left-0 right-0 top-full z-[70] mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                        {isSearchingPlaces && (
+                          <div className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-slate-500">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                            Mencari lokasi...
+                          </div>
+                        )}
+                        {placeSuggestions.map((suggestion, index) => {
+                          const { label, secondary } = getPlacePredictionLabel(suggestion);
+                          if (!label && !secondary) return null;
+                          return (
+                            <button
+                              key={`${label || secondary}-${index}`}
+                              type="button"
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                handlePlaceSuggestionSelect(suggestion);
+                              }}
+                              className="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-blue-50"
+                            >
+                              <span className="block truncate text-[11px] font-extrabold text-slate-900">
+                                {label || secondary}
+                              </span>
+                              {label && secondary && (
+                                <span className="block truncate text-[10px] font-medium text-slate-500">
+                                  {secondary}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                        {placeSuggestions.length > 0 && (
+                          <div className="border-t border-slate-100 px-3 py-1 text-right text-[8px] font-semibold text-slate-400">
+                            Powered by Google
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
+                  {mapSearchError && (
+                    <p className="text-[10px] font-bold text-rose-600">{mapSearchError}</p>
+                  )}
                 </div>
 
                 <div
@@ -2659,7 +2881,10 @@ function JourneyReportContent() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setShowMapSelector(false)}
+                    onClick={() => {
+                      resetMapSearch();
+                      setShowMapSelector(false);
+                    }}
                     className="rounded-xl border-slate-200 text-xs font-bold text-slate-900 h-10"
                   >
                     Batal
