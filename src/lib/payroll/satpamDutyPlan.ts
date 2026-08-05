@@ -18,7 +18,6 @@ export const SATPAM_DUTY_PLAN_ROTATION_VERSION = 'SATPAM-8DAY-V1';
 export const SATPAM_DUTY_PLAN_SEED_LENGTH = 8;
 export const SATPAM_PAID_ABSENCE_RATE = 12_500;
 export const SATPAM_MONTHLY_ATTENDANCE_BONUS = 100_000;
-export const SATPAM_DUTY_PLAN_TRIAL_PERIOD = '2026-07';
 
 export const SATPAM_ROTATING_POST_IDS = [
   'Pos 1',
@@ -44,9 +43,10 @@ export interface SatpamRotationSlotAssignment {
 }
 
 /**
- * Duty planning is required for the explicit trial month, for any period
- * already marked at materialization, and for every period in the
- * attendance-payroll regime.
+ * Duty planning is required for any period already marked at materialization
+ * and for every period in the attendance-payroll regime. July 2026 remains a
+ * legacy payroll month because the Satpam attendance implementation was not
+ * yet active then.
  *
  * The regime check matters because periods are open by default: an August-or-
  * later month that nobody has materialized yet still owes a duty plan, and
@@ -57,7 +57,6 @@ export function isSatpamDutyPlanRequired(
   periodData?: Record<string, unknown> | null,
 ): boolean {
   return (
-    period === SATPAM_DUTY_PLAN_TRIAL_PERIOD ||
     periodData?.satpamDutyPlanRequired === true ||
     period >= ATTENDANCE_PAYROLL_START_PERIOD
   );

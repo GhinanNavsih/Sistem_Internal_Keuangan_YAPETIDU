@@ -45,13 +45,13 @@ test('premium dates outside the payroll window are rejected', () => {
   assert.ok(!normalized.includes('2026-09-20'));
 });
 
-test('duty planning is required for unmaterialized attendance-regime periods', () => {
+test('duty planning is required from the August attendance regime onward', () => {
   // The stored marker is written at materialization. An August-or-later month
   // nobody has touched still owes a duty plan, so the regime boundary has to
-  // answer on its own.
+  // answer on its own; July remains a legacy month.
   assert.equal(isSatpamDutyPlanRequired('2026-09', null), true);
   assert.equal(isSatpamDutyPlanRequired('2026-08', null), true);
-  assert.equal(isSatpamDutyPlanRequired('2026-07', null), true, 'trial period');
+  assert.equal(isSatpamDutyPlanRequired('2026-07', null), false);
   assert.equal(isSatpamDutyPlanRequired('2026-05', null), false);
   assert.equal(
     isSatpamDutyPlanRequired('2026-05', { satpamDutyPlanRequired: true }),

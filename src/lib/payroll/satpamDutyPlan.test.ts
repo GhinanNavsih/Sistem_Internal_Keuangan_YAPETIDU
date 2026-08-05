@@ -26,8 +26,8 @@ const roster = Array.from({ length: 10 }, (_, index) =>
   `SAT-${String(index + 1).padStart(2, '0')}`,
 );
 
-test('July 2026 is an explicit Satpam trial period', () => {
-  assert.equal(isSatpamDutyPlanRequired('2026-07', null), true);
+test('Satpam duty planning begins with the August 2026 attendance regime', () => {
+  assert.equal(isSatpamDutyPlanRequired('2026-07', null), false);
   assert.equal(isSatpamDutyPlanRequired('2026-06', null), false);
   assert.equal(
     isSatpamDutyPlanRequired('2026-08', {
