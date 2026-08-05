@@ -45,14 +45,13 @@ import { dedupeSatpamActivityReports } from '@/lib/payroll/domain';
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
 import { authenticatedJson, propagateUraianToSlips } from '@/lib/payroll/client';
 import {
+  allowsHistoricalPaperSpjEntry,
   allowsManualSpjEntry,
   pekaryaPayrollWindow,
   sumApprovedActivitySpj,
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
 import { DriverPiketSchedule, countDriverPiketInPeriod } from '@/lib/payroll/driverPiket';
-
-const HISTORICAL_SPJ_EMPLOYEE_IDS = new Set(['BC_053', 'BC_054']);
 
 export default function RekapPekaryaPage() {
   const router = useRouter();
@@ -350,9 +349,11 @@ export default function RekapPekaryaPage() {
   // Helper: the SPJ value that belongs on the rekap, slip, and PDF
   const getSpjValue = useCallback((empId: string) => {
     const manualValue = tableData[empId]?.spj;
-    if (manualSpjEnabled && manualValue !== undefined) return manualValue;
+    const paperSpjEnabled =
+      manualSpjEnabled || allowsHistoricalPaperSpjEntry(category, period, empId);
+    if (paperSpjEnabled && manualValue !== undefined) return manualValue;
     return getComputedSpj(empId);
-  }, [manualSpjEnabled, tableData, getComputedSpj]);
+  }, [manualSpjEnabled, category, period, tableData, getComputedSpj]);
 
   const getComputedSatpamShiftCount = useCallback((empId: string, shiftTypeKey: string) => {
     let targetShiftType = '';
@@ -647,7 +648,7 @@ export default function RekapPekaryaPage() {
     const isHistoricalSpjCell =
       historicalSpjEditEnabled &&
       key === 'spj' &&
-      HISTORICAL_SPJ_EMPLOYEE_IDS.has(employeeId);
+      allowsHistoricalPaperSpjEntry(category, period, employeeId);
     if (isLocked && !isHistoricalSpjCell) return;
     if (
       satpamDutyPlanRequired &&
@@ -1073,6 +1074,9 @@ export default function RekapPekaryaPage() {
     // gap against the computed sum is expected rather than a warning.
     if (manualSpjEnabled) return [];
     return employees.map(emp => {
+      if (allowsHistoricalPaperSpjEntry(category, period, emp.employeeId)) {
+        return null;
+      }
       const rawVal = tableData[emp.employeeId]?.spj;
       const computedVal = getComputedSpj(emp.employeeId);
       if (rawVal !== undefined && rawVal !== computedVal) {
@@ -1085,7 +1089,7 @@ export default function RekapPekaryaPage() {
       }
       return null;
     }).filter(Boolean) as { name: string; employeeId: string; manual: number; computed: number }[];
-  }, [employees, tableData, getComputedSpj, manualSpjEnabled]);
+  }, [employees, tableData, getComputedSpj, manualSpjEnabled, category, period]);
 
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
@@ -1393,7 +1397,7 @@ export default function RekapPekaryaPage() {
                           const isSpj = col.key === 'spj';
                           const canEditThisHistoricalSpj =
                             historicalSpjEditEnabled &&
-                            HISTORICAL_SPJ_EMPLOYEE_IDS.has(emp.employeeId);
+                            allowsHistoricalPaperSpjEntry(category, period, emp.employeeId);
                           const isSatpamShift = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'].includes(col.key);
                           const isTunjanganJabatan = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && col.key === 'tunjanganJabatan';
                           const isSopirPiket = category === 'SOPIR' && col.key === 'piket';
@@ -1408,7 +1412,9 @@ export default function RekapPekaryaPage() {
                             canEditSatpamMonthlyBonus &&
                             col.key === 'bonusPresensiBulanan';
                           const cellValue = isSpj
-                            ? (manualSpjEnabled || canEditThisHistoricalSpj
+                            ? (manualSpjEnabled ||
+                              allowsHistoricalPaperSpjEntry(category, period, emp.employeeId) ||
+                              canEditThisHistoricalSpj
                                 ? (tableData[emp.employeeId]?.spj ?? getComputedSpj(emp.employeeId) ?? 0)
                                 : (getComputedSpj(emp.employeeId) || 0))
                             : (isSatpamShift && tableData[emp.employeeId]?.[col.key] === undefined)
