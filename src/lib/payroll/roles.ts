@@ -1,7 +1,6 @@
 export const USER_ROLES = [
   'super_admin',
   'finance_verifier',
-  'payroll_authorizer',
   'satker_head',
   'satker_head_loyalis',
   'employee_admin',
@@ -16,7 +15,6 @@ export type UserRole = (typeof USER_ROLES)[number];
 export const FINANCE_ROLES: readonly UserRole[] = [
   'super_admin',
   'finance_verifier',
-  'payroll_authorizer',
 ];
 
 /**
@@ -40,7 +38,6 @@ export const EMPLOYEE_PROFILE_EDITOR_ROLES: readonly UserRole[] = [
 export const URAIAN_EDITOR_ROLES: readonly UserRole[] = [
   'super_admin',
   'finance_verifier',
-  'payroll_authorizer',
   'satker_head',
   'satker_head_loyalis',
 ];
@@ -53,11 +50,6 @@ export function canVerifyPayroll(role: UserRole): boolean {
   return role === 'finance_verifier' || role === 'super_admin';
 }
 
-export function canAuthorizePayroll(role: UserRole): boolean {
-  return role === 'payroll_authorizer' || role === 'super_admin';
-}
-
 export function canOperatePayments(role: UserRole): boolean {
   return role === 'finance_verifier' || role === 'super_admin';
 }
-

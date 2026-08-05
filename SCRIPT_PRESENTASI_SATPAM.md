@@ -50,7 +50,7 @@ Script ini dirancang untuk dipresentasikan kepada seluruh anggota Satpam Pekarya
 * **Script Presenter:**
   > "Kita tidak perlu lagi menunggu sampai akhir bulan untuk menumpuk 90 lembar kertas laporan harian dari pos-pos penjagaan. 
   > 
-  > Sistem ini melakukan akumulasi secara dinamis setiap detiknya. Begitu laporan harian disetujui oleh verifikator (Majlis Kamtib / Kepala Biro Umum) di dashboard mereka ([activity-review/page.tsx](file:///Users/ghinannavsih/Documents/Internal-BAK/src/app/dashboard/payroll/activity-review/page.tsx)), data tersebut langsung tersinkronisasi. 
+  > Sistem ini melakukan akumulasi secara dinamis setiap detiknya. Begitu laporan harian disetujui oleh Kepala SatKer Satpam di dashboard mereka ([activity-review/page.tsx](file:///Users/ghinannavsih/Documents/Internal-BAK/src/app/dashboard/payroll/activity-review/page.tsx)), data tersebut langsung tersinkronisasi.
   > 
   > Anda bisa melihat grafik akumulasi shift Anda meningkat. Hari pertama terkumpul 1 shift harian, hari kedua bertambah 1 lembur cover, hari ketiga bertambah shift Jumat—semuanya terjumlah secara instan dan otomatis!"
 

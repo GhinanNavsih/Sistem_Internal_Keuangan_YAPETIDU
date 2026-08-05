@@ -73,8 +73,6 @@ export interface SatpamShiftAnomaly {
 
 export type PayrollStatus =
   | 'draft'
-  | 'finance_verified'
-  | 'kbu_approved'
   | 'locked'
   | 'payment_created'
   | 'paid';

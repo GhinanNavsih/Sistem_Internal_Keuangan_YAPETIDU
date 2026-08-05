@@ -28,6 +28,10 @@ env:
     value: "admin.bak@unipdu.ac.id"
   - variable: NEXT_PUBLIC_APP_URL
     value: "https://saku.unipdu.ac.id"
+  - variable: KOPERASI_PAYROLL_BRIDGE_URL
+    value: "https://us-central1-koperasi-unipdu.cloudfunctions.net/payrollLoanBridge"
+  - variable: KOPERASI_PAYROLL_HMAC_SECRET
+    secret: koperasi-payroll-hmac-secret
   - variable: GEMINI_API_KEY
     secret: gemini-api-key
   - variable: SMTP_PASS

@@ -49,10 +49,8 @@ export interface SlipState {
   deductions: PaySlipField[];
   generatedAt?: string;
   lockedAt?: string;
-  financeVerifiedAt?: string;
-  financeVerifiedBy?: string;
-  kbuApprovedAt?: string;
-  kbuApprovedBy?: string;
+  verifiedAt?: string;
+  verifiedBy?: string;
   lockedBy?: string;
   lockedSnapshotHash?: string;
   paymentBatchId?: string;
@@ -68,11 +66,10 @@ interface PaySlipDialogProps {
   employeeNo: number;
   gapok: number;
   period: string; // e.g. "Mei 2026"
+  periodClosed: boolean;
   slipState: SlipState | null;
   onSave: (employeeId: string, earnings: PaySlipField[], deductions: PaySlipField[]) => Promise<void>;
-  onVerify: (employeeId: string, reason: string) => Promise<void>;
-  onApprove: (employeeId: string, reason: string) => Promise<void>;
-  onLock: (employeeId: string) => Promise<void>;
+  onVerifyAndLock: (employeeId: string, reason: string) => Promise<void>;
   onCreatePayment: (employeeId: string, paymentBatchId: string, reason: string) => Promise<void>;
   onMarkPaid: (employeeId: string, bankReference: string, reason: string) => Promise<void>;
   onRequestCorrection: (employeeId: string, reason: string) => Promise<void>;
@@ -137,11 +134,10 @@ export default function PaySlipDialog({
   employeeNo,
   gapok,
   period,
+  periodClosed,
   slipState,
   onSave,
-  onVerify,
-  onApprove,
-  onLock,
+  onVerifyAndLock,
   onCreatePayment,
   onMarkPaid,
   onRequestCorrection,
@@ -169,7 +165,7 @@ export default function PaySlipDialog({
   const [snapshotDeductions, setSnapshotDeductions] = useState<PaySlipField[]>([]);
 
   const [localStatus, setLocalStatus] = useState<SlipStatus>('draft');
-  const localIsLocked = localStatus !== 'draft';
+  const localIsLocked = localStatus !== 'draft' || periodClosed;
 
   // Refresh & diff comparison states
   const [compareOpen, setCompareOpen] = useState(false);
@@ -184,7 +180,7 @@ export default function PaySlipDialog({
     let initEarnings: PaySlipField[] = [];
     let initDeductions: PaySlipField[] = [];
 
-    if (slipState && slipState.earnings && slipState.earnings.length > 0) {
+    if (slipState && Array.isArray(slipState.earnings)) {
       initEarnings = JSON.parse(JSON.stringify(slipState.earnings));
     } else {
       initEarnings = buildInitialEarnings(
@@ -202,7 +198,7 @@ export default function PaySlipDialog({
       );
     }
 
-    if (slipState && slipState.deductions && slipState.deductions.length > 0) {
+    if (slipState && Array.isArray(slipState.deductions)) {
       initDeductions = JSON.parse(JSON.stringify(slipState.deductions));
     } else {
       initDeductions = buildInitialDeductions(
@@ -360,39 +356,22 @@ export default function PaySlipDialog({
     }
   };
 
-  const handleKunci = async () => {
-    if (!employee) return;
-    try {
-      await onLock(employee.employeeId || employee.id);
-      onOpenChange(false);
-    } catch (err) {
-      console.error("Gagal mengunci slip:", err);
-    }
-  };
-
   // ─── Inline Modal States ──────────────────────────────────────
   const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
   const [correctionReasonInput, setCorrectionReasonInput] = useState('');
   const [paidModalOpen, setPaidModalOpen] = useState(false);
   const [bankRefInput, setBankRefInput] = useState('');
 
-  const handleVerify = async () => {
+  const handleVerifyAndLock = async () => {
     if (!employee) return;
     try {
-      await onVerify(employee.employeeId || employee.id, 'Verifikasi slip gaji oleh Badan Keuangan');
+      await onVerifyAndLock(
+        employee.employeeId || employee.id,
+        'Verifikasi angka dan penguncian final oleh Badan Keuangan',
+      );
       onOpenChange(false);
     } catch (err) {
-      console.error("Gagal memverifikasi slip:", err);
-    }
-  };
-
-  const handleApprove = async () => {
-    if (!employee) return;
-    try {
-      await onApprove(employee.employeeId || employee.id, 'Pengesahan slip gaji oleh Kepala Biro Umum');
-      onOpenChange(false);
-    } catch (err) {
-      console.error("Gagal mengesahkan slip:", err);
+      console.error("Gagal memverifikasi dan mengunci slip:", err);
     }
   };
 
@@ -427,8 +406,6 @@ export default function PaySlipDialog({
 
   const statusLabel: Record<SlipStatus, string> = {
     draft: 'Draf',
-    finance_verified: 'Diverifikasi Keuangan',
-    kbu_approved: 'Disahkan KBU',
     locked: 'Terkunci',
     payment_created: 'Instruksi Bayar Dibuat',
     paid: 'Dibayar',
@@ -668,44 +645,40 @@ export default function PaySlipDialog({
 
             <div>
               {localStatus === 'draft' ? (
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    onClick={handleSimpan}
-                    className="rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 shadow-sm px-6 cursor-pointer font-bold"
-                  >
-                    Simpan Perubahan
-                  </Button>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {!periodClosed && (
+                    <Button
+                      type="button"
+                      onClick={handleSimpan}
+                      className="rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 shadow-sm px-6 cursor-pointer font-bold"
+                    >
+                      Simpan Perubahan
+                    </Button>
+                  )}
                   {(actorRole === 'finance_verifier' || actorRole === 'super_admin') && (
                     <Button
                       type="button"
-                      onClick={handleVerify}
+                      onClick={handleVerifyAndLock}
+                      disabled={!periodClosed || !slipState}
                       className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 font-bold"
+                      title={
+                        !periodClosed
+                          ? 'Tutup periode payroll terlebih dahulu.'
+                          : !slipState
+                            ? 'Draf harus disimpan sebelum periode ditutup.'
+                            : undefined
+                      }
                     >
-                      ✓ Verifikasi Keuangan
+                      ✓ Verifikasi &amp; Kunci
                     </Button>
                   )}
+                  {!periodClosed && (
+                    <span className="text-xs text-slate-500">Tutup periode untuk mengaktifkan verifikasi final.</span>
+                  )}
+                  {periodClosed && !slipState && (
+                    <span className="text-xs text-rose-600">Tidak ada draf tersimpan sebelum periode ditutup.</span>
+                  )}
                 </div>
-              ) : localStatus === 'finance_verified' ? (
-                (actorRole === 'payroll_authorizer' || actorRole === 'super_admin') ? (
-                  <Button
-                    type="button"
-                    onClick={handleApprove}
-                    className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white px-6 font-bold"
-                  >
-                    ✓ Sahkan sebagai KBU
-                  </Button>
-                ) : <span className="text-xs text-slate-500">Menunggu pengesahan KBU</span>
-              ) : localStatus === 'kbu_approved' ? (
-                (actorRole === 'payroll_authorizer' || actorRole === 'super_admin') ? (
-                  <Button
-                    type="button"
-                    onClick={handleKunci}
-                    className="rounded-xl bg-gradient-to-r from-red-500 to-rose-600 text-white px-6 font-bold"
-                  >
-                    🔒 Kunci Snapshot Final
-                  </Button>
-                ) : <span className="text-xs text-slate-500">Menunggu penguncian KBU</span>
               ) : isImmutablePayrollStatus(localStatus) ? (
                 <div className="flex items-center gap-2">
                   {localStatus !== 'paid' && (actorRole === 'finance_verifier' || actorRole === 'super_admin') && (

@@ -8,6 +8,7 @@ export type PresenceCorrectionStatus = 'pending' | 'approved' | 'rejected';
 
 export interface PresenceCorrectionRequest {
   id: string;
+  period?: string;
   date: string;
   type: PresenceCorrectionType;
   checkInTime?: string | null;

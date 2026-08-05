@@ -43,7 +43,7 @@ export default function Sidebar() {
     setIsMobileOpen(false);
   }, [pathname]);
 
-  if (!currentProfile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(currentProfile.role)) {
+  if (!currentProfile || !['super_admin', 'finance_verifier'].includes(currentProfile.role)) {
     return null;
   }
 
@@ -184,9 +184,7 @@ export default function Sidebar() {
       ? 'Super Admin'
       : currentProfile?.role === 'finance_verifier'
         ? 'Badan Keuangan'
-        : currentProfile?.role === 'payroll_authorizer'
-          ? 'Kepala Biro Umum'
-          : currentProfile?.role || 'Pengguna';
+        : currentProfile?.role || 'Pengguna';
 
   return (
     <>

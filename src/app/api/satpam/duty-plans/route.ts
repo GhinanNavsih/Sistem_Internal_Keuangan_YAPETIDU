@@ -53,7 +53,6 @@ export const dynamic = 'force-dynamic';
 const AUDITOR_ROLES = [
   'super_admin',
   'finance_verifier',
-  'payroll_authorizer',
   'satker_head',
 ] as const;
 
@@ -545,6 +544,7 @@ export async function POST(request: NextRequest) {
         idempotencyBefore,
         reportedOccurrences,
         continuationBefore,
+        latestPeriod,
       ] =
         await Promise.all([
           transaction.get(planRef),
@@ -553,6 +553,7 @@ export async function POST(request: NextRequest) {
           continuationRef
             ? transaction.get(continuationRef)
             : Promise.resolve(null),
+          transaction.get(adminDb.collection('PayrollPeriods').doc(period)),
         ]);
       if (idempotencyBefore.exists) {
         if (idempotencyBefore.data()?.requestHash !== requestHash) {
@@ -567,6 +568,12 @@ export async function POST(request: NextRequest) {
             idempotencyBefore.data()?.lateBackfillDates || [],
           idempotent: true,
         };
+      }
+      if (isPeriodClosed(latestPeriod.data())) {
+        throw new HttpError(
+          409,
+          'Periode payroll sudah ditutup; rencana dinas tidak dapat diterbitkan.',
+        );
       }
       const currentRevision = planBefore.exists
         ? Number(planBefore.data()?.revision || 0)
@@ -1047,11 +1054,13 @@ export async function PATCH(request: NextRequest) {
       const transactionReads = await Promise.all([
         transaction.get(planRef),
         transaction.get(idempotencyRef),
+        transaction.get(adminDb.collection('PayrollPeriods').doc(period)),
         ...swapOccurrenceRefs.map((reference) => transaction.get(reference)),
       ]);
       const latestPlan = transactionReads[0] as FirebaseFirestore.DocumentSnapshot;
       const idempotency = transactionReads[1] as FirebaseFirestore.DocumentSnapshot;
-      const swapOccurrences = transactionReads.slice(2) as FirebaseFirestore.DocumentSnapshot[];
+      const latestPeriod = transactionReads[2] as FirebaseFirestore.DocumentSnapshot;
+      const swapOccurrences = transactionReads.slice(3) as FirebaseFirestore.DocumentSnapshot[];
       if (idempotency.exists) {
         if (idempotency.data()?.requestHash !== requestHash) {
           throw new HttpError(409, 'requestId sudah digunakan untuk perubahan lain.');
@@ -1061,6 +1070,12 @@ export async function PATCH(request: NextRequest) {
           swapDateY: String(idempotency.data()?.swapDateY || '') || null,
           idempotent: true,
         };
+      }
+      if (isPeriodClosed(latestPeriod.data())) {
+        throw new HttpError(
+          409,
+          'Periode payroll sudah ditutup; rencana dinas tidak dapat diubah.',
+        );
       }
       if (Number(latestPlan.data()?.revision || 0) !== expectedRevision) {
         throw new HttpError(409, 'Rencana telah berubah. Muat ulang lalu coba lagi.');

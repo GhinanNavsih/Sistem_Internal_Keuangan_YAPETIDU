@@ -413,6 +413,7 @@ export default function PresenceCorrectionsAdminPage() {
         updatedAt: serverTimestamp(),
       });
       batch.update(requestRef, {
+        period: req.date.slice(0, 7),
         status: 'approved',
         resolvedBy: profile?.email || 'Admin',
         updatedAt: serverTimestamp(),
@@ -445,9 +446,14 @@ export default function PresenceCorrectionsAdminPage() {
 
     setActionLoading(rejectingReqId);
     try {
+      const request = allRequests.find((item) => item.id === rejectingReqId);
+      if (!request) {
+        throw new Error('Data koreksi tidak ditemukan.');
+      }
       const requestRef = doc(db, 'LoyalisPresenceCorrections', rejectingReqId);
       const batch = writeBatch(db);
       batch.update(requestRef, {
+        period: request.date.slice(0, 7),
         status: 'rejected',
         rejectionReason: rejectionReason.trim(),
         resolvedBy: profile?.email || 'Admin',

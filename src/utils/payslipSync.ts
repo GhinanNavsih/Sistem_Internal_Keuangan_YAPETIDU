@@ -67,6 +67,7 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
     // 4. Update UraianGaji document (if it exists)
     const uraianDocId = `${periodKey}_${jobCategory}`;
     const uraianRef = doc(db, 'UraianGaji', uraianDocId);
+    const periodRef = doc(db, 'PayrollPeriods', period);
     let harianCount = 0;
     let jumatCount = 0;
     let lemburSendiriCount = 0;
@@ -115,7 +116,11 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
     const spjIsManual = allowsManualSpjEntry(jobCategory, period);
 
     await runTransaction(db, async transaction => {
-      const uraianSnap = await transaction.get(uraianRef);
+      const [periodSnap, uraianSnap] = await Promise.all([
+        transaction.get(periodRef),
+        transaction.get(uraianRef),
+      ]);
+      if (periodSnap.data()?.attendanceStatus === 'closed') return;
       if (!uraianSnap.exists()) return;
       const uraianData = uraianSnap.data();
       const entries = { ...(uraianData.entries || {}) };

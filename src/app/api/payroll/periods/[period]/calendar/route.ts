@@ -176,7 +176,6 @@ export async function GET(
     requireRole(actor, [
       'super_admin',
       'finance_verifier',
-      'payroll_authorizer',
       'satker_head',
       'loyalis_presence_admin',
     ]);

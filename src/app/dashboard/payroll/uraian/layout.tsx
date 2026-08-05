@@ -121,8 +121,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     if (!profile) return [];
     if (
       profile.role === 'super_admin' ||
-      profile.role === 'finance_verifier' ||
-      profile.role === 'payroll_authorizer'
+      profile.role === 'finance_verifier'
     ) {
       return activeCategories;
     }
@@ -198,8 +197,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       }
     } else if (
       profile.role !== 'super_admin' &&
-      profile.role !== 'finance_verifier' &&
-      profile.role !== 'payroll_authorizer'
+      profile.role !== 'finance_verifier'
     ) {
       // Satker Head Pekarya / other roles
       if (

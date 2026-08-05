@@ -8,7 +8,8 @@ A payroll period is the controlled data-collection and review window for a
 particular payroll month. Collection is automatic; only permanent closure is an
 explicit administrative act.
 
-Closing a period does **not** immediately calculate salaries, lock payslips, create bank payments, or modify historical payroll records. It ends collection and starts finance verification.
+Closing a period does **not** immediately lock payslips or create bank payments.
+It seals every period-scoped input and starts final Finance verification.
 
 The period status is stored in Firestore as:
 
@@ -54,7 +55,7 @@ DIBUKA (implicit -- no document required)
     v
 DITUTUP
     |
-    | Finance verification, authorization, locking, and payment
+    | Verifikasi & Kunci, then payment
     v
 FINAL PAYROLL
 ```
@@ -73,7 +74,7 @@ Consequences:
 - Kepala SatKer can create or revise collective Pekarya SPJ events.
 - Finance can create and refresh draft payslips.
 - The period owns an editable calendar snapshot. Fridays remain automatic.
-- Finance verification, final authorization, locking, and payment remain blocked.
+- Final verification, locking, and payment remain blocked.
 
 ### 2. Materialization
 
@@ -102,14 +103,25 @@ The period document contains:
 
 ```ts
 attendanceStatus: "closed"
+sealedAt: ServerTimestamp
+sealedBy: "<firebase-user-id>"
+dataSealVersion: 1
 ```
 
 Consequences:
 
 - New attendance, activity, driver, and SPJ submissions are rejected.
 - Pending activity reviews are rejected.
-- Finance verification can begin.
-- Authorized payslips can be locked into immutable snapshots.
+- Draft payslips, earnings, deductions, attendance, SPJ, journeys, Uraian, and
+  profile propagation are frozen, including the saved Koperasi installment
+  plan.
+- Badan Keuangan or Super Admin can run **Verifikasi & Kunci**. The server first
+  advances every eligible Koperasi loan in the employee's sealed plan, then
+  creates the immutable hashed payslip snapshot only after Koperasi returns a
+  receipt.
+- A Koperasi timeout or rejection leaves the payslip as `draft`. Retrying is
+  safe because both applications use deterministic employee/period and
+  loan/period progression markers.
 - Payment instructions can be created only from locked payslips.
 - Completed payment references can be recorded.
 
@@ -249,8 +261,7 @@ independently create or remove Satpam pay.
 | Submit Pekarya activity | Linked `honorer` account |
 | Submit Satpam shift | `ketua_shift_satpam` |
 | Review Pekarya activity | `satker_head`, `super_admin` |
-| Verify payroll | `finance_verifier`, `super_admin` |
-| Authorize payroll | `payroll_authorizer`, `super_admin` |
+| Verify and lock payroll | `finance_verifier`, `super_admin` |
 
 Every period closure and every red-date edit requires a reason between 8 and
 500 characters.
@@ -308,7 +319,7 @@ Responsibilities:
 - Displays `DIBUKA` or `DITUTUP`.
 - Provides the **Tutup Permanen** and **Tanggal Merah Periode** controls.
 - Creates and refreshes draft payslips.
-- Starts finance verification, authorization, locking, and payment after closure.
+- Runs the unified verification-and-lock action and payment after closure.
 
 ### Employee Activities
 
@@ -479,12 +490,9 @@ src/app/api/payroll/slips/route.ts
 
 Responsibilities:
 
-- Requires a configured period before draft creation.
-- Allows `save_draft` while the period is open.
+- Allows `save_draft` only while the period is open.
 - Requires the period to be closed before:
-  - Finance verification.
-  - Payroll authorization.
-  - Final locking.
+  - Atomic verification and final locking.
   - Payment instruction creation.
   - Payment completion.
 - Preserves locked payroll snapshots and routes later changes through corrections.
@@ -531,14 +539,21 @@ Confirm that:
 - All collective SPJ events have been entered.
 - Missing or rejected reports have been resolved.
 - Draft payslip totals have been reviewed.
+- Every saved draft has a Koperasi installment plan, and its plan total exactly
+  equals the `Pinjaman Kop. UNIPDU` deduction. Resave drafts after resolving a
+  borrower-name ambiguity, missing Koperasi UID, or amount mismatch.
 
 ### Closing
 
 1. Click **Tutup Permanen**.
 2. Enter a meaningful closure reason.
 3. Confirm that the status changes to **DITUTUP**.
-4. Begin finance verification and authorization.
-5. Lock approved payslips.
+4. Click **Verifikasi & Kunci** for each saved draft (or use the bulk action).
+   Each successful employee advances all loans in the sealed plan exactly once;
+   a final installment also marks the loan `Lunas`. A failed employee remains a
+   draft and can be retried without duplicating an installment.
+5. Review the single or bulk Koperasi result (advanced, already applied, paid
+   off, and failed) before continuing.
 6. Create payment instructions only from locked snapshots.
 
 ## Summary

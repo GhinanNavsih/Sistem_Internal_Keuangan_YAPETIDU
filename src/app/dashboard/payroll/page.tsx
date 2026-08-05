@@ -143,6 +143,33 @@ interface BulkChange {
   freshDeductions: PaySlipField[];
 }
 
+interface KoperasiLockReceipt {
+  status: 'applied' | 'not_applicable';
+  loans: Array<{
+    loanId: string;
+    outcome: 'advanced' | 'paid_off' | 'already_applied';
+    paidAfter: number;
+    tenor: number;
+  }>;
+}
+
+interface VerifyAndLockResponse {
+  status: 'locked';
+  koperasi: KoperasiLockReceipt;
+}
+
+function koperasiReceiptMessage(receipt: KoperasiLockReceipt): string {
+  if (!receipt.loans.length) return 'Tidak ada pinjaman Koperasi aktif.';
+  const paidOff = receipt.loans.filter((loan) => loan.outcome === 'paid_off').length;
+  const alreadyApplied = receipt.loans.filter((loan) => loan.outcome === 'already_applied').length;
+  const advanced = receipt.loans.length - alreadyApplied;
+  return [
+    `${advanced} cicilan Koperasi diproses`,
+    paidOff > 0 ? `${paidOff} pinjaman lunas` : '',
+    alreadyApplied > 0 ? `${alreadyApplied} sudah tercatat sebelumnya` : '',
+  ].filter(Boolean).join('; ') + '.';
+}
+
 export default function PayrollValidationDashboard() {
   const { user, profile, logout } = useAuth();
   const { sendingBulkEmail, startBulkEmailJob, bulkEmailProgress, emailTargetCount, bulkEmailResults } = useBulkEmail();
@@ -293,7 +320,7 @@ export default function PayrollValidationDashboard() {
   // period, unless it has already been closed permanently.
   useEffect(() => {
     if (defaultPeriodResolvedRef.current) return;
-    if (!profile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(profile.role)) {
+    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) {
       return;
     }
     const now = new Date();
@@ -338,7 +365,7 @@ export default function PayrollValidationDashboard() {
   }, [profile]);
 
   useEffect(() => {
-    if (!profile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(profile.role)) {
+    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) {
       return;
     }
     let cancelled = false;
@@ -1148,7 +1175,7 @@ export default function PayrollValidationDashboard() {
   });
 
   useEffect(() => {
-    if (!profile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(profile.role)) return;
+    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) return;
 
     const isLoyalis = payrollCollar === 'loyalis';
     const list = isLoyalis ? employeesLoyalis : employeesBlueCollar;
@@ -1188,7 +1215,7 @@ export default function PayrollValidationDashboard() {
 
   // ─── Fetch UraianGaji & persisted SlipStates for current period ──
   useEffect(() => {
-    if (!profile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(profile.role)) return;
+    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) return;
     const fetchPeriodData = async () => {
       try {
         const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1245,7 +1272,7 @@ export default function PayrollValidationDashboard() {
 
   // ─── Fetch VakasiTambahan for current period (Loyalis Only) ───
   useEffect(() => {
-    if (!profile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(profile.role)) return;
+    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) return;
     const fetchVakasiAndSpj = async () => {
       try {
         const periodToken = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1583,11 +1610,16 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleSlipSave = async (employeeId: string, earnings: PaySlipField[], deductions: PaySlipField[]) => {
+    if (attendancePeriodStatus === 'closed') {
+      throw new Error('Periode payroll sudah ditutup; draf tidak dapat diubah.');
+    }
     if (isSavingRef.current) return;
     isSavingRef.current = true;
     try {
       const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-      await authenticatedJson('/api/payroll/slips', {
+      const result = await authenticatedJson<{
+        koperasiPlan?: { loanCount: number; expectedDeduction: number; matchType: string };
+      }>('/api/payroll/slips', {
         method: 'POST',
         body: JSON.stringify({
           action: 'save_draft',
@@ -1609,7 +1641,9 @@ export default function PayrollValidationDashboard() {
       setNotification({
         show: true,
         type: 'success',
-        message: 'Draf slip gaji berhasil disimpan!'
+        message: result.koperasiPlan
+          ? `Draf berhasil disimpan. Rencana Koperasi: ${result.koperasiPlan.loanCount} pinjaman, Rp${result.koperasiPlan.expectedDeduction.toLocaleString('id-ID')}.`
+          : 'Draf slip gaji berhasil disimpan!'
       });
       setTimeout(() => {
         setNotification(prev => ({ ...prev, show: false }));
@@ -1629,84 +1663,19 @@ export default function PayrollValidationDashboard() {
     }
   };
 
-  const handleSlipVerify = async (employeeId: string, reason: string) => {
+  const handleSlipVerifyAndLock = async (employeeId: string, reason: string) => {
     if (isSavingRef.current) return;
     isSavingRef.current = true;
     try {
       const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-      await authenticatedJson('/api/payroll/slips', {
+      const result = await authenticatedJson<VerifyAndLockResponse>('/api/payroll/slips', {
         method: 'POST',
         body: JSON.stringify({
-          action: 'finance_verify',
+          action: 'verify_and_lock',
           employeeId,
           period,
-          requestId: createFinancialRequestId('verify'),
+          requestId: createFinancialRequestId('verify_lock'),
           reason,
-        }),
-      });
-      setSlipStates(prev => ({
-        ...prev,
-        [employeeId]: {
-          ...prev[employeeId],
-          status: 'finance_verified',
-          financeVerifiedAt: new Date().toISOString(),
-          financeVerifiedBy: user?.uid,
-        },
-      }));
-      setNotification({ show: true, type: 'success', message: 'Slip diverifikasi Badan Keuangan.' });
-    } catch (err: any) {
-      setNotification({ show: true, type: 'error', message: err.message || 'Verifikasi gagal.' });
-      throw err;
-    } finally {
-      isSavingRef.current = false;
-    }
-  };
-
-  const handleSlipApprove = async (employeeId: string, reason: string) => {
-    if (isSavingRef.current) return;
-    isSavingRef.current = true;
-    try {
-      const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-      await authenticatedJson('/api/payroll/slips', {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'kbu_approve',
-          employeeId,
-          period,
-          requestId: createFinancialRequestId('approve'),
-          reason,
-        }),
-      });
-      setSlipStates(prev => ({
-        ...prev,
-        [employeeId]: {
-          ...prev[employeeId],
-          status: 'kbu_approved',
-          kbuApprovedAt: new Date().toISOString(),
-          kbuApprovedBy: user?.uid,
-        },
-      }));
-      setNotification({ show: true, type: 'success', message: 'Slip disahkan Kepala Biro Umum.' });
-    } catch (err: any) {
-      setNotification({ show: true, type: 'error', message: err.message || 'Pengesahan gagal.' });
-      throw err;
-    } finally {
-      isSavingRef.current = false;
-    }
-  };
-
-  const handleSlipLock = async (employeeId: string) => {
-    if (isSavingRef.current) return;
-    isSavingRef.current = true;
-    try {
-      const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
-      await authenticatedJson('/api/payroll/slips', {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'lock',
-          employeeId,
-          period,
-          requestId: createFinancialRequestId('lock'),
         }),
       });
       setSlipStates(prev => ({
@@ -1714,13 +1683,19 @@ export default function PayrollValidationDashboard() {
         [employeeId]: {
           ...prev[employeeId],
           status: 'locked',
+          verifiedAt: new Date().toISOString(),
+          verifiedBy: user?.uid,
           lockedAt: new Date().toISOString(),
           lockedBy: user?.uid,
         },
       }));
-      setNotification({ show: true, type: 'success', message: 'Snapshot payroll final berhasil dikunci.' });
+      setNotification({
+        show: true,
+        type: 'success',
+        message: `Slip berhasil diverifikasi dan dikunci. ${koperasiReceiptMessage(result.koperasi)}`,
+      });
     } catch (err: any) {
-      setNotification({ show: true, type: 'error', message: err.message || 'Penguncian gagal.' });
+      setNotification({ show: true, type: 'error', message: err.message || 'Verifikasi dan penguncian gagal.' });
       throw err;
     } finally {
       isSavingRef.current = false;
@@ -1811,6 +1786,10 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleBulkRefresh = async () => {
+    if (attendancePeriodStatus === 'closed') {
+      alert('Periode payroll sudah ditutup. Data draf telah dibekukan.');
+      return;
+    }
     if (displayEmployees.length === 0) {
       alert("Tidak ada karyawan untuk direfresh.");
       return;
@@ -2266,6 +2245,10 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleApplyBulkRefresh = async () => {
+    if (attendancePeriodStatus === 'closed') {
+      alert('Periode payroll sudah ditutup. Draf tidak dapat diubah.');
+      return;
+    }
     const selectedChanges = bulkChanges.filter(c =>
       selectedBulkRefreshEmployeeIds.has(c.employeeId) &&
       slipStates[c.employeeId]?.status === 'draft',
@@ -2630,17 +2613,21 @@ export default function PayrollValidationDashboard() {
     };
   };
 
-  const handleBulkLock = async () => {
+  const handleBulkVerifyAndLock = async () => {
+    if (attendancePeriodStatus !== 'closed') {
+      alert('Tutup periode payroll sebelum memverifikasi dan mengunci slip.');
+      return;
+    }
     const unlockableEmployees = displayEmployees.filter(
-      emp => slipStates[emp.id]?.status === 'kbu_approved',
+      emp => slipStates[emp.id]?.status === 'draft',
     );
 
     if (unlockableEmployees.length === 0) {
-      alert('Tidak ada slip berstatus "Disahkan KBU" yang siap dikunci.');
+      alert('Tidak ada slip draf tersimpan yang siap diverifikasi dan dikunci.');
       return;
     }
 
-    const confirmMessage = `Apakah Anda yakin ingin mengunci sekaligus ${unlockableEmployees.length} slip gaji untuk karyawan yang terpilih?`;
+    const confirmMessage = `Verifikasi angka dan kunci sekaligus ${unlockableEmployees.length} slip gaji? Tindakan ini tidak dapat dibatalkan.`;
     if (!window.confirm(confirmMessage)) {
       return;
     }
@@ -2650,41 +2637,64 @@ export default function PayrollValidationDashboard() {
     try {
       const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
       const updatedSlips: Record<string, SlipState> = {};
+      const failures: Array<{ name: string; message: string }> = [];
+      let progressedLoans = 0;
+      let paidOffLoans = 0;
       const nowStr = new Date().toISOString();
 
       for (const emp of unlockableEmployees) {
         const prevSlip = slipStates[emp.id];
-        await authenticatedJson('/api/payroll/slips', {
-          method: 'POST',
-          body: JSON.stringify({
-            action: 'lock',
-            employeeId: emp.id,
-            period,
-            requestId: createFinancialRequestId('bulk_lock'),
-          }),
-        });
-        updatedSlips[emp.id] = {
-          ...prevSlip,
-          status: 'locked',
-          lockedAt: nowStr,
-          lockedBy: user?.uid,
-        };
+        try {
+          const result = await authenticatedJson<VerifyAndLockResponse>('/api/payroll/slips', {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'verify_and_lock',
+              employeeId: emp.id,
+              period,
+              requestId: createFinancialRequestId('bulk_verify_lock'),
+              reason: 'Verifikasi angka dan penguncian final massal oleh Badan Keuangan',
+            }),
+          });
+          progressedLoans += result.koperasi.loans.filter(
+            (loan) => loan.outcome !== 'already_applied',
+          ).length;
+          paidOffLoans += result.koperasi.loans.filter(
+            (loan) => loan.outcome === 'paid_off',
+          ).length;
+          updatedSlips[emp.id] = {
+            ...prevSlip,
+            status: 'locked',
+            verifiedAt: nowStr,
+            verifiedBy: user?.uid,
+            lockedAt: nowStr,
+            lockedBy: user?.uid,
+          };
+        } catch (error) {
+          failures.push({
+            name: (emp as any).name || (emp as any).raw?.personal_info?.name || emp.id,
+            message: error instanceof Error ? error.message : 'Operasi gagal',
+          });
+        }
       }
 
       setSlipStates(prev => ({ ...prev, ...updatedSlips }));
 
       setNotification({
         show: true,
-        type: 'success',
-        message: `${unlockableEmployees.length} slip gaji berhasil dikunci!`
+        type: failures.length > 0 ? 'error' : 'success',
+        message: `${Object.keys(updatedSlips).length} slip dikunci; ${progressedLoans} cicilan Koperasi diproses${paidOffLoans > 0 ? `; ${paidOffLoans} pinjaman lunas` : ''}${failures.length > 0 ? `; ${failures.length} slip gagal dan tetap draf` : ''}.`
       });
       setTimeout(() => {
         setNotification(prev => ({ ...prev, show: false }));
       }, 3000);
 
+      if (failures.length > 0) {
+        alert(`Sebagian Verifikasi & Kunci gagal:\n\n${failures.map((failure) => `• ${failure.name}: ${failure.message}`).join('\n')}`);
+      }
+
     } catch (err: any) {
-      console.error('Error bulk locking payslips:', err);
-      alert(`Gagal melakukan penguncian massal: ${err.message || 'Terjadi kesalahan sistem'}`);
+      console.error('Error bulk verify-and-lock:', err);
+      alert(`Gagal melakukan verifikasi dan penguncian massal: ${err.message || 'Terjadi kesalahan sistem'}`);
     } finally {
       setConfirmingBulk(false);
     }
@@ -2901,9 +2911,9 @@ export default function PayrollValidationDashboard() {
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={handleBulkLock}
-                  disabled={confirmingBulk || loading}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(confirmingBulk || loading) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  onClick={handleBulkVerifyAndLock}
+                  disabled={confirmingBulk || loading || attendancePeriodStatus !== 'closed'}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(confirmingBulk || loading || attendancePeriodStatus !== 'closed') ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {confirmingBulk ? (
                     <>
@@ -2913,15 +2923,15 @@ export default function PayrollValidationDashboard() {
                   ) : (
                     <>
                       <CheckCheck className="w-4 h-4 text-emerald-600" />
-                      Kunci yang Disahkan ({displayEmployees.filter(emp => slipStates[emp.id]?.status === 'kbu_approved').length})
+                      Verifikasi &amp; Kunci ({displayEmployees.filter(emp => slipStates[emp.id]?.status === 'draft').length})
                     </>
                   )}
                 </button>
                 <button
                   type="button"
                   onClick={handleBulkRefresh}
-                  disabled={refreshingBulk || loading}
-                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(refreshingBulk || loading) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={refreshingBulk || loading || attendancePeriodStatus === 'closed'}
+                  className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(refreshingBulk || loading || attendancePeriodStatus === 'closed') ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {refreshingBulk ? (
                     <>
@@ -3125,11 +3135,10 @@ export default function PayrollValidationDashboard() {
         employeeNo={selectedEmployee?.rowIndex ?? 0}
         gapok={selectedEmployee ? calculateGapok(selectedEmployee, salaryMatrix, targetDate) : 0}
         period={payrollPeriod}
+        periodClosed={attendancePeriodStatus === 'closed'}
         slipState={selectedEmployee ? slipStates[selectedEmployee.id] ?? null : null}
         onSave={handleSlipSave}
-        onVerify={handleSlipVerify}
-        onApprove={handleSlipApprove}
-        onLock={handleSlipLock}
+        onVerifyAndLock={handleSlipVerifyAndLock}
         onCreatePayment={handleCreatePayment}
         onMarkPaid={handleMarkPaid}
         onRequestCorrection={handleSlipCorrectionRequest}

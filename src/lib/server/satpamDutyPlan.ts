@@ -471,38 +471,40 @@ export async function syncSatpamDutyReconciliation(
     shiftCountsByEmployee.set(employeeId, counts);
   }
   const now = admin.firestore.FieldValue.serverTimestamp();
-  const reconciliationBatch = adminDb.batch();
-  let reconciliationWriteCount = 0;
-  for (const plan of view.plans) {
-    for (const employee of plan.employees) {
-      const reconciliationId = `${period.replace('-', '')}__${plan.teamId}__${employee.employeeId}`;
-      reconciliationBatch.set(
-        adminDb
-          .collection(SATPAM_DUTY_RECONCILIATIONS_COLLECTION)
-          .doc(reconciliationId),
-        {
-          period,
-          teamId: plan.teamId,
-          planId: plan.planId,
-          planRevision: plan.revision,
-          ...employee,
-          generatedAt: now,
-          generatedBy: actorUid,
-          schemaVersion: 1,
-        },
-      );
-      reconciliationWriteCount += 1;
-    }
-  }
-  if (reconciliationWriteCount > 0) {
-    await reconciliationBatch.commit();
-  }
-
   const uraianRef = adminDb
     .collection('UraianGaji')
     .doc(`${period.replace('-', '_')}_SATPAM`);
+  const periodRef = adminDb.collection('PayrollPeriods').doc(period);
   await adminDb.runTransaction(async (transaction) => {
-    const uraianSnapshot = await transaction.get(uraianRef);
+    const [periodSnapshot, uraianSnapshot] = await Promise.all([
+      transaction.get(periodRef),
+      transaction.get(uraianRef),
+    ]);
+    if (periodSnapshot.data()?.attendanceStatus === 'closed') {
+      throw new Error(
+        `Periode payroll ${period} sudah ditutup; rekonsiliasi tidak dapat mengubah data historis.`,
+      );
+    }
+    for (const plan of view.plans) {
+      for (const employee of plan.employees) {
+        const reconciliationId = `${period.replace('-', '')}__${plan.teamId}__${employee.employeeId}`;
+        transaction.set(
+          adminDb
+            .collection(SATPAM_DUTY_RECONCILIATIONS_COLLECTION)
+            .doc(reconciliationId),
+          {
+            period,
+            teamId: plan.teamId,
+            planId: plan.planId,
+            planRevision: plan.revision,
+            ...employee,
+            generatedAt: now,
+            generatedBy: actorUid,
+            schemaVersion: 1,
+          },
+        );
+      }
+    }
     if (!uraianSnapshot.exists) return;
     const uraian = uraianSnapshot.data()!;
     // July 2026 is a paper-based Satpam pilot. Once an authorised Satker

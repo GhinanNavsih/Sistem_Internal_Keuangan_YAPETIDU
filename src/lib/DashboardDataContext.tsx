@@ -39,7 +39,7 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
-    if (!profile || !['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(profile.role)) {
+    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) {
       setLoading(false);
       return;
     }

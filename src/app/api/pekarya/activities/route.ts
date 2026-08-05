@@ -1100,6 +1100,20 @@ export async function DELETE(request: NextRequest) {
         }
       }
 
+      const targetPeriod = String(
+        reportData?.period ||
+          jData?.payrollPeriod ||
+          jData?.period ||
+          '',
+      );
+      if (!/^\d{4}-\d{2}$/.test(targetPeriod)) {
+        throw new HttpError(409, 'Periode payroll laporan tidak dapat ditentukan.');
+      }
+      const periodSnapshot = await transaction.get(
+        adminDb.collection('PayrollPeriods').doc(targetPeriod),
+      );
+      assertPeriodAcceptsInput(periodSnapshot.data());
+
       // ── WRITE PHASE ──
       if (reportData && targetReportRef) {
         transaction.delete(targetReportRef);

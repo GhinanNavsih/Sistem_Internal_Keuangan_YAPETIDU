@@ -208,8 +208,7 @@ export function classifySlipForPropagation(
   if (!slipExists) return 'no_slip';
   if (isImmutablePayrollStatus(status)) return 'immutable';
   if (status === 'draft' || status === undefined || status === null) return 'eligible';
-  // finance_verified / kbu_approved: a human signed off on these numbers, so the
-  // slip is left alone and the drift is flagged instead.
+  // Unknown historical states are never rewritten automatically.
   return 'blocked_status';
 }
 

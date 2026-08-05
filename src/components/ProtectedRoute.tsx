@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { isUserRole } from '@/lib/payroll/roles';
 import { Loader2 } from 'lucide-react';
 
 /**
@@ -44,6 +45,8 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     if (!loading && uiPreviewHydrated) {
       if (!user) {
         router.replace('/login');
+      } else if (currentProfile && !isUserRole(currentProfile.role)) {
+        router.replace('/login');
       } else if (currentProfile) {
         // Enforce role-based route access
         if (currentProfile.role === 'super_admin') {
@@ -79,10 +82,6 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
         } else if (currentProfile.role === 'ketua_shift_satpam') {
           if (!pathname.startsWith('/employee/')) {
             router.replace('/employee/activities');
-          }
-        } else if (currentProfile.role === 'payroll_authorizer') {
-          if (pathname !== '/dashboard/payroll') {
-            router.replace('/dashboard/payroll');
           }
         } else if (currentProfile.role === 'finance_verifier') {
           if (!pathname.startsWith('/dashboard/payroll')) {
@@ -124,7 +123,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     );
   }
 
-  if (!user || !profile) return null;
+  if (!user || !profile || !isUserRole(profile.role)) return null;
 
   // Additional block in case they somehow render before the useEffect redirect completes
   if (
@@ -154,13 +153,6 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   if (
     profile.role === 'finance_verifier' &&
     !pathname.startsWith('/dashboard/payroll')
-  ) {
-    return null;
-  }
-  if (
-    profile.role === 'payroll_authorizer' &&
-    pathname !== '/dashboard/payroll' &&
-    !pathname.startsWith('/dashboard/payroll/uraian/presensi-pekarya')
   ) {
     return null;
   }

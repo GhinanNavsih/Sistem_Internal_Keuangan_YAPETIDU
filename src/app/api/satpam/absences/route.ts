@@ -65,7 +65,6 @@ export async function GET(request: NextRequest) {
       requireRole(actor, [
         'super_admin',
         'finance_verifier',
-        'payroll_authorizer',
         'satker_head',
       ]);
       if (
@@ -246,9 +245,10 @@ export async function POST(request: NextRequest) {
       planRevision: plan.revision,
     });
     const result = await adminDb.runTransaction(async (transaction) => {
-      const [beforeSnapshot, idempotencySnapshot] = await Promise.all([
+      const [beforeSnapshot, idempotencySnapshot, latestPeriodSnapshot] = await Promise.all([
         transaction.get(absenceRef),
         transaction.get(idempotencyRef),
+        transaction.get(adminDb.collection('PayrollPeriods').doc(period)),
       ]);
       if (idempotencySnapshot.exists) {
         if (idempotencySnapshot.data()?.requestHash !== requestHash) {
@@ -262,6 +262,12 @@ export async function POST(request: NextRequest) {
           status: idempotencySnapshot.data()?.status,
           idempotent: true,
         };
+      }
+      if (isPeriodClosed(latestPeriodSnapshot.data())) {
+        throw new HttpError(
+          409,
+          'Periode payroll sudah ditutup; pengajuan izin tidak dapat diubah.',
+        );
       }
       const before = beforeSnapshot.exists ? beforeSnapshot.data()! : null;
       const currentRevision = Number(before?.revision || 0);

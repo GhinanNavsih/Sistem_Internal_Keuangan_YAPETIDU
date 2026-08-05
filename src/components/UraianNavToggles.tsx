@@ -72,8 +72,7 @@ export default function UraianNavToggles() {
     profile.role !== 'loyalis_presence_admin' &&
     profile.role !== 'satker_head_loyalis' &&
     profile.role !== 'satker_head' &&
-    profile.role !== 'finance_verifier' &&
-    profile.role !== 'payroll_authorizer'
+    profile.role !== 'finance_verifier'
   ) {
     return null;
   }
@@ -146,8 +145,7 @@ export default function UraianNavToggles() {
 
       {/* Row 2: Pekarya Pay Navigation */}
       {(profile.role === 'super_admin' ||
-        profile.role === 'finance_verifier' ||
-        profile.role === 'payroll_authorizer') && (
+        profile.role === 'finance_verifier') && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 px-1 shrink-0 bg-emerald-50/80 border border-emerald-100 py-1 rounded-md">
             Pekarya

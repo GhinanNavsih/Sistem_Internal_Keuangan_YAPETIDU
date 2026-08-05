@@ -97,6 +97,35 @@ function canDriverAccessJourney(
   );
 }
 
+function payrollPeriodFromJourney(data: FirebaseFirestore.DocumentData): string {
+  const storedPeriod = [data.payrollPeriod, data.period].find(
+    (value) => typeof value === 'string' && /^\d{4}-\d{2}$/.test(value),
+  );
+  if (typeof storedPeriod === 'string') return storedPeriod;
+  const activityDate = String(data.activityDate || data.journeyDate || '');
+  try {
+    assertDateOnly(activityDate);
+    return pekaryaPayrollPeriodForDate(activityDate);
+  } catch {
+    throw new HttpError(409, 'Periode payroll perjalanan tidak dapat ditentukan.');
+  }
+}
+
+async function assertJourneyPeriodOpen(
+  transaction: FirebaseFirestore.Transaction,
+  period: string,
+): Promise<void> {
+  const snapshot = await transaction.get(
+    adminDb.collection('PayrollPeriods').doc(period),
+  );
+  if (snapshot.data()?.attendanceStatus === 'closed') {
+    throw new HttpError(
+      409,
+      `Periode payroll ${period} sudah ditutup; perjalanan dan bukti historisnya tidak dapat diubah.`,
+    );
+  }
+}
+
 /**
  * Returns the authenticated driver's journeys. The client used to call this
  * endpoint while it did not exist, then fall back to a direct Firestore read.
@@ -201,6 +230,13 @@ export async function POST(request: NextRequest) {
       const result = await adminDb.runTransaction(async (transaction) => {
         const existingSnapshot = await transaction.get(journeyRef);
         const existing = existingSnapshot.exists ? existingSnapshot.data()! : null;
+        await assertJourneyPeriodOpen(transaction, period);
+        if (existing) {
+          const existingPeriod = payrollPeriodFromJourney(existing);
+          if (existingPeriod !== period) {
+            await assertJourneyPeriodOpen(transaction, existingPeriod);
+          }
+        }
         if (existing && !['unassigned', 'open', 'assigned'].includes(String(existing.status || ''))) {
           throw new HttpError(409, 'Perjalanan yang sudah dimulai atau diproses tidak dapat diubah.');
         }
@@ -307,10 +343,18 @@ export async function POST(request: NextRequest) {
         const activeJourneyQuery = adminDb
           .collection('DriverJourneys')
           .where('employeeId', '==', actor.linkedEmployeeId);
-        const [scheduleSnapshot, activeJourneySnapshot] = await Promise.all([
+        const periodRef = adminDb.collection('PayrollPeriods').doc(period);
+        const [scheduleSnapshot, activeJourneySnapshot, periodSnapshot] = await Promise.all([
           transaction.get(scheduleQuery),
           transaction.get(activeJourneyQuery),
+          transaction.get(periodRef),
         ]);
+        if (periodSnapshot.data()?.attendanceStatus === 'closed') {
+          throw new HttpError(
+            409,
+            `Periode payroll ${period} sudah ditutup; perjalanan baru tidak dapat dibuat.`,
+          );
+        }
         const hasSchedule = scheduleSnapshot.docs.some(
           (schedule) => schedule.data().driverId === actor.linkedEmployeeId,
         );
@@ -391,6 +435,10 @@ export async function POST(request: NextRequest) {
           throw new HttpError(409, 'Anda masih memiliki perjalanan aktif yang belum diselesaikan.');
         }
         const journey = journeySnapshot.data()!;
+        await assertJourneyPeriodOpen(
+          transaction,
+          payrollPeriodFromJourney(journey),
+        );
         const status = String(journey.status || '');
         if (status === 'assigned' && journey.assignedTo !== actor.linkedEmployeeId) {
           throw new HttpError(409, 'Perjalanan ini ditugaskan kepada sopir lain.');
@@ -421,6 +469,10 @@ export async function POST(request: NextRequest) {
         const journeySnapshot = await transaction.get(journeyRef);
         if (!journeySnapshot.exists) throw new HttpError(404, 'Perjalanan dinas tidak ditemukan.');
         const journey = journeySnapshot.data()!;
+        await assertJourneyPeriodOpen(
+          transaction,
+          payrollPeriodFromJourney(journey),
+        );
         if (
           journey.status !== 'claimed' ||
           (journey.employeeId !== actor.linkedEmployeeId && journey.claimedBy !== actor.uid)
@@ -544,6 +596,10 @@ export async function POST(request: NextRequest) {
         const journeySnapshot = await transaction.get(journeyRef);
         if (!journeySnapshot.exists) throw new HttpError(404, 'Perjalanan dinas tidak ditemukan.');
         const journey = journeySnapshot.data()!;
+        await assertJourneyPeriodOpen(
+          transaction,
+          payrollPeriodFromJourney(journey),
+        );
         if (
           !['claimed', 'submitted', 'declined'].includes(String(journey.status || '')) ||
           journey.employeeId !== actor.linkedEmployeeId
@@ -595,6 +651,10 @@ export async function DELETE(request: NextRequest) {
       }
 
       const journey = journeySnapshot.data()!;
+      await assertJourneyPeriodOpen(
+        transaction,
+        payrollPeriodFromJourney(journey),
+      );
       const status = String(journey.status || '');
 
       if (status === 'claimed') {

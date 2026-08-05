@@ -188,7 +188,6 @@ export async function GET(request: NextRequest) {
     requireRole(actor, [
       'super_admin',
       'finance_verifier',
-      'payroll_authorizer',
       'loyalis_presence_admin',
     ]);
     const period = request.nextUrl.searchParams.get('period') || '';

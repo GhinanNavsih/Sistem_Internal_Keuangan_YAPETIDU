@@ -25,10 +25,10 @@ graph TD
   * Logika rota ini mengetahui persis jadwal masing-masing kelompok roster (Bastomi, Mujiono, Suhariono) dan menentukan status shift/lembur secara otomatis berdasarkan aturan rotasi mingguan tanpa perlu pengecekan manual.
 
 ## 2. Validasi Real-Time & Persetujuan Digital
-* **Sebelumnya (Manual):** Di akhir bulan, sekretariat harus mengumpulkan dan memeriksa secara manual sekitar 90 lembar laporan fisik bulanan untuk diserahkan ke Kepala Biro Umum agar ditandatangani basah.
+* **Sebelumnya (Manual):** Di akhir bulan, sekretariat harus mengumpulkan dan memeriksa secara manual sekitar 90 lembar laporan fisik bulanan untuk ditandatangani basah.
 * **Sekarang (Digital):**
   * Dokumen fisik dan tanda tangan basah dieliminasi sepenuhnya.
-  * Setiap laporan yang masuk dapat ditinjau dan disetujui secara real-time oleh penanggung jawab (Majlis Kamtib / Kepala Biro Umum) melalui dashboard **Review Aktivitas** ([activity-review/page.tsx](file:///Users/ghinannavsih/Documents/Internal-BAK/src/app/dashboard/payroll/activity-review/page.tsx)).
+  * Setiap laporan yang masuk dapat ditinjau dan disetujui secara real-time oleh Kepala SatKer Satpam melalui dashboard **Review Aktivitas** ([activity-review/page.tsx](file:///Users/ghinannavsih/Documents/Internal-BAK/src/app/dashboard/payroll/activity-review/page.tsx)).
   * Persetujuan dilakukan secara digital dalam hitungan detik, mencegah penumpukan berkas verifikasi di akhir bulan.
 
 ## 3. Rekapitulasi Otomatis (Instant Aggregation)

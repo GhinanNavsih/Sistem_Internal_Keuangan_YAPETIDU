@@ -144,8 +144,7 @@ test('the transaction guard rejects collateral damage', () => {
 test('only draft slips in an open period may be rewritten', () => {
   assert.equal(classifySlipForPropagation(true, 'draft', false), 'eligible');
   assert.equal(classifySlipForPropagation(false, undefined, false), 'no_slip');
-  assert.equal(classifySlipForPropagation(true, 'finance_verified', false), 'blocked_status');
-  assert.equal(classifySlipForPropagation(true, 'kbu_approved', false), 'blocked_status');
+  assert.equal(classifySlipForPropagation(true, 'retired_status', false), 'blocked_status');
   for (const status of ['confirmed', 'locked', 'payment_created', 'paid']) {
     assert.equal(classifySlipForPropagation(true, status, false), 'immutable');
   }

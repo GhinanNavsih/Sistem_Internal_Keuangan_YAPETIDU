@@ -221,8 +221,8 @@ async function collectLoyalisTargets(command: PropagationCommand): Promise<SlipT
  *
  * The request carries no amounts: every figure is re-derived here from the
  * source document the caller was already authorized to write. Slips past draft
- * are never rewritten — they get a drift notice instead, so a verified or
- * locked slip keeps its signature and snapshot hash intact.
+ * are never rewritten, so a locked slip keeps its signature and snapshot hash
+ * intact.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -230,12 +230,6 @@ export async function POST(request: NextRequest) {
     requireRole(actor, URAIAN_EDITOR_ROLES);
     const command = parseCommand(await request.json());
     assertCategoryAllowed(actor, command);
-
-    const periodSnapshot = await adminDb
-      .collection('PayrollPeriods')
-      .doc(command.periodToken)
-      .get();
-    const periodClosed = periodSnapshot.data()?.attendanceStatus === 'closed';
 
     const targets =
       command.scope === 'pekarya'
@@ -252,8 +246,18 @@ export async function POST(request: NextRequest) {
             .collection('PayrollSlipStates')
             .doc(`${command.periodKey}_${target.employeeId}`),
         );
-        // Every read must precede every write inside a transaction.
-        const slipSnapshots = await transaction.getAll(...slipRefs);
+        const periodRef = adminDb
+          .collection('PayrollPeriods')
+          .doc(command.periodToken);
+        // The seal is read in the same transaction as every draft write. If a
+        // close races this propagation, Firestore retries against the closed
+        // period and no historical value can move.
+        const [periodSnapshot, ...slipSnapshots] = await transaction.getAll(
+          periodRef,
+          ...slipRefs,
+        );
+        const periodClosed =
+          periodSnapshot.data()?.attendanceStatus === 'closed';
         const results: EmployeeOutcome[] = [];
 
         chunk.forEach((target, index) => {
@@ -295,9 +299,8 @@ export async function POST(request: NextRequest) {
           }
 
           if (classification !== 'eligible') {
-            // Verified, approved, locked or paid: the numbers a human signed
-            // off on stay exactly as they are, and the drift is recorded next
-            // to the slip for Finance to act on.
+            // Locked or paid numbers stay exactly as signed, and the drift is
+            // recorded next to the slip for Finance to act on.
             transaction.set(
               adminDb
                 .collection(DRIFT_NOTICES_COLLECTION)

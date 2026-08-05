@@ -6,13 +6,30 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function supportedRole(role) {
+      return role in [
+        'super_admin',
+        'finance_verifier',
+        'satker_head',
+        'satker_head_loyalis',
+        'employee_admin',
+        'honorer',
+        'loyalis',
+        'loyalis_presence_admin',
+        'ketua_shift_satpam'
+      ];
+    }
+
     function hasProfile() {
       return signedIn() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         // Existing profiles may predate the disabled flag. Map.get keeps those
         // accounts enabled while still failing closed when disabled is true.
         get(/databases/$(database)/documents/users/$(request.auth.uid))
-          .data.get('disabled', false) == false;
+          .data.get('disabled', false) == false &&
+        supportedRole(
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        );
     }
 
     function profile() {
@@ -35,12 +52,8 @@ service cloud.firestore {
       return roleIs('finance_verifier');
     }
 
-    function isPayrollAuthorizer() {
-      return roleIs('payroll_authorizer');
-    }
-
     function isFinanceRole() {
-      return isSuperAdmin() || isFinanceVerifier() || isPayrollAuthorizer();
+      return isSuperAdmin() || isFinanceVerifier();
     }
 
     function isSatkerRole() {
@@ -63,6 +76,30 @@ service cloud.firestore {
       return status in ['confirmed', 'locked', 'payment_created', 'paid'];
     }
 
+    function periodIsOpen(period) {
+      return period is string &&
+        period.matches('^\\d{4}-\\d{2}$') &&
+        (
+          !exists(/databases/$(database)/documents/PayrollPeriods/$(period)) ||
+          get(/databases/$(database)/documents/PayrollPeriods/$(period))
+            .data.get('attendanceStatus', 'open') != 'closed'
+        );
+    }
+
+    function createsOpenPeriodRecord() {
+      return periodIsOpen(request.resource.data.get('period', ''));
+    }
+
+    function updatesOpenPeriodRecord() {
+      return request.resource.data.get('period', '') ==
+          resource.data.get('period', '') &&
+        periodIsOpen(resource.data.get('period', ''));
+    }
+
+    function deletesOpenPeriodRecord() {
+      return periodIsOpen(resource.data.get('period', ''));
+    }
+
     match /users/{uid} {
       // Profile bootstrap must not depend on hasProfile(), otherwise the first
       // profile read after Firebase Authentication becomes circular. A user can
@@ -75,14 +112,14 @@ service cloud.firestore {
     // Read-only compatibility for historical employee references. New records
     // belong in the typed employee collections below.
     match /Employees/{employeeId} {
-      allow read: if signedIn();
+      allow read: if hasProfile();
       allow write: if false;
     }
 
     // Employee documents contain bank and salary data. Employees can read only
     // their own record. Ketua Shift receives a redacted directory from the API.
     match /Employees_BlueCollar/{employeeId} {
-      allow read: if signedIn();
+      allow read: if hasProfile();
       allow create: if (isSuperAdmin() || isEmployeeAdmin()) &&
         !request.resource.data.keys().hasAny(['nipy', 'nipyAssignment']);
       allow update: if (isSuperAdmin() || isEmployeeAdmin()) &&
@@ -93,7 +130,7 @@ service cloud.firestore {
     }
 
     match /Employees_WhiteCollar/{employeeId} {
-      allow read: if signedIn();
+      allow read: if hasProfile();
       allow create: if (isSuperAdmin() || isEmployeeAdmin()) &&
         !request.resource.data.keys().hasAny(['nipy']);
       allow update: if (isSuperAdmin() || isEmployeeAdmin()) &&
@@ -102,7 +139,7 @@ service cloud.firestore {
     }
 
     match /Employees_Loyalis/{employeeId} {
-      allow read: if signedIn();
+      allow read: if hasProfile();
       allow create: if (isSuperAdmin() || isEmployeeAdmin()) &&
         !request.resource.data.keys().hasAny(['nipy']) &&
         request.resource.data.get('personal_info', {})
@@ -162,27 +199,32 @@ service cloud.firestore {
     // Rekap inputs remain editable only before payslip verification. Final
     // payslips never inherit later changes because they contain a hashed snapshot.
     match /UraianGaji/{docId} {
-      allow read: if signedIn();
-      allow create, update: if isFinanceVerifier() || isSuperAdmin() || isSatkerRole();
+      allow read: if hasProfile();
+      allow create: if (isFinanceVerifier() || isSuperAdmin() || isSatkerRole()) &&
+        createsOpenPeriodRecord();
+      allow update: if (isFinanceVerifier() || isSuperAdmin() || isSatkerRole()) &&
+        updatesOpenPeriodRecord();
       allow delete: if false;
     }
 
     match /VakasiTambahan/{docId} {
       allow read: if isFinanceRole() || roleIs('satker_head_loyalis');
-      allow create, update: if isFinanceVerifier() || isSuperAdmin() ||
-        roleIs('satker_head_loyalis');
+      allow create: if (isFinanceVerifier() || isSuperAdmin() ||
+        roleIs('satker_head_loyalis')) && createsOpenPeriodRecord();
+      allow update: if (isFinanceVerifier() || isSuperAdmin() ||
+        roleIs('satker_head_loyalis')) && updatesOpenPeriodRecord();
       allow delete: if false;
     }
 
     match /KegiatanSpj/{docId} {
-      allow read: if signedIn();
+      allow read: if hasProfile();
       // Financial event mutations are validated, audited, and made idempotent
       // by /api/pekarya/spj-events.
       allow create, update, delete: if false;
     }
 
     match /PayrollSlipStates/{docId} {
-      allow read: if signedIn();
+      allow read: if hasProfile();
       // All mutations go through /api/payroll/slips and Firebase Admin.
       allow create, update, delete: if false;
     }
@@ -219,13 +261,21 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /PayrollKoperasiProgressions/{docId} {
+      // Finance may inspect retry/block/completion state; every mutation is
+      // performed by the signed payroll API using Firebase Admin.
+      allow read: if isFinanceRole();
+      allow write: if false;
+    }
+
     match /PayrollDeliveryEvents/{docId} {
       allow read: if isFinanceRole();
       allow write: if false;
     }
 
     match /PayrollPeriods/{period} {
-      allow read: if isFinanceRole();
+      // Period seal state is shared with browser-side transaction guards.
+      allow read: if hasProfile();
       allow write: if false;
     }
 
@@ -308,30 +358,43 @@ service cloud.firestore {
     }
 
     match /DriverPiketSchedules/{piketId} {
-      allow read: if signedIn();
-      allow create, update, delete: if isSuperAdmin() ||
-        (roleIs('satker_head') && hasCategory('SOPIR'));
+      allow read: if hasProfile();
+      allow create: if (isSuperAdmin() ||
+        (roleIs('satker_head') && hasCategory('SOPIR'))) &&
+        createsOpenPeriodRecord();
+      allow update: if (isSuperAdmin() ||
+        (roleIs('satker_head') && hasCategory('SOPIR'))) &&
+        updatesOpenPeriodRecord();
+      allow delete: if (isSuperAdmin() ||
+        (roleIs('satker_head') && hasCategory('SOPIR'))) &&
+        deletesOpenPeriodRecord();
     }
 
     match /LoyalisPresence/{docId} {
       allow read: if isFinanceRole() || roleIs('satker_head_loyalis') ||
         roleIs('loyalis_presence_admin');
-      allow create, update: if isFinanceVerifier() || isSuperAdmin() ||
-        roleIs('loyalis_presence_admin');
+      allow create: if (isFinanceVerifier() || isSuperAdmin() ||
+        roleIs('loyalis_presence_admin')) && createsOpenPeriodRecord();
+      allow update: if (isFinanceVerifier() || isSuperAdmin() ||
+        roleIs('loyalis_presence_admin')) && updatesOpenPeriodRecord();
       allow delete: if false;
     }
 
     match /PelaporanKegiatan/{docId} {
       allow read: if isFinanceRole() || roleIs('satker_head_loyalis');
-      allow create, update: if isFinanceVerifier() || isSuperAdmin() ||
-        roleIs('satker_head_loyalis');
+      allow create: if (isFinanceVerifier() || isSuperAdmin() ||
+        roleIs('satker_head_loyalis')) && createsOpenPeriodRecord();
+      allow update: if (isFinanceVerifier() || isSuperAdmin() ||
+        roleIs('satker_head_loyalis')) && updatesOpenPeriodRecord();
       allow delete: if false;
     }
 
     match /ProposalKegiatan/{docId} {
       allow read: if isFinanceRole() || roleIs('satker_head_loyalis');
-      allow create, update: if isFinanceVerifier() || isSuperAdmin() ||
-        roleIs('satker_head_loyalis');
+      allow create: if (isFinanceVerifier() || isSuperAdmin() ||
+        roleIs('satker_head_loyalis')) && createsOpenPeriodRecord();
+      allow update: if (isFinanceVerifier() || isSuperAdmin() ||
+        roleIs('satker_head_loyalis')) && updatesOpenPeriodRecord();
       allow delete: if false;
     }
 
@@ -372,8 +435,16 @@ service cloud.firestore {
         ownsEmployee(resource.data.employeeId);
       allow create: if roleIs('loyalis') &&
         ownsEmployee(request.resource.data.employeeId) &&
-        request.resource.data.status == 'pending';
+        request.resource.data.status == 'pending' &&
+        createsOpenPeriodRecord();
       allow update: if
+        request.resource.data.get('period', '') ==
+          resource.data.get('period', request.resource.data.get('period', '')) &&
+        periodIsOpen(request.resource.data.get('period', '')) &&
+        (
+          resource.data.keys().hasAny(['period']) ||
+          request.resource.data.date == resource.data.date
+        ) &&
         (
           roleIs('loyalis_presence_admin') &&
           resource.data.status == 'pending' &&

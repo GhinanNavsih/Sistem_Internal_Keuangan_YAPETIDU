@@ -1112,6 +1112,7 @@ export default function PresensiLoyalisRawPage() {
         const updateCorrectionPromises = Object.entries(pendingResolutionUpdates).map(async ([reqId, update]) => {
           const reqRef = doc(db, 'LoyalisPresenceCorrections', reqId);
           await setDoc(reqRef, {
+            period: periodToken,
             status: update.status,
             rejectionReason: update.rejectionReason || null,
             resolvedBy: profile?.email || 'Admin',

@@ -16,9 +16,7 @@ import {
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
 import { DRIFT_NOTICES_COLLECTION } from '@/lib/payroll/slipPropagation';
 import {
-  canAuthorizePayroll,
   canOperatePayments,
-  canVerifyPayroll,
   FINANCE_ROLES,
 } from '@/lib/payroll/roles';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
@@ -32,14 +30,16 @@ import {
   pekaryaPublicationId,
   PEKARYA_PUBLICATIONS_COLLECTION,
 } from '@/lib/server/attendanceStore';
+import {
+  prepareKoperasiPlanForDraft,
+  verifyAndLockWithKoperasi,
+} from '@/lib/server/payrollKoperasiSaga';
 
 export const dynamic = 'force-dynamic';
 
 type PayrollAction =
   | 'save_draft'
-  | 'finance_verify'
-  | 'kbu_approve'
-  | 'lock'
+  | 'verify_and_lock'
   | 'create_payment'
   | 'mark_paid'
   | 'record_email_sent'
@@ -64,9 +64,7 @@ function parseCommand(raw: unknown): PayrollCommand {
   const command = raw as Partial<PayrollCommand>;
   const actions: PayrollAction[] = [
     'save_draft',
-    'finance_verify',
-    'kbu_approve',
-    'lock',
+    'verify_and_lock',
     'create_payment',
     'mark_paid',
     'record_email_sent',
@@ -107,6 +105,18 @@ export async function POST(request: NextRequest) {
     const command = parseCommand(await request.json());
     const slipId = `${command.period}_${command.employeeId}`;
 
+    if (command.action === 'verify_and_lock') {
+      const result = await verifyAndLockWithKoperasi(command, actor);
+      return Response.json(result, {
+        status: result.idempotent ? 200 : 201,
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    }
+
+    const koperasiInstallmentPlan = command.action === 'save_draft'
+      ? await prepareKoperasiPlanForDraft(command, actor)
+      : null;
+
     const result = await adminDb.runTransaction(async (transaction) => {
       const slipRef = adminDb.collection('PayrollSlipStates').doc(slipId);
       const idempotencyRef = adminDb
@@ -121,18 +131,23 @@ export async function POST(request: NextRequest) {
       const loyalisEmployeeRef = adminDb
         .collection('Employees_Loyalis')
         .doc(command.employeeId);
+      const periodSlipsQuery = adminDb
+        .collection('PayrollSlipStates')
+        .where('period', '==', command.period);
       const [
         slipSnapshot,
         idempotencySnapshot,
         periodSnapshot,
         blueEmployeeSnapshot,
         loyalisEmployeeSnapshot,
+        periodSlipsSnapshot,
       ] = await Promise.all([
         transaction.get(slipRef),
         transaction.get(idempotencyRef),
         transaction.get(periodRef),
         transaction.get(blueEmployeeRef),
         transaction.get(loyalisEmployeeRef),
+        transaction.get(periodSlipsQuery),
       ]);
       const before = slipSnapshot.exists ? slipSnapshot.data()! : null;
       const commandHash = snapshotHash(command);
@@ -151,22 +166,26 @@ export async function POST(request: NextRequest) {
       if (!blueEmployeeSnapshot.exists && !loyalisEmployeeSnapshot.exists) {
         throw new HttpError(404, 'Pegawai payroll tidak ditemukan.');
       }
-      const requiresConfiguredPeriod = ![
+      const canRunOutsideClosedPeriod = [
         'record_email_sent',
         'request_correction',
       ].includes(command.action);
-      // Periods are open by default, so drafting never waits on an
-      // administrator. Verification, locking, and payment still require an
-      // explicit closure, which the attendanceStatus check below enforces.
       const periodData = periodSnapshot.data();
+      const periodClosed = periodData?.attendanceStatus === 'closed';
+      if (command.action === 'save_draft' && periodClosed) {
+        throw new HttpError(
+          409,
+          'Periode payroll sudah ditutup. Draf dan seluruh sumber nilainya telah dibekukan.',
+        );
+      }
       if (
-        requiresConfiguredPeriod &&
         command.action !== 'save_draft' &&
-        periodData?.attendanceStatus !== 'closed'
+        !canRunOutsideClosedPeriod &&
+        !periodClosed
       ) {
         throw new HttpError(
           409,
-          'Tutup periode kehadiran sebelum verifikasi, penguncian, atau pembayaran.',
+          'Tutup periode payroll sebelum verifikasi, penguncian, atau pembayaran.',
         );
       }
 
@@ -327,6 +346,23 @@ export async function POST(request: NextRequest) {
           }
           const earnings = validateMoneyFields(command.earnings, 'earnings');
           const deductions = validateMoneyFields(command.deductions, 'deductions');
+          const plannedLoanIds = new Set(
+            koperasiInstallmentPlan?.loans.map((loan) => loan.loanId) || [],
+          );
+          const conflictingSlip = periodSlipsSnapshot.docs.find((document) => {
+            if (document.id === slipId) return false;
+            const otherLoanIds = document.data()?.koperasiInstallmentPlan?.loans;
+            return Array.isArray(otherLoanIds) && otherLoanIds.some(
+              (loan: { loanId?: unknown }) =>
+                typeof loan.loanId === 'string' && plannedLoanIds.has(loan.loanId),
+            );
+          });
+          if (conflictingSlip) {
+            throw new HttpError(
+              409,
+              `Pinjaman Koperasi juga cocok dengan slip ${conflictingSlip.id}. Perbaiki tautan UID pegawai sebelum menyimpan draf.`,
+            );
+          }
           if (canonicalPekaryaSpj !== null) {
             const spjFields = earnings.filter(
               (field) => field.label.trim().toUpperCase() === 'SPJ',
@@ -397,6 +433,7 @@ export async function POST(request: NextRequest) {
             generatedAt: before?.generatedAt || now,
             updatedAt: now,
             updatedBy: actor.uid,
+            koperasiInstallmentPlan,
             schemaVersion: 2,
           };
           reason = command.reason?.trim() || 'Penyimpanan draf payroll';
@@ -409,98 +446,10 @@ export async function POST(request: NextRequest) {
           break;
         }
 
-        case 'finance_verify': {
-          if (!canVerifyPayroll(actor.role)) {
-            throw new HttpError(403, 'Hanya Badan Keuangan yang dapat memverifikasi.');
-          }
-          if (!before || before.status !== 'draft') {
-            throw new HttpError(409, 'Hanya slip draf yang dapat diverifikasi.');
-          }
-          calculatePayrollTotals(
-            validateMoneyFields(before.earnings, 'earnings'),
-            validateMoneyFields(before.deductions, 'deductions'),
-          );
-          reason = requireReason(command);
-          after = {
-            ...before,
-            status: 'finance_verified',
-            financeVerifiedAt: now,
-            financeVerifiedBy: actor.uid,
-            financeVerificationReason: reason,
-            revision: Number(before.revision || 0) + 1,
-            updatedAt: now,
-          };
-          transaction.set(slipRef, after);
-          break;
-        }
-
-        case 'kbu_approve': {
-          if (!canAuthorizePayroll(actor.role)) {
-            throw new HttpError(403, 'Hanya Kepala Biro Umum yang dapat mengesahkan.');
-          }
-          if (!before || before.status !== 'finance_verified') {
-            throw new HttpError(409, 'Slip harus diverifikasi Badan Keuangan terlebih dahulu.');
-          }
-          if (before.financeVerifiedBy === actor.uid) {
-            throw new HttpError(
-              409,
-              'Pengesah KBU harus berbeda dari petugas verifikasi Keuangan.',
-            );
-          }
-          reason = requireReason(command);
-          after = {
-            ...before,
-            status: 'kbu_approved',
-            kbuApprovedAt: now,
-            kbuApprovedBy: actor.uid,
-            kbuApprovalReason: reason,
-            revision: Number(before.revision || 0) + 1,
-            updatedAt: now,
-          };
-          transaction.set(slipRef, after);
-          break;
-        }
-
-        case 'lock': {
-          if (!canAuthorizePayroll(actor.role)) {
-            throw new HttpError(403, 'Hanya Kepala Biro Umum yang dapat mengunci payroll.');
-          }
-          if (!before || before.status !== 'kbu_approved') {
-            throw new HttpError(409, 'Slip harus disahkan KBU sebelum dikunci.');
-          }
-          if (before.financeVerifiedBy === actor.uid) {
-            throw new HttpError(
-              409,
-              'Pengunci harus berbeda dari petugas verifikasi Keuangan.',
-            );
-          }
-          const immutableSnapshot = {
-            employeeId: before.employeeId,
-            period: before.period,
-            earnings: before.earnings,
-            deductions: before.deductions,
-            totalEarnings: before.totalEarnings,
-            totalDeductions: before.totalDeductions,
-            netSalary: before.netSalary,
-            financeVerifiedBy: before.financeVerifiedBy,
-            kbuApprovedBy: before.kbuApprovedBy,
-            revision: before.revision,
-          };
-          const lockedSnapshotHash = snapshotHash(immutableSnapshot);
-          after = {
-            ...before,
-            status: 'locked',
-            lockedAt: now,
-            lockedBy: actor.uid,
-            lockedSnapshotHash,
-            lockedSnapshot: immutableSnapshot,
-            revision: Number(before.revision || 0) + 1,
-            updatedAt: now,
-          };
-          reason = command.reason?.trim() || 'Snapshot payroll disahkan dan dikunci';
-          transaction.set(slipRef, after);
-          break;
-        }
+        case 'verify_and_lock':
+          // Handled before entering the single-project transaction because
+          // Koperasi progression is a resumable cross-project saga.
+          throw new HttpError(500, 'Jalur Verifikasi & Kunci tidak valid.');
 
         case 'create_payment': {
           if (!canOperatePayments(actor.role)) {
@@ -640,7 +589,20 @@ export async function POST(request: NextRequest) {
         createdAt: now,
       });
 
-      return { slipId, status: after.status, idempotent: false };
+      return {
+        slipId,
+        status: after.status,
+        idempotent: false,
+        ...(command.action === 'save_draft' && koperasiInstallmentPlan
+          ? {
+              koperasiPlan: {
+                loanCount: koperasiInstallmentPlan.loans.length,
+                expectedDeduction: koperasiInstallmentPlan.expectedDeduction,
+                matchType: koperasiInstallmentPlan.matchType,
+              },
+            }
+          : {}),
+      };
     });
 
     return Response.json(result, {

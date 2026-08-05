@@ -100,7 +100,7 @@ function parseCommand(raw: unknown): SaveEventCommand {
 export async function GET(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'satker_head', 'finance_verifier', 'payroll_authorizer']);
+    requireRole(actor, ['super_admin', 'satker_head', 'finance_verifier']);
     const period = request.nextUrl.searchParams.get('period') || '';
     const category = request.nextUrl.searchParams.get('category') || '';
     if (!/^\d{4}-\d{2}$/.test(period)) throw new HttpError(400, 'Periode tidak valid.');

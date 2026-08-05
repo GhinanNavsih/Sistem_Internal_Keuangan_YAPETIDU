@@ -346,6 +346,7 @@ export default function PresensiCorrectionPage() {
 
       // 2. Save document to Firestore
       const requestData: Record<string, unknown> = {
+        period: date.slice(0, 7),
         date,
         type,
         checkInTime: type === 'tap_out' ? null : checkIn,

@@ -247,7 +247,7 @@ export default function PekaryaAttendancePage() {
     searchParams.get('category') ||
     (year === 2026 &&
     month === 7 &&
-    (['super_admin', 'finance_verifier', 'payroll_authorizer'].includes(
+    (['super_admin', 'finance_verifier'].includes(
       profile?.role || '',
     ) ||
       profile?.permittedCategories?.includes('SATPAM'))

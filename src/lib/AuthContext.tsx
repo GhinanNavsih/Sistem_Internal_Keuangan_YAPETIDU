@@ -12,7 +12,7 @@ import {
 } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
-import { UserRole } from '@/lib/payroll/roles';
+import { isUserRole, UserRole } from '@/lib/payroll/roles';
 
 export interface UserProfile {
   uid: string;
@@ -91,7 +91,10 @@ async function getUserProfile(uid: string): Promise<UserProfile | null> {
     );
 
     if (docSnap.exists()) {
-      return { uid, ...docSnap.data() } as UserProfile;
+      const data = docSnap.data();
+      return isUserRole(data.role)
+        ? ({ uid, ...data, role: data.role } as UserProfile)
+        : null;
     }
     return null;
   } catch (err) {
@@ -113,7 +116,10 @@ async function getUserProfile(uid: string): Promise<UserProfile | null> {
         PROFILE_CACHE_TIMEOUT_MS
       );
       if (cacheSnap.exists()) {
-        return { uid, ...cacheSnap.data() } as UserProfile;
+        const data = cacheSnap.data();
+        return isUserRole(data.role)
+          ? ({ uid, ...data, role: data.role } as UserProfile)
+          : null;
       }
     } catch (cacheErr) {
       console.warn('Profile cache fallback unavailable:', cacheErr);
@@ -197,7 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const activeProfile = isImpersonatingUi ? impersonatedUiProfile : profile;
 
   const startUiImpersonation = async (targetUser: UserProfile) => {
-    if (!isSuperAdmin) return null;
+    if (!isSuperAdmin || !isUserRole(targetUser.role)) return null;
 
     // The users page normally passes a fresh API result, but refresh the
     // profile at the hand-off as well. This prevents a previously loaded user
@@ -207,9 +213,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const targetSnapshot = await getDocFromServer(doc(db, 'users', targetUser.uid));
       if (targetSnapshot.exists()) {
+        const targetData = targetSnapshot.data();
+        if (!isUserRole(targetData.role)) return null;
         latestTarget = {
           ...targetUser,
-          ...targetSnapshot.data(),
+          ...targetData,
+          role: targetData.role,
           uid: targetUser.uid,
         } as UserProfile;
       }

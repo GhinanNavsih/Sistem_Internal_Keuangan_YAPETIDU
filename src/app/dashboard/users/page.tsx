@@ -800,7 +800,6 @@ export default function UserManagementPage() {
                         <option value="employee_admin">Staf Master Data Pegawai (Employee Admin)</option>
                         <option value="super_admin">Super Administrator (BAK)</option>
                         <option value="finance_verifier">Badan Keuangan (Verifikator)</option>
-                        <option value="payroll_authorizer">Kepala Biro Umum (Pengesah)</option>
                         <option value="honorer">Karyawan Honorer (Lapor Kegiatan)</option>
                         <option value="loyalis">Karyawan Loyalis (Lihat Slip Gaji)</option>
                         <option value="loyalis_presence_admin">Penanggung Jawab Presensi Loyalis</option>
@@ -813,8 +812,7 @@ export default function UserManagementPage() {
                         {newRole === 'satker_head_loyalis' && <span className="text-xs text-slate-600 leading-relaxed block">Dapat login dan mengelola data vakasi/kehadiran Loyalis pada halaman Vakasi Tambahan. Dilarang membuka menu dashboard lain.</span>}
                         {newRole === 'employee_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Hanya memiliki wewenang untuk mengelola data induk pegawai (Master Data Pegawai). Dilarang membuka menu payroll/uraian/lainnya.</span>}
                         {newRole === 'super_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Akses penuh dan bebas ke semua fitur sistem payroll, Legalitas, dan manajemen user.</span>}
-                        {newRole === 'finance_verifier' && <span className="text-xs text-slate-600 leading-relaxed block">Memverifikasi draf payroll dan membuat instruksi pembayaran, tetapi tidak dapat mengesahkan sebagai KBU.</span>}
-                        {newRole === 'payroll_authorizer' && <span className="text-xs text-slate-600 leading-relaxed block">Mengesahkan dan mengunci snapshot payroll setelah verifikasi oleh petugas Keuangan yang berbeda.</span>}
+                        {newRole === 'finance_verifier' && <span className="text-xs text-slate-600 leading-relaxed block">Memverifikasi sekaligus mengunci draf payroll, lalu membuat instruksi pembayaran.</span>}
                         {newRole === 'honorer' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk karyawan kebersihan yang hanya dapat mengakses halaman lapor kegiatan harian. Harus dihubungkan ke data pegawai.</span>}
                         {newRole === 'loyalis' && <span className="text-xs text-slate-600 leading-relaxed block">Akun untuk karyawan Loyalis (white collar) yang hanya dapat mengakses halaman slip gaji. Harus dihubungkan ke data pegawai.</span>}
                         {newRole === 'loyalis_presence_admin' && <span className="text-xs text-slate-600 leading-relaxed block">Memiliki wewenang khusus HANYA untuk menghitung dan mengelola kehadiran Loyalis bulanan via raw daily logs. Dilarang membuka menu dashboard lain.</span>}
@@ -1579,7 +1577,6 @@ export default function UserManagementPage() {
                       <option value="employee_admin">Staf Master Data Pegawai (Employee Admin)</option>
                       <option value="super_admin">Super Administrator (BAK)</option>
                       <option value="finance_verifier">Badan Keuangan (Verifikator)</option>
-                      <option value="payroll_authorizer">Kepala Biro Umum (Pengesah)</option>
                       <option value="honorer">Karyawan Honorer (Lapor Kegiatan)</option>
                       <option value="loyalis">Karyawan Loyalis (Lihat Slip Gaji)</option>
                       <option value="loyalis_presence_admin">Penanggung Jawab Presensi Loyalis</option>
@@ -1594,8 +1591,7 @@ export default function UserManagementPage() {
                     {editRole === 'satker_head_loyalis' && <span>Mengelola data vakasi & laporan kehadiran Loyalis secara penuh.</span>}
                     {editRole === 'employee_admin' && <span>Akses khusus pengelolaan Master Data Pegawai (White Collar & Blue Collar).</span>}
                     {editRole === 'super_admin' && <span>Akses penuh bypass ke seluruh modul payroll, legalitas, dan pengaturan pengguna.</span>}
-                    {editRole === 'finance_verifier' && <span>Memverifikasi draf payroll dan membuat instruksi pembayaran.</span>}
-                    {editRole === 'payroll_authorizer' && <span>Mengesahkan dan mengunci payroll sebagai Kepala Biro Umum.</span>}
+                    {editRole === 'finance_verifier' && <span>Memverifikasi dan mengunci draf payroll, lalu membuat instruksi pembayaran.</span>}
                     {editRole === 'honorer' && <span>Akun khusus karyawan Pekarya untuk pelaporan kegiatan harian di Portal Karyawan.</span>}
                     {editRole === 'loyalis' && <span>Akun khusus karyawan Loyalis untuk melihat slip gaji digital mandiri.</span>}
                     {editRole === 'loyalis_presence_admin' && <span>Mengelola kalkulator presensi loyalis via raw daily logs.</span>}

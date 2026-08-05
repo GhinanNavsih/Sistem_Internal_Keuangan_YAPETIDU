@@ -10,11 +10,10 @@ Legacy anomalies are reported for human review only.
 flowchart LR
   A["Ketua Shift submits one immutable occurrence"] --> B["Deterministic ledger entries"]
   B --> C["Payroll draft"]
-  C --> D["Finance verifies"]
-  D --> E["Different KBU actor approves"]
-  E --> F["KBU locks hashed snapshot"]
-  F --> G["Finance creates unique payment"]
-  G --> H["Finance records bank reference and PAID"]
+  C --> D["Period closes and seals all inputs"]
+  D --> E["Finance advances sealed Koperasi plan exactly once"]
+  E --> F["Finance locks hashed snapshot after Koperasi receipt"]
+  F --> G["Finance records bank reference and PAID"]
 ```
 
 - Satpam shifts use the shift start date as the duty, Friday/holiday, and
@@ -23,8 +22,13 @@ flowchart LR
   and request idempotency key have deterministic or unique identities.
 - Submitted shifts and final payslips have no client write path.
 - Attendance periods cannot be reopened after closure.
-- Verification requires a closed attendance period.
-- Finance verifier and KBU approver must be different Firebase UIDs.
+- Verification and locking are one atomic action and require a closed period.
+- Only `finance_verifier` and `super_admin` may perform that action.
+- Saving a draft previews Koperasi loans server-to-server. The sealed plan must
+  exactly equal the `Pinjaman Kop. UNIPDU` deduction before the period closes.
+- Koperasi progression is idempotent per payroll period and loan. A failed
+  Koperasi request leaves the payslip as a retryable draft; a final installment
+  is automatically marked `Lunas`.
 - Locked snapshots are hashed. Rate/config changes cannot recalculate them.
 - A payment document is unique per employee and period, and `PAID` requires a
   bank reference.
@@ -65,19 +69,32 @@ flowchart LR
 ## Required deployment order
 
 1. Back up Firestore and export the currently deployed rules.
-2. Deploy the application and `Current_Firestore_Rules.md`/`storage.rules`
-   together during a maintenance window.
-3. Create the App Hosting secret `google-maps-api-key` with a server-only,
+2. Generate one random HMAC value of at least 32 characters. Store it as the
+   Koperasi Functions secret `INTERNAL_PAYROLL_HMAC_SECRET` and as the
+   Internal-BAK App Hosting secret `koperasi-payroll-hmac-secret`. Never expose
+   it to either browser application.
+3. Upgrade/install Koperasi Functions under Node 20, then deploy
+   `payrollLoanBridge` and `recordManualLoanInstallment` before deploying the
+   Koperasi period-aware Simpan Pinjam UI.
+4. Deploy Internal-BAK and `Current_Firestore_Rules.md`/`storage.rules`
+   together during a maintenance window. Confirm
+   `KOPERASI_PAYROLL_BRIDGE_URL` points to the deployed bridge function.
+5. Create the App Hosting secret `google-maps-api-key` with a server-only,
    API-restricted Directions key. Keep the browser key separately restricted by
    HTTP referrer.
-4. Assign the new `finance_verifier` and `payroll_authorizer` roles to separate
-   people. Keep at least two `super_admin` accounts for recovery.
-5. In Payroll, configure the national-holiday calendar for the year.
-6. Open the current attendance period. Once all shifts are entered, close it.
+6. Assign the `finance_verifier` role to the authorized Badan Keuangan staff.
+   Keep at least two `super_admin` accounts for recovery.
+7. While July 2026 remains open, run a read-only Koperasi preview and resave
+   every affected draft. Resolve every deduction mismatch or ambiguous borrower
+   before closure; do not manually record July installments in parallel.
+8. In Payroll, configure the national-holiday calendar for the year.
+9. Open the current attendance period. Once all shifts are entered, close it.
    Closure is permanent.
-7. Test one non-production employee through draft → verify → approve → lock →
-   payment created → paid before processing the full institution.
-8. Monitor `FinancialAuditLogs`, `PayrollDeliveryEvents`, and API errors.
+10. Test one non-production employee through draft → close period → verify and
+    lock → Koperasi receipt → payment created → paid before processing the full
+    institution.
+11. Monitor `FinancialAuditLogs`, `PayrollKoperasiProgressions`, Koperasi
+    `payrollInstallmentProgressions`, and API errors.
 
 The Admin SDK credential must be supplied through the hosting environment.
 `service-account.json` and `.env*` are ignored and must never be committed.

@@ -104,7 +104,6 @@ test('negative net pay is rejected and transfer eligibility is locked-only', () 
     /tidak boleh negatif/,
   );
   assert.equal(isTransferEligibleStatus('draft'), false);
-  assert.equal(isTransferEligibleStatus('finance_verified'), false);
   assert.equal(isTransferEligibleStatus('confirmed'), true);
   assert.equal(isTransferEligibleStatus('locked'), true);
   assert.equal(isTransferEligibleStatus('paid'), true);

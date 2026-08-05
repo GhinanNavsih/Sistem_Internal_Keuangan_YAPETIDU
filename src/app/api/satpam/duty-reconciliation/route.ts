@@ -18,7 +18,6 @@ export async function GET(request: NextRequest) {
     requireRole(actor, [
       'super_admin',
       'finance_verifier',
-      'payroll_authorizer',
       'satker_head',
     ]);
     if (

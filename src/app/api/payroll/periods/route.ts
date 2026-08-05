@@ -16,6 +16,7 @@ import {
   periodCalendarFromData,
 } from '@/lib/payroll/calendar';
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
+import { validateMoneyFields } from '@/lib/payroll/domain';
 import {
   ATTENDANCE_IMPORTS_COLLECTION,
   PEKARYA_PUBLICATIONS_COLLECTION,
@@ -23,6 +24,11 @@ import {
   pekaryaPublicationId,
 } from '@/lib/server/attendanceStore';
 import { syncSatpamDutyReconciliation } from '@/lib/server/satpamDutyPlan';
+import {
+  hashKoperasiInstallmentPlan,
+  KoperasiInstallmentPlan,
+  koperasiLoanDeduction,
+} from '@/lib/server/koperasiPayrollBridge';
 import {
   isPeriodClosed,
   isPeriodMaterialized,
@@ -100,6 +106,22 @@ export async function POST(request: NextRequest) {
     }
     if (!['open', 'closed'].includes(attendanceStatus)) {
       throw new HttpError(400, 'Status periode tidak valid.');
+    }
+
+    // Closing is forward-only. A repeated request is a read-only success so it
+    // cannot move timestamps, alter the frozen calendar, or emit a second audit.
+    const currentPeriodSnapshot = await adminDb
+      .collection('PayrollPeriods')
+      .doc(period)
+      .get();
+    if (
+      attendanceStatus === 'closed' &&
+      isPeriodClosed(currentPeriodSnapshot.data())
+    ) {
+      return Response.json(
+        { ...currentPeriodSnapshot.data(), idempotent: true },
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
     }
 
     if (
@@ -278,9 +300,13 @@ export async function POST(request: NextRequest) {
       const calendarRef = adminDb
         .collection('PayrollHolidayCalendars')
         .doc(period.slice(0, 4));
-      const [snapshot, calendarSnapshot] = await Promise.all([
+      const periodSlipsQuery = adminDb
+        .collection('PayrollSlipStates')
+        .where('period', '==', period.replace('-', '_'));
+      const [snapshot, calendarSnapshot, periodSlipsSnapshot] = await Promise.all([
         transaction.get(periodRef),
         transaction.get(calendarRef),
+        transaction.get(periodSlipsQuery),
       ]);
       const before = snapshot.exists ? snapshot.data()! : null;
       // Periods are open by default, so closing a month that nobody explicitly
@@ -291,11 +317,49 @@ export async function POST(request: NextRequest) {
           'Periode yang sudah ditutup tidak dapat dibuka kembali; gunakan proses koreksi.',
         );
       }
+      if (before?.attendanceStatus === 'closed' && attendanceStatus === 'closed') {
+        return { ...before, idempotent: true };
+      }
       if (attendanceStatus === 'open' && !isPeriodClosed(before)) {
         throw new HttpError(
           409,
           'Periode sudah menerima input secara otomatis; tindakan membuka periode tidak diperlukan lagi.',
         );
+      }
+      if (attendanceStatus === 'closed') {
+        const invalidDrafts = periodSlipsSnapshot.docs.filter((document) => {
+          const data = document.data();
+          if (data.status !== 'draft') return false;
+          const plan = data.koperasiInstallmentPlan as
+            | KoperasiInstallmentPlan
+            | undefined;
+          try {
+            const expectedDeduction = koperasiLoanDeduction(
+              validateMoneyFields(data.deductions, 'deductions'),
+            );
+            const planTotal = Array.isArray(plan?.loans)
+              ? plan.loans.reduce(
+                  (total, loan) => total + Number(loan.installmentAmount || 0),
+                  0,
+                )
+              : -1;
+            return !plan ||
+              plan.schemaVersion !== 1 ||
+              plan.payrollPeriod !== period ||
+              typeof plan.planHash !== 'string' ||
+              plan.expectedDeduction !== expectedDeduction ||
+              planTotal !== expectedDeduction ||
+              hashKoperasiInstallmentPlan(plan) !== plan.planHash;
+          } catch {
+            return true;
+          }
+        });
+        if (invalidDrafts.length > 0) {
+          throw new HttpError(
+            409,
+            `${invalidDrafts.length} draf belum memiliki rencana cicilan Koperasi yang valid. Simpan ulang seluruh draf sebelum menutup periode.`,
+          );
+        }
       }
 
       // Sync calendar snapshot or create auto-version if calendar doesn't exist yet
@@ -308,13 +372,14 @@ export async function POST(request: NextRequest) {
         [...existingDates, ...holidays],
       );
 
+      const now = admin.firestore.FieldValue.serverTimestamp();
       transaction.set(
         calendarRef,
         {
           year,
           version: calData.version || `ID-${year}-V1`,
           dates: mergedDates,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: now,
           updatedBy: actor.uid,
         },
         { merge: true },
@@ -342,12 +407,23 @@ export async function POST(request: NextRequest) {
                 annualVersion: calData.version || `ID-${year}-V1`,
                 premiumDates: periodPremiumDates,
                 reason,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: now,
                 updatedBy: actor.uid,
               },
               calendarReconciliationStatus: 'complete',
             }),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...(attendanceStatus === 'closed'
+          ? {
+              sealedAt: now,
+              sealedBy: actor.uid,
+              dataSealVersion: 1,
+              koperasiPlanVersion: 1,
+              koperasiPlannedDraftCount: periodSlipsSnapshot.docs.filter(
+                (document) => document.data().status === 'draft',
+              ).length,
+            }
+          : {}),
+        updatedAt: now,
         updatedBy: actor.uid,
         schemaVersion: 1,
       };
@@ -366,7 +442,11 @@ export async function POST(request: NextRequest) {
       return after;
     });
 
-    return Response.json(result, { status: 201 });
+    return Response.json(result, {
+      status:
+        'idempotent' in result && result.idempotent === true ? 200 : 201,
+      headers: { 'Cache-Control': 'no-store' },
+    });
   } catch (error) {
     return errorResponse(error);
   }
