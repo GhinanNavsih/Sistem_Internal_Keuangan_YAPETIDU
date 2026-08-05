@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
@@ -17,6 +18,11 @@ import {
 } from '@/lib/payroll/calendar';
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
 import { validateMoneyFields } from '@/lib/payroll/domain';
+import {
+  buildPayrollRoster,
+  missingPayrollRosterEntries,
+  PayrollRosterEntry,
+} from '@/lib/payroll/payrollRoster';
 import {
   ATTENDANCE_IMPORTS_COLLECTION,
   PEKARYA_PUBLICATIONS_COLLECTION,
@@ -38,6 +44,20 @@ import {
 export const dynamic = 'force-dynamic';
 
 type AttendanceStatus = 'open' | 'closed';
+const LEGACY_ROSTER_REPAIR_PERIOD = '2026-07';
+
+function hasPayrollRosterSeal(data: FirebaseFirestore.DocumentData | undefined): boolean {
+  return data?.payrollRosterSeal?.schemaVersion === 1;
+}
+
+function payrollRosterHash(entries: readonly PayrollRosterEntry[]): string {
+  return createHash('sha256')
+    .update(JSON.stringify(entries.map((entry) => ({
+      employeeId: entry.employeeId,
+      employeeCollection: entry.employeeCollection,
+    }))))
+    .digest('hex');
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -116,7 +136,11 @@ export async function POST(request: NextRequest) {
       .get();
     if (
       attendanceStatus === 'closed' &&
-      isPeriodClosed(currentPeriodSnapshot.data())
+      isPeriodClosed(currentPeriodSnapshot.data()) &&
+      (
+        hasPayrollRosterSeal(currentPeriodSnapshot.data()) ||
+        period !== LEGACY_ROSTER_REPAIR_PERIOD
+      )
     ) {
       return Response.json(
         { ...currentPeriodSnapshot.data(), idempotent: true },
@@ -303,12 +327,23 @@ export async function POST(request: NextRequest) {
       const periodSlipsQuery = adminDb
         .collection('PayrollSlipStates')
         .where('period', '==', period.replace('-', '_'));
-      const [snapshot, calendarSnapshot, periodSlipsSnapshot] = await Promise.all([
+      const blueEmployeesQuery = adminDb.collection('Employees_BlueCollar');
+      const loyalisEmployeesQuery = adminDb.collection('Employees_Loyalis');
+      const [
+        snapshot,
+        calendarSnapshot,
+        periodSlipsSnapshot,
+        blueEmployeesSnapshot,
+        loyalisEmployeesSnapshot,
+      ] = await Promise.all([
         transaction.get(periodRef),
         transaction.get(calendarRef),
         transaction.get(periodSlipsQuery),
+        transaction.get(blueEmployeesQuery),
+        transaction.get(loyalisEmployeesQuery),
       ]);
       const before = snapshot.exists ? snapshot.data()! : null;
+      let validatedPayrollRosterSeal: Record<string, unknown> | null = null;
       // Periods are open by default, so closing a month that nobody explicitly
       // opened is normal and must materialize it rather than be rejected.
       if (before?.attendanceStatus === 'closed' && attendanceStatus === 'open') {
@@ -317,7 +352,11 @@ export async function POST(request: NextRequest) {
           'Periode yang sudah ditutup tidak dapat dibuka kembali; gunakan proses koreksi.',
         );
       }
-      if (before?.attendanceStatus === 'closed' && attendanceStatus === 'closed') {
+      if (
+        before?.attendanceStatus === 'closed' &&
+        attendanceStatus === 'closed' &&
+        (hasPayrollRosterSeal(before) || period !== LEGACY_ROSTER_REPAIR_PERIOD)
+      ) {
         return { ...before, idempotent: true };
       }
       if (attendanceStatus === 'open' && !isPeriodClosed(before)) {
@@ -327,6 +366,61 @@ export async function POST(request: NextRequest) {
         );
       }
       if (attendanceStatus === 'closed') {
+        const roster = buildPayrollRoster(
+          blueEmployeesSnapshot.docs.map((document) => ({
+            id: document.id,
+            data: document.data(),
+          })),
+          loyalisEmployeesSnapshot.docs.map((document) => ({
+            id: document.id,
+            data: document.data(),
+          })),
+        );
+        if (roster.duplicateEmployeeIds.length > 0) {
+          throw new HttpError(
+            409,
+            `ID pegawai payroll dipakai di lebih dari satu koleksi: ${roster.duplicateEmployeeIds.slice(0, 10).join(', ')}.`,
+          );
+        }
+        const slipIdPrefix = `${period.replace('-', '_')}_`;
+        const slipsByEmployeeId = new Map(
+          periodSlipsSnapshot.docs.map((document) => {
+            const data = document.data();
+            const employeeId = String(
+              data.employeeId || document.id.slice(slipIdPrefix.length),
+            );
+            return [employeeId, data] as const;
+          }),
+        );
+        const missingEntries = missingPayrollRosterEntries(
+          roster.entries,
+          new Set(slipsByEmployeeId.keys()),
+        );
+        if (missingEntries.length > 0) {
+          const examples = missingEntries
+            .slice(0, 8)
+            .map((entry) => `${entry.name || entry.employeeId} (${entry.employeeId})`)
+            .join(', ');
+          throw new HttpError(
+            409,
+            `${missingEntries.length} pegawai payroll belum memiliki draf: ${examples}${missingEntries.length > 8 ? ', …' : ''}. Siapkan seluruh draf sebelum menutup periode.`,
+          );
+        }
+
+        const invalidStatuses = roster.entries.filter((entry) => {
+          const status = slipsByEmployeeId.get(entry.employeeId)?.status;
+          if (before?.attendanceStatus === 'closed') {
+            return !['draft', 'locked', 'payment_created', 'paid', 'confirmed'].includes(status);
+          }
+          return status !== 'draft';
+        });
+        if (invalidStatuses.length > 0) {
+          throw new HttpError(
+            409,
+            `${invalidStatuses.length} slip memiliki status yang tidak sesuai untuk penyegelan roster payroll.`,
+          );
+        }
+
         const invalidDrafts = periodSlipsSnapshot.docs.filter((document) => {
           const data = document.data();
           if (data.status !== 'draft') return false;
@@ -359,6 +453,61 @@ export async function POST(request: NextRequest) {
             409,
             `${invalidDrafts.length} draf belum memiliki rencana cicilan Koperasi yang valid. Simpan ulang seluruh draf sebelum menutup periode.`,
           );
+        }
+
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const payrollRosterSeal = {
+          schemaVersion: 1,
+          employeeIds: roster.entries.map((entry) => entry.employeeId),
+          rosterHash: payrollRosterHash(roster.entries),
+          totalEmployeeCount: roster.entries.length,
+          pekaryaCount: roster.entries.filter(
+            (entry) => entry.employeeCollection === 'Employees_BlueCollar',
+          ).length,
+          loyalisCount: roster.entries.filter(
+            (entry) => entry.employeeCollection === 'Employees_Loyalis',
+          ).length,
+          sealedAt: now,
+          sealedBy: actor.uid,
+        };
+        validatedPayrollRosterSeal = payrollRosterSeal;
+
+        // July 2026 was already closed before roster completeness became a
+        // closure invariant. Once its missing drafts have been repaired, seal
+        // only the roster metadata; never move its original closure timestamp
+        // or rewrite its frozen calendar.
+        if (before?.attendanceStatus === 'closed') {
+          const after = {
+            ...before,
+            payrollRosterSeal,
+            koperasiPlannedDraftCount: periodSlipsSnapshot.docs.filter(
+              (document) => document.data().status === 'draft',
+            ).length,
+            rosterSealRepairedAt: now,
+            rosterSealRepairedBy: actor.uid,
+            updatedAt: now,
+            updatedBy: actor.uid,
+          };
+          transaction.set(periodRef, {
+            payrollRosterSeal,
+            koperasiPlannedDraftCount: after.koperasiPlannedDraftCount,
+            rosterSealRepairedAt: now,
+            rosterSealRepairedBy: actor.uid,
+            updatedAt: now,
+            updatedBy: actor.uid,
+          }, { merge: true });
+          transaction.create(
+            newFinancialAuditRef(),
+            buildFinancialAuditRecord(actor, {
+              action: 'PAYROLL_PERIOD_ROSTER_REPAIRED',
+              entityType: 'PayrollPeriod',
+              entityId: period,
+              reason: `Menyegel roster lengkap ${roster.entries.length} pegawai pada periode tertutup ${period}`,
+              before,
+              after,
+            }),
+          );
+          return { ...after, rosterSealRepaired: true };
         }
       }
 
@@ -421,6 +570,7 @@ export async function POST(request: NextRequest) {
               koperasiPlannedDraftCount: periodSlipsSnapshot.docs.filter(
                 (document) => document.data().status === 'draft',
               ).length,
+              payrollRosterSeal: validatedPayrollRosterSeal,
             }
           : {}),
         updatedAt: now,

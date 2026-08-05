@@ -190,6 +190,20 @@ export async function verifyAndLockWithKoperasi(
     if (periodSnapshot.data()?.attendanceStatus !== 'closed') {
       throw new HttpError(409, 'Tutup periode payroll sebelum verifikasi dan penguncian.');
     }
+    if (periodSnapshot.data()?.payrollRosterSeal?.schemaVersion !== 1) {
+      throw new HttpError(
+        409,
+        'Roster payroll belum lengkap dan belum disegel. Siapkan seluruh draf sebelum Verifikasi & Kunci.',
+      );
+    }
+    if (
+      !Array.isArray(periodSnapshot.data()?.payrollRosterSeal?.employeeIds) ||
+      !periodSnapshot.data()?.payrollRosterSeal?.employeeIds.includes(
+        command.employeeId,
+      )
+    ) {
+      throw new HttpError(409, 'Pegawai tidak termasuk dalam roster payroll yang disegel.');
+    }
     const before = slipSnapshot.data();
     const existingOperation = operationSnapshot.data();
     if (before?.status === 'locked' && existingOperation?.status === 'completed') {
@@ -283,6 +297,17 @@ export async function verifyAndLockWithKoperasi(
     }
     if (periodSnapshot.data()?.attendanceStatus !== 'closed') {
       throw new HttpError(409, 'Periode payroll tidak lagi tertutup.');
+    }
+    if (periodSnapshot.data()?.payrollRosterSeal?.schemaVersion !== 1) {
+      throw new HttpError(409, 'Segel roster payroll tidak ditemukan.');
+    }
+    if (
+      !Array.isArray(periodSnapshot.data()?.payrollRosterSeal?.employeeIds) ||
+      !periodSnapshot.data()?.payrollRosterSeal?.employeeIds.includes(
+        command.employeeId,
+      )
+    ) {
+      throw new HttpError(409, 'Pegawai tidak termasuk dalam roster payroll yang disegel.');
     }
     const before = slipSnapshot.data();
     const operation = operationSnapshot.data();

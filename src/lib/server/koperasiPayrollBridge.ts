@@ -89,6 +89,31 @@ export function koperasiLoanDeduction(deductions: readonly MoneyField[]): number
   }, 0);
 }
 
+export function replaceKoperasiLoanDeduction(
+  deductions: readonly MoneyField[],
+  amount: number,
+): MoneyField[] {
+  if (!Number.isSafeInteger(amount) || amount < 0) {
+    throw new KoperasiBridgeError(
+      502,
+      'INVALID_DEDUCTION_RESPONSE',
+      'Koperasi mengembalikan nilai cicilan yang tidak valid.',
+    );
+  }
+  let replaced = false;
+  const next = deductions.map((field) => {
+    const label = field.label.trim().replace(/\s+/g, ' ').toUpperCase();
+    if (!KOPERASI_LOAN_LABELS.has(label)) return { ...field };
+    if (replaced) return { ...field, amount: 0 };
+    replaced = true;
+    return { ...field, amount };
+  });
+  if (!replaced) {
+    next.push({ label: 'Pinjaman Kop. UNIPDU', amount });
+  }
+  return next;
+}
+
 function bridgeConfig(): { url: string; secret: string } {
   const url = process.env.KOPERASI_PAYROLL_BRIDGE_URL?.trim() || '';
   const secret = process.env.KOPERASI_PAYROLL_HMAC_SECRET || '';

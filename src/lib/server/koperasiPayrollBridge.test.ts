@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   hashKoperasiInstallmentPlan,
   koperasiLoanDeduction,
+  replaceKoperasiLoanDeduction,
 } from './koperasiPayrollBridge';
 
 test('Koperasi loan deduction recognizes canonical aliases only', () => {
@@ -15,6 +16,21 @@ test('Koperasi loan deduction recognizes canonical aliases only', () => {
     ]),
     425_000,
   );
+});
+
+test('legacy repair replaces exactly one Koperasi loan deduction total', () => {
+  const repaired = replaceKoperasiLoanDeduction([
+    { label: 'BPJS', amount: 50_000 },
+    { label: 'Pinjaman Kop. UNIPDU', amount: 100_000 },
+    { label: 'Pinjaman Koperasi', amount: 200_000 },
+  ], 325_000);
+
+  assert.equal(koperasiLoanDeduction(repaired), 325_000);
+  assert.deepEqual(repaired, [
+    { label: 'BPJS', amount: 50_000 },
+    { label: 'Pinjaman Kop. UNIPDU', amount: 325_000 },
+    { label: 'Pinjaman Koperasi', amount: 0 },
+  ]);
 });
 
 test('sealed Koperasi plan hash changes with installment state', () => {

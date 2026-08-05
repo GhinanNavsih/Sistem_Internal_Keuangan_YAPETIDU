@@ -14,6 +14,7 @@ import {
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
+import { isPayrollEmployeeEligible } from '@/lib/payroll/payrollRoster';
 import { DRIFT_NOTICES_COLLECTION } from '@/lib/payroll/slipPropagation';
 import {
   canOperatePayments,
@@ -34,11 +35,16 @@ import {
   prepareKoperasiPlanForDraft,
   verifyAndLockWithKoperasi,
 } from '@/lib/server/payrollKoperasiSaga';
+import {
+  KoperasiBridgeError,
+  replaceKoperasiLoanDeduction,
+} from '@/lib/server/koperasiPayrollBridge';
 
 export const dynamic = 'force-dynamic';
 
 type PayrollAction =
   | 'save_draft'
+  | 'repair_missing_draft'
   | 'verify_and_lock'
   | 'create_payment'
   | 'mark_paid'
@@ -64,6 +70,7 @@ function parseCommand(raw: unknown): PayrollCommand {
   const command = raw as Partial<PayrollCommand>;
   const actions: PayrollAction[] = [
     'save_draft',
+    'repair_missing_draft',
     'verify_and_lock',
     'create_payment',
     'mark_paid',
@@ -98,6 +105,19 @@ function requireReason(command: PayrollCommand): string {
   return reason;
 }
 
+const LEGACY_CLOSED_DRAFT_REPAIR_PERIOD = '2026_07';
+
+function isDraftWriteAction(action: PayrollAction): boolean {
+  return action === 'save_draft' || action === 'repair_missing_draft';
+}
+
+function bridgeHttpError(error: KoperasiBridgeError): HttpError {
+  return new HttpError(
+    error.status >= 500 ? 503 : 409,
+    `${error.message}${error.message.includes('Slip tetap berstatus draf') ? '' : ' Slip tetap berstatus draf.'}`,
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
@@ -113,9 +133,53 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const koperasiInstallmentPlan = command.action === 'save_draft'
-      ? await prepareKoperasiPlanForDraft(command, actor)
-      : null;
+    let effectiveCommand = command;
+    let koperasiInstallmentPlan = null;
+    let repairedKoperasiDeduction: number | null = null;
+    if (isDraftWriteAction(command.action)) {
+      try {
+        koperasiInstallmentPlan = await prepareKoperasiPlanForDraft(
+          effectiveCommand,
+          actor,
+        );
+      } catch (error) {
+        const details = error instanceof KoperasiBridgeError
+          ? error.details as { actualDeduction?: unknown } | null
+          : null;
+        const actualDeduction = Number(details?.actualDeduction);
+        if (
+          command.action === 'repair_missing_draft' &&
+          error instanceof KoperasiBridgeError &&
+          error.code === 'DEDUCTION_MISMATCH' &&
+          Number.isSafeInteger(actualDeduction) &&
+          actualDeduction >= 0
+        ) {
+          effectiveCommand = {
+            ...command,
+            deductions: replaceKoperasiLoanDeduction(
+              validateMoneyFields(command.deductions, 'deductions'),
+              actualDeduction,
+            ),
+          };
+          repairedKoperasiDeduction = actualDeduction;
+          try {
+            koperasiInstallmentPlan = await prepareKoperasiPlanForDraft(
+              effectiveCommand,
+              actor,
+            );
+          } catch (retryError) {
+            if (retryError instanceof KoperasiBridgeError) {
+              throw bridgeHttpError(retryError);
+            }
+            throw retryError;
+          }
+        } else if (error instanceof KoperasiBridgeError) {
+          throw bridgeHttpError(error);
+        } else {
+          throw error;
+        }
+      }
+    }
 
     const result = await adminDb.runTransaction(async (transaction) => {
       const slipRef = adminDb.collection('PayrollSlipStates').doc(slipId);
@@ -178,8 +242,48 @@ export async function POST(request: NextRequest) {
           'Periode payroll sudah ditutup. Draf dan seluruh sumber nilainya telah dibekukan.',
         );
       }
+      if (command.action === 'repair_missing_draft') {
+        if (
+          command.period !== LEGACY_CLOSED_DRAFT_REPAIR_PERIOD ||
+          !periodClosed ||
+          Number(periodData?.dataSealVersion || 0) !== 1 ||
+          periodData?.payrollRosterSeal?.schemaVersion === 1
+        ) {
+          throw new HttpError(
+            409,
+            'Perbaikan draf tertutup hanya diizinkan untuk transisi Juli 2026 yang belum memiliki segel roster.',
+          );
+        }
+        if (before) {
+          throw new HttpError(
+            409,
+            'Draf pegawai sudah tersedia dan tidak boleh ditimpa oleh proses perbaikan. Muat ulang halaman.',
+          );
+        }
+        if (blueEmployeeSnapshot.exists && loyalisEmployeeSnapshot.exists) {
+          throw new HttpError(
+            409,
+            'ID pegawai ditemukan di dua koleksi payroll; perbaiki master data terlebih dahulu.',
+          );
+        }
+        const eligible = blueEmployeeSnapshot.exists
+          ? isPayrollEmployeeEligible(
+              'Employees_BlueCollar',
+              blueEmployeeSnapshot.data()!,
+            )
+          : isPayrollEmployeeEligible(
+              'Employees_Loyalis',
+              loyalisEmployeeSnapshot.data()!,
+            );
+        if (!eligible) {
+          throw new HttpError(
+            409,
+            'Pegawai tidak termasuk roster payroll aktif yang dapat diperbaiki.',
+          );
+        }
+      }
       if (
-        command.action !== 'save_draft' &&
+        !isDraftWriteAction(command.action) &&
         !canRunOutsideClosedPeriod &&
         !periodClosed
       ) {
@@ -201,7 +305,7 @@ export async function POST(request: NextRequest) {
       let canonicalSatpamDuty:
         | { harian: number; jumatLibur: number; bonusPresensiBulanan: number }
         | null = null;
-      if (command.action === 'save_draft' && blueEmployeeSnapshot.exists) {
+      if (isDraftWriteAction(command.action) && blueEmployeeSnapshot.exists) {
         const employee = blueEmployeeSnapshot.data()!;
         const jobCategory = employee.employment?.jobCategory;
         if (!isPekaryaJobCategory(jobCategory)) {
@@ -337,15 +441,17 @@ export async function POST(request: NextRequest) {
       }
 
       switch (command.action) {
-        case 'save_draft': {
+        case 'save_draft':
+        case 'repair_missing_draft': {
+          const isLegacyRepair = command.action === 'repair_missing_draft';
           if (before && before.status !== 'draft') {
             throw new HttpError(
               409,
               `Slip berstatus ${before.status}; hanya draf yang dapat diubah.`,
             );
           }
-          const earnings = validateMoneyFields(command.earnings, 'earnings');
-          const deductions = validateMoneyFields(command.deductions, 'deductions');
+          const earnings = validateMoneyFields(effectiveCommand.earnings, 'earnings');
+          const deductions = validateMoneyFields(effectiveCommand.deductions, 'deductions');
           const plannedLoanIds = new Set(
             koperasiInstallmentPlan?.loans.map((loan) => loan.loanId) || [],
           );
@@ -434,10 +540,39 @@ export async function POST(request: NextRequest) {
             updatedAt: now,
             updatedBy: actor.uid,
             koperasiInstallmentPlan,
+            ...(isLegacyRepair
+              ? {
+                  closureRepair: {
+                    schemaVersion: 1,
+                    source: 'legacy_2026_07_missing_draft',
+                    repairedAt: now,
+                    repairedBy: actor.uid,
+                    koperasiDeductionAdjusted:
+                      repairedKoperasiDeduction !== null,
+                    repairedKoperasiDeduction,
+                  },
+                }
+              : {}),
             schemaVersion: 2,
           };
-          reason = command.reason?.trim() || 'Penyimpanan draf payroll';
-          transaction.set(slipRef, after);
+          reason = command.reason?.trim() || (isLegacyRepair
+            ? 'Perbaikan draf payroll yang hilang pada penutupan Juli 2026'
+            : 'Penyimpanan draf payroll');
+          auditAction = isLegacyRepair
+            ? 'PAYROLL_MISSING_DRAFT_REPAIRED'
+            : auditAction;
+          if (isLegacyRepair) {
+            transaction.create(slipRef, after);
+            transaction.set(periodRef, {
+              legacyDraftRepairCount: admin.firestore.FieldValue.increment(1),
+              legacyDraftRepairEmployeeIds:
+                admin.firestore.FieldValue.arrayUnion(command.employeeId),
+              legacyDraftRepairLastAt: now,
+              legacyDraftRepairLastBy: actor.uid,
+            }, { merge: true });
+          } else {
+            transaction.set(slipRef, after);
+          }
           // A manual save re-derives from current data, so any profile drift
           // recorded against this slip has now been dealt with.
           transaction.delete(
@@ -593,12 +728,13 @@ export async function POST(request: NextRequest) {
         slipId,
         status: after.status,
         idempotent: false,
-        ...(command.action === 'save_draft' && koperasiInstallmentPlan
+        ...(isDraftWriteAction(command.action) && koperasiInstallmentPlan
           ? {
               koperasiPlan: {
                 loanCount: koperasiInstallmentPlan.loans.length,
                 expectedDeduction: koperasiInstallmentPlan.expectedDeduction,
                 matchType: koperasiInstallmentPlan.matchType,
+                repairedDeduction: repairedKoperasiDeduction,
               },
             }
           : {}),

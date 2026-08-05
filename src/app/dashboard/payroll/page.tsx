@@ -86,6 +86,12 @@ import {
   isTransferEligibleStatus,
   previousPayrollPeriodToken,
 } from '@/lib/payroll/domain';
+import {
+  buildDashboardSlipData,
+  DashboardPayrollCollar,
+} from '@/lib/payroll/dashboardSlipData';
+import { buildKoperasiPayrollAmountMaps } from '@/lib/payroll/koperasiAmounts';
+import { isPayrollEmployeeEligible } from '@/lib/payroll/payrollRoster';
 
 import {
   calculateTotalEarnings,
@@ -125,6 +131,19 @@ function getPayrollPeriod(date: Date): string {
 interface EmployeeRow extends Employee {
   raw: any;
   rowIndex: number;
+}
+
+interface PayrollTarget {
+  id: string;
+  name: string;
+  collar: DashboardPayrollCollar;
+  raw: EmployeeRow['raw'];
+}
+
+interface BulkPayrollProgress {
+  phase: 'preparing' | 'sealing' | 'locking';
+  completed: number;
+  total: number;
 }
 
 interface BulkChange {
@@ -170,6 +189,46 @@ function koperasiReceiptMessage(receipt: KoperasiLockReceipt): string {
   ].filter(Boolean).join('; ') + '.';
 }
 
+async function runWithConcurrency<T>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let nextIndex = 0;
+  const runners = Array.from(
+    { length: Math.min(Math.max(1, concurrency), items.length) },
+    async () => {
+      while (nextIndex < items.length) {
+        const item = items[nextIndex++];
+        await worker(item);
+      }
+    },
+  );
+  await Promise.all(runners);
+}
+
+function replaceClientKoperasiDeduction(
+  deductions: readonly PaySlipField[],
+  amount: number,
+): PaySlipField[] {
+  const labels = new Set([
+    'PINJAMAN KOP. UNIPDU',
+    'PINJAMAN KOP UNIPDU',
+    'PINJAMAN KOPERASI',
+    'PINJAMAN KOPERASI UNIPDU',
+  ]);
+  let replaced = false;
+  const next = deductions.map((field) => {
+    const normalized = field.label.trim().replace(/\s+/g, ' ').toUpperCase();
+    if (!labels.has(normalized)) return { ...field };
+    if (replaced) return { ...field, amount: 0 };
+    replaced = true;
+    return { ...field, amount };
+  });
+  if (!replaced) next.push({ label: 'Pinjaman Kop. UNIPDU', amount });
+  return next;
+}
+
 export default function PayrollValidationDashboard() {
   const { user, profile, logout } = useAuth();
   const { sendingBulkEmail, startBulkEmailJob, bulkEmailProgress, emailTargetCount, bulkEmailResults } = useBulkEmail();
@@ -182,6 +241,8 @@ export default function PayrollValidationDashboard() {
     kepangkatanAllowanceMap: contextKepangkatanAllowanceMap,
     koperasiDeductions: contextKoperasiDeductions,
     koperasiSavings: contextKoperasiSavings,
+    koperasiLoans,
+    koperasiUsers,
     loading: contextLoading
   } = useDashboardData();
 
@@ -246,6 +307,9 @@ export default function PayrollValidationDashboard() {
   const [kepangkatanDesignations, setKepangkatanDesignations] = useState<Record<number, string>>({});
   const [localLoading, setLocalLoading] = useState(false);
   const [confirmingBulk, setConfirmingBulk] = useState(false);
+  const [preparingAllDrafts, setPreparingAllDrafts] = useState(false);
+  const [bulkPayrollProgress, setBulkPayrollProgress] =
+    useState<BulkPayrollProgress | null>(null);
   const loading = contextLoading || localLoading;
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' | null }>({ key: '', direction: null });
 
@@ -275,9 +339,68 @@ export default function PayrollValidationDashboard() {
   const [vakasiTambahanListMap, setVakasiTambahanListMap] = useState<Record<string, { eventName: string; payGiven: number; isEndOfMonth?: boolean }[]>>({});
   const [functionalAllowanceMap, setFunctionalAllowanceMap] = useState<Record<string, number>>({});
   const [kepangkatanAllowanceMap, setKepangkatanAllowanceMap] = useState<Record<string, number>>({});
-  const koperasiDeductions = contextKoperasiDeductions;
-  const koperasiSavings = contextKoperasiSavings;
+  const selectedKoperasiAmounts = useMemo(() => {
+    const payrollPeriod = `${targetDate.getFullYear()}-${String(
+      targetDate.getMonth() + 1,
+    ).padStart(2, '0')}`;
+    const allEmployees = [...employeesLoyalis, ...employeesBlueCollar];
+    if (koperasiLoans.length === 0 && koperasiUsers.length === 0) {
+      return {
+        deductions: contextKoperasiDeductions,
+        savings: contextKoperasiSavings,
+      };
+    }
+    return buildKoperasiPayrollAmountMaps(
+      payrollPeriod,
+      allEmployees,
+      koperasiLoans,
+      koperasiUsers,
+    );
+  }, [
+    targetDate,
+    employeesLoyalis,
+    employeesBlueCollar,
+    koperasiLoans,
+    koperasiUsers,
+    contextKoperasiDeductions,
+    contextKoperasiSavings,
+  ]);
+  const koperasiDeductions = selectedKoperasiAmounts.deductions;
+  const koperasiSavings = selectedKoperasiAmounts.savings;
   const [loyalisPresenceData, setLoyalisPresenceData] = useState<any | null>(null);
+
+  const allPayrollTargets = useMemo<PayrollTarget[]>(() => [
+    ...employeesLoyalis
+      .filter((employee) =>
+        isPayrollEmployeeEligible('Employees_Loyalis', employee),
+      )
+      .map((employee) => ({
+        id: employee.id,
+        name: String(employee.personal_info?.name || employee.id),
+        collar: 'loyalis' as const,
+        raw: employee,
+      })),
+    ...employeesBlueCollar
+      .filter((employee) =>
+        isPayrollEmployeeEligible('Employees_BlueCollar', employee),
+      )
+      .map((employee) => ({
+        id: employee.id,
+        name: String(employee.name || employee.id),
+        collar: 'pekarya' as const,
+        raw: employee,
+      })),
+  ].sort((left, right) =>
+    left.name.localeCompare(right.name, 'id') || left.id.localeCompare(right.id),
+  ), [employeesLoyalis, employeesBlueCollar]);
+
+  const missingPayrollDraftCount = allPayrollTargets.filter(
+    (target) => !slipStates[target.id],
+  ).length;
+  const pendingPayrollLockCount = allPayrollTargets.filter((target) => {
+    const status = slipStates[target.id]?.status;
+    return !status || status === 'draft';
+  }).length;
 
   // Cooperative matched deductions/savings are pre-calculated at layout context level.
 
@@ -389,6 +512,12 @@ export default function PayrollValidationDashboard() {
 
   const handleSetAttendancePeriod = async (_attendanceStatus: 'closed') => {
     const period = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+    if (missingPayrollDraftCount > 0) {
+      alert(
+        `${missingPayrollDraftCount} pegawai payroll belum memiliki draf. Klik “Siapkan Semua Draf” dan selesaikan seluruh kegagalan sebelum menutup periode.`,
+      );
+      return;
+    }
     if (!window.confirm(`Apakah Anda yakin ingin menutup periode ${period} secara permanen?`)) return;
 
     try {
@@ -1043,6 +1172,28 @@ export default function PayrollValidationDashboard() {
 
     return { earnings, deductions };
   };
+
+  const buildPayrollTargetDraftData = (
+    target: PayrollTarget,
+    states: Record<string, SlipState>,
+  ) => buildDashboardSlipData(
+    { ...target.raw, id: target.id },
+    target.collar,
+    states[target.id],
+    {
+      targetDate,
+      salaryMatrix:
+        target.collar === 'loyalis' ? salaryMatrixWhite : salaryMatrixBlue,
+      uraianMap,
+      vakasiTambahanMap,
+      vakasiTambahanListMap,
+      functionalAllowanceMap,
+      kepangkatanAllowanceMap,
+      koperasiDeductions,
+      koperasiSavings,
+      loyalisPresenceData,
+    },
+  );
 
   const getFilteredAndSortedEmployees = () => {
     let filtered = [...employees];
@@ -2613,46 +2764,217 @@ export default function PayrollValidationDashboard() {
     };
   };
 
+  const prepareMissingPayrollDrafts = async (
+    action: 'save_draft' | 'repair_missing_draft',
+    startingStates: Record<string, SlipState>,
+  ): Promise<{
+    states: Record<string, SlipState>;
+    failures: Array<{ name: string; message: string }>;
+  }> => {
+    const missingTargets = allPayrollTargets.filter(
+      (target) => !startingStates[target.id],
+    );
+    const nextStates = { ...startingStates };
+    const failures: Array<{ name: string; message: string }> = [];
+    const period = `${targetDate.getFullYear()}_${String(
+      targetDate.getMonth() + 1,
+    ).padStart(2, '0')}`;
+    let completed = 0;
+    setBulkPayrollProgress({
+      phase: 'preparing',
+      completed,
+      total: missingTargets.length,
+    });
+
+    await runWithConcurrency(missingTargets, 4, async (target) => {
+      try {
+        const draftData = buildPayrollTargetDraftData(target, startingStates);
+        const result = await authenticatedJson<{
+          koperasiPlan?: {
+            loanCount: number;
+            expectedDeduction: number;
+            matchType: string;
+            repairedDeduction?: number | null;
+          };
+        }>('/api/payroll/slips', {
+          method: 'POST',
+          body: JSON.stringify({
+            action,
+            employeeId: target.id,
+            period,
+            requestId: createFinancialRequestId(
+              action === 'save_draft' ? 'prepare_draft' : 'repair_draft',
+            ),
+            reason: action === 'repair_missing_draft'
+              ? 'Perbaikan draf payroll Juli 2026 yang hilang sebelum penguncian massal'
+              : undefined,
+            earnings: draftData.earnings,
+            deductions: draftData.deductions,
+          }),
+        });
+        const deductions = result.koperasiPlan
+          ? replaceClientKoperasiDeduction(
+              draftData.deductions,
+              result.koperasiPlan.expectedDeduction,
+            )
+          : draftData.deductions;
+        nextStates[target.id] = {
+          status: 'draft',
+          earnings: draftData.earnings,
+          deductions,
+          generatedAt: new Date().toISOString(),
+        };
+      } catch (error) {
+        failures.push({
+          name: target.name,
+          message: error instanceof Error ? error.message : 'Operasi gagal',
+        });
+      } finally {
+        completed += 1;
+        setBulkPayrollProgress({
+          phase: 'preparing',
+          completed,
+          total: missingTargets.length,
+        });
+      }
+    });
+
+    setSlipStates(nextStates);
+    return { states: nextStates, failures };
+  };
+
+  const showPayrollFailures = (
+    title: string,
+    failures: Array<{ name: string; message: string }>,
+  ) => {
+    const visible = failures.slice(0, 20);
+    alert(
+      `${title}\n\n${visible.map((failure) => `• ${failure.name}: ${failure.message}`).join('\n')}${failures.length > visible.length ? `\n• …dan ${failures.length - visible.length} kegagalan lainnya.` : ''}`,
+    );
+  };
+
+  const handlePrepareAllDrafts = async () => {
+    if (attendancePeriodStatus === 'closed') {
+      alert('Periode sudah ditutup; gunakan Verifikasi & Kunci untuk perbaikan transisi Juli 2026.');
+      return;
+    }
+    if (missingPayrollDraftCount === 0) {
+      alert('Seluruh pegawai payroll sudah memiliki draf. Periode siap ditutup.');
+      return;
+    }
+    if (!window.confirm(
+      `Siapkan ${missingPayrollDraftCount} draf yang belum ada? Draf yang sudah tersimpan tidak akan ditimpa.`,
+    )) return;
+
+    setPreparingAllDrafts(true);
+    try {
+      const result = await prepareMissingPayrollDrafts('save_draft', slipStates);
+      if (result.failures.length > 0) {
+        setNotification({
+          show: true,
+          type: 'error',
+          message: `${result.failures.length} draf gagal disiapkan; periode belum boleh ditutup.`,
+        });
+        showPayrollFailures('Sebagian draf gagal disiapkan:', result.failures);
+        return;
+      }
+      setNotification({
+        show: true,
+        type: 'success',
+        message: `${missingPayrollDraftCount} draf berhasil disiapkan. Seluruh roster siap ditutup.`,
+      });
+    } finally {
+      setPreparingAllDrafts(false);
+      setBulkPayrollProgress(null);
+    }
+  };
+
   const handleBulkVerifyAndLock = async () => {
     if (attendancePeriodStatus !== 'closed') {
       alert('Tutup periode payroll sebelum memverifikasi dan mengunci slip.');
       return;
     }
-    const unlockableEmployees = displayEmployees.filter(
-      emp => slipStates[emp.id]?.status === 'draft',
-    );
-
-    if (unlockableEmployees.length === 0) {
-      alert('Tidak ada slip draf tersimpan yang siap diverifikasi dan dikunci.');
+    if (pendingPayrollLockCount === 0) {
+      alert('Seluruh slip roster payroll sudah dikunci atau diproses untuk pembayaran.');
       return;
     }
 
-    const confirmMessage = `Verifikasi angka dan kunci sekaligus ${unlockableEmployees.length} slip gaji? Tindakan ini tidak dapat dibatalkan.`;
-    if (!window.confirm(confirmMessage)) {
+    const period = `${targetDate.getFullYear()}_${String(
+      targetDate.getMonth() + 1,
+    ).padStart(2, '0')}`;
+    if (missingPayrollDraftCount > 0 && period !== '2026_07') {
+      alert(
+        `${missingPayrollDraftCount} draf hilang pada periode tertutup. Sistem menolak pembuatan draf setelah penutupan; hubungi Super Admin untuk audit periode.`,
+      );
       return;
     }
+    const confirmMessage = missingPayrollDraftCount > 0
+      ? `Roster berisi ${allPayrollTargets.length} pegawai. Sistem akan memperbaiki ${missingPayrollDraftCount} draf Juli 2026 yang hilang, menyegel roster, lalu memverifikasi dan mengunci seluruh slip. Lanjutkan?`
+      : `Verifikasi angka dan kunci seluruh ${allPayrollTargets.filter((target) => slipStates[target.id]?.status === 'draft').length} slip draf pada roster payroll? Tindakan ini tidak dapat dibatalkan.`;
+    if (!window.confirm(confirmMessage)) return;
 
     setConfirmingBulk(true);
-    
     try {
-      const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+      let workingStates = { ...slipStates };
+      if (missingPayrollDraftCount > 0) {
+        const repair = await prepareMissingPayrollDrafts(
+          'repair_missing_draft',
+          workingStates,
+        );
+        workingStates = repair.states;
+        if (repair.failures.length > 0) {
+          setNotification({
+            show: true,
+            type: 'error',
+            message: `${repair.failures.length} draf gagal diperbaiki. Tidak ada slip yang dikunci.`,
+          });
+          showPayrollFailures(
+            'Perbaikan roster belum lengkap; tidak ada slip yang dikunci:',
+            repair.failures,
+          );
+          return;
+        }
+      }
+
+      setBulkPayrollProgress({ phase: 'sealing', completed: 0, total: 1 });
+      await authenticatedJson('/api/payroll/periods', {
+        method: 'POST',
+        body: JSON.stringify({
+          period: period.replace('_', '-'),
+          attendanceStatus: 'closed',
+          reason: 'Penyegelan roster lengkap sebelum Verifikasi & Kunci massal',
+        }),
+      });
+      setBulkPayrollProgress({ phase: 'sealing', completed: 1, total: 1 });
+
+      const unlockableTargets = allPayrollTargets.filter(
+        (target) => workingStates[target.id]?.status === 'draft',
+      );
       const updatedSlips: Record<string, SlipState> = {};
       const failures: Array<{ name: string; message: string }> = [];
       let progressedLoans = 0;
       let paidOffLoans = 0;
       const nowStr = new Date().toISOString();
+      let completed = 0;
+      setBulkPayrollProgress({
+        phase: 'locking',
+        completed,
+        total: unlockableTargets.length,
+      });
 
-      for (const emp of unlockableEmployees) {
-        const prevSlip = slipStates[emp.id];
+      // Koperasi application is deliberately sequential. Each employee is a
+      // resumable saga and a failure must leave only that employee as draft.
+      for (const target of unlockableTargets) {
+        const prevSlip = workingStates[target.id];
         try {
           const result = await authenticatedJson<VerifyAndLockResponse>('/api/payroll/slips', {
             method: 'POST',
             body: JSON.stringify({
               action: 'verify_and_lock',
-              employeeId: emp.id,
+              employeeId: target.id,
               period,
               requestId: createFinancialRequestId('bulk_verify_lock'),
-              reason: 'Verifikasi angka dan penguncian final massal oleh Badan Keuangan',
+              reason: 'Verifikasi angka dan penguncian final seluruh roster oleh Badan Keuangan',
             }),
           });
           progressedLoans += result.koperasi.loans.filter(
@@ -2661,7 +2983,7 @@ export default function PayrollValidationDashboard() {
           paidOffLoans += result.koperasi.loans.filter(
             (loan) => loan.outcome === 'paid_off',
           ).length;
-          updatedSlips[emp.id] = {
+          updatedSlips[target.id] = {
             ...prevSlip,
             status: 'locked',
             verifiedAt: nowStr,
@@ -2671,32 +2993,34 @@ export default function PayrollValidationDashboard() {
           };
         } catch (error) {
           failures.push({
-            name: (emp as any).name || (emp as any).raw?.personal_info?.name || emp.id,
+            name: target.name,
             message: error instanceof Error ? error.message : 'Operasi gagal',
+          });
+        } finally {
+          completed += 1;
+          setBulkPayrollProgress({
+            phase: 'locking',
+            completed,
+            total: unlockableTargets.length,
           });
         }
       }
 
-      setSlipStates(prev => ({ ...prev, ...updatedSlips }));
-
+      setSlipStates((previous) => ({ ...previous, ...updatedSlips }));
       setNotification({
         show: true,
         type: failures.length > 0 ? 'error' : 'success',
-        message: `${Object.keys(updatedSlips).length} slip dikunci; ${progressedLoans} cicilan Koperasi diproses${paidOffLoans > 0 ? `; ${paidOffLoans} pinjaman lunas` : ''}${failures.length > 0 ? `; ${failures.length} slip gagal dan tetap draf` : ''}.`
+        message: `${Object.keys(updatedSlips).length} slip dikunci; ${progressedLoans} cicilan Koperasi diproses${paidOffLoans > 0 ? `; ${paidOffLoans} pinjaman lunas` : ''}${failures.length > 0 ? `; ${failures.length} slip gagal dan tetap draf` : ''}.`,
       });
-      setTimeout(() => {
-        setNotification(prev => ({ ...prev, show: false }));
-      }, 3000);
-
       if (failures.length > 0) {
-        alert(`Sebagian Verifikasi & Kunci gagal:\n\n${failures.map((failure) => `• ${failure.name}: ${failure.message}`).join('\n')}`);
+        showPayrollFailures('Sebagian Verifikasi & Kunci gagal:', failures);
       }
-
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error bulk verify-and-lock:', err);
-      alert(`Gagal melakukan verifikasi dan penguncian massal: ${err.message || 'Terjadi kesalahan sistem'}`);
+      alert(`Gagal melakukan verifikasi dan penguncian massal: ${err instanceof Error ? err.message : 'Terjadi kesalahan sistem'}`);
     } finally {
       setConfirmingBulk(false);
+      setBulkPayrollProgress(null);
     }
   };
 
@@ -2835,6 +3159,7 @@ export default function PayrollValidationDashboard() {
                             variant="outline"
                             className="h-7 rounded-lg px-2 text-[11px]"
                             onClick={() => handleSetAttendancePeriod('closed')}
+                            disabled={preparingAllDrafts || missingPayrollDraftCount > 0}
                           >
                             Tutup Permanen
                           </Button>
@@ -2909,6 +3234,26 @@ export default function PayrollValidationDashboard() {
             <div className="px-8 py-4 flex flex-wrap justify-between items-center gap-4 border-b border-slate-100">
               <span className="font-semibold text-lg">Validasi Gaji</span>
               <div className="flex items-center gap-3">
+                {attendancePeriodStatus !== 'closed' && (
+                  <button
+                    type="button"
+                    onClick={handlePrepareAllDrafts}
+                    disabled={preparingAllDrafts || loading || missingPayrollDraftCount === 0}
+                    className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(preparingAllDrafts || loading || missingPayrollDraftCount === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {preparingAllDrafts ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+                        Menyiapkan ({bulkPayrollProgress?.completed || 0}/{bulkPayrollProgress?.total || missingPayrollDraftCount})
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="w-4 h-4 text-amber-600" />
+                        Siapkan Semua Draf ({missingPayrollDraftCount})
+                      </>
+                    )}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleBulkVerifyAndLock}
@@ -2918,12 +3263,18 @@ export default function PayrollValidationDashboard() {
                   {confirmingBulk ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
-                      Memproses...
+                      {bulkPayrollProgress?.phase === 'preparing'
+                        ? `Memperbaiki draf (${bulkPayrollProgress.completed}/${bulkPayrollProgress.total})`
+                        : bulkPayrollProgress?.phase === 'sealing'
+                          ? 'Menyegel roster...'
+                          : bulkPayrollProgress?.phase === 'locking'
+                            ? `Mengunci (${bulkPayrollProgress.completed}/${bulkPayrollProgress.total})`
+                            : 'Memproses seluruh roster...'}
                     </>
                   ) : (
                     <>
                       <CheckCheck className="w-4 h-4 text-emerald-600" />
-                      Verifikasi &amp; Kunci ({displayEmployees.filter(emp => slipStates[emp.id]?.status === 'draft').length})
+                      Verifikasi &amp; Kunci Semua ({pendingPayrollLockCount})
                     </>
                   )}
                 </button>

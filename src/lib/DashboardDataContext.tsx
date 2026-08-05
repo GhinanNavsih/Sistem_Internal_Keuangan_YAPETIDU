@@ -18,6 +18,8 @@ interface DashboardDataContextType {
   kepangkatanAllowanceMap: Record<string, number>;
   koperasiDeductions: Record<string, number>;
   koperasiSavings: Record<string, number>;
+  koperasiLoans: any[];
+  koperasiUsers: any[];
   loading: boolean;
   refreshData: () => Promise<void>;
 }
@@ -36,6 +38,8 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
   const [kepangkatanAllowanceMap, setKepangkatanAllowanceMap] = useState<Record<string, number>>({});
   const [koperasiDeductions, setKoperasiDeductions] = useState<Record<string, number>>({});
   const [koperasiSavings, setKoperasiSavings] = useState<Record<string, number>>({});
+  const [koperasiLoans, setKoperasiLoans] = useState<any[]>([]);
+  const [koperasiUsers, setKoperasiUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
@@ -181,8 +185,14 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       const currentYear = now.getFullYear();
       const currentMonth = now.getMonth() + 1;
 
-      const activeLoans = loanSnapshot.docs
-        .map(docSnap => ({ id: docSnap.id, ...docSnap.data() as any }))
+      const koperasiLoanRecords = loanSnapshot.docs
+        .map(docSnap => ({ id: docSnap.id, ...docSnap.data() as any }));
+      const koperasiUserRecords = userSnapshot.docs
+        .map(docSnap => ({ id: docSnap.id, ...docSnap.data() as any }));
+      setKoperasiLoans(koperasiLoanRecords);
+      setKoperasiUsers(koperasiUserRecords);
+
+      const activeLoans = koperasiLoanRecords
         .filter(loan => {
           if ((loan.sisaHutang || 0) <= 0) return false;
 
@@ -344,6 +354,8 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
         kepangkatanAllowanceMap,
         koperasiDeductions,
         koperasiSavings,
+        koperasiLoans,
+        koperasiUsers,
         loading,
         refreshData: fetchData
       }}
