@@ -8,6 +8,8 @@ const inter = {
   variable: "font-sans",
 };
 
+const isProduction = process.env.NODE_ENV === "production";
+
 export const viewport: Viewport = {
   themeColor: "#4f46e5",
   width: "device-width",
@@ -46,16 +48,33 @@ export default function RootLayout({
         <Script id="register-sw" strategy="afterInteractive">
           {`
             if ('serviceWorker' in navigator) {
-              window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/sw.js').then(
-                  function(registration) {
-                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                  },
-                  function(err) {
-                    console.log('ServiceWorker registration failed: ', err);
-                  }
-                );
-              });
+              if (${isProduction}) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js').then(
+                    function(registration) {
+                      console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    },
+                    function(err) {
+                      console.log('ServiceWorker registration failed: ', err);
+                    }
+                  );
+                });
+              } else {
+                // Do not let a previously installed production worker serve
+                // stale route HTML while running the development server.
+                navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                  registrations.forEach(function(registration) {
+                    registration.unregister();
+                  });
+                });
+                if ('caches' in window) {
+                  caches.keys().then(function(keys) {
+                    return Promise.all(keys
+                      .filter(function(key) { return key.indexOf('bak-payroll-cache-') === 0; })
+                      .map(function(key) { return caches.delete(key); }));
+                  });
+                }
+              }
             }
           `}
         </Script>

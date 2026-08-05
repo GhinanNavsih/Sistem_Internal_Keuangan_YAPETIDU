@@ -126,6 +126,21 @@ function getJourneyDate(j: any): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+if (typeof window !== 'undefined' && !(window as any).__googleMapsErrorPatched) {
+  (window as any).__googleMapsErrorPatched = true;
+  const originalConsoleError = console.error;
+  console.error = (...args: any[]) => {
+    if (
+      typeof args[0] === 'string' &&
+      (args[0].includes('The provided Place ID is no longer valid') ||
+        args[0].includes('place-id#save-id'))
+    ) {
+      return;
+    }
+    originalConsoleError.apply(console, args);
+  };
+}
+
 const loadGoogleMapsScript = (callback: () => void) => {
   if (typeof window === 'undefined') return;
   const g = (window as any).google;
@@ -446,6 +461,54 @@ function DriverJourneysContent() {
     });
   };
 
+  const performGeocodeSearch = (queryText: string) => {
+    if (!queryText || !queryText.trim()) return;
+    const google = (window as any).google;
+    if (!google) return;
+
+    try {
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ address: queryText.trim() }, (results: any, status: any) => {
+        if (status === 'OK' && results && results[0] && results[0].geometry) {
+          const loc = results[0].geometry.location;
+          const formatted = results[0].formatted_address;
+
+          if (mapRef.current) {
+            mapRef.current.setCenter(loc);
+            mapRef.current.setZoom(16);
+          }
+          if (markerRef.current) {
+            markerRef.current.setPosition(loc);
+          }
+
+          const nameAndAddress = queryText.includes(',') ? queryText : formatted;
+          setMapAddress(nameAndAddress);
+          setMapSearchText(nameAndAddress);
+
+          // Update location photo preview
+          try {
+            const service = new google.maps.places.PlacesService(mapRef.current || document.createElement('div'));
+            service.textSearch({ query: formatted }, (res: any, stat: any) => {
+              if (stat === google.maps.places.PlacesServiceStatus.OK && res && res.length > 0) {
+                const matchWithPhoto = res.find((r: any) => r.photos && r.photos.length > 0);
+                if (matchWithPhoto) {
+                  setMapAddressImage(matchWithPhoto.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
+                  return;
+                }
+              }
+              setMapAddressImage(null);
+            });
+          } catch (e) {
+            console.error(e);
+            setMapAddressImage(null);
+          }
+        }
+      });
+    } catch (err) {
+      console.error('Error during geocode search:', err);
+    }
+  };
+
   const initAutocomplete = (inputEl: HTMLInputElement) => {
     loadGoogleMapsScript(() => {
       const google = (window as any).google;
@@ -458,7 +521,15 @@ function DriverJourneysContent() {
 
         autocomplete.addListener('place_changed', () => {
           const place = autocomplete.getPlace();
-          if (!place.geometry || !place.geometry.location) return;
+
+          // Fallback: If geometry is missing (e.g. invalid Place ID error from Google API), geocode directly by name or input text
+          if (!place || !place.geometry || !place.geometry.location) {
+            const fallbackQuery = place?.name || inputEl.value || mapSearchText;
+            if (fallbackQuery) {
+              performGeocodeSearch(fallbackQuery);
+            }
+            return;
+          }
 
           mapRef.current.setCenter(place.geometry.location);
           mapRef.current.setZoom(16);
@@ -1723,6 +1794,12 @@ function DriverJourneysContent() {
                 placeholder="Cari lokasi tujuan dinas..."
                 value={mapSearchText}
                 onChange={(e) => setMapSearchText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    performGeocodeSearch(mapSearchText);
+                  }
+                }}
                 className="flex-1 border-none bg-transparent p-0 focus-visible:ring-0 text-xs font-bold text-slate-700 h-full placeholder:text-slate-400"
               />
               {mapSearchText && (
@@ -1740,7 +1817,9 @@ function DriverJourneysContent() {
               <div className="w-px h-5 bg-slate-200 shrink-0" />
               <button
                 type="button"
-                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-indigo-50 transition-all text-indigo-500 hover:text-indigo-600 shrink-0"
+                onClick={() => performGeocodeSearch(mapSearchText)}
+                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-indigo-50 transition-all text-indigo-500 hover:text-indigo-600 shrink-0 cursor-pointer"
+                title="Cari Lokasi"
               >
                 <Search className="w-4.5 h-4.5" />
               </button>

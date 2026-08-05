@@ -47,7 +47,10 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { MONTHS_ID } from '@/utils/rekapConfig';
-import { calculateDriverNetWage } from '@/lib/payroll/driverJourney';
+import {
+  calculateDriverNetWage,
+  calculateDriverReimbursementSettlement,
+} from '@/lib/payroll/driverJourney';
 import { authenticatedJson } from '@/lib/payroll/client';
 import {
   Select,
@@ -87,6 +90,8 @@ interface ActivityReport {
   journeyId?: string;
   extraMealAllowance?: number;
   extraFuelCost?: number;
+  extraTollCost?: number;
+  extraOperationalCost?: number;
   fuelReceiptUrl?: string;
   tollReceiptUrl?: string;
   reimburseDelta?: number;
@@ -461,7 +466,19 @@ function DriverHistoryContent() {
               const sc = getStatusConfig(activity.status);
               const reimburseDelta = activity.reimburseDelta !== undefined
                 ? activity.reimburseDelta
-                : Math.max(0, (activity.tollParkingFee || 0) + (activity.extraMealAllowance || 0) + (activity.extraFuelCost || 0));
+                : calculateDriverReimbursementSettlement({
+                  fuelAllowance: activity.vehicleType === 'Ndalem' ? 0 : Number(activity.baseOperationalCost || 0),
+                  fuelSpent: activity.vehicleType === 'Ndalem'
+                    ? 0
+                    : activity.fuelFee !== undefined
+                      ? Number(activity.fuelFee || 0)
+                      : Number(activity.baseOperationalCost || 0) + Number(activity.extraFuelCost || 0),
+                  tollAllowance: Number(activity.preAuthorizedToll || 0),
+                  tollSpent: activity.tollParkingFee !== undefined
+                    ? Number(activity.tollParkingFee || 0)
+                    : Number(activity.preAuthorizedToll || 0) + Number(activity.extraTollCost || 0),
+                  additionalReimbursement: Number(activity.extraMealAllowance || 0) + Number(activity.extraOperationalCost || 0),
+                }).reimburseDelta;
 
               return (
                 <Card key={activity.id} className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden hover:border-slate-300 transition-all animate-in fade-in duration-150">

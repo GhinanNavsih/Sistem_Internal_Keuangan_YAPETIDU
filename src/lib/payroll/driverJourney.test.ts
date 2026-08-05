@@ -5,8 +5,10 @@ import {
   DEFAULT_DRIVER_VEHICLE_NAME,
   DRIVER_VEHICLE_RATES,
   calculateDriverJourneyOperationalCosts,
+  calculateDriverReimbursementSettlement,
   calculateDriverNetWage,
   calculateEstimatedDriverWage,
+  calculateEditableDriverJourneyTimeline,
   calculateJourneyElapsedHours,
   calculateJourneyDateTimeTimings,
   calculateNightPremium,
@@ -41,6 +43,88 @@ test('authorized journey operational costs use the same baseline for every autho
     tollParkingFee: 15_000,
     totalOperationalCost: 55_000,
   });
+});
+
+test('fuel savings offset toll and parking overage before reimbursement is paid', () => {
+  const settlement = calculateDriverReimbursementSettlement({
+    fuelAllowance: 170_200,
+    fuelSpent: 150_000,
+    tollAllowance: 0,
+    tollSpent: 30_000,
+  });
+
+  assert.equal(settlement.fuelAllowanceSurplus, 20_200);
+  assert.equal(settlement.extraTollCost, 30_000);
+  assert.equal(settlement.netOperationalDelta, 9_800);
+  assert.equal(settlement.reimburseDelta, 9_800);
+  assert.equal(settlement.remainingUnspentCash, 0);
+});
+
+test('toll and parking savings offset fuel overage before reimbursement is paid', () => {
+  const settlement = calculateDriverReimbursementSettlement({
+    fuelAllowance: 0,
+    fuelSpent: 30_000,
+    tollAllowance: 100_000,
+    tollSpent: 80_000,
+  });
+
+  assert.equal(settlement.extraFuelCost, 30_000);
+  assert.equal(settlement.tollAllowanceSurplus, 20_000);
+  assert.equal(settlement.reimburseDelta, 10_000);
+  assert.equal(settlement.remainingUnspentCash, 0);
+});
+
+test('remaining net allowance is deducted from the driver wage', () => {
+  const settlement = calculateDriverReimbursementSettlement({
+    fuelAllowance: 170_200,
+    fuelSpent: 100_000,
+    tollAllowance: 0,
+    tollSpent: 30_000,
+  });
+
+  assert.equal(settlement.netOperationalDelta, -40_200);
+  assert.equal(settlement.reimburseDelta, 0);
+  assert.equal(settlement.unspentCash, 40_200);
+  assert.equal(settlement.remainingUnspentCash, 40_200);
+  assert.equal(Math.max(0, 79_050 - settlement.remainingUnspentCash), 38_850);
+});
+
+test('additional reimbursement can consume allowance surplus before wage deduction', () => {
+  const settlement = calculateDriverReimbursementSettlement({
+    fuelAllowance: 100,
+    fuelSpent: 50,
+    tollAllowance: 0,
+    tollSpent: 0,
+    additionalReimbursement: 30,
+  });
+
+  assert.equal(settlement.reimburseDelta, 0);
+  assert.equal(settlement.remainingUnspentCash, 20);
+
+  const reimbursementRemains = calculateDriverReimbursementSettlement({
+    fuelAllowance: 100,
+    fuelSpent: 50,
+    tollAllowance: 0,
+    tollSpent: 0,
+    additionalReimbursement: 60,
+  });
+  assert.equal(reimbursementRemains.reimburseDelta, 10);
+  assert.equal(reimbursementRemains.remainingUnspentCash, 0);
+});
+
+test('settlement rejects invalid negative or non-finite money values', () => {
+  assert.throws(() => calculateDriverReimbursementSettlement({
+    fuelAllowance: -1,
+    fuelSpent: 0,
+    tollAllowance: 0,
+    tollSpent: 0,
+  }));
+  assert.throws(() => calculateDriverReimbursementSettlement({
+    fuelAllowance: 0,
+    fuelSpent: Number.NaN,
+    tollAllowance: 0,
+    tollSpent: 0,
+  }));
 });
 
 test('meal allowance supports 24-hour cycles and partial-day strata', () => {
@@ -131,6 +215,38 @@ test('calculateJourneyDateTimeTimings enforces 05:00 AM cutoff threshold for ove
   const wage = calculateDriverNetWage(173.4, result.durationHours, result.nightCount);
   // (173.4 * 300) + (26 * 5000) + (1 * 50000) + (5000 short trip meal) = 52020 + 130000 + 50000 + 5000 = 237020
   assert.equal(wage, 237_020);
+});
+
+test('editable audit timeline infers overnight journeys from edited times', () => {
+  const overnight = calculateEditableDriverJourneyTimeline({
+    dateStart: '2026-08-04',
+    timeStart: '20:00',
+    timeEnd: '05:00',
+  });
+  assert.equal(overnight.isMultiDay, true);
+  assert.equal(overnight.dateEnd, '2026-08-05');
+  assert.equal(overnight.durationHours, 9);
+  assert.equal(overnight.nightCount, 1);
+  assert.equal(getMealAllowanceForDuration(overnight.durationHours, 'Suzuki XL7'), 40_000);
+  assert.equal(calculateNightPremium(overnight.nightCount), 50_000);
+
+  const beforeCutoff = calculateEditableDriverJourneyTimeline({
+    dateStart: '2026-08-04',
+    timeStart: '20:00',
+    timeEnd: '02:00',
+  });
+  assert.equal(beforeCutoff.isMultiDay, true);
+  assert.equal(beforeCutoff.durationHours, 6);
+  assert.equal(beforeCutoff.nightCount, 0);
+
+  const sameDay = calculateEditableDriverJourneyTimeline({
+    dateStart: '2026-08-04',
+    timeStart: '08:00',
+    timeEnd: '17:00',
+  });
+  assert.equal(sameDay.isMultiDay, false);
+  assert.equal(sameDay.durationHours, 9);
+  assert.equal(sameDay.nightCount, 0);
 });
 
 test('canonicalizeDriverJourneyTimeline clears stale overnight data for a single-day journey', () => {

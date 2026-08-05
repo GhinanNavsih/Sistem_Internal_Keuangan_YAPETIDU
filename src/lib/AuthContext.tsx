@@ -67,48 +67,34 @@ class ProfileFetchError extends Error {
   }
 }
 
+const PROFILE_SERVER_TIMEOUT_MS = 3_000;
+const PROFILE_CACHE_TIMEOUT_MS = 1_000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new ProfileFetchError()), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  });
+}
+
 async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const docRef = doc(db, 'users', uid);
 
   try {
-    const serverPromise = getDocFromServer(docRef);
-
-    // Race server getDoc against a 3-second timeout to prevent infinite loading state
-    const timeoutPromise = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), 3000)
+    const docSnap = await withTimeout(
+      getDocFromServer(docRef),
+      PROFILE_SERVER_TIMEOUT_MS
     );
 
-    const docSnap = await Promise.race([
-      serverPromise,
-      timeoutPromise
-    ]);
-
-    if (docSnap) {
-      if (docSnap.exists()) {
-        return { uid, ...docSnap.data() } as UserProfile;
-      }
-      return null;
-    }
-
-    // Server request timed out. Fall back to local cache if available.
-    console.warn("getUserProfile server request timed out. Trying cache fallback...");
-    try {
-      const cacheSnap = await getDocFromCache(docRef);
-      if (cacheSnap.exists()) {
-        return { uid, ...cacheSnap.data() } as UserProfile;
-      }
-    } catch (cacheErr) {
-      console.warn("Cache fallback failed (no cached document). Waiting for server instead...", cacheErr);
-    }
-
-    // If cache fallback failed or document wasn't cached, wait for the server response to complete
-    const finalSnap = await serverPromise;
-    if (finalSnap.exists()) {
-      return { uid, ...finalSnap.data() } as UserProfile;
+    if (docSnap.exists()) {
+      return { uid, ...docSnap.data() } as UserProfile;
     }
     return null;
   } catch (err) {
-    console.error("Error fetching user profile:", err);
     const errorCode =
       typeof err === 'object' && err !== null && 'code' in err
         ? String(err.code)
@@ -116,13 +102,21 @@ async function getUserProfile(uid: string): Promise<UserProfile | null> {
     if (errorCode === 'permission-denied' || errorCode === 'firestore/permission-denied') {
       return null;
     }
+
+    // A server request can remain pending while the browser is offline or
+    // Firestore is negotiating its connection. Never wait for that original
+    // promise after the timeout; use the local cache, then let auth settle.
+    console.warn('getUserProfile server request failed or timed out. Trying cache fallback...', err);
     try {
-      const cacheSnap = await getDocFromCache(docRef);
+      const cacheSnap = await withTimeout(
+        getDocFromCache(docRef),
+        PROFILE_CACHE_TIMEOUT_MS
+      );
       if (cacheSnap.exists()) {
         return { uid, ...cacheSnap.data() } as UserProfile;
       }
     } catch (cacheErr) {
-      console.error("Cache fallback after error failed:", cacheErr);
+      console.warn('Profile cache fallback unavailable:', cacheErr);
     }
     // Couldn't confirm the profile either way (e.g. offline, flaky mobile network).
     // Signal this distinctly so the caller doesn't force a sign-out on a transient blip.

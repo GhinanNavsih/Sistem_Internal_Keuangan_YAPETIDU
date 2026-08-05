@@ -97,6 +97,7 @@ import {
   DRIVER_VEHICLE_RATES,
   calculateDriverNetWage,
   calculateDriverJourneyOperationalCosts,
+  calculateDriverReimbursementSettlement,
   calculateJourneyElapsedHours,
   calculateNightPremium,
   calculateJourneyDateTimeTimings,
@@ -2182,12 +2183,17 @@ function ActivitiesContent() {
           ? activeReportingJourney.mealAllowance
           : getMealAllowanceForDuration(preAuthorizedDurationPP));
 
-      const baseCostVal = activeReportingJourney.baseOperationalCost ||
-        ((activeReportingJourney.totalOperationalCost || 0) - preAuthorizedMeal - (activeReportingJourney.tollParkingFee || 0));
-      const preAuthorizedToll = activeReportingJourney.tollParkingFee || 0;
-      const totalPreAuthorizedAllowance = baseCostVal + preAuthorizedToll;
-
-      const totalActualSpent = fuelVal + tollVal;
+      const preAuthorizedToll = activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
+        ? Number(activeReportingJourney.preAuthorizedToll)
+        : Number(activeReportingJourney.tollParkingFee || 0);
+      const baseCostVal = activeReportingJourney.baseOperationalCost !== undefined && activeReportingJourney.baseOperationalCost !== null
+        ? Number(activeReportingJourney.baseOperationalCost)
+        : Math.max(
+          0,
+          Number(activeReportingJourney.totalOperationalCost || 0) -
+            preAuthorizedMeal -
+            preAuthorizedToll,
+        );
 
       const timings = calculateJourneyDateTimeTimings({
         dateStart: formDate,
@@ -2209,20 +2215,27 @@ function ActivitiesContent() {
         elapsedHours,
         activeReportingJourney.vehicleName,
       );
-      const extraMealAllowance = isNdalem ? 0 : Math.max(0, actualMealAllowance - preAuthorizedMeal);
+      const extraMealAllowance = isNdalem
+        ? actualMealAllowance
+        : Math.max(0, actualMealAllowance - preAuthorizedMeal);
 
-      const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
-      const extraTollCost = Math.max(0, tollVal - preAuthorizedToll);
-
-      // Positive Reimburse Delta before unspent deduction
-      const positiveReimburseDelta = extraMealAllowance + extraFuelCost + extraTollCost + extraOperationalCost;
-
-      // Operational Allowance Savings / Unspent Cash
-      const unspentCash = Math.max(0, totalPreAuthorizedAllowance - totalActualSpent);
-
-      // Deductions: Step 1 (Subtract from Reimburse Delta) & Step 2 (Subtract from Upah Bersih)
-      const finalReimburseDelta = Math.max(0, positiveReimburseDelta - unspentCash);
-      const remainingUnspentCash = Math.max(0, unspentCash - positiveReimburseDelta);
+      const settlement = calculateDriverReimbursementSettlement({
+        fuelAllowance: isNdalem ? 0 : baseCostVal,
+        fuelSpent: isNdalem ? 0 : fuelVal,
+        tollAllowance: preAuthorizedToll,
+        tollSpent: tollVal,
+        additionalReimbursement: extraMealAllowance + extraOperationalCost,
+      });
+      const authorizedTotalOperationalCost = activeReportingJourney.totalOperationalCost !== undefined
+        ? Number(activeReportingJourney.totalOperationalCost || 0)
+        : baseCostVal + preAuthorizedMeal + preAuthorizedToll;
+      const adjustedTotalOperationalCost = Math.max(
+        0,
+        authorizedTotalOperationalCost +
+          settlement.netOperationalDelta +
+          extraMealAllowance +
+          extraOperationalCost,
+      );
 
       // Driver Base Wage & Final Net Wage
       const nightPremium = calculateNightPremium(effectiveNightCount);
@@ -2231,7 +2244,7 @@ function ActivitiesContent() {
         submittedDurationHours,
         effectiveNightCount,
       );
-      const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
+      const finalUpahBersih = Math.max(0, baseDriverWage - settlement.remainingUnspentCash);
 
       const extraLocs = extraActivities.filter(a => a.type === 'tambah_lokasi' && a.destination);
       const extraLocsText = extraLocs.map(l => l.destination.split(',')[0]).join(' → ');
@@ -2266,23 +2279,26 @@ function ActivitiesContent() {
             extraActivities,
             extraDistanceKm,
             extraOperationalCost,
-            extraFuelCost,
-            extraTollCost,
+            extraFuelCost: settlement.extraFuelCost,
+            extraTollCost: settlement.extraTollCost,
             extraMealAllowance,
             actualMealAllowance,
-            positiveReimburseDelta,
+            positiveReimburseDelta: settlement.positiveReimburseDelta,
             baseDriverWage,
             upahBersih: finalUpahBersih,
-            reimburseDelta: finalReimburseDelta,
-            unspentCash,
-            remainingUnspentCash,
+            reimburseDelta: settlement.reimburseDelta,
+            unspentCash: settlement.unspentCash,
+            remainingUnspentCash: settlement.remainingUnspentCash,
+            netOperationalDelta: settlement.netOperationalDelta,
+            fuelAllowanceSurplus: settlement.fuelAllowanceSurplus,
+            tollAllowanceSurplus: settlement.tollAllowanceSurplus,
             baseOperationalCost: baseCostVal,
             preAuthorizedMeal,
             preAuthorizedToll,
             customDurationPP: preAuthorizedDurationPP,
-            totalPreAuthorizedAllowance,
-            totalActualSpent,
-            totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
+            totalPreAuthorizedAllowance: settlement.totalPreAuthorizedAllowance,
+            totalActualSpent: settlement.totalActualSpent,
+            totalOperationalCost: adjustedTotalOperationalCost,
             vehicleRate: activeReportingJourney.vehicleRate ?? 1000,
             componentJarak: Math.ceil(calculatedDistanceKm * 300),
             componentWaktu: Math.ceil(submittedDurationHours * 5000),
@@ -3756,7 +3772,19 @@ function ActivitiesContent() {
               const sc = getStatusConfig(activity.status);
               const reimburseDelta = activity.reimburseDelta !== undefined
                 ? activity.reimburseDelta
-                : Math.max(0, (activity.tollParkingFee || 0) + (activity.extraMealAllowance || 0) + (activity.extraFuelCost || 0));
+                : calculateDriverReimbursementSettlement({
+                  fuelAllowance: activity.vehicleType === 'Ndalem' ? 0 : Number(activity.baseOperationalCost || 0),
+                  fuelSpent: activity.vehicleType === 'Ndalem'
+                    ? 0
+                    : activity.fuelFee !== undefined
+                      ? Number(activity.fuelFee || 0)
+                      : Number(activity.baseOperationalCost || 0) + Number(activity.extraFuelCost || 0),
+                  tollAllowance: Number(activity.preAuthorizedToll || 0),
+                  tollSpent: activity.tollParkingFee !== undefined
+                    ? Number(activity.tollParkingFee || 0)
+                    : Number(activity.preAuthorizedToll || 0) + Number(activity.extraTollCost || 0),
+                  additionalReimbursement: Number(activity.extraMealAllowance || 0) + Number(activity.extraOperationalCost || 0),
+                }).reimburseDelta;
 
               return (
                 <Card key={activity.id} className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden hover:border-slate-300 transition-all animate-in fade-in duration-150">

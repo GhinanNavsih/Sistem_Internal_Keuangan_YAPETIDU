@@ -8,7 +8,9 @@ import {
 } from '@/lib/payroll/domain';
 import {
   assertNightCount,
+  calculateEditableDriverJourneyTimeline,
   calculateDriverNetWage,
+  calculateDriverReimbursementSettlement,
   calculateJourneyElapsedHours,
   calculateNightPremium,
   getMealAllowanceForDuration,
@@ -45,6 +47,11 @@ interface ReviewItem {
   driverReview?: {
     distanceKm: number;
     durationHours: number;
+    timeStart?: string;
+    timeEnd?: string;
+    dateStart?: string;
+    dateEnd?: string;
+    isMultiDay?: boolean;
     fuelDelta: number;
     tollDelta: number;
     mealDelta: number;
@@ -130,12 +137,42 @@ function validateDriverReview(value: ReviewItem['driverReview']) {
       error instanceof Error ? error.message : 'Jumlah malam tidak valid.',
     );
   }
-  for (const [label, number] of [
-    ['selisih BBM', value.fuelDelta],
-    ['selisih tol', value.tollDelta],
-    ['selisih makan', value.mealDelta],
+  for (const [label, time] of [
+    ['jam berangkat', value.timeStart],
+    ['jam tiba', value.timeEnd],
   ] as const) {
-    if (!Number.isFinite(number) || number < 0 || number > 100_000_000) {
+    if (
+      time !== undefined &&
+      (typeof time !== 'string' || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(time))
+    ) {
+      throw new HttpError(400, `${label} audit tidak valid.`);
+    }
+  }
+  for (const [label, date] of [
+    ['tanggal mulai', value.dateStart],
+    ['tanggal selesai', value.dateEnd],
+  ] as const) {
+    if (
+      date !== undefined &&
+      (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+    ) {
+      throw new HttpError(400, `${label} audit tidak valid.`);
+    }
+  }
+  if (value.isMultiDay !== undefined && typeof value.isMultiDay !== 'boolean') {
+    throw new HttpError(400, 'Status lintas hari audit tidak valid.');
+  }
+  for (const [label, number, allowNegative] of [
+    ['selisih BBM', value.fuelDelta, true],
+    ['selisih tol', value.tollDelta, true],
+    ['selisih makan', value.mealDelta, false],
+  ] as const) {
+    if (
+      !Number.isFinite(number) ||
+      (!allowNegative && number < 0) ||
+      number < -100_000_000 ||
+      number > 100_000_000
+    ) {
       throw new HttpError(400, `Nilai ${label} tidak valid.`);
     }
   }
@@ -308,8 +345,47 @@ export async function POST(request: NextRequest) {
             throw new HttpError(409, 'Audit Sopir hanya berlaku untuk kategori SOPIR.');
           }
           const review = validateDriverReview(item.driverReview);
-          const effectiveNightCount = before.isMultiDay === true ? review.nightCount : 0;
           const authorizedJourney = journeySnapshots[index]?.data();
+          const reviewTimeStart = review.timeStart ?? String(before.timeStart || '');
+          const reviewTimeEnd = review.timeEnd ?? String(before.timeEnd || '');
+          const originalDateStart = String(
+            before.dateStart || before.activityDate || reportPeriods[index],
+          );
+          const reviewDateStart = review.dateStart ?? originalDateStart;
+          const reviewDateEnd = review.dateEnd ?? String(before.dateEnd || originalDateStart);
+          const reviewIsMultiDay =
+            review.isMultiDay ?? before.isMultiDay === true;
+          const originalIsMultiDay =
+            before.isMultiDay === true || String(before.dateEnd || originalDateStart) > originalDateStart;
+          const timelineChanged =
+            (review.timeStart !== undefined && review.timeStart !== String(before.timeStart || '')) ||
+            (review.timeEnd !== undefined && review.timeEnd !== String(before.timeEnd || '')) ||
+            (review.dateStart !== undefined && review.dateStart !== originalDateStart) ||
+            (review.dateEnd !== undefined && review.dateEnd !== String(before.dateEnd || originalDateStart)) ||
+            (review.isMultiDay !== undefined && review.isMultiDay !== (before.isMultiDay === true));
+          let editedTimeline;
+          try {
+            editedTimeline = calculateEditableDriverJourneyTimeline({
+              dateStart: reviewDateStart,
+              dateEnd: reviewDateEnd,
+              timeStart: reviewTimeStart,
+              timeEnd: reviewTimeEnd,
+              isMultiDay: reviewIsMultiDay,
+            });
+            if (editedTimeline.durationHours <= 0) {
+              throw new Error('Jam tiba dan tanggal tidak membentuk durasi perjalanan yang valid.');
+            }
+          } catch (error) {
+            throw new HttpError(
+              409,
+              error instanceof Error ? error.message : 'Waktu perjalanan audit tidak valid.',
+            );
+          }
+          const effectiveNightCount = timelineChanged
+            ? review.nightCount
+            : originalIsMultiDay
+              ? review.nightCount
+              : 0;
           const rate = vehicleRate(review.vehicleType);
           const baseOperationalCost =
             typeof authorizedJourney?.baseOperationalCost === 'number'
@@ -317,33 +393,11 @@ export async function POST(request: NextRequest) {
               : typeof before.baseOperationalCost === 'number'
                 ? before.baseOperationalCost
               : Math.ceil(review.distanceKm * rate);
-          const upahBersih = calculateDriverNetWage(
-            review.distanceKm,
-            review.durationHours,
-            effectiveNightCount,
-          );
-          const preAuthorizedMeal =
-            review.vehicleType === 'Ndalem'
-              ? 0
-              : typeof authorizedJourney?.mealAllowance === 'number' &&
-                  authorizedJourney.mealAllowance > 0
-                ? authorizedJourney.mealAllowance
-                : typeof before.preAuthorizedMeal === 'number' &&
-                    before.preAuthorizedMeal > 0
-                  ? before.preAuthorizedMeal
-                : getMealAllowanceForDuration(
-                    Number(
-                      authorizedJourney?.customDurationPP ||
-                        before.customDurationPP ||
-                        0,
-                    ),
-                    review.vehicleType,
-                  );
           let actualJourneyDurationHours: number;
           try {
             actualJourneyDurationHours = calculateJourneyElapsedHours(
-              String(before.timeStart || ''),
-              String(before.timeEnd || ''),
+              reviewTimeStart,
+              reviewTimeEnd,
               effectiveNightCount,
             );
           } catch (error) {
@@ -352,6 +406,35 @@ export async function POST(request: NextRequest) {
               error instanceof Error ? error.message : 'Durasi perjalanan tidak valid.',
             );
           }
+          const finalDurationHours = timelineChanged
+            ? actualJourneyDurationHours
+            : review.durationHours;
+          const baseDriverWage = calculateDriverNetWage(
+            review.distanceKm,
+            finalDurationHours,
+            effectiveNightCount,
+          );
+          const originalPreAuthorizedMeal =
+            typeof authorizedJourney?.mealAllowance === 'number' &&
+              authorizedJourney.mealAllowance > 0
+              ? authorizedJourney.mealAllowance
+              : typeof before.preAuthorizedMeal === 'number' &&
+                  before.preAuthorizedMeal > 0
+                ? before.preAuthorizedMeal
+                : getMealAllowanceForDuration(
+                    Number(
+                      authorizedJourney?.customDurationPP ||
+                        before.customDurationPP ||
+                        0,
+                    ),
+                    review.vehicleType,
+                  );
+          const preAuthorizedMeal =
+            review.vehicleType === 'Ndalem'
+              ? 0
+              : timelineChanged
+                ? getMealAllowanceForDuration(actualJourneyDurationHours, review.vehicleType)
+                : originalPreAuthorizedMeal;
           const ndalemMealMoney = Number(before.ndalemMealMoneyReceived ?? 0);
           const actualMealAllowance = getMealAllowanceForDuration(
             actualJourneyDurationHours,
@@ -363,60 +446,87 @@ export async function POST(request: NextRequest) {
               ? actualMealAllowance
               : Math.max(0, actualMealAllowance - preAuthorizedMeal);
           const preAuthorizedToll =
-            typeof authorizedJourney?.tollParkingFee === 'number'
-              ? authorizedJourney.tollParkingFee
-              : Number(before.preAuthorizedToll || 0);
-          const totalPreAuthorizedAllowance = baseOperationalCost + preAuthorizedToll;
-          const actualFuel = Math.max(0, baseOperationalCost + review.fuelDelta);
+            typeof authorizedJourney?.preAuthorizedToll === 'number'
+              ? authorizedJourney.preAuthorizedToll
+              : typeof authorizedJourney?.tollParkingFee === 'number'
+                ? authorizedJourney.tollParkingFee
+                : Number(before.preAuthorizedToll || 0);
+          const fuelAllowance = review.vehicleType === 'Ndalem' ? 0 : baseOperationalCost;
+          const fuelDelta = review.vehicleType === 'Ndalem' ? 0 : review.fuelDelta;
+          const actualFuel = Math.max(0, fuelAllowance + fuelDelta);
           const actualToll = Math.max(0, preAuthorizedToll + review.tollDelta);
-          const totalActualSpent =
-            actualFuel + actualToll;
-          const unspentCash = Math.max(
-            0,
-            totalPreAuthorizedAllowance - totalActualSpent,
-          );
-          const positiveDelta =
-            review.fuelDelta + review.tollDelta + mealDelta;
-          const reimburseDelta = Math.max(0, positiveDelta - unspentCash);
+          const extraOperationalCost = Math.max(0, Number(before.extraOperationalCost || 0));
+          const settlement = calculateDriverReimbursementSettlement({
+            fuelAllowance,
+            fuelSpent: actualFuel,
+            tollAllowance: preAuthorizedToll,
+            tollSpent: actualToll,
+            additionalReimbursement: mealDelta + extraOperationalCost,
+          });
+          // The journey document is updated with the driver's submitted
+          // actuals before review. Rebuild from the original allowance
+          // components here so approval never applies the delta twice.
+          const initialTotalOperationalCost =
+            fuelAllowance + preAuthorizedMeal + preAuthorizedToll;
           const totalOperationalCost = Math.max(
             0,
             Math.ceil(
-              Number(
-                authorizedJourney?.totalOperationalCost ||
-                  before.totalOperationalCost ||
-                  baseOperationalCost,
-              ) +
-                positiveDelta -
-                unspentCash,
+              initialTotalOperationalCost +
+                settlement.netOperationalDelta +
+                mealDelta +
+                extraOperationalCost,
             ),
+          );
+          const upahBersih = Math.max(
+            0,
+            baseDriverWage - settlement.remainingUnspentCash,
           );
           after = {
             ...before,
             status: 'approved',
             fee: upahBersih,
             upahBersih,
-            baseDriverWage: upahBersih,
+            baseDriverWage,
             totalOperationalCost,
             distanceKm: review.distanceKm,
-            durationHours: review.durationHours,
+            durationHours: finalDurationHours,
+            routeDurationHours: timelineChanged
+              ? finalDurationHours
+              : before.routeDurationHours,
+            timeStart: reviewTimeStart,
+            timeEnd: reviewTimeEnd,
+            dateStart: editedTimeline.dateStart,
+            dateEnd: editedTimeline.dateEnd,
+            isMultiDay: timelineChanged
+              ? editedTimeline.isMultiDay
+              : before.isMultiDay === true,
+            crossesMidnight: reviewTimeEnd < reviewTimeStart,
+            customDurationPP: timelineChanged
+              ? finalDurationHours
+              : before.customDurationPP,
             componentJarak: Math.ceil(review.distanceKm * 300),
-            componentWaktu: Math.ceil(review.durationHours * 5_000),
+            componentWaktu: Math.ceil(finalDurationHours * 5_000),
             fuelFee: actualFuel,
-            extraFuelCost: review.fuelDelta,
+            extraFuelCost: settlement.extraFuelCost,
             tollParkingFee: actualToll,
-            extraTollCost: review.tollDelta,
+            extraTollCost: settlement.extraTollCost,
             preAuthorizedMeal,
             preAuthorizedToll,
-            totalPreAuthorizedAllowance,
-            totalActualSpent,
-            unspentCash,
+            totalPreAuthorizedAllowance: settlement.totalPreAuthorizedAllowance,
+            totalActualSpent: settlement.totalActualSpent,
+            unspentCash: settlement.unspentCash,
+            remainingUnspentCash: settlement.remainingUnspentCash,
+            netOperationalDelta: settlement.netOperationalDelta,
+            fuelAllowanceSurplus: settlement.fuelAllowanceSurplus,
+            tollAllowanceSurplus: settlement.tollAllowanceSurplus,
             actualJourneyDurationHours,
             actualMealAllowance,
             extraMealAllowance: mealDelta,
-            reimburseDelta,
+            positiveReimburseDelta: settlement.positiveReimburseDelta,
+            reimburseDelta: settlement.reimburseDelta,
             vehicleType: review.vehicleType,
             vehicleRate: rate,
-            baseOperationalCost,
+            baseOperationalCost: fuelAllowance,
             nightCount: effectiveNightCount,
             nightPremium: calculateNightPremium(effectiveNightCount),
             points: review.points,
@@ -524,11 +634,24 @@ export async function POST(request: NextRequest) {
                   extraFuelCost: after.extraFuelCost || 0,
                   tollParkingFee: after.tollParkingFee || 0,
                   extraTollCost: after.extraTollCost || 0,
+                  mealAllowance: after.preAuthorizedMeal || 0,
+                  preAuthorizedMeal: after.preAuthorizedMeal || 0,
+                  preAuthorizedToll: after.preAuthorizedToll || 0,
+                  customDurationPP: after.customDurationPP || 0,
                   extraMealAllowance: after.extraMealAllowance || 0,
+                  positiveReimburseDelta: after.positiveReimburseDelta || 0,
                   reimburseDelta: after.reimburseDelta || 0,
+                  unspentCash: after.unspentCash || 0,
+                  remainingUnspentCash: after.remainingUnspentCash || 0,
+                  netOperationalDelta: after.netOperationalDelta || 0,
+                  fuelAllowanceSurplus: after.fuelAllowanceSurplus || 0,
+                  tollAllowanceSurplus: after.tollAllowanceSurplus || 0,
+                  totalPreAuthorizedAllowance: after.totalPreAuthorizedAllowance || 0,
+                  totalActualSpent: after.totalActualSpent || 0,
                   vehicleName: after.vehicleType || '',
                   vehicleRate: after.vehicleRate || 0,
                   baseOperationalCost: after.baseOperationalCost || 0,
+                  baseDriverWage: after.baseDriverWage || 0,
                   nightCount: after.nightCount ?? 0,
                   nightPremium: after.nightPremium || 0,
                   points: after.points || [],

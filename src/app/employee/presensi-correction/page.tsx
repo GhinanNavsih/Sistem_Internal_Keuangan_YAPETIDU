@@ -5,22 +5,16 @@ import { useAuth } from '@/lib/AuthContext';
 import { db, storage } from '@/lib/firebase';
 import {
   collection,
-  addDoc,
   getDocs,
   query,
   where,
-  orderBy,
   serverTimestamp,
   doc,
-  updateDoc,
-  deleteDoc,
   setDoc
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import {
   Card,
-  CardContent,
-  CardHeader,
   CardTitle,
   CardDescription
 } from '@/components/ui/card';
@@ -36,23 +30,36 @@ import {
   CheckCircle2,
   ChevronLeft,
   FileText,
-  FileSpreadsheet,
   XCircle,
   HelpCircle,
-  MessageCircle,
   X,
   MoreVertical,
   Pencil,
   Trash2
 } from 'lucide-react';
 import Link from 'next/link';
+import {
+  asPresenceCorrectionRequest,
+  correctionTimeLabel,
+  formatPresenceDate,
+  isPresenceCorrectionType,
+  parseDateOnly,
+  timestampToMillis,
+  type PresenceCorrectionRequest,
+} from '@/lib/payroll/presenceCorrections';
+
+const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+function isValidClockTime(value: string): boolean {
+  return CLOCK_TIME_PATTERN.test(value);
+}
 
 export default function PresensiCorrectionPage() {
   const { profile: rawProfile, activeProfile } = useAuth();
   const profile = activeProfile || rawProfile;
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
-  const [requests, setRequests] = useState<any[]>([]);
+  const [requests, setRequests] = useState<PresenceCorrectionRequest[]>([]);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Form states
@@ -113,41 +120,51 @@ export default function PresensiCorrectionPage() {
   const isTimeRangeInvalid = useMemo(() => {
     if (type === 'izin_resmi') return false;
     if (type !== 'both' || !checkInTime || !checkOutTime) return false;
+    if (!isValidClockTime(checkInTime) || !isValidClockTime(checkOutTime)) return false;
     const [hIn, mIn] = checkInTime.split(':').map(Number);
     const [hOut, mOut] = checkOutTime.split(':').map(Number);
-    if (isNaN(hIn) || isNaN(hOut)) return false;
     return (hOut * 60 + mOut) <= (hIn * 60 + mIn);
   }, [type, checkInTime, checkOutTime]);
 
-  // Fetch employee's submitted requests for the current month
-  const fetchRequests = useCallback(async () => {
-    if (!profile?.uid) return;
+  const employeeId = profile?.linkedEmployeeId || profile?.uid;
+
+  // Fetch employee's submitted requests. The list is sorted in memory so the
+  // employee query does not require a composite Firestore index.
+  const fetchRequests = useCallback(async (showError = true) => {
+    if (!employeeId) return;
     setLoading(true);
     try {
       const q = query(
         collection(db, 'LoyalisPresenceCorrections'),
-        where('employeeId', '==', profile.linkedEmployeeId || profile.uid),
-        orderBy('createdAt', 'desc')
+        where('employeeId', '==', employeeId),
       );
       const snap = await getDocs(q);
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const list = snap.docs
+        .map((snapshot) => asPresenceCorrectionRequest(snapshot.id, snapshot.data()))
+        .sort((a, b) => timestampToMillis(b.createdAt) - timestampToMillis(a.createdAt));
       setRequests(list);
     } catch (err) {
       console.error('Error fetching requests:', err);
+      if (showError) {
+        setMessage({ type: 'error', text: 'Gagal memuat riwayat koreksi presensi.' });
+      }
     } finally {
       setLoading(false);
     }
-  }, [profile]);
+  }, [employeeId]);
 
   useEffect(() => {
-    fetchRequests();
+    // This effect intentionally starts an async data load; the loader updates
+    // state when the Firestore request resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchRequests();
   }, [fetchRequests]);
 
-  const handleStartEdit = (req: any) => {
+  const handleStartEdit = (req: PresenceCorrectionRequest) => {
     setActiveMenuId(null);
     setEditingRequestId(req.id);
     setDate(req.date);
-    setType(req.type);
+    setType(isPresenceCorrectionType(req.type) ? req.type : 'both');
     setCheckInTime(req.checkInTime || '');
     setCheckOutTime(req.checkOutTime || '');
     setReason(req.reason || '');
@@ -171,6 +188,9 @@ export default function PresensiCorrectionPage() {
     setCheckOutTime('');
     setFile(null);
     setFilePreview(null);
+    setUploadProgress(null);
+    setCheckInFocused(false);
+    setCheckOutFocused(false);
   };
 
   const handleDeleteRequest = async (id: string) => {
@@ -216,20 +236,41 @@ export default function PresensiCorrectionPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!date) {
+    if (!date || !parseDateOnly(date)) {
       setMessage({ type: 'error', text: 'Pilih tanggal terlebih dahulu.' });
       return;
     }
 
     const today = new Date();
     const currentMonthToken = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    if (!date.startsWith(currentMonthToken)) {
+    if (date.slice(0, 7) !== currentMonthToken) {
       setMessage({ type: 'error', text: 'Pengajuan koreksi hanya diizinkan untuk periode bulan berjalan.' });
       return;
     }
     if (!reason.trim()) {
       setMessage({ type: 'error', text: 'Masukkan alasan koreksi presensi Anda.' });
       return;
+    }
+
+    const checkIn = type === 'izin_resmi' ? '07:30' : (checkInTime.trim() || '08:00');
+    const checkOut = type === 'izin_resmi' ? '14:00' : (checkOutTime.trim() || '14:00');
+
+    if (type !== 'tap_out' && !isValidClockTime(checkIn)) {
+      setMessage({ type: 'error', text: 'Masukkan jam masuk dalam format HH:MM yang valid.' });
+      return;
+    }
+    if (type !== 'tap_in' && !isValidClockTime(checkOut)) {
+      setMessage({ type: 'error', text: 'Masukkan jam pulang dalam format HH:MM yang valid.' });
+      return;
+    }
+
+    if (type === 'both') {
+      const [hIn, mIn] = checkIn.split(':').map(Number);
+      const [hOut, mOut] = checkOut.split(':').map(Number);
+      if ((hOut * 60 + mOut) <= (hIn * 60 + mIn)) {
+        setMessage({ type: 'error', text: 'Jam Pulang harus lebih lambat dari Jam Masuk.' });
+        return;
+      }
     }
 
     setSubmitLoading(true);
@@ -266,19 +307,6 @@ export default function PresensiCorrectionPage() {
         }
       }
 
-      let checkIn = type === 'izin_resmi' ? '07:30' : (checkInTime.trim() || '08:00');
-      let checkOut = type === 'izin_resmi' ? '14:00' : (checkOutTime.trim() || '14:00');
-
-      if (type === 'both') {
-        const [hIn, mIn] = checkIn.split(':').map(Number);
-        const [hOut, mOut] = checkOut.split(':').map(Number);
-        if ((hOut * 60 + mOut) <= (hIn * 60 + mIn)) {
-          setMessage({ type: 'error', text: 'Jam Pulang harus lebih lambat dari Jam Masuk.' });
-          setSubmitLoading(false);
-          return;
-        }
-      }
-
       // 1. Optional File Upload to Firebase Storage
       if (file) {
         const storageRef = ref(storage, `presence_corrections/${empId}/${Date.now()}_${file.name}`);
@@ -296,8 +324,14 @@ export default function PresensiCorrectionPage() {
               reject(error);
             },
             async () => {
-              proofUrl = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve();
+              try {
+                proofUrl = await getDownloadURL(uploadTask.snapshot.ref);
+                setUploadProgress(100);
+                resolve();
+              } catch (error) {
+                console.error('Failed to resolve uploaded file URL:', error);
+                reject(error);
+              }
             }
           );
         });
@@ -311,7 +345,7 @@ export default function PresensiCorrectionPage() {
       const customDocId = `${empId}_${yy}${mm}${dd}`;
 
       // 2. Save document to Firestore
-      const requestData: any = {
+      const requestData: Record<string, unknown> = {
         date,
         type,
         checkInTime: type === 'tap_out' ? null : checkIn,
@@ -357,10 +391,13 @@ export default function PresensiCorrectionPage() {
       // Reset form
       handleCancelEdit();
 
-      fetchRequests();
-    } catch (err: any) {
+      await fetchRequests(false);
+    } catch (err: unknown) {
       console.error(err);
-      setMessage({ type: 'error', text: err.message || 'Gagal mengajukan koreksi presensi. Silakan coba lagi.' });
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Gagal mengajukan koreksi presensi. Silakan coba lagi.',
+      });
     } finally {
       setSubmitLoading(false);
     }
@@ -432,7 +469,12 @@ export default function PresensiCorrectionPage() {
 
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Tipe Koreksi</label>
-                  <Select value={type} onValueChange={(val: any) => setType(val)}>
+                  <Select
+                    value={type}
+                    onValueChange={(value) => {
+                      if (isPresenceCorrectionType(value)) setType(value);
+                    }}
+                  >
                     <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white h-11 text-sm font-semibold focus:ring-2 focus:ring-indigo-500/20">
                       <SelectValue>
                         {type === 'both' && 'Keduanya (Masuk & Pulang)'}
@@ -633,7 +675,7 @@ export default function PresensiCorrectionPage() {
                       <div className="flex items-center justify-between mb-2.5">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-slate-700 font-mono">
-                            {new Date(req.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            {formatPresenceDate(req.date, { day: 'numeric', month: 'short', year: 'numeric' })}
                           </span>
                           {req.type === 'izin_resmi' ? (
                             <span className="text-[10px] bg-emerald-100/60 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Izin Resmi</span>
@@ -707,7 +749,7 @@ export default function PresensiCorrectionPage() {
                       <div className="flex items-center gap-2 mb-2">
                         <Clock className="w-3.5 h-3.5 text-slate-350 shrink-0" />
                         <span className="text-[11px] font-semibold font-mono text-slate-500">
-                          {req.type === 'izin_resmi' ? '07:30 — 14:00 (Hari Penuh)' : req.type === 'tap_out' ? req.checkOutTime : req.type === 'tap_in' ? req.checkInTime : `${req.checkInTime} — ${req.checkOutTime}`}
+                          {correctionTimeLabel(req)}
                         </span>
                       </div>
 

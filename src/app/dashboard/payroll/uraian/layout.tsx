@@ -13,9 +13,9 @@ import {
   SelectValue
 } from '@/components/ui/select';
 import { LogOut, ArrowLeft } from 'lucide-react';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { SUPPORTED_CATEGORIES, MONTHS_ID } from '@/utils/rekapConfig';
+import { MONTHS_ID } from '@/utils/rekapConfig';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import UraianNavToggles from '@/components/UraianNavToggles';
 import { defaultPayrollPeriodToken, previousPayrollPeriodToken } from '@/lib/payroll/domain';
@@ -80,24 +80,41 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, hasExplicitPeriod, pathname]);
 
-  const [dynamicCategories, setDynamicCategories] = useState<string[]>(SUPPORTED_CATEGORIES);
+  const [activeCategories, setActiveCategories] = useState<string[]>([]);
+  const [categoriesLoaded, setCategoriesLoaded] = useState(false);
 
-  // Sync Categories from DB Blue Collar
+  // Only expose categories that have at least one active blue-collar employee.
   useEffect(() => {
+    let cancelled = false;
+
     const fetchCats = async () => {
       try {
-        const allEmpSnap = await getDocs(collection(db, 'Employees_BlueCollar'));
-        const cats = new Set<string>(SUPPORTED_CATEGORIES);
-        allEmpSnap.docs.forEach(d => {
-          const cat = d.data()?.employment?.jobCategory;
-          if (cat) cats.add(cat);
+        const activeEmployeesQuery = query(
+          collection(db, 'Employees_BlueCollar'),
+          where('employment.status', '==', 'active'),
+        );
+        const activeEmpSnap = await getDocs(activeEmployeesQuery);
+        const cats = new Set<string>();
+        activeEmpSnap.docs.forEach((employeeDoc) => {
+          const rawCategory = employeeDoc.data()?.employment?.jobCategory;
+          if (typeof rawCategory === 'string' && rawCategory.trim()) {
+            cats.add(rawCategory.trim());
+          }
         });
-        setDynamicCategories(Array.from(cats).sort());
+
+        if (!cancelled) setActiveCategories(Array.from(cats).sort());
       } catch (err) {
-        console.error(err);
+        console.error('Failed to load active blue-collar categories:', err);
+        if (!cancelled) setActiveCategories([]);
+      } finally {
+        if (!cancelled) setCategoriesLoaded(true);
       }
     };
+
     fetchCats();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const allowedCategories = useMemo(() => {
@@ -107,10 +124,10 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       profile.role === 'finance_verifier' ||
       profile.role === 'payroll_authorizer'
     ) {
-      return dynamicCategories;
+      return activeCategories;
     }
-    return dynamicCategories.filter(cat => profile.permittedCategories?.includes(cat));
-  }, [profile, dynamicCategories]);
+    return activeCategories.filter(cat => profile.permittedCategories?.includes(cat));
+  }, [profile, activeCategories]);
 
   // Handle setting/changing query params
   const setMonth = (m: number) => {
@@ -195,18 +212,41 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     }
   }, [profile, activeTab, router, getCleanParamsString, month, year, searchParams]);
 
-  // Set default category for Pekarya views
+  // Set or repair the category for Pekarya views after the active categories
+  // have loaded. This also handles stale bookmarked URLs such as
+  // ?category=PEKARYA after that category no longer has active employees.
   useEffect(() => {
     if (
-      allowedCategories.length > 0 &&
-      !category &&
-      (activeTab === 'presensi' ||
-        activeTab === 'presensi_pekarya' ||
-        activeTab === 'kegiatan_spj')
+      !profile ||
+      !categoriesLoaded ||
+      (activeTab !== 'presensi' &&
+        activeTab !== 'presensi_pekarya' &&
+        activeTab !== 'kegiatan_spj')
     ) {
-      setCategory(allowedCategories[0]);
+      return;
     }
-  }, [allowedCategories, category, activeTab]);
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (allowedCategories.length > 0) {
+      if (category && allowedCategories.includes(category)) return;
+      params.set('category', allowedCategories[0]);
+    } else {
+      if (!category) return;
+      params.delete('category');
+    }
+
+    const queryString = params.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
+  }, [
+    allowedCategories,
+    category,
+    activeTab,
+    categoriesLoaded,
+    pathname,
+    profile,
+    router,
+    searchParams,
+  ]);
 
   const pageTitle = useMemo(() => {
     switch (activeTab) {
@@ -378,7 +418,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               </SelectContent>
             </Select>
 
-            {showCategorySelector && category && allowedCategories.length > 0 && (
+            {showCategorySelector && categoriesLoaded && category && allowedCategories.length > 0 && (
               <Select value={category} onValueChange={(v) => v && setCategory(v)}>
                 <SelectTrigger className="w-48 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
                   <SelectValue>

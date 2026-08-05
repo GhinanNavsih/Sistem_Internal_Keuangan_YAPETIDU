@@ -48,6 +48,7 @@ import {
 } from 'firebase/firestore';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import {
+  calculateDriverReimbursementSettlement,
   calculateDriverNetWage,
   calculateJourneyElapsedHours,
   calculateNightPremium,
@@ -399,7 +400,7 @@ const DestinationImageBanner = ({
 
   if (loading) {
     return (
-      <div className="w-full h-36 bg-slate-100 flex items-center justify-center animate-pulse">
+      <div className="relative w-full h-[clamp(240px,38vh,360px)] bg-slate-100 flex items-center justify-center animate-pulse overflow-hidden">
         <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
       </div>
     );
@@ -407,22 +408,23 @@ const DestinationImageBanner = ({
 
   if (!imgUrl) {
     return (
-      <div className="w-full h-36 bg-gradient-to-br from-blue-100 to-slate-100 flex items-center justify-center relative overflow-hidden">
+      <div className="relative w-full h-[clamp(240px,38vh,360px)] bg-gradient-to-br from-blue-100 to-slate-100 flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#2563eb_1px,transparent_1px)] [background-size:16px_16px]" />
         <Compass className="w-10 h-10 text-blue-400/50 relative z-10" />
+        <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-slate-50 via-slate-50/70 to-transparent" />
       </div>
     );
   }
 
   return (
-    <div className="w-full h-36 relative overflow-hidden border-b border-slate-100">
+    <div className="relative w-full h-[clamp(240px,38vh,360px)] overflow-hidden bg-slate-100">
       <img
         src={imgUrl}
         alt={destination}
-        className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+        className="absolute inset-0 w-full h-full object-cover object-center hover:scale-105 transition-transform duration-500"
         onError={() => setImgUrl(null)}
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-black/10 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[46%] bg-gradient-to-t from-slate-50 via-slate-50/75 to-transparent" />
     </div>
   );
 };
@@ -1309,10 +1311,6 @@ function JourneyReportContent() {
       const baseCostVal = activeReportingJourney.baseOperationalCost !== undefined && activeReportingJourney.baseOperationalCost !== null
         ? Number(activeReportingJourney.baseOperationalCost)
         : Math.max(0, (activeReportingJourney.totalOperationalCost || 0) - preAuthorizedMeal - preAuthorizedToll);
-      const totalPreAuthorizedAllowance = baseCostVal + preAuthorizedToll;
-
-      const totalActualSpent = fuelVal + tollVal;
-
       const timings = calculateJourneyDateTimeTimings({
         dateStart: formDate,
         timeStart: formTimeStart,
@@ -1334,14 +1332,23 @@ function JourneyReportContent() {
       );
       const extraMealAllowance = isNdalem ? actualMealAllowance : Math.max(0, actualMealAllowance - preAuthorizedMeal);
 
-      const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
-      const extraTollCost = Math.max(0, tollVal - preAuthorizedToll);
-
-      const positiveReimburseDelta = extraMealAllowance + extraFuelCost + extraTollCost + extraOperationalCost;
-      const unspentCash = Math.max(0, totalPreAuthorizedAllowance - totalActualSpent);
-
-      const finalReimburseDelta = Math.max(0, positiveReimburseDelta - unspentCash);
-      const remainingUnspentCash = Math.max(0, unspentCash - positiveReimburseDelta);
+      const settlement = calculateDriverReimbursementSettlement({
+        fuelAllowance: isNdalem ? 0 : baseCostVal,
+        fuelSpent: isNdalem ? 0 : fuelVal,
+        tollAllowance: preAuthorizedToll,
+        tollSpent: tollVal,
+        additionalReimbursement: extraMealAllowance + extraOperationalCost,
+      });
+      const authorizedTotalOperationalCost = activeReportingJourney.totalOperationalCost !== undefined
+        ? Number(activeReportingJourney.totalOperationalCost || 0)
+        : baseCostVal + preAuthorizedMeal + preAuthorizedToll;
+      const adjustedTotalOperationalCost = Math.max(
+        0,
+        authorizedTotalOperationalCost +
+          settlement.netOperationalDelta +
+          extraMealAllowance +
+          extraOperationalCost,
+      );
 
       const nightPremium = calculateNightPremium(effectiveNightCount);
       const baseDriverWage = calculateDriverNetWage(
@@ -1349,7 +1356,7 @@ function JourneyReportContent() {
         submittedDurationHours,
         effectiveNightCount,
       );
-      const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
+      const finalUpahBersih = Math.max(0, baseDriverWage - settlement.remainingUnspentCash);
 
       const extraLocs = extraActivities.filter(a => a.type === 'tambah_lokasi' && a.destination);
       const extraLocsText = extraLocs.map(l => l.destination.split(',')[0]).join(' → ');
@@ -1394,23 +1401,26 @@ function JourneyReportContent() {
             extraActivities,
             extraDistanceKm,
             extraOperationalCost,
-            extraFuelCost,
-            extraTollCost,
+            extraFuelCost: settlement.extraFuelCost,
+            extraTollCost: settlement.extraTollCost,
             extraMealAllowance,
             ndalemMealMoneyReceived: isNdalem ? (formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0) : 0,
-            positiveReimburseDelta,
+            positiveReimburseDelta: settlement.positiveReimburseDelta,
             baseDriverWage,
             upahBersih: finalUpahBersih,
-            reimburseDelta: finalReimburseDelta,
-            unspentCash,
-            remainingUnspentCash,
+            reimburseDelta: settlement.reimburseDelta,
+            unspentCash: settlement.unspentCash,
+            remainingUnspentCash: settlement.remainingUnspentCash,
+            netOperationalDelta: settlement.netOperationalDelta,
+            fuelAllowanceSurplus: settlement.fuelAllowanceSurplus,
+            tollAllowanceSurplus: settlement.tollAllowanceSurplus,
             baseOperationalCost: baseCostVal,
             preAuthorizedMeal,
             preAuthorizedToll,
             customDurationPP: preAuthorizedDurationPP,
-            totalPreAuthorizedAllowance,
-            totalActualSpent,
-            totalOperationalCost: activeReportingJourney.totalOperationalCost || 0,
+            totalPreAuthorizedAllowance: settlement.totalPreAuthorizedAllowance,
+            totalActualSpent: settlement.totalActualSpent,
+            totalOperationalCost: adjustedTotalOperationalCost,
             vehicleRate: activeReportingJourney.vehicleRate ?? 1000,
             componentJarak: Math.ceil(calculatedDistanceKm * 300),
             componentWaktu: Math.ceil(submittedDurationHours * 5000),
@@ -1606,27 +1616,32 @@ function JourneyReportContent() {
         <form onSubmit={handleCompleteJourneySubmit} className="space-y-5">
 
           {/* Header Banner & Trip Specifications */}
-          <div className="space-y-3">
-            <div className="rounded-2xl overflow-hidden shadow-xs">
+          <div className="space-y-0">
+            <div className="relative left-1/2 -mt-5 w-screen -translate-x-1/2 overflow-hidden">
               <DestinationImageBanner
                 destination={activeReportingJourney.endPoint}
                 cachedUrl={activeReportingJourney.destinationImageUrl}
                 onColorExtracted={handleColorExtracted}
               />
-            </div>
-            <div className="text-xs font-extrabold text-slate-900 px-1">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <div>Keperluan: <strong className="text-black font-extrabold">{activeReportingJourney.activityName}</strong></div>
-                <div className="text-slate-900 font-black">•</div>
-                <div>Kendaraan: <strong className="text-black font-extrabold">{activeReportingJourney.vehicleName}</strong></div>
-                <div className="text-slate-900 font-black">•</div>
-                <div>
-                  Tanggal: <strong className="text-black font-extrabold">
-                    {(() => {
-                      const d = formDate || activeReportingJourney.activityDate || getTodayISO();
-                      return new Date(d.includes('T') ? d : `${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-                    })()}
-                  </strong>
+              <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between px-4 py-4">
+                <div className="pointer-events-auto flex min-w-0 max-w-full items-center gap-2 self-start rounded-full border border-white/40 bg-white/20 px-3.5 py-2 text-white shadow-[0_8px_30px_rgba(15,23,42,0.2)] ring-1 ring-white/10 backdrop-blur-xl">
+                  <span className="shrink-0 text-[9px] font-black uppercase tracking-wide text-white/75">Keperluan</span>
+                  <strong className="min-w-0 truncate text-[10px] font-extrabold text-white">{activeReportingJourney.activityName}</strong>
+                </div>
+                <div className="pointer-events-auto flex w-full items-center gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-white/35 bg-slate-950/60 px-3 py-2 text-white shadow-[0_8px_30px_rgba(15,23,42,0.35)] ring-1 ring-white/10 backdrop-blur-xl">
+                    <span className="shrink-0 text-[9px] font-black uppercase tracking-wide text-white/75">Kendaraan</span>
+                    <strong className="min-w-0 truncate text-[10px] font-extrabold text-white">{activeReportingJourney.vehicleName}</strong>
+                  </div>
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-white/35 bg-slate-950/60 px-3 py-2 text-white shadow-[0_8px_30px_rgba(15,23,42,0.35)] ring-1 ring-white/10 backdrop-blur-xl">
+                    <span className="shrink-0 text-[9px] font-black uppercase tracking-wide text-white/75">Tanggal</span>
+                    <strong className="min-w-0 truncate text-[10px] font-extrabold text-white">
+                      {(() => {
+                        const d = formDate || activeReportingJourney.activityDate || getTodayISO();
+                        return new Date(d.includes('T') ? d : `${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                      })()}
+                    </strong>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2350,7 +2365,13 @@ function JourneyReportContent() {
             const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
             const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
 
-            const extraFuelCost = isNdalem ? 0 : Math.max(0, fuelVal - baseCostVal);
+            const settlement = calculateDriverReimbursementSettlement({
+              fuelAllowance: isNdalem ? 0 : baseCostVal,
+              fuelSpent: isNdalem ? 0 : fuelVal,
+              tollAllowance: preAuthorizedTollInCalc,
+              tollSpent: tollVal,
+              additionalReimbursement: extraMealAllowance + extraOperationalCost,
+            });
 
             return (
               <div className="border-t border-slate-200/70 pt-5 text-slate-900 text-xs space-y-2 font-bold">
@@ -2406,8 +2427,11 @@ function JourneyReportContent() {
                             <td className="py-2 text-center font-extrabold text-blue-700"><span>{fmtRp(Math.ceil(baseCostVal))}</span></td>
                             <td className="py-2 text-center font-black text-blue-700">{fmtRp(Math.ceil(fuelVal))}</td>
                             <td className="py-2 text-right font-black text-blue-700">
-                              {extraFuelCost > 0 ? (
-                                <span>+{fmtRp(Math.ceil(extraFuelCost))}</span>
+                              {settlement.fuelDelta !== 0 ? (
+                                <span>
+                                  {settlement.fuelDelta > 0 ? '+' : '-'}
+                                  {fmtRp(Math.ceil(Math.abs(settlement.fuelDelta)))}
+                                </span>
                               ) : (
                                 <span className="text-black font-extrabold">—</span>
                               )}
@@ -2431,10 +2455,10 @@ function JourneyReportContent() {
                   );
                 })()}
 
-                {extraFuelCost > 0 && (
+                {settlement.extraFuelCost > 0 && (
                   <div className="flex justify-between text-slate-900 font-extrabold">
                     <span>Kelebihan BBM (Delta)</span>
-                    <span className="font-black text-blue-700">+{fmtRp(Math.ceil(extraFuelCost))}</span>
+                    <span className="font-black text-blue-700">+{fmtRp(Math.ceil(settlement.extraFuelCost))}</span>
                   </div>
                 )}
                 {extraMealAllowance > 0 && (
@@ -2459,45 +2483,19 @@ function JourneyReportContent() {
                   return null;
                 })()}
                 {(() => {
-                  const preAuthorizedDurationPP = activeReportingJourney.customDurationPP || (activeReportingJourney.durationHours ? activeReportingJourney.durationHours * 2 : 0);
-                  const preAuthorizedMeal = isNdalem
-                    ? 0
-                    : (activeReportingJourney.mealAllowance !== undefined && activeReportingJourney.mealAllowance !== null && activeReportingJourney.mealAllowance > 0
-                      ? activeReportingJourney.mealAllowance
-                      : getMealAllowanceForDuration(preAuthorizedDurationPP));
-
-                  const preAuthorizedToll = activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
-                    ? Number(activeReportingJourney.preAuthorizedToll)
-                    : (activeReportingJourney.status === 'claimed' ? Number(activeReportingJourney.tollParkingFee || 0) : 0);
-                  const totalPreAuthorizedAllowance = baseCostVal + preAuthorizedToll;
-                  const totalActualSpent = fuelVal + tollVal;
-
-                  const extraTollCost = Math.max(0, tollVal - preAuthorizedToll);
-                  const positiveReimburseDelta = extraMealAllowance + extraFuelCost + extraTollCost + extraOperationalCost;
-                  const unspentCash = Math.max(0, totalPreAuthorizedAllowance - totalActualSpent);
-
-                  const finalReimburseDelta = Math.max(0, positiveReimburseDelta - unspentCash);
-                  const remainingUnspentCash = Math.max(0, unspentCash - positiveReimburseDelta);
-
                   const baseDriverWage = calculateDriverNetWage(
                     calculatedDistanceKm,
                     submittedDurationHours,
                     effectiveTableNights,
                   );
-                  const finalUpahBersih = Math.max(0, baseDriverWage - remainingUnspentCash);
+                  const finalUpahBersih = Math.max(0, baseDriverWage - settlement.remainingUnspentCash);
 
                   return (
                     <>
                       <div className="py-2 border-y border-blue-200/50 flex justify-between font-black text-blue-700 text-sm">
                         <span>Total Reimburse (Delta)</span>
-                        <span>{fmtRp(Math.ceil(finalReimburseDelta))}</span>
+                        <span>{fmtRp(Math.ceil(settlement.reimburseDelta))}</span>
                       </div>
-                      {unspentCash > 0 && (
-                        <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
-                          <span>• Penghematan Uang Jalan Operasional</span>
-                          <span className="text-blue-700 font-extrabold">-{fmtRp(Math.ceil(unspentCash))}</span>
-                        </div>
-                      )}
 
                       <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
                         <span>• Komponen Jarak ({calculatedDistanceKm.toFixed(1)} km)</span>
@@ -2533,10 +2531,10 @@ function JourneyReportContent() {
                           <span className="text-emerald-700 font-black">+{fmtRp(calculateNightPremium(effectiveTableNights))}</span>
                         </div>
                       )}
-                      {remainingUnspentCash > 0 && (
+                      {settlement.remainingUnspentCash > 0 && (
                         <div className="flex justify-between text-blue-700 text-[10px] font-bold pl-2">
                           <span>• Potongan Sisa Kas Operasional (ke Upah Bersih)</span>
-                          <span className="font-extrabold">-{fmtRp(Math.ceil(remainingUnspentCash))}</span>
+                          <span className="font-extrabold">-{fmtRp(Math.ceil(settlement.remainingUnspentCash))}</span>
                         </div>
                       )}
 

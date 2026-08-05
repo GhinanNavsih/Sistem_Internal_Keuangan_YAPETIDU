@@ -142,6 +142,8 @@ import { syncActivityToPayslip } from '@/utils/payslipSync';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
 import {
+  calculateEditableDriverJourneyTimeline,
+  calculateDriverReimbursementSettlement,
   calculateDriverNetWage,
   calculateJourneyElapsedHours,
   calculateNightPremium,
@@ -162,6 +164,9 @@ interface ActivityReport {
   activityDate: string;
   timeStart: string;
   timeEnd: string;
+  dateStart?: string;
+  dateEnd?: string;
+  isMultiDay?: boolean;
   status: 'pending' | 'approved' | 'declined';
   fee: number;
   hasUangMakan?: boolean;
@@ -623,6 +628,11 @@ export default function ActivityReviewPage() {
 
   // ── Driver (Sopir) Audit Modal State ──
   const [auditActivity, setAuditActivity] = useState<ActivityReport | null>(null);
+  const [auditTimeStart, setAuditTimeStart] = useState('');
+  const [auditTimeEnd, setAuditTimeEnd] = useState('');
+  const [auditDateStart, setAuditDateStart] = useState('');
+  const [auditDateEnd, setAuditDateEnd] = useState('');
+  const [auditIsMultiDay, setAuditIsMultiDay] = useState(false);
   const [auditDistanceKm, setAuditDistanceKm] = useState<number>(0);
   const [auditDurationHours, setAuditDurationHours] = useState<number>(0);
   const [auditAuthorizedDurationPP, setAuditAuthorizedDurationPP] = useState<number>(0);
@@ -866,6 +876,42 @@ export default function ActivityReviewPage() {
     });
   };
 
+  const handleAuditTimeChange = (field: 'start' | 'end', value: string) => {
+    const nextTimeStart = field === 'start' ? value : auditTimeStart;
+    const nextTimeEnd = field === 'end' ? value : auditTimeEnd;
+    if (!auditActivity) return;
+
+    if (field === 'start') setAuditTimeStart(value);
+    else setAuditTimeEnd(value);
+
+    const timeline = calculateEditableDriverJourneyTimeline({
+      dateStart: auditDateStart || auditActivity.dateStart || auditActivity.activityDate,
+      dateEnd: auditDateEnd || auditActivity.dateEnd || auditActivity.activityDate,
+      timeStart: nextTimeStart,
+      timeEnd: nextTimeEnd,
+      isMultiDay: auditIsMultiDay,
+    });
+
+    setAuditDateEnd(timeline.dateEnd);
+    setAuditIsMultiDay(timeline.isMultiDay);
+    setAuditNightCount(timeline.nightCount);
+    if (timeline.durationHours > 0) {
+      setAuditDurationHours(timeline.durationHours);
+      setAuditAuthorizedDurationPP(timeline.durationHours);
+    }
+  };
+
+  const auditTimeline = useMemo(() => {
+    if (!auditActivity) return null;
+    return calculateEditableDriverJourneyTimeline({
+      dateStart: auditDateStart || auditActivity.dateStart || auditActivity.activityDate,
+      dateEnd: auditDateEnd || auditActivity.dateEnd || auditActivity.activityDate,
+      timeStart: auditTimeStart,
+      timeEnd: auditTimeEnd,
+      isMultiDay: auditIsMultiDay,
+    });
+  }, [auditActivity, auditDateStart, auditDateEnd, auditIsMultiDay, auditTimeStart, auditTimeEnd]);
+
   const handleOpenAuditSopir = (activity: ActivityReport) => {
     setAuditActivity(activity);
     const distKm = activity.distanceKm || 0;
@@ -874,11 +920,25 @@ export default function ActivityReviewPage() {
       ? activity.customDurationPP
       : durHrs;
     const vType = activity.vehicleType || 'Suzuki XL7';
+    const dateStart = activity.dateStart || activity.activityDate;
+    const dateEnd = activity.dateEnd || dateStart;
+    const initialTimeline = calculateEditableDriverJourneyTimeline({
+      dateStart,
+      dateEnd,
+      timeStart: activity.timeStart || '',
+      timeEnd: activity.timeEnd || '',
+      isMultiDay: activity.isMultiDay === true,
+    });
+    setAuditTimeStart(activity.timeStart || '');
+    setAuditTimeEnd(activity.timeEnd || '');
+    setAuditDateStart(initialTimeline.dateStart);
+    setAuditDateEnd(initialTimeline.dateEnd);
+    setAuditIsMultiDay(initialTimeline.isMultiDay);
     setAuditDistanceKm(distKm);
-    setAuditDurationHours(durHrs);
+    setAuditDurationHours(initialTimeline.durationHours > 0 ? initialTimeline.durationHours : durHrs);
     setAuditAuthorizedDurationPP(authDurPP);
     setAuditVehicleType(vType);
-    setAuditNightCount(activity.nightCount || 0);
+    setAuditNightCount(initialTimeline.durationHours > 0 ? initialTimeline.nightCount : (activity.nightCount || 0));
 
     const pts = activity.points && activity.points.length > 0
       ? activity.points
@@ -891,16 +951,15 @@ export default function ActivityReviewPage() {
       ? activity.baseOperationalCost
       : Math.ceil(distKm * rate);
 
-    // 1. BBM Delta: Use saved extraFuelCost if available; otherwise calculate from fuelFee - baseFuel
-    const fuelDelta = activity.extraFuelCost !== undefined && activity.extraFuelCost !== null
-      ? activity.extraFuelCost
-      : Math.max(0, (activity.fuelFee || 0) - baseFuel);
-
-    // 2. Tol & Parkir Delta: Use saved extraTollCost if available; otherwise calculate from tollParkingFee - preAuthorizedToll
     const preToll = activity.preAuthorizedToll ?? 0;
-    const tollDelta = activity.extraTollCost !== undefined && activity.extraTollCost !== null
-      ? activity.extraTollCost
-      : Math.max(0, (activity.tollParkingFee || 0) - preToll);
+    // Keep these deltas signed: allowance savings must remain visible so they
+    // can offset overage in the other operational category during approval.
+    const fuelDelta = activity.fuelFee !== undefined && activity.fuelFee !== null
+      ? (vType === 'Ndalem' ? 0 : Number(activity.fuelFee) - baseFuel)
+      : (activity.extraFuelCost ?? 0);
+    const tollDelta = activity.tollParkingFee !== undefined && activity.tollParkingFee !== null
+      ? Number(activity.tollParkingFee) - preToll
+      : (activity.extraTollCost ?? 0);
 
     setAuditFuelDelta(fuelDelta);
     setAuditTollDelta(tollDelta);
@@ -925,20 +984,46 @@ export default function ActivityReviewPage() {
   };
 
   const auditCalc = useMemo(() => {
-    if (!auditActivity) return null;
+    if (!auditActivity || !auditTimeline) return null;
     const rate = getVehicleRate(auditVehicleType);
+
+    const originalDateStart = auditActivity.dateStart || auditActivity.activityDate;
+    const originalDateEnd = auditActivity.dateEnd || originalDateStart;
+    const originalIsMultiDay =
+      auditActivity.isMultiDay === true || originalDateEnd > originalDateStart;
+    const timelineChanged =
+      auditTimeStart !== auditActivity.timeStart ||
+      auditTimeEnd !== auditActivity.timeEnd ||
+      auditDateStart !== originalDateStart ||
+      auditDateEnd !== originalDateEnd ||
+      auditIsMultiDay !== originalIsMultiDay;
 
     // Base BBM
     const baselineBBM = auditActivity.baseOperationalCost !== undefined && auditActivity.baseOperationalCost !== null
       ? auditActivity.baseOperationalCost
       : Math.ceil(auditDistanceKm * rate);
 
-    // Base Meal follows journey duration inputted by Kepala SatKer (auditAuthorizedDurationPP)
-    const authDurForMeal = auditAuthorizedDurationPP || auditDurationHours;
+    let actualJourneyDurationHours = 0;
+    try {
+      actualJourneyDurationHours = calculateJourneyElapsedHours(
+        auditTimeStart,
+        auditTimeEnd,
+        auditNightCount,
+      );
+    } catch {
+      actualJourneyDurationHours = 0;
+    }
+
+    // Once the auditor edits the submitted times, the edited duration becomes
+    // the new meal-allowance authorization baseline.
+    const authDurForMeal = timelineChanged && actualJourneyDurationHours > 0
+      ? actualJourneyDurationHours
+      : auditAuthorizedDurationPP || auditDurationHours;
+    const savedPreAuthorizedMeal = auditActivity.preAuthorizedMeal;
     const baselineMeal = auditVehicleType === 'Ndalem'
       ? 0
-      : (auditActivity.preAuthorizedMeal !== undefined && auditActivity.preAuthorizedMeal !== null && auditActivity.preAuthorizedMeal > 0
-        ? auditActivity.preAuthorizedMeal
+      : (!timelineChanged && savedPreAuthorizedMeal !== undefined && savedPreAuthorizedMeal !== null && savedPreAuthorizedMeal > 0
+        ? savedPreAuthorizedMeal
         : getMealAllowanceForHours(authDurForMeal));
 
     const baselineToll = auditActivity.preAuthorizedToll ?? 0;
@@ -946,16 +1031,6 @@ export default function ActivityReviewPage() {
 
     const deltaFuel = auditVehicleType === 'Ndalem' ? 0 : auditFuelDelta;
     const deltaToll = auditTollDelta;
-    let actualJourneyDurationHours = 0;
-    try {
-      actualJourneyDurationHours = calculateJourneyElapsedHours(
-        auditActivity.timeStart,
-        auditActivity.timeEnd,
-        auditNightCount,
-      );
-    } catch {
-      actualJourneyDurationHours = 0;
-    }
     const ndalemMealMoney = auditActivity.ndalemMealMoneyReceived ?? 0;
     const actualMeal = getMealAllowanceForDuration(
       actualJourneyDurationHours,
@@ -967,25 +1042,51 @@ export default function ActivityReviewPage() {
       : Math.max(0, actualMeal - baselineMeal);
     const extraOps = 0; // Mileage distance is compensated via componentJarak in upahBersih, not cash reimbursement
 
+    const wageDurationHours = timelineChanged && actualJourneyDurationHours > 0
+      ? actualJourneyDurationHours
+      : auditDurationHours;
     const componentJarak = Math.ceil(auditDistanceKm * 300);
-    const componentWaktu = Math.ceil(auditDurationHours * 5000);
+    const componentWaktu = Math.ceil(wageDurationHours * 5000);
     const premiumWeekend = 0;
     const nightPremium = calculateNightPremium(auditNightCount);
-    const upahBersih = calculateDriverNetWage(
+    const baseDriverWage = calculateDriverNetWage(
       auditDistanceKm,
-      auditDurationHours,
+      wageDurationHours,
       auditNightCount,
     );
 
-    const positiveDelta = deltaFuel + deltaToll + deltaMeal + extraOps;
-    const actualFuel = baselineBBM + deltaFuel;
-    const actualToll = baselineToll + deltaToll;
-    const totalActualSpent = actualFuel + actualToll;
-    const unspentCash = Math.max(0, baselineBBM + baselineToll - totalActualSpent);
-    const totalReimburseDelta = Math.max(0, positiveDelta - unspentCash);
+    const actualFuel = Math.max(
+      0,
+      (auditVehicleType === 'Ndalem' ? 0 : baselineBBM) + deltaFuel,
+    );
+    const actualToll = Math.max(0, baselineToll + deltaToll);
+    const settlement = calculateDriverReimbursementSettlement({
+      fuelAllowance: auditVehicleType === 'Ndalem' ? 0 : baselineBBM,
+      fuelSpent: actualFuel,
+      tollAllowance: baselineToll,
+      tollSpent: actualToll,
+      additionalReimbursement: deltaMeal + extraOps,
+    });
+    const positiveDelta = settlement.positiveReimburseDelta;
+    const totalReimburseDelta = settlement.reimburseDelta;
+    const upahBersih = Math.max(
+      0,
+      baseDriverWage - settlement.remainingUnspentCash,
+    );
 
-    const initialTotalOps = auditActivity.totalOperationalCost || (baselineBBM + baselineMeal + baselineToll);
-    const operationalCost = Math.ceil(initialTotalOps + positiveDelta - unspentCash);
+    // The report may already contain the driver's submitted actuals. The
+    // audit total must start from the original allowance, then apply the
+    // signed audit deltas exactly once.
+    const initialTotalOps = baselineBBM + baselineMeal + baselineToll;
+    const operationalCost = Math.max(
+      0,
+      Math.ceil(
+        initialTotalOps +
+          settlement.netOperationalDelta +
+          deltaMeal +
+          extraOps,
+      ),
+    );
 
     return {
       rate,
@@ -1003,14 +1104,33 @@ export default function ActivityReviewPage() {
       extraOps,
       positiveDelta,
       totalReimburseDelta,
+      remainingUnspentCash: settlement.remainingUnspentCash,
+      netOperationalDelta: settlement.netOperationalDelta,
       componentJarak,
       componentWaktu,
       premiumWeekend,
       nightPremium,
       upahBersih,
+      durationHours: wageDurationHours,
+      timelineChanged,
       operationalCost,
     };
-  }, [auditActivity, auditDistanceKm, auditDurationHours, auditFuelDelta, auditTollDelta, auditVehicleType, auditNightCount, auditAuthorizedDurationPP]);
+  }, [
+    auditActivity,
+    auditTimeline,
+    auditDateStart,
+    auditDateEnd,
+    auditIsMultiDay,
+    auditTimeStart,
+    auditTimeEnd,
+    auditDistanceKm,
+    auditDurationHours,
+    auditFuelDelta,
+    auditTollDelta,
+    auditVehicleType,
+    auditNightCount,
+    auditAuthorizedDurationPP,
+  ]);
 
   const handleApproveSopirAudit = async () => {
     if (!auditActivity || !auditCalc || !user) return;
@@ -1026,7 +1146,12 @@ export default function ActivityReviewPage() {
             reportId: auditActivity.id,
             driverReview: {
               distanceKm: auditDistanceKm,
-              durationHours: auditDurationHours,
+              durationHours: auditCalc.durationHours,
+              timeStart: auditTimeStart,
+              timeEnd: auditTimeEnd,
+              dateStart: auditDateStart,
+              dateEnd: auditDateEnd,
+              isMultiDay: auditIsMultiDay,
               fuelDelta: auditFuelDelta,
               tollDelta: auditTollDelta,
               mealDelta: auditCalc.deltaMeal,
@@ -3256,6 +3381,49 @@ export default function ActivityReviewPage() {
                     )}
                   </div>
 
+                  <div className="grid grid-cols-2 gap-3.5 border-y border-indigo-100/70 py-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="auditTimeStart" className="text-[9.5px] font-bold text-slate-400 uppercase">
+                        Jam Berangkat
+                      </Label>
+                      <Input
+                        id="auditTimeStart"
+                        type="time"
+                        value={auditTimeStart}
+                        onChange={(event) => handleAuditTimeChange('start', event.target.value)}
+                        disabled={auditActivity.status !== 'pending' || actionLoading}
+                        className="h-9 rounded-xl border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="auditTimeEnd" className="text-[9.5px] font-bold text-slate-400 uppercase">
+                        Jam Tiba / Selesai
+                      </Label>
+                      <Input
+                        id="auditTimeEnd"
+                        type="time"
+                        value={auditTimeEnd}
+                        onChange={(event) => handleAuditTimeChange('end', event.target.value)}
+                        disabled={auditActivity.status !== 'pending' || actionLoading}
+                        className="h-9 rounded-xl border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-xl bg-indigo-50/70 px-3 py-2 text-[10px] font-bold text-indigo-800">
+                    <span>
+                      Durasi {auditIsMultiDay ? 'lintas hari' : 'hari yang sama'}:{' '}
+                      {auditCalc.actualJourneyDurationHours > 0
+                        ? `${auditCalc.actualJourneyDurationHours.toFixed(1).replace(/\.0$/, '')} jam`
+                        : '—'}
+                    </span>
+                    <span>
+                      {auditCalc.nightPremium > 0
+                        ? `${auditNightCount} malam · +${fmtRp(auditCalc.nightPremium)}`
+                        : 'Tanpa uang menginap'}
+                    </span>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3.5">
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
@@ -3301,12 +3469,12 @@ export default function ActivityReviewPage() {
 
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1">
-                      <Label className="text-[9px] font-bold text-slate-400 uppercase">Reimburse BBM (Delta)</Label>
+                      <Label className="text-[9px] font-bold text-slate-400 uppercase">Selisih BBM (+/-)</Label>
                       <Input
                         type="number"
                         placeholder="Sesuai Anggaran"
                         value={auditFuelDelta || ''}
-                        onChange={(e) => setAuditFuelDelta(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        onChange={(e) => setAuditFuelDelta(parseInt(e.target.value, 10) || 0)}
                         disabled={auditActivity.status !== 'pending' || actionLoading}
                         className={`rounded-xl text-xs font-bold transition-all ${!auditFuelDelta || auditFuelDelta === 0
                             ? 'bg-emerald-50/80 border-emerald-300 text-emerald-700 placeholder:text-emerald-600/70 focus:border-emerald-500 font-semibold'
@@ -3329,12 +3497,12 @@ export default function ActivityReviewPage() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[9px] font-bold text-slate-400 uppercase">Tol & Parkir (Delta)</Label>
+                      <Label className="text-[9px] font-bold text-slate-400 uppercase">Selisih Tol & Parkir (+/-)</Label>
                       <Input
                         type="number"
                         placeholder="Sesuai Anggaran"
                         value={auditTollDelta || ''}
-                        onChange={(e) => setAuditTollDelta(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        onChange={(e) => setAuditTollDelta(parseInt(e.target.value, 10) || 0)}
                         disabled={auditActivity.status !== 'pending' || actionLoading}
                         className={`rounded-xl text-xs font-bold transition-all ${!auditTollDelta || auditTollDelta === 0
                             ? 'bg-emerald-50/80 border-emerald-300 text-emerald-700 placeholder:text-emerald-600/70 focus:border-emerald-500 font-semibold'
@@ -3453,6 +3621,12 @@ export default function ActivityReviewPage() {
                     <span>Upah Bersih Sopir (Net Wage)</span>
                     <span className="font-black text-emerald-600 text-base">{fmtRp(auditCalc.upahBersih)}</span>
                   </div>
+                  {auditCalc.remainingUnspentCash > 0 && (
+                    <div className="flex justify-between text-[10px] font-bold text-blue-700">
+                      <span>Potongan Sisa Kas Operasional</span>
+                      <span>-{fmtRp(auditCalc.remainingUnspentCash)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* CARD 4: Biaya Operasional (SPJ) — Matriks Perbandingan Card */}
@@ -3488,7 +3662,9 @@ export default function ActivityReviewPage() {
                           <td className="py-2.5 px-3.5 text-right font-bold text-slate-600">{fmtRp(auditCalc.baselineBBM)}</td>
                           <td className="py-2.5 px-3.5 text-right font-bold text-slate-800">{fmtRp(auditCalc.actualFuel)}</td>
                           <td className="py-2.5 px-3.5 text-right font-extrabold text-blue-600">
-                            {auditCalc.deltaFuel > 0 ? `+${fmtRp(auditCalc.deltaFuel)}` : '—'}
+                            {auditCalc.deltaFuel !== 0
+                              ? `${auditCalc.deltaFuel > 0 ? '+' : '-'}${fmtRp(Math.abs(auditCalc.deltaFuel))}`
+                              : '—'}
                           </td>
                         </tr>
 
@@ -3513,7 +3689,9 @@ export default function ActivityReviewPage() {
                           <td className="py-2.5 px-3.5 text-right font-bold text-slate-600">{fmtRp(auditCalc.baselineToll)}</td>
                           <td className="py-2.5 px-3.5 text-right font-bold text-slate-800">{fmtRp(auditCalc.actualToll)}</td>
                           <td className="py-2.5 px-3.5 text-right font-extrabold text-blue-600">
-                            {auditCalc.deltaToll > 0 ? `+${fmtRp(auditCalc.deltaToll)}` : '—'}
+                            {auditCalc.deltaToll !== 0
+                              ? `${auditCalc.deltaToll > 0 ? '+' : '-'}${fmtRp(Math.abs(auditCalc.deltaToll))}`
+                              : '—'}
                           </td>
                         </tr>
 
@@ -3573,7 +3751,7 @@ export default function ActivityReviewPage() {
                 </Button>
                 <Button
                   onClick={handleApproveSopirAudit}
-                  disabled={actionLoading}
+                  disabled={actionLoading || !auditCalc || auditCalc.actualJourneyDurationHours <= 0}
                   className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold hover:shadow-lg shadow-indigo-100"
                 >
                   {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}

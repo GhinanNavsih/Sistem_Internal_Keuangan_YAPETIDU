@@ -182,6 +182,100 @@ export function calculateDriverJourneyOperationalCosts(
   };
 }
 
+export interface DriverReimbursementSettlementInput {
+  fuelAllowance: number;
+  fuelSpent: number;
+  tollAllowance: number;
+  tollSpent: number;
+  additionalReimbursement?: number;
+}
+
+export interface DriverReimbursementSettlement {
+  fuelDelta: number;
+  tollDelta: number;
+  extraFuelCost: number;
+  extraTollCost: number;
+  fuelAllowanceSurplus: number;
+  tollAllowanceSurplus: number;
+  grossOperationalOverage: number;
+  grossAllowanceSurplus: number;
+  netOperationalDelta: number;
+  /** Gross positive reimbursement before allowance surplus is applied. */
+  positiveReimburseDelta: number;
+  /** Final cash reimbursement after fuel/toll cross-offset. */
+  reimburseDelta: number;
+  totalPreAuthorizedAllowance: number;
+  totalActualSpent: number;
+  /** Net fuel/toll allowance surplus after categories offset each other. */
+  unspentCash: number;
+  /** Surplus still left after all additional reimbursements; deduct from wage. */
+  remainingUnspentCash: number;
+}
+
+function assertNonNegativeAmount(value: number, fieldName: string): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${fieldName} harus berupa angka tidak negatif.`);
+  }
+}
+
+/**
+ * Settles fuel and toll/parking spending against their separate allowances.
+ *
+ * Savings in one category offset overage in the other before reimbursement is
+ * paid. Any allowance still left after that offset and other reimbursement
+ * items is deducted from the driver's net wage.
+ */
+export function calculateDriverReimbursementSettlement(
+  input: DriverReimbursementSettlementInput,
+): DriverReimbursementSettlement {
+  const fuelAllowance = input.fuelAllowance;
+  const fuelSpent = input.fuelSpent;
+  const tollAllowance = input.tollAllowance;
+  const tollSpent = input.tollSpent;
+  const additionalReimbursement = input.additionalReimbursement ?? 0;
+
+  assertNonNegativeAmount(fuelAllowance, 'Jatah BBM');
+  assertNonNegativeAmount(fuelSpent, 'BBM terpakai');
+  assertNonNegativeAmount(tollAllowance, 'Jatah tol & parkir');
+  assertNonNegativeAmount(tollSpent, 'Tol & parkir terbayar');
+  assertNonNegativeAmount(additionalReimbursement, 'Reimburse tambahan');
+
+  const fuelDelta = fuelSpent - fuelAllowance;
+  const tollDelta = tollSpent - tollAllowance;
+  const extraFuelCost = Math.max(0, fuelDelta);
+  const extraTollCost = Math.max(0, tollDelta);
+  const fuelAllowanceSurplus = Math.max(0, -fuelDelta);
+  const tollAllowanceSurplus = Math.max(0, -tollDelta);
+  const grossOperationalOverage = extraFuelCost + extraTollCost;
+  const grossAllowanceSurplus = fuelAllowanceSurplus + tollAllowanceSurplus;
+  const netOperationalDelta = fuelDelta + tollDelta;
+  const positiveReimburseDelta = grossOperationalOverage + additionalReimbursement;
+  const reimburseDelta = Math.max(0, netOperationalDelta + additionalReimbursement);
+  const unspentCash = Math.max(0, -netOperationalDelta);
+  const remainingUnspentCash = Math.max(
+    0,
+    -netOperationalDelta - additionalReimbursement,
+  );
+
+  return {
+    fuelDelta,
+    tollDelta,
+    extraFuelCost,
+    extraTollCost,
+    fuelAllowanceSurplus,
+    tollAllowanceSurplus,
+    grossOperationalOverage,
+    grossAllowanceSurplus,
+    netOperationalDelta,
+    positiveReimburseDelta,
+    reimburseDelta,
+    totalPreAuthorizedAllowance: fuelAllowance + tollAllowance,
+    totalActualSpent: fuelSpent + tollSpent,
+    unspentCash,
+    remainingUnspentCash,
+  };
+}
+
 export function calculateNightPremium(nightCount: number): number {
   assertNightCount(nightCount);
   return nightCount * DRIVER_NIGHT_PREMIUM_RATE;
@@ -309,6 +403,70 @@ export function calculateJourneyDateTimeTimings(
     nightCount,
     dateStart,
     dateEnd,
+  };
+}
+
+export interface EditableDriverJourneyTimelineInput {
+  dateStart: string;
+  timeStart: string;
+  dateEnd?: string;
+  timeEnd: string;
+  isMultiDay?: boolean;
+}
+
+export interface EditableDriverJourneyTimelineResult extends JourneyDateTimeResult {
+  isMultiDay: boolean;
+}
+
+function nextCalendarDate(dateValue: string): string {
+  const parsed = new Date(`${dateValue}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return dateValue;
+  parsed.setUTCDate(parsed.getUTCDate() + 1);
+  return parsed.toISOString().slice(0, 10);
+}
+
+/**
+ * Calculates a reviewable journey timeline while inferring the next calendar
+ * day when an auditor changes the arrival time to be earlier than departure.
+ * The existing arrival-before-05:00 rule remains authoritative for the night
+ * count and therefore for uang menginap.
+ */
+export function calculateEditableDriverJourneyTimeline(
+  input: EditableDriverJourneyTimelineInput,
+): EditableDriverJourneyTimelineResult {
+  const dateStart = input.dateStart;
+  let dateEnd = input.dateEnd && input.dateEnd >= dateStart
+    ? input.dateEnd
+    : dateStart;
+  let isMultiDay = input.isMultiDay === true || dateEnd > dateStart;
+  const hasValidTimes =
+    /^([01]\d|2[0-3]):([0-5]\d)$/.test(input.timeStart) &&
+    /^([01]\d|2[0-3]):([0-5]\d)$/.test(input.timeEnd);
+
+  if (isMultiDay && dateEnd <= dateStart) {
+    dateEnd = nextCalendarDate(dateStart);
+  }
+
+  if (
+    !isMultiDay &&
+    hasValidTimes &&
+    timeToMinutes(input.timeEnd) < timeToMinutes(input.timeStart)
+  ) {
+    isMultiDay = true;
+    dateEnd = nextCalendarDate(dateStart);
+  }
+
+  const timings = calculateJourneyDateTimeTimings({
+    dateStart,
+    timeStart: input.timeStart,
+    dateEnd,
+    timeEnd: input.timeEnd,
+    isMultiDay,
+  });
+
+  return {
+    ...timings,
+    isMultiDay,
   };
 }
 

@@ -11,6 +11,7 @@ import {
 import {
   calculateJourneyDateTimeTimings,
   calculateDriverNetWage,
+  calculateDriverReimbursementSettlement,
   calculateNightPremium,
   canonicalizeDriverJourneyTimeline,
   getMealAllowanceForDuration,
@@ -83,6 +84,9 @@ const ALLOWED_DRIVER_FIELDS = [
   'reimburseDelta',
   'unspentCash',
   'remainingUnspentCash',
+  'netOperationalDelta',
+  'fuelAllowanceSurplus',
+  'tollAllowanceSurplus',
   'baseOperationalCost',
   'preAuthorizedMeal',
   'preAuthorizedToll',
@@ -317,6 +321,8 @@ function sanitizeDriverData(
     'reimburseDelta',
     'unspentCash',
     'remainingUnspentCash',
+    'fuelAllowanceSurplus',
+    'tollAllowanceSurplus',
     'baseOperationalCost',
     'preAuthorizedMeal',
     'preAuthorizedToll',
@@ -335,6 +341,20 @@ function sanitizeDriverData(
       (typeof number !== 'number' ||
         !Number.isFinite(number) ||
         number < 0 ||
+        number > 100_000_000)
+    ) {
+      throw new HttpError(400, `Nilai ${key} tidak valid.`);
+    }
+  }
+
+  const signedMoneyFields = ['netOperationalDelta'];
+  for (const key of signedMoneyFields) {
+    const number = result[key];
+    if (
+      number !== undefined &&
+      (typeof number !== 'number' ||
+        !Number.isFinite(number) ||
+        number < -100_000_000 ||
         number > 100_000_000)
     ) {
       throw new HttpError(400, `Nilai ${key} tidak valid.`);
@@ -749,20 +769,34 @@ export async function POST(request: NextRequest) {
         const fuelFee = Number(driverData.fuelFee || 0);
         const tollParkingFee = Number(driverData.tollParkingFee || 0);
         const actualMealAllowance = Number(driverData.actualMealAllowance || 0);
-        const extraFuelCost =
-          vehicleType === 'Ndalem' ? 0 : Math.max(0, fuelFee - baseOperationalCost);
-        const extraTollCost = Math.max(0, tollParkingFee - preAuthorizedToll);
         const extraMealAllowance =
           vehicleType === 'Ndalem'
             ? actualMealAllowance
             : Math.max(0, actualMealAllowance - preAuthorizedMeal);
-        const positiveReimburseDelta =
-          extraFuelCost + extraTollCost + extraMealAllowance;
-        const totalPreAuthorizedAllowance = baseOperationalCost + preAuthorizedToll;
-        const totalActualSpent = fuelFee + tollParkingFee;
-        const unspentCash = Math.max(
+        const fuelSpent = vehicleType === 'Ndalem' ? 0 : fuelFee;
+        const extraOperationalCost = Number(driverData.extraOperationalCost || 0);
+        const settlement = calculateDriverReimbursementSettlement({
+          fuelAllowance: vehicleType === 'Ndalem' ? 0 : baseOperationalCost,
+          fuelSpent,
+          tollAllowance: preAuthorizedToll,
+          tollSpent: tollParkingFee,
+          additionalReimbursement: extraMealAllowance + extraOperationalCost,
+        });
+        const baseDriverWage = Number(driverData.baseDriverWage || 0);
+        const finalUpahBersih = Math.max(
           0,
-          totalPreAuthorizedAllowance - totalActualSpent,
+          baseDriverWage - settlement.remainingUnspentCash,
+        );
+        const authorizedTotalOperationalCost =
+          typeof journeyBefore.totalOperationalCost === 'number'
+            ? journeyBefore.totalOperationalCost
+            : baseOperationalCost + preAuthorizedMeal + preAuthorizedToll;
+        const totalOperationalCost = Math.max(
+          0,
+          authorizedTotalOperationalCost +
+            settlement.netOperationalDelta +
+            extraMealAllowance +
+            extraOperationalCost,
         );
 
         Object.assign(driverData, {
@@ -770,16 +804,22 @@ export async function POST(request: NextRequest) {
           preAuthorizedToll,
           customDurationPP: authorizedDurationHours,
           baseOperationalCost,
-          extraFuelCost,
-          extraTollCost,
+          fuelFee: fuelSpent,
+          extraFuelCost: settlement.extraFuelCost,
+          extraTollCost: settlement.extraTollCost,
           extraMealAllowance,
-          positiveReimburseDelta,
-          totalPreAuthorizedAllowance,
-          totalActualSpent,
-          unspentCash,
-          reimburseDelta: Math.max(0, positiveReimburseDelta - unspentCash),
-          remainingUnspentCash: Math.max(0, unspentCash - positiveReimburseDelta),
-          totalOperationalCost: Number(journeyBefore.totalOperationalCost || 0),
+          positiveReimburseDelta: settlement.positiveReimburseDelta,
+          totalPreAuthorizedAllowance: settlement.totalPreAuthorizedAllowance,
+          totalActualSpent: settlement.totalActualSpent,
+          unspentCash: settlement.unspentCash,
+          remainingUnspentCash: settlement.remainingUnspentCash,
+          netOperationalDelta: settlement.netOperationalDelta,
+          fuelAllowanceSurplus: settlement.fuelAllowanceSurplus,
+          tollAllowanceSurplus: settlement.tollAllowanceSurplus,
+          reimburseDelta: settlement.reimburseDelta,
+          baseDriverWage,
+          upahBersih: finalUpahBersih,
+          totalOperationalCost,
           vehicleRate: Number(journeyBefore.vehicleRate || 0),
         });
       }
