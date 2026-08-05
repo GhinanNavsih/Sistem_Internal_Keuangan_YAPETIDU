@@ -52,6 +52,8 @@ import {
 } from '@/lib/payroll/pekaryaSpj';
 import { DriverPiketSchedule, countDriverPiketInPeriod } from '@/lib/payroll/driverPiket';
 
+const HISTORICAL_SPJ_EMPLOYEE_IDS = new Set(['BC_053', 'BC_054']);
+
 export default function RekapPekaryaPage() {
   const router = useRouter();
   const { user, profile } = useAuth();
@@ -74,6 +76,7 @@ export default function RekapPekaryaPage() {
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [employees, setEmployees] = useState<BlueCollarEmployee[]>([]);
   const [tableData, setTableData] = useState<Record<string, Record<string, number>>>({});
+  const [initialSpjValues, setInitialSpjValues] = useState<Record<string, number>>({});
   const [satpamDutySources, setSatpamDutySources] = useState<
     Record<string, UraianEntry['satpamDutySource']>
   >({});
@@ -88,6 +91,8 @@ export default function RekapPekaryaPage() {
   const isSavingRef = useRef(false);
   const [saved, setSaved] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
+  const [historicalSpjCorrectionMode, setHistoricalSpjCorrectionMode] = useState(false);
+  const [historicalSpjCorrectionSaving, setHistoricalSpjCorrectionSaving] = useState(false);
   const [satpamDutyPlanRequired, setSatpamDutyPlanRequired] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -332,6 +337,16 @@ export default function RekapPekaryaPage() {
       (profile?.role === 'satker_head' &&
         profile.permittedCategories?.includes('SATPAM')));
 
+  // July 2026 is already sealed. The only supported post-close correction is
+  // a Super Admin's audited paper-SPJ correction for the two affected legacy
+  // Pekarya rows; it never reopens the ordinary rekap editor.
+  const canCorrectHistoricalSpj =
+    profile?.role === 'super_admin' &&
+    period === '2026-07' &&
+    category === 'KEBERSIHAN';
+  const historicalSpjEditEnabled =
+    canCorrectHistoricalSpj && historicalSpjCorrectionMode;
+
   // Helper: the SPJ value that belongs on the rekap, slip, and PDF
   const getSpjValue = useCallback((empId: string) => {
     const manualValue = tableData[empId]?.spj;
@@ -388,6 +403,8 @@ export default function RekapPekaryaPage() {
     setDetectedColumnOrder(null);
     setMessage(null);
     setSaved(false);
+    setHistoricalSpjCorrectionMode(false);
+    setInitialSpjValues({});
     const fetchData = async () => {
       setLoadingEmps(true);
       try {
@@ -421,6 +438,7 @@ export default function RekapPekaryaPage() {
         setEmployees(sortedEmps);
 
         const initialTable: Record<string, Record<string, number>> = {};
+        const loadedSpjValues: Record<string, number> = {};
         const loadedDutySources: Record<
           string,
           UraianEntry['satpamDutySource']
@@ -449,6 +467,7 @@ export default function RekapPekaryaPage() {
               }
             });
             initialTable[entry.employeeId] = rawValues;
+            loadedSpjValues[entry.employeeId] = Number(rawValues.spj || 0);
             if (entry.satpamDutySource) {
               loadedDutySources[entry.employeeId] = entry.satpamDutySource;
             }
@@ -459,6 +478,7 @@ export default function RekapPekaryaPage() {
           setIsLocked(false);
         }
         setSatpamDutySources(loadedDutySources);
+        setInitialSpjValues(loadedSpjValues);
         setTableData(initialTable);
       } catch (err) {
         console.error(err);
@@ -624,7 +644,11 @@ export default function RekapPekaryaPage() {
   };
 
   const updateCell = (employeeId: string, key: string, value: string) => {
-    if (isLocked) return;
+    const isHistoricalSpjCell =
+      historicalSpjEditEnabled &&
+      key === 'spj' &&
+      HISTORICAL_SPJ_EMPLOYEE_IDS.has(employeeId);
+    if (isLocked && !isHistoricalSpjCell) return;
     if (
       satpamDutyPlanRequired &&
       category === 'SATPAM' &&
@@ -634,6 +658,7 @@ export default function RekapPekaryaPage() {
       return;
     }
     if (key === 'spj' && value.trim() === '') {
+      if (!isHistoricalSpjCell && !manualSpjEnabled) return;
       setTableData(prev => {
         const copy = { ...prev };
         if (copy[employeeId]) {
@@ -651,6 +676,7 @@ export default function RekapPekaryaPage() {
       key === 'bonusPresensiBulanan' && canEditSatpamMonthlyBonus
         ? Math.min(1, Math.max(0, parsed))
         : parsed;
+    if (key === 'spj' && !isHistoricalSpjCell && !manualSpjEnabled) return;
     setTableData(prev => ({ ...prev, [employeeId]: { ...prev[employeeId], [key]: num } }));
     setSaved(false);
   };
@@ -765,6 +791,65 @@ export default function RekapPekaryaPage() {
     } finally {
       isSavingRef.current = false;
       setSaving(false);
+    }
+  };
+
+  const handleHistoricalSpjCorrection = async () => {
+    if (!historicalSpjEditEnabled || historicalSpjCorrectionSaving) return;
+    const corrections = employees
+      .map((employee) => ({
+        employeeId: employee.employeeId,
+        spj: Number(tableData[employee.employeeId]?.spj || 0),
+      }))
+      .filter((correction) =>
+        correction.spj !== Number(initialSpjValues[correction.employeeId] || 0),
+      );
+
+    if (corrections.length === 0) {
+      setMessage({ type: 'error', text: 'Tidak ada perubahan nilai SPJ untuk disimpan.' });
+      return;
+    }
+
+    const reason = window.prompt(
+      'Alasan koreksi SPJ historis Juli 2026 (wajib):',
+      'Koreksi SPJ paper-based; pegawai belum menggunakan pelaporan SPJ digital pada Juli 2026.',
+    )?.trim();
+    if (!reason || reason.length < 8) return;
+    if (!window.confirm(
+      `Simpan koreksi SPJ historis untuk ${corrections.length} pegawai? Nilai tersebut akan diterapkan ke Rekap Uraian dan draf payroll, lalu periode dapat dicoba dikunci kembali.`,
+    )) return;
+
+    setHistoricalSpjCorrectionSaving(true);
+    try {
+      const result = await authenticatedJson<{
+        corrected: Array<{ employeeId: string; spj: number }>;
+        updatedSlipCount: number;
+      }>('/api/payroll/historical-spj-correction', {
+        method: 'POST',
+        body: JSON.stringify({
+          period,
+          jobCategory: category,
+          corrections,
+          reason,
+          requestId: `historical_spj_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+        }),
+      });
+      setInitialSpjValues((previous) => ({
+        ...previous,
+        ...Object.fromEntries(corrections.map((correction) => [correction.employeeId, correction.spj])),
+      }));
+      setHistoricalSpjCorrectionMode(false);
+      setMessage({
+        type: 'success',
+        text: `Koreksi SPJ tersimpan untuk ${result.corrected.length} pegawai.${result.updatedSlipCount > 0 ? ` ${result.updatedSlipCount} draf ikut diperbarui.` : ''} Kembali ke Payroll dan ulangi Verifikasi & Kunci Semua.`,
+      });
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Gagal menyimpan koreksi SPJ historis.',
+      });
+    } finally {
+      setHistoricalSpjCorrectionSaving(false);
     }
   };
 
@@ -1035,7 +1120,29 @@ export default function RekapPekaryaPage() {
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
           Simpan rekap
         </Button>
-        {isLocked ? (
+        {canCorrectHistoricalSpj ? (
+          <>
+            <Button
+              onClick={() => setHistoricalSpjCorrectionMode((previous) => !previous)}
+              disabled={historicalSpjCorrectionSaving}
+              variant="outline"
+              className="rounded-xl border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {historicalSpjCorrectionMode ? <X className="w-4 h-4 text-amber-600" /> : <Unlock className="w-4 h-4 text-amber-600" />}
+              {historicalSpjCorrectionMode ? 'Batal Koreksi SPJ' : 'Koreksi SPJ Khoirul & Pribadi'}
+            </Button>
+            {historicalSpjCorrectionMode && (
+              <Button
+                onClick={handleHistoricalSpjCorrection}
+                disabled={historicalSpjCorrectionSaving}
+                className="rounded-xl px-6 bg-amber-600 shadow-lg shadow-amber-200 text-white font-bold transition-all hover:bg-amber-700 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {historicalSpjCorrectionSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Simpan Koreksi SPJ
+              </Button>
+            )}
+          </>
+        ) : isLocked ? (
           <Button
             onClick={() => setIsLocked(false)}
             variant="outline"
@@ -1284,6 +1391,9 @@ export default function RekapPekaryaPage() {
                         </td>
                         {columns.map((col, colIdx) => {
                           const isSpj = col.key === 'spj';
+                          const canEditThisHistoricalSpj =
+                            historicalSpjEditEnabled &&
+                            HISTORICAL_SPJ_EMPLOYEE_IDS.has(emp.employeeId);
                           const isSatpamShift = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'].includes(col.key);
                           const isTunjanganJabatan = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && col.key === 'tunjanganJabatan';
                           const isSopirPiket = category === 'SOPIR' && col.key === 'piket';
@@ -1298,7 +1408,7 @@ export default function RekapPekaryaPage() {
                             canEditSatpamMonthlyBonus &&
                             col.key === 'bonusPresensiBulanan';
                           const cellValue = isSpj
-                            ? (manualSpjEnabled
+                            ? (manualSpjEnabled || canEditThisHistoricalSpj
                                 ? (tableData[emp.employeeId]?.spj ?? getComputedSpj(emp.employeeId) ?? 0)
                                 : (getComputedSpj(emp.employeeId) || 0))
                             : (isSatpamShift && tableData[emp.employeeId]?.[col.key] === undefined)
@@ -1324,8 +1434,8 @@ export default function RekapPekaryaPage() {
                                 value={cellValue}
                                 onChange={(e) => updateCell(emp.employeeId, col.key, e.target.value)}
                                 disabled={
-                                  isLocked ||
-                                  (isSpj && !manualSpjEnabled) ||
+                                  (isLocked && !canEditThisHistoricalSpj) ||
+                                  (isSpj && !manualSpjEnabled && !canEditThisHistoricalSpj) ||
                                   isAttendanceDerived ||
                                   isDutyPlanDerived
                                 }
@@ -1336,10 +1446,10 @@ export default function RekapPekaryaPage() {
                                     ? 'Bonus dihitung otomatis dari pemenuhan rencana dinas Satpam.'
                                   : isAttendanceDerived
                                     ? 'Nilai ini bersumber dari publikasi Presensi Pekarya.'
-                                    : isLocked
+                                    : isLocked && !canEditThisHistoricalSpj
                                       ? 'Tabel rekap sedang dikunci. Klik "Buka Kunci" jika ingin mengubah data.'
                                       : isSpj
-                                        ? manualSpjEnabled
+                                        ? (manualSpjEnabled || canEditThisHistoricalSpj)
                                           ? 'Periode Juli 2026 (26 Jun–31 Jul) masih berbasis kertas. Isi akumulasi SPJ secara manual; kosongkan untuk memakai nilai kegiatan.'
                                           : 'SPJ dihitung otomatis dari kegiatan yang disetujui.'
                                         : undefined
@@ -1348,7 +1458,7 @@ export default function RekapPekaryaPage() {
                                   ? 'bg-slate-50/60 border-slate-200/80 text-slate-900 disabled:opacity-100 cursor-default shadow-2xs'
                                   : isAttendanceDerived || isDutyPlanDerived
                                     ? 'bg-indigo-50 border-indigo-200 text-indigo-800 disabled:opacity-100 cursor-not-allowed'
-                                  : isManualSatpamBonus || isSpj || isSatpamShift || isSopirPiket || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
+                                  : isManualSatpamBonus || (isSpj && canEditThisHistoricalSpj) || isSatpamShift || isSopirPiket || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
                                     ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
                                     : hasScanData
                                       ? 'rounded-xl border-slate-400 bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'

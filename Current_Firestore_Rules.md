@@ -239,6 +239,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Historical payroll corrections are created only by the audited
+    // Super-Admin server endpoint. Finance may inspect the evidence.
+    match /PayrollHistoricalCorrections/{docId} {
+      allow read: if isFinanceRole();
+      allow write: if false;
+    }
+
     // Raised when an employee-profile edit could not be applied to a slip that
     // was already verified or locked. Written only by
     // /api/payroll/employee-profile-propagation via the Admin SDK.
