@@ -180,6 +180,29 @@ export function allowsManualSpjEntry(
   );
 }
 
+/**
+ * Two KEBERSIHAN employees were still paid from paper records during the
+ * July 2026 transition, even though their current master-data category is
+ * KEBERSIHAN. Their sealed Rekap Uraian SPJ values are therefore authoritative
+ * for that one payroll period.
+ */
+export const HISTORICAL_PAPER_SPJ_EMPLOYEE_IDS = new Set([
+  'BC_053',
+  'BC_054',
+]);
+
+export function allowsHistoricalPaperSpjEntry(
+  jobCategory: string,
+  period: string,
+  employeeId: string,
+): boolean {
+  return (
+    period === MANUAL_SPJ_ENTRY_PERIOD &&
+    jobCategory === 'KEBERSIHAN' &&
+    HISTORICAL_PAPER_SPJ_EMPLOYEE_IDS.has(employeeId)
+  );
+}
+
 export function approvedActivitySpjAmount(
   report: PekaryaActivityFinancialLike,
 ): number {

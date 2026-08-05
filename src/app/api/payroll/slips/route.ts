@@ -7,6 +7,7 @@ import {
   validateMoneyFields,
 } from '@/lib/payroll/domain';
 import {
+  allowsHistoricalPaperSpjEntry,
   allowsManualSpjEntry,
   isPekaryaJobCategory,
   pekaryaPayrollWindow,
@@ -344,10 +345,19 @@ export async function POST(request: NextRequest) {
           ) +
           sumApprovedEventSpj(events, command.employeeId, jobCategory, periodToken);
 
-        if (allowsManualSpjEntry(jobCategory, periodToken)) {
+        if (
+          allowsManualSpjEntry(jobCategory, periodToken) ||
+          allowsHistoricalPaperSpjEntry(
+            jobCategory,
+            periodToken,
+            command.employeeId,
+          )
+        ) {
           // The manual-SPJ categories had no digital activity reporting in the
           // July 2026 transition period, so the Kepala Satker's manual rekap
-          // entry — not the activity sum — is the official SPJ.
+          // entry — not the activity sum — is the official SPJ. BC_053 and
+          // BC_054 are the two historical paper-based KEBERSIHAN exceptions;
+          // their locked July Rekap Uraian values are authoritative as well.
           const manualSpjSnapshot = await transaction.get(
             adminDb
               .collection('UraianGaji')

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   activityDurationMinutes,
+  allowsHistoricalPaperSpjEntry,
   allowsManualSpjEntry,
   assertSatpamFoundItemPhotoCount,
   buildPekaryaActivityIdentity,
@@ -253,4 +254,27 @@ test('manual SPJ entry is limited to the July 2026 paper-based categories', () =
   assert.equal(allowsManualSpjEntry('SOPIR', '2026-08'), false);
   assert.equal(allowsManualSpjEntry('SATPAM', '2026-08'), false);
   assert.equal(allowsManualSpjEntry('SATPAM', '2027-07'), false);
+});
+
+test('historical paper SPJ applies only to Khoirul Anam and Pribadi', () => {
+  assert.equal(
+    allowsHistoricalPaperSpjEntry('KEBERSIHAN', '2026-07', 'BC_053'),
+    true,
+  );
+  assert.equal(
+    allowsHistoricalPaperSpjEntry('KEBERSIHAN', '2026-07', 'BC_054'),
+    true,
+  );
+  assert.equal(
+    allowsHistoricalPaperSpjEntry('KEBERSIHAN', '2026-07', 'BC_052'),
+    false,
+  );
+  assert.equal(
+    allowsHistoricalPaperSpjEntry('KEBERSIHAN_PONTI', '2026-07', 'BC_053'),
+    false,
+  );
+  assert.equal(
+    allowsHistoricalPaperSpjEntry('KEBERSIHAN', '2026-08', 'BC_053'),
+    false,
+  );
 });
