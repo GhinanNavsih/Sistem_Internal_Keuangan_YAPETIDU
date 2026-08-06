@@ -26,6 +26,23 @@ test('latest history status is authoritative and installment events remain activ
   assert.equal(resolveKoperasiLoanStatus(loan), 'Disetujui dan Aktif');
 });
 
+test('current Lunas status wins over the final installment event', () => {
+  const loan = {
+    status: 'Lunas',
+    jumlahPinjaman: 6_000_000,
+    tenor: 10,
+    sisaHutang: 0,
+    jumlahMenyicil: 10,
+    history: [
+      { status: 'Disetujui dan Aktif', timestamp: timestamp(100) },
+      { status: 'Pembayaran Cicilan', notes: '10/10 melalui payroll 2026-07', timestamp: timestamp(200) },
+    ],
+  };
+
+  assert.equal(resolveKoperasiLoanStatus(loan), 'Lunas');
+  assert.deepEqual(selectKoperasiActiveLoans([loan]), []);
+});
+
 test('loan math uses the recorded paid-installment count from Simpan Pinjam', () => {
   const loan = { jumlahPinjaman: 3_900_000, tenor: 12, jumlahMenyicil: 11 };
   assert.equal(koperasiMonthlyInstallment(loan), 325_000);

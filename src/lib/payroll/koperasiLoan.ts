@@ -113,6 +113,17 @@ export function resolveKoperasiLoanStatusAtPeriod(
   asOf?: Date,
 ): string {
   const latestStatus = latestKoperasiLoanHistory(loan, asOf)?.status;
+
+  // A payment history entry is an event rather than a state transition.  The
+  // Koperasi payroll bridge can append the final payment event while updating
+  // the document's top-level status to Lunas.  For the current record, keep
+  // that terminal state instead of turning the settled loan back into an
+  // active one.  Historical projections intentionally continue to use only
+  // history entries at the selected cutoff.
+  if (!asOf && loan.status === 'Lunas' && latestStatus === 'Pembayaran Cicilan') {
+    return 'Lunas';
+  }
+
   const resolvedStatus = latestStatus || loan.status || '';
   return resolvedStatus === 'Pembayaran Cicilan'
     ? 'Disetujui dan Aktif'

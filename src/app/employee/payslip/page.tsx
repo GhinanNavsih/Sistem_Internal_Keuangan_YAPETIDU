@@ -40,7 +40,7 @@ import {
   CreditCard,
   History,
   BookOpen,
-  MessageCircle,
+  CalendarCheck,
   ClipboardList,
   Calendar,
 } from 'lucide-react';
@@ -1512,7 +1512,7 @@ export default function EmployeePayslipPage() {
                   className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
                   title="Koreksi Presensi"
                 >
-                  <MessageCircle className="w-4.5 h-4.5 text-indigo-500" />
+                  <CalendarCheck className="w-4.5 h-4.5 text-indigo-500" />
                 </Button>
               </Link>
             )}
