@@ -1508,11 +1508,11 @@ export default function EmployeePayslipPage() {
               <Link href="/employee/presensi-correction">
                 <Button
                   variant="outline"
-                  size="icon"
-                  className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
-                  title="Koreksi Presensi"
+                  className="text-slate-800 hover:text-indigo-600 hover:bg-indigo-50/50 border-slate-200 bg-white rounded-xl h-9 px-3 flex items-center gap-1.5 text-xs font-bold shadow-sm cursor-pointer"
+                  title="Ajukan Presensi"
                 >
-                  <CalendarCheck className="w-4.5 h-4.5 text-indigo-500" />
+                  <CalendarCheck className="w-4 h-4 text-indigo-500" />
+                  <span>Ajukan Presensi</span>
                 </Button>
               </Link>
             )}
