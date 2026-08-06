@@ -49,6 +49,10 @@ export interface SatpamAttendanceMismatch {
   message: string;
 }
 
+export interface PekaryaAttendanceViewOptions {
+  allowMissingActiveImport?: boolean;
+}
+
 function activeBlueCollar(identity: {
   employeeCollection: string;
   active: boolean;
@@ -60,6 +64,7 @@ function activeBlueCollar(identity: {
 export async function buildPekaryaAttendanceView(
   period: string,
   category: string,
+  options: PekaryaAttendanceViewOptions = {},
 ) {
   const [
     { days, rows, importData, revisionData, correctionRevisions },
@@ -68,7 +73,7 @@ export async function buildPekaryaAttendanceView(
     publicationSnapshot,
     correctionHistorySnapshot,
   ] = await Promise.all([
-    loadEffectiveAttendanceDays(period),
+    loadEffectiveAttendanceDays(period, options),
     loadAttendanceEmployeeIdentities(),
     loadPeriodPremiumDates(period),
     adminDb
@@ -202,7 +207,10 @@ export async function buildPekaryaAttendanceView(
   };
 }
 
-export async function buildSatpamAttendanceMismatches(period: string) {
+export async function buildSatpamAttendanceMismatches(
+  period: string,
+  options: PekaryaAttendanceViewOptions = {},
+) {
   const [
     { days, importData },
     { identities, byNipy },
@@ -210,7 +218,7 @@ export async function buildSatpamAttendanceMismatches(period: string) {
     absenceSnapshot,
   ] =
     await Promise.all([
-      loadEffectiveAttendanceDays(period),
+      loadEffectiveAttendanceDays(period, options),
       loadAttendanceEmployeeIdentities(),
       loadPeriodPremiumDates(period),
       adminDb

@@ -22,7 +22,7 @@ import {
   Loader2, CheckCircle2, FileText, AlertCircle, Trash2, Eye, Plus, Save,
   Building2, PlusCircle, Check, X, Users, Layers, Send, CheckCircle,
   RotateCcw, AlertTriangle, XCircle, Search, Copy, Sparkles, Clock, FileDown, Banknote,
-  Lock, Unlock, Receipt, ToggleLeft, ToggleRight, ChevronDown, ChevronRight, ArrowLeft
+  Lock, Unlock, Receipt, ToggleLeft, ToggleRight, ChevronDown, ChevronRight, ArrowLeft, Link2
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -32,6 +32,26 @@ import { db } from '@/lib/firebase';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { generateProposalKegiatanPdf } from '@/utils/generateProposalKegiatanPdf';
 import { generatePelaporanKegiatanPdf } from '@/utils/generatePelaporanKegiatanPdf';
+import { generateProposalExpenseReportPdf } from '@/utils/generateProposalExpenseReportPdf';
+import ExpenseReportStage from './ExpenseReportStage';
+import {
+  createExpenseReport,
+  createProposalExpenseRow,
+  createStableId,
+  ensureExpenseRowIds,
+  EXPENSE_REPORT_DEFINITIONS,
+  ExpenseReport,
+  ExpenseReportType,
+  getExpenseReportDefinition,
+  ProposalExpenseRow,
+} from '@/lib/payroll/proposalExpenseReports';
+
+const clearExpenseReportLink = (row: ProposalExpenseRow): ProposalExpenseRow => {
+  const cleanRow = { ...row };
+  delete cleanRow.reportId;
+  delete cleanRow.reportType;
+  return cleanRow;
+};
 
 export default function ProposalKegiatanPage() {
   const { profile } = useAuth();
@@ -46,8 +66,11 @@ export default function ProposalKegiatanPage() {
   // ── Main Page State ──
   const [proposalList, setProposalList] = useState<any[]>([]);
   const [loadingProposal, setLoadingProposal] = useState(false);
-  const [activeStage, setActiveStage] = useState<'proposal' | 'lpj'>('proposal');
+  const [activeStage, setActiveStage] = useState<'proposal' | 'lpj' | 'reports'>('proposal');
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
+  const [selectedExpenseReportId, setSelectedExpenseReportId] = useState<string | null>(null);
+  const [showExpenseLinkDialog, setShowExpenseLinkDialog] = useState(false);
+  const [linkingExpenseRowIndex, setLinkingExpenseRowIndex] = useState<number | null>(null);
 
   // Common Header States
   const [reportName, setReportName] = useState('');
@@ -57,6 +80,7 @@ export default function ProposalKegiatanPage() {
   const [activeInsertMenuIdx, setActiveInsertMenuIdx] = useState<number | null>(null);
   const [activePelaporanSuggestionIndex, setActivePelaporanSuggestionIndex] = useState<number>(0);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [periodClosed, setPeriodClosed] = useState(false);
 
   // Proposal Status & Review States
   const [currentProposalStatus, setCurrentProposalStatus] = useState<string | null>(null);
@@ -77,12 +101,7 @@ export default function ProposalKegiatanPage() {
   }[]>([{ uraian: '', rincianQty: '', rincianRate: 0 }]);
   const [yayasanPercentage, setYayasanPercentage] = useState(20);
   const [unipduPercentage, setUnipduPercentage] = useState(20);
-  const [pengeluaranRows, setPengeluaranRows] = useState<{
-    type: 'item' | 'group_header';
-    uraian: string;
-    rincianQty: string;
-    rincianRate: number;
-  }[]>([{ type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0 }]);
+  const [pengeluaranRows, setPengeluaranRows] = useState<ProposalExpenseRow[]>([createProposalExpenseRow('group_header')]);
   const [kepanitiaaanPercentage, setKepanitiaaanPercentage] = useState(10);
 
   const [proposalSignatures, setProposalSignatures] = useState<{
@@ -119,13 +138,10 @@ export default function ProposalKegiatanPage() {
     rincianRate: number;
     realisasi: number;
   }[]>([{ uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
-  const [lpjPengeluaranRows, setLpjPengeluaranRows] = useState<{
-    type: 'item' | 'group_header';
-    uraian: string;
-    rincianQty: string;
-    rincianRate: number;
-    realisasi: number;
-  }[]>([{ type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
+  const [lpjPengeluaranRows, setLpjPengeluaranRows] = useState<ProposalExpenseRow[]>([{ ...createProposalExpenseRow('group_header'), realisasi: 0 }]);
+
+  // Stage 3: one final report per connected main expense point.
+  const [expenseReports, setExpenseReports] = useState<ExpenseReport[]>([]);
 
   // LPJ Seksi 2: Vakasi Penguji
   const [vakasiPengujiTitle, setVakasiPengujiTitle] = useState('VAKASI PENGUJI ');
@@ -219,6 +235,27 @@ export default function ProposalKegiatanPage() {
     return match ? parseFloat(match[0]) : 0;
   };
 
+  const canManageProposal = Boolean(
+    profile && ['super_admin', 'finance_verifier', 'satker_head_loyalis'].includes(profile.role),
+  );
+
+  useEffect(() => {
+    if (!profile) return;
+    let cancelled = false;
+    getDoc(doc(db, 'PayrollPeriods', periodToken))
+      .then((snapshot) => {
+        if (!cancelled) setPeriodClosed(snapshot.data()?.attendanceStatus === 'closed');
+      })
+      .catch(() => {
+        // The rules treat a missing/unreadable period as open by default. The
+        // server-side rule remains authoritative for the eventual write.
+        if (!cancelled) setPeriodClosed(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [periodToken, profile]);
+
   // Fetch departments
   useEffect(() => {
     const fetchDept = async () => {
@@ -257,7 +294,7 @@ export default function ProposalKegiatanPage() {
 
   // Live Sync ProposalKegiatan collection
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || !canManageProposal) return;
     setLoadingProposal(true);
     const q = query(
       collection(db, 'ProposalKegiatan'),
@@ -292,11 +329,14 @@ export default function ProposalKegiatanPage() {
     });
 
     return () => unsubscribe();
-  }, [periodToken, profile]);
+  }, [canManageProposal, periodToken, profile]);
 
   const resetForm = () => {
     skipAutoSaveRef.current = true;
     setSelectedProposalId(null);
+    setSelectedExpenseReportId(null);
+    setShowExpenseLinkDialog(false);
+    setLinkingExpenseRowIndex(null);
     setReportName('');
     setDepartmentUnit('');
     setCurrentProposalStatus('proposal_draft');
@@ -310,7 +350,7 @@ export default function ProposalKegiatanPage() {
     setPemasukanRows([{ uraian: '', rincianQty: '', rincianRate: 0 }]);
     setYayasanPercentage(20);
     setUnipduPercentage(20);
-    setPengeluaranRows([{ type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0 }]);
+    setPengeluaranRows([createProposalExpenseRow('group_header')]);
     setKepanitiaaanPercentage(10);
 
     setProposalSignatures([
@@ -325,7 +365,8 @@ export default function ProposalKegiatanPage() {
     setKepanitiaaanEnabled(true);
     setReceiptEnabled(false);
     setLpjPemasukanRows([{ uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
-    setLpjPengeluaranRows([{ type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
+    setLpjPengeluaranRows([{ ...createProposalExpenseRow('group_header'), realisasi: 0 }]);
+    setExpenseReports([]);
     setVakasiPengujiRows([{ employeeId: '', employeeName: '', roleQtys: {}, searchText: '', showDropdown: false }]);
     setKepanitiaaanRows([{ name: '', phaseAmounts: {}, searchText: '', showDropdown: false }]);
     setReceiptRows([{ itemName: '', qty: 1, unitPrice: 0 }]);
@@ -341,7 +382,7 @@ export default function ProposalKegiatanPage() {
   };
 
   const isProposalApproved = useMemo(() => {
-    return profile?.role === 'super_admin' || currentProposalStatus === 'proposal_approved' || currentProposalStatus?.startsWith('lpj_');
+    return Boolean(profile?.role === 'super_admin' || currentProposalStatus === 'proposal_approved' || currentProposalStatus?.startsWith('lpj_'));
   }, [currentProposalStatus, profile]);
 
   const handleSelectProposal = (item: any) => {
@@ -354,6 +395,7 @@ export default function ProposalKegiatanPage() {
     setCurrentSubmittedByName(item.submittedByName || null);
     setCurrentSubmittedByEmail(item.submittedByEmail || null);
     setCurrentProposalQueueNo(item.proposalQueueNumber || null);
+    setSelectedExpenseReportId(null);
 
     if (item.status && item.status.startsWith('lpj_')) {
       setActiveStage('lpj');
@@ -371,10 +413,13 @@ export default function ProposalKegiatanPage() {
     if (item.unipduPercentage !== undefined) setUnipduPercentage(item.unipduPercentage);
     if (item.kepanitiaaanPercentage !== undefined) setKepanitiaaanPercentage(item.kepanitiaaanPercentage);
 
+    const normalizedProposalExpenseRows = item.pengeluaranRows && item.pengeluaranRows.length > 0
+      ? ensureExpenseRowIds(item.pengeluaranRows)
+      : [createProposalExpenseRow('group_header')];
     if (item.pengeluaranRows && item.pengeluaranRows.length > 0) {
-      setPengeluaranRows(item.pengeluaranRows);
+      setPengeluaranRows(normalizedProposalExpenseRows);
     } else {
-      setPengeluaranRows([{ type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0 }]);
+      setPengeluaranRows(normalizedProposalExpenseRows);
     }
     if (item.signatures && item.signatures.length > 0) {
       setProposalSignatures(item.signatures);
@@ -384,8 +429,26 @@ export default function ProposalKegiatanPage() {
     if (item.lpjPemasukanRows) setLpjPemasukanRows(item.lpjPemasukanRows);
     else if (item.pemasukanRows) setLpjPemasukanRows(item.pemasukanRows.map((r: any) => ({ ...r, realisasi: parseQty(r.rincianQty) * (r.rincianRate || 0) })));
 
-    if (item.lpjPengeluaranRows) setLpjPengeluaranRows(item.lpjPengeluaranRows);
-    else if (item.pengeluaranRows) setLpjPengeluaranRows(item.pengeluaranRows.map((r: any) => ({ ...r, realisasi: parseQty(r.rincianQty) * (r.rincianRate || 0) })));
+    if (item.lpjPengeluaranRows) {
+      setLpjPengeluaranRows(item.lpjPengeluaranRows.map((row: ProposalExpenseRow, index: number) => ({
+        ...row,
+        rowId: row.rowId || normalizedProposalExpenseRows[index]?.rowId,
+        realisasi: row.type === 'group_header' ? 0 : (row.realisasi ?? parseQty(row.rincianQty) * (row.rincianRate || 0)),
+      })));
+    } else if (item.pengeluaranRows) {
+      setLpjPengeluaranRows(normalizedProposalExpenseRows.map((row) => ({
+        ...row,
+        realisasi: row.type === 'group_header' ? 0 : parseQty(row.rincianQty) * (row.rincianRate || 0),
+      })));
+    } else {
+      setLpjPengeluaranRows([{ ...createProposalExpenseRow('group_header'), realisasi: 0 }]);
+    }
+
+    if (item.expenseReports && Array.isArray(item.expenseReports)) {
+      setExpenseReports(item.expenseReports);
+    } else {
+      setExpenseReports([]);
+    }
 
     if (item.realisasiEnabled !== undefined) setRealisasiEnabled(item.realisasiEnabled);
     if (item.vakasiPengujiEnabled !== undefined) setVakasiPengujiEnabled(item.vakasiPengujiEnabled);
@@ -443,7 +506,7 @@ export default function ProposalKegiatanPage() {
     return danaOperasionalAnggaran - totalPengeluaranAnggaran;
   }, [danaOperasionalAnggaran, totalPengeluaranAnggaran]);
 
-  const isProposalReadOnly = currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_');
+  const isProposalReadOnly = periodClosed || currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_');
 
   // ── REAL-TIME DEBOUNCED AUTO-SAVE EFFECT ──
   useEffect(() => {
@@ -452,7 +515,7 @@ export default function ProposalKegiatanPage() {
       return;
     }
     if (skipAutoSaveRef.current) return;
-    if (!profile) return;
+    if (!profile || !canManageProposal || periodClosed) return;
     if (!reportName.trim() || !departmentUnit) return;
     if (isProposalReadOnly && activeStage === 'proposal') return;
 
@@ -494,6 +557,7 @@ export default function ProposalKegiatanPage() {
           receiptTitle,
           receiptRows,
           lpjSignatures,
+          expenseReports,
           updatedAt: serverTimestamp(),
         };
 
@@ -533,10 +597,14 @@ export default function ProposalKegiatanPage() {
     receiptTitle,
     receiptRows,
     lpjSignatures,
+    expenseReports,
+    canManageProposal,
+    periodClosed,
   ]);
 
   // ── Historical Baseline Clone Handler ──
   const fetchHistoricalBaselines = async () => {
+    if (!canManageProposal) return;
     setLoadingHistorical(true);
     try {
       const snapProp = await getDocs(collection(db, 'ProposalKegiatan'));
@@ -557,6 +625,10 @@ export default function ProposalKegiatanPage() {
   };
 
   const handleOpenCloneModal = () => {
+    if (!canManageProposal) {
+      setMessage({ type: 'error', text: 'Akun ini tidak memiliki akses untuk mengkloning proposal.' });
+      return;
+    }
     setShowCloneModal(true);
     fetchHistoricalBaselines();
   };
@@ -583,9 +655,19 @@ export default function ProposalKegiatanPage() {
     if (pastItem.kepanitiaaanPercentage !== undefined) setKepanitiaaanPercentage(pastItem.kepanitiaaanPercentage);
 
     if (pastItem.pengeluaranRows && pastItem.pengeluaranRows.length > 0) {
-      setPengeluaranRows(pastItem.pengeluaranRows);
-      setLpjPengeluaranRows(pastItem.pengeluaranRows);
+      const clonedExpenseRows = ensureExpenseRowIds(pastItem.pengeluaranRows).map((row) => ({
+        ...clearExpenseReportLink(row),
+        rowId: createStableId('expense-row'),
+      }));
+      setPengeluaranRows(clonedExpenseRows);
+      setLpjPengeluaranRows(clonedExpenseRows.map((row) => ({
+        ...row,
+        realisasi: row.type === 'group_header' ? 0 : parseQty(row.rincianQty) * (row.rincianRate || 0),
+      })));
     }
+
+    setExpenseReports([]);
+    setSelectedExpenseReportId(null);
 
     setShowCloneModal(false);
     setMessage({
@@ -596,6 +678,14 @@ export default function ProposalKegiatanPage() {
 
   // Save Proposal Draft
   const handleSaveProposalDraft = async () => {
+    if (!canManageProposal) {
+      setMessage({ type: 'error', text: 'Akun ini tidak memiliki akses untuk menyimpan proposal.' });
+      return;
+    }
+    if (periodClosed) {
+      setMessage({ type: 'error', text: 'Periode payroll sudah ditutup sehingga proposal tidak dapat diubah.' });
+      return;
+    }
     if (!reportName.trim()) {
       setMessage({ type: 'error', text: 'Nama Kegiatan / Proposal wajib diisi.' });
       return;
@@ -620,6 +710,7 @@ export default function ProposalKegiatanPage() {
         submittedBy: profile?.uid || null,
         submittedByName: profile?.displayName || null,
         submittedByEmail: profile?.email || null,
+        expenseReports,
         updatedAt: serverTimestamp(),
       };
 
@@ -648,6 +739,92 @@ export default function ProposalKegiatanPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openExpenseLinkDialog = (rowIndex: number) => {
+    if (!isProposalApproved) {
+      setMessage({ type: 'error', text: 'Laporan per pos dapat dihubungkan setelah proposal anggaran disetujui.' });
+      return;
+    }
+    const row = pengeluaranRows[rowIndex];
+    if (!row || !row.uraian.trim()) {
+      setMessage({ type: 'error', text: 'Isi uraian pos pengeluaran terlebih dahulu sebelum menghubungkan laporan.' });
+      return;
+    }
+    setLinkingExpenseRowIndex(rowIndex);
+    setShowExpenseLinkDialog(true);
+  };
+
+  const handleLinkExpenseReport = (reportType: ExpenseReportType) => {
+    if (!isProposalApproved) return;
+    if (linkingExpenseRowIndex === null) return;
+    const row = pengeluaranRows[linkingExpenseRowIndex];
+    if (!row) return;
+
+    const rowId = row.rowId || createStableId('expense-row');
+    const existingReport = row.reportId ? expenseReports.find((report) => report.id === row.reportId) : undefined;
+    const reportId = existingReport && existingReport.reportType === reportType
+      ? existingReport.id
+      : createStableId('expense-report');
+    const nextReport = existingReport && existingReport.reportType === reportType
+      ? { ...existingReport, expenseRowId: rowId, expenseLabel: row.uraian }
+      : createExpenseReport(reportId, rowId, row.uraian, reportType);
+
+    setExpenseReports((prev) => [
+      ...prev.filter((report) => report.id !== existingReport?.id),
+      nextReport,
+    ]);
+
+    setPengeluaranRows((prev) => prev.map((expenseRow, index) => index === linkingExpenseRowIndex
+      ? { ...expenseRow, rowId, reportId, reportType }
+      : expenseRow));
+    setLpjPengeluaranRows((prev) => prev.map((expenseRow, index) => (
+      expenseRow.rowId === rowId || index === linkingExpenseRowIndex
+        ? { ...expenseRow, rowId, reportId, reportType }
+        : expenseRow
+    )));
+
+    setSelectedExpenseReportId(reportId);
+    setActiveStage('reports');
+    setShowExpenseLinkDialog(false);
+    setLinkingExpenseRowIndex(null);
+    setMessage({ type: 'success', text: `Pos "${row.uraian}" berhasil dihubungkan ke ${getExpenseReportDefinition(reportType).label}.` });
+  };
+
+  const handleUnlinkExpenseReport = () => {
+    if (linkingExpenseRowIndex === null) return;
+    const row = pengeluaranRows[linkingExpenseRowIndex];
+    if (!row) return;
+
+    if (row.reportId) {
+      setExpenseReports((prev) => prev.filter((report) => report.id !== row.reportId));
+    }
+    setPengeluaranRows((prev) => prev.map((expenseRow, index) => {
+      if (index !== linkingExpenseRowIndex) return expenseRow;
+      return clearExpenseReportLink(expenseRow);
+    }));
+    setLpjPengeluaranRows((prev) => prev.map((expenseRow, index) => {
+      if (expenseRow.rowId !== row.rowId && index !== linkingExpenseRowIndex) return expenseRow;
+      return clearExpenseReportLink(expenseRow);
+    }));
+    setSelectedExpenseReportId(null);
+    setShowExpenseLinkDialog(false);
+    setLinkingExpenseRowIndex(null);
+    setMessage({ type: 'success', text: `Laporan untuk pos "${row.uraian}" dilepas.` });
+  };
+
+  const handleUpdateExpenseReport = (reportId: string, updater: (report: ExpenseReport) => ExpenseReport) => {
+    setExpenseReports((prev) => prev.map((report) => report.id === reportId ? updater(report) : report));
+  };
+
+  const handlePrintExpenseReport = (report: ExpenseReport) => {
+    generateProposalExpenseReportPdf({
+      report,
+      reportName: reportName || 'Kegiatan',
+      period: `${MONTHS_ID[month - 1]} ${year}`,
+      departmentUnit,
+      signatures: lpjSignatures,
+    });
   };
 
   // Print PDF Handler
@@ -695,6 +872,10 @@ export default function ProposalKegiatanPage() {
 
   // Submit Proposal to FIFO Queue
   const handleSubmitProposalToQueue = async () => {
+    if (!canManageProposal || periodClosed) {
+      setMessage({ type: 'error', text: 'Proposal tidak dapat disimpan pada periode yang sudah ditutup.' });
+      return;
+    }
     if (!reportName.trim()) {
       setMessage({ type: 'error', text: 'Nama Kegiatan / Proposal wajib diisi.' });
       return;
@@ -725,6 +906,7 @@ export default function ProposalKegiatanPage() {
         submittedBy: profile?.uid || null,
         submittedByName: profile?.displayName || null,
         submittedByEmail: profile?.email || null,
+        expenseReports,
         proposalSubmittedAt: serverTimestamp(),
         reviewNote: null,
         reviewedBy: null,
@@ -750,6 +932,10 @@ export default function ProposalKegiatanPage() {
 
   // Save LPJ Draft
   const handleSaveLpjDraft = async () => {
+    if (!canManageProposal || periodClosed) {
+      setMessage({ type: 'error', text: 'Draft LPJ tidak dapat disimpan pada periode yang sudah ditutup.' });
+      return;
+    }
     if (!selectedProposalId) {
       setMessage({ type: 'error', text: 'Pilih atau simpan proposal terlebih dahulu.' });
       return;
@@ -776,6 +962,7 @@ export default function ProposalKegiatanPage() {
         receiptTitle,
         receiptRows,
         lpjSignatures,
+        expenseReports,
         status: currentProposalStatus === 'proposal_approved' ? 'lpj_draft' : currentProposalStatus,
         updatedAt: serverTimestamp(),
       };
@@ -795,6 +982,10 @@ export default function ProposalKegiatanPage() {
 
   // Submit LPJ to Admin
   const handleSubmitLpjToQueue = async () => {
+    if (!canManageProposal || periodClosed) {
+      setMessage({ type: 'error', text: 'LPJ tidak dapat disimpan pada periode yang sudah ditutup.' });
+      return;
+    }
     if (!selectedProposalId) {
       setMessage({ type: 'error', text: 'Pilih proposal yang telah disetujui terlebih dahulu.' });
       return;
@@ -821,6 +1012,7 @@ export default function ProposalKegiatanPage() {
         receiptTitle,
         receiptRows,
         lpjSignatures,
+        expenseReports,
         status: 'lpj_submitted',
         lpjSubmittedAt: serverTimestamp(),
         reviewNote: null,
@@ -848,6 +1040,10 @@ export default function ProposalKegiatanPage() {
     note: string
   ) => {
     if (!selectedProposalId) return;
+    if (!canManageProposal || periodClosed) {
+      setMessage({ type: 'error', text: 'Periode payroll sudah ditutup sehingga status proposal tidak dapat diubah.' });
+      return;
+    }
     setSaving(true);
     try {
       const defaultLpjPemasukan = pemasukanRows.map((r: any) => ({
@@ -963,6 +1159,33 @@ export default function ProposalKegiatanPage() {
 
   const fmtRp = (n: number) => 'Rp\u00a0' + Math.round(n).toLocaleString('id-ID');
 
+  const renderExpenseReportLink = (row: ProposalExpenseRow, rowIndex: number) => {
+    if (!row.uraian.trim()) return null;
+    const linkedReport = row.reportId ? expenseReports.find((report) => report.id === row.reportId) : undefined;
+    const label = linkedReport ? getExpenseReportDefinition(linkedReport.reportType).shortLabel : 'Hubungkan';
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        title={linkedReport ? `Buka laporan ${label}` : 'Hubungkan pos ini ke laporan'}
+        onClick={() => {
+          if (linkedReport) {
+            setSelectedExpenseReportId(linkedReport.id);
+            setActiveStage('reports');
+          } else {
+            openExpenseLinkDialog(rowIndex);
+          }
+        }}
+        className={`h-7 rounded-lg px-2 text-[10px] font-bold ${linkedReport
+          ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+          : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+      >
+        <Link2 className="mr-1 h-3 w-3" /> {label}
+      </Button>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Messages */}
@@ -992,7 +1215,7 @@ export default function ProposalKegiatanPage() {
             >
               <Copy className="w-4 h-4 text-purple-600" /> Kloning Anggaran Event Lalu
             </Button>
-            <Button
+            {activeStage !== 'reports' && <Button
               onClick={() => {
                 if (activeStage === 'proposal') {
                   generateProposalKegiatanPdf({
@@ -1038,7 +1261,7 @@ export default function ProposalKegiatanPage() {
               className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-semibold flex items-center gap-2 text-xs h-9"
             >
               <FileDown className="w-4 h-4 text-indigo-600" /> Cetak {activeStage === 'proposal' ? 'Proposal' : 'LPJ'} (PDF)
-            </Button>
+            </Button>}
           </div>
         </div>
 
@@ -1179,6 +1402,21 @@ export default function ProposalKegiatanPage() {
                 <Unlock className="w-3.5 h-3.5 text-teal-600" />
               )}
               <span>2. Pelaporan Realisasi (LPJ)</span>
+            </button>
+
+            <button
+              onClick={() => setActiveStage('reports')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeStage === 'reports'
+                ? 'bg-white text-indigo-600 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
+                }`}
+            >
+              {!isProposalApproved ? (
+                <Lock className="w-3.5 h-3.5 text-amber-500" />
+              ) : (
+                <Link2 className="w-3.5 h-3.5 text-indigo-500" />
+              )}
+              <span>3. Rincian Laporan Pengeluaran</span>
             </button>
           </div>
         </div>
@@ -1503,6 +1741,8 @@ export default function ProposalKegiatanPage() {
                                 />
                               </td>
                               <td className="px-3 py-2.5 text-center">
+                                <div className="flex flex-wrap items-center justify-center gap-1">
+                                  {renderExpenseReportLink(row, idx)}
                                 {!isProposalReadOnly && (
                                   <div className="flex items-center justify-center gap-1">
                                     <Button
@@ -1535,6 +1775,7 @@ export default function ProposalKegiatanPage() {
                                     </Button>
                                   </div>
                                 )}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -1597,6 +1838,8 @@ export default function ProposalKegiatanPage() {
                             </td>
                             <td className="px-3 py-2 text-xs font-bold text-slate-700 text-right font-mono">{fmtRp(anggaran)}</td>
                             <td className="px-3 py-2 text-center">
+                              <div className="flex flex-wrap items-center justify-center gap-1">
+                                {renderExpenseReportLink(row, idx)}
                               {!isProposalReadOnly && (
                                 <div className="flex items-center justify-center gap-1">
                                   <div className="relative">
@@ -1657,6 +1900,7 @@ export default function ProposalKegiatanPage() {
                                   </Button>
                                 </div>
                               )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1760,7 +2004,7 @@ export default function ProposalKegiatanPage() {
                   </span>
                 )}
 
-                {!isProposalReadOnly && (
+                {!isProposalReadOnly && canManageProposal && (
                   <Button
                     type="button"
                     onClick={handleSaveProposalDraft}
@@ -1890,6 +2134,19 @@ export default function ProposalKegiatanPage() {
                   ))}
                 </div>
 
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 px-4 py-3">
+                  <div className="flex items-start gap-2.5">
+                    <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+                    <div>
+                      <p className="text-xs font-bold text-indigo-900">Lanjutkan ke rincian laporan per pos</p>
+                      <p className="mt-0.5 text-[11px] text-indigo-700/70">Hubungkan pengeluaran ke vakasi penguji, pembimbing, pedoman, kepanitiaan, atau kwitansi/nota.</p>
+                    </div>
+                  </div>
+                  <Button type="button" onClick={() => setActiveStage('reports')} className="h-8 rounded-lg bg-indigo-600 px-3 text-[11px] font-bold text-white hover:bg-indigo-700">
+                    Buka Tahap 3 <ArrowLeft className="ml-1.5 h-3.5 w-3.5 rotate-180" />
+                  </Button>
+                </div>
+
                 {/* SEKSI 1: REALISASI KEUANGAN (FULL COMPREHENSIVE) */}
                 {realisasiEnabled && (() => {
                   const totalPemasukanAnggaranLPJ = lpjPemasukanRows.reduce((sum, r) => sum + (parseQty(r.rincianQty) * r.rincianRate), 0);
@@ -1907,7 +2164,7 @@ export default function ProposalKegiatanPage() {
 
                   const expItemsLPJ = lpjPengeluaranRows.filter(r => r.type === 'item' && r.uraian.trim());
                   const jumlahPengeluaranAnggaranLPJ = expItemsLPJ.reduce((sum, r) => sum + (parseQty(r.rincianQty) * r.rincianRate), 0);
-                  const jumlahPengeluaranRealisasiLPJ = expItemsLPJ.reduce((sum, r) => sum + r.realisasi, 0);
+                  const jumlahPengeluaranRealisasiLPJ = expItemsLPJ.reduce((sum, r) => sum + (r.realisasi || 0), 0);
 
                   const kepanitiaaanAnggaranLPJ = jumlahPengeluaranAnggaranLPJ * (kepanitiaaanPercentage / 100);
                   const kepanitiaaanRealisasiLPJ = jumlahPengeluaranAnggaranLPJ * (kepanitiaaanPercentage / 100);
@@ -2104,7 +2361,7 @@ export default function ProposalKegiatanPage() {
                                         <td className="px-3 py-2"><Input type="text" placeholder="10 / 20%" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
                                         <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                         <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(anggaran)}</td>
-                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={(row.realisasi || 0) > 0 ? fmtRp(row.realisasi || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                         <td className="px-3 py-2 text-center">
                                           <div className="flex items-center justify-center gap-1">
                                             <div className="relative">
@@ -2496,7 +2753,7 @@ export default function ProposalKegiatanPage() {
                     <Button
                       type="button"
                       onClick={handleSaveLpjDraft}
-                      disabled={saving}
+                      disabled={saving || !canManageProposal || periodClosed}
                       className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
                     >
                       {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
@@ -2515,7 +2772,7 @@ export default function ProposalKegiatanPage() {
                     {profile?.role === 'satker_head_loyalis' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'lpj_draft' || currentProposalStatus === 'lpj_revision') && (
                       <Button
                         onClick={handleSubmitLpjToQueue}
-                        disabled={saving}
+                        disabled={saving || !canManageProposal || periodClosed}
                         className="rounded-xl px-6 bg-slate-900 hover:bg-black text-white font-bold text-xs h-10 flex items-center gap-2 shadow-md cursor-pointer"
                       >
                         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -2548,7 +2805,91 @@ export default function ProposalKegiatanPage() {
             )}
           </div>
         )}
+
+        {activeStage === 'reports' && (
+          <ExpenseReportStage
+            expenseRows={pengeluaranRows}
+            expenseReports={expenseReports}
+            employees={loyalisEmployees}
+            unlocked={isProposalApproved}
+            selectedReportId={selectedExpenseReportId}
+            onSelectReport={setSelectedExpenseReportId}
+            onOpenLink={openExpenseLinkDialog}
+            onUpdateReport={handleUpdateExpenseReport}
+            onPrintReport={handlePrintExpenseReport}
+            onBackToLpj={() => setActiveStage('lpj')}
+            fmtRp={fmtRp}
+            parseQty={parseQty}
+          />
+        )}
       </Card>
+
+      <Dialog
+        open={showExpenseLinkDialog}
+        onOpenChange={(open) => {
+          setShowExpenseLinkDialog(open);
+          if (!open) setLinkingExpenseRowIndex(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl max-w-full overflow-hidden rounded-3xl border-none bg-white p-0 shadow-2xl">
+          <DialogHeader className="border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-slate-50 p-6 pb-5">
+            <DialogTitle className="flex items-center gap-2.5 text-lg font-bold text-slate-800">
+              <Link2 className="h-5 w-5 text-indigo-600" /> Hubungkan Pos Pengeluaran
+            </DialogTitle>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              Pilih format laporan yang akan menampung rincian pos ini. Format proposal dan realisasi keuangan tetap berada pada PDF masing-masing.
+            </p>
+          </DialogHeader>
+
+          <div className="max-h-[58vh] space-y-3 overflow-y-auto p-6">
+            {linkingExpenseRowIndex !== null && pengeluaranRows[linkingExpenseRowIndex] && (
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-4 py-3">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-indigo-500">Pos yang dipilih</span>
+                <span className="mt-1 block text-sm font-black text-slate-900">{pengeluaranRows[linkingExpenseRowIndex].uraian}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {EXPENSE_REPORT_DEFINITIONS.map((definition) => {
+                const isCurrent = linkingExpenseRowIndex !== null && pengeluaranRows[linkingExpenseRowIndex]?.reportType === definition.type;
+                return (
+                  <button
+                    key={definition.type}
+                    type="button"
+                    onClick={() => handleLinkExpenseReport(definition.type)}
+                    className={`rounded-2xl border p-4 text-left transition-all ${isCurrent
+                      ? 'border-indigo-300 bg-indigo-50 ring-2 ring-indigo-100'
+                      : 'border-slate-150 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-indigo-500">{definition.shortLabel}</span>
+                        <h4 className="mt-1 text-sm font-black text-slate-900">{definition.label}</h4>
+                      </div>
+                      {isCurrent && <CheckCircle2 className="h-5 w-5 shrink-0 text-indigo-600" />}
+                    </div>
+                    <p className="mt-2 text-[11px] leading-relaxed text-slate-500">{definition.description}</p>
+                    <p className="mt-3 truncate text-[10px] font-semibold text-slate-400">Sumber: {definition.sourceDocument}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 rounded-b-3xl border-t border-slate-100 bg-slate-50 p-4">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleUnlinkExpenseReport}
+              disabled={linkingExpenseRowIndex === null || !pengeluaranRows[linkingExpenseRowIndex]?.reportId}
+              className="rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50"
+            >
+              Lepas Hubungan
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setShowExpenseLinkDialog(false)} className="rounded-xl text-xs font-bold text-slate-500">Batal</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Historical Baseline Clone Dialog */}
       <Dialog open={showCloneModal} onOpenChange={setShowCloneModal}>

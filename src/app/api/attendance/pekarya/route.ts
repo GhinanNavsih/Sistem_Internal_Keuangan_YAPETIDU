@@ -48,8 +48,12 @@ export async function GET(request: NextRequest) {
     }
     const result =
       category === 'SATPAM'
-        ? await buildSatpamAttendanceMismatches(period)
-        : await buildPekaryaAttendanceView(period, category);
+        ? await buildSatpamAttendanceMismatches(period, {
+            allowMissingActiveImport: true,
+          })
+        : await buildPekaryaAttendanceView(period, category, {
+            allowMissingActiveImport: true,
+          });
     const officialLeaveSnapshot =
       category === 'SATPAM'
         ? null

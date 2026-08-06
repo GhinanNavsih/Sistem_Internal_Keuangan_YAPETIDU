@@ -655,6 +655,16 @@ export default function PekaryaAttendancePage() {
         </div>
       </section>
 
+      {data && !data.importRevisionId && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
+          <p className="font-bold">Import presensi aktif belum tersedia</p>
+          <p className="mt-1 text-sm">
+            Muat ulang halaman ini setelah import presensi terpadu diaktifkan.
+            Data pegawai tetap ditampilkan, tetapi belum dapat dipublikasikan ke Rekap Uraian.
+          </p>
+        </div>
+      )}
+
       {loading && (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">
           Memuat hasil presensi…
@@ -1109,6 +1119,7 @@ export default function PekaryaAttendancePage() {
                   onClick={() => void publish()}
                   disabled={
                     working ||
+                    !data.importRevisionId ||
                     data.employees.some((employee) => employee.publishBlocked)
                   }
                 >

@@ -115,7 +115,10 @@ export async function loadAttendanceEmployeeIdentities(): Promise<{
   return { identities, byNipy };
 }
 
-export async function loadActiveAttendanceRows(period: string): Promise<{
+export async function loadActiveAttendanceRows(
+  period: string,
+  options: { allowMissingActiveImport?: boolean } = {},
+): Promise<{
   importData: Record<string, unknown>;
   revisionData: Record<string, unknown>;
   rows: AttendanceNormalizedRow[];
@@ -125,6 +128,9 @@ export async function loadActiveAttendanceRows(period: string): Promise<{
     .doc(period)
     .get();
   if (!importSnapshot.exists || !importSnapshot.data()?.activeRevisionId) {
+    if (options.allowMissingActiveImport) {
+      return { importData: {}, revisionData: {}, rows: [] };
+    }
     throw new Error(`Data presensi aktif untuk periode ${period} belum tersedia.`);
   }
   const importData = importSnapshot.data()!;
@@ -179,9 +185,12 @@ export async function loadPeriodPremiumDates(period: string): Promise<{
   };
 }
 
-export async function loadEffectiveAttendanceDays(period: string) {
+export async function loadEffectiveAttendanceDays(
+  period: string,
+  options: { allowMissingActiveImport?: boolean } = {},
+) {
   const [{ rows, importData, revisionData }, correctionsSnapshot] = await Promise.all([
-    loadActiveAttendanceRows(period),
+    loadActiveAttendanceRows(period, options),
     adminDb
       .collection(PEKARYA_CORRECTION_HEADS_COLLECTION)
       .where('period', '==', period)
