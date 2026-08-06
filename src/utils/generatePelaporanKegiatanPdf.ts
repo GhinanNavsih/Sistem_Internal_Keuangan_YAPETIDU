@@ -338,6 +338,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       let oIdx = 0;
       data.pengeluaranRows.forEach(row => {
         if (row.type === 'group_header') {
+          oIdx = 0;
           tableRows.push([
             { content: '', styles: { fontStyle: 'bold' as const } },
             { content: row.uraian, colSpan: 4, styles: { fontStyle: 'bold' as const } },
@@ -377,6 +378,7 @@ export function generatePelaporanKegiatanPdf(data: PelaporanKegiatanPdfData, sav
       let itemNum = 0;
       data.realisasiRows.forEach((row) => {
         if (row.type === 'group_header') {
+          itemNum = 0;
           tableRows.push([
             { content: '', styles: { fontStyle: 'bold' as const } },
             { content: row.uraian, colSpan: 4, styles: { fontStyle: 'bold' as const } },

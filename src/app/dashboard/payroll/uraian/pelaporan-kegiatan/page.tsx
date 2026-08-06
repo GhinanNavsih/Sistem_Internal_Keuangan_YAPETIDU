@@ -1017,7 +1017,10 @@ export default function PelaporanKegiatanPage() {
                         </thead>
                         <tbody>
                           {pengeluaranRows.map((row, idx) => {
-                            const itemNum = row.type === 'item' ? pengeluaranRows.slice(0, idx + 1).filter(r => r.type === 'item').length : null;
+                            const lastHeaderIdx = pengeluaranRows.slice(0, idx + 1).findLastIndex(r => r.type === 'group_header');
+                            const itemNum = row.type === 'item'
+                              ? pengeluaranRows.slice(lastHeaderIdx === -1 ? 0 : lastHeaderIdx, idx + 1).filter(r => r.type === 'item').length
+                              : null;
                             if (row.type === 'group_header') {
                               return (
                                 <tr key={idx} className="bg-slate-50/60 border-b border-slate-100">

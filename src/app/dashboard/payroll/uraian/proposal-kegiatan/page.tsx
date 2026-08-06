@@ -1718,7 +1718,10 @@ export default function ProposalKegiatanPage() {
                     </thead>
                     <tbody>
                       {pengeluaranRows.map((row, idx) => {
-                        const itemNum = row.type === 'item' ? pengeluaranRows.slice(0, idx + 1).filter(r => r.type === 'item').length : null;
+                        const lastHeaderIdx = pengeluaranRows.slice(0, idx + 1).findLastIndex(r => r.type === 'group_header');
+                        const itemNum = row.type === 'item'
+                          ? pengeluaranRows.slice(lastHeaderIdx === -1 ? 0 : lastHeaderIdx, idx + 1).filter(r => r.type === 'item').length
+                          : null;
                         if (row.type === 'group_header') {
                           return (
                             <tr key={idx} className="bg-slate-50/60 border-b border-slate-100">
@@ -2019,7 +2022,6 @@ export default function ProposalKegiatanPage() {
                 <Button
                   type="button"
                   onClick={handlePrintPdf}
-                  disabled={!reportName.trim() || !departmentUnit}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
                 >
                   <FileText className="w-4 h-4" /> Cetak PDF
@@ -2334,7 +2336,8 @@ export default function ProposalKegiatanPage() {
                                 </thead>
                                 <tbody>
                                   {lpjPengeluaranRows.map((row, idx) => {
-                                    const itemNum = row.type === 'item' ? lpjPengeluaranRows.slice(0, idx + 1).filter(r => r.type === 'item').length : null;
+                                    const lastHeaderIdx = lpjPengeluaranRows.slice(0, idx + 1).findLastIndex(r => r.type === 'group_header');
+                                    const itemNum = row.type === 'item' ? lpjPengeluaranRows.slice(lastHeaderIdx === -1 ? 0 : lastHeaderIdx, idx + 1).filter(r => r.type === 'item').length : null;
                                     if (row.type === 'group_header') {
                                       return (
                                         <tr key={idx} className="bg-slate-50/60 border-b border-slate-100">
@@ -2763,7 +2766,6 @@ export default function ProposalKegiatanPage() {
                     <Button
                       type="button"
                       onClick={handlePrintPdf}
-                      disabled={!reportName.trim() || !departmentUnit}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
                     >
                       <FileText className="w-4 h-4" /> Cetak PDF

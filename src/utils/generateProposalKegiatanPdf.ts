@@ -209,6 +209,7 @@ export function generateProposalKegiatanPdf(data: ProposalKegiatanPdfData) {
     let oIdx = 0;
     data.pengeluaranRows.forEach(row => {
       if (row.type === 'group_header') {
+        oIdx = 0;
         tableRows.push([
           { content: '', styles: { fontStyle: 'bold' as const } },
           { content: row.uraian, colSpan: 3, styles: { fontStyle: 'bold' as const } },
