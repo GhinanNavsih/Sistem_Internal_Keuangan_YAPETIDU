@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import type { PekaryaOfficialLeaveRequest } from '@/lib/payroll/pekaryaOfficialLeave';
 
 type AttendanceDay = {
   date: string;
@@ -87,6 +88,7 @@ type AttendanceView = {
     actorUid?: string;
     actorName?: string;
   }>;
+  officialLeaves: PekaryaOfficialLeaveRequest[];
 };
 
 type SatpamView = {
@@ -273,6 +275,8 @@ export default function PekaryaAttendancePage() {
   const [absenceDecisionReasons, setAbsenceDecisionReasons] = useState<
     Record<string, string>
   >({});
+  const [officialLeaveDecisionReasons, setOfficialLeaveDecisionReasons] =
+    useState<Record<string, string>>({});
   const [planDecisionReasons, setPlanDecisionReasons] = useState<
     Record<string, string>
   >({});
@@ -377,6 +381,49 @@ export default function PekaryaAttendancePage() {
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Gagal memutuskan izin.');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const reviewOfficialLeave = async (
+    leave: PekaryaOfficialLeaveRequest,
+    action: 'approve' | 'decline',
+  ) => {
+    const reason = (officialLeaveDecisionReasons[leave.id] || '').trim();
+    if (reason.length < 8) {
+      setError('Alasan keputusan izin minimal delapan karakter.');
+      return;
+    }
+    setWorking(true);
+    setError('');
+    try {
+      await authenticatedJson('/api/attendance/pekarya/official-leave/review', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('pekarya-official-leave-review'),
+          officialLeaveRequestId: leave.id,
+          action,
+          reason,
+          expectedRevision: leave.revision,
+        }),
+      });
+      setMessage(
+        action === 'approve'
+          ? 'Izin resmi disetujui dan presensi hari penuh telah diperbarui.'
+          : 'Izin resmi ditolak.',
+      );
+      setOfficialLeaveDecisionReasons((current) => ({
+        ...current,
+        [leave.id]: '',
+      }));
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Gagal memutuskan izin resmi.',
+      );
     } finally {
       setWorking(false);
     }
@@ -1078,6 +1125,83 @@ export default function PekaryaAttendancePage() {
             )}
           </section>
 
+          <section className="overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-sm">
+            <div className="border-b border-indigo-100 bg-indigo-50/50 p-5">
+              <h2 className="font-bold text-slate-900">Pengajuan Izin Resmi Pekarya</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Izin yang disetujui dicatat sebagai presensi penuh 07:30–14:00
+                dan dihitung sesuai kalender upah.
+              </p>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {(data.officialLeaves || []).length === 0 ? (
+                <div className="p-6 text-center text-slate-500">
+                  Belum ada pengajuan izin resmi pada periode ini.
+                </div>
+              ) : (
+                data.officialLeaves.map((leave) => (
+                  <article key={leave.id} className="space-y-3 p-5">
+                    <div>
+                      <p className="font-bold text-slate-900">
+                        {leave.employeeName || leave.employeeId} · {leave.date}
+                      </p>
+                      <p className="text-sm text-slate-600">{leave.reason}</p>
+                      <p className="mt-1 text-xs font-semibold uppercase text-slate-400">
+                        {leave.status}
+                        {leave.status === 'approved' && leave.approvedAmount
+                          ? ` · ${money(leave.approvedAmount)}`
+                          : ''}
+                      </p>
+                      {leave.decisionReason && (
+                        <p className="mt-2 rounded-lg bg-slate-50 p-2 text-sm text-slate-600">
+                          Keputusan terakhir: {leave.decisionReason}
+                        </p>
+                      )}
+                    </div>
+                    {canEdit && leave.status === 'pending' && (
+                      <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
+                        <textarea
+                          className="min-h-20 rounded-xl border border-slate-300 p-3 text-sm"
+                          value={officialLeaveDecisionReasons[leave.id] || ''}
+                          onChange={(event) =>
+                            setOfficialLeaveDecisionReasons((current) => ({
+                              ...current,
+                              [leave.id]: event.target.value,
+                            }))
+                          }
+                          placeholder="Alasan keputusan Kepala SatKer (wajib)"
+                        />
+                        <Button
+                          className="min-h-12 bg-emerald-600 hover:bg-emerald-700"
+                          disabled={
+                            working ||
+                            (officialLeaveDecisionReasons[leave.id] || '')
+                              .trim().length < 8
+                          }
+                          onClick={() => void reviewOfficialLeave(leave, 'approve')}
+                        >
+                          Setujui
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="min-h-12 border-rose-200 text-rose-700"
+                          disabled={
+                            working ||
+                            (officialLeaveDecisionReasons[leave.id] || '')
+                              .trim().length < 8
+                          }
+                          onClick={() => void reviewOfficialLeave(leave, 'decline')}
+                        >
+                          Tolak
+                        </Button>
+                      </div>
+                    )}
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+
           <section className="space-y-3">
             {data.employees.map((employee) => {
               const isExpanded = expanded.has(employee.employeeId);
@@ -1176,7 +1300,9 @@ export default function PekaryaAttendancePage() {
                                         : 'bg-slate-100 text-slate-600'
                                     }`}
                                   >
-                                    {day.corrected
+                                    {day.workStatus === 'IZIN RESMI'
+                                      ? 'Izin Resmi'
+                                      : day.corrected
                                       ? 'Dikoreksi'
                                       : day.completePunch
                                         ? 'Lengkap'

@@ -109,6 +109,7 @@ import {
 import { parseImageExif } from '@/lib/exif';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
 import { SatpamAbsencePanel } from '@/components/satpam/SatpamDutyAndAbsencePanels';
+import { PekaryaOfficialLeavePanel } from '@/components/pekarya/PekaryaOfficialLeavePanel';
 import {
   SwapLiburConfirmModal,
   type SwapLiburPrompt,
@@ -778,6 +779,7 @@ function ActivitiesContent() {
   const [showForm, setShowForm] = useState(false);
   const [showSatpamSpjChoice, setShowSatpamSpjChoice] = useState(false);
   const [showSatpamAbsenceForm, setShowSatpamAbsenceForm] = useState(false);
+  const [showPekaryaOfficialLeaveForm, setShowPekaryaOfficialLeaveForm] = useState(false);
   const [showFoundItemForm, setShowFoundItemForm] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ActivityReport | null>(null);
   const [formActivityType, setFormActivityType] = useState<'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya' | 'Buang Sampah'>('Piket');
@@ -1630,7 +1632,7 @@ function ActivitiesContent() {
   }, [isKetuaShiftSatpam, profile?.linkedEmployeeId, satpamReportDate]);
 
   useEffect(() => {
-    if (userJobCategory !== 'SATPAM' || isKetuaShiftSatpam) return;
+    if (!profile?.linkedEmployeeId || !userJobCategory || isKetuaShiftSatpam) return;
     authenticatedJson<{
       openPeriods: Array<{ period: string; startDate: string; endDate: string }>;
     }>('/api/payroll/periods', { method: 'GET' })
@@ -1638,7 +1640,7 @@ function ActivitiesContent() {
       .catch((error) => {
         console.error('Error loading open payroll periods:', error);
       });
-  }, [isKetuaShiftSatpam, userJobCategory]);
+  }, [isKetuaShiftSatpam, profile?.linkedEmployeeId, userJobCategory]);
 
   useEffect(() => {
     if (message) {
@@ -5527,6 +5529,17 @@ function ActivitiesContent() {
         </button>
       )}
 
+      {/* ── Ajukan Izin Resmi FAB (all non-Satpam Pekarya) ─────────────── */}
+      {userJobCategory && userJobCategory !== 'SATPAM' && profile.linkedEmployeeId && (
+        <button
+          onClick={() => setShowPekaryaOfficialLeaveForm(true)}
+          className="fixed bottom-6 left-6 z-40 min-w-14 h-14 px-4 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white shadow-xl shadow-indigo-300/40 hover:shadow-2xl hover:shadow-indigo-300/50 hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2"
+        >
+          <ShieldCheck className="w-6 h-6" />
+          <span className="font-bold">Ajukan Izin Resmi</span>
+        </button>
+      )}
+
       {/* ── Ajukan Izin Satpam ─────────────────────────────────────────── */}
       <Dialog open={showSatpamAbsenceForm} onOpenChange={setShowSatpamAbsenceForm}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] sm:max-w-lg max-w-[calc(100%-2rem)] rounded-3xl border-none bg-white p-0 shadow-2xl overflow-y-auto">
@@ -5544,6 +5557,33 @@ function ActivitiesContent() {
           </div>
           {profile.linkedEmployeeId && (
             <SatpamAbsencePanel
+              embedded
+              employeeId={profile.linkedEmployeeId}
+              openPeriods={satpamOpenPeriods}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Ajukan Izin Resmi Pekarya ──────────────────────────────────── */}
+      <Dialog
+        open={showPekaryaOfficialLeaveForm}
+        onOpenChange={setShowPekaryaOfficialLeaveForm}
+      >
+        <DialogContent className="max-h-[calc(100dvh-2rem)] sm:max-w-lg max-w-[calc(100%-2rem)] rounded-3xl border-none bg-white p-0 shadow-2xl overflow-y-auto">
+          <div className="sticky top-0 z-10 bg-gradient-to-r from-indigo-500 to-blue-600 p-5">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-xl font-bold text-white">
+                <ShieldCheck className="h-5 w-5" />
+                Ajukan Izin Resmi
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-base text-indigo-50">
+                Pengajuan izin resmi Pekarya diperiksa oleh Kepala SatKer.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          {profile.linkedEmployeeId && (
+            <PekaryaOfficialLeavePanel
               embedded
               employeeId={profile.linkedEmployeeId}
               openPeriods={satpamOpenPeriods}

@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { adminDb } from '@/lib/firebase-admin';
 import {
   ATTENDANCE_PAYROLL_START_PERIOD,
 } from '@/lib/payroll/attendance';
@@ -12,6 +13,7 @@ import {
   requireAuthenticatedProfile,
   requireRole,
 } from '@/lib/server/auth';
+import { PEKARYA_OFFICIAL_LEAVE_REQUESTS_COLLECTION } from '@/lib/server/pekaryaOfficialLeave';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +50,26 @@ export async function GET(request: NextRequest) {
       category === 'SATPAM'
         ? await buildSatpamAttendanceMismatches(period)
         : await buildPekaryaAttendanceView(period, category);
-    return Response.json(result);
+    const officialLeaveSnapshot =
+      category === 'SATPAM'
+        ? null
+        : await adminDb
+            .collection(PEKARYA_OFFICIAL_LEAVE_REQUESTS_COLLECTION)
+            .where('period', '==', period)
+            .get();
+    return Response.json({
+      ...result,
+      officialLeaves:
+        officialLeaveSnapshot?.docs
+          .map((document): { id: string; [key: string]: unknown } => ({
+            id: document.id,
+            ...(document.data() as Record<string, unknown>),
+          }))
+          .filter((item) => String(item.category || '') === category)
+          .sort((left, right) =>
+            String(right.date || '').localeCompare(String(left.date || '')),
+          ) || [],
+    });
   } catch (error) {
     return errorResponse(error);
   }

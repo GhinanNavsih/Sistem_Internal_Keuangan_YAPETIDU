@@ -79,7 +79,7 @@ export default function PresensiCorrectionPage() {
   const [checkInFocused, setCheckInFocused] = useState(false);
   const [checkOutFocused, setCheckOutFocused] = useState(false);
   const [filePreview, setFilePreview] = useState<string | null>(null);
-  
+
   // Actions states
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
@@ -104,15 +104,15 @@ export default function PresensiCorrectionPage() {
     const today = new Date();
     const y = today.getFullYear();
     const m = today.getMonth(); // 0-indexed
-    
+
     // First day of current month
     const firstDay = new Date(y, m, 1);
     const minStr = `${firstDay.getFullYear()}-${String(firstDay.getMonth() + 1).padStart(2, '0')}-01`;
-    
+
     // Last day of current month
     const lastDay = new Date(y, m + 1, 0);
     const maxStr = `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
-    
+
     return { minDate: minStr, maxDate: maxStr };
   }, []);
 
@@ -373,9 +373,9 @@ export default function PresensiCorrectionPage() {
           { merge: true },
         );
 
-        setMessage({ 
-          type: 'success', 
-          text: editingRequestId ? 'Pengajuan koreksi berhasil diperbarui!' : 'Pengajuan koreksi sebelumnya berhasil ditimpa!' 
+        setMessage({
+          type: 'success',
+          text: editingRequestId ? 'Pengajuan koreksi berhasil diperbarui!' : 'Pengajuan koreksi sebelumnya berhasil ditimpa!'
         });
       } else {
         const newRequest = {
@@ -536,7 +536,7 @@ export default function PresensiCorrectionPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Alasan / Keterangan (Wajib)</label>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Alasan / Keterangan</label>
                   <textarea
                     rows={3}
                     value={reason}
@@ -547,7 +547,7 @@ export default function PresensiCorrectionPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Bukti Kehadiran (Opsional)</label>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Bukti Kehadiran</label>
                   {!file && !existingProofUrl ? (
                     <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center hover:bg-slate-50/50 transition-colors">
                       <input
@@ -608,7 +608,7 @@ export default function PresensiCorrectionPage() {
                   )}
                 </div>
 
-                 <div className="flex gap-2.5">
+                <div className="flex gap-2.5">
                   {editingRequestId && (
                     <Button
                       type="button"
@@ -666,11 +666,10 @@ export default function PresensiCorrectionPage() {
                   {requests.map((req) => (
                     <div
                       key={req.id}
-                      className={`relative rounded-2xl border p-4 transition-colors ${
-                        editingRequestId === req.id
-                          ? 'border-indigo-200 bg-indigo-50/30 ring-1 ring-indigo-100'
-                          : 'border-slate-100 bg-slate-50/30 hover:bg-slate-50/60'
-                      }`}
+                      className={`relative rounded-2xl border p-4 transition-colors ${editingRequestId === req.id
+                        ? 'border-indigo-200 bg-indigo-50/30 ring-1 ring-indigo-100'
+                        : 'border-slate-100 bg-slate-50/30 hover:bg-slate-50/60'
+                        }`}
                     >
                       {/* Top row: Date + Status + Action */}
                       <div className="flex items-center justify-between mb-2.5">
@@ -689,13 +688,12 @@ export default function PresensiCorrectionPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            req.status === 'approved'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                              : req.status === 'rejected'
-                                ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                                : 'bg-amber-50 text-amber-700 border border-amber-100'
-                          }`}>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${req.status === 'approved'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                            : req.status === 'rejected'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                              : 'bg-amber-50 text-amber-700 border border-amber-100'
+                            }`}>
                             {req.status === 'approved' ? (
                               <><CheckCircle2 className="w-3 h-3" /> Disetujui</>
                             ) : req.status === 'rejected' ? (
