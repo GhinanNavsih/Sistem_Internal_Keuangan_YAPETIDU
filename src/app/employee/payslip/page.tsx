@@ -1467,26 +1467,26 @@ export default function EmployeePayslipPage() {
 
       {/* ── Header Navbar ──────────────────────────────────────────────── */}
       <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-100 shadow-sm relative z-20">
-        <div className="max-w-5xl mx-auto px-6 sm:px-8 md:px-12 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-lg shadow-indigo-200 shrink-0">
-              <FileText className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-white" />
+        <div className="max-w-5xl mx-auto px-3.5 sm:px-8 md:px-12 py-3 sm:py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-400 flex items-center justify-center shadow-lg shadow-indigo-200 shrink-0">
+              <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <div className="min-w-0">
-              <h1 className="text-sm sm:text-base font-bold text-black leading-tight truncate">Slip Gaji</h1>
-              <p className="text-[10px] sm:text-xs text-black font-semibold truncate max-w-[120px] sm:max-w-none">{profile.displayName || 'Karyawan'}</p>
+            <div className="min-w-0 shrink">
+              <h1 className="text-xs sm:text-base font-bold text-black leading-tight truncate">Slip Gaji</h1>
+              <p className="text-[10px] sm:text-xs text-black font-semibold truncate max-w-[80px] xs:max-w-[110px] sm:max-w-none">{profile.displayName || 'Karyawan'}</p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             {(profile.role === 'honorer' || (profile.role as string) === 'ketua_shift_satpam') && (
               <Link href="/employee/activities">
                 <Button
                   variant="outline"
                   size="icon"
-                  className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
+                  className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center shadow-sm cursor-pointer"
                   title="Laporan Kegiatan"
                 >
-                  <ClipboardList className="w-4.5 h-4.5 text-indigo-500" />
+                  <ClipboardList className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-indigo-500" />
                 </Button>
               </Link>
             )}
@@ -1496,10 +1496,10 @@ export default function EmployeePayslipPage() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
+                  className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center shadow-sm cursor-pointer"
                   title="Jadwal Regu"
                 >
-                  <CalendarDays className="w-4.5 h-4.5 text-indigo-500" />
+                  <CalendarDays className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-indigo-500" />
                 </Button>
               </Link>
             )}
@@ -1508,11 +1508,11 @@ export default function EmployeePayslipPage() {
               <Link href="/employee/presensi-correction">
                 <Button
                   variant="outline"
-                  className="text-slate-800 hover:text-indigo-600 hover:bg-indigo-50/50 border-slate-200 bg-white rounded-xl h-8 px-2.5 flex items-center gap-1 text-[11px] font-semibold shadow-sm cursor-pointer shrink-0"
+                  className="text-slate-800 hover:text-indigo-600 hover:bg-indigo-50/50 border-slate-200 bg-white rounded-xl h-8 px-2 sm:px-2.5 flex items-center gap-1 text-[11px] font-semibold shadow-sm cursor-pointer shrink-0"
                   title="Ajukan Presensi"
                 >
-                  <CalendarCheck className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Ajukan Presensi</span>
+                  <CalendarCheck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                  <span className="hidden min-[360px]:inline">Ajukan Presensi</span>
                 </Button>
               </Link>
             )}
@@ -1522,13 +1522,13 @@ export default function EmployeePayslipPage() {
               disabled={resetLoading}
               variant="outline"
               size="icon"
-              className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30 rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
+              className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30 rounded-xl h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center shadow-sm cursor-pointer shrink-0"
               title="Ubah Password"
             >
               {resetLoading ? (
-                <Loader2 className="w-4.5 h-4.5 animate-spin" />
+                <Loader2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 animate-spin" />
               ) : (
-                <KeyRound className="w-4.5 h-4.5" />
+                <KeyRound className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
               )}
             </Button>
 
@@ -1536,10 +1536,10 @@ export default function EmployeePayslipPage() {
               onClick={() => logout()}
               variant="ghost"
               size="icon"
-              className="text-black hover:text-rose-500 rounded-xl h-9 w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer"
+              className="text-black hover:text-rose-500 rounded-xl h-8 w-8 sm:h-9 sm:w-9 border border-slate-150/40 bg-white shadow-sm flex items-center justify-center cursor-pointer shrink-0"
               title="Keluar"
             >
-              <LogOut className="w-4.5 h-4.5" />
+              <LogOut className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
             </Button>
           </div>
         </div>
