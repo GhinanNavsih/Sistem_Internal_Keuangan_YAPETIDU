@@ -1,5 +1,21 @@
 import { auth } from '@/lib/firebase';
 
+/**
+ * Thrown by {@link authenticatedJson} when the server answers with a non-2xx.
+ * `message` stays exactly what the API returned so existing `err.message`
+ * callers are unaffected; `status` lets callers (bulk email retry) tell a
+ * transient 5xx apart from a permanent 400/409.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 export function createFinancialRequestId(prefix: string): string {
   const normalizedPrefix = prefix.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 24);
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -53,9 +69,12 @@ export async function authenticatedJson<T>(
       if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
         window.location.href = '/login';
       }
-      throw new Error(payload.error || 'Sesi tidak valid atau sudah kadaluarsa. Silakan masuk kembali.');
+      throw new ApiError(
+        payload.error || 'Sesi tidak valid atau sudah kadaluarsa. Silakan masuk kembali.',
+        401,
+      );
     }
-    throw new Error(payload.error || `Permintaan gagal (${response.status}).`);
+    throw new ApiError(payload.error || `Permintaan gagal (${response.status}).`, response.status);
   }
   return payload as T;
 }

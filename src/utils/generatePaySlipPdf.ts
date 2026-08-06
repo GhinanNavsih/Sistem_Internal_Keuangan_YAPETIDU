@@ -922,12 +922,12 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
       ];
       note = 'Simpanan Wajib Koperasi UNIPDU';
     } else if (labelUpper.includes('BNI SIMPONI') || labelUpper.includes('THT')) {
-      title = `${indexNum}. TABUNGAN HARI TUA BNI SIMPONI`;
+      title = `${indexNum}. TABUNGAN HARI TUA DAN/ATAU BNI SIMPONI`;
       bullets = [
-        'Potongan tabungan pensiun / hari tua melalui program BNI Simponi.',
+        'Potongan tabungan pensiun / hari tua melalui program Tabungan Hari Tua (THT) dan/atau BNI Simponi.',
         'Sesuai dengan kesepakatan dan profil kepegawaian.'
       ];
-      note = 'Program Tabungan Pensiun BNI Simponi';
+      note = 'Program Tabungan Pensiun THT / BNI Simponi';
     } else if (labelUpper.includes('ROCHMAD')) {
       title = `${indexNum}. KOPERASI ROCHMAD`;
       bullets = [

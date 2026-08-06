@@ -136,11 +136,17 @@ import {
   query,
   where,
   onSnapshot,
+  type DocumentData,
+  type QueryConstraint,
+  type QuerySnapshot,
 } from 'firebase/firestore';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { syncActivityToPayslip } from '@/utils/payslipSync';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
-import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
+import {
+  pekaryaPayrollPeriodForDate,
+  pekaryaPayrollWindow,
+} from '@/lib/payroll/pekaryaSpj';
 import {
   calculateEditableDriverJourneyTimeline,
   calculateDriverReimbursementSettlement,
@@ -315,6 +321,22 @@ function calculateSopirDefaultFee(
 
 function fmtRp(val: number): string {
   return 'Rp' + val.toLocaleString('id-ID');
+}
+
+function formatPayrollWindowLabel(period: string): string {
+  const [periodYear, periodMonth] = period.split('-').map(Number);
+  const { startsOn, endsOn } = pekaryaPayrollWindow(period);
+  const [startYear, startMonth, startDay] = startsOn.split('-').map(Number);
+  const [endYear, endMonth, endDay] = endsOn.split('-').map(Number);
+  const monthName = MONTHS_ID[periodMonth - 1] || period;
+  const startMonthName = MONTHS_ID[startMonth - 1]?.slice(0, 3) || String(startMonth);
+  const endMonthName = MONTHS_ID[endMonth - 1]?.slice(0, 3) || String(endMonth);
+  const startWithYear = startYear !== periodYear ? `${startDay} ${startMonthName} ${startYear}` : `${startDay} ${startMonthName}`;
+  const endWithYear = endYear !== periodYear ? `${endDay} ${endMonthName} ${endYear}` : `${endDay} ${endMonthName}`;
+  const range = startMonth === endMonth && startYear === endYear
+    ? `${startDay} – ${endDay} ${endMonthName}`
+    : `${startWithYear} – ${endWithYear}`;
+  return `${monthName} (${range})`;
 }
 
 function calculateDefaultFee(
@@ -567,12 +589,9 @@ export default function ActivityReviewPage() {
   const { profile, user } = useAuth();
 
   // ── Period ──
-  // Always the current calendar month, regardless of any month/year a link
-  // into this page happens to carry (e.g. from a Rekap Uraian page that is
-  // itself defaulted to the prior month before the payroll cutoff day).
-  // Reviewing activity reports is a day-to-day task, not tied to which
-  // payroll period is currently being compiled, so this page intentionally
-  // does not follow that "previous month before the 6th" rule.
+  // Default to the current month, but interpret the selected month using the
+  // shared Pekarya payroll window. July 2026 is the transition period from
+  // 26 June through 31 July rather than a calendar month.
   const [month, setMonth] = useState(() => new Date().getMonth() + 1);
   const [year, setYear] = useState(() => new Date().getFullYear());
 
@@ -1239,30 +1258,35 @@ export default function ActivityReviewPage() {
     setLoading(true);
     setSelectedIds(new Set());
 
-    let q;
-    if (profile?.role === 'super_admin') {
-      q = query(
-        collection(db, 'ActivityReports'),
-        where('period', '==', periodToken),
-      );
-    } else {
-      if (allowedCategories.length === 0) {
-        setActivities([]);
-        setLoading(false);
-        return;
-      }
-      q = query(
-        collection(db, 'ActivityReports'),
-        where('period', '==', periodToken),
-        where('jobCategory', 'in', allowedCategories),
-      );
+    if (profile?.role !== 'super_admin' && allowedCategories.length === 0) {
+      setActivities([]);
+      setLoading(false);
+      return;
     }
 
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const list: ActivityReport[] = snap.docs.map(d => ({
-        id: d.id,
-        ...d.data(),
-      } as ActivityReport));
+    const payrollWindow = pekaryaPayrollWindow(periodToken);
+    const snapshots = new Map<string, QuerySnapshot<DocumentData>>();
+    const settledPeriods = new Set<string>();
+    let cancelled = false;
+
+    const applySnapshots = () => {
+      if (cancelled) return;
+      const reportsById = new Map<string, ActivityReport>();
+      snapshots.forEach((snap) => {
+        snap.docs.forEach((document) => {
+          const report = {
+            id: document.id,
+            ...document.data(),
+          } as ActivityReport;
+          if (
+            report.activityDate >= payrollWindow.startsOn &&
+            report.activityDate <= payrollWindow.endsOn
+          ) {
+            reportsById.set(report.id, report);
+          }
+        });
+      });
+      const list = Array.from(reportsById.values());
 
       // Sort ascending by submittedAt (oldest submission first)
       list.sort((a, b) => {
@@ -1324,14 +1348,37 @@ export default function ActivityReviewPage() {
       });
 
       setActivities(list);
-      setLoading(false);
-    }, (err) => {
-      console.error('Error listening to activity reports:', err);
-      setErrorMsg('Gagal memuat data laporan kegiatan.');
-      setLoading(false);
+      if (settledPeriods.size === payrollWindow.sourceMonths.length) setLoading(false);
+    };
+
+    const unsubscribes = payrollWindow.sourceMonths.map((sourcePeriod) => {
+      const constraints: QueryConstraint[] = [
+        where('period', '==', sourcePeriod),
+        ...(profile?.role === 'super_admin'
+          ? []
+          : [where('jobCategory', 'in', allowedCategories)]),
+      ];
+      const q = query(collection(db, 'ActivityReports'), ...constraints);
+      return onSnapshot(
+        q,
+        (snap) => {
+          snapshots.set(sourcePeriod, snap);
+          settledPeriods.add(sourcePeriod);
+          applySnapshots();
+        },
+        (err) => {
+          console.error(`Error listening to ${sourcePeriod} activity reports:`, err);
+          settledPeriods.add(sourcePeriod);
+          setErrorMsg('Gagal memuat data laporan kegiatan.');
+          if (settledPeriods.size === payrollWindow.sourceMonths.length) setLoading(false);
+        },
+      );
     });
 
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+      unsubscribes.forEach((unsubscribe) => unsubscribe());
+    };
   }, [hasAccess, periodToken, profile?.role, allowedCategories, refreshTrigger]);
 
   // ── Filtered activities ──
@@ -2064,18 +2111,18 @@ export default function ActivityReviewPage() {
             </div>
             <div>
               <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">Review Laporan Kegiatan</h1>
-              <p className="text-slate-500 text-sm">Tinjau, setujui, atau tolak kegiatan yang dilaporkan oleh karyawan kebersihan.</p>
+              <p className="text-slate-500 text-sm">Tinjau, setujui, atau tolak kegiatan yang dilaporkan oleh pekarya.</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Select value={String(month)} onValueChange={(v) => v && setMonth(parseInt(v))}>
               <SelectTrigger className="w-44 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
                 <SelectValue>
-                  {`${MONTHS_ID[month - 1]} (1 – ${new Date(year, month, 0).getDate()} ${MONTHS_ID[month - 1].slice(0, 3)})`}
+                  {formatPayrollWindowLabel(periodToken)}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
-                {MONTHS_ID.map((m, i) => {
+                {MONTHS_ID.map((_, i) => {
                   const now = new Date();
                   const currentYear = now.getFullYear();
                   const currentMonth = now.getMonth() + 1;
@@ -2084,7 +2131,7 @@ export default function ActivityReviewPage() {
                   if (profile?.role !== 'super_admin' && year === 2026 && monthVal < 7) return null;
                   return (
                     <SelectItem key={i + 1} value={String(i + 1)}>
-                      {m}
+                      {formatPayrollWindowLabel(`${year}-${String(monthVal).padStart(2, '0')}`)}
                     </SelectItem>
                   );
                 })}
@@ -3102,7 +3149,7 @@ export default function ActivityReviewPage() {
                 <Users className="w-4 h-4 text-teal-500" />
                 Ringkasan Per Karyawan
               </CardTitle>
-              <CardDescription className="text-xs">Total fee disetujui per karyawan untuk periode {MONTHS_ID[month - 1]} {year}.</CardDescription>
+              <CardDescription className="text-xs">Total fee disetujui per karyawan untuk periode {formatPayrollWindowLabel(periodToken)}.</CardDescription>
             </CardHeader>
             <CardContent className="px-6 pb-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

@@ -1181,13 +1181,13 @@ export default function EmployeePayslipPage() {
     },
     {
       id: 'tht_bni',
-      title: 'Tabungan Hari Tua BNI Simponi',
-      formula: 'Potongan THT Sesuai Profil',
+      title: 'Tabungan Hari Tua dan/atau BNI Simponi',
+      formula: 'Potongan THT / BNI Simponi Sesuai Profil',
       bullets: [
-        'Potongan tabungan pensiun melalui program BNI Simponi',
+        'Potongan tabungan pensiun / hari tua melalui program Tabungan Hari Tua (THT) dan/atau BNI Simponi',
         'Nominal sesuai dengan kesepakatan dan profil kepegawaian',
       ],
-      matchLabels: ['TABUNGAN HARI TUA BNI SIMPONI', 'THT', 'BNI SIMPONI'],
+      matchLabels: ['TABUNGAN HARI TUA DAN/ATAU BNI SIMPONI', 'TABUNGAN HARI TUA BNI SIMPONI', 'THT', 'BNI SIMPONI'],
     },
     {
       id: 'tabungan',
@@ -1963,7 +1963,7 @@ export default function EmployeePayslipPage() {
                                                     <thead className="bg-slate-50 border-b border-slate-200 font-bold text-black">
                                                       <tr>
                                                         <th className="pl-3 sm:pl-4 pr-1 py-2 text-left w-[22%]">TANGGAL</th>
-                                                        <th className="px-1 py-2 text-center w-[35%]">JAM SCAN (IN / OUT)</th>
+                                                        <th className="px-1 py-2 text-center w-[35%]">JAM SCAN (MASUK / PULANG)</th>
                                                         <th className="px-1 py-2 text-center w-[15%]">DURASI</th>
                                                         <th className="pr-3 sm:pr-4 pl-1 py-2 text-right w-[28%]">PENDAPATAN</th>
                                                       </tr>
@@ -1983,10 +1983,10 @@ export default function EmployeePayslipPage() {
                                                             <td className="px-1 py-1.5 text-center font-mono text-[10px] sm:text-[11px]">
                                                               <div className="flex flex-col items-center leading-tight gap-0.5">
                                                                 <span className="text-black font-medium">
-                                                                  In: {scanIn}
+                                                                  Masuk: {scanIn}
                                                                 </span>
                                                                 <span className="text-black font-medium">
-                                                                  Out: {scanOut}
+                                                                  Pulang: {scanOut}
                                                                 </span>
                                                               </div>
                                                             </td>
