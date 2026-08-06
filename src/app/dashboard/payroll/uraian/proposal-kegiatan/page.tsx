@@ -1708,12 +1708,12 @@ export default function ProposalKegiatanPage() {
                   <table className="w-full text-left border-collapse min-w-[600px]">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-100">
-                        <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">NO</th>
-                        <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[45%]">URAIAN PENGELUARAN</th>
-                        <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[150px] text-center">QTY</th>
-                        <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[140px] text-center">RATE</th>
-                        <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase w-[180px] text-right">ESTIMASI ANGGARAN</th>
-                        <th className="px-3 py-2.5 w-20 text-center"></th>
+                        <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase w-12 text-center">NO</th>
+                        <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase w-[45%]">URAIAN PENGELUARAN</th>
+                        <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase w-[150px] text-center">QTY</th>
+                        <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase w-[140px] text-center">RATE</th>
+                        <th className="px-2.5 py-1.5 text-[10px] font-bold text-slate-500 uppercase w-[180px] text-right">ESTIMASI ANGGARAN</th>
+                        <th className="px-2.5 py-1.5 w-20 text-center"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1722,8 +1722,8 @@ export default function ProposalKegiatanPage() {
                         if (row.type === 'group_header') {
                           return (
                             <tr key={idx} className="bg-slate-50/60 border-b border-slate-100">
-                              <td className="px-3 py-2.5 text-xs font-bold text-slate-400 text-center"></td>
-                              <td colSpan={4} className="px-3 py-2.5">
+                              <td className="px-2.5 py-1.5 text-xs font-bold text-slate-400 text-center"></td>
+                              <td colSpan={4} className="px-2.5 py-1.5">
                                 <Input
                                   type="text"
                                   placeholder="Nama grup (e.g., A. Pengeluaran Panitia)..."
@@ -1737,10 +1737,10 @@ export default function ProposalKegiatanPage() {
                                       return c;
                                     });
                                   }}
-                                  className={`rounded-lg font-bold text-slate-800 text-xs h-8 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'bg-transparent border-none focus:ring-0'}`}
+                                  className={`rounded-lg font-bold text-slate-800 text-xs h-7.5 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'bg-transparent border-none focus:ring-0'}`}
                                 />
                               </td>
-                              <td className="px-3 py-2.5 text-center">
+                              <td className="px-2.5 py-1.5 text-center">
                                 <div className="flex flex-wrap items-center justify-center gap-1">
                                   {renderExpenseReportLink(row, idx)}
                                 {!isProposalReadOnly && (
@@ -1783,8 +1783,8 @@ export default function ProposalKegiatanPage() {
                         const anggaran = parseQty(row.rincianQty) * row.rincianRate;
                         return (
                           <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
-                            <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{itemNum}</td>
-                            <td className="px-3 py-2">
+                            <td className="px-2.5 py-1 text-xs font-bold text-slate-400 text-center">{itemNum}</td>
+                            <td className="px-2.5 py-1">
                               <Input
                                 type="text"
                                 placeholder="Uraian pengeluaran..."
@@ -1798,10 +1798,10 @@ export default function ProposalKegiatanPage() {
                                     return c;
                                   });
                                 }}
-                                className={`rounded-lg font-medium text-xs h-8 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 font-bold disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+                                className={`rounded-lg font-medium text-xs h-7.5 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 font-bold disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
-                            <td className="px-3 py-2">
+                            <td className="px-2.5 py-1">
                               <Input
                                 type="text"
                                 placeholder="Nilai / Presentase"
@@ -1815,10 +1815,10 @@ export default function ProposalKegiatanPage() {
                                     return c;
                                   });
                                 }}
-                                className={`rounded-lg font-bold text-xs h-8 w-full text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+                                className={`rounded-lg font-bold text-xs h-7.5 w-full text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
-                            <td className="px-3 py-2">
+                            <td className="px-2.5 py-1">
                               <Input
                                 type="text"
                                 inputMode="numeric"
@@ -1833,11 +1833,11 @@ export default function ProposalKegiatanPage() {
                                     return c;
                                   });
                                 }}
-                                className={`rounded-lg font-bold text-xs h-8 w-full text-right transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
+                                className={`rounded-lg font-bold text-xs h-7.5 w-full text-right transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
-                            <td className="px-3 py-2 text-xs font-bold text-slate-700 text-right font-mono">{fmtRp(anggaran)}</td>
-                            <td className="px-3 py-2 text-center">
+                            <td className="px-2.5 py-1 text-xs font-bold text-slate-700 text-right font-mono">{fmtRp(anggaran)}</td>
+                            <td className="px-2.5 py-1 text-center">
                               <div className="flex flex-wrap items-center justify-center gap-1">
                                 {renderExpenseReportLink(row, idx)}
                               {!isProposalReadOnly && (
