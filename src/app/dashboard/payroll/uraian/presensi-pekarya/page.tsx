@@ -29,6 +29,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  isValidAttendanceScanRange,
   pekaryaAttendanceReportType,
   type PekaryaOfficialLeaveRequest,
 } from '@/lib/payroll/pekaryaOfficialLeave';
@@ -243,6 +244,52 @@ function statusText(view: AttendanceView) {
     : 'Belum dipublikasikan';
 }
 
+function decisionStatusLabel(status: string): string {
+  return {
+    pending: 'Menunggu keputusan',
+    approved: 'Disetujui',
+    declined: 'Ditolak',
+    withdrawn: 'Ditarik',
+  }[status] || 'Status tidak diketahui';
+}
+
+function satpamAbsenceTypeLabel(absenceType: string | undefined): string {
+  return (
+    {
+      sakit: 'Sakit',
+      izin_resmi: 'Izin resmi',
+      darurat: 'Keperluan darurat',
+      lainnya: 'Lainnya',
+    }[absenceType || ''] || 'Izin'
+  );
+}
+
+function satpamPlanStatusLabel(status: string): string {
+  return (
+    {
+      missing: 'Belum dibuat',
+      draft: 'Draf',
+      published: 'Diterbitkan',
+      pending_backfill_review: 'Menunggu pemeriksaan backfill',
+      stale: 'Perlu diperbarui',
+    }[status] || 'Status tidak diketahui'
+  );
+}
+
+function categoryLabel(category: string): string {
+  return (
+    {
+      SATPAM: 'Satpam',
+      SOPIR: 'Sopir',
+      PEKARYA: 'Pekarya',
+      TEKNISI: 'Teknisi',
+      KEBERSIHAN: 'Kebersihan',
+      KEBERSIHAN_PONTI: 'Kebersihan Ponti',
+      PONTI: 'Ponti',
+    }[category] || 'Kategori'
+  );
+}
+
 export default function PekaryaAttendancePage() {
   const searchParams = useSearchParams();
   const { profile } = useAuth();
@@ -277,6 +324,12 @@ export default function PekaryaAttendancePage() {
   } | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [correction, setCorrection] = useState<CorrectionState | null>(null);
+  const correctionTimeRangeInvalid = Boolean(
+    correction?.present &&
+      correction.scanIn &&
+      correction.scanOut &&
+      !isValidAttendanceScanRange(correction.scanIn, correction.scanOut),
+  );
   const [planCorrection, setPlanCorrection] =
     useState<PlanCorrectionState | null>(null);
   const [satpamOperations, setSatpamOperations] =
@@ -511,6 +564,10 @@ export default function PekaryaAttendancePage() {
 
   const saveCorrection = async () => {
     if (!correction) return;
+    if (correctionTimeRangeInvalid) {
+      setError('Scan pulang harus lebih lambat dari scan masuk.');
+      return;
+    }
     setWorking(true);
     setError('');
     try {
@@ -611,7 +668,7 @@ export default function PekaryaAttendancePage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="font-bold text-slate-900">
-              {category || 'Pilih kategori'} · {period}
+              {category ? categoryLabel(category) : 'Pilih kategori'} · {period}
             </p>
             <p className="mt-1 text-sm text-slate-500">
               {data
@@ -731,7 +788,7 @@ export default function PekaryaAttendancePage() {
                             : `Revisi ${plan.revision || 1}`}
                         </h2>
                         <p className="mt-1 text-sm text-slate-500">
-                          Status: {plan.status} ·{' '}
+                          Status: {satpamPlanStatusLabel(plan.status)} ·{' '}
                           {plan.generatedDays?.length || 0} tanggal dihasilkan
                         </p>
                         {backfillDates.length > 0 && (
@@ -823,10 +880,11 @@ export default function PekaryaAttendancePage() {
                             {absence.dutyDate}
                           </p>
                           <p className="text-sm text-slate-600">
-                            {absence.absenceType || 'izin'} · {absence.reason}
+                            {satpamAbsenceTypeLabel(absence.absenceType)} ·{' '}
+                            {absence.reason}
                           </p>
                           <p className="mt-1 text-xs font-semibold uppercase text-slate-400">
-                            {absence.status}
+                            {decisionStatusLabel(absence.status)}
                             {absence.late ? ' · diajukan terlambat' : ''}
                             {absence.status === 'approved'
                               ? ` · ${money(absence.approvedAmount || 12_500)}`
@@ -1113,7 +1171,7 @@ export default function PekaryaAttendancePage() {
                         </p>
                         <p className="text-sm text-slate-600">{leave.reason}</p>
                         <p className="mt-1 text-xs font-semibold uppercase text-slate-400">
-                          {leave.status}
+                          {decisionStatusLabel(leave.status)}
                           {leave.status === 'approved' && leave.approvedAmount
                             ? ` · ${money(leave.approvedAmount)}`
                             : ''}
@@ -1539,9 +1597,14 @@ export default function PekaryaAttendancePage() {
                   type="checkbox"
                   className="h-5 w-5"
                   checked={correction.present}
-                  onChange={(event) =>
-                    setCorrection({ ...correction, present: event.target.checked })
-                  }
+                  onChange={(event) => {
+                    const present = event.target.checked;
+                    setCorrection({
+                      ...correction,
+                      present,
+                      ...(present ? {} : { scanIn: '', scanOut: '' }),
+                    });
+                  }}
                 />
                 <span className="font-semibold">Anggap hadir penuh pada tanggal ini</span>
               </label>
@@ -1552,6 +1615,7 @@ export default function PekaryaAttendancePage() {
                     id="scan-in"
                     type="time"
                     step="1"
+                    disabled={!correction.present}
                     value={correction.scanIn}
                     onChange={(event) =>
                       setCorrection({ ...correction, scanIn: event.target.value })
@@ -1564,6 +1628,7 @@ export default function PekaryaAttendancePage() {
                     id="scan-out"
                     type="time"
                     step="1"
+                    disabled={!correction.present}
                     value={correction.scanOut}
                     onChange={(event) =>
                       setCorrection({ ...correction, scanOut: event.target.value })
@@ -1571,6 +1636,11 @@ export default function PekaryaAttendancePage() {
                   />
                 </div>
               </div>
+              {correctionTimeRangeInvalid && (
+                <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                  Scan pulang harus lebih lambat dari scan masuk.
+                </p>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="correction-reason">Alasan wajib</Label>
                 <textarea
@@ -1596,7 +1666,12 @@ export default function PekaryaAttendancePage() {
             <Button
               className="min-h-12 gap-2"
               onClick={() => void saveCorrection()}
-              disabled={working || !correction || correction.reason.trim().length < 8}
+              disabled={
+                working ||
+                !correction ||
+                correction.reason.trim().length < 8 ||
+                correctionTimeRangeInvalid
+              }
             >
               <CheckCircle2 className="h-4 w-4" />
               Simpan Koreksi

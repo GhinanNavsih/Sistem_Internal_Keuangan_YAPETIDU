@@ -8,10 +8,15 @@ import {
   PEKARYA_ATTENDANCE_RATES,
   resolveEmployeeAttendanceNipy,
 } from '@/lib/payroll/attendance';
-import { assertRequestId } from '@/lib/payroll/domain';
+import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
 import { pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import {
+  isPekaryaOfficialLeaveCategory,
+  isValidAttendanceScanRange,
+} from '@/lib/payroll/pekaryaOfficialLeave';
+import {
   attendanceCorrectionHeadId,
+  ATTENDANCE_IMPORTS_COLLECTION,
   PEKARYA_CORRECTIONS_COLLECTION,
   PEKARYA_CORRECTION_HEADS_COLLECTION,
   PEKARYA_PUBLICATIONS_COLLECTION,
@@ -71,8 +76,7 @@ export async function POST(request: NextRequest) {
       throw new HttpError(400, 'Tanggal koreksi berada di luar periode payroll.');
     }
     if (
-      !category ||
-      category === 'SATPAM' ||
+      !isPekaryaOfficialLeaveCategory(category) ||
       !actor.permittedCategories.includes(category)
     ) {
       throw new HttpError(403, 'Kategori koreksi tidak diizinkan.');
@@ -106,8 +110,9 @@ export async function POST(request: NextRequest) {
     if (
       !employeeSnapshot.exists ||
       employee?.employment?.jobCategory !== category ||
-      (employee?.employment?.status !== 'active' &&
-        employee?.flags?.isActive !== true)
+      employee?.employment?.status !== 'active' ||
+      employee?.flags?.isActive === false ||
+      employee?.flags?.isPayrollEligible === false
     ) {
       throw new HttpError(409, 'Pegawai aktif pada kategori ini tidak ditemukan.');
     }
@@ -119,6 +124,9 @@ export async function POST(request: NextRequest) {
     const employeeView = view.employees.find(
       (candidate) => candidate.employeeId === employeeId,
     );
+    if (!employeeView) {
+      throw new HttpError(409, 'Pegawai tidak tersedia dalam presensi Pekarya periode ini.');
+    }
     const rawDay =
       employeeView?.days.find((day) => day.date === date) || null;
     const headRef = adminDb
@@ -136,6 +144,12 @@ export async function POST(request: NextRequest) {
     const uraianRef = adminDb
       .collection('UraianGaji')
       .doc(`${period.replace('-', '_')}_${category}`);
+    const slipRef = adminDb
+      .collection('PayrollSlipStates')
+      .doc(`${period.replace('-', '_')}_${employeeId}`);
+    const importRef = adminDb
+      .collection(ATTENDANCE_IMPORTS_COLLECTION)
+      .doc(period);
     const requestHash = createHash('sha256')
       .update(
         JSON.stringify({
@@ -148,6 +162,8 @@ export async function POST(request: NextRequest) {
           scanIn,
           scanOut,
           expectedRevision,
+          importRevisionId: view.importRevisionId,
+          calendarRevision: view.calendarRevision,
         }),
       )
       .digest('hex');
@@ -158,6 +174,8 @@ export async function POST(request: NextRequest) {
         idempotencySnapshot,
         publicationSnapshot,
         uraianSnapshot,
+        slipSnapshot,
+        importSnapshot,
       ] =
         await Promise.all([
           transaction.get(adminDb.collection('PayrollPeriods').doc(period)),
@@ -165,6 +183,8 @@ export async function POST(request: NextRequest) {
           transaction.get(idempotencyRef),
           transaction.get(publicationRef),
           transaction.get(uraianRef),
+          transaction.get(slipRef),
+          transaction.get(importRef),
         ]);
       if (idempotencySnapshot.exists) {
         if (idempotencySnapshot.data()?.requestHash !== requestHash) {
@@ -178,6 +198,34 @@ export async function POST(request: NextRequest) {
         };
       }
       assertPeriodAcceptsInput(periodSnapshot.data());
+      if (
+        slipSnapshot.exists &&
+        isImmutablePayrollStatus(slipSnapshot.data()?.status)
+      ) {
+        throw new HttpError(
+          409,
+          'Slip pegawai sudah immutable; gunakan koreksi finansial.',
+        );
+      }
+      if (
+        String(importSnapshot.data()?.activeRevisionId || '') !==
+        view.importRevisionId
+      ) {
+        throw new HttpError(
+          409,
+          'Revisi import presensi berubah. Muat ulang sebelum mengoreksi.',
+        );
+      }
+      const currentCalendarRevision = Number(
+        (periodSnapshot.data()?.workCalendar as { revision?: number } | undefined)
+          ?.revision || 1,
+      );
+      if (currentCalendarRevision !== view.calendarRevision) {
+        throw new HttpError(
+          409,
+          'Kalender kerja berubah. Muat ulang sebelum mengoreksi.',
+        );
+      }
       const currentRevision = Number(headSnapshot.data()?.revision || 0);
       if (currentRevision !== expectedRevision) {
         throw new HttpError(
@@ -192,13 +240,45 @@ export async function POST(request: NextRequest) {
         typeof headSnapshot.data()?.effectiveValue === 'object'
           ? headSnapshot.data()!.effectiveValue
           : {};
-      const effective = {
+      const effective: Record<string, unknown> = {
         ...previousEffective,
         ...(present !== undefined ? { present } : {}),
         ...(workStatus !== undefined ? { workStatus } : {}),
         ...(scanIn !== undefined ? { scanIn } : {}),
         ...(scanOut !== undefined ? { scanOut } : {}),
       };
+      if (present === false) {
+        effective.scanIn = null;
+        effective.scanOut = null;
+        if (workStatus === undefined) effective.workStatus = 'TIDAK MASUK';
+      }
+      const hasEffectiveScanIn =
+        effective.scanIn !== null && effective.scanIn !== undefined;
+      const hasEffectiveScanOut =
+        effective.scanOut !== null && effective.scanOut !== undefined;
+      const normalizedEffectiveScanIn = hasEffectiveScanIn
+        ? normalizeAttendanceTime(effective.scanIn)
+        : null;
+      const normalizedEffectiveScanOut = hasEffectiveScanOut
+        ? normalizeAttendanceTime(effective.scanOut)
+        : null;
+      if (
+        (hasEffectiveScanIn && !normalizedEffectiveScanIn) ||
+        (hasEffectiveScanOut && !normalizedEffectiveScanOut) ||
+        (normalizedEffectiveScanIn &&
+          normalizedEffectiveScanOut &&
+          !isValidAttendanceScanRange(
+            normalizedEffectiveScanIn,
+            normalizedEffectiveScanOut,
+          ))
+      ) {
+        throw new HttpError(
+          400,
+          'Scan pulang harus lebih lambat dari scan masuk.',
+        );
+      }
+      if (hasEffectiveScanIn) effective.scanIn = normalizedEffectiveScanIn;
+      if (hasEffectiveScanOut) effective.scanOut = normalizedEffectiveScanOut;
       const record = {
         period,
         category,

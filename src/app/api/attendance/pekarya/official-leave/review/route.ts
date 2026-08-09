@@ -16,12 +16,14 @@ import {
 import { pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import {
   isPekaryaOfficialLeaveCategory,
+  isValidAttendanceScanRange,
   officialLeaveAttendanceCorrection,
   scanAttendanceCorrection,
   PEKARYA_OFFICIAL_LEAVE_TYPE,
 } from '@/lib/payroll/pekaryaOfficialLeave';
 import {
   attendanceCorrectionHeadId,
+  ATTENDANCE_IMPORTS_COLLECTION,
   PEKARYA_CORRECTIONS_COLLECTION,
   PEKARYA_CORRECTION_HEADS_COLLECTION,
   PEKARYA_PUBLICATIONS_COLLECTION,
@@ -47,11 +49,6 @@ const ACTIONS = new Set(['approve', 'decline']);
 
 function stableHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
-}
-
-function clockMinutes(value: string): number {
-  const [hours, minutes] = value.split(':').map(Number);
-  return hours * 60 + minutes;
 }
 
 export async function POST(request: NextRequest) {
@@ -117,7 +114,7 @@ export async function POST(request: NextRequest) {
     if (reportType === 'scan') {
       scanIn = normalizeAttendanceTime(leave.scanIn);
       scanOut = normalizeAttendanceTime(leave.scanOut);
-      if (!scanIn || !scanOut || clockMinutes(scanOut) <= clockMinutes(scanIn)) {
+      if (!scanIn || !scanOut || !isValidAttendanceScanRange(scanIn, scanOut)) {
         throw new HttpError(409, 'Data scan masuk atau scan pulang tidak valid.');
       }
     }
@@ -190,6 +187,9 @@ export async function POST(request: NextRequest) {
     const slipRef = adminDb
       .collection('PayrollSlipStates')
       .doc(`${period.replace('-', '_')}_${employeeId}`);
+    const importRef = adminDb
+      .collection(ATTENDANCE_IMPORTS_COLLECTION)
+      .doc(period);
     const requestHash = stableHash({
       officialLeaveRequestId,
       reportType,
@@ -210,6 +210,7 @@ export async function POST(request: NextRequest) {
         publicationSnapshot,
         uraianSnapshot,
         slipSnapshot,
+        importSnapshot,
         idempotencySnapshot,
       ] = await Promise.all([
         transaction.get(leaveRef),
@@ -218,6 +219,7 @@ export async function POST(request: NextRequest) {
         transaction.get(publicationRef),
         transaction.get(uraianRef),
         transaction.get(slipRef),
+        transaction.get(importRef),
         transaction.get(idempotencyRef),
       ]);
       if (idempotencySnapshot.exists) {
@@ -235,6 +237,25 @@ export async function POST(request: NextRequest) {
         periodSnapshot.data(),
         'Periode payroll sudah ditutup; keputusan izin tidak dapat diubah.',
       );
+      if (
+        String(importSnapshot.data()?.activeRevisionId || '') !==
+        view.importRevisionId
+      ) {
+        throw new HttpError(
+          409,
+          'Revisi import presensi berubah. Muat ulang sebelum memutuskan.',
+        );
+      }
+      const currentCalendarRevision = Number(
+        (periodSnapshot.data()?.workCalendar as { revision?: number } | undefined)
+          ?.revision || 1,
+      );
+      if (currentCalendarRevision !== view.calendarRevision) {
+        throw new HttpError(
+          409,
+          'Kalender kerja berubah. Muat ulang sebelum memutuskan.',
+        );
+      }
       if (
         slipSnapshot.exists &&
         isImmutablePayrollStatus(slipSnapshot.data()?.status)

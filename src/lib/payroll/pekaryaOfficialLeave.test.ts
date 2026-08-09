@@ -7,6 +7,7 @@ import {
 } from './attendance';
 import {
   isPekaryaOfficialLeaveCategory,
+  isValidAttendanceScanRange,
   officialLeaveAttendanceCorrection,
   pekaryaAttendanceReportType,
   scanAttendanceCorrection,
@@ -62,4 +63,12 @@ test('Pekarya attendance requests distinguish scan reports from legacy official 
     scanIn: '08:00:00',
     scanOut: '14:00:00',
   });
+});
+
+test('attendance scan ranges must move forward within the same day', () => {
+  assert.equal(isValidAttendanceScanRange('08:00', '14:00'), true);
+  assert.equal(isValidAttendanceScanRange('08:00:01', '08:00:02'), true);
+  assert.equal(isValidAttendanceScanRange('14:00', '08:00'), false);
+  assert.equal(isValidAttendanceScanRange('08:00', '08:00'), false);
+  assert.equal(isValidAttendanceScanRange('not-a-time', '14:00'), false);
 });

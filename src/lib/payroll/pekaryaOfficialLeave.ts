@@ -2,6 +2,7 @@ import {
   isPekaryaJobCategory,
   type PekaryaJobCategory,
 } from './pekaryaSpj';
+import { normalizeAttendanceTime } from './attendance';
 import type { PhotoAuditMetadata } from './domain';
 
 export const PEKARYA_OFFICIAL_LEAVE_TYPE = 'izin_resmi' as const;
@@ -67,4 +68,23 @@ export function scanAttendanceCorrection(scanIn: string, scanOut: string) {
     scanIn,
     scanOut,
   } as const;
+}
+
+export function isValidAttendanceScanRange(
+  scanIn: unknown,
+  scanOut: unknown,
+): boolean {
+  const normalizedScanIn = normalizeAttendanceTime(scanIn);
+  const normalizedScanOut = normalizeAttendanceTime(scanOut);
+  if (!normalizedScanIn || !normalizedScanOut) return false;
+
+  const [inHours, inMinutes, inSeconds] = normalizedScanIn
+    .split(':')
+    .map(Number);
+  const [outHours, outMinutes, outSeconds] = normalizedScanOut
+    .split(':')
+    .map(Number);
+  const scanInSeconds = inHours * 3_600 + inMinutes * 60 + inSeconds;
+  const scanOutSeconds = outHours * 3_600 + outMinutes * 60 + outSeconds;
+  return scanOutSeconds > scanInSeconds;
 }

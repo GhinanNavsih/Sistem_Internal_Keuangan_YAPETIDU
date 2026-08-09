@@ -141,9 +141,18 @@ export async function POST(request: NextRequest) {
       .get();
     if (
       !employeeSnapshot.exists ||
-      employeeSnapshot.data()?.employment?.jobCategory !== 'SATPAM'
+      employeeSnapshot.data()?.employment?.jobCategory !== 'SATPAM' ||
+      employeeSnapshot.data()?.employment?.status !== 'active' ||
+      employeeSnapshot.data()?.flags?.isActive === false ||
+      employeeSnapshot.data()?.flags?.isPayrollEligible === false
     ) {
       throw new HttpError(409, 'Akun ini tidak terhubung ke pegawai Satpam.');
+    }
+    if (
+      actor.permittedCategories.length > 0 &&
+      !actor.permittedCategories.includes('SATPAM')
+    ) {
+      throw new HttpError(403, 'Akun ini tidak memiliki akses kategori SATPAM.');
     }
     const body = await request.json();
     const action = String(body.action || 'submit');
@@ -201,6 +210,9 @@ export async function POST(request: NextRequest) {
     const idempotencyRef = adminDb
       .collection('FinancialIdempotencyKeys')
       .doc(`${actor.uid}__${requestId}`);
+    const planRef = adminDb
+      .collection('SatpamDutyPlans')
+      .doc(plan.id);
 
     let absenceType = '';
     let reason = '';
@@ -245,10 +257,16 @@ export async function POST(request: NextRequest) {
       planRevision: plan.revision,
     });
     const result = await adminDb.runTransaction(async (transaction) => {
-      const [beforeSnapshot, idempotencySnapshot, latestPeriodSnapshot] = await Promise.all([
+      const [
+        beforeSnapshot,
+        idempotencySnapshot,
+        latestPeriodSnapshot,
+        latestPlanSnapshot,
+      ] = await Promise.all([
         transaction.get(absenceRef),
         transaction.get(idempotencyRef),
         transaction.get(adminDb.collection('PayrollPeriods').doc(period)),
+        transaction.get(planRef),
       ]);
       if (idempotencySnapshot.exists) {
         if (idempotencySnapshot.data()?.requestHash !== requestHash) {
@@ -267,6 +285,18 @@ export async function POST(request: NextRequest) {
         throw new HttpError(
           409,
           'Periode payroll sudah ditutup; pengajuan izin tidak dapat diubah.',
+        );
+      }
+      if (
+        !isSatpamDutyPlanRequired(
+          period,
+          latestPeriodSnapshot.data() || null,
+        ) ||
+        Number(latestPlanSnapshot.data()?.revision || 0) !== plan.revision
+      ) {
+        throw new HttpError(
+          409,
+          'Rencana dinas berubah. Muat ulang sebelum mengajukan izin.',
         );
       }
       const before = beforeSnapshot.exists ? beforeSnapshot.data()! : null;

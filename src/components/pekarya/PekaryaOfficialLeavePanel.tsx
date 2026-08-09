@@ -52,6 +52,10 @@ type OpenPeriod = {
 const DEFAULT_SCAN_IN = '08:00';
 const DEFAULT_SCAN_OUT = '14:00';
 const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const REPORT_TYPE_LABELS: Record<PekaryaAttendanceReportType, string> = {
+  scan: 'Scan Masuk & Scan Keluar',
+  izin_resmi: 'Izin Resmi (Hari Penuh)',
+};
 
 function statusLabel(status: PekaryaOfficialLeaveRequest['status']): string {
   return {
@@ -63,9 +67,7 @@ function statusLabel(status: PekaryaOfficialLeaveRequest['status']): string {
 }
 
 function reportTypeLabel(request: PekaryaOfficialLeaveRequest): string {
-  return pekaryaAttendanceReportType(request) === 'scan'
-    ? 'Scan Masuk & Scan Keluar'
-    : 'Izin Resmi';
+  return REPORT_TYPE_LABELS[pekaryaAttendanceReportType(request)];
 }
 
 function timeToMinutes(value: string): number {
@@ -326,7 +328,7 @@ export function PekaryaOfficialLeavePanel(props: {
                 id="official-leave-report-type"
                 className="min-h-14 w-full rounded-xl border-slate-300 bg-white px-4 text-base font-bold text-slate-800 shadow-none hover:bg-slate-50"
               >
-                <SelectValue />
+                <SelectValue>{REPORT_TYPE_LABELS[reportType]}</SelectValue>
               </SelectTrigger>
               <SelectContent
                 side="top"

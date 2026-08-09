@@ -80,6 +80,18 @@ export async function POST(request: NextRequest) {
     const absence = beforeSnapshot.data()!;
     const period = String(absence.period || '');
     const employeeId = String(absence.employeeId || '');
+    const employeeRef = adminDb.collection('Employees_BlueCollar').doc(employeeId);
+    const employeeSnapshot = await employeeRef.get();
+    const employee = employeeSnapshot.data();
+    if (
+      !employeeSnapshot.exists ||
+      employee?.employment?.jobCategory !== 'SATPAM' ||
+      employee?.employment?.status !== 'active' ||
+      employee?.flags?.isActive === false ||
+      employee?.flags?.isPayrollEligible === false
+    ) {
+      throw new HttpError(409, 'Pegawai Satpam aktif tidak ditemukan.');
+    }
     const plan = await loadSatpamDutyPlan(period, String(absence.teamId || ''));
     if (!plan) {
       throw new HttpError(409, 'Rencana dinas sumber tidak ditemukan.');
@@ -154,12 +166,14 @@ export async function POST(request: NextRequest) {
         latestPlan,
         periodSnapshot,
         slipSnapshot,
+        latestEmployee,
         idempotencySnapshot,
       ] = await Promise.all([
         transaction.get(absenceRef),
         transaction.get(planRef),
         transaction.get(periodRef),
         transaction.get(slipRef),
+        transaction.get(employeeRef),
         transaction.get(idempotencyRef),
       ]);
       if (idempotencySnapshot.exists) {
@@ -181,6 +195,16 @@ export async function POST(request: NextRequest) {
         isImmutablePayrollStatus(slipSnapshot.data()?.status)
       ) {
         throw new HttpError(409, 'Slip pegawai sudah immutable; gunakan koreksi finansial.');
+      }
+      const latestEmployeeData = latestEmployee.data();
+      if (
+        !latestEmployee.exists ||
+        latestEmployeeData?.employment?.jobCategory !== 'SATPAM' ||
+        latestEmployeeData?.employment?.status !== 'active' ||
+        latestEmployeeData?.flags?.isActive === false ||
+        latestEmployeeData?.flags?.isPayrollEligible === false
+      ) {
+        throw new HttpError(409, 'Pegawai Satpam aktif tidak ditemukan.');
       }
       const current = latestAbsence.data()!;
       if (Number(current.revision || 0) !== expectedRevision) {

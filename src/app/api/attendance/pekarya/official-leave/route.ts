@@ -15,6 +15,7 @@ import {
 import { pekaryaPayrollPeriodForDate, pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import {
   isPekaryaOfficialLeaveCategory,
+  isValidAttendanceScanRange,
   PEKARYA_OFFICIAL_LEAVE_TYPE,
 } from '@/lib/payroll/pekaryaOfficialLeave';
 import {
@@ -97,11 +98,6 @@ function parsePhotoAuditMetadata(value: unknown): PhotoAuditMetadata {
     locationAddress: stringOrNull('locationAddress', 500),
     locationPlaceId: stringOrNull('locationPlaceId', 200),
   };
-}
-
-function clockMinutes(value: string): number {
-  const [hours, minutes] = value.split(':').map(Number);
-  return hours * 60 + minutes;
 }
 
 async function loadLinkedPekarya(actor: Awaited<ReturnType<typeof requireAuthenticatedProfile>>) {
@@ -269,7 +265,7 @@ export async function POST(request: NextRequest) {
             'Scan masuk dan scan pulang wajib diisi dengan format jam yang valid.',
           );
         }
-        if (clockMinutes(scanOut) <= clockMinutes(scanIn)) {
+        if (!isValidAttendanceScanRange(scanIn, scanOut)) {
           throw new HttpError(
             400,
             'Scan pulang harus lebih lambat dari scan masuk.',
