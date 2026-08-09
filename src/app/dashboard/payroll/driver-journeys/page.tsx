@@ -52,11 +52,22 @@ import {
   UserCheck,
   Users,
   Check,
+  ClipboardCheck,
+  ThumbsDown,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
+import { ImageExifViewer } from '@/components/ImageExifViewer';
+import {
+  DriverJourneyAuditDialog,
+  type DriverAuditReport,
+  type DriverReviewPayload,
+} from '@/components/DriverJourneyAuditDialog';
+import type { PhotoAuditMetadata } from '@/lib/payroll/domain';
 import { DriverPiketSchedule, PIKET_STATIONS, PiketStationKey } from '@/lib/payroll/driverPiket';
 import { getMealAllowanceForDuration, calculateEstimatedDriverWage } from '@/lib/payroll/driverJourney';
-import { authenticatedJson } from '@/lib/payroll/client';
+import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import { pekaryaPayrollPeriodForDate, pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
+import { syncActivityToPayslip } from '@/utils/payslipSync';
 import {
   collection,
   query,
@@ -226,6 +237,20 @@ function DriverJourneysContent() {
   // Driver Assignment States
   const [drivers, setDrivers] = useState<any[]>([]);
   const [assignedDriverId, setAssignedDriverId] = useState<string>('');
+
+  // ── SPJ Audit States ──
+  // Settled journeys carry an ActivityReports doc; auditing one from here runs
+  // through exactly the same review endpoint as the Activity Review page.
+  const [reportsByJourneyId, setReportsByJourneyId] = useState<Record<string, DriverAuditReport>>({});
+  const [auditReport, setAuditReport] = useState<DriverAuditReport | null>(null);
+  const [declineTarget, setDeclineTarget] = useState<DriverAuditReport | null>(null);
+  const [declineReason, setDeclineReason] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [selectedExifImage, setSelectedExifImage] = useState<{
+    url: string;
+    title: string;
+    auditMetadata?: PhotoAuditMetadata | null;
+  } | null>(null);
 
   // Piket Schedule States
   const [activeTab, setActiveTab] = useState<'journeys' | 'piket'>('journeys');
@@ -612,6 +637,139 @@ function DriverJourneysContent() {
 
     return () => unsubscribe();
   }, [periodToken]);
+
+  // ── Real-time listener for the SPJ reports settled against these journeys ──
+  // A journey's report is filed under the Pekarya payroll period, which spans
+  // two calendar months around the 26th, so both source months are watched.
+  useEffect(() => {
+    const sourceMonths = pekaryaPayrollWindow(periodToken).sourceMonths;
+    const snapshots = new Map<string, DriverAuditReport[]>();
+
+    const applySnapshots = () => {
+      const byJourneyId: Record<string, DriverAuditReport> = {};
+      snapshots.forEach((reports) => {
+        reports.forEach((report) => {
+          if (report.journeyId) {
+            byJourneyId[report.journeyId] = report;
+          }
+        });
+      });
+      setReportsByJourneyId(byJourneyId);
+    };
+
+    const unsubscribes = sourceMonths.map((sourcePeriod) => {
+      const q = query(
+        collection(db, 'ActivityReports'),
+        where('period', '==', sourcePeriod),
+        where('jobCategory', '==', 'SOPIR'),
+      );
+      return onSnapshot(
+        q,
+        (snap) => {
+          snapshots.set(
+            sourcePeriod,
+            snap.docs.map((d) => ({ id: d.id, ...d.data() }) as DriverAuditReport),
+          );
+          applySnapshots();
+        },
+        (err) => {
+          console.error(`Error fetching SOPIR activity reports for ${sourcePeriod}:`, err);
+          snapshots.set(sourcePeriod, []);
+          applySnapshots();
+        },
+      );
+    });
+
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+  }, [periodToken]);
+
+  // Keep the open audit dialog in sync with live report edits without losing
+  // the auditor's in-progress form (the dialog re-seeds only on id change).
+  const openAuditReport = auditReport
+    ? (Object.values(reportsByJourneyId).find((r) => r.id === auditReport.id) ?? auditReport)
+    : null;
+
+  // ── Approve a driver's SPJ after auditing it ──
+  const handleApproveSopirAudit = async (driverReview: DriverReviewPayload) => {
+    if (!auditReport || !user) return;
+    setActionLoading(true);
+    try {
+      await authenticatedJson('/api/pekarya/activities/review', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('driver_review'),
+          action: 'approve_driver',
+          reason: 'Audit dan persetujuan perjalanan oleh Kepala SatKer',
+          items: [{ reportId: auditReport.id, driverReview }],
+        }),
+      });
+
+      setMessage({
+        type: 'success',
+        text: `Laporan perjalanan dinas ${auditReport.employeeName} berhasil diaudit dan disetujui.`,
+      });
+      setAuditReport(null);
+      try {
+        await syncActivityToPayslip(
+          db,
+          auditReport.employeeId,
+          pekaryaPayrollPeriodForDate(auditReport.activityDate),
+        );
+      } catch (syncErr) {
+        console.error('Error syncing payslip in handleApproveSopirAudit:', syncErr);
+      }
+    } catch (err) {
+      console.error('Error approving driver audit:', err);
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Gagal menyetujui laporan perjalanan dinas.',
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // ── Decline a driver's SPJ (the sopir may edit and resubmit) ──
+  const handleDeclineSopirReport = async () => {
+    if (!declineTarget || !user) return;
+    setActionLoading(true);
+    try {
+      const reason = declineReason.trim();
+      await authenticatedJson('/api/pekarya/activities/review', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('activity_decline'),
+          action: 'decline',
+          reason,
+          items: [{ reportId: declineTarget.id, reason }],
+        }),
+      });
+      setMessage({
+        type: 'success',
+        text: `Perjalanan "${declineTarget.activityName}" oleh ${declineTarget.employeeName} telah ditolak.`,
+      });
+      const declined = declineTarget;
+      setDeclineTarget(null);
+      setDeclineReason('');
+      try {
+        await syncActivityToPayslip(
+          db,
+          declined.employeeId,
+          pekaryaPayrollPeriodForDate(declined.activityDate),
+        );
+      } catch (syncErr) {
+        console.error('Error syncing payslip in handleDeclineSopirReport:', syncErr);
+      }
+    } catch (err) {
+      console.error('Error declining driver report:', err);
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Gagal menolak laporan perjalanan dinas.',
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   // ── Automatic debounced route calculation ──
   useEffect(() => {
@@ -1078,6 +1236,22 @@ function DriverJourneysContent() {
                                   <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
                                 </div>
                               )}
+                              {j.status === 'submitted' && (
+                                <div className="space-y-1">
+                                  <Badge className="bg-sky-50 text-sky-700 border border-sky-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                    Menunggu Audit
+                                  </Badge>
+                                  <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
+                                </div>
+                              )}
+                              {j.status === 'declined' && (
+                                <div className="space-y-1">
+                                  <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
+                                    Ditolak
+                                  </Badge>
+                                  <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
+                                </div>
+                              )}
                               {j.status === 'completed' && (
                                 <div className="space-y-1">
                                   <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
@@ -1089,6 +1263,26 @@ function DriverJourneysContent() {
                             </TableCell>
                             <TableCell className="text-right pr-6">
                               <div className="flex items-center justify-end gap-1.5">
+                                {(() => {
+                                  const report = reportsByJourneyId[j.id];
+                                  if (!report) return null;
+                                  const isPending = report.status === 'pending';
+                                  return (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setAuditReport(report)}
+                                      className={`h-8 px-2.5 text-[10px] font-extrabold rounded-xl cursor-pointer border ${isPending
+                                        ? 'text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
+                                        : 'text-slate-500 bg-slate-50 border-slate-200 hover:bg-slate-100'
+                                        }`}
+                                      title={isPending ? 'Audit & setujui SPJ perjalanan' : 'Lihat detail audit SPJ'}
+                                    >
+                                      <ClipboardCheck className="w-3.5 h-3.5 mr-1" />
+                                      {isPending ? 'Audit SPJ' : 'Detail SPJ'}
+                                    </Button>
+                                  );
+                                })()}
                                 {['unassigned', 'assigned'].includes(j.status) && (
                                   <Button
                                     variant="ghost"
@@ -1951,6 +2145,87 @@ function DriverJourneysContent() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Driver (Sopir) SPJ Audit & Edit Modal ─────────────────────────── */}
+      <DriverJourneyAuditDialog
+        report={openAuditReport}
+        onOpenChange={(open) => { if (!open) setAuditReport(null); }}
+        actionLoading={actionLoading}
+        onApprove={handleApproveSopirAudit}
+        onDecline={() => {
+          setDeclineTarget(auditReport);
+          setDeclineReason('');
+          setAuditReport(null);
+        }}
+        onOpenPhoto={(image) => setSelectedExifImage(image)}
+      />
+
+      {/* ── Decline SPJ Dialog ────────────────────────────────────────────── */}
+      <Dialog open={declineTarget !== null} onOpenChange={(open) => { if (!open) setDeclineTarget(null); }}>
+        <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl bg-white p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
+              <ThumbsDown className="w-5 h-5 text-rose-500" />
+              Tolak Perjalanan
+            </DialogTitle>
+            <DialogDescription className="text-slate-500">
+              Tolak perjalanan <strong>&quot;{declineTarget?.activityName}&quot;</strong> oleh{' '}
+              <strong>{declineTarget?.employeeName}</strong>. Sopir dapat mengedit dan mengajukan
+              ulang laporan yang ditolak.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400 font-semibold">Tanggal</span>
+                <span className="font-bold text-slate-700">{declineTarget?.activityDate}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400 font-semibold">Waktu</span>
+                <span className="font-bold text-slate-700">
+                  {declineTarget?.timeStart} – {declineTarget?.timeEnd}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-500 uppercase">Alasan Penolakan (Opsional)</Label>
+              <Input
+                type="text"
+                placeholder="Contoh: Bukti BBM tidak sesuai nominal"
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+                className="rounded-xl border-slate-200 focus:border-rose-400 focus:ring-rose-400/20 text-sm"
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-3">
+            <Button variant="ghost" onClick={() => setDeclineTarget(null)} className="rounded-xl font-bold text-slate-500">
+              Batal
+            </Button>
+            <Button
+              onClick={handleDeclineSopirReport}
+              disabled={actionLoading}
+              className="rounded-xl bg-rose-500 text-white font-bold hover:bg-rose-600 shadow-md shadow-rose-100"
+            >
+              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <XCircle className="w-4 h-4 mr-2" />}
+              Konfirmasi Tolak
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* EXIF Metadata Audit Modal for Kepala SatKer */}
+      {selectedExifImage && (
+        <ImageExifViewer
+          imageUrl={selectedExifImage.url}
+          title={selectedExifImage.title}
+          activityDate={openAuditReport?.activityDate}
+          auditMetadata={selectedExifImage.auditMetadata}
+          isOpen={Boolean(selectedExifImage)}
+          onClose={() => setSelectedExifImage(null)}
+        />
+      )}
       </div>
     </div>
   );

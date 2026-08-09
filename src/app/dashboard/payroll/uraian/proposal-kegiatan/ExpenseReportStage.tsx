@@ -1,35 +1,52 @@
 "use client";
 
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   AlertCircle,
-  ArrowLeft,
-  ArrowRight,
+  Check,
   CheckCircle2,
-  FileText,
-  Layers,
+  FileDown,
   Link2,
-  Pencil,
+  Loader2,
+  Lock,
   Plus,
+  Search,
   Trash2,
+  Users,
+  X,
 } from 'lucide-react';
 import {
-  ExpenseReport,
-  ExpenseReportType,
-  ProposalExpenseRow,
-  getExpenseReportDefinition,
-  getExpenseReportRowCount,
-  getExpenseReportTotal,
+  createExpenseReport,
+  createExpenseReportRow,
   createStableId,
+  ExpenseReport,
+  ExpenseReportMode,
+  ExpenseReportRow,
+  getExpenseGroupRows,
+  getExpenseReportActualTotal,
+  getExpenseReportBudgetTotal,
+  normalizeExpenseReport,
+  parseProposalQty,
+  ProposalExpenseRow,
+  sanitizeForFirestore,
+  seedExpenseReportRows,
+  validateExpenseReport,
 } from '@/lib/payroll/proposalExpenseReports';
 
 interface EmployeeOption {
   id: string;
   name: string;
   role?: string;
+  department?: string;
 }
 
 interface ExpenseReportStageProps {
@@ -37,112 +54,148 @@ interface ExpenseReportStageProps {
   expenseReports: ExpenseReport[];
   employees: EmployeeOption[];
   unlocked: boolean;
-  selectedReportId: string | null;
-  onSelectReport: (reportId: string | null) => void;
-  onOpenLink: (rowIndex: number) => void;
-  onUpdateReport: (reportId: string, updater: (report: ExpenseReport) => ExpenseReport) => void;
+  readOnly?: boolean;
+  openGroupRowId?: string | null;
+  onOpenGroupHandled?: () => void;
+  onUpsertReport: (report: ExpenseReport) => void;
+  onUnlinkReport: (reportId: string) => void;
   onPrintReport: (report: ExpenseReport) => void;
-  onBackToLpj: () => void;
   fmtRp: (amount: number) => string;
-  parseQty: (value: string) => number;
+  parseQty?: (value: string) => number;
 }
 
-const accentClasses: Record<ExpenseReport['reportType'], { card: string; badge: string; border: string; button: string }> = {
-  proposal_examiner: {
-    card: 'bg-blue-50/50 border-blue-100',
-    badge: 'bg-blue-100 text-blue-700 border-blue-200',
-    border: 'border-blue-200',
-    button: 'bg-blue-600 hover:bg-blue-700',
-  },
-  munaqosyah_examiner: {
-    card: 'bg-indigo-50/50 border-indigo-100',
-    badge: 'bg-indigo-100 text-indigo-700 border-indigo-200',
-    border: 'border-indigo-200',
-    button: 'bg-indigo-600 hover:bg-indigo-700',
-  },
-  pembimbing: {
-    card: 'bg-emerald-50/50 border-emerald-100',
-    badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    border: 'border-emerald-200',
-    button: 'bg-emerald-600 hover:bg-emerald-700',
-  },
-  pedoman_kti: {
-    card: 'bg-violet-50/50 border-violet-100',
-    badge: 'bg-violet-100 text-violet-700 border-violet-200',
-    border: 'border-violet-200',
-    button: 'bg-violet-600 hover:bg-violet-700',
-  },
-  committee: {
-    card: 'bg-rose-50/50 border-rose-100',
-    badge: 'bg-rose-100 text-rose-700 border-rose-200',
-    border: 'border-rose-200',
-    button: 'bg-rose-600 hover:bg-rose-700',
-  },
-  receipt: {
-    card: 'bg-amber-50/50 border-amber-100',
-    badge: 'bg-amber-100 text-amber-700 border-amber-200',
-    border: 'border-amber-200',
-    button: 'bg-amber-600 hover:bg-amber-700',
-  },
+const parseMoney = (value: string): number => {
+  const parsed = parseInt(value.replace(/\D/g, ''), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const parseMoney = (value: string): number => parseInt(value.replace(/\D/g, ''), 10) || 0;
+function modeLabel(mode: ExpenseReportMode): string {
+  return mode === 'employee' ? 'Pembayaran Pegawai' : 'Pengeluaran Tanpa Pegawai';
+}
 
-function ReportTypeBadge({ type }: { type: ExpenseReportType }) {
-  const definition = getExpenseReportDefinition(type);
-  const classes = accentClasses[type];
-  return (
-    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${classes.badge}`}>
-      {definition.shortLabel}
-    </span>
+function getGroupBudget(rows: ProposalExpenseRow[], index: number, parseQty: (value: string) => number): number {
+  return getExpenseGroupRows(rows, index).reduce(
+    (sum, row) => sum + parseQty(row.rincianQty) * (row.rincianRate || 0),
+    0,
   );
 }
 
-function EmployeeField({
-  listId,
-  employees,
-  value,
-  onChange,
+function getGroupActual(rows: ProposalExpenseRow[], index: number): number {
+  return getExpenseGroupRows(rows, index).reduce((sum, row) => sum + (row.realisasi || 0), 0);
+}
+
+function ReportModeCard({
+  mode,
+  selected,
+  disabled,
+  onClick,
 }: {
-  listId: string;
-  employees: EmployeeOption[];
-  value: string;
-  onChange: (name: string, employeeId: string) => void;
+  mode: ExpenseReportMode;
+  selected: boolean;
+  disabled: boolean;
+  onClick: () => void;
 }) {
+  const employee = mode === 'employee';
   return (
-    <>
-      <Input
-        list={listId}
-        type="text"
-        value={value}
-        placeholder="Cari / ketik nama..."
-        onChange={(event) => {
-          const nextName = event.target.value;
-          const match = employees.find((employee) => employee.name.toLowerCase() === nextName.toLowerCase());
-          onChange(nextName, match?.id || '');
-        }}
-        className="h-8 rounded-lg border-slate-200 text-xs font-semibold text-slate-900"
-      />
-      <datalist id={listId}>
-        {employees.map((employee) => (
-          <option key={employee.id} value={employee.name}>{employee.role || employee.id}</option>
-        ))}
-      </datalist>
-    </>
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`rounded-2xl border p-4 text-left transition-all ${selected
+        ? 'border-indigo-300 bg-indigo-50 ring-2 ring-indigo-100'
+        : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'} ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-wider text-indigo-500">Mode laporan</p>
+          <h4 className="mt-1 text-sm font-black text-slate-900">{modeLabel(mode)}</h4>
+        </div>
+        {selected && <CheckCircle2 className="h-5 w-5 shrink-0 text-indigo-600" />}
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+        {employee
+          ? 'Setiap rincian harus terhubung ke pegawai aktif. REALISASI menjadi nominal yang dikirim ke payroll.'
+          : 'Gunakan untuk konsumsi, ATK, rapat, bukti pembelian, atau pengeluaran lain tanpa penerima pegawai.'}
+      </p>
+    </button>
   );
 }
 
-function EmptyState({ onOpenLink }: { onOpenLink: () => void }) {
+function EmployeeSearch({
+  row,
+  employees,
+  selectedEmployeeIds,
+  disabled,
+  onChange,
+  onConnect,
+  onDisconnect,
+}: {
+  row: ExpenseReportRow;
+  employees: EmployeeOption[];
+  selectedEmployeeIds: Set<string>;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  onConnect: (employee: EmployeeOption) => void;
+  onDisconnect: () => void;
+}) {
+  const isConnected = Boolean(row.employeeId);
+  const searchText = row.employeeSearchText ?? row.employeeName;
+
+  // Only show search dropdown when unconnected or when user actively edits the search text
+  const isActivelyEditing = !isConnected || (row.employeeSearchText !== undefined && row.employeeSearchText !== row.employeeName);
+
+  const matches = isActivelyEditing && searchText.trim().length > 0
+    ? employees.filter((employee) => {
+      const isCurrent = employee.id === row.employeeId;
+      const isDuplicate = selectedEmployeeIds.has(employee.id) && !isCurrent;
+      return !isDuplicate && (
+        employee.name.toLowerCase().includes(searchText.toLowerCase()) ||
+        employee.id.toLowerCase().includes(searchText.toLowerCase()) ||
+        (employee.role || '').toLowerCase().includes(searchText.toLowerCase())
+      );
+    }).slice(0, 8)
+    : [];
+
   return (
-    <div className="rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/30 p-8 text-center">
-      <Link2 className="mx-auto h-8 w-8 text-indigo-300" />
-      <h4 className="mt-3 text-sm font-bold text-slate-800">Belum ada laporan yang terhubung</h4>
-      <p className="mx-auto mt-1 max-w-xl text-xs leading-relaxed text-slate-500">
-        Hubungkan setiap pos pengeluaran ke jenis laporan yang sesuai. Setelah terhubung, rincian penerima atau bukti pembelian diisi di sini dan tetap terkait dengan pos anggarannya.
-      </p>
-      <Button type="button" onClick={onOpenLink} className="mt-4 h-9 rounded-xl bg-indigo-600 px-4 text-xs font-bold hover:bg-indigo-700">
-        <Link2 className="mr-1.5 h-3.5 w-3.5" /> Hubungkan Pos Pengeluaran
-      </Button>
+    <div className="w-full">
+      <div className="relative flex items-center">
+        <Input
+          type="text"
+          value={searchText}
+          disabled={disabled}
+          placeholder="Cari pegawai aktif..."
+          onChange={(event) => onChange(event.target.value)}
+          className={`h-8 w-full rounded-lg text-xs transition-all ${
+            isConnected
+              ? 'border-emerald-300 bg-emerald-50/90 font-bold text-emerald-950 pl-3 pr-8 shadow-2xs focus:bg-white focus:text-slate-900 focus:border-indigo-400'
+              : 'border-slate-200 bg-white font-semibold text-slate-900 pl-3 pr-3 focus:border-indigo-400'
+          }`}
+        />
+
+        {isConnected && (
+          <Check className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 stroke-[3] text-emerald-600 shrink-0" />
+        )}
+
+        {!disabled && matches.length > 0 && (
+          <div className="absolute left-0 right-0 top-9 z-[80] max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+            {matches.map((employee) => (
+              <button
+                key={employee.id}
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => onConnect(employee)}
+                className="flex w-full items-center justify-between gap-2 border-b border-slate-50 px-3 py-2 text-left transition-colors last:border-0 hover:bg-indigo-50"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-xs font-bold text-slate-900">{employee.name}</span>
+                  <span className="mt-0.5 block truncate text-[9px] text-slate-400">{employee.role || 'Pegawai'} · {employee.id}</span>
+                </span>
+                <span className="shrink-0 rounded-lg bg-indigo-100 px-2 py-1 text-[9px] font-black text-indigo-700">Hubungkan</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -152,393 +205,554 @@ export default function ExpenseReportStage({
   expenseReports,
   employees,
   unlocked,
-  selectedReportId,
-  onSelectReport,
-  onOpenLink,
-  onUpdateReport,
+  readOnly = false,
+  openGroupRowId = null,
+  onOpenGroupHandled,
+  onUpsertReport,
+  onUnlinkReport,
   onPrintReport,
-  onBackToLpj,
   fmtRp,
-  parseQty,
+  parseQty = parseProposalQty,
 }: ExpenseReportStageProps) {
-  const visibleExpenseRows = expenseRows
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [draftReport, setDraftReport] = useState<ExpenseReport | null>(null);
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+
+  const groupRows = useMemo(() => expenseRows
     .map((row, index) => ({ row, index }))
-    .filter(({ row }) => row.uraian.trim());
+    .filter(({ row }) => row.type === 'group_header' && row.uraian.trim()), [expenseRows]);
 
-  const getRowBudget = (row: ProposalExpenseRow, index: number): number => {
-    if (row.type === 'item') return parseQty(row.rincianQty) * (row.rincianRate || 0);
-    let total = 0;
-    for (let cursor = index + 1; cursor < expenseRows.length; cursor += 1) {
-      if (expenseRows[cursor].type === 'group_header') break;
-      total += parseQty(expenseRows[cursor].rincianQty) * (expenseRows[cursor].rincianRate || 0);
+  const openReport = useCallback((group: ProposalExpenseRow, groupIndex: number) => {
+    if (!unlocked) return;
+    const linked = group.reportId ? expenseReports.find((report) => report.id === group.reportId) : undefined;
+    const normalized = linked ? normalizeExpenseReport(linked, {
+      expenseRowId: group.rowId || '',
+      expenseLabel: group.uraian,
+    }) : null;
+    const report = normalized || createExpenseReport(
+      createStableId('expense-report'),
+      group.rowId || createStableId('expense-row'),
+      group.uraian,
+      'employee',
+      seedExpenseReportRows(expenseRows, groupIndex),
+    );
+    setDraftReport({
+      ...report,
+      expenseRowId: group.rowId || report.expenseRowId,
+      expenseLabel: group.uraian,
+      title: report.title || `Laporan ${group.uraian}`,
+    });
+    setFormErrors([]);
+    setDialogOpen(true);
+  }, [expenseReports, expenseRows, unlocked]);
+
+  useEffect(() => {
+    if (!openGroupRowId || !unlocked) return;
+    const timer = window.setTimeout(() => {
+      const target = groupRows.find(({ row }) => row.rowId === openGroupRowId);
+      if (target) openReport(target.row, target.index);
+      onOpenGroupHandled?.();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [groupRows, onOpenGroupHandled, openGroupRowId, openReport, unlocked]);
+
+  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+  const updateDraft = (updater: (report: ExpenseReport) => ExpenseReport) => {
+    setDraftReport((current) => current ? updater(current) : current);
+    setFormErrors([]);
+  };
+
+  const updateDraftRow = (rowId: string, updater: (row: ExpenseReportRow) => ExpenseReportRow) => {
+    updateDraft((report) => ({
+      ...report,
+      rows: report.rows.map((row) => row.id === rowId ? updater(row) : row),
+    }));
+  };
+
+  // Live Autosave on every input / change
+  useEffect(() => {
+    if (!draftReport || readOnly || !dialogOpen) return;
+    setAutosaveStatus('saving');
+    const timer = setTimeout(() => {
+      onUpsertReport(sanitizeForFirestore({ ...draftReport, source: draftReport.source || 'custom' }));
+      setAutosaveStatus('saved');
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [draftReport, readOnly, dialogOpen, onUpsertReport]);
+
+  const closeDialog = () => {
+    if (draftReport && !readOnly) {
+      onUpsertReport(sanitizeForFirestore({ ...draftReport, source: draftReport.source || 'custom' }));
     }
-    return total;
+    setDialogOpen(false);
+    setDraftReport(null);
+    setFormErrors([]);
+    setAutosaveStatus('idle');
   };
 
-  const updateReport = (report: ExpenseReport, updater: (current: ExpenseReport) => ExpenseReport) => {
-    onUpdateReport(report.id, updater);
+  const saveDraft = () => {
+    if (!draftReport) return;
+    const validation = validateExpenseReport(draftReport, parseQty);
+    const invalidActiveEmployees = draftReport.mode === 'employee'
+      ? validation.populatedRows.filter((row) => row.employeeId && !employees.some((employee) => employee.id === row.employeeId))
+      : [];
+    const errors = [
+      ...validation.errors,
+      ...invalidActiveEmployees.map((row) => `Pegawai pada baris ${draftReport.rows.findIndex((item) => item.id === row.id) + 1} sudah tidak aktif atau tidak ditemukan.`),
+    ];
+    if (errors.length > 0) {
+      setFormErrors(Array.from(new Set(errors)));
+      return;
+    }
+    onUpsertReport(sanitizeForFirestore({ ...draftReport, source: draftReport.source || 'custom' }));
+    closeDialog();
   };
 
-  const selectedReport = expenseReports.find((report) => report.id === selectedReportId) || null;
-  const selectedDefinition = selectedReport ? getExpenseReportDefinition(selectedReport.reportType) : null;
-  const selectedAccent = selectedReport ? accentClasses[selectedReport.reportType] : null;
-
-  const reportStatus = (report: ExpenseReport) => {
-    const hasData = (() => {
-      if (report.reportType === 'proposal_examiner' || report.reportType === 'munaqosyah_examiner') {
-        return report.examinerRows.some((row) => row.employeeName.trim() || row.studentCount > 0);
-      }
-      if (report.reportType === 'pembimbing') {
-        return report.pembimbingRows.some((row) => row.employeeName.trim() || row.studentCount > 0);
-      }
-      if (report.reportType === 'pedoman_kti') {
-        return report.pedomanRows.some((row) => row.employeeName.trim() || row.task.trim() || row.amount > 0);
-      }
-      if (report.reportType === 'committee') {
-        return report.committeeRows.some((row) => row.employeeName.trim() || row.amount > 0);
-      }
-      return report.receiptRows.some((row) => row.itemName.trim() || row.unitPrice > 0);
-    })();
-    return hasData ? 'Draft terisi' : 'Belum diisi';
-  };
-
-  const renderExaminerTable = (report: ExpenseReport) => (
-    <div className="overflow-x-auto rounded-2xl border border-slate-150">
-      <table className="w-full min-w-[820px] border-collapse text-left">
-        <thead>
-          <tr className="border-b border-slate-100 bg-slate-50">
-            <th className="w-10 px-3 py-2.5 text-center text-[10px] font-bold uppercase text-slate-500">No</th>
-            <th className="min-w-[230px] px-3 py-2.5 text-[10px] font-bold uppercase text-slate-500">Nama</th>
-            <th className="w-[170px] px-3 py-2.5 text-[10px] font-bold uppercase text-slate-500">Peran</th>
-            <th className="w-[110px] px-3 py-2.5 text-center text-[10px] font-bold uppercase text-slate-500">Mhs</th>
-            <th className="w-[150px] px-3 py-2.5 text-right text-[10px] font-bold uppercase text-slate-500">Vakasi</th>
-            <th className="w-[160px] px-3 py-2.5 text-right text-[10px] font-bold uppercase text-slate-500">Jumlah</th>
-            <th className="w-10 px-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {report.examinerRows.map((row, index) => (
-            <tr key={row.id} className="border-b border-slate-50 hover:bg-slate-50/30">
-              <td className="px-3 py-2 text-center text-xs font-bold text-slate-400">{index + 1}</td>
-              <td className="px-3 py-2">
-                <EmployeeField
-                  listId={`employees-${report.id}`}
-                  employees={employees}
-                  value={row.employeeName}
-                  onChange={(employeeName, employeeId) => updateReport(report, (current) => ({
-                    ...current,
-                    examinerRows: current.examinerRows.map((item) => item.id === row.id ? { ...item, employeeName, employeeId } : item),
-                  }))}
-                />
-              </td>
-              <td className="px-3 py-2">
-                <Input type="text" value={row.role} onChange={(event) => updateReport(report, (current) => ({
-                  ...current,
-                  examinerRows: current.examinerRows.map((item) => item.id === row.id ? { ...item, role: event.target.value } : item),
-                }))} className="h-8 rounded-lg border-slate-200 text-xs font-semibold" />
-              </td>
-              <td className="px-3 py-2">
-                <Input type="number" min={0} value={row.studentCount || ''} onChange={(event) => updateReport(report, (current) => ({
-                  ...current,
-                  examinerRows: current.examinerRows.map((item) => item.id === row.id ? { ...item, studentCount: parseInt(event.target.value, 10) || 0 } : item),
-                }))} className="h-8 rounded-lg border-slate-200 text-center text-xs font-bold" />
-              </td>
-              <td className="px-3 py-2">
-                <Input type="text" inputMode="numeric" value={row.rate > 0 ? fmtRp(row.rate) : ''} onChange={(event) => updateReport(report, (current) => ({
-                  ...current,
-                  examinerRows: current.examinerRows.map((item) => item.id === row.id ? { ...item, rate: parseMoney(event.target.value) } : item),
-                }))} className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" />
-              </td>
-              <td className="px-3 py-2 text-right font-mono text-xs font-black text-slate-800">{fmtRp(row.studentCount * row.rate)}</td>
-              <td className="px-2 py-2 text-center">
-                <Button type="button" variant="ghost" size="icon-xs" onClick={() => updateReport(report, (current) => ({ ...current, examinerRows: current.examinerRows.filter((item) => item.id !== row.id) }))} className="text-rose-400 hover:bg-rose-50 hover:text-rose-600">
-                  <Trash2 />
-                </Button>
-              </td>
-            </tr>
-          ))}
-          <tr>
-            <td colSpan={5} className="px-3 py-2.5">
-              <Button type="button" size="sm" onClick={() => updateReport(report, (current) => ({
-                ...current,
-                examinerRows: [...current.examinerRows, {
-                  id: createStableId('examiner-row'), employeeId: '', employeeName: '', role: report.reportType === 'munaqosyah_examiner' ? 'Sekretaris' : 'Penguji', studentCount: 0, rate: 0,
-                }],
-              }))} className={`rounded-xl px-3 text-xs font-bold text-white ${selectedAccent?.button || 'bg-indigo-600 hover:bg-indigo-700'}`}>
-                <Plus className="mr-1 h-3.5 w-3.5" /> Tambah Penguji
-              </Button>
-            </td>
-            <td colSpan={2} className="px-3 py-2.5 text-right text-xs font-black text-slate-900">Total {fmtRp(getExpenseReportTotal(report))}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+  const selectedEmployeeIds = new Set(
+    draftReport?.mode === 'employee'
+      ? draftReport.rows.map((row) => row.employeeId).filter(Boolean)
+      : [],
   );
-
-  const renderPembimbingTable = (report: ExpenseReport) => (
-    <div className="overflow-x-auto rounded-2xl border border-slate-150">
-      <table className="w-full min-w-[820px] border-collapse text-left">
-        <thead>
-          <tr className="border-b border-slate-100 bg-slate-50">
-            <th className="w-10 px-3 py-2.5 text-center text-[10px] font-bold uppercase text-slate-500">No</th>
-            <th className="min-w-[260px] px-3 py-2.5 text-[10px] font-bold uppercase text-slate-500">Nama</th>
-            <th className="w-[170px] px-3 py-2.5 text-[10px] font-bold uppercase text-slate-500">Peran</th>
-            <th className="w-[110px] px-3 py-2.5 text-center text-[10px] font-bold uppercase text-slate-500">Mhs</th>
-            <th className="w-[150px] px-3 py-2.5 text-right text-[10px] font-bold uppercase text-slate-500">Vakasi</th>
-            <th className="w-[160px] px-3 py-2.5 text-right text-[10px] font-bold uppercase text-slate-500">Jumlah</th>
-            <th className="w-10 px-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {report.pembimbingRows.map((row, index) => (
-            <tr key={row.id} className="border-b border-slate-50 hover:bg-slate-50/30">
-              <td className="px-3 py-2 text-center text-xs font-bold text-slate-400">{index + 1}</td>
-              <td className="px-3 py-2">
-                <EmployeeField
-                  listId={`employees-${report.id}`}
-                  employees={employees}
-                  value={row.employeeName}
-                  onChange={(employeeName, employeeId) => updateReport(report, (current) => ({
-                    ...current,
-                    pembimbingRows: current.pembimbingRows.map((item) => item.id === row.id ? { ...item, employeeName, employeeId } : item),
-                  }))}
-                />
-              </td>
-              <td className="px-3 py-2"><Input type="text" value={row.role} onChange={(event) => updateReport(report, (current) => ({ ...current, pembimbingRows: current.pembimbingRows.map((item) => item.id === row.id ? { ...item, role: event.target.value } : item) }))} className="h-8 rounded-lg border-slate-200 text-xs font-semibold" /></td>
-              <td className="px-3 py-2"><Input type="number" min={0} value={row.studentCount || ''} onChange={(event) => updateReport(report, (current) => ({ ...current, pembimbingRows: current.pembimbingRows.map((item) => item.id === row.id ? { ...item, studentCount: parseInt(event.target.value, 10) || 0 } : item) }))} className="h-8 rounded-lg border-slate-200 text-center text-xs font-bold" /></td>
-              <td className="px-3 py-2"><Input type="text" inputMode="numeric" value={row.rate > 0 ? fmtRp(row.rate) : ''} onChange={(event) => updateReport(report, (current) => ({ ...current, pembimbingRows: current.pembimbingRows.map((item) => item.id === row.id ? { ...item, rate: parseMoney(event.target.value) } : item) }))} className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" /></td>
-              <td className="px-3 py-2 text-right font-mono text-xs font-black text-slate-800">{fmtRp(row.studentCount * row.rate)}</td>
-              <td className="px-2 py-2 text-center"><Button type="button" variant="ghost" size="icon-xs" onClick={() => updateReport(report, (current) => ({ ...current, pembimbingRows: current.pembimbingRows.filter((item) => item.id !== row.id) }))} className="text-rose-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 /></Button></td>
-            </tr>
-          ))}
-          <tr>
-            <td colSpan={5} className="px-3 py-2.5"><Button type="button" size="sm" onClick={() => updateReport(report, (current) => ({ ...current, pembimbingRows: [...current.pembimbingRows, { id: createStableId('pembimbing-row'), employeeId: '', employeeName: '', role: 'Pembimbing', studentCount: 0, rate: 0 }] }))} className={`rounded-xl px-3 text-xs font-bold text-white ${selectedAccent?.button || 'bg-emerald-600 hover:bg-emerald-700'}`}><Plus className="mr-1 h-3.5 w-3.5" /> Tambah Pembimbing</Button></td>
-            <td colSpan={2} className="px-3 py-2.5 text-right text-xs font-black text-slate-900">Total {fmtRp(getExpenseReportTotal(report))}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  );
-
-  const renderPedomanTable = (report: ExpenseReport) => (
-    <div className="overflow-x-auto rounded-2xl border border-slate-150">
-      <table className="w-full min-w-[760px] border-collapse text-left">
-        <thead><tr className="border-b border-slate-100 bg-slate-50">
-          <th className="w-10 px-3 py-2.5 text-center text-[10px] font-bold uppercase text-slate-500">No</th>
-          <th className="min-w-[280px] px-3 py-2.5 text-[10px] font-bold uppercase text-slate-500">Nama</th>
-          <th className="min-w-[220px] px-3 py-2.5 text-[10px] font-bold uppercase text-slate-500">Tugas</th>
-          <th className="w-[180px] px-3 py-2.5 text-right text-[10px] font-bold uppercase text-slate-500">Jumlah</th>
-          <th className="w-10 px-2" />
-        </tr></thead>
-        <tbody>
-          {report.pedomanRows.map((row, index) => (
-            <tr key={row.id} className="border-b border-slate-50 hover:bg-slate-50/30">
-              <td className="px-3 py-2 text-center text-xs font-bold text-slate-400">{index + 1}</td>
-              <td className="px-3 py-2"><EmployeeField listId={`employees-${report.id}`} employees={employees} value={row.employeeName} onChange={(employeeName, employeeId) => updateReport(report, (current) => ({ ...current, pedomanRows: current.pedomanRows.map((item) => item.id === row.id ? { ...item, employeeName, employeeId } : item) }))} /></td>
-              <td className="px-3 py-2"><Input type="text" value={row.task} placeholder="Penanggung Jawab / Ketua / Anggota" onChange={(event) => updateReport(report, (current) => ({ ...current, pedomanRows: current.pedomanRows.map((item) => item.id === row.id ? { ...item, task: event.target.value } : item) }))} className="h-8 rounded-lg border-slate-200 text-xs font-semibold" /></td>
-              <td className="px-3 py-2"><Input type="text" inputMode="numeric" value={row.amount > 0 ? fmtRp(row.amount) : ''} onChange={(event) => updateReport(report, (current) => ({ ...current, pedomanRows: current.pedomanRows.map((item) => item.id === row.id ? { ...item, amount: parseMoney(event.target.value) } : item) }))} className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" /></td>
-              <td className="px-2 py-2 text-center"><Button type="button" variant="ghost" size="icon-xs" onClick={() => updateReport(report, (current) => ({ ...current, pedomanRows: current.pedomanRows.filter((item) => item.id !== row.id) }))} className="text-rose-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 /></Button></td>
-            </tr>
-          ))}
-          <tr><td colSpan={3} className="px-3 py-2.5"><Button type="button" size="sm" onClick={() => updateReport(report, (current) => ({ ...current, pedomanRows: [...current.pedomanRows, { id: createStableId('pedoman-row'), employeeId: '', employeeName: '', task: '', amount: 0 }] }))} className={`rounded-xl px-3 text-xs font-bold text-white ${selectedAccent?.button || 'bg-violet-600 hover:bg-violet-700'}`}><Plus className="mr-1 h-3.5 w-3.5" /> Tambah Penyusun</Button></td><td className="px-3 py-2.5 text-right text-xs font-black text-slate-900">Total {fmtRp(getExpenseReportTotal(report))}</td><td /></tr>
-        </tbody>
-      </table>
-    </div>
-  );
-
-  const renderCommitteeTable = (report: ExpenseReport) => (
-    <div className="overflow-x-auto rounded-2xl border border-slate-150">
-      <table className="w-full min-w-[620px] border-collapse text-left">
-        <thead><tr className="border-b border-slate-100 bg-slate-50">
-          <th className="w-10 px-3 py-2.5 text-center text-[10px] font-bold uppercase text-slate-500">No</th>
-          <th className="min-w-[330px] px-3 py-2.5 text-[10px] font-bold uppercase text-slate-500">Nama</th>
-          <th className="w-[190px] px-3 py-2.5 text-right text-[10px] font-bold uppercase text-slate-500">Jumlah</th>
-          <th className="w-10 px-2" />
-        </tr></thead>
-        <tbody>
-          {report.committeeRows.map((row, index) => (
-            <tr key={row.id} className="border-b border-slate-50 hover:bg-slate-50/30">
-              <td className="px-3 py-2 text-center text-xs font-bold text-slate-400">{index + 1}</td>
-              <td className="px-3 py-2"><EmployeeField listId={`employees-${report.id}`} employees={employees} value={row.employeeName} onChange={(employeeName, employeeId) => updateReport(report, (current) => ({ ...current, committeeRows: current.committeeRows.map((item) => item.id === row.id ? { ...item, employeeName, employeeId } : item) }))} /></td>
-              <td className="px-3 py-2"><Input type="text" inputMode="numeric" value={row.amount > 0 ? fmtRp(row.amount) : ''} onChange={(event) => updateReport(report, (current) => ({ ...current, committeeRows: current.committeeRows.map((item) => item.id === row.id ? { ...item, amount: parseMoney(event.target.value) } : item) }))} className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" /></td>
-              <td className="px-2 py-2 text-center"><Button type="button" variant="ghost" size="icon-xs" onClick={() => updateReport(report, (current) => ({ ...current, committeeRows: current.committeeRows.filter((item) => item.id !== row.id) }))} className="text-rose-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 /></Button></td>
-            </tr>
-          ))}
-          <tr><td colSpan={2} className="px-3 py-2.5"><Button type="button" size="sm" onClick={() => updateReport(report, (current) => ({ ...current, committeeRows: [...current.committeeRows, { id: createStableId('committee-row'), employeeId: '', employeeName: '', amount: 0 }] }))} className={`rounded-xl px-3 text-xs font-bold text-white ${selectedAccent?.button || 'bg-rose-600 hover:bg-rose-700'}`}><Plus className="mr-1 h-3.5 w-3.5" /> Tambah Panitia</Button></td><td className="px-3 py-2.5 text-right text-xs font-black text-slate-900">Total {fmtRp(getExpenseReportTotal(report))}</td><td /></tr>
-        </tbody>
-      </table>
-    </div>
-  );
-
-  const renderReceiptTable = (report: ExpenseReport) => (
-    <div className="overflow-x-auto rounded-2xl border border-slate-150">
-      <table className="w-full min-w-[820px] border-collapse text-left">
-        <thead><tr className="border-b border-slate-100 bg-slate-50">
-          <th className="w-10 px-3 py-2.5 text-center text-[10px] font-bold uppercase text-slate-500">No</th>
-          <th className="min-w-[280px] px-3 py-2.5 text-[10px] font-bold uppercase text-slate-500">Nama Item / Bukti</th>
-          <th className="w-[90px] px-3 py-2.5 text-center text-[10px] font-bold uppercase text-slate-500">Qty</th>
-          <th className="w-[170px] px-3 py-2.5 text-right text-[10px] font-bold uppercase text-slate-500">Harga Satuan</th>
-          <th className="w-[170px] px-3 py-2.5 text-right text-[10px] font-bold uppercase text-slate-500">Total</th>
-          <th className="min-w-[170px] px-3 py-2.5 text-[10px] font-bold uppercase text-slate-500">Keterangan</th>
-          <th className="w-10 px-2" />
-        </tr></thead>
-        <tbody>
-          {report.receiptRows.map((row, index) => (
-            <tr key={row.id} className="border-b border-slate-50 hover:bg-slate-50/30">
-              <td className="px-3 py-2 text-center text-xs font-bold text-slate-400">{index + 1}</td>
-              <td className="px-3 py-2"><Input type="text" value={row.itemName} placeholder="Konsumsi / ATK / Nota..." onChange={(event) => updateReport(report, (current) => ({ ...current, receiptRows: current.receiptRows.map((item) => item.id === row.id ? { ...item, itemName: event.target.value } : item) }))} className="h-8 rounded-lg border-slate-200 text-xs font-semibold" /></td>
-              <td className="px-3 py-2"><Input type="number" min={1} value={row.qty || ''} onChange={(event) => updateReport(report, (current) => ({ ...current, receiptRows: current.receiptRows.map((item) => item.id === row.id ? { ...item, qty: parseInt(event.target.value, 10) || 1 } : item) }))} className="h-8 rounded-lg border-slate-200 text-center text-xs font-bold" /></td>
-              <td className="px-3 py-2"><Input type="text" inputMode="numeric" value={row.unitPrice > 0 ? fmtRp(row.unitPrice) : ''} onChange={(event) => updateReport(report, (current) => ({ ...current, receiptRows: current.receiptRows.map((item) => item.id === row.id ? { ...item, unitPrice: parseMoney(event.target.value) } : item) }))} className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" /></td>
-              <td className="px-3 py-2 text-right font-mono text-xs font-black text-slate-800">{fmtRp(row.qty * row.unitPrice)}</td>
-              <td className="px-3 py-2"><Input type="text" value={row.note} placeholder="No. nota / tanggal..." onChange={(event) => updateReport(report, (current) => ({ ...current, receiptRows: current.receiptRows.map((item) => item.id === row.id ? { ...item, note: event.target.value } : item) }))} className="h-8 rounded-lg border-slate-200 text-xs" /></td>
-              <td className="px-2 py-2 text-center"><Button type="button" variant="ghost" size="icon-xs" onClick={() => updateReport(report, (current) => ({ ...current, receiptRows: current.receiptRows.filter((item) => item.id !== row.id) }))} className="text-rose-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 /></Button></td>
-            </tr>
-          ))}
-          <tr><td colSpan={4} className="px-3 py-2.5"><Button type="button" size="sm" onClick={() => updateReport(report, (current) => ({ ...current, receiptRows: [...current.receiptRows, { id: createStableId('receipt-row'), itemName: '', qty: 1, unitPrice: 0, note: '' }] }))} className={`rounded-xl px-3 text-xs font-bold text-white ${selectedAccent?.button || 'bg-amber-600 hover:bg-amber-700'}`}><Plus className="mr-1 h-3.5 w-3.5" /> Tambah Item</Button></td><td colSpan={2} className="px-3 py-2.5 text-right text-xs font-black text-slate-900">Total {fmtRp(getExpenseReportTotal(report))}</td><td /></tr>
-        </tbody>
-      </table>
-    </div>
-  );
-
-  const renderReportEditor = () => {
-    if (!selectedReport || !selectedDefinition || !selectedAccent) return null;
-
-    return (
-      <Card className={`rounded-2xl border p-0 shadow-sm ${selectedAccent.border}`}>
-        <div className={`flex flex-wrap items-start justify-between gap-3 border-b p-4 ${selectedAccent.card}`}>
-          <div className="min-w-0">
-            <div className="mb-1 flex flex-wrap items-center gap-2">
-              <ReportTypeBadge type={selectedReport.reportType} />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Terhubung ke pos pengeluaran</span>
-            </div>
-            <h3 className="text-sm font-black uppercase text-slate-900">{selectedReport.expenseLabel}</h3>
-            <p className="mt-1 text-xs text-slate-500">Format data mengikuti {selectedDefinition.sourceDocument}.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => onPrintReport(selectedReport)} className="h-8 rounded-lg border-slate-200 bg-white/80 px-2.5 text-[11px] font-bold text-indigo-700 hover:bg-white">
-              <FileText className="mr-1 h-3.5 w-3.5" /> Cetak PDF
-            </Button>
-            <div className="rounded-xl border border-white/70 bg-white/70 px-3 py-2 text-right">
-              <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Total laporan</span>
-              <span className="font-mono text-base font-black text-slate-900">{fmtRp(getExpenseReportTotal(selectedReport))}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-4 p-4 md:p-5">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_240px]">
-            <div>
-              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Judul laporan</label>
-              <Input type="text" value={selectedReport.title} onChange={(event) => updateReport(selectedReport, (current) => ({ ...current, title: event.target.value }))} className="h-10 rounded-xl border-slate-200 text-xs font-bold uppercase text-slate-900" />
-            </div>
-            <div className="rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2">
-              <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Anggaran terhubung</span>
-              <span className="font-mono text-sm font-black text-slate-800">{fmtRp(getRowBudget(expenseRows.find((row) => row.rowId === selectedReport.expenseRowId) || { type: 'item', uraian: '', rincianQty: '', rincianRate: 0 }, expenseRows.findIndex((row) => row.rowId === selectedReport.expenseRowId)))}</span>
-            </div>
-          </div>
-
-          {selectedReport.reportType === 'proposal_examiner' || selectedReport.reportType === 'munaqosyah_examiner'
-            ? renderExaminerTable(selectedReport)
-            : selectedReport.reportType === 'pembimbing'
-              ? renderPembimbingTable(selectedReport)
-              : selectedReport.reportType === 'pedoman_kti'
-                ? renderPedomanTable(selectedReport)
-                : selectedReport.reportType === 'committee'
-                  ? renderCommitteeTable(selectedReport)
-                  : renderReceiptTable(selectedReport)}
-
-          <div>
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Catatan laporan / referensi bukti</label>
-            <textarea value={selectedReport.notes} onChange={(event) => updateReport(selectedReport, (current) => ({ ...current, notes: event.target.value }))} placeholder="Contoh: bukti pembayaran disimpan pada berkas LPJ halaman 1-18..." className="min-h-20 w-full rounded-xl border border-slate-200 p-3 text-xs font-medium text-slate-800 outline-none focus:border-indigo-300 focus:ring-3 focus:ring-indigo-100" />
-          </div>
-        </div>
-      </Card>
-    );
-  };
-
-  if (!unlocked) {
-    return (
-      <div className="space-y-5 animate-in fade-in duration-300">
-        <div className="rounded-2xl border border-amber-200/80 bg-amber-50/60 p-8 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-            <Link2 className="h-6 w-6" />
-          </div>
-          <h3 className="mt-3 text-sm font-bold text-slate-800">Rincian laporan masih terkunci</h3>
-          <p className="mx-auto mt-1 max-w-xl text-xs leading-relaxed text-slate-500">Setujui proposal anggaran terlebih dahulu. Setelah itu setiap pos pengeluaran dapat dihubungkan ke laporan vakasi atau kwitansi yang sesuai.</p>
-          <Button type="button" onClick={onBackToLpj} variant="outline" className="mt-4 h-9 rounded-xl border-amber-300 px-4 text-xs font-bold text-amber-800 hover:bg-amber-100"><ArrowLeft className="mr-1.5 h-4 w-4" /> Kembali ke Realisasi</Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/80 via-white to-slate-50 p-5 md:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm"><FileText className="h-5 w-5" /></div>
-            <div>
-              <h3 className="text-base font-black text-slate-900">Rincian Laporan per Pos Pengeluaran</h3>
-              <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-500">Hubungkan pos utama pada anggaran dengan format laporan akhirnya. Satu pos memiliki satu laporan utama, sehingga nominal laporan dapat ditelusuri kembali ke anggaran dan realisasi.</p>
-            </div>
+    <section className="space-y-4 rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/50 via-white to-slate-50/80 p-4 md:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Link2 className="h-4 w-4 text-indigo-600" />
+            <h3 className="text-sm font-black uppercase tracking-wider text-indigo-900">Laporan Per Pos Pengeluaran</h3>
           </div>
-          <div className="flex items-center gap-2 rounded-xl border border-indigo-100 bg-white px-3 py-2 text-xs font-bold text-indigo-700">
-            <CheckCircle2 className="h-4 w-4" /> {expenseReports.length} laporan terhubung
-          </div>
+          <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-slate-500">
+            Hubungkan setiap header grup LPJ ke laporan custom. Format laporan dapat disesuaikan per kebutuhan dan tidak mengubah PDF anggaran maupun PDF realisasi.
+          </p>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-          <div className="rounded-xl border border-slate-100 bg-white p-3"><span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Pos pengeluaran</span><span className="mt-1 block text-lg font-black text-slate-900">{visibleExpenseRows.length}</span></div>
-          <div className="rounded-xl border border-slate-100 bg-white p-3"><span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Sudah terhubung</span><span className="mt-1 block text-lg font-black text-indigo-700">{visibleExpenseRows.filter(({ row }) => row.reportId).length}</span></div>
-          <div className="rounded-xl border border-slate-100 bg-white p-3"><span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Total anggaran</span><span className="mt-1 block font-mono text-sm font-black text-slate-900">{fmtRp(visibleExpenseRows.reduce((sum, { row, index }) => sum + getRowBudget(row, index), 0))}</span></div>
-          <div className="rounded-xl border border-slate-100 bg-white p-3"><span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Total laporan</span><span className="mt-1 block font-mono text-sm font-black text-emerald-700">{fmtRp(expenseReports.reduce((sum, report) => sum + getExpenseReportTotal(report), 0))}</span></div>
+        <div className="rounded-xl border border-indigo-100 bg-white px-3 py-2 text-[10px] font-bold text-slate-500">
+          {groupRows.filter(({ row }) => row.reportId).length}/{groupRows.length} header terhubung
         </div>
       </div>
 
-      {visibleExpenseRows.length === 0 ? (
-        <EmptyState onOpenLink={() => onOpenLink(0)} />
+      {!unlocked ? (
+        <div className="rounded-2xl border border-dashed border-amber-200 bg-amber-50/60 p-5 text-center">
+          <p className="text-xs font-bold text-amber-800">Hubungan laporan tersedia setelah proposal anggaran disetujui.</p>
+        </div>
+      ) : groupRows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-indigo-200 bg-white p-7 text-center">
+          <Link2 className="mx-auto h-8 w-8 text-indigo-300" />
+          <p className="mt-3 text-sm font-bold text-slate-800">Belum ada header grup pengeluaran</p>
+          <p className="mx-auto mt-1 max-w-lg text-xs leading-relaxed text-slate-500">Tambahkan header grup pada tabel Realisasi Keuangan terlebih dahulu. Hanya header grup yang dapat dihubungkan ke laporan.</p>
+        </div>
       ) : (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div><h4 className="text-xs font-black uppercase tracking-wider text-slate-700">Pemetaan Pos & Laporan</h4><p className="mt-0.5 text-[11px] text-slate-400">Gunakan Hubungkan Laporan pada setiap pos yang memerlukan rincian.</p></div>
-            <div className="hidden items-center gap-1.5 text-[10px] font-semibold text-slate-400 md:flex"><Layers className="h-3.5 w-3.5" /> Sumber dari tabel pengeluaran</div>
-          </div>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {visibleExpenseRows.map(({ row, index }) => {
-              const report = expenseReports.find((item) => item.id === row.reportId);
-              const definition = report ? getExpenseReportDefinition(report.reportType) : null;
-              const classes = report ? accentClasses[report.reportType] : null;
-              return (
-                <div key={row.rowId || `${row.type}-${index}`} className={`rounded-2xl border p-4 transition-all ${classes?.card || 'border-slate-150 bg-white'} ${selectedReportId === report?.id ? 'ring-2 ring-indigo-200' : ''}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-md bg-white/80 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-slate-400">{row.type === 'group_header' ? 'Pos Utama' : 'Rincian'}</span>
-                        {definition && <ReportTypeBadge type={report!.reportType} />}
-                      </div>
-                      <h5 className="mt-2 line-clamp-2 text-sm font-black text-slate-900">{row.uraian}</h5>
-                      <p className="mt-1 text-[11px] font-medium text-slate-500">Anggaran tersambung: <span className="font-mono font-bold text-slate-700">{fmtRp(getRowBudget(row, index))}</span></p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      {report ? <span className={`inline-flex items-center gap-1 text-[10px] font-bold ${reportStatus(report) === 'Draft terisi' ? 'text-emerald-700' : 'text-amber-700'}`}><CheckCircle2 className="h-3.5 w-3.5" /> {reportStatus(report)}</span> : <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400"><AlertCircle className="h-3.5 w-3.5" /> Belum terhubung</span>}
-                    </div>
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          {groupRows.map(({ row, index }) => {
+            const linked = row.reportId ? expenseReports.find((report) => report.id === row.reportId) : undefined;
+            const budget = getGroupBudget(expenseRows, index, parseQty);
+            const actual = getGroupActual(expenseRows, index);
+            return (
+              <Card key={row.rowId || `${row.uraian}-${index}`} className="border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-indigo-500">Header grup LPJ</p>
+                    <h4 className="mt-1 truncate text-sm font-black text-slate-900">{row.uraian}</h4>
+                    <p className="mt-1 text-[10px] text-slate-400">{getExpenseGroupRows(expenseRows, index).length} rincian anak · Anggaran {fmtRp(budget)} · Realisasi {fmtRp(actual)}</p>
                   </div>
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-white/70 pt-3">
-                    {report ? <span className="text-[11px] font-semibold text-slate-500">Total rincian: <span className="font-mono font-black text-slate-800">{fmtRp(getExpenseReportTotal(report))}</span> · {getExpenseReportRowCount(report)} baris</span> : <span className="text-[11px] font-medium text-slate-400">Belum ada format laporan yang dipilih</span>}
-                    <div className="flex items-center gap-2">
-                      <Button type="button" variant="outline" size="sm" onClick={() => onOpenLink(index)} className="h-8 rounded-lg border-slate-200 px-2.5 text-[11px] font-bold text-slate-700 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"><Pencil className="mr-1 h-3.5 w-3.5" /> {report ? 'Ganti' : 'Hubungkan Laporan'}</Button>
-                      {report && <Button type="button" size="sm" onClick={() => onSelectReport(report.id)} className={`h-8 rounded-lg px-2.5 text-[11px] font-bold text-white ${classes?.button || 'bg-indigo-600 hover:bg-indigo-700'}`}>Buka Laporan <ArrowRight className="ml-1 h-3.5 w-3.5" /></Button>}
-                    </div>
-                  </div>
+                  {linked ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Terhubung</span>
+                  ) : (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">Belum terhubung</span>
+                  )}
                 </div>
-              );
-            })}
-          </div>
+                {linked && (
+                  <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-xs font-bold text-slate-800">{linked.title || 'Tanpa judul'}</p>
+                      <span className="shrink-0 rounded-md bg-indigo-100 px-2 py-0.5 text-[9px] font-black text-indigo-700">{modeLabel(linked.mode)}</span>
+                    </div>
+                    <p className="mt-1 text-[10px] text-slate-500">Anggaran {fmtRp(getExpenseReportBudgetTotal(linked, parseQty))} · Realisasi {fmtRp(getExpenseReportActualTotal(linked))}</p>
+                  </div>
+                )}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button type="button" disabled={readOnly && !linked} onClick={() => openReport(row, index)} className="h-8 rounded-lg bg-indigo-600 px-3 text-[10px] font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+                    {linked ? <><FileDown className="mr-1.5 h-3.5 w-3.5" /> Buka / Edit Laporan</> : <><Link2 className="mr-1.5 h-3.5 w-3.5" /> Hubungkan Header Grup ke Laporan</>}
+                  </Button>
+                  {linked && !readOnly && (
+                    <Button type="button" variant="ghost" onClick={() => onUnlinkReport(linked.id)} className="h-8 rounded-lg px-3 text-[10px] font-bold text-rose-600 hover:bg-rose-50">
+                      <X className="mr-1 h-3.5 w-3.5" /> Lepas
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 
-      {selectedReport ? renderReportEditor() : expenseReports.length > 0 ? (
-        <div className="rounded-2xl border border-slate-150 bg-white p-6 text-center text-xs text-slate-400">Pilih <span className="font-bold text-indigo-600">Buka Laporan</span> pada salah satu pos untuk mengisi rincian.</div>
-      ) : null}
-    </div>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
+        <DialogContent className="flex h-[92vh] max-h-[95vh] w-[96vw] max-w-[96vw] sm:max-w-[96vw] flex-col overflow-hidden rounded-3xl border-none bg-white p-0 shadow-2xl">
+          <DialogHeader className="shrink-0 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-slate-50 p-5 md:p-6">
+            <DialogTitle className="flex items-center gap-2.5 text-lg font-bold text-slate-800">
+              <Link2 className="h-5 w-5 text-indigo-600" /> Hubungkan Header Grup ke Laporan
+            </DialogTitle>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">Buat format laporan reusable untuk rincian header LPJ ini. QTY, RATE, ANGGARAN, dan REALISASI mengikuti pola tabel proposal/LPJ.</p>
+          </DialogHeader>
+
+          {draftReport && (
+            <div className="min-h-0 flex-1 overflow-hidden p-5 md:p-6">
+              <div className="grid h-full min-h-0 grid-cols-1 gap-6 lg:grid-cols-12">
+                {/* Left Side: Meta, Title, Notes & Mode Selection */}
+                <div className="flex flex-col space-y-4 overflow-y-auto pr-0 xl:col-span-3 lg:col-span-4 lg:border-r lg:border-slate-100 lg:pr-5">
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4 shadow-2xs">
+                    <span className="block text-[10px] font-black uppercase tracking-wider text-indigo-500">Header grup yang dipilih</span>
+                    <span className="mt-1 block text-sm font-black text-slate-900">{draftReport.expenseLabel}</span>
+                  </div>
+
+                  <div className="space-y-3 bg-slate-50/50 p-4 rounded-2xl border border-slate-150">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-600">Judul laporan custom</label>
+                      <Input value={draftReport.title} disabled={readOnly} onChange={(event) => updateDraft((report) => ({ ...report, title: event.target.value }))} placeholder="Contoh: Laporan Pembayaran Tim Pelaksana" className="h-10 rounded-xl bg-white border-slate-200 text-sm font-bold text-slate-900" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Mode Laporan</label>
+                    <div className="grid grid-cols-1 gap-3">
+                      <ReportModeCard mode="employee" selected={draftReport.mode === 'employee'} disabled={readOnly} onClick={() => updateDraft((report) => ({ ...report, mode: 'employee' }))} />
+                      <ReportModeCard mode="expense" selected={draftReport.mode === 'expense'} disabled={readOnly} onClick={() => updateDraft((report) => ({ ...report, mode: 'expense' }))} />
+                    </div>
+                  </div>
+
+                  {formErrors.length > 0 && (
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 shadow-2xs">
+                      <p className="font-black">Periksa laporan sebelum disimpan:</p>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-4">{formErrors.map((error) => <li key={error}>{error}</li>)}</ul>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Side: Item Details Table */}
+                <div className="flex h-full min-h-0 flex-col space-y-3 xl:col-span-9 lg:col-span-8">
+                  <div className="flex shrink-0 items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Rincian Item & Nominal Laporan</h4>
+                      <p className="mt-0.5 text-[11px] text-slate-500">Isi uraian, pegawai/penerima, qty, rate, dan realisasi.</p>
+                    </div>
+                    {!readOnly && (
+                      <Button type="button" variant="outline" onClick={() => updateDraft((report) => ({ ...report, rows: [...report.rows, createExpenseReportRow({ id: createStableId('expense-report-row') })] }))} className="h-8.5 rounded-xl border-indigo-200 bg-indigo-50/50 text-xs font-bold text-indigo-700 hover:bg-indigo-100">
+                        <Plus className="mr-1.5 h-3.5 w-3.5" /> Tambah Baris
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="relative min-h-0 flex-1 overflow-auto rounded-2xl border border-slate-200 bg-white">
+                    <table className="w-full min-w-[1000px] border-collapse text-left">
+                      <thead>
+                        <tr className="sticky top-0 z-20 border-b border-slate-200 bg-slate-100 shadow-2xs">
+                          <th className="w-12 px-3 py-3 text-center text-[10px] font-black uppercase text-slate-600">No</th>
+                          <th className="w-[210px] max-w-[210px] px-3 py-3 text-[10px] font-black uppercase text-slate-600">Uraian / Pegawai</th>
+                          <th className="w-[190px] px-3 py-3 text-center text-[10px] font-black uppercase text-slate-600">QTY</th>
+                          <th className="w-[150px] px-3 py-3 text-right text-[10px] font-black uppercase text-slate-600">RATE</th>
+                          <th className="w-[160px] px-3 py-3 text-right text-[10px] font-black uppercase text-slate-600">REALISASI</th>
+                          <th className="w-[260px] px-3 py-3 text-right text-[10px] font-black uppercase text-slate-600">Status / Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const groupHeaderIndex = expenseRows.findIndex(
+                            (r) => r.type === 'group_header' && r.rowId === draftReport.expenseRowId
+                          );
+                          const headerItems = groupHeaderIndex !== -1 ? getExpenseGroupRows(expenseRows, groupHeaderIndex) : [];
+
+                          if (headerItems.length === 0) {
+                            return draftReport.rows.map((row, index) => {
+                              return (
+                                <tr key={row.id} className="border-b border-slate-100 align-top hover:bg-slate-50/50">
+                                  <td className="px-3 py-3 text-center text-xs font-bold text-slate-400">{index + 1}</td>
+                                  <td className="px-3 py-3">
+                                    <div className="space-y-2">
+                                      <Input value={row.uraian} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, uraian: event.target.value }))} placeholder="Uraian rincian..." className="h-8 rounded-lg border-slate-200 text-xs font-semibold" />
+                                      {draftReport.mode === 'employee' && (
+                                        <EmployeeSearch
+                                          row={row}
+                                          employees={employees}
+                                          selectedEmployeeIds={selectedEmployeeIds}
+                                          disabled={readOnly}
+                                          onChange={(value) => updateDraftRow(row.id, (current) => ({ ...current, employeeId: '', employeeName: '', employeeSearchText: value }))}
+                                          onConnect={(employee) => updateDraftRow(row.id, (current) => ({ ...current, employeeId: employee.id, employeeName: employee.name, employeeSearchText: employee.name }))}
+                                          onDisconnect={() => updateDraftRow(row.id, (current) => ({ ...current, employeeId: '', employeeName: '', employeeSearchText: '' }))}
+                                        />
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-3"><Input value={row.rincianQty} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, rincianQty: event.target.value }))} placeholder="10 / 20%" className="h-8 rounded-lg border-slate-200 text-center text-xs font-bold" /></td>
+                                  <td className="px-3 py-3"><Input type="text" inputMode="numeric" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, rincianRate: parseMoney(event.target.value) }))} placeholder="Rp 0" className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" /></td>
+                                  <td className="px-3 py-3"><Input type="text" inputMode="numeric" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, realisasi: parseMoney(event.target.value) }))} placeholder="Rp 0" className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" /></td>
+                                  <td className="px-3 py-3 text-right"><Button type="button" variant="ghost" size="icon-xs" disabled={readOnly || draftReport.rows.length <= 1} onClick={() => updateDraft((report) => ({ ...report, rows: report.rows.filter((item) => item.id !== row.id) }))} className="text-rose-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"><Trash2 /></Button></td>
+                                </tr>
+                              );
+                            });
+                          }
+
+                          return headerItems.map((headerItem, hIdx) => {
+                            const headerAnggaran = parseQty(headerItem.rincianQty) * headerItem.rincianRate;
+                            const headerRealisasi = headerItem.realisasi ?? headerAnggaran;
+
+                            const childRows = draftReport.rows.filter((r) => {
+                              if (r.parentRowId) return r.parentRowId === headerItem.rowId;
+                              if (r.parentUraian) return r.parentUraian === headerItem.uraian;
+                              return r.uraian === headerItem.uraian;
+                            });
+
+                            const childTotal = childRows.reduce((sum, c) => {
+                              const qty = parseQty(c.rincianQty || '1');
+                              const sub = c.realisasi > 0 ? c.realisasi : qty * c.rincianRate;
+                              return sum + sub;
+                            }, 0);
+
+                            const isBalanced = childRows.length > 0 && Math.abs(childTotal - headerRealisasi) < 1;
+
+                            return (
+                              <React.Fragment key={headerItem.rowId || hIdx}>
+                                {/* LOCKED HEADER ITEM ROW */}
+                                <tr className="bg-indigo-50/80 border-y border-indigo-200/80 font-bold text-slate-900">
+                                  <td className="px-3 py-2.5 text-center text-xs font-black text-indigo-700">{hIdx + 1}</td>
+                                  <td className="px-3 py-2.5 text-xs font-black text-slate-900 flex items-center gap-1.5">
+                                    <Lock className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                    <span>{headerItem.uraian}</span>
+                                  </td>
+                                  <td className="px-3 py-2.5 text-center font-bold text-xs text-slate-700">{headerItem.rincianQty || '-'}</td>
+                                  <td className="px-3 py-2.5 text-right font-mono font-bold text-xs text-slate-700">{fmtRp(headerItem.rincianRate)}</td>
+                                  <td className="px-3 py-2.5 text-right font-mono font-black text-xs text-indigo-800">{fmtRp(headerRealisasi)}</td>
+                                  <td className="w-[260px] px-3 py-2.5 text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      {childRows.length > 0 ? (
+                                        isBalanced ? (
+                                          <div className="inline-flex items-center gap-1.5 text-left text-emerald-800 bg-emerald-100/90 px-2.5 py-1 rounded-lg shrink-0">
+                                            <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                                            <div className="flex flex-col leading-tight">
+                                              <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-800">Total Sesuai</span>
+                                              <span className="text-[11px] font-black font-mono text-emerald-700">{fmtRp(headerRealisasi)}</span>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="inline-flex items-center gap-1.5 text-left text-amber-900 bg-amber-100/90 px-2.5 py-1 rounded-lg shrink-0">
+                                            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                                            <div className="flex flex-col leading-tight">
+                                              <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-800">Penerima: {fmtRp(childTotal)}</span>
+                                              <span className="text-[10px] font-bold font-mono text-amber-700">LPJ: {fmtRp(headerRealisasi)}</span>
+                                            </div>
+                                          </div>
+                                        )
+                                      ) : (
+                                        <span className="text-[10px] font-semibold text-slate-400 italic whitespace-nowrap">Belum ada penerima</span>
+                                      )}
+
+                                      {childRows.length === 0 && !readOnly && (
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          title="Tambah Penerima"
+                                          onClick={() => {
+                                            const initialQty = headerItem.rincianQty || '1';
+                                            const initialRate = headerItem.rincianRate || 0;
+                                            const calculatedSubtotal = parseQty(initialQty) * initialRate;
+                                            const initialRealisasi = headerItem.realisasi || calculatedSubtotal;
+
+                                            const newRow = createExpenseReportRow({
+                                              id: createStableId('expense-report-row'),
+                                              parentRowId: headerItem.rowId,
+                                              parentUraian: headerItem.uraian,
+                                              uraian: headerItem.uraian,
+                                              rincianQty: initialQty,
+                                              rincianRate: initialRate,
+                                              realisasi: initialRealisasi,
+                                            });
+                                            updateDraft((report) => ({
+                                              ...report,
+                                              rows: [...report.rows, newRow],
+                                            }));
+                                          }}
+                                          className="h-7 px-2 rounded-lg text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs shrink-0"
+                                        >
+                                          <Plus className="w-3 h-3 mr-0.5" /> Penerima
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+
+                                {/* CHILD RECIPIENT ROWS UNDER THIS HEADER ITEM */}
+                                {childRows.map((cRow, cIdx) => {
+                                  const cQty = parseQty(cRow.rincianQty || '1');
+                                  const cSubtotal = cRow.realisasi > 0 ? cRow.realisasi : cQty * cRow.rincianRate;
+                                  const isLastChild = cIdx === childRows.length - 1;
+
+                                  return (
+                                    <tr key={cRow.id} className="border-b border-slate-100 bg-white hover:bg-slate-50/70">
+                                      <td className="px-3 py-2.5 text-center text-[10px] font-bold text-slate-400">{hIdx + 1}.{cIdx + 1}</td>
+                                      <td className="px-3 py-2.5">
+                                        {draftReport.mode === 'employee' ? (
+                                          <EmployeeSearch
+                                            row={cRow}
+                                            employees={employees}
+                                            selectedEmployeeIds={selectedEmployeeIds}
+                                            disabled={readOnly}
+                                            onChange={(value) => updateDraftRow(cRow.id, (current) => ({ ...current, employeeId: '', employeeName: '', employeeSearchText: value }))}
+                                            onConnect={(employee) => updateDraftRow(cRow.id, (current) => ({ ...current, employeeId: employee.id, employeeName: employee.name, employeeSearchText: employee.name }))}
+                                            onDisconnect={() => updateDraftRow(cRow.id, (current) => ({ ...current, employeeId: '', employeeName: '', employeeSearchText: '' }))}
+                                          />
+                                        ) : (
+                                          <span className="text-slate-300 font-mono text-[11px] pl-2">↳</span>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2.5">
+                                        <Input
+                                          value={cRow.rincianQty}
+                                          disabled={readOnly}
+                                          onChange={(event) => {
+                                            const val = event.target.value;
+                                            const parsedQty = parseQty(val);
+                                            updateDraftRow(cRow.id, (current) => ({
+                                              ...current,
+                                              rincianQty: val,
+                                              realisasi: parsedQty * current.rincianRate,
+                                            }));
+                                          }}
+                                          placeholder="1"
+                                          className="h-7.5 rounded-lg border-slate-200 text-center text-xs font-bold"
+                                        />
+                                      </td>
+                                      <td className="px-3 py-2.5">
+                                        <Input
+                                          type="text"
+                                          inputMode="numeric"
+                                          value={cRow.rincianRate > 0 ? fmtRp(cRow.rincianRate) : ''}
+                                          disabled={readOnly}
+                                          onChange={(event) => {
+                                            const rateVal = parseMoney(event.target.value);
+                                            const parsedQty = parseQty(cRow.rincianQty || '1');
+                                            updateDraftRow(cRow.id, (current) => ({
+                                              ...current,
+                                              rincianRate: rateVal,
+                                              realisasi: parsedQty * rateVal,
+                                            }));
+                                          }}
+                                          placeholder="Rp 0"
+                                          className="h-7.5 rounded-lg border-slate-200 text-right text-xs font-bold"
+                                        />
+                                      </td>
+                                      <td className="px-3 py-2.5">
+                                        <Input
+                                          type="text"
+                                          inputMode="numeric"
+                                          value={cSubtotal > 0 ? fmtRp(cSubtotal) : ''}
+                                          disabled={readOnly}
+                                          onChange={(event) => {
+                                            const subtotalVal = parseMoney(event.target.value);
+                                            updateDraftRow(cRow.id, (current) => ({
+                                              ...current,
+                                              realisasi: subtotalVal,
+                                            }));
+                                          }}
+                                          placeholder="Rp 0"
+                                          className="h-7.5 rounded-lg border-slate-200 text-right text-xs font-black text-indigo-700"
+                                        />
+                                      </td>
+                                      <td className="px-3 py-2.5 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                          {isLastChild && !readOnly && (
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="sm"
+                                              title="Tambah Penerima"
+                                              onClick={() => {
+                                                const lastChild = childRows[childRows.length - 1];
+                                                const initialQty = lastChild ? (lastChild.rincianQty || '1') : (headerItem.rincianQty || '1');
+                                                const initialRate = lastChild ? (lastChild.rincianRate || 0) : (headerItem.rincianRate || 0);
+                                                const calculatedSubtotal = parseQty(initialQty) * initialRate;
+                                                const initialRealisasi = lastChild ? (lastChild.realisasi || calculatedSubtotal) : (headerItem.realisasi || calculatedSubtotal);
+
+                                                const newRow = createExpenseReportRow({
+                                                  id: createStableId('expense-report-row'),
+                                                  parentRowId: headerItem.rowId,
+                                                  parentUraian: headerItem.uraian,
+                                                  uraian: headerItem.uraian,
+                                                  rincianQty: initialQty,
+                                                  rincianRate: initialRate,
+                                                  realisasi: initialRealisasi,
+                                                });
+                                                updateDraft((report) => ({
+                                                  ...report,
+                                                  rows: [...report.rows, newRow],
+                                                }));
+                                              }}
+                                              className="h-7 px-2 rounded-lg text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs shrink-0"
+                                            >
+                                              <Plus className="w-3 h-3 mr-0.5" /> Penerima
+                                            </Button>
+                                          )}
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-xs"
+                                            disabled={readOnly}
+                                            onClick={() => updateDraft((report) => ({ ...report, rows: report.rows.filter((item) => item.id !== cRow.id) }))}
+                                            className="text-rose-400 hover:bg-rose-50 hover:text-rose-600"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </Button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </React.Fragment>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                      <tfoot>
+                        <tr className="sticky bottom-0 z-20 border-t-2 border-slate-200 bg-slate-100 shadow-2xs">
+                          <td colSpan={4} className="px-3 py-3 text-right text-xs font-black uppercase text-slate-700">Total laporan</td>
+                          <td className="px-3 py-3 text-right font-mono text-xs font-black text-indigo-700">{fmtRp(getExpenseReportActualTotal(draftReport))}</td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 p-4">
+            <div className="flex items-center gap-2">
+              {draftReport && !readOnly && expenseReports.some((report) => report.id === draftReport.id) && (
+                <Button type="button" variant="ghost" onClick={() => { onUnlinkReport(draftReport.id); closeDialog(); }} className="rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50">Lepas Hubungan</Button>
+              )}
+              {draftReport && (
+                <Button type="button" variant="ghost" onClick={() => onPrintReport(draftReport)} className="rounded-xl text-xs font-bold text-indigo-700 hover:bg-indigo-50"><FileDown className="mr-1.5 h-3.5 w-3.5" /> Cetak PDF</Button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {!readOnly && (
+                autosaveStatus === 'saving' ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+                    <Loader2 className="h-3 w-3 animate-spin text-amber-600" /> Menyimpan...
+                  </span>
+                ) : autosaveStatus === 'saved' ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Tersimpan otomatis
+                  </span>
+                ) : null
+              )}
+              <Button type="button" variant="ghost" onClick={closeDialog} className="rounded-xl text-xs font-bold text-slate-500">Tutup</Button>
+              {!readOnly && <Button type="button" onClick={saveDraft} className="rounded-xl bg-indigo-600 px-5 text-xs font-bold text-white hover:bg-indigo-700"><Check className="mr-1.5 h-3.5 w-3.5" /> Simpan & Selesai</Button>}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </section>
   );
 }

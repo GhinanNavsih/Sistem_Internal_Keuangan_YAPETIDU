@@ -1,3 +1,15 @@
+/**
+ * Generic reports attached to LPJ expense-group headers.
+ *
+ * The legacy report type and row interfaces at the bottom of this file are
+ * intentionally kept as a read adapter. They are not used by the new UI,
+ * but allow documents created before the generic report workflow to remain
+ * readable and editable.
+ */
+
+export type ExpenseReportMode = 'employee' | 'expense';
+
+/** @deprecated Only used while normalizing old example-based documents. */
 export type ExpenseReportType =
   | 'proposal_examiner'
   | 'munaqosyah_examiner'
@@ -13,130 +25,54 @@ export interface ProposalExpenseRow {
   rincianQty: string;
   rincianRate: number;
   realisasi?: number;
+  /** Stable link stored only on LPJ group-header rows. */
   reportId?: string;
+  /** @deprecated Legacy records may still contain the old report type. */
   reportType?: ExpenseReportType;
 }
 
-export interface ExpenseReportDefinition {
-  type: ExpenseReportType;
-  label: string;
-  shortLabel: string;
-  description: string;
-  sourceDocument: string;
-  defaultTitle: string;
-  accent: 'blue' | 'violet' | 'amber' | 'emerald' | 'indigo' | 'rose';
-}
-
-export const EXPENSE_REPORT_DEFINITIONS: ExpenseReportDefinition[] = [
-  {
-    type: 'proposal_examiner',
-    label: 'Vakasi Penguji Proposal',
-    shortLabel: 'Penguji Proposal',
-    description: 'Daftar penguji utama dan ketua penguji beserta jumlah mahasiswa dan tarif vakasi.',
-    sourceDocument: 'Vakasi Penguji Proposal Skripsi 25-26.pdf',
-    defaultTitle: 'VAKASI PENGUJI PROPOSAL SKRIPSI',
-    accent: 'blue',
-  },
-  {
-    type: 'munaqosyah_examiner',
-    label: 'Vakasi Penguji Munaqosyah',
-    shortLabel: 'Penguji Munaqosyah',
-    description: 'Daftar penguji utama, ketua penguji, dan sekretaris munaqosyah.',
-    sourceDocument: 'Vakasi Penguji Munaqosyah Skripsi 25-26.pdf',
-    defaultTitle: 'VAKASI PENGUJI MUNAQOSYAH SKRIPSI',
-    accent: 'indigo',
-  },
-  {
-    type: 'pembimbing',
-    label: 'Vakasi Pembimbing',
-    shortLabel: 'Pembimbing',
-    description: 'Daftar pembimbing 1 dan pembimbing 2 berdasarkan jumlah mahasiswa.',
-    sourceDocument: 'Vakasi Pembimbing Skripsi 25-26.pdf',
-    defaultTitle: 'VAKASI PEMBIMBING SKRIPSI',
-    accent: 'emerald',
-  },
-  {
-    type: 'pedoman_kti',
-    label: 'Vakasi Penyusun Pedoman KTI',
-    shortLabel: 'Penyusun Pedoman KTI',
-    description: 'Daftar penyusun pedoman, tugas, dan nominal vakasi masing-masing.',
-    sourceDocument: 'Vakasi Penyusun Pedoman KTI Skripsi 25-26.pdf',
-    defaultTitle: 'VAKASI PENYUSUN PEDOMAN KTI',
-    accent: 'violet',
-  },
-  {
-    type: 'committee',
-    label: 'Vakasi Kepanitiaan',
-    shortLabel: 'Kepanitiaan',
-    description: 'Daftar panitia dan nominal vakasi yang menjadi bagian dari biaya kepanitiaan.',
-    sourceDocument: 'Vakasi Kepanitiaan Skripsi FAI25-26.pdf',
-    defaultTitle: 'KEPANITIAAN SKRIPSI',
-    accent: 'rose',
-  },
-  {
-    type: 'receipt',
-    label: 'Kwitansi / Nota',
-    shortLabel: 'Kwitansi / Nota',
-    description: 'Rincian pembelian dan bukti pengeluaran untuk konsumsi, ATK, rapat, atau biaya lain.',
-    sourceDocument: 'LPJ (Kwitansi dan Nota).pdf',
-    defaultTitle: 'LPJ KWITANSI DAN NOTA',
-    accent: 'amber',
-  },
-];
-
-export interface ExaminerReportRow {
+export interface ExpenseReportRow {
   id: string;
+  parentRowId?: string;
+  parentUraian?: string;
+  uraian: string;
   employeeId: string;
   employeeName: string;
-  role: string;
-  studentCount: number;
-  rate: number;
-}
-
-export interface PembimbingReportRow {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  role: string;
-  studentCount: number;
-  rate: number;
-}
-
-export interface PedomanReportRow {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  task: string;
-  amount: number;
-}
-
-export interface CommitteeReportRow {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  amount: number;
-}
-
-export interface ReceiptReportRow {
-  id: string;
-  itemName: string;
-  qty: number;
-  unitPrice: number;
+  /** Search text is kept so an unfinished draft can be reopened safely. */
+  employeeSearchText?: string;
+  rincianQty: string;
+  rincianRate: number;
+  realisasi: number;
   note: string;
 }
 
 export interface ExpenseReport {
   id: string;
+  /** Must match the rowId of an LPJ group_header row. */
   expenseRowId: string;
   expenseLabel: string;
-  reportType: ExpenseReportType;
   title: string;
+  mode: ExpenseReportMode;
   notes: string;
-  examinerRows: ExaminerReportRow[];
-  pembimbingRows: PembimbingReportRow[];
-  pedomanRows: PedomanReportRow[];
-  committeeRows: CommitteeReportRow[];
-  receiptRows: ReceiptReportRow[];
+  rows: ExpenseReportRow[];
+  source: 'custom' | 'legacy';
+  /** @deprecated Present only when this report came from an old document. */
+  legacyReportType?: ExpenseReportType;
+  /** Original legacy payload, retained for a lossless read/migration path. */
+  legacy?: Record<string, unknown>;
+}
+
+export interface ExpenseReportValidation {
+  valid: boolean;
+  errors: string[];
+  populatedRows: ExpenseReportRow[];
+  duplicateEmployeeIds: string[];
+}
+
+export interface ExpenseReportWorker {
+  employeeId: string;
+  employeeName: string;
+  payGiven: number;
 }
 
 export function createStableId(prefix: string): string {
@@ -147,8 +83,29 @@ export function createStableId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export function getExpenseReportDefinition(type: ExpenseReportType): ExpenseReportDefinition {
-  return EXPENSE_REPORT_DEFINITIONS.find((definition) => definition.type === type) || EXPENSE_REPORT_DEFINITIONS[0];
+/** Matches the quantity grammar already used by the proposal and LPJ pages. */
+export function parseProposalQty(value: string): number {
+  if (!value) return 0;
+  const trimmed = String(value).trim();
+  const parts = trimmed.split(/[xX\*]/);
+  if (parts.length > 1) {
+    let product = 1;
+    for (const part of parts) {
+      const cleanPart = part.trim();
+      const match = cleanPart.match(/[\d.]+/);
+      if (!match) continue;
+      let parsed = parseFloat(match[0]);
+      if (cleanPart.includes('%')) parsed /= 100;
+      product *= parsed;
+    }
+    return Number.isFinite(product) ? product : 0;
+  }
+  if (trimmed.endsWith('%')) {
+    const match = trimmed.match(/[\d.]+/);
+    return match ? parseFloat(match[0]) / 100 : 0;
+  }
+  const match = trimmed.match(/[\d.]+/);
+  return match ? parseFloat(match[0]) : 0;
 }
 
 export function createProposalExpenseRow(type: 'item' | 'group_header' = 'item'): ProposalExpenseRow {
@@ -163,112 +120,376 @@ export function createProposalExpenseRow(type: 'item' | 'group_header' = 'item')
   return row;
 }
 
-function createExaminerRow(role: string, rate: number): ExaminerReportRow {
-  return {
-    id: createStableId('examiner-row'),
-    employeeId: '',
-    employeeName: '',
-    role,
-    studentCount: 0,
-    rate,
-  };
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function createPembimbingRow(role: string, rate: number): PembimbingReportRow {
-  return {
-    id: createStableId('pembimbing-row'),
-    employeeId: '',
-    employeeName: '',
-    role,
-    studentCount: 0,
-    rate,
-  };
+function normalizeText(value: unknown): string {
+  return typeof value === 'string' ? value : value == null ? '' : String(value);
 }
 
-function createPedomanRow(): PedomanReportRow {
-  return {
-    id: createStableId('pedoman-row'),
-    employeeId: '',
-    employeeName: '',
-    task: '',
-    amount: 0,
-  };
+function isPlainObject(value: object): value is Record<string, unknown> {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
-function createCommitteeRow(): CommitteeReportRow {
-  return {
-    id: createStableId('committee-row'),
-    employeeId: '',
-    employeeName: '',
-    amount: 0,
-  };
+/**
+ * Removes undefined values before a proposal is sent to Firestore.
+ *
+ * Firestore sentinels, Timestamps, Dates, and references are class instances,
+ * so only plain application objects are traversed. This keeps values such as
+ * serverTimestamp() intact while cleaning legacy/UI objects at every depth.
+ */
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === undefined) return null as unknown as T;
+  if (data === null || typeof data !== 'object') return data;
+  if (Array.isArray(data)) {
+    return data.map((item) => sanitizeForFirestore(item)) as unknown as T;
+  }
+  if (!isPlainObject(data)) return data;
+
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) {
+      cleaned[key] = sanitizeForFirestore(value);
+    }
+  }
+  return cleaned as T;
 }
 
-function createReceiptRow(): ReceiptReportRow {
-  return {
-    id: createStableId('receipt-row'),
-    itemName: '',
-    qty: 1,
-    unitPrice: 0,
+function normalizeRow(raw: Partial<ExpenseReportRow> | Record<string, unknown>, index: number): ExpenseReportRow {
+  const employeeName = normalizeText(raw.employeeName);
+  const employeeId = normalizeText(raw.employeeId);
+  const employeeSearchText = normalizeText(raw.employeeSearchText || employeeName);
+  const row: ExpenseReportRow = {
+    id: normalizeText(raw.id) || `expense-report-row-${index + 1}`,
+    uraian: normalizeText(raw.uraian),
+    employeeId,
+    employeeName,
+    employeeSearchText,
+    rincianQty: normalizeText(raw.rincianQty),
+    rincianRate: Math.max(0, toFiniteNumber(raw.rincianRate)),
+    realisasi: Math.max(0, toFiniteNumber(raw.realisasi)),
+    note: normalizeText(raw.note),
+  };
+  if (raw.parentRowId) row.parentRowId = normalizeText(raw.parentRowId);
+  if (raw.parentUraian) row.parentUraian = normalizeText(raw.parentUraian);
+  return row;
+}
+
+export function createExpenseReportRow(seed: Partial<ExpenseReportRow> = {}): ExpenseReportRow {
+  return normalizeRow({
+    id: createStableId('expense-report-row'),
+    uraian: '',
+    employeeId: '',
+    employeeName: '',
+    employeeSearchText: '',
+    rincianQty: '',
+    rincianRate: 0,
+    realisasi: 0,
     note: '',
-  };
+    ...seed,
+  }, 0);
+}
+
+/** Returns only children belonging to a given group header. */
+export function getExpenseGroupRows(
+  expenseRows: ProposalExpenseRow[],
+  groupIndex: number,
+): ProposalExpenseRow[] {
+  if (expenseRows[groupIndex]?.type !== 'group_header') return [];
+  const rows: ProposalExpenseRow[] = [];
+  for (let index = groupIndex + 1; index < expenseRows.length; index += 1) {
+    if (expenseRows[index].type === 'group_header') break;
+    rows.push(expenseRows[index]);
+  }
+  return rows;
+}
+
+/**
+ * Seeds a new report from the linked LPJ group's children. The child rows are
+ * copied rather than referenced so the report can be edited independently.
+ */
+export function seedExpenseReportRows(
+  expenseRows: ProposalExpenseRow[],
+  groupIndex: number,
+): ExpenseReportRow[] {
+  const seeded = getExpenseGroupRows(expenseRows, groupIndex)
+    .filter((row) => row.uraian.trim() || row.rincianQty.trim() || row.rincianRate || row.realisasi)
+    .map((row, index) => createExpenseReportRow({
+      id: createStableId(`expense-report-row-${index + 1}`),
+      uraian: row.uraian,
+      rincianQty: row.rincianQty,
+      rincianRate: Math.max(0, toFiniteNumber(row.rincianRate)),
+      realisasi: Math.max(0, toFiniteNumber(row.realisasi ?? parseProposalQty(row.rincianQty) * row.rincianRate)),
+    }));
+  return seeded.length > 0 ? seeded : [createExpenseReportRow()];
 }
 
 export function createExpenseReport(
   id: string,
   expenseRowId: string,
   expenseLabel: string,
-  reportType: ExpenseReportType,
+  mode: ExpenseReportMode = 'employee',
+  seedRows: ExpenseReportRow[] = [createExpenseReportRow()],
 ): ExpenseReport {
-  const examinerRows = reportType === 'proposal_examiner'
-    ? [createExaminerRow('Penguji Utama', 40000), createExaminerRow('Ketua Penguji', 35000)]
-    : reportType === 'munaqosyah_examiner'
-      ? [
-        createExaminerRow('Penguji Utama', 55000),
-        createExaminerRow('Ketua Penguji', 45000),
-        createExaminerRow('Sekretaris', 35000),
-      ]
-      : [];
-
   return {
     id,
     expenseRowId,
     expenseLabel,
-    reportType,
-    title: getExpenseReportDefinition(reportType).defaultTitle,
+    title: '',
+    mode,
     notes: '',
-    examinerRows,
-    pembimbingRows: reportType === 'pembimbing'
-      ? [createPembimbingRow('Pembimbing 1', 140000), createPembimbingRow('Pembimbing 2', 95000)]
-      : [],
-    pedomanRows: reportType === 'pedoman_kti' ? [createPedomanRow()] : [],
-    committeeRows: reportType === 'committee' ? [createCommitteeRow()] : [],
-    receiptRows: reportType === 'receipt' ? [createReceiptRow()] : [],
+    rows: seedRows.map((row, index) => normalizeRow(row, index)),
+    source: 'custom',
   };
 }
 
-export function getExpenseReportTotal(report: ExpenseReport): number {
-  if (report.reportType === 'proposal_examiner' || report.reportType === 'munaqosyah_examiner') {
-    return report.examinerRows.reduce((sum, row) => sum + row.studentCount * row.rate, 0);
-  }
-  if (report.reportType === 'pembimbing') {
-    return report.pembimbingRows.reduce((sum, row) => sum + row.studentCount * row.rate, 0);
-  }
-  if (report.reportType === 'pedoman_kti') {
-    return report.pedomanRows.reduce((sum, row) => sum + row.amount, 0);
-  }
-  if (report.reportType === 'committee') {
-    return report.committeeRows.reduce((sum, row) => sum + row.amount, 0);
-  }
-  return report.receiptRows.reduce((sum, row) => sum + row.qty * row.unitPrice, 0);
+export function getExpenseReportBudgetTotal(
+  report: ExpenseReport,
+  parseQty: (value: string) => number = parseProposalQty,
+): number {
+  return report.rows.reduce((sum, row) => {
+    const qty = parseQty(row.rincianQty);
+    return sum + (Number.isFinite(qty) ? qty : 0) * Math.max(0, toFiniteNumber(row.rincianRate));
+  }, 0);
+}
+
+export function getExpenseReportActualTotal(report: ExpenseReport): number {
+  return report.rows.reduce((sum, row) => sum + Math.max(0, toFiniteNumber(row.realisasi)), 0);
+}
+
+/** Kept as the generic replacement for the former type-specific total helper. */
+export function getExpenseReportTotal(
+  report: ExpenseReport,
+  parseQty: (value: string) => number = parseProposalQty,
+): number {
+  return getExpenseReportBudgetTotal(report, parseQty);
 }
 
 export function getExpenseReportRowCount(report: ExpenseReport): number {
-  if (report.reportType === 'proposal_examiner' || report.reportType === 'munaqosyah_examiner') return report.examinerRows.length;
-  if (report.reportType === 'pembimbing') return report.pembimbingRows.length;
-  if (report.reportType === 'pedoman_kti') return report.pedomanRows.length;
-  if (report.reportType === 'committee') return report.committeeRows.length;
-  return report.receiptRows.length;
+  return report.rows.length;
+}
+
+function isPopulatedRow(row: ExpenseReportRow): boolean {
+  return Boolean(
+    row.uraian.trim() ||
+    row.employeeId.trim() ||
+    row.employeeName.trim() ||
+    row.employeeSearchText?.trim() ||
+    row.rincianQty.trim() ||
+    row.rincianRate ||
+    row.realisasi ||
+    row.note.trim(),
+  );
+}
+
+export function validateExpenseReport(
+  report: ExpenseReport,
+  parseQty: (value: string) => number = parseProposalQty,
+): ExpenseReportValidation {
+  const errors: string[] = [];
+  const populatedRows = report.rows.filter(isPopulatedRow);
+  const duplicateEmployeeIds: string[] = [];
+
+  if (!report.expenseRowId.trim()) errors.push('Laporan belum terhubung ke header grup LPJ.');
+  if (!report.title.trim()) errors.push('Judul laporan wajib diisi.');
+  if (populatedRows.length === 0) errors.push('Tambahkan setidaknya satu rincian laporan.');
+
+  const seenEmployeeIds = new Set<string>();
+  populatedRows.forEach((row, index) => {
+    const rowLabel = `Baris ${index + 1}`;
+    const qty = parseQty(row.rincianQty);
+    const rate = toFiniteNumber(row.rincianRate, NaN);
+    const actual = toFiniteNumber(row.realisasi, NaN);
+    if (!row.uraian.trim()) errors.push(`${rowLabel}: uraian wajib diisi.`);
+    if (!Number.isFinite(qty) || qty <= 0) errors.push(`${rowLabel}: QTY harus lebih besar dari 0.`);
+    if (!Number.isFinite(rate) || rate < 0) errors.push(`${rowLabel}: RATE tidak valid.`);
+    if (!Number.isFinite(actual) || actual < 0) errors.push(`${rowLabel}: REALISASI tidak valid.`);
+
+    if (report.mode === 'employee') {
+      if (!row.employeeId.trim() || !row.employeeName.trim()) {
+        errors.push(`${rowLabel}: pilih pegawai dari hasil pencarian dan hubungkan.`);
+      }
+      if (row.employeeId && seenEmployeeIds.has(row.employeeId)) {
+        duplicateEmployeeIds.push(row.employeeId);
+        errors.push(`${rowLabel}: pegawai yang sama tidak boleh muncul dua kali.`);
+      }
+      if (row.employeeId) seenEmployeeIds.add(row.employeeId);
+      if (row.employeeSearchText?.trim() && !row.employeeId) {
+        errors.push(`${rowLabel}: pencarian pegawai belum dihubungkan.`);
+      }
+    }
+  });
+
+  return { valid: errors.length === 0, errors, populatedRows, duplicateEmployeeIds };
+}
+
+export function buildExpenseReportWorkers(
+  report: ExpenseReport,
+  parseQty: (value: string) => number = parseProposalQty,
+): ExpenseReportWorker[] {
+  if (report.mode !== 'employee') return [];
+  const workers = new Map<string, ExpenseReportWorker>();
+  report.rows.forEach((row) => {
+    if (!row.employeeId.trim()) return;
+    const previous = workers.get(row.employeeId);
+    const payGiven = Math.max(0, toFiniteNumber(row.realisasi));
+    workers.set(row.employeeId, {
+      employeeId: row.employeeId,
+      employeeName: row.employeeName,
+      payGiven: (previous?.payGiven || 0) + payGiven,
+    });
+  });
+  // Keep the parser in this function's signature for callers that share the
+  // same validation/build pipeline; REALISASI, not budget, is intentionally pay.
+  void parseQty;
+  return Array.from(workers.values());
+}
+
+function normalizeLegacyRows(raw: Record<string, unknown>, type: ExpenseReportType): ExpenseReportRow[] {
+  const employeeRows = (value: unknown): Record<string, unknown>[] => Array.isArray(value)
+    ? value.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+    : [];
+
+  if (type === 'receipt') {
+    const rows = employeeRows(raw.receiptRows);
+    return (rows.length ? rows : [{}]).map((row, index) => createExpenseReportRow({
+      id: normalizeText(row.id) || createStableId(`legacy-receipt-${index + 1}`),
+      uraian: normalizeText(row.itemName),
+      rincianQty: normalizeText(row.qty || ''),
+      rincianRate: Math.max(0, toFiniteNumber(row.unitPrice)),
+      realisasi: Math.max(0, toFiniteNumber(row.qty) * toFiniteNumber(row.unitPrice)),
+      note: normalizeText(row.note),
+    }));
+  }
+
+  const rows = type === 'proposal_examiner' || type === 'munaqosyah_examiner'
+    ? employeeRows(raw.examinerRows)
+    : type === 'pembimbing'
+      ? employeeRows(raw.pembimbingRows)
+      : type === 'pedoman_kti'
+        ? employeeRows(raw.pedomanRows)
+        : employeeRows(raw.committeeRows);
+
+  return (rows.length ? rows : [{}]).map((row, index) => {
+    const qty = type === 'pedoman_kti' || type === 'committee'
+      ? '1'
+      : normalizeText(row.studentCount || '');
+    const rate = type === 'pedoman_kti'
+      ? toFiniteNumber(row.amount)
+      : type === 'committee'
+        ? toFiniteNumber(row.amount)
+        : toFiniteNumber(row.rate);
+    return createExpenseReportRow({
+      id: normalizeText(row.id) || createStableId(`legacy-report-${index + 1}`),
+      uraian: normalizeText(row.role || row.task || (type === 'committee' ? 'Kepanitiaan' : '')),
+      employeeId: normalizeText(row.employeeId),
+      employeeName: normalizeText(row.employeeName),
+      employeeSearchText: normalizeText(row.employeeName),
+      rincianQty: qty,
+      rincianRate: Math.max(0, rate),
+      realisasi: Math.max(0, type === 'pedoman_kti' || type === 'committee'
+        ? rate
+        : toFiniteNumber(row.studentCount) * rate),
+    });
+  });
+}
+
+/**
+ * Converts both the generic shape and the former example-specific shape to
+ * the generic model. Unknown legacy fields are retained under `legacy`.
+ */
+export function normalizeExpenseReport(
+  raw: unknown,
+  fallback: Partial<Pick<ExpenseReport, 'expenseRowId' | 'expenseLabel'>> = {},
+): ExpenseReport | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Record<string, unknown>;
+  const id = normalizeText(value.id);
+  if (!id) return null;
+
+  const legacyType = normalizeText(value.legacyReportType || value.reportType) as ExpenseReportType;
+  const hasValidLegacyType = [
+    'proposal_examiner',
+    'munaqosyah_examiner',
+    'pembimbing',
+    'pedoman_kti',
+    'committee',
+    'receipt',
+  ].includes(legacyType);
+  const isGeneric = value.mode === 'employee' || value.mode === 'expense' || Array.isArray(value.rows);
+  const mode: ExpenseReportMode = value.mode === 'expense' || legacyType === 'receipt' ? 'expense' : 'employee';
+  const rows = isGeneric
+    ? (Array.isArray(value.rows) ? value.rows : []).map((row, index) => normalizeRow(
+      row as Record<string, unknown>,
+      index,
+    ))
+    : hasValidLegacyType
+      ? normalizeLegacyRows(value, legacyType)
+      : [];
+
+  return {
+    id,
+    expenseRowId: normalizeText(value.expenseRowId || fallback.expenseRowId),
+    expenseLabel: normalizeText(value.expenseLabel || fallback.expenseLabel),
+    title: normalizeText(value.title) || (hasValidLegacyType ? `Laporan ${normalizeText(value.expenseLabel || fallback.expenseLabel)}` : ''),
+    mode,
+    notes: normalizeText(value.notes),
+    rows: rows.length ? rows : [createExpenseReportRow()],
+    source: isGeneric && value.source === 'legacy' ? 'legacy' : hasValidLegacyType ? 'legacy' : 'custom',
+    ...(hasValidLegacyType ? { legacyReportType: legacyType } : {}),
+    ...(!isGeneric && hasValidLegacyType ? { legacy: value } : {}),
+  };
+}
+
+export function normalizeExpenseReports(rawReports: unknown, fallbackRows: ProposalExpenseRow[] = []): ExpenseReport[] {
+  if (!Array.isArray(rawReports)) return [];
+  return rawReports.map((raw) => {
+    const value = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+    const fallbackRow = fallbackRows.find((row) => row.reportId === value.id);
+    return normalizeExpenseReport(raw, {
+      expenseRowId: fallbackRow?.rowId,
+      expenseLabel: fallbackRow?.uraian,
+    });
+  }).filter((report): report is ExpenseReport => Boolean(report));
+}
+
+/**
+ * Legacy UI versions could put a link on an individual child row. Preserve
+ * the first such link at its containing group header and clear child links so
+ * the new group-only rule has one canonical representation.
+ */
+export function normalizeExpenseReportLinksToGroups(
+  rows: ProposalExpenseRow[],
+  reports: ExpenseReport[],
+): { rows: ProposalExpenseRow[]; reports: ExpenseReport[] } {
+  const nextRows = rows.map((row) => ({ ...row }));
+  const nextReports = reports.map((report) => ({ ...report }));
+  let groupIndex = -1;
+
+  nextRows.forEach((row, index) => {
+    if (row.type === 'group_header') {
+      groupIndex = index;
+      return;
+    }
+    if (row.type !== 'item' || !row.reportId || groupIndex < 0) return;
+    const group = nextRows[groupIndex];
+    if (!group.reportId) group.reportId = row.reportId;
+    const report = nextReports.find((candidate) => candidate.id === row.reportId);
+    if (report && report.expenseRowId === row.rowId && group.rowId) report.expenseRowId = group.rowId;
+    delete row.reportId;
+    delete row.reportType;
+  });
+
+  nextRows.forEach((row) => {
+    if (row.type !== 'group_header' || !row.reportId || !row.rowId) return;
+    const report = nextReports.find((candidate) => candidate.id === row.reportId);
+    if (report) report.expenseRowId = row.rowId;
+  });
+
+  return { rows: nextRows, reports: nextReports };
 }
 
 export function ensureExpenseRowIds<T extends ProposalExpenseRow>(rows: T[]): T[] {

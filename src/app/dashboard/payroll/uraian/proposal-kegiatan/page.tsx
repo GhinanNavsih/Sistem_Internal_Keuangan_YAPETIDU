@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,16 +35,16 @@ import { generatePelaporanKegiatanPdf } from '@/utils/generatePelaporanKegiatanP
 import { generateProposalExpenseReportPdf } from '@/utils/generateProposalExpenseReportPdf';
 import ExpenseReportStage from './ExpenseReportStage';
 import {
-  createExpenseReport,
   createProposalExpenseRow,
   createStableId,
   ensureExpenseRowIds,
-  EXPENSE_REPORT_DEFINITIONS,
   ExpenseReport,
-  ExpenseReportType,
-  getExpenseReportDefinition,
+  normalizeExpenseReportLinksToGroups,
+  normalizeExpenseReports,
   ProposalExpenseRow,
+  sanitizeForFirestore,
 } from '@/lib/payroll/proposalExpenseReports';
+import { authenticatedJson } from '@/lib/payroll/client';
 
 const clearExpenseReportLink = (row: ProposalExpenseRow): ProposalExpenseRow => {
   const cleanRow = { ...row };
@@ -66,11 +66,9 @@ export default function ProposalKegiatanPage() {
   // ── Main Page State ──
   const [proposalList, setProposalList] = useState<any[]>([]);
   const [loadingProposal, setLoadingProposal] = useState(false);
-  const [activeStage, setActiveStage] = useState<'proposal' | 'lpj' | 'reports'>('proposal');
+  const [activeStage, setActiveStage] = useState<'proposal' | 'lpj'>('proposal');
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
-  const [selectedExpenseReportId, setSelectedExpenseReportId] = useState<string | null>(null);
-  const [showExpenseLinkDialog, setShowExpenseLinkDialog] = useState(false);
-  const [linkingExpenseRowIndex, setLinkingExpenseRowIndex] = useState<number | null>(null);
+  const [reportEditorGroupId, setReportEditorGroupId] = useState<string | null>(null);
 
   // Common Header States
   const [reportName, setReportName] = useState('');
@@ -118,8 +116,11 @@ export default function ProposalKegiatanPage() {
 
   // ── Stage 2: LPJ / Pelaporan States (Exact 4 Sections like PelaporanKegiatanPage) ──
   const [realisasiEnabled, setRealisasiEnabled] = useState(true);
-  const [vakasiPengujiEnabled, setVakasiPengujiEnabled] = useState(true);
-  const [kepanitiaaanEnabled, setKepanitiaaanEnabled] = useState(true);
+  // These fields remain in storage and are still passed to the legacy LPJ PDF
+  // adapter. The visible workflow now uses generic reports below the LPJ
+  // realization table instead of the old example-specific sections.
+  const [vakasiPengujiEnabled, setVakasiPengujiEnabled] = useState(false);
+  const [kepanitiaaanEnabled, setKepanitiaaanEnabled] = useState(false);
   const [receiptEnabled, setReceiptEnabled] = useState(false);
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -140,7 +141,7 @@ export default function ProposalKegiatanPage() {
   }[]>([{ uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
   const [lpjPengeluaranRows, setLpjPengeluaranRows] = useState<ProposalExpenseRow[]>([{ ...createProposalExpenseRow('group_header'), realisasi: 0 }]);
 
-  // Stage 3: one final report per connected main expense point.
+  // Generic reports, one per connected LPJ group header.
   const [expenseReports, setExpenseReports] = useState<ExpenseReport[]>([]);
 
   // LPJ Seksi 2: Vakasi Penguji
@@ -334,9 +335,7 @@ export default function ProposalKegiatanPage() {
   const resetForm = () => {
     skipAutoSaveRef.current = true;
     setSelectedProposalId(null);
-    setSelectedExpenseReportId(null);
-    setShowExpenseLinkDialog(false);
-    setLinkingExpenseRowIndex(null);
+    setReportEditorGroupId(null);
     setReportName('');
     setDepartmentUnit('');
     setCurrentProposalStatus('proposal_draft');
@@ -361,8 +360,8 @@ export default function ProposalKegiatanPage() {
 
     // LPJ Reset
     setRealisasiEnabled(true);
-    setVakasiPengujiEnabled(true);
-    setKepanitiaaanEnabled(true);
+    setVakasiPengujiEnabled(false);
+    setKepanitiaaanEnabled(false);
     setReceiptEnabled(false);
     setLpjPemasukanRows([{ uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
     setLpjPengeluaranRows([{ ...createProposalExpenseRow('group_header'), realisasi: 0 }]);
@@ -395,7 +394,7 @@ export default function ProposalKegiatanPage() {
     setCurrentSubmittedByName(item.submittedByName || null);
     setCurrentSubmittedByEmail(item.submittedByEmail || null);
     setCurrentProposalQueueNo(item.proposalQueueNumber || null);
-    setSelectedExpenseReportId(null);
+    setReportEditorGroupId(null);
 
     if (item.status && item.status.startsWith('lpj_')) {
       setActiveStage('lpj');
@@ -429,26 +428,29 @@ export default function ProposalKegiatanPage() {
     if (item.lpjPemasukanRows) setLpjPemasukanRows(item.lpjPemasukanRows);
     else if (item.pemasukanRows) setLpjPemasukanRows(item.pemasukanRows.map((r: any) => ({ ...r, realisasi: parseQty(r.rincianQty) * (r.rincianRate || 0) })));
 
-    if (item.lpjPengeluaranRows) {
-      setLpjPengeluaranRows(item.lpjPengeluaranRows.map((row: ProposalExpenseRow, index: number) => ({
-        ...row,
-        rowId: row.rowId || normalizedProposalExpenseRows[index]?.rowId,
-        realisasi: row.type === 'group_header' ? 0 : (row.realisasi ?? parseQty(row.rincianQty) * (row.rincianRate || 0)),
-      })));
-    } else if (item.pengeluaranRows) {
-      setLpjPengeluaranRows(normalizedProposalExpenseRows.map((row) => ({
-        ...row,
-        realisasi: row.type === 'group_header' ? 0 : parseQty(row.rincianQty) * (row.rincianRate || 0),
-      })));
-    } else {
-      setLpjPengeluaranRows([{ ...createProposalExpenseRow('group_header'), realisasi: 0 }]);
-    }
-
-    if (item.expenseReports && Array.isArray(item.expenseReports)) {
-      setExpenseReports(item.expenseReports);
-    } else {
-      setExpenseReports([]);
-    }
+    const normalizedLpjExpenseRows: ProposalExpenseRow[] = item.lpjPengeluaranRows
+      ? ensureExpenseRowIds(item.lpjPengeluaranRows).map((row: ProposalExpenseRow, index: number) => {
+        const proposalRow = normalizedProposalExpenseRows[index];
+        return {
+          ...row,
+          // Old records sometimes stored links on proposal rows only. Copy
+          // that link into LPJ once, then all new edits remain LPJ-scoped.
+          rowId: row.rowId || proposalRow?.rowId,
+          reportId: row.reportId || proposalRow?.reportId,
+          reportType: row.reportType || proposalRow?.reportType,
+          realisasi: row.type === 'group_header' ? 0 : (row.realisasi ?? parseQty(row.rincianQty) * (row.rincianRate || 0)),
+        };
+      })
+      : item.pengeluaranRows
+        ? normalizedProposalExpenseRows.map((row) => ({
+          ...row,
+          realisasi: row.type === 'group_header' ? 0 : parseQty(row.rincianQty) * (row.rincianRate || 0),
+        }))
+        : [{ ...createProposalExpenseRow('group_header'), realisasi: 0 }];
+    const normalizedReports = normalizeExpenseReports(item.expenseReports, normalizedLpjExpenseRows);
+    const normalizedLinks = normalizeExpenseReportLinksToGroups(normalizedLpjExpenseRows, normalizedReports);
+    setLpjPengeluaranRows(normalizedLinks.rows);
+    setExpenseReports(normalizedLinks.reports);
 
     if (item.realisasiEnabled !== undefined) setRealisasiEnabled(item.realisasiEnabled);
     if (item.vakasiPengujiEnabled !== undefined) setVakasiPengujiEnabled(item.vakasiPengujiEnabled);
@@ -507,6 +509,7 @@ export default function ProposalKegiatanPage() {
   }, [danaOperasionalAnggaran, totalPengeluaranAnggaran]);
 
   const isProposalReadOnly = periodClosed || currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_');
+  const isLpjReadOnly = periodClosed || currentProposalStatus === 'lpj_submitted' || currentProposalStatus === 'lpj_approved';
 
   // ── REAL-TIME DEBOUNCED AUTO-SAVE EFFECT ──
   useEffect(() => {
@@ -561,7 +564,7 @@ export default function ProposalKegiatanPage() {
           updatedAt: serverTimestamp(),
         };
 
-        await setDoc(doc(db, 'ProposalKegiatan', docId), payload, { merge: true });
+        await setDoc(doc(db, 'ProposalKegiatan', docId), sanitizeForFirestore(payload), { merge: true });
         if (!selectedProposalId) setSelectedProposalId(docId);
         setAutoSaveStatus('saved');
         setTimeout(() => setAutoSaveStatus('idle'), 3000);
@@ -667,7 +670,7 @@ export default function ProposalKegiatanPage() {
     }
 
     setExpenseReports([]);
-    setSelectedExpenseReportId(null);
+    setReportEditorGroupId(null);
 
     setShowCloneModal(false);
     setMessage({
@@ -714,7 +717,7 @@ export default function ProposalKegiatanPage() {
         updatedAt: serverTimestamp(),
       };
 
-      await setDoc(doc(db, 'ProposalKegiatan', docId), payload, { merge: true });
+      await setDoc(doc(db, 'ProposalKegiatan', docId), sanitizeForFirestore(payload), { merge: true });
       setSelectedProposalId(docId);
       setMessage({ type: 'success', text: `Draft Proposal "${reportName}" berhasil disimpan.` });
     } catch (err) {
@@ -741,80 +744,28 @@ export default function ProposalKegiatanPage() {
     }
   };
 
-  const openExpenseLinkDialog = (rowIndex: number) => {
-    if (!isProposalApproved) {
-      setMessage({ type: 'error', text: 'Laporan per pos dapat dihubungkan setelah proposal anggaran disetujui.' });
-      return;
-    }
-    const row = pengeluaranRows[rowIndex];
-    if (!row || !row.uraian.trim()) {
-      setMessage({ type: 'error', text: 'Isi uraian pos pengeluaran terlebih dahulu sebelum menghubungkan laporan.' });
-      return;
-    }
-    setLinkingExpenseRowIndex(rowIndex);
-    setShowExpenseLinkDialog(true);
-  };
-
-  const handleLinkExpenseReport = (reportType: ExpenseReportType) => {
-    if (!isProposalApproved) return;
-    if (linkingExpenseRowIndex === null) return;
-    const row = pengeluaranRows[linkingExpenseRowIndex];
-    if (!row) return;
-
-    const rowId = row.rowId || createStableId('expense-row');
-    const existingReport = row.reportId ? expenseReports.find((report) => report.id === row.reportId) : undefined;
-    const reportId = existingReport && existingReport.reportType === reportType
-      ? existingReport.id
-      : createStableId('expense-report');
-    const nextReport = existingReport && existingReport.reportType === reportType
-      ? { ...existingReport, expenseRowId: rowId, expenseLabel: row.uraian }
-      : createExpenseReport(reportId, rowId, row.uraian, reportType);
-
+  // Keep this callback stable. ExpenseReportStage uses it in its debounced
+  // autosave effect; recreating it on every parent render would restart that
+  // effect after each autosave and leave the UI stuck on "Menyimpan...".
+  const handleUpsertExpenseReport = useCallback((report: ExpenseReport) => {
     setExpenseReports((prev) => [
-      ...prev.filter((report) => report.id !== existingReport?.id),
-      nextReport,
+      ...prev.filter((item) => item.id !== report.id),
+      report,
     ]);
-
-    setPengeluaranRows((prev) => prev.map((expenseRow, index) => index === linkingExpenseRowIndex
-      ? { ...expenseRow, rowId, reportId, reportType }
-      : expenseRow));
-    setLpjPengeluaranRows((prev) => prev.map((expenseRow, index) => (
-      expenseRow.rowId === rowId || index === linkingExpenseRowIndex
-        ? { ...expenseRow, rowId, reportId, reportType }
-        : expenseRow
-    )));
-
-    setSelectedExpenseReportId(reportId);
-    setActiveStage('reports');
-    setShowExpenseLinkDialog(false);
-    setLinkingExpenseRowIndex(null);
-    setMessage({ type: 'success', text: `Pos "${row.uraian}" berhasil dihubungkan ke ${getExpenseReportDefinition(reportType).label}.` });
-  };
-
-  const handleUnlinkExpenseReport = () => {
-    if (linkingExpenseRowIndex === null) return;
-    const row = pengeluaranRows[linkingExpenseRowIndex];
-    if (!row) return;
-
-    if (row.reportId) {
-      setExpenseReports((prev) => prev.filter((report) => report.id !== row.reportId));
-    }
-    setPengeluaranRows((prev) => prev.map((expenseRow, index) => {
-      if (index !== linkingExpenseRowIndex) return expenseRow;
-      return clearExpenseReportLink(expenseRow);
+    setLpjPengeluaranRows((prev) => prev.map((row) => {
+      if (row.type !== 'group_header' || row.rowId !== report.expenseRowId) return row;
+      const linkedRow = clearExpenseReportLink(row);
+      return { ...linkedRow, reportId: report.id };
     }));
-    setLpjPengeluaranRows((prev) => prev.map((expenseRow, index) => {
-      if (expenseRow.rowId !== row.rowId && index !== linkingExpenseRowIndex) return expenseRow;
-      return clearExpenseReportLink(expenseRow);
-    }));
-    setSelectedExpenseReportId(null);
-    setShowExpenseLinkDialog(false);
-    setLinkingExpenseRowIndex(null);
-    setMessage({ type: 'success', text: `Laporan untuk pos "${row.uraian}" dilepas.` });
-  };
+    setMessage({ type: 'success', text: `Laporan untuk header "${report.expenseLabel}" berhasil disimpan.` });
+  }, []);
 
-  const handleUpdateExpenseReport = (reportId: string, updater: (report: ExpenseReport) => ExpenseReport) => {
-    setExpenseReports((prev) => prev.map((report) => report.id === reportId ? updater(report) : report));
+  const handleUnlinkExpenseReport = (reportId: string) => {
+    const report = expenseReports.find((item) => item.id === reportId);
+    setExpenseReports((prev) => prev.filter((item) => item.id !== reportId));
+    setLpjPengeluaranRows((prev) => prev.map((row) => row.reportId === reportId ? clearExpenseReportLink(row) : row));
+    setReportEditorGroupId(null);
+    setMessage({ type: 'success', text: `Hubungan laporan untuk header "${report?.expenseLabel || 'pengeluaran'}" dilepas.` });
   };
 
   const handlePrintExpenseReport = (report: ExpenseReport) => {
@@ -914,7 +865,7 @@ export default function ProposalKegiatanPage() {
         updatedAt: serverTimestamp(),
       };
 
-      await setDoc(doc(db, 'ProposalKegiatan', docId), payload, { merge: true });
+      await setDoc(doc(db, 'ProposalKegiatan', docId), sanitizeForFirestore(payload), { merge: true });
       setSelectedProposalId(docId);
       setCurrentProposalStatus('proposal_submitted');
       setCurrentProposalQueueNo(nextProposalQueueNo);
@@ -967,7 +918,7 @@ export default function ProposalKegiatanPage() {
         updatedAt: serverTimestamp(),
       };
 
-      await setDoc(doc(db, 'ProposalKegiatan', selectedProposalId), payload, { merge: true });
+      await setDoc(doc(db, 'ProposalKegiatan', selectedProposalId), sanitizeForFirestore(payload), { merge: true });
       if (currentProposalStatus === 'proposal_approved') {
         setCurrentProposalStatus('lpj_draft');
       }
@@ -1019,7 +970,7 @@ export default function ProposalKegiatanPage() {
         updatedAt: serverTimestamp(),
       };
 
-      await setDoc(doc(db, 'ProposalKegiatan', selectedProposalId), payload, { merge: true });
+      await setDoc(doc(db, 'ProposalKegiatan', selectedProposalId), sanitizeForFirestore(payload), { merge: true });
       setCurrentProposalStatus('lpj_submitted');
       setMessage({
         type: 'success',
@@ -1046,15 +997,6 @@ export default function ProposalKegiatanPage() {
     }
     setSaving(true);
     try {
-      const defaultLpjPemasukan = pemasukanRows.map((r: any) => ({
-        ...r,
-        realisasi: parseQty(r.rincianQty) * (r.rincianRate || 0)
-      }));
-      const defaultLpjPengeluaran = pengeluaranRows.map((r: any) => ({
-        ...r,
-        realisasi: r.type === 'group_header' ? 0 : parseQty(r.rincianQty) * (r.rincianRate || 0)
-      }));
-
       const updatePayload: Record<string, any> = {
         status: action,
         reviewedBy: profile?.uid || null,
@@ -1064,13 +1006,28 @@ export default function ProposalKegiatanPage() {
       };
 
       if (action === 'proposal_approved') {
+        const defaultLpjPemasukan = pemasukanRows.map((r: any) => ({
+          ...r,
+          realisasi: parseQty(r.rincianQty) * (r.rincianRate || 0)
+        }));
+        const defaultLpjPengeluaran = pengeluaranRows.map((r: any) => ({
+          ...r,
+          realisasi: r.type === 'group_header' ? 0 : parseQty(r.rincianQty) * (r.rincianRate || 0)
+        }));
         updatePayload.lpjPemasukanRows = defaultLpjPemasukan;
         updatePayload.lpjPengeluaranRows = defaultLpjPengeluaran;
         setLpjPemasukanRows(defaultLpjPemasukan);
         setLpjPengeluaranRows(defaultLpjPengeluaran);
       }
 
-      await setDoc(doc(db, 'ProposalKegiatan', selectedProposalId), updatePayload, { merge: true });
+      if (target === 'lpj' && action === 'lpj_approved') {
+        await authenticatedJson('/api/payroll/proposal-kegiatan/approve', {
+          method: 'POST',
+          body: JSON.stringify({ proposalId: selectedProposalId, note: note || null }),
+        });
+      } else {
+        await setDoc(doc(db, 'ProposalKegiatan', selectedProposalId), sanitizeForFirestore(updatePayload), { merge: true });
+      }
 
       let actionLabel = '';
       if (action === 'proposal_approved') actionLabel = 'Proposal Disetujui (Event Siap & LPJ Terbuka)';
@@ -1159,33 +1116,6 @@ export default function ProposalKegiatanPage() {
 
   const fmtRp = (n: number) => 'Rp\u00a0' + Math.round(n).toLocaleString('id-ID');
 
-  const renderExpenseReportLink = (row: ProposalExpenseRow, rowIndex: number) => {
-    if (!row.uraian.trim()) return null;
-    const linkedReport = row.reportId ? expenseReports.find((report) => report.id === row.reportId) : undefined;
-    const label = linkedReport ? getExpenseReportDefinition(linkedReport.reportType).shortLabel : 'Hubungkan';
-    return (
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        title={linkedReport ? `Buka laporan ${label}` : 'Hubungkan pos ini ke laporan'}
-        onClick={() => {
-          if (linkedReport) {
-            setSelectedExpenseReportId(linkedReport.id);
-            setActiveStage('reports');
-          } else {
-            openExpenseLinkDialog(rowIndex);
-          }
-        }}
-        className={`h-7 rounded-lg px-2 text-[10px] font-bold ${linkedReport
-          ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-          : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-      >
-        <Link2 className="mr-1 h-3 w-3" /> {label}
-      </Button>
-    );
-  };
-
   return (
     <div className="space-y-6">
       {/* Messages */}
@@ -1215,7 +1145,7 @@ export default function ProposalKegiatanPage() {
             >
               <Copy className="w-4 h-4 text-purple-600" /> Kloning Anggaran Event Lalu
             </Button>
-            {activeStage !== 'reports' && <Button
+            <Button
               onClick={() => {
                 if (activeStage === 'proposal') {
                   generateProposalKegiatanPdf({
@@ -1261,7 +1191,7 @@ export default function ProposalKegiatanPage() {
               className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-semibold flex items-center gap-2 text-xs h-9"
             >
               <FileDown className="w-4 h-4 text-indigo-600" /> Cetak {activeStage === 'proposal' ? 'Proposal' : 'LPJ'} (PDF)
-            </Button>}
+              </Button>
           </div>
         </div>
 
@@ -1404,20 +1334,6 @@ export default function ProposalKegiatanPage() {
               <span>2. Pelaporan Realisasi (LPJ)</span>
             </button>
 
-            <button
-              onClick={() => setActiveStage('reports')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${activeStage === 'reports'
-                ? 'bg-white text-indigo-600 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
-                }`}
-            >
-              {!isProposalApproved ? (
-                <Lock className="w-3.5 h-3.5 text-amber-500" />
-              ) : (
-                <Link2 className="w-3.5 h-3.5 text-indigo-500" />
-              )}
-              <span>3. Rincian Laporan Pengeluaran</span>
-            </button>
           </div>
         </div>
 
@@ -1744,8 +1660,6 @@ export default function ProposalKegiatanPage() {
                                 />
                               </td>
                               <td className="px-2.5 py-1.5 text-center">
-                                <div className="flex flex-wrap items-center justify-center gap-1">
-                                  {renderExpenseReportLink(row, idx)}
                                 {!isProposalReadOnly && (
                                   <div className="flex items-center justify-center gap-1">
                                     <Button
@@ -1778,7 +1692,6 @@ export default function ProposalKegiatanPage() {
                                     </Button>
                                   </div>
                                 )}
-                                </div>
                               </td>
                             </tr>
                           );
@@ -1841,8 +1754,6 @@ export default function ProposalKegiatanPage() {
                             </td>
                             <td className="px-2.5 py-1 text-xs font-bold text-slate-700 text-right font-mono">{fmtRp(anggaran)}</td>
                             <td className="px-2.5 py-1 text-center">
-                              <div className="flex flex-wrap items-center justify-center gap-1">
-                                {renderExpenseReportLink(row, idx)}
                               {!isProposalReadOnly && (
                                 <div className="flex items-center justify-center gap-1">
                                   <div className="relative">
@@ -1903,7 +1814,6 @@ export default function ProposalKegiatanPage() {
                                   </Button>
                                 </div>
                               )}
-                              </div>
                             </td>
                           </tr>
                         );
@@ -2117,8 +2027,6 @@ export default function ProposalKegiatanPage() {
                 <div className="flex flex-wrap gap-3 pt-2">
                   {[
                     { key: 'realisasi', label: 'Realisasi Keuangan', enabled: realisasiEnabled, toggle: setRealisasiEnabled, icon: <Receipt className="w-3.5 h-3.5" /> },
-                    { key: 'kepanitiaan', label: 'Vakasi Kepanitiaan', enabled: kepanitiaaanEnabled, toggle: setKepanitiaaanEnabled, icon: <Layers className="w-3.5 h-3.5" /> },
-                    { key: 'kwitansi', label: 'Kwitansi', enabled: receiptEnabled, toggle: setReceiptEnabled, icon: <Receipt className="w-3.5 h-3.5" /> },
                   ].map(s => (
                     <button
                       key={s.key}
@@ -2134,19 +2042,6 @@ export default function ProposalKegiatanPage() {
                       {s.label}
                     </button>
                   ))}
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 px-4 py-3">
-                  <div className="flex items-start gap-2.5">
-                    <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
-                    <div>
-                      <p className="text-xs font-bold text-indigo-900">Lanjutkan ke rincian laporan per pos</p>
-                      <p className="mt-0.5 text-[11px] text-indigo-700/70">Hubungkan pengeluaran ke vakasi penguji, pembimbing, pedoman, kepanitiaan, atau kwitansi/nota.</p>
-                    </div>
-                  </div>
-                  <Button type="button" onClick={() => setActiveStage('reports')} className="h-8 rounded-lg bg-indigo-600 px-3 text-[11px] font-bold text-white hover:bg-indigo-700">
-                    Buka Tahap 3 <ArrowLeft className="ml-1.5 h-3.5 w-3.5 rotate-180" />
-                  </Button>
                 </div>
 
                 {/* SEKSI 1: REALISASI KEUANGAN (FULL COMPREHENSIVE) */}
@@ -2345,10 +2240,22 @@ export default function ProposalKegiatanPage() {
                                           <td colSpan={5} className="px-3 py-2.5"><Input type="text" placeholder="Nama grup (e.g., A. Pengeluaran Panitia)..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-800 text-xs h-8 w-full bg-transparent border-none focus:ring-0" /></td>
                                           <td className="px-3 py-2.5 text-center">
                                             <div className="flex items-center justify-center gap-1">
-                                              <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }); return c; }); }} className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer">
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                disabled={(!row.reportId && isLpjReadOnly) || !row.rowId}
+                                                onClick={() => setReportEditorGroupId(row.rowId || null)}
+                                                className={`h-7 rounded-lg px-2 text-[10px] font-bold ${row.reportId
+                                                  ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                                  : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                                              >
+                                                <Link2 className="mr-1 h-3 w-3" /> {row.reportId ? 'Buka Laporan' : 'Hubungkan Laporan'}
+                                              </Button>
+                                              <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('item'), realisasi: 0 }); return c; }); }} className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer">
                                                 <Plus className="w-3.5 h-3.5" />
                                               </Button>
-                                              <Button type="button" variant="ghost" size="icon" title="Hapus grup" onClick={() => setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
+                                              <Button type="button" variant="ghost" size="icon" title="Hapus grup" onClick={() => { if (row.reportId) setExpenseReports(prev => prev.filter((report) => report.id !== row.reportId)); setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx)); }} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
                                                 <Trash2 className="w-3.5 h-3.5" />
                                               </Button>
                                             </div>
@@ -2375,8 +2282,8 @@ export default function ProposalKegiatanPage() {
                                                 <>
                                                   <div className="fixed inset-0 z-40" onClick={() => setActiveInsertMenuIdx(null)} />
                                                   <div className="absolute right-0 bottom-8 z-50 w-44 bg-white border border-slate-150 rounded-xl shadow-xl py-1.5 text-left">
-                                                    <button type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><FileText className="w-3.5 h-3.5 text-indigo-500" /><span>Baris Biasa</span></button>
-                                                    <button type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><Layers className="w-3.5 h-3.5 text-indigo-500" /><span>Header Grup</span></button>
+                                                    <button type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('item'), realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><FileText className="w-3.5 h-3.5 text-indigo-500" /><span>Baris Biasa</span></button>
+                                                    <button type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('group_header'), realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><Layers className="w-3.5 h-3.5 text-indigo-500" /><span>Header Grup</span></button>
                                                   </div>
                                                 </>
                                               )}
@@ -2393,10 +2300,10 @@ export default function ProposalKegiatanPage() {
                                     <td></td>
                                     <td colSpan={6} className="px-3 py-3">
                                       <div className="flex items-center gap-2">
-                                        <Button type="button" size="sm" onClick={() => setLpjPengeluaranRows(prev => [...prev, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }])} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                                        <Button type="button" size="sm" onClick={() => setLpjPengeluaranRows(prev => [...prev, { ...createProposalExpenseRow('item'), realisasi: 0 }])} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
                                           <Plus className="w-3.5 h-3.5" /> Tambah Baris
                                         </Button>
-                                        <Button type="button" size="sm" onClick={() => setLpjPengeluaranRows(prev => [...prev, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }])} variant="outline" className="border-indigo-200 text-indigo-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                                        <Button type="button" size="sm" onClick={() => setLpjPengeluaranRows(prev => [...prev, { ...createProposalExpenseRow('group_header'), realisasi: 0 }])} variant="outline" className="border-indigo-200 text-indigo-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
                                           <Layers className="w-3.5 h-3.5" /> Tambah Header Grup
                                         </Button>
                                       </div>
@@ -2439,8 +2346,25 @@ export default function ProposalKegiatanPage() {
 
 
 
+                <ExpenseReportStage
+                  expenseRows={lpjPengeluaranRows}
+                  expenseReports={expenseReports}
+                  employees={loyalisEmployees}
+                  unlocked={isProposalApproved}
+                  readOnly={isLpjReadOnly}
+                  openGroupRowId={reportEditorGroupId}
+                  onOpenGroupHandled={() => setReportEditorGroupId(null)}
+                  onUpsertReport={handleUpsertExpenseReport}
+                  onUnlinkReport={handleUnlinkExpenseReport}
+                  onPrintReport={handlePrintExpenseReport}
+                  fmtRp={fmtRp}
+                  parseQty={parseQty}
+                />
+
+                {/* Legacy LPJ fields remain in storage/PDF payloads but are no
+                    longer separate user-facing report sections. */}
                 {/* SEKSI 3: VAKASI KEPANITIAAN */}
-                {kepanitiaaanEnabled && (
+                {false && kepanitiaaanEnabled && (
                   <div className="border border-slate-150 rounded-2xl overflow-hidden">
                     <button type="button" onClick={() => toggleSection('kepanitiaan')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-violet-50 to-violet-50/40 hover:from-violet-100/60 transition-all cursor-pointer">
                       <div className="flex items-center gap-2.5">
@@ -2546,7 +2470,7 @@ export default function ProposalKegiatanPage() {
                 )}
 
                 {/* SEKSI 4: KWITANSI / PEMBELIAN */}
-                {receiptEnabled && (
+                {false && receiptEnabled && (
                   <div className="border border-slate-150 rounded-2xl overflow-hidden">
                     <button type="button" onClick={() => toggleSection('kwitansi')} className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-amber-50 to-amber-50/40 hover:from-amber-100/60 transition-all cursor-pointer">
                       <div className="flex items-center gap-2.5">
@@ -2808,94 +2732,11 @@ export default function ProposalKegiatanPage() {
           </div>
         )}
 
-        {activeStage === 'reports' && (
-          <ExpenseReportStage
-            expenseRows={pengeluaranRows}
-            expenseReports={expenseReports}
-            employees={loyalisEmployees}
-            unlocked={isProposalApproved}
-            selectedReportId={selectedExpenseReportId}
-            onSelectReport={setSelectedExpenseReportId}
-            onOpenLink={openExpenseLinkDialog}
-            onUpdateReport={handleUpdateExpenseReport}
-            onPrintReport={handlePrintExpenseReport}
-            onBackToLpj={() => setActiveStage('lpj')}
-            fmtRp={fmtRp}
-            parseQty={parseQty}
-          />
-        )}
       </Card>
-
-      <Dialog
-        open={showExpenseLinkDialog}
-        onOpenChange={(open) => {
-          setShowExpenseLinkDialog(open);
-          if (!open) setLinkingExpenseRowIndex(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-2xl max-w-full overflow-hidden rounded-3xl border-none bg-white p-0 shadow-2xl">
-          <DialogHeader className="border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-slate-50 p-6 pb-5">
-            <DialogTitle className="flex items-center gap-2.5 text-lg font-bold text-slate-800">
-              <Link2 className="h-5 w-5 text-indigo-600" /> Hubungkan Pos Pengeluaran
-            </DialogTitle>
-            <p className="mt-1 text-xs leading-relaxed text-slate-500">
-              Pilih format laporan yang akan menampung rincian pos ini. Format proposal dan realisasi keuangan tetap berada pada PDF masing-masing.
-            </p>
-          </DialogHeader>
-
-          <div className="max-h-[58vh] space-y-3 overflow-y-auto p-6">
-            {linkingExpenseRowIndex !== null && pengeluaranRows[linkingExpenseRowIndex] && (
-              <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-4 py-3">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-indigo-500">Pos yang dipilih</span>
-                <span className="mt-1 block text-sm font-black text-slate-900">{pengeluaranRows[linkingExpenseRowIndex].uraian}</span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              {EXPENSE_REPORT_DEFINITIONS.map((definition) => {
-                const isCurrent = linkingExpenseRowIndex !== null && pengeluaranRows[linkingExpenseRowIndex]?.reportType === definition.type;
-                return (
-                  <button
-                    key={definition.type}
-                    type="button"
-                    onClick={() => handleLinkExpenseReport(definition.type)}
-                    className={`rounded-2xl border p-4 text-left transition-all ${isCurrent
-                      ? 'border-indigo-300 bg-indigo-50 ring-2 ring-indigo-100'
-                      : 'border-slate-150 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-indigo-500">{definition.shortLabel}</span>
-                        <h4 className="mt-1 text-sm font-black text-slate-900">{definition.label}</h4>
-                      </div>
-                      {isCurrent && <CheckCircle2 className="h-5 w-5 shrink-0 text-indigo-600" />}
-                    </div>
-                    <p className="mt-2 text-[11px] leading-relaxed text-slate-500">{definition.description}</p>
-                    <p className="mt-3 truncate text-[10px] font-semibold text-slate-400">Sumber: {definition.sourceDocument}</p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-2 rounded-b-3xl border-t border-slate-100 bg-slate-50 p-4">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleUnlinkExpenseReport}
-              disabled={linkingExpenseRowIndex === null || !pengeluaranRows[linkingExpenseRowIndex]?.reportId}
-              className="rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50"
-            >
-              Lepas Hubungan
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => setShowExpenseLinkDialog(false)} className="rounded-xl text-xs font-bold text-slate-500">Batal</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Historical Baseline Clone Dialog */}
       <Dialog open={showCloneModal} onOpenChange={setShowCloneModal}>
-        <DialogContent className="sm:max-w-2xl max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl">
+        <DialogContent className="sm:max-w-4xl max-w-full overflow-hidden flex flex-col p-0 border-none bg-white shadow-2xl rounded-3xl">
           <DialogHeader className="p-6 pb-4 bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-slate-100">
             <DialogTitle className="text-slate-800 flex items-center gap-2.5 font-bold text-lg">
               <Copy className="w-5 h-5 text-purple-600" /> Kloning Anggaran dari Event Lalu

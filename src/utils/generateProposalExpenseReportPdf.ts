@@ -3,8 +3,9 @@ import autoTable, { RowInput, Styles } from 'jspdf-autotable';
 import { LOGO_UNIPDU_BASE64 } from './logoConstants';
 import {
   ExpenseReport,
-  getExpenseReportDefinition,
-  getExpenseReportTotal,
+  getExpenseReportActualTotal,
+  getExpenseReportBudgetTotal,
+  parseProposalQty,
 } from '@/lib/payroll/proposalExpenseReports';
 
 export interface ProposalExpenseReportSignature {
@@ -52,43 +53,16 @@ function renderLetterhead(doc: jsPDF) {
   doc.line(15, 36, pageWidth - 15, 36);
 }
 
-function pushRoleRows(
-  tableRows: RowInput[],
-  rows: { employeeName: string; role: string; studentCount: number; rate: number }[],
-) {
-  const roles = Array.from(new Set(rows.map((row) => row.role.trim() || 'Tanpa Peran')));
-  roles.forEach((role) => {
-    tableRows.push([
-      { content: role, colSpan: 5, styles: { fontStyle: 'bold' as const, fillColor: [245, 247, 250] as [number, number, number] } },
-    ]);
-    let roleNo = 0;
-    const roleRows = rows.filter((row) => (row.role.trim() || 'Tanpa Peran') === role);
-    roleRows.forEach((row) => {
-      roleNo += 1;
-      tableRows.push([
-        roleNo.toString(),
-        row.employeeName || '-',
-        String(row.studentCount || 0),
-        { content: formatIDR(row.rate), styles: { halign: 'right' as const } },
-        { content: formatIDR(row.studentCount * row.rate), styles: { halign: 'right' as const } },
-      ]);
-    });
-    tableRows.push([
-      { content: '', styles: { fillColor: [250, 250, 250] as [number, number, number] } },
-      { content: `Jumlah ${role}`, styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: [250, 250, 250] as [number, number, number] } },
-      { content: String(roleRows.reduce((sum, row) => sum + row.studentCount, 0)), styles: { fontStyle: 'bold' as const, halign: 'center' as const, fillColor: [250, 250, 250] as [number, number, number] } },
-      { content: '', styles: { fillColor: [250, 250, 250] as [number, number, number] } },
-      { content: formatIDR(roleRows.reduce((sum, row) => sum + row.studentCount * row.rate, 0)), styles: { fontStyle: 'bold' as const, halign: 'right' as const, fillColor: [250, 250, 250] as [number, number, number] } },
-    ]);
-  });
+function getLastTableY(doc: jsPDF, fallback: number): number {
+  return (doc as AutoTableDocument).lastAutoTable?.finalY || fallback;
 }
 
 function renderSignatures(doc: jsPDF, signatures: ProposalExpenseReportSignature[]) {
   if (!signatures.length) return;
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const y = (getLastTableY(doc, 45) || 45) + 16;
-  const sigY = y + 12 > pageHeight - 50 ? 52 : y;
+  const y = getLastTableY(doc, 45) + 16;
+  const sigY = y + 36 > pageHeight - 20 ? 52 : y;
   if (sigY !== y) {
     doc.addPage();
     renderLetterhead(doc);
@@ -112,62 +86,73 @@ function renderSignatures(doc: jsPDF, signatures: ProposalExpenseReportSignature
   });
 }
 
-function getLastTableY(doc: jsPDF, fallback: number): number {
-  return (doc as AutoTableDocument).lastAutoTable?.finalY || fallback;
-}
-
 export function generateProposalExpenseReportPdf(
   data: ProposalExpenseReportPdfData,
   saveToFile = true,
 ): jsPDF {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [210, 330] });
-  const definition = getExpenseReportDefinition(data.report.reportType);
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 15;
-  const tableRows: RowInput[] = [];
+  const isEmployeeReport = data.report.mode === 'employee';
+  const tableRows: RowInput[] = data.report.rows.map((row, index) => {
+    const budget = parseProposalQty(row.rincianQty) * row.rincianRate;
+    if (isEmployeeReport) {
+      return [
+        index + 1,
+        row.uraian || '-',
+        row.employeeName || '-',
+        row.rincianQty || '-',
+        { content: formatIDR(row.rincianRate), styles: { halign: 'right' as const } },
+        { content: formatIDR(budget), styles: { halign: 'right' as const } },
+        { content: formatIDR(row.realisasi), styles: { halign: 'right' as const } },
+      ];
+    }
+    return [
+      index + 1,
+      row.uraian || '-',
+      row.rincianQty || '-',
+      { content: formatIDR(row.rincianRate), styles: { halign: 'right' as const } },
+      { content: formatIDR(budget), styles: { halign: 'right' as const } },
+      { content: formatIDR(row.realisasi), styles: { halign: 'right' as const } },
+      row.note || '-',
+    ];
+  });
 
   renderLetterhead(doc);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  const title = `${data.report.title || definition.defaultTitle}\n${data.reportName || 'KEGIATAN'}${data.departmentUnit ? ` - ${data.departmentUnit}` : ''}\n${data.period}`.toUpperCase();
-  doc.text(title, pageWidth / 2, 45, { align: 'center' });
+  const titleLines = [
+    (data.report.title || 'LAPORAN PENGELUARAN').toUpperCase(),
+    `${data.reportName || 'KEGIATAN'}${data.departmentUnit ? ` - ${data.departmentUnit}` : ''}`.toUpperCase(),
+    data.period.toUpperCase(),
+  ];
+  doc.text(titleLines, pageWidth / 2, 45, { align: 'center' });
 
-  if (data.report.reportType === 'proposal_examiner' || data.report.reportType === 'munaqosyah_examiner') {
-    pushRoleRows(tableRows, data.report.examinerRows);
-  } else if (data.report.reportType === 'pembimbing') {
-    pushRoleRows(tableRows, data.report.pembimbingRows);
-  } else if (data.report.reportType === 'pedoman_kti') {
-    data.report.pedomanRows.forEach((row, index) => {
-      tableRows.push([index + 1, row.employeeName || '-', row.task || '-', { content: formatIDR(row.amount), styles: { halign: 'right' as const } }]);
-    });
-  } else if (data.report.reportType === 'committee') {
-    data.report.committeeRows.forEach((row, index) => {
-      tableRows.push([index + 1, row.employeeName || '-', { content: formatIDR(row.amount), styles: { halign: 'right' as const } }]);
-    });
-  } else {
-    data.report.receiptRows.forEach((row, index) => {
-      tableRows.push([index + 1, row.itemName || '-', row.qty || 0, { content: formatIDR(row.unitPrice), styles: { halign: 'right' as const } }, { content: formatIDR(row.qty * row.unitPrice), styles: { halign: 'right' as const } }, row.note || '']);
-    });
-  }
-
-  let head: string[];
-  let columnStyles: Record<number, Partial<Styles>>;
-  if (data.report.reportType === 'proposal_examiner' || data.report.reportType === 'munaqosyah_examiner' || data.report.reportType === 'pembimbing') {
-    head = ['NO', 'NAMA', 'MHS', 'VAKASI', 'JUMLAH MHS x VAKASI'];
-    columnStyles = { 0: { cellWidth: 12, halign: 'center' }, 1: { cellWidth: 68 }, 2: { cellWidth: 18, halign: 'center' }, 3: { cellWidth: 34, halign: 'right' }, 4: { cellWidth: 48, halign: 'right' } };
-  } else if (data.report.reportType === 'pedoman_kti') {
-    head = ['NO', 'NAMA', 'TUGAS', 'JUMLAH'];
-    columnStyles = { 0: { cellWidth: 12, halign: 'center' }, 1: { cellWidth: 65 }, 2: { cellWidth: 60 }, 3: { cellWidth: 43, halign: 'right' } };
-  } else if (data.report.reportType === 'committee') {
-    head = ['NO', 'NAMA', 'JUMLAH'];
-    columnStyles = { 0: { cellWidth: 15, halign: 'center' }, 1: { cellWidth: 115 }, 2: { cellWidth: 50, halign: 'right' } };
-  } else {
-    head = ['NO', 'ITEM / BUKTI', 'QTY', 'HARGA SATUAN', 'JUMLAH', 'KETERANGAN'];
-    columnStyles = { 0: { cellWidth: 10, halign: 'center' }, 1: { cellWidth: 58 }, 2: { cellWidth: 18, halign: 'center' }, 3: { cellWidth: 35, halign: 'right' }, 4: { cellWidth: 35, halign: 'right' }, 5: { cellWidth: 24 } };
-  }
+  const head = isEmployeeReport
+    ? ['NO', 'URAIAN', 'PEGAWAI', 'QTY', 'RATE', 'ANGGARAN', 'REALISASI']
+    : ['NO', 'URAIAN', 'QTY', 'RATE', 'ANGGARAN', 'REALISASI', 'CATATAN'];
+  const columnStyles: Record<number, Partial<Styles>> = isEmployeeReport
+    ? {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 34 },
+      2: { cellWidth: 38 },
+      3: { cellWidth: 15, halign: 'center' },
+      4: { cellWidth: 26, halign: 'right' },
+      5: { cellWidth: 29, halign: 'right' },
+      6: { cellWidth: 30, halign: 'right' },
+    }
+    : {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 39 },
+      2: { cellWidth: 15, halign: 'center' },
+      3: { cellWidth: 25, halign: 'right' },
+      4: { cellWidth: 29, halign: 'right' },
+      5: { cellWidth: 29, halign: 'right' },
+      6: { cellWidth: 35 },
+    };
 
   autoTable(doc, {
-    startY: 65,
+    startY: 64,
     margin: { left: margin, right: margin },
     tableWidth: pageWidth - margin * 2,
     head: [head],
@@ -179,20 +164,25 @@ export function generateProposalExpenseReportPdf(
     columnStyles,
   });
 
-  const total = getExpenseReportTotal(data.report);
-  const finalY = getLastTableY(doc, 65);
+  const budgetTotal = getExpenseReportBudgetTotal(data.report, parseProposalQty);
+  const actualTotal = getExpenseReportActualTotal(data.report);
   autoTable(doc, {
-    startY: finalY + 3,
+    startY: getLastTableY(doc, 64) + 3,
     margin: { left: margin, right: margin },
     tableWidth: pageWidth - margin * 2,
-    body: [[{ content: 'TOTAL LAPORAN', styles: { fontStyle: 'bold' as const, halign: 'right' as const } }, { content: formatIDR(total), styles: { fontStyle: 'bold' as const, halign: 'right' as const } }]],
+    body: [[
+      { content: 'TOTAL ANGGARAN', styles: { fontStyle: 'bold' as const, halign: 'right' as const } },
+      { content: formatIDR(budgetTotal), styles: { fontStyle: 'bold' as const, halign: 'right' as const } },
+      { content: 'TOTAL REALISASI', styles: { fontStyle: 'bold' as const, halign: 'right' as const } },
+      { content: formatIDR(actualTotal), styles: { fontStyle: 'bold' as const, halign: 'right' as const } },
+    ]],
     theme: 'grid',
     bodyStyles: { fontSize: 8.5, fillColor: [240, 244, 255], lineColor: [0, 0, 0], lineWidth: 0.15 },
-    columnStyles: { 0: { cellWidth: 140 }, 1: { cellWidth: 40 } },
+    columnStyles: { 0: { cellWidth: 45 }, 1: { cellWidth: 35 }, 2: { cellWidth: 50 }, 3: { cellWidth: 50 } },
   });
 
   if (data.report.notes.trim()) {
-    const notesY = getLastTableY(doc, finalY) + 8;
+    const notesY = getLastTableY(doc, 64) + 8;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.text(doc.splitTextToSize(`Catatan: ${data.report.notes}`, pageWidth - margin * 2), margin, notesY);
@@ -201,7 +191,7 @@ export function generateProposalExpenseReportPdf(
   renderSignatures(doc, data.signatures || []);
 
   if (saveToFile) {
-    const safeName = `${definition.shortLabel}_${data.reportName || 'Kegiatan'}`.replace(/[^a-zA-Z0-9]+/g, '_');
+    const safeName = `${data.report.title || 'Laporan_Pengeluaran'}_${data.reportName || 'Kegiatan'}`.replace(/[^a-zA-Z0-9]+/g, '_');
     doc.save(`Laporan_${safeName}.pdf`);
   }
   return doc;
