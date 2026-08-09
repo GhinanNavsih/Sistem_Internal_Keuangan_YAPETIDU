@@ -3,12 +3,14 @@ import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   ATTENDANCE_PAYROLL_START_PERIOD,
+  normalizeAttendanceTime,
   resolveEmployeeAttendanceNipy,
 } from '@/lib/payroll/attendance';
 import {
   assertDateOnly,
   assertPekaryaActivityProofUrl,
   assertRequestId,
+  type PhotoAuditMetadata,
 } from '@/lib/payroll/domain';
 import { pekaryaPayrollPeriodForDate, pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import {
@@ -51,6 +53,57 @@ function stableHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
+function parsePhotoAuditMetadata(value: unknown): PhotoAuditMetadata {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(400, 'Metadata audit foto tidak valid.');
+  }
+  const item = value as Record<string, unknown>;
+  const stringOrNull = (key: string, max: number): string | null => {
+    const field = item[key];
+    if (field === null) return null;
+    if (typeof field !== 'string' || field.trim().length > max) {
+      throw new HttpError(400, `Metadata ${key} tidak valid.`);
+    }
+    return field.trim() || null;
+  };
+  const numberOrNull = (key: string, min: number, max: number): number | null => {
+    const field = item[key];
+    if (field === null) return null;
+    if (
+      typeof field !== 'number' ||
+      !Number.isFinite(field) ||
+      field < min ||
+      field > max
+    ) {
+      throw new HttpError(400, `Metadata ${key} tidak valid.`);
+    }
+    return field;
+  };
+  if (typeof item.hasExif !== 'boolean') {
+    throw new HttpError(400, 'Metadata hasExif tidak valid.');
+  }
+  const latitude = numberOrNull('latitude', -90, 90);
+  const longitude = numberOrNull('longitude', -180, 180);
+  if ((latitude === null) !== (longitude === null)) {
+    throw new HttpError(400, 'Koordinat foto harus lengkap.');
+  }
+  return {
+    capturedAt: stringOrNull('capturedAt', 64),
+    latitude,
+    longitude,
+    deviceName: stringOrNull('deviceName', 200),
+    hasExif: item.hasExif,
+    locationName: stringOrNull('locationName', 200),
+    locationAddress: stringOrNull('locationAddress', 500),
+    locationPlaceId: stringOrNull('locationPlaceId', 200),
+  };
+}
+
+function clockMinutes(value: string): number {
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
 async function loadLinkedPekarya(actor: Awaited<ReturnType<typeof requireAuthenticatedProfile>>) {
   if (!actor.linkedEmployeeId) {
     throw new HttpError(409, 'Akun belum terhubung ke data Pekarya.');
@@ -84,7 +137,7 @@ function validatePeriodAndDate(period: string, date: string): void {
   if (!validAttendancePeriod(period)) {
     throw new HttpError(
       400,
-      'Izin resmi Pekarya berlaku mulai periode payroll 2026-08.',
+      'Pengajuan presensi Pekarya berlaku mulai periode payroll 2026-08.',
     );
   }
   try {
@@ -92,7 +145,7 @@ function validatePeriodAndDate(period: string, date: string): void {
   } catch (error) {
     throw new HttpError(
       400,
-      error instanceof Error ? error.message : 'Tanggal izin tidak valid.',
+      error instanceof Error ? error.message : 'Tanggal presensi tidak valid.',
     );
   }
   const window = pekaryaPayrollWindow(period);
@@ -101,7 +154,7 @@ function validatePeriodAndDate(period: string, date: string): void {
     date > window.endsOn ||
     pekaryaPayrollPeriodForDate(date) !== period
   ) {
-    throw new HttpError(400, 'Tanggal izin berada di luar periode payroll.');
+    throw new HttpError(400, 'Tanggal presensi berada di luar periode payroll.');
   }
 }
 
@@ -125,7 +178,7 @@ export async function GET(request: NextRequest) {
     } else {
       requireRole(actor, ['super_admin', 'finance_verifier', 'satker_head']);
       if (category && !isPekaryaOfficialLeaveCategory(category)) {
-        throw new HttpError(400, 'Kategori Pekarya tidak valid untuk izin resmi.');
+        throw new HttpError(400, 'Kategori Pekarya tidak valid untuk pengajuan presensi.');
       }
       if (
         actor.role === 'satker_head' &&
@@ -175,6 +228,9 @@ export async function POST(request: NextRequest) {
     const date = String(body.date || '');
     const requestId = String(body.requestId || '');
     const expectedRevision = Number(body.expectedRevision || 0);
+    const rawReportType = body.reportType;
+    const reportType =
+      rawReportType === undefined ? 'izin_resmi' : String(rawReportType);
     validatePeriodAndDate(period, date);
     try {
       assertRequestId(requestId);
@@ -188,15 +244,37 @@ export async function POST(request: NextRequest) {
       throw new HttpError(400, 'Revisi pengajuan tidak valid.');
     }
     if (action !== 'submit' && action !== 'withdraw') {
-      throw new HttpError(400, 'Aksi pengajuan izin tidak valid.');
+      throw new HttpError(400, 'Aksi pengajuan presensi tidak valid.');
+    }
+    if (reportType !== 'scan' && reportType !== 'izin_resmi') {
+      throw new HttpError(400, 'Jenis pengajuan presensi tidak valid.');
     }
 
     let reason = '';
     let evidenceUrl: string | null = null;
+    let evidenceAuditMetadata: PhotoAuditMetadata | null = null;
+    let scanIn: string | null = null;
+    let scanOut: string | null = null;
     if (action === 'submit') {
       reason = String(body.reason || '').trim();
       if (reason.length < 8 || reason.length > 500) {
-        throw new HttpError(400, 'Alasan izin wajib diisi antara 8 dan 500 karakter.');
+        throw new HttpError(400, 'Alasan pengajuan wajib diisi antara 8 dan 500 karakter.');
+      }
+      if (reportType === 'scan') {
+        scanIn = normalizeAttendanceTime(body.scanIn);
+        scanOut = normalizeAttendanceTime(body.scanOut);
+        if (!scanIn || !scanOut) {
+          throw new HttpError(
+            400,
+            'Scan masuk dan scan pulang wajib diisi dengan format jam yang valid.',
+          );
+        }
+        if (clockMinutes(scanOut) <= clockMinutes(scanIn)) {
+          throw new HttpError(
+            400,
+            'Scan pulang harus lebih lambat dari scan masuk.',
+          );
+        }
       }
       if (body.evidenceUrl) {
         if (typeof body.evidenceUrl !== 'string') {
@@ -211,6 +289,9 @@ export async function POST(request: NextRequest) {
           );
         }
         evidenceUrl = body.evidenceUrl;
+        if (body.evidenceAuditMetadata !== undefined && body.evidenceAuditMetadata !== null) {
+          evidenceAuditMetadata = parsePhotoAuditMetadata(body.evidenceAuditMetadata);
+        }
       }
     }
 
@@ -226,8 +307,12 @@ export async function POST(request: NextRequest) {
       employeeId: linked.employeeId,
       period,
       date,
+      reportType,
+      scanIn,
+      scanOut,
       reason,
       evidenceUrl,
+      evidenceAuditMetadata,
       expectedRevision,
     });
     const result = await adminDb.runTransaction(async (transaction) => {
@@ -285,9 +370,14 @@ export async function POST(request: NextRequest) {
               category: linked.category,
               period,
               date,
-              leaveType: PEKARYA_OFFICIAL_LEAVE_TYPE,
+              reportType,
+              leaveType:
+                reportType === 'izin_resmi' ? PEKARYA_OFFICIAL_LEAVE_TYPE : null,
+              scanIn,
+              scanOut,
               reason,
               evidenceUrl,
+              evidenceAuditMetadata,
               status: 'pending',
               revision,
               submittedAt: now,
@@ -316,12 +406,17 @@ export async function POST(request: NextRequest) {
         buildFinancialAuditRecord(actor, {
           action:
             action === 'withdraw'
-              ? 'PEKARYA_OFFICIAL_LEAVE_WITHDRAWN'
-              : 'PEKARYA_OFFICIAL_LEAVE_SUBMITTED',
-          entityType: 'PekaryaOfficialLeaveRequest',
+              ? `PEKARYA_${reportType === 'scan' ? 'ATTENDANCE' : 'OFFICIAL_LEAVE'}_WITHDRAWN`
+              : `PEKARYA_${reportType === 'scan' ? 'ATTENDANCE' : 'OFFICIAL_LEAVE'}_SUBMITTED`,
+          entityType:
+            reportType === 'scan'
+              ? 'PekaryaAttendanceRequest'
+              : 'PekaryaOfficialLeaveRequest',
           entityId: requestDocumentId,
           requestId,
-          reason: reason || 'Pengajuan izin resmi ditarik oleh pegawai.',
+          reason:
+            reason ||
+            `Pengajuan ${reportType === 'scan' ? 'presensi' : 'izin resmi'} ditarik oleh pegawai.`,
           before,
           after,
           metadata: { category: linked.category, date },
@@ -331,7 +426,10 @@ export async function POST(request: NextRequest) {
         actorUid: actor.uid,
         requestId,
         requestHash,
-        entityType: 'PekaryaOfficialLeaveRequest',
+        entityType:
+          reportType === 'scan'
+            ? 'PekaryaAttendanceRequest'
+            : 'PekaryaOfficialLeaveRequest',
         entityId: requestDocumentId,
         revision,
         status: after.status,

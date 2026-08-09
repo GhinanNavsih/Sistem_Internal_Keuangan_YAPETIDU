@@ -20,6 +20,31 @@ export const DRIVER_VEHICLE_NAMES = Object.freeze(
   Object.keys(DRIVER_VEHICLE_RATES) as DriverVehicleName[],
 );
 
+export type FuelProcurementMode =
+  | 'hold_accumulate'
+  | 'procure_release'
+  | 'standard_direct';
+
+export const DEFAULT_FUEL_PROCUREMENT_MODE: FuelProcurementMode = 'standard_direct';
+
+export function isFuelProcurementMode(value: unknown): value is FuelProcurementMode {
+  return value === 'hold_accumulate' ||
+    value === 'procure_release' ||
+    value === 'standard_direct';
+}
+
+export function assertFuelProcurementMode(
+  value: unknown,
+): asserts value is FuelProcurementMode {
+  if (!isFuelProcurementMode(value)) {
+    throw new Error('Mode pengadaan BBM tidak valid.');
+  }
+}
+
+export function isFuelAccumulationVehicle(vehicleName: string): boolean {
+  return isDriverVehicleName(vehicleName) && vehicleName !== DEFAULT_DRIVER_VEHICLE_NAME;
+}
+
 export function isDriverVehicleName(value: unknown): value is DriverVehicleName {
   return (
     typeof value === 'string' &&
@@ -139,9 +164,35 @@ export interface DriverJourneyOperationalCostResult {
   vehicleName: DriverVehicleName;
   vehicleRate: number;
   baseOperationalCost: number;
+  fuelProcurementMode: FuelProcurementMode;
+  effectiveFuelAllowance: number;
+  heldFuelAmount: number;
+  procuredAccumulatedAmount: number;
+  totalFuelAllocation: number;
   mealAllowance: number;
   tollParkingFee: number;
   totalOperationalCost: number;
+}
+
+export interface DriverJourneyFuelCalculationOptions {
+  fuelProcurementMode?: FuelProcurementMode;
+  procuredAccumulatedAmount?: number;
+}
+
+export function calculateEffectiveFuelAllowance(
+  baseFuelAllowance: number,
+  fuelProcurementMode: FuelProcurementMode = DEFAULT_FUEL_PROCUREMENT_MODE,
+  procuredAccumulatedAmount: number = 0,
+): number {
+  assertNonNegativeAmount(baseFuelAllowance, 'Jatah BBM dasar');
+  assertFuelProcurementMode(fuelProcurementMode);
+  assertNonNegativeAmount(procuredAccumulatedAmount, 'Akumulasi BBM yang dicairkan');
+
+  if (fuelProcurementMode === 'hold_accumulate') return 0;
+  if (fuelProcurementMode === 'procure_release') {
+    return baseFuelAllowance + procuredAccumulatedAmount;
+  }
+  return baseFuelAllowance;
 }
 
 /**
@@ -154,6 +205,7 @@ export function calculateDriverJourneyOperationalCosts(
   durationHoursPP: number,
   vehicleName: DriverVehicleName,
   tollParkingFee: number = 0,
+  options: DriverJourneyFuelCalculationOptions = {},
 ): DriverJourneyOperationalCostResult {
   if (!Number.isFinite(distanceKmOneWay) || distanceKmOneWay < 0) {
     throw new Error('Jarak perjalanan tidak valid.');
@@ -165,8 +217,23 @@ export function calculateDriverJourneyOperationalCosts(
     throw new Error('Tol & parkir tidak valid.');
   }
 
+  const fuelProcurementMode = options.fuelProcurementMode ?? DEFAULT_FUEL_PROCUREMENT_MODE;
+  const procuredAccumulatedAmount = options.procuredAccumulatedAmount ?? 0;
+  assertFuelProcurementMode(fuelProcurementMode);
+  assertNonNegativeAmount(procuredAccumulatedAmount, 'Akumulasi BBM yang dicairkan');
+  if (vehicleName === DEFAULT_DRIVER_VEHICLE_NAME && fuelProcurementMode !== 'standard_direct') {
+    throw new Error('Kendaraan Ndalem tidak dapat menggunakan akumulasi BBM.');
+  }
+
   const vehicleRate = DRIVER_VEHICLE_RATES[vehicleName];
   const baseOperationalCost = distanceKmOneWay * 2 * vehicleRate;
+  const heldFuelAmount = fuelProcurementMode === 'hold_accumulate' ? baseOperationalCost : 0;
+  const effectiveFuelAllowance = calculateEffectiveFuelAllowance(
+    baseOperationalCost,
+    fuelProcurementMode,
+    procuredAccumulatedAmount,
+  );
+  const totalFuelAllocation = heldFuelAmount + effectiveFuelAllowance;
   const mealAllowance = vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
     ? 0
     : getMealAllowanceForDuration(durationHoursPP, vehicleName);
@@ -175,9 +242,14 @@ export function calculateDriverJourneyOperationalCosts(
     vehicleName,
     vehicleRate,
     baseOperationalCost,
+    fuelProcurementMode,
+    effectiveFuelAllowance,
+    heldFuelAmount,
+    procuredAccumulatedAmount,
+    totalFuelAllocation,
     mealAllowance,
     tollParkingFee,
-    totalOperationalCost: baseOperationalCost + mealAllowance + tollParkingFee,
+    totalOperationalCost: totalFuelAllocation + mealAllowance + tollParkingFee,
   };
 }
 
@@ -187,9 +259,14 @@ export interface DriverReimbursementSettlementInput {
   tollAllowance: number;
   tollSpent: number;
   additionalReimbursement?: number;
+  fuelProcurementMode?: FuelProcurementMode;
+  procuredAccumulatedAmount?: number;
 }
 
 export interface DriverReimbursementSettlement {
+  effectiveFuelAllowance: number;
+  heldFuelAmount: number;
+  procuredAccumulatedAmount: number;
   fuelDelta: number;
   tollDelta: number;
   extraFuelCost: number;
@@ -232,14 +309,24 @@ export function calculateDriverReimbursementSettlement(
   const tollAllowance = input.tollAllowance;
   const tollSpent = input.tollSpent;
   const additionalReimbursement = input.additionalReimbursement ?? 0;
+  const fuelProcurementMode = input.fuelProcurementMode ?? DEFAULT_FUEL_PROCUREMENT_MODE;
+  const procuredAccumulatedAmount = input.procuredAccumulatedAmount ?? 0;
 
   assertNonNegativeAmount(fuelAllowance, 'Jatah BBM');
   assertNonNegativeAmount(fuelSpent, 'BBM terpakai');
   assertNonNegativeAmount(tollAllowance, 'Jatah tol & parkir');
   assertNonNegativeAmount(tollSpent, 'Tol & parkir terbayar');
   assertNonNegativeAmount(additionalReimbursement, 'Reimburse tambahan');
+  assertFuelProcurementMode(fuelProcurementMode);
+  assertNonNegativeAmount(procuredAccumulatedAmount, 'Akumulasi BBM yang dicairkan');
 
-  const fuelDelta = fuelSpent - fuelAllowance;
+  const effectiveFuelAllowance = calculateEffectiveFuelAllowance(
+    fuelAllowance,
+    fuelProcurementMode,
+    procuredAccumulatedAmount,
+  );
+  const heldFuelAmount = fuelProcurementMode === 'hold_accumulate' ? fuelAllowance : 0;
+  const fuelDelta = fuelSpent - effectiveFuelAllowance;
   const tollDelta = tollSpent - tollAllowance;
   const extraFuelCost = Math.max(0, fuelDelta);
   const extraTollCost = Math.max(0, tollDelta);
@@ -257,6 +344,9 @@ export function calculateDriverReimbursementSettlement(
   );
 
   return {
+    effectiveFuelAllowance,
+    heldFuelAmount,
+    procuredAccumulatedAmount,
     fuelDelta,
     tollDelta,
     extraFuelCost,
@@ -268,7 +358,7 @@ export function calculateDriverReimbursementSettlement(
     netOperationalDelta,
     positiveReimburseDelta,
     reimburseDelta,
-    totalPreAuthorizedAllowance: fuelAllowance + tollAllowance,
+    totalPreAuthorizedAllowance: effectiveFuelAllowance + tollAllowance,
     totalActualSpent: fuelSpent + tollSpent,
     unspentCash,
     remainingUnspentCash,

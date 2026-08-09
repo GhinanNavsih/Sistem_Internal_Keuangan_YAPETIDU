@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import GlobalHeader from '@/components/GlobalHeader';
@@ -63,8 +63,20 @@ import {
   type DriverReviewPayload,
 } from '@/components/DriverJourneyAuditDialog';
 import type { PhotoAuditMetadata } from '@/lib/payroll/domain';
-import { DriverPiketSchedule, PIKET_STATIONS, PiketStationKey } from '@/lib/payroll/driverPiket';
-import { getMealAllowanceForDuration, calculateEstimatedDriverWage } from '@/lib/payroll/driverJourney';
+import {
+  DriverPiketSchedule,
+  PIKET_STATIONS,
+  PiketStationKey,
+  EXTRA_PIKET_STATION_PREFIX,
+  isExtraPiketStationKey,
+} from '@/lib/payroll/driverPiket';
+import {
+  getMealAllowanceForDuration,
+  calculateEstimatedDriverWage,
+  DEFAULT_FUEL_PROCUREMENT_MODE,
+  isFuelProcurementMode,
+  type FuelProcurementMode,
+} from '@/lib/payroll/driverJourney';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import { pekaryaPayrollPeriodForDate, pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import { syncActivityToPayslip } from '@/utils/payslipSync';
@@ -232,7 +244,15 @@ function DriverJourneysContent() {
   const [startPoint, setStartPoint] = useState('UNIPDU Jombang, Jawa Timur');
   const [endPoint, setEndPoint] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState<keyof typeof VEHICLE_RATES>('Suzuki XL7');
+  const [fuelProcurementMode, setFuelProcurementMode] = useState<FuelProcurementMode>(DEFAULT_FUEL_PROCUREMENT_MODE);
   const [tollFee, setTollFee] = useState<string>('');
+  const [fuelBalances, setFuelBalances] = useState<any[]>([]);
+  const [fuelLedgerVehicle, setFuelLedgerVehicle] = useState<string | null>(null);
+  const [fuelLedgerEntries, setFuelLedgerEntries] = useState<Record<string, unknown>[]>([]);
+  const [showFuelLedger, setShowFuelLedger] = useState(false);
+  const [fuelAdjustmentDelta, setFuelAdjustmentDelta] = useState('');
+  const [fuelAdjustmentReason, setFuelAdjustmentReason] = useState('');
+  const [fuelAdjustmentSaving, setFuelAdjustmentSaving] = useState(false);
 
   // Driver Assignment States
   const [drivers, setDrivers] = useState<any[]>([]);
@@ -258,6 +278,7 @@ function DriverJourneysContent() {
   const [selectedPiketDate, setSelectedPiketDate] = useState<string | null>(null);
   const [showPiketDialog, setShowPiketDialog] = useState(false);
   const [savingPiket, setSavingPiket] = useState(false);
+  const [pendingExtraSlotKeys, setPendingExtraSlotKeys] = useState<string[]>([]);
 
   // Real-time listener for Driver Piket Schedules in current period
   useEffect(() => {
@@ -287,14 +308,14 @@ function DriverJourneysContent() {
     return (day + 6) % 7; // Monday = 0, ..., Sunday = 6
   }, [year, month]);
 
-  const getScheduleForStation = (dateStr: string, stationKey: PiketStationKey, fallbackIdx: number) => {
+  const getScheduleForStation = (dateStr: string, stationKey: string, fallbackIdx: number) => {
     const byKey = piketSchedules.find((s) => s.date === dateStr && s.stationKey === stationKey);
     if (byKey) return byKey;
     const unkeyed = piketSchedules.filter((s) => s.date === dateStr && !s.stationKey);
     return unkeyed[fallbackIdx] || null;
   };
 
-  const assignDriverToStation = async (stationKey: PiketStationKey, stationName: string, driverId: string) => {
+  const assignDriverToStation = async (stationKey: string, stationName: string, driverId: string) => {
     if (!selectedPiketDate) return;
     setSavingPiket(true);
     try {
@@ -335,6 +356,40 @@ function DriverJourneysContent() {
       setMessage({ type: 'error', text: 'Gagal memperbarui jadwal piket.' });
     } finally {
       setSavingPiket(false);
+    }
+  };
+
+  // Extra (ad-hoc) piket slots beyond the 5 fixed stations, saved with a
+  // "extra-<id>" stationKey so they never collide with the fixed keys or the
+  // legacy unkeyed fallback lookup in getScheduleForStation.
+  const extraPiketSchedules = useMemo(() => {
+    if (!selectedPiketDate) return [];
+    return piketSchedules
+      .filter((s) => s.date === selectedPiketDate && isExtraPiketStationKey(s.stationKey))
+      .sort((a, b) => (a.stationKey || '').localeCompare(b.stationKey || ''));
+  }, [piketSchedules, selectedPiketDate]);
+
+  const extraPiketSlotKeys = useMemo(() => {
+    const keys = extraPiketSchedules.map((s) => s.stationKey!);
+    for (const key of pendingExtraSlotKeys) {
+      if (!keys.includes(key)) keys.push(key);
+    }
+    return keys;
+  }, [extraPiketSchedules, pendingExtraSlotKeys]);
+
+  const addExtraPiketSlot = () => {
+    const key = `${EXTRA_PIKET_STATION_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setPendingExtraSlotKeys((prev) => [...prev, key]);
+  };
+
+  const removeExtraPiketSlot = async (stationKey: string) => {
+    setPendingExtraSlotKeys((prev) => prev.filter((k) => k !== stationKey));
+    if (!selectedPiketDate || !extraPiketSchedules.some((s) => s.stationKey === stationKey)) return;
+    try {
+      await deleteDoc(doc(db, 'DriverPiketSchedules', `PIKET-${selectedPiketDate}-${stationKey}`));
+    } catch (err) {
+      console.error('Error removing extra piket slot:', err);
+      setMessage({ type: 'error', text: 'Gagal menghapus slot piket tambahan.' });
     }
   };
 
@@ -390,6 +445,67 @@ function DriverJourneysContent() {
   const dynamicMealAllowance = selectedVehicle === 'Ndalem'
     ? 0
     : getMealAllowanceForDuration(totalDurationPP, selectedVehicle);
+
+  const loadFuelBalances = useCallback(async () => {
+    if (!user) return;
+    try {
+      const result = await authenticatedJson<{ balances?: any[] }>(
+        '/api/driver-journeys/vehicle-fuel-balances',
+      );
+      setFuelBalances(result.balances || []);
+    } catch (error) {
+      console.error('Error fetching vehicle fuel balances:', error);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    void loadFuelBalances();
+  }, [loadFuelBalances]);
+
+  const selectedFuelBalance = fuelBalances.find((balance) => balance.vehicleName === selectedVehicle);
+
+  const openFuelLedger = async (vehicleName: string) => {
+    try {
+      const result = await authenticatedJson<{ history?: Record<string, unknown>[] }>(
+        `/api/driver-journeys/vehicle-fuel-balances?vehicleName=${encodeURIComponent(vehicleName)}&history=true`,
+      );
+      setFuelLedgerVehicle(vehicleName);
+      setFuelLedgerEntries(result.history || []);
+      setShowFuelLedger(true);
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'Riwayat ledger BBM gagal dimuat.' });
+    }
+  };
+
+  const submitFuelAdjustment = async () => {
+    if (!fuelLedgerVehicle || fuelAdjustmentSaving) return;
+    const delta = Number(fuelAdjustmentDelta.replace(/\D/g, '')) * (fuelAdjustmentDelta.trim().startsWith('-') ? -1 : 1);
+    if (!Number.isSafeInteger(delta) || delta === 0 || fuelAdjustmentReason.trim().length < 8) {
+      setMessage({ type: 'error', text: 'Isi delta saldo (boleh negatif) dan alasan minimal 8 karakter.' });
+      return;
+    }
+    setFuelAdjustmentSaving(true);
+    try {
+      await authenticatedJson('/api/driver-journeys/vehicle-fuel-balances', {
+        method: 'POST',
+        body: JSON.stringify({
+          vehicleName: fuelLedgerVehicle,
+          delta,
+          reason: fuelAdjustmentReason.trim(),
+          requestId: createFinancialRequestId('vehicle_fuel_adjustment'),
+        }),
+      });
+      setFuelAdjustmentDelta('');
+      setFuelAdjustmentReason('');
+      await loadFuelBalances();
+      await openFuelLedger(fuelLedgerVehicle);
+      setMessage({ type: 'success', text: 'Penyesuaian saldo BBM berhasil dicatat.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'Penyesuaian saldo BBM gagal.' });
+    } finally {
+      setFuelAdjustmentSaving(false);
+    }
+  };
 
   const initMap = (element: HTMLDivElement) => {
     loadGoogleMapsScript(() => {
@@ -860,6 +976,9 @@ function DriverJourneysContent() {
           startPoint: startPoint.trim(),
           endPoint: endPoint.trim(),
           vehicleName: selectedVehicle,
+          fuelProcurementMode: selectedVehicle === 'Ndalem'
+            ? DEFAULT_FUEL_PROCUREMENT_MODE
+            : fuelProcurementMode,
           distanceKm: calcDistance,
           durationHours: calcDuration,
           customDurationPP: durPP,
@@ -883,6 +1002,7 @@ function DriverJourneysContent() {
       setEditingJourneyId(null);
       setAssignedDriverId('');
       setTollFee('');
+      setFuelProcurementMode(DEFAULT_FUEL_PROCUREMENT_MODE);
       lastCalculatedRef.current = { start: '', end: '' };
       setShowAddForm(false);
     } catch (err: any) {
@@ -1079,6 +1199,36 @@ function DriverJourneysContent() {
           <span>{message.text}</span>
         </div>
       )}
+
+      <Card className="border-slate-200/60 shadow-sm rounded-2xl bg-white">
+        <CardHeader className="p-4 pb-2">
+          <CardTitle className="text-sm font-extrabold text-slate-800">Saldo BBM Armada</CardTitle>
+          <CardDescription className="text-xs mt-0.5">Pool per model kendaraan. Ndalem tidak memakai saldo akumulasi.</CardDescription>
+        </CardHeader>
+        <CardContent className="p-4 pt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {fuelBalances.map((balance) => (
+            <div key={balance.vehicleName} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-black text-slate-800">{balance.vehicleName}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => openFuelLedger(balance.vehicleName)}
+                  className="h-7 px-2 text-[10px] font-bold text-indigo-700 hover:bg-indigo-50 rounded-lg"
+                >
+                  Ledger
+                </Button>
+              </div>
+              <div className="grid grid-cols-3 gap-1 text-[10px] font-bold">
+                <div><span className="block text-slate-400">Tersedia</span><span className="text-emerald-700">{fmtRp(Number(balance.availableBalance || 0))}</span></div>
+                <div><span className="block text-slate-400">Hold</span><span className="text-amber-700">{fmtRp(Number(balance.pendingHoldAmount || 0))}</span></div>
+                <div><span className="block text-slate-400">Cair</span><span className="text-orange-700">{fmtRp(Number(balance.pendingReleaseAmount || 0))}</span></div>
+              </div>
+            </div>
+          ))}
+          {fuelBalances.length === 0 && <p className="text-xs font-semibold text-slate-400">Saldo kendaraan belum termuat.</p>}
+        </CardContent>
+      </Card>
 
       {/* Tab Switcher */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
@@ -1294,6 +1444,11 @@ function DriverJourneysContent() {
                                       setStartPoint(j.startPoint);
                                       setEndPoint(j.endPoint);
                                       setSelectedVehicle(j.vehicleName);
+                                      setFuelProcurementMode(
+                                        isFuelProcurementMode(j.fuelProcurementMode)
+                                          ? j.fuelProcurementMode
+                                          : DEFAULT_FUEL_PROCUREMENT_MODE,
+                                      );
                                       setCalcDistance(j.distanceKm);
                                       setCalcDuration(j.durationHours);
                                       setInputDuration(j.customDurationPP || (j.durationHours ? j.durationHours * 2 : 0));
@@ -1383,6 +1538,7 @@ function DriverJourneysContent() {
                     key={dateStr}
                     onClick={() => {
                       setSelectedPiketDate(dateStr);
+                      setPendingExtraSlotKeys([]);
                       setShowPiketDialog(true);
                     }}
                     className={`min-h-[145px] sm:min-h-[165px] rounded-xl border p-2 flex flex-col justify-between transition-all cursor-pointer group hover:border-indigo-400 hover:shadow-md ${isToday
@@ -1398,7 +1554,7 @@ function DriverJourneysContent() {
                       </span>
                       {assigned.length > 0 ? (
                         <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-200 text-[9px] font-extrabold px-1.5 py-0">
-                          {assigned.length}/5 Piket
+                          {assigned.length}/{Math.max(5, assigned.length)} Piket
                         </Badge>
                       ) : (
                         <span className="text-[9px] text-slate-300 font-semibold">Kosong</span>
@@ -1432,6 +1588,27 @@ function DriverJourneysContent() {
                           </div>
                         );
                       })}
+                      {assigned
+                        .filter((s) => isExtraPiketStationKey(s.stationKey))
+                        .map((sched) => (
+                          <div
+                            key={sched.stationKey}
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-md border flex items-center justify-between gap-1 bg-amber-50 text-amber-900 border-amber-200/80 shadow-xs"
+                            title={`${sched.stationName || 'Piket Tambahan'}: ${sched.driverName}`}
+                          >
+                            <span className="truncate text-[9px] font-black text-amber-600 uppercase tracking-tight w-14 shrink-0">
+                              {sched.stationName || 'Tambahan'}
+                            </span>
+                            <span className="truncate text-[10px] font-bold text-amber-900">
+                              {(() => {
+                                const d = drivers.find((drv) => drv.id === sched.driverId);
+                                if (d?.name && d.name !== sched.driverId) return d.name;
+                                if (sched.driverName && !sched.driverName.startsWith('BC_')) return sched.driverName;
+                                return d?.name || sched.driverName || sched.driverId;
+                              })()}
+                            </span>
+                          </div>
+                        ))}
                     </div>
 
                     <div className="text-[9px] font-extrabold text-indigo-600 group-hover:opacity-100 transition-opacity flex items-center gap-1 justify-end pt-1 border-t border-slate-100">
@@ -1445,13 +1622,16 @@ function DriverJourneysContent() {
         </Card>
       )}
 
-      {/* Dialog for Assigning Drivers to 5 Piket Stations on Selected Date */}
-      <Dialog open={showPiketDialog} onOpenChange={setShowPiketDialog}>
+      {/* Dialog for Assigning Drivers to Piket Stations on Selected Date */}
+      <Dialog open={showPiketDialog} onOpenChange={(open) => {
+        if (!open) setPendingExtraSlotKeys([]);
+        setShowPiketDialog(open);
+      }}>
         <DialogContent className="max-w-lg rounded-3xl p-6 sm:p-7">
           <DialogHeader className="border-b border-slate-100 pb-3">
             <DialogTitle className="text-base font-black text-slate-800 flex items-center gap-2">
               <CalendarDays className="w-5 h-5 text-indigo-600" />
-              Kelola 5 Stasiun Piket ({selectedPiketDate ? formatIndonesianDate(selectedPiketDate) : ''})
+              Kelola Stasiun Piket ({selectedPiketDate ? formatIndonesianDate(selectedPiketDate) : ''})
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500 mt-0.5">
               Tentukan sopir bertugas pada setiap stasiun piket untuk tanggal ini.
@@ -1524,6 +1704,95 @@ function DriverJourneysContent() {
                 </div>
               );
             })}
+
+            {extraPiketSlotKeys.map((slotKey, extraIdx) => {
+              const currentSched = extraPiketSchedules.find((s) => s.stationKey === slotKey) || null;
+              const selectedDriverId = currentSched?.driverId || 'unassigned';
+              const stationLabel = currentSched?.stationName || `Piket Tambahan ${extraIdx + 1}`;
+
+              const assignedOtherDriverIds = selectedPiketDate
+                ? piketSchedules
+                    .filter((s) => {
+                      if (s.date !== selectedPiketDate || !s.driverId || s.driverId === 'unassigned') return false;
+                      if (s.stationKey) return s.stationKey !== slotKey;
+                      return currentSched ? s.id !== currentSched.id : true;
+                    })
+                    .map((s) => s.driverId)
+                : [];
+
+              return (
+                <div
+                  key={slotKey}
+                  className="p-3 bg-amber-50/60 border border-amber-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-black text-xs shrink-0">
+                      <Compass className="w-4 h-4 text-amber-600" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-slate-800">{stationLabel}</div>
+                      <div className="text-[10px] text-slate-400 font-semibold">Slot Piket Tambahan</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <Select
+                      value={selectedDriverId}
+                      disabled={savingPiket}
+                      onValueChange={(val: string | null) => {
+                        assignDriverToStation(slotKey, stationLabel, val || 'unassigned');
+                      }}
+                    >
+                      <SelectTrigger className="w-full sm:w-[190px] h-9 text-xs font-bold bg-white rounded-xl border border-slate-200">
+                        <SelectValue placeholder="-- Pilih Sopir --">
+                          {(() => {
+                            if (selectedDriverId === 'unassigned') return '-- Belum Ditugaskan --';
+                            const selectedDriver = drivers.find((d) => d.id === selectedDriverId);
+                            return selectedDriver ? (selectedDriver.name || selectedDriver.personal_info?.name || selectedDriver.id) : selectedDriverId;
+                          })()}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                        <SelectItem value="unassigned" className="text-xs text-slate-400 italic">
+                          -- Belum Ditugaskan --
+                        </SelectItem>
+                        {drivers
+                          .filter((d) => !assignedOtherDriverIds.includes(d.id))
+                          .map((d) => {
+                            const driverName = d.name || d.personal_info?.name || d.id;
+                            return (
+                              <SelectItem key={d.id} value={d.id} className="text-xs font-bold">
+                                {driverName}
+                              </SelectItem>
+                            );
+                          })}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      disabled={savingPiket}
+                      onClick={() => removeExtraPiketSlot(slotKey)}
+                      className="h-9 w-9 rounded-xl border-rose-200 text-rose-500 hover:bg-rose-50 shrink-0 cursor-pointer"
+                      title="Hapus slot piket tambahan"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={addExtraPiketSlot}
+              className="w-full rounded-xl border-dashed border-slate-300 text-slate-500 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50/50 font-bold text-xs h-10 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1.5" />
+              Tambah Slot Piket
+            </Button>
           </div>
 
           <DialogFooter className="pt-2 border-t border-slate-100">
@@ -1748,6 +2017,7 @@ function DriverJourneysContent() {
                   value={selectedVehicle}
                   onValueChange={(val: any) => {
                     setSelectedVehicle(val);
+                    if (val === 'Ndalem') setFuelProcurementMode(DEFAULT_FUEL_PROCUREMENT_MODE);
                   }}
                 >
                   <SelectTrigger className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
@@ -1806,6 +2076,44 @@ function DriverJourneysContent() {
               </div>
             </div>
 
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="fuelModeSelect" className="text-xs font-bold text-indigo-900 uppercase tracking-wider">
+                  Mode Pengadaan BBM
+                </Label>
+                {selectedVehicle !== 'Ndalem' && selectedFuelBalance && (
+                  <span className="text-[10px] font-bold text-slate-600">
+                    Saldo tersedia: <strong className="text-emerald-700">{fmtRp(Number(selectedFuelBalance.availableBalance || 0))}</strong>
+                  </span>
+                )}
+              </div>
+              <Select
+                value={selectedVehicle === 'Ndalem' ? DEFAULT_FUEL_PROCUREMENT_MODE : fuelProcurementMode}
+                onValueChange={(value) => {
+                  if (isFuelProcurementMode(value) && selectedVehicle !== 'Ndalem') {
+                    setFuelProcurementMode(value);
+                  }
+                }}
+                disabled={selectedVehicle === 'Ndalem'}
+              >
+                <SelectTrigger id="fuelModeSelect" className="w-full text-xs font-bold text-slate-700 bg-white rounded-xl border border-indigo-100 h-10 px-3">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
+                  <SelectItem value="standard_direct">Standard langsung — aturan legacy</SelectItem>
+                  <SelectItem value="hold_accumulate">Tahan & akumulasi — tambah saldo saat disetujui</SelectItem>
+                  <SelectItem value="procure_release">Cairkan saldo — gunakan pool + jatah trip</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] leading-relaxed text-indigo-800">
+                {fuelProcurementMode === 'hold_accumulate'
+                  ? 'Tidak ada kuitansi BBM. Jatah perjalanan ditahan dan menjadi saldo kendaraan ketika audit disetujui.'
+                  : fuelProcurementMode === 'procure_release'
+                    ? `Saldo tersedia ${fmtRp(Number(selectedFuelBalance?.availableBalance || 0))} akan dicairkan saat otorisasi; kuitansi tetap wajib.`
+                    : 'Settlement BBM mengikuti alur langsung yang sudah berjalan.'}
+              </p>
+            </div>
+
             {/* Calculation Loader */}
             {calculating && (
               <div className="flex items-center justify-center p-3 text-xs text-indigo-600 font-bold bg-indigo-50/50 rounded-xl border border-indigo-100/50 animate-in fade-in duration-200">
@@ -1836,7 +2144,18 @@ function DriverJourneysContent() {
             )}
 
             {/* Calculation Summary Preview */}
-            {calcDistance !== null && (
+            {calcDistance !== null && (() => {
+              const baseFuelPreview = calcDistance * 2 * VEHICLE_RATES[selectedVehicle];
+              const releasedFuelPreview = fuelProcurementMode === 'procure_release'
+                ? Number(selectedFuelBalance?.availableBalance || 0)
+                : 0;
+              const effectiveFuelPreview = fuelProcurementMode === 'hold_accumulate'
+                ? 0
+                : baseFuelPreview + releasedFuelPreview;
+              const totalFuelAllocationPreview = fuelProcurementMode === 'hold_accumulate'
+                ? baseFuelPreview
+                : effectiveFuelPreview;
+              return (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {/* Rincian Estimasi Biaya Otorisasi */}
                 <div className="p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-xl space-y-1.5 animate-in fade-in duration-200">
@@ -1859,9 +2178,21 @@ function DriverJourneysContent() {
 
                   <div className="space-y-1 text-xs pt-1">
                     <div className="flex justify-between text-slate-500 font-medium">
-                      <span>Biaya BBM (PP)</span>
-                      <span className="font-bold text-slate-700">{fmtRp(calcDistance * 2 * VEHICLE_RATES[selectedVehicle])}</span>
+                      <span>{fuelProcurementMode === 'hold_accumulate' ? 'Jatah BBM ditahan' : 'Biaya BBM dasar (PP)'}</span>
+                      <span className="font-bold text-slate-700">{fmtRp(baseFuelPreview)}</span>
                     </div>
+                    {fuelProcurementMode === 'procure_release' && (
+                      <div className="flex justify-between text-orange-700 font-medium">
+                        <span>Saldo kendaraan dicairkan</span>
+                        <span className="font-bold">+{fmtRp(releasedFuelPreview)}</span>
+                      </div>
+                    )}
+                    {fuelProcurementMode === 'hold_accumulate' && (
+                      <div className="flex justify-between text-amber-700 font-medium">
+                        <span>Masuk pool saat audit disetujui</span>
+                        <span className="font-bold">{fmtRp(baseFuelPreview)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-slate-500 font-medium">
                       <span>Uang Makan Sopir (Flat Durasi)</span>
                       <span className="font-bold text-slate-700">{fmtRp(dynamicMealAllowance)}</span>
@@ -1878,7 +2209,7 @@ function DriverJourneysContent() {
                           )}
                           <div className="flex justify-between text-slate-800 font-black border-t border-indigo-200/60 pt-1.5 mt-1 text-sm">
                             <span>Total Uang Jalan (Operasional)</span>
-                            <span className="text-indigo-700">{fmtRp((calcDistance * 2 * VEHICLE_RATES[selectedVehicle]) + dynamicMealAllowance + tollFeeVal)}</span>
+                            <span className="text-indigo-700">{fmtRp(totalFuelAllocationPreview + dynamicMealAllowance + tollFeeVal)}</span>
                           </div>
                         </>
                       );
@@ -1936,7 +2267,8 @@ function DriverJourneysContent() {
                   })()}
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             <DialogFooter className="pt-2 border-t border-slate-100 gap-2">
               <Button
@@ -2143,6 +2475,46 @@ function DriverJourneysContent() {
               </Button>
             </DialogFooter>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showFuelLedger} onOpenChange={setShowFuelLedger}>
+        <DialogContent className="sm:max-w-2xl rounded-2xl bg-white p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base font-extrabold text-slate-800">Ledger BBM {fuelLedgerVehicle || ''}</DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">Riwayat append-only dan penyesuaian manual bertanda tangan.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 grid grid-cols-1 sm:grid-cols-[150px_1fr_auto] gap-2 items-end">
+              <div>
+                <Label className="text-[10px] font-bold text-indigo-900">Signed delta (Rp)</Label>
+                <Input value={fuelAdjustmentDelta} onChange={(event) => setFuelAdjustmentDelta(event.target.value.replace(/[^0-9-]/g, ''))} placeholder="+500000 / -500000" className="mt-1 h-9 text-xs bg-white" />
+              </div>
+              <div>
+                <Label className="text-[10px] font-bold text-indigo-900">Alasan wajib</Label>
+                <Input value={fuelAdjustmentReason} onChange={(event) => setFuelAdjustmentReason(event.target.value)} placeholder="Koreksi saldo berdasarkan dokumen..." className="mt-1 h-9 text-xs bg-white" />
+              </div>
+              <Button type="button" onClick={submitFuelAdjustment} disabled={fuelAdjustmentSaving} className="h-9 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-xs font-bold">
+                {fuelAdjustmentSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Catat adjustment'}
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {fuelLedgerEntries.map((entry) => (
+                <div key={String(entry.id)} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-[10px]">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-black text-slate-800">{String(entry.eventType || 'event')}</span>
+                    <span className="font-bold text-slate-500">Δ tersedia {fmtRp(Number(entry.availableDelta || 0))}</span>
+                  </div>
+                  <div className="mt-1 text-slate-500">{String(entry.reason || '')}</div>
+                  <div className="mt-1 text-slate-400">{String(entry.actorName || entry.actorUid || '')}</div>
+                </div>
+              ))}
+              {fuelLedgerEntries.length === 0 && <p className="text-xs text-slate-400 font-semibold">Belum ada entri ledger.</p>}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setShowFuelLedger(false)} className="text-xs font-bold">Tutup</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

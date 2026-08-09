@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
@@ -14,8 +14,21 @@ import {
   calculateDriverReimbursementSettlement,
   calculateNightPremium,
   canonicalizeDriverJourneyTimeline,
+  DEFAULT_FUEL_PROCUREMENT_MODE,
+  isDriverVehicleName,
+  isFuelProcurementMode,
   getMealAllowanceForDuration,
 } from '@/lib/payroll/driverJourney';
+import {
+  createFuelLedgerContext,
+  flushFuelLedger,
+  reservationFields,
+  reservationFromJourney,
+  reserveFuel,
+  type FuelLedgerContext,
+  type FuelReservationRecord,
+} from '@/lib/payroll/vehicleFuel';
+import { releaseFuelReservation } from '@/lib/payroll/vehicleFuel';
 import {
   activityDurationMinutes,
   assertSatpamFoundItemPhotoCount,
@@ -100,6 +113,11 @@ const ALLOWED_DRIVER_FIELDS = [
   'nightPremium',
   'reportedEndPoint',
   'ndalemMealMoneyReceived',
+  'fuelProcurementMode',
+  'heldFuelAmount',
+  'procuredAccumulatedAmount',
+  'fuelAllowanceForSettlement',
+  'fuelTotalAllocation',
 ] as const;
 
 function parsePhotoAuditMetadata(value: unknown): PhotoAuditMetadata {
@@ -726,6 +744,8 @@ export async function POST(request: NextRequest) {
       const journeyId = typeof driverData.journeyId === 'string' ? driverData.journeyId : null;
       let journeyRef: FirebaseFirestore.DocumentReference | null = null;
       let journeyBefore: FirebaseFirestore.DocumentData | null = null;
+      let fuelContext: FuelLedgerContext | null = null;
+      let fuelReservationAfterSubmission: FuelReservationRecord | null = null;
       if (journeyId) {
         journeyRef = adminDb.collection('DriverJourneys').doc(journeyId);
         const journeySnapshot = await transaction.get(journeyRef);
@@ -736,11 +756,24 @@ export async function POST(request: NextRequest) {
         const ownsJourney =
           journeyBefore.employeeId === employeeId ||
           journeyBefore.assignedTo === employeeId;
-        if (!ownsJourney || !['claimed', 'submitted', 'completed'].includes(journeyBefore.status)) {
+        if (!ownsJourney || !['claimed', 'submitted', 'declined', 'completed'].includes(journeyBefore.status)) {
           throw new HttpError(409, 'Perjalanan dinas tidak dimiliki oleh pegawai ini.');
         }
-        const vehicleType =
-          typeof driverData.vehicleType === 'string' ? driverData.vehicleType : '';
+        if (journeyBefore.fuelModeSelectionRequired === true) {
+          throw new HttpError(409, 'Pilih mode pengadaan BBM sebelum mengirim laporan perjalanan.');
+        }
+        const journeyVehicleName = String(journeyBefore.vehicleName || '');
+        if (!isDriverVehicleName(journeyVehicleName)) {
+          throw new HttpError(409, 'Jenis kendaraan perjalanan tidak valid.');
+        }
+        const vehicleType = journeyVehicleName;
+        driverData.vehicleType = vehicleType;
+        const fuelProcurementMode = isFuelProcurementMode(journeyBefore.fuelProcurementMode)
+          ? journeyBefore.fuelProcurementMode
+          : DEFAULT_FUEL_PROCUREMENT_MODE;
+        if (vehicleType === 'Ndalem' && fuelProcurementMode !== DEFAULT_FUEL_PROCUREMENT_MODE) {
+          throw new HttpError(409, 'Kendaraan Ndalem tidak dapat menggunakan akumulasi BBM.');
+        }
         const authorizedDurationHours = Number(
           journeyBefore.customDurationPP ||
             (journeyBefore.durationHours ? journeyBefore.durationHours * 2 : 0),
@@ -762,17 +795,32 @@ export async function POST(request: NextRequest) {
             ? journeyBefore.baseOperationalCost
             : Math.max(
                 0,
-                Number(journeyBefore.totalOperationalCost || 0) -
+                  Number(journeyBefore.totalOperationalCost || 0) -
                   preAuthorizedMeal -
                   preAuthorizedToll,
               );
-        const fuelFee = Number(driverData.fuelFee || 0);
+        const heldFuelAmount = Number(journeyBefore.heldFuelAmount || 0);
+        const procuredAccumulatedAmount = Number(journeyBefore.procuredAccumulatedAmount || 0);
+        const fuelFee = fuelProcurementMode === 'hold_accumulate'
+          ? 0
+          : Number(driverData.fuelFee || 0);
         const tollParkingFee = Number(driverData.tollParkingFee || 0);
         const actualMealAllowance = Number(driverData.actualMealAllowance || 0);
         const extraMealAllowance =
           vehicleType === 'Ndalem'
             ? actualMealAllowance
             : Math.max(0, actualMealAllowance - preAuthorizedMeal);
+        const fuelReceiptUrl = fuelProcurementMode === 'hold_accumulate'
+          ? ''
+          : String(driverData.fuelReceiptUrl || '').trim();
+        if (fuelProcurementMode === 'procure_release' && (fuelFee <= 0 || !fuelReceiptUrl)) {
+          throw new HttpError(400, 'Mode Cairkan Refueling wajib menyertakan nominal dan struk BBM.');
+        }
+        if (fuelProcurementMode === 'hold_accumulate') {
+          driverData.fuelFee = 0;
+          driverData.fuelReceiptUrl = '';
+          delete driverData.fuelReceiptEvidence;
+        }
         const fuelSpent = vehicleType === 'Ndalem' ? 0 : fuelFee;
         const extraOperationalCost = Number(driverData.extraOperationalCost || 0);
         const settlement = calculateDriverReimbursementSettlement({
@@ -781,6 +829,8 @@ export async function POST(request: NextRequest) {
           tollAllowance: preAuthorizedToll,
           tollSpent: tollParkingFee,
           additionalReimbursement: extraMealAllowance + extraOperationalCost,
+          fuelProcurementMode,
+          procuredAccumulatedAmount: vehicleType === 'Ndalem' ? 0 : procuredAccumulatedAmount,
         });
         const baseDriverWage = Number(driverData.baseDriverWage || 0);
         const finalUpahBersih = Math.max(
@@ -803,6 +853,11 @@ export async function POST(request: NextRequest) {
           preAuthorizedMeal,
           preAuthorizedToll,
           customDurationPP: authorizedDurationHours,
+          fuelProcurementMode,
+          heldFuelAmount: vehicleType === 'Ndalem' ? 0 : heldFuelAmount,
+          procuredAccumulatedAmount: vehicleType === 'Ndalem' ? 0 : procuredAccumulatedAmount,
+          fuelAllowanceForSettlement: settlement.effectiveFuelAllowance,
+          fuelTotalAllocation: settlement.effectiveFuelAllowance + (vehicleType === 'Ndalem' ? 0 : heldFuelAmount),
           baseOperationalCost,
           fuelFee: fuelSpent,
           extraFuelCost: settlement.extraFuelCost,
@@ -822,7 +877,34 @@ export async function POST(request: NextRequest) {
           totalOperationalCost,
           vehicleRate: Number(journeyBefore.vehicleRate || 0),
         });
+
+        const existingReservation = reservationFromJourney(journeyBefore);
+        if (
+          journeyBefore.status === 'declined' &&
+          existingReservation &&
+          existingReservation.fuelProcurementMode !== DEFAULT_FUEL_PROCUREMENT_MODE &&
+          existingReservation.fuelReservationState !== 'reserved'
+        ) {
+          fuelContext = await createFuelLedgerContext(transaction, [vehicleType], {
+            uid: actor.uid,
+            displayName: actor.displayName,
+            role: actor.role,
+          });
+          fuelReservationAfterSubmission = reserveFuel(fuelContext, {
+            journeyId,
+            reservationId: `FUEL-${journeyId}-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`,
+            vehicleName: vehicleType,
+            mode: fuelProcurementMode,
+            baseFuelAllowance: baseOperationalCost,
+            reason: 'Reservasi ulang BBM saat pengajuan ulang laporan',
+          });
+          Object.assign(driverData, reservationFields(fuelReservationAfterSubmission));
+        } else {
+          fuelReservationAfterSubmission = existingReservation;
+        }
       }
+
+      if (fuelContext) flushFuelLedger(fuelContext);
 
       const now = admin.firestore.FieldValue.serverTimestamp();
       const after = {
@@ -1114,6 +1196,27 @@ export async function DELETE(request: NextRequest) {
       );
       assertPeriodAcceptsInput(periodSnapshot.data());
 
+      const journeyOwnsRequest = Boolean(
+        jData &&
+        jRef &&
+        targetJourneyId &&
+        (jData.employeeId === employeeId || jData.claimedBy === actor.uid || jData.assignedTo === employeeId),
+      );
+      const journeyReservation = journeyOwnsRequest && jData
+        ? reservationFromJourney(jData)
+        : null;
+      const fuelContext = journeyReservation?.fuelReservationState === 'reserved'
+        ? await createFuelLedgerContext(transaction, [journeyReservation.fuelReservationVehicleName], {
+            uid: actor.uid,
+            displayName: actor.displayName,
+            role: actor.role,
+          })
+        : null;
+      const releasedJourneyReservation = fuelContext && journeyReservation
+        ? releaseFuelReservation(fuelContext, journeyReservation, 'Pembatalan laporan/perjalanan oleh Sopir', targetJourneyId || undefined)
+        : journeyReservation;
+      if (fuelContext) flushFuelLedger(fuelContext);
+
       // ── WRITE PHASE ──
       if (reportData && targetReportRef) {
         transaction.delete(targetReportRef);
@@ -1157,6 +1260,7 @@ export async function DELETE(request: NextRequest) {
               draftExtraActivities: admin.firestore.FieldValue.delete(),
               draftCalculatedDistanceKm: admin.firestore.FieldValue.delete(),
               draftCalculatedDurationHours: admin.firestore.FieldValue.delete(),
+              ...(releasedJourneyReservation ? reservationFields(releasedJourneyReservation) : {}),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
           }

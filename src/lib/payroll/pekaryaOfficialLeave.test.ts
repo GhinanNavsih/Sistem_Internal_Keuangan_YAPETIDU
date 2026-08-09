@@ -8,6 +8,8 @@ import {
 import {
   isPekaryaOfficialLeaveCategory,
   officialLeaveAttendanceCorrection,
+  pekaryaAttendanceReportType,
+  scanAttendanceCorrection,
 } from './pekaryaOfficialLeave';
 
 test('official leave is available to every non-Satpam Pekarya category', () => {
@@ -46,4 +48,18 @@ test('approved official leave creates a payable full-day attendance record', () 
     summarizePekaryaAttendance('P-001', days, new Set(['2026-08-10'])).totalAmount,
     25_000,
   );
+});
+
+test('Pekarya attendance requests distinguish scan reports from legacy official leave', () => {
+  assert.equal(pekaryaAttendanceReportType({ reportType: 'scan' }), 'scan');
+  assert.equal(
+    pekaryaAttendanceReportType({ leaveType: 'izin_resmi' }),
+    'izin_resmi',
+  );
+  assert.deepEqual(scanAttendanceCorrection('08:00:00', '14:00:00'), {
+    present: true,
+    workStatus: 'MASUK',
+    scanIn: '08:00:00',
+    scanOut: '14:00:00',
+  });
 });

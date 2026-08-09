@@ -103,7 +103,6 @@ type DutyPlan = {
   seedDays?: PlanDay[];
   generatedDays?: PlanDay[];
   lateBackfillDates?: string[];
-  acknowledgedBackfillDates?: string[];
 };
 
 type DutyPlanResponse = {
@@ -215,7 +214,7 @@ function employeeName(
 
 function statusLabel(status: string) {
   if (status === 'published') return 'Dipublikasikan';
-  if (status === 'pending_backfill_review') return 'Menunggu Konfirmasi Backfill';
+  if (status === 'pending_backfill_review') return 'Dipublikasikan (Backfill)';
   if (status === 'approved') return 'Disetujui';
   if (status === 'declined') return 'Ditolak';
   if (status === 'withdrawn') return 'Ditarik';
@@ -759,10 +758,10 @@ export function SatpamDutyPlanPanel(props: {
                 <p className="font-bold">
                   {statusLabel(plan.status)} · revisi {plan.revision}
                 </p>
-                {plan.status === 'pending_backfill_review' && (
+                {(plan.lateBackfillDates?.length || 0) > 0 && (
                   <p className="mt-1 text-sm">
-                    {plan.lateBackfillDates?.length || 0} tanggal yang sudah
-                    dimulai menunggu konfirmasi Kepala SatKer.
+                    {plan.lateBackfillDates?.length || 0} tanggal diterbitkan
+                    sebagai backfill (setelah shift dimulai).
                   </p>
                 )}
               </div>
@@ -986,7 +985,7 @@ export function SatpamDutyPlanPanel(props: {
                     previewLateBackfillDates.length > 0 && (
                     <p className="mt-2 font-semibold text-amber-800">
                       {previewLateBackfillDates.length} tanggal merupakan
-                      backfill dan memerlukan konfirmasi Kepala SatKer.
+                      backfill (diterbitkan setelah shift dimulai).
                     </p>
                   )}
                 </div>

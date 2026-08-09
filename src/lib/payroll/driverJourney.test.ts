@@ -6,6 +6,7 @@ import {
   DRIVER_VEHICLE_RATES,
   calculateDriverJourneyOperationalCosts,
   calculateDriverReimbursementSettlement,
+  calculateEffectiveFuelAllowance,
   calculateDriverNetWage,
   calculateEstimatedDriverWage,
   calculateEditableDriverJourneyTimeline,
@@ -29,6 +30,11 @@ test('authorized journey operational costs use the same baseline for every autho
     vehicleName: 'Ndalem',
     vehicleRate: 0,
     baseOperationalCost: 0,
+    fuelProcurementMode: 'standard_direct',
+    effectiveFuelAllowance: 0,
+    heldFuelAmount: 0,
+    procuredAccumulatedAmount: 0,
+    totalFuelAllocation: 0,
     mealAllowance: 0,
     tollParkingFee: 15_000,
     totalOperationalCost: 15_000,
@@ -39,10 +45,77 @@ test('authorized journey operational costs use the same baseline for every autho
     vehicleName: 'Suzuki XL7',
     vehicleRate: 1_000,
     baseOperationalCost: 20_000,
+    fuelProcurementMode: 'standard_direct',
+    effectiveFuelAllowance: 20_000,
+    heldFuelAmount: 0,
+    procuredAccumulatedAmount: 0,
+    totalFuelAllocation: 20_000,
     mealAllowance: 20_000,
     tollParkingFee: 15_000,
     totalOperationalCost: 55_000,
   });
+});
+
+test('fuel modes calculate allocation and settlement independently', () => {
+  const hold = calculateDriverJourneyOperationalCosts(
+    10,
+    6,
+    'Suzuki XL7',
+    0,
+    { fuelProcurementMode: 'hold_accumulate' },
+  );
+  assert.equal(hold.baseOperationalCost, 20_000);
+  assert.equal(hold.effectiveFuelAllowance, 0);
+  assert.equal(hold.heldFuelAmount, 20_000);
+  assert.equal(hold.totalFuelAllocation, 20_000);
+  assert.equal(hold.totalOperationalCost, 40_000);
+
+  const procure = calculateDriverJourneyOperationalCosts(
+    10,
+    6,
+    'Suzuki XL7',
+    0,
+    { fuelProcurementMode: 'procure_release', procuredAccumulatedAmount: 35_000 },
+  );
+  assert.equal(procure.effectiveFuelAllowance, 55_000);
+  assert.equal(procure.heldFuelAmount, 0);
+  assert.equal(procure.totalFuelAllocation, 55_000);
+
+  assert.equal(calculateEffectiveFuelAllowance(20_000, 'hold_accumulate'), 0);
+  assert.equal(calculateEffectiveFuelAllowance(20_000, 'procure_release', 35_000), 55_000);
+  assert.equal(calculateEffectiveFuelAllowance(20_000), 20_000);
+
+  const holdSettlement = calculateDriverReimbursementSettlement({
+    fuelAllowance: 20_000,
+    fuelSpent: 0,
+    tollAllowance: 0,
+    tollSpent: 0,
+    fuelProcurementMode: 'hold_accumulate',
+  });
+  assert.equal(holdSettlement.effectiveFuelAllowance, 0);
+  assert.equal(holdSettlement.fuelDelta, 0);
+  assert.equal(holdSettlement.totalPreAuthorizedAllowance, 0);
+
+  const procureSettlement = calculateDriverReimbursementSettlement({
+    fuelAllowance: 20_000,
+    fuelSpent: 50_000,
+    tollAllowance: 0,
+    tollSpent: 0,
+    fuelProcurementMode: 'procure_release',
+    procuredAccumulatedAmount: 35_000,
+  });
+  assert.equal(procureSettlement.effectiveFuelAllowance, 55_000);
+  assert.equal(procureSettlement.fuelDelta, -5_000);
+});
+
+test('accumulation modes are rejected for Ndalem', () => {
+  assert.throws(() => calculateDriverJourneyOperationalCosts(
+    10,
+    6,
+    'Ndalem',
+    0,
+    { fuelProcurementMode: 'hold_accumulate' },
+  ));
 });
 
 test('fuel savings offset toll and parking overage before reimbursement is paid', () => {

@@ -5578,7 +5578,8 @@ function ActivitiesContent() {
                 Ajukan Izin Resmi
               </DialogTitle>
               <DialogDescription className="mt-1 text-base text-indigo-50">
-                Pengajuan izin resmi Pekarya diperiksa oleh Kepala SatKer.
+                Pilih laporan scan masuk &amp; scan keluar atau izin resmi untuk
+                diperiksa oleh Kepala SatKer.
               </DialogDescription>
             </DialogHeader>
           </div>

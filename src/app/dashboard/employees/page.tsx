@@ -317,12 +317,12 @@ interface PendingEdit {
 interface PropagationResult {
   period: string;
   outcome:
-    | 'updated'
-    | 'unchanged'
-    | 'no_slip'
-    | 'period_closed'
-    | 'blocked_status'
-    | 'immutable';
+  | 'updated'
+  | 'unchanged'
+  | 'no_slip'
+  | 'period_closed'
+  | 'blocked_status'
+  | 'immutable';
 }
 
 function formatPeriodLabel(period: string): string {
@@ -1201,7 +1201,7 @@ export default function EmployeesPage() {
             current = current[part];
           }
           const lastPart = parts[parts.length - 1];
-          
+
           let val = c.oldValue;
           // Convert ISO date strings back to Firestore Timestamps
           if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
@@ -1226,9 +1226,9 @@ export default function EmployeesPage() {
       setPendingEdits([]);
       localStorage.removeItem('pending_employee_edits');
       setIsLogOpen(false);
-      
+
       await fetchEmployees();
-      
+
       setMessage({ type: 'success', text: 'Seluruh perubahan berhasil dibatalkan dan dikembalikan (revert)!' });
       setTimeout(() => setMessage(null), 4000);
     } catch (err) {
@@ -1502,9 +1502,8 @@ export default function EmployeesPage() {
 
           <div className="flex items-center gap-3">
             {message && (
-              <div className={`fixed top-0 left-0 right-0 z-[9999] w-full flex items-center justify-center px-6 py-4 shadow-md text-sm font-semibold transition-all duration-300 animate-in slide-in-from-top ${
-                message.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
-              }`}>
+              <div className={`fixed top-0 left-0 right-0 z-[9999] w-full flex items-center justify-center px-6 py-4 shadow-md text-sm font-semibold transition-all duration-300 animate-in slide-in-from-top ${message.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                }`}>
                 <div className="flex items-center gap-2.5">
                   {message.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
                   <span>{message.text}</span>
@@ -2778,9 +2777,9 @@ export default function EmployeesPage() {
                         (formData.nipyAssignment.sourceStartDate !==
                           formData.employment?.startDate ||
                           formData.nipyAssignment.categoryGroup !==
-                            getPekaryaNipyGroup(
-                              formData.employment?.jobCategory,
-                            )) && (
+                          getPekaryaNipyGroup(
+                            formData.employment?.jobCategory,
+                          )) && (
                           <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-800">
                             Kategori atau tanggal mulai telah berubah. NIPY tetap
                             permanen; koreksi penerbitan hanya dapat dilakukan
@@ -2793,9 +2792,9 @@ export default function EmployeesPage() {
                         (editingEmployee.nipyAssignment.sourceStartDate !==
                           editingEmployee.employment?.startDate ||
                           editingEmployee.nipyAssignment.categoryGroup !==
-                            getPekaryaNipyGroup(
-                              editingEmployee.employment?.jobCategory,
-                            )) && (
+                          getPekaryaNipyGroup(
+                            editingEmployee.employment?.jobCategory,
+                          )) && (
                           <Button
                             type="button"
                             variant="outline"

@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
+  Eye,
   RefreshCw,
   Save,
   ShieldCheck,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import { ImageExifViewer } from '@/components/ImageExifViewer';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -26,7 +28,10 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import type { PekaryaOfficialLeaveRequest } from '@/lib/payroll/pekaryaOfficialLeave';
+import {
+  pekaryaAttendanceReportType,
+  type PekaryaOfficialLeaveRequest,
+} from '@/lib/payroll/pekaryaOfficialLeave';
 
 type AttendanceDay = {
   date: string;
@@ -117,7 +122,6 @@ type SatpamDutyPlanAdminView = {
     status: string;
     revision?: number;
     lateBackfillDates?: string[];
-    acknowledgedBackfillDates?: string[];
     rosterSnapshot?: Array<{
       employeeId: string;
       name: string;
@@ -165,7 +169,6 @@ type SatpamReconciliationView = {
     status: string;
     revision: number;
     lateBackfillDates: string[];
-    acknowledgedBackfillDates: string[];
     missingOccurrenceDates: string[];
     pendingOccurrenceDates: string[];
     employees: Array<{
@@ -266,6 +269,12 @@ export default function PekaryaAttendancePage() {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [selectedEvidence, setSelectedEvidence] = useState<{
+    url: string;
+    title: string;
+    activityDate: string;
+    auditMetadata?: PekaryaOfficialLeaveRequest['evidenceAuditMetadata'];
+  } | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [correction, setCorrection] = useState<CorrectionState | null>(null);
   const [planCorrection, setPlanCorrection] =
@@ -277,9 +286,6 @@ export default function PekaryaAttendancePage() {
   >({});
   const [officialLeaveDecisionReasons, setOfficialLeaveDecisionReasons] =
     useState<Record<string, string>>({});
-  const [planDecisionReasons, setPlanDecisionReasons] = useState<
-    Record<string, string>
-  >({});
   const [satpamTab, setSatpamTab] = useState<
     'plans' | 'absences' | 'reconciliation' | 'mismatches'
   >('plans');
@@ -410,8 +416,12 @@ export default function PekaryaAttendancePage() {
       });
       setMessage(
         action === 'approve'
-          ? 'Izin resmi disetujui dan presensi hari penuh telah diperbarui.'
-          : 'Izin resmi ditolak.',
+          ? pekaryaAttendanceReportType(leave) === 'scan'
+            ? 'Laporan scan disetujui dan presensi telah diperbarui.'
+            : 'Izin resmi disetujui dan presensi hari penuh telah diperbarui.'
+          : pekaryaAttendanceReportType(leave) === 'scan'
+            ? 'Laporan scan ditolak.'
+            : 'Izin resmi ditolak.',
       );
       setOfficialLeaveDecisionReasons((current) => ({
         ...current,
@@ -422,41 +432,7 @@ export default function PekaryaAttendancePage() {
       setError(
         cause instanceof Error
           ? cause.message
-          : 'Gagal memutuskan izin resmi.',
-      );
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const acknowledgeBackfill = async (
-    plan: SatpamDutyPlanAdminView['plans'][number],
-  ) => {
-    const reason = (planDecisionReasons[plan.id] || '').trim();
-    if (reason.length < 8) {
-      setError('Alasan konfirmasi backfill minimal delapan karakter.');
-      return;
-    }
-    setWorking(true);
-    setError('');
-    try {
-      await authenticatedJson('/api/satpam/duty-plans', {
-        method: 'PATCH',
-        body: JSON.stringify({
-          requestId: createFinancialRequestId('satpam-plan-backfill'),
-          action: 'acknowledge_backfill',
-          period,
-          teamId: plan.teamId,
-          expectedRevision: plan.revision,
-          reason,
-        }),
-      });
-      setMessage('Backfill rencana dinas telah dikonfirmasi dan diaudit.');
-      setPlanDecisionReasons((current) => ({ ...current, [plan.id]: '' }));
-      await load();
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Gagal mengonfirmasi backfill.',
+          : 'Gagal memutuskan pengajuan presensi.',
       );
     } finally {
       setWorking(false);
@@ -741,10 +717,7 @@ export default function PekaryaAttendancePage() {
                 </div>
               )}
               {satpamOperations.dutyPlans.plans.map((plan) => {
-                const unresolved = (plan.lateBackfillDates || []).filter(
-                  (date) =>
-                    !(plan.acknowledgedBackfillDates || []).includes(date),
-                );
+                const backfillDates = plan.lateBackfillDates || [];
                 return (
                   <article
                     key={plan.id}
@@ -761,38 +734,12 @@ export default function PekaryaAttendancePage() {
                           Status: {plan.status} ·{' '}
                           {plan.generatedDays?.length || 0} tanggal dihasilkan
                         </p>
-                        {unresolved.length > 0 && (
+                        {backfillDates.length > 0 && (
                           <p className="mt-2 text-sm font-semibold text-amber-700">
-                            Backfill perlu konfirmasi: {unresolved.join(', ')}
+                            Backfill (diterbitkan setelah shift dimulai): {backfillDates.join(', ')}
                           </p>
                         )}
                       </div>
-                      {canEdit && unresolved.length > 0 && (
-                        <div className="w-full space-y-2 md:max-w-md">
-                          <textarea
-                            className="min-h-20 w-full rounded-xl border border-slate-300 p-3 text-sm"
-                            value={planDecisionReasons[plan.id] || ''}
-                            onChange={(event) =>
-                              setPlanDecisionReasons((current) => ({
-                                ...current,
-                                [plan.id]: event.target.value,
-                              }))
-                            }
-                            placeholder="Alasan konfirmasi backfill (wajib)"
-                          />
-                          <Button
-                            className="min-h-12 w-full"
-                            disabled={
-                              working ||
-                              (planDecisionReasons[plan.id] || '').trim()
-                                .length < 8
-                            }
-                            onClick={() => void acknowledgeBackfill(plan)}
-                          >
-                            Konfirmasi Backfill
-                          </Button>
-                        </div>
-                      )}
                     </div>
                     {(plan.generatedDays?.length || 0) > 0 && (
                       <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50">
@@ -1138,77 +1085,103 @@ export default function PekaryaAttendancePage() {
 
           <section className="overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-sm">
             <div className="border-b border-indigo-100 bg-indigo-50/50 p-5">
-              <h2 className="font-bold text-slate-900">Pengajuan Izin Resmi Pekarya</h2>
+              <h2 className="font-bold text-slate-900">Pengajuan Presensi Pekarya</h2>
               <p className="mt-1 text-sm text-slate-600">
-                Izin yang disetujui dicatat sebagai presensi penuh 07:30–14:00
-                dan dihitung sesuai kalender upah.
+                Laporan scan yang disetujui memakai jam yang diajukan. Izin resmi
+                dicatat sebagai presensi penuh 07:30–14:00 dan dihitung sesuai
+                kalender upah.
               </p>
             </div>
             <div className="divide-y divide-slate-100">
               {(data.officialLeaves || []).length === 0 ? (
                 <div className="p-6 text-center text-slate-500">
-                  Belum ada pengajuan izin resmi pada periode ini.
+                  Belum ada pengajuan presensi pada periode ini.
                 </div>
               ) : (
-                data.officialLeaves.map((leave) => (
-                  <article key={leave.id} className="space-y-3 p-5">
-                    <div>
-                      <p className="font-bold text-slate-900">
-                        {leave.employeeName || leave.employeeId} · {leave.date}
-                      </p>
-                      <p className="text-sm text-slate-600">{leave.reason}</p>
-                      <p className="mt-1 text-xs font-semibold uppercase text-slate-400">
-                        {leave.status}
-                        {leave.status === 'approved' && leave.approvedAmount
-                          ? ` · ${money(leave.approvedAmount)}`
-                          : ''}
-                      </p>
-                      {leave.decisionReason && (
-                        <p className="mt-2 rounded-lg bg-slate-50 p-2 text-sm text-slate-600">
-                          Keputusan terakhir: {leave.decisionReason}
+                data.officialLeaves.map((leave) => {
+                  const reportType = pekaryaAttendanceReportType(leave);
+                  return (
+                    <article key={leave.id} className="space-y-3 p-5">
+                      <div>
+                        <p className="font-bold text-slate-900">
+                          {leave.employeeName || leave.employeeId} · {leave.date}
                         </p>
-                      )}
-                    </div>
-                    {canEdit && leave.status === 'pending' && (
-                      <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
-                        <textarea
-                          className="min-h-20 rounded-xl border border-slate-300 p-3 text-sm"
-                          value={officialLeaveDecisionReasons[leave.id] || ''}
-                          onChange={(event) =>
-                            setOfficialLeaveDecisionReasons((current) => ({
-                              ...current,
-                              [leave.id]: event.target.value,
-                            }))
-                          }
-                          placeholder="Alasan keputusan Kepala SatKer (wajib)"
-                        />
-                        <Button
-                          className="min-h-12 bg-emerald-600 hover:bg-emerald-700"
-                          disabled={
-                            working ||
-                            (officialLeaveDecisionReasons[leave.id] || '')
-                              .trim().length < 8
-                          }
-                          onClick={() => void reviewOfficialLeave(leave, 'approve')}
-                        >
-                          Setujui
-                        </Button>
-                        <Button
-                          variant="outline"
-                          className="min-h-12 border-rose-200 text-rose-700"
-                          disabled={
-                            working ||
-                            (officialLeaveDecisionReasons[leave.id] || '')
-                              .trim().length < 8
-                          }
-                          onClick={() => void reviewOfficialLeave(leave, 'decline')}
-                        >
-                          Tolak
-                        </Button>
+                        <p className="text-sm font-semibold text-indigo-700">
+                          {reportType === 'scan'
+                            ? `Scan Masuk & Scan Keluar · ${leave.scanIn?.slice(0, 5) || '--:--'}–${leave.scanOut?.slice(0, 5) || '--:--'}`
+                            : 'Izin Resmi · 07:30–14:00'}
+                        </p>
+                        <p className="text-sm text-slate-600">{leave.reason}</p>
+                        <p className="mt-1 text-xs font-semibold uppercase text-slate-400">
+                          {leave.status}
+                          {leave.status === 'approved' && leave.approvedAmount
+                            ? ` · ${money(leave.approvedAmount)}`
+                            : ''}
+                        </p>
+                        {leave.decisionReason && (
+                          <p className="mt-2 rounded-lg bg-slate-50 p-2 text-sm text-slate-600">
+                            Keputusan terakhir: {leave.decisionReason}
+                          </p>
+                        )}
+                        {leave.evidenceUrl && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedEvidence({
+                                url: leave.evidenceUrl!,
+                                title: `Foto Bukti Presensi ${leave.employeeName || leave.employeeId}`,
+                                activityDate: leave.date,
+                                auditMetadata: leave.evidenceAuditMetadata,
+                              })
+                            }
+                            className="mt-2 flex min-h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
+                          >
+                            <Eye className="h-4 w-4" />
+                            Lihat Foto Bukti
+                          </button>
+                        )}
                       </div>
-                    )}
-                  </article>
-                ))
+                      {canEdit && leave.status === 'pending' && (
+                        <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
+                          <textarea
+                            className="min-h-20 rounded-xl border border-slate-300 p-3 text-sm"
+                            value={officialLeaveDecisionReasons[leave.id] || ''}
+                            onChange={(event) =>
+                              setOfficialLeaveDecisionReasons((current) => ({
+                                ...current,
+                                [leave.id]: event.target.value,
+                              }))
+                            }
+                            placeholder="Alasan keputusan Kepala SatKer (wajib)"
+                          />
+                          <Button
+                            className="min-h-12 bg-emerald-600 hover:bg-emerald-700"
+                            disabled={
+                              working ||
+                              (officialLeaveDecisionReasons[leave.id] || '')
+                                .trim().length < 8
+                            }
+                            onClick={() => void reviewOfficialLeave(leave, 'approve')}
+                          >
+                            Setujui
+                          </Button>
+                          <Button
+                            variant="outline"
+                            className="min-h-12 border-rose-200 text-rose-700"
+                            disabled={
+                              working ||
+                              (officialLeaveDecisionReasons[leave.id] || '')
+                                .trim().length < 8
+                            }
+                            onClick={() => void reviewOfficialLeave(leave, 'decline')}
+                          >
+                            Tolak
+                          </Button>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })
               )}
             </div>
           </section>
@@ -1631,6 +1604,17 @@ export default function PekaryaAttendancePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {selectedEvidence && (
+        <ImageExifViewer
+          imageUrl={selectedEvidence.url}
+          title={selectedEvidence.title}
+          activityDate={selectedEvidence.activityDate}
+          auditMetadata={selectedEvidence.auditMetadata}
+          isOpen={Boolean(selectedEvidence)}
+          onClose={() => setSelectedEvidence(null)}
+        />
+      )}
     </div>
   );
 }

@@ -57,6 +57,9 @@ import {
   getShortTripMealWageComponent,
   getMealAllowanceForDuration,
   getMealTierCount,
+  DEFAULT_FUEL_PROCUREMENT_MODE,
+  isFuelProcurementMode,
+  type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
 import { prepareProofImage, type PhotoEvidence } from '@/lib/photoEvidence';
 import type { PhotoAuditMetadata } from '@/lib/payroll/domain';
@@ -466,6 +469,8 @@ function JourneyReportContent() {
   const isSopir = userJobCategory === 'SOPIR';
 
   const [activeReportingJourney, setActiveReportingJourney] = useState<any | null>(null);
+  const [selectedFuelMode, setSelectedFuelMode] = useState<FuelProcurementMode>(DEFAULT_FUEL_PROCUREMENT_MODE);
+  const [selectingFuelMode, setSelectingFuelMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -642,6 +647,11 @@ function JourneyReportContent() {
             return;
           }
           setActiveReportingJourney(reportData);
+          setSelectedFuelMode(
+            isFuelProcurementMode(reportData.fuelProcurementMode)
+              ? reportData.fuelProcurementMode
+              : DEFAULT_FUEL_PROCUREMENT_MODE,
+          );
 
           // Check for local storage auto-saved draft
           const localDraftKey = `journey_draft_${targetId}`;
@@ -1371,6 +1381,51 @@ function JourneyReportContent() {
     return activeReportingJourney?.status === 'claimed';
   }, [activeReportingJourney?.status]);
 
+  const activeFuelMode: FuelProcurementMode = isFuelProcurementMode(
+    activeReportingJourney?.fuelProcurementMode,
+  )
+    ? activeReportingJourney.fuelProcurementMode
+    : selectedFuelMode;
+  const fuelModeSelectionRequired = Boolean(
+    activeReportingJourney?.fuelModeSelectionRequired &&
+      activeReportingJourney?.vehicleName !== 'Ndalem',
+  );
+
+  const handleSelectFuelMode = async (mode: FuelProcurementMode) => {
+    if (!activeReportingJourney || selectingFuelMode) return;
+    setSelectingFuelMode(true);
+    try {
+      const result = await authenticatedJson<{
+        fuelProcurementMode: FuelProcurementMode;
+        fuelBalance: any;
+      }>('/api/driver-journeys', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'select_fuel_mode',
+          journeyId: activeReportingJourney.id,
+          fuelProcurementMode: mode,
+        }),
+      });
+      setSelectedFuelMode(result.fuelProcurementMode);
+      if (result.fuelProcurementMode === 'hold_accumulate') {
+        setFormFuelFee('');
+        setFormFuelReceiptUrls([]);
+        setFormFuelReceiptEvidence([]);
+      }
+      setActiveReportingJourney((previous: any) => previous ? {
+        ...previous,
+        fuelProcurementMode: result.fuelProcurementMode,
+        fuelModeSelectionRequired: false,
+        fuelBalance: result.fuelBalance ?? previous.fuelBalance,
+      } : previous);
+      setMessage({ type: 'success', text: 'Mode pengadaan BBM berhasil disimpan.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.message || 'Mode pengadaan BBM gagal disimpan.' });
+    } finally {
+      setSelectingFuelMode(false);
+    }
+  };
+
   const handleOpenCancelModal = () => {
     setShowCancelModal(true);
   };
@@ -1408,6 +1463,10 @@ function JourneyReportContent() {
   const handleCompleteJourneySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeReportingJourney || isSubmittingRef.current) return;
+    if (fuelModeSelectionRequired) {
+      setMessage({ type: 'error', text: 'Pilih mode pengadaan BBM sebelum mengirim laporan.' });
+      return;
+    }
     if (!profile?.linkedEmployeeId) {
       setMessage({ type: 'error', text: 'Akun Anda belum terhubung ke data Pegawai.' });
       return;
@@ -1460,9 +1519,12 @@ function JourneyReportContent() {
     }
 
     try {
-      const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
+      const isHoldAccumulate = activeFuelMode === 'hold_accumulate';
+      const fuelVal = isHoldAccumulate
+        ? 0
+        : (formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0);
       const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
-      const submittedFuelReceiptUrls = fuelVal > 0
+      const submittedFuelReceiptUrls = !isHoldAccumulate && fuelVal > 0
         ? formFuelReceiptUrls.filter(Boolean)
         : [];
       const submittedTollReceiptUrls = tollVal > 0
@@ -1488,7 +1550,7 @@ function JourneyReportContent() {
         setFormTollReceiptEvidence([]);
       }
 
-      if (fuelVal > 0 && submittedFuelReceiptUrls.length === 0) {
+      if (!isHoldAccumulate && fuelVal > 0 && submittedFuelReceiptUrls.length === 0) {
         setMessage({ type: 'error', text: 'Mohon unggah bukti reimburse BBM terlebih dahulu.' });
         isSubmittingRef.current = false;
         setSubmitting(false);
@@ -1521,6 +1583,9 @@ function JourneyReportContent() {
       const baseCostVal = activeReportingJourney.baseOperationalCost !== undefined && activeReportingJourney.baseOperationalCost !== null
         ? Number(activeReportingJourney.baseOperationalCost)
         : Math.max(0, (activeReportingJourney.totalOperationalCost || 0) - preAuthorizedMeal - preAuthorizedToll);
+      const procuredAccumulatedAmount = activeFuelMode === 'procure_release'
+        ? Math.max(0, Number(activeReportingJourney.procuredAccumulatedAmount || 0))
+        : 0;
       const timings = calculateJourneyDateTimeTimings({
         dateStart: formDate,
         timeStart: formTimeStart,
@@ -1548,6 +1613,8 @@ function JourneyReportContent() {
         tollAllowance: preAuthorizedToll,
         tollSpent: tollVal,
         additionalReimbursement: extraMealAllowance + extraOperationalCost,
+        fuelProcurementMode: isNdalem ? DEFAULT_FUEL_PROCUREMENT_MODE : activeFuelMode,
+        procuredAccumulatedAmount,
       });
       const authorizedTotalOperationalCost = activeReportingJourney.totalOperationalCost !== undefined
         ? Number(activeReportingJourney.totalOperationalCost || 0)
@@ -1592,6 +1659,9 @@ function JourneyReportContent() {
           driverData: {
             tripType: calculatedDistanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
             vehicleType: activeReportingJourney.vehicleName,
+            fuelProcurementMode: activeFuelMode,
+            heldFuelAmount: activeFuelMode === 'hold_accumulate' ? Math.ceil(baseCostVal) : 0,
+            procuredAccumulatedAmount,
             nightCount: effectiveNightCount,
             dateStart: formDate,
             dateEnd: effectiveDateEnd,
@@ -1624,6 +1694,10 @@ function JourneyReportContent() {
             netOperationalDelta: settlement.netOperationalDelta,
             fuelAllowanceSurplus: settlement.fuelAllowanceSurplus,
             tollAllowanceSurplus: settlement.tollAllowanceSurplus,
+            fuelAllowanceForSettlement: settlement.effectiveFuelAllowance,
+            fuelTotalAllocation:
+              settlement.effectiveFuelAllowance +
+              (activeFuelMode === 'hold_accumulate' ? Math.ceil(baseCostVal) : 0),
             baseOperationalCost: baseCostVal,
             preAuthorizedMeal,
             preAuthorizedToll,
@@ -1817,6 +1891,61 @@ function JourneyReportContent() {
               </div>
             </div>
           </div>
+
+          {(activeReportingJourney.vehicleName !== 'Ndalem' || fuelModeSelectionRequired) && (
+            <Card className="border-blue-100 bg-blue-50/60 shadow-sm rounded-2xl">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-blue-800">Pengadaan BBM</p>
+                    <p className="text-xs font-semibold text-blue-900 mt-1">
+                      {fuelModeSelectionRequired
+                        ? 'Pilih satu mode sebelum laporan dapat dikirim.'
+                        : 'Mode ini sudah dikunci untuk perjalanan yang sedang berjalan.'}
+                    </p>
+                  </div>
+                  {activeReportingJourney.vehicleName !== 'Ndalem' && activeReportingJourney.fuelBalance && (
+                    <div className="text-right text-[10px] font-bold text-slate-600">
+                      <div>Tersedia: <span className="text-emerald-700">{fmtRp(Number(activeReportingJourney.fuelBalance.availableBalance || 0))}</span></div>
+                      <div>Menunggu: <span className="text-amber-700">{fmtRp(Number(activeReportingJourney.fuelBalance.pendingHoldAmount || 0) + Number(activeReportingJourney.fuelBalance.pendingReleaseAmount || 0))}</span></div>
+                    </div>
+                  )}
+                </div>
+                {fuelModeSelectionRequired ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {([
+                      ['standard_direct', 'Standard langsung', 'BBM dibayar dan disettle sesuai aturan lama.'],
+                      ['hold_accumulate', 'Tahan & akumulasi', 'Jatah trip masuk saldo kendaraan setelah disetujui; tanpa kuitansi.'],
+                      ['procure_release', 'Cairkan saldo', 'Saldo kendaraan yang tersedia ikut dicairkan; kuitansi wajib.'],
+                    ] as const).map(([mode, title, description]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => handleSelectFuelMode(mode)}
+                        disabled={selectingFuelMode}
+                        className="text-left rounded-xl border border-blue-200 bg-white hover:border-blue-500 hover:bg-blue-50 p-3 transition-colors disabled:opacity-60"
+                      >
+                        <span className="block text-xs font-black text-slate-800">{title}</span>
+                        <span className="block text-[10px] leading-relaxed text-slate-500 mt-1">{description}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold text-slate-600">
+                    <span className="rounded-full bg-white border border-blue-200 px-2.5 py-1">
+                      {activeFuelMode === 'hold_accumulate'
+                        ? 'Tahan & akumulasi'
+                        : activeFuelMode === 'procure_release'
+                          ? 'Cairkan saldo'
+                          : 'Standard langsung'}
+                    </span>
+                    {activeFuelMode === 'hold_accumulate' && <span>Jangan unggah kuitansi BBM; jatah akan masuk ledger kendaraan saat audit disetujui.</span>}
+                    {activeFuelMode === 'procure_release' && <span>Saldo tersedia ditambahkan ke jatah trip dan kuitansi BBM wajib.</span>}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Line Separator 1: Unified Route Timeline Section */}
           {(() => {
@@ -2287,10 +2416,25 @@ function JourneyReportContent() {
                 const baseCostVal = activeReportingJourney.baseOperationalCost !== undefined && activeReportingJourney.baseOperationalCost !== null
                   ? Number(activeReportingJourney.baseOperationalCost)
                   : Math.max(0, (activeReportingJourney.totalOperationalCost || 0) - (activeReportingJourney.mealAllowance || 0) - preAuthorizedToll);
+                const procuredAmount = activeFuelMode === 'procure_release'
+                  ? Math.max(0, Number(activeReportingJourney.procuredAccumulatedAmount || 0))
+                  : 0;
+                const displayedFuelAllowance = activeFuelMode === 'hold_accumulate'
+                  ? 0
+                  : baseCostVal + procuredAmount;
                 return (
                   <div className="space-y-2">
+                    {activeFuelMode === 'hold_accumulate' ? (
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+                        <div className="font-black">BBM ditahan untuk akumulasi kendaraan</div>
+                        <div className="mt-1 font-semibold leading-relaxed">
+                          Alokasi {fmtRp(Math.ceil(baseCostVal))} akan masuk saldo {activeReportingJourney.vehicleName} setelah audit disetujui. Kuitansi BBM tidak diperlukan dan input BBM dinonaktifkan.
+                        </div>
+                      </div>
+                    ) : (
+                      <>
                     <Label htmlFor="journeyFuel" className="text-xs font-black text-slate-900">
-                      BBM Terbeli <span className="text-blue-600 font-extrabold normal-case tracking-normal">({`Jatah: ${fmtRp(Math.ceil(baseCostVal))}`})</span>
+                      BBM Terbeli <span className="text-blue-600 font-extrabold normal-case tracking-normal">({`Jatah: ${fmtRp(Math.ceil(displayedFuelAllowance))}`})</span>
                     </Label>
                     <div className="flex gap-2 items-end">
                       <div className="flex-1 relative">
@@ -2381,6 +2525,8 @@ function JourneyReportContent() {
                           </div>
                         ))}
                       </div>
+                    )}
+                      </>
                     )}
                   </div>
                 );

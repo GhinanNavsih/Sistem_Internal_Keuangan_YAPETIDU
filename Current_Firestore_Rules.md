@@ -364,6 +364,17 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Vehicle fuel balances and their append-only ledger are mutated and read
+    // through the authenticated server APIs. Keeping this collection closed
+    // prevents clients from forging reservations, balances, or audit history.
+    match /VehicleFuelBalances/{vehicleName} {
+      allow read, write: if false;
+
+      match /ledger/{entryId} {
+        allow read, write: if false;
+      }
+    }
+
     match /DriverPiketSchedules/{piketId} {
       allow read: if hasProfile();
       allow create: if (isSuperAdmin() ||

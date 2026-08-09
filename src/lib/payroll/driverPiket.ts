@@ -17,12 +17,20 @@ export interface DriverPiketSchedule {
   id: string;
   period: string; // "YYYY-MM" e.g. "2026-08"
   date: string;   // "YYYY-MM-DD" e.g. "2026-08-01"
-  stationKey?: PiketStationKey;
+  /** One of the 5 fixed PIKET_STATIONS keys, or an ad-hoc "extra-..." key. */
+  stationKey?: string;
   stationName?: string;
   driverId: string;
   driverName: string;
   assignedBy?: string;
   createdAt?: any;
+}
+
+/** Prefix for ad-hoc piket slots added beyond the 5 fixed stations. */
+export const EXTRA_PIKET_STATION_PREFIX = 'extra-';
+
+export function isExtraPiketStationKey(stationKey: string | undefined): boolean {
+  return typeof stationKey === 'string' && stationKey.startsWith(EXTRA_PIKET_STATION_PREFIX);
 }
 
 export interface DriverPiketJourneyLike {

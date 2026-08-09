@@ -50,7 +50,6 @@ export interface StoredSatpamDutyPlan {
   status: SatpamDutyPlanStatus;
   revision: number;
   lateBackfillDates: string[];
-  acknowledgedBackfillDates: string[];
   staleDates: string[];
   publishedAt?: unknown;
   publishedBy?: string;
@@ -71,7 +70,6 @@ export interface SatpamDutyReconciliationView {
     status: SatpamDutyPlanStatus;
     revision: number;
     lateBackfillDates: string[];
-    acknowledgedBackfillDates: string[];
     missingOccurrenceDates: string[];
     pendingOccurrenceDates: string[];
     employees: Array<{
@@ -345,7 +343,6 @@ export async function buildSatpamDutyReconciliation(
       status: plan.status,
       revision: plan.revision,
       lateBackfillDates: plan.lateBackfillDates || [],
-      acknowledgedBackfillDates: plan.acknowledgedBackfillDates || [],
       missingOccurrenceDates,
       pendingOccurrenceDates,
       employees: employeeResults,
@@ -361,15 +358,6 @@ export async function buildSatpamDutyReconciliation(
   }
   if (plans.some((plan) => plan.status !== 'published')) {
     blockers.push('Ada rencana dinas yang belum berstatus dipublikasikan.');
-  }
-  if (
-    plans.some((plan) =>
-      (plan.lateBackfillDates || []).some(
-        (date) => !(plan.acknowledgedBackfillDates || []).includes(date),
-      ),
-    )
-  ) {
-    blockers.push('Ada tanggal backfill yang belum dikonfirmasi Kepala SatKer.');
   }
   if (planViews.some((plan) => plan.missingOccurrenceDates.length > 0)) {
     blockers.push('Ada tanggal dinas yang belum memiliki laporan regu.');

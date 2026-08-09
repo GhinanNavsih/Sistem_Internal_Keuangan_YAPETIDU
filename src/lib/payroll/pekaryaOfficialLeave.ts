@@ -2,10 +2,13 @@ import {
   isPekaryaJobCategory,
   type PekaryaJobCategory,
 } from './pekaryaSpj';
+import type { PhotoAuditMetadata } from './domain';
 
 export const PEKARYA_OFFICIAL_LEAVE_TYPE = 'izin_resmi' as const;
 export const PEKARYA_OFFICIAL_LEAVE_SCAN_IN = '07:30:00' as const;
 export const PEKARYA_OFFICIAL_LEAVE_SCAN_OUT = '14:00:00' as const;
+
+export type PekaryaAttendanceReportType = 'scan' | 'izin_resmi';
 
 export type PekaryaOfficialLeaveStatus =
   | 'pending'
@@ -21,14 +24,25 @@ export interface PekaryaOfficialLeaveRequest {
   category: string;
   period: string;
   date: string;
-  leaveType: typeof PEKARYA_OFFICIAL_LEAVE_TYPE;
+  /** `reportType` is present on new records; old records use `leaveType`. */
+  reportType?: PekaryaAttendanceReportType;
+  leaveType?: typeof PEKARYA_OFFICIAL_LEAVE_TYPE | null;
+  scanIn?: string | null;
+  scanOut?: string | null;
   reason: string;
   evidenceUrl?: string | null;
+  evidenceAuditMetadata?: PhotoAuditMetadata | null;
   status: PekaryaOfficialLeaveStatus;
   revision: number;
   decisionReason?: string;
   approvedPayType?: 'Harian' | 'Jumat & Libur' | null;
   approvedAmount?: number;
+}
+
+export function pekaryaAttendanceReportType(
+  request: Pick<PekaryaOfficialLeaveRequest, 'reportType' | 'leaveType'>,
+): PekaryaAttendanceReportType {
+  return request.reportType === 'scan' ? 'scan' : 'izin_resmi';
 }
 
 export function isPekaryaOfficialLeaveCategory(
@@ -43,5 +57,14 @@ export function officialLeaveAttendanceCorrection() {
     workStatus: 'IZIN RESMI',
     scanIn: PEKARYA_OFFICIAL_LEAVE_SCAN_IN,
     scanOut: PEKARYA_OFFICIAL_LEAVE_SCAN_OUT,
+  } as const;
+}
+
+export function scanAttendanceCorrection(scanIn: string, scanOut: string) {
+  return {
+    present: true,
+    workStatus: 'MASUK',
+    scanIn,
+    scanOut,
   } as const;
 }

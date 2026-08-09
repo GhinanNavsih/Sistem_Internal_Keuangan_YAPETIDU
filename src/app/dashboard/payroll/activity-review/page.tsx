@@ -149,6 +149,11 @@ interface ActivityReport {
   extraActivities?: any[];
   vehicleRate?: number;
   baseOperationalCost?: number;
+  fuelProcurementMode?: 'hold_accumulate' | 'procure_release' | 'standard_direct';
+  heldFuelAmount?: number;
+  procuredAccumulatedAmount?: number;
+  fuelAllowanceForSettlement?: number;
+  fuelTotalAllocation?: number;
   mealAllowance?: number;
   preAuthorizedMeal?: number;
   preAuthorizedToll?: number;
@@ -391,7 +396,7 @@ const SATPAM_ANOMALY_LABELS: Record<string, string> = {
   FUTURE_WORK_NOT_FINISHED: 'Pekerjaan belum selesai',
   DUTY_PLAN_MISSING: 'Rencana dinas belum ada',
   DUTY_PLAN_STALE: 'Rencana dinas perlu diperbarui',
-  DUTY_PLAN_BACKFILL_PENDING: 'Jadwal dinas belum disetujui',
+  DUTY_PLAN_BACKFILL_PENDING: 'Rencana dinas backfill (terbit setelah shift mulai)',
   ACTUAL_ROSTER_DIFFERS: 'Petugas beda dari rencana',
   POS9_GUARD_MISMATCH: 'Pos 9 memakai petugas pengganti',
   EXTRA_NOT_OFF_DUTY: 'Lembur di luar hari libur',
@@ -923,7 +928,6 @@ export default function ActivityReviewPage() {
         ),
       }))
       .sort((a, b) =>
-        b.anomalyCodes.length - a.anomalyCodes.length ||
         a.dutyDate.localeCompare(b.dutyDate) ||
         a.shiftName.localeCompare(b.shiftName),
       );
@@ -942,13 +946,85 @@ export default function ActivityReviewPage() {
     () =>
       filteredActivities
         .filter((activity) => !groupedSatpamIds.has(activity.id))
-        .sort(
-          (left, right) =>
-            Number((right.identityAnomalies || []).length > 0) -
-            Number((left.identityAnomalies || []).length > 0),
-        ),
+        .sort((left, right) => {
+          const dateA = left.activityDate || left.dutyDate || '';
+          const dateB = right.activityDate || right.dutyDate || '';
+          const dateDiff = dateA.localeCompare(dateB);
+          if (dateDiff !== 0) return dateDiff;
+          const getMs = (ts: any): number => {
+            if (!ts) return 0;
+            if (typeof ts.toMillis === 'function') return ts.toMillis();
+            if (typeof ts.seconds === 'number') return ts.seconds * 1000;
+            return 0;
+          };
+          return getMs(left.submittedAt) - getMs(right.submittedAt);
+        }),
     [filteredActivities, groupedSatpamIds],
   );
+
+  type ReviewTableItem =
+    | { type: 'satpam_group'; id: string; date: string; group: SatpamShiftGroup }
+    | { type: 'activity'; id: string; date: string; activity: ActivityReport };
+
+  const combinedTableItems = useMemo(() => {
+    const items: ReviewTableItem[] = [];
+
+    satpamShiftGroups.forEach((group) => {
+      items.push({
+        type: 'satpam_group',
+        id: group.occurrenceId,
+        date: group.dutyDate || group.submittedDutyDate || '',
+        group,
+      });
+    });
+
+    ungroupedActivities.forEach((activity) => {
+      items.push({
+        type: 'activity',
+        id: activity.id,
+        date: activity.activityDate || activity.dutyDate || '',
+        activity,
+      });
+    });
+
+    const getTimestampMs = (item: ReviewTableItem): number => {
+      if (item.type === 'activity') {
+        const ts = item.activity.submittedAt;
+        if (ts) {
+          if (typeof ts.toMillis === 'function') return ts.toMillis();
+          if (typeof ts.seconds === 'number') return ts.seconds * 1000;
+        }
+      } else if (item.type === 'satpam_group') {
+        let minMs = Infinity;
+        item.group.assignments.forEach((a) => {
+          const ts = a.submittedAt;
+          if (ts) {
+            const ms = typeof ts.toMillis === 'function' ? ts.toMillis() : typeof ts.seconds === 'number' ? ts.seconds * 1000 : 0;
+            if (ms > 0 && ms < minMs) minMs = ms;
+          }
+        });
+        if (minMs !== Infinity) return minMs;
+      }
+      return 0;
+    };
+
+    items.sort((a, b) => {
+      // Primary sort: Date ascending (oldest date to latest date)
+      const dateDiff = a.date.localeCompare(b.date);
+      if (dateDiff !== 0) return dateDiff;
+
+      // Secondary sort: Submitted timestamp ascending
+      const timeA = getTimestampMs(a);
+      const timeB = getTimestampMs(b);
+      if (timeA !== 0 && timeB !== 0 && timeA !== timeB) {
+        return timeA - timeB;
+      }
+
+      return a.id.localeCompare(b.id);
+    });
+
+    return items;
+  }, [satpamShiftGroups, ungroupedActivities]);
 
   // ── Stats ──
   const stats = useMemo(() => {
@@ -1805,18 +1881,19 @@ export default function ActivityReviewPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {/* ── Satpam shift occurrences: one expandable row per shift ── */}
-                    {satpamShiftGroups.map((group) => {
-                      const isExpanded = expandedShiftIds.has(group.occurrenceId);
-                      const isPending = group.pendingCount > 0;
-                      const isSubmitting = submittingShiftId === group.occurrenceId;
-                      const noteValue = shiftReviewNotes[group.occurrenceId] || '';
-                      const missingPhotos = group.assignments.length - group.photoCount;
+                    {combinedTableItems.map((item) => {
+                      if (item.type === 'satpam_group') {
+                        const group = item.group;
+                        const isExpanded = expandedShiftIds.has(group.occurrenceId);
+                        const isPending = group.pendingCount > 0;
+                        const isSubmitting = submittingShiftId === group.occurrenceId;
+                        const noteValue = shiftReviewNotes[group.occurrenceId] || '';
+                        const missingPhotos = group.assignments.length - group.photoCount;
 
-                      const displayShiftFee = group.assignments.reduce((sum, item) => {
-                        const verdict = item.status === 'pending' ? (shiftDecisions[item.id] || 'approve') : item.status;
-                        return verdict === 'approve' ? sum + (item.fee || 0) : sum;
-                      }, 0);
+                        const displayShiftFee = group.assignments.reduce((sum, assignItem) => {
+                          const verdict = assignItem.status === 'pending' ? (shiftDecisions[assignItem.id] || 'approve') : assignItem.status;
+                          return verdict === 'approve' ? sum + (assignItem.fee || 0) : sum;
+                        }, 0);
 
                       return (
                         <React.Fragment key={group.occurrenceId}>
@@ -2166,10 +2243,10 @@ export default function ActivityReviewPage() {
                           )}
                         </React.Fragment>
                       );
-                    })}
+                    }
 
-                    {ungroupedActivities.map((activity) => {
-                      const sc = getStatusConfig(activity.status);
+                    const activity = item.activity;
+                    const sc = getStatusConfig(activity.status);
                       const isSelected = selectedIds.has(activity.id);
                       const isDriver = activity.jobCategory === 'SOPIR';
                       const isExpanded = !isDriver && expandedActivityIds.has(activity.id);

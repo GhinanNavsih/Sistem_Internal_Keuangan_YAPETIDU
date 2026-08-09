@@ -460,20 +460,6 @@ export async function POST(request: NextRequest) {
             'Rencana dinas telah berubah. Edit auditor diperlukan sebelum persetujuan.',
           );
         }
-        const planData = dutyPlanSnapshot.data()!;
-        const unresolvedBackfillForDate =
-          Array.isArray(planData.lateBackfillDates) &&
-          planData.lateBackfillDates.includes(occurrence.dutyDate) &&
-          !(
-            Array.isArray(planData.acknowledgedBackfillDates) &&
-            planData.acknowledgedBackfillDates.includes(occurrence.dutyDate)
-          );
-        if (unresolvedBackfillForDate) {
-          throw new HttpError(
-            409,
-            'Tanggal ini masih menunggu konfirmasi backfill Kepala SatKer.',
-          );
-        }
       }
       const annualHolidayDates =
         holidaySnapshot?.exists && Array.isArray(holidaySnapshot.data()?.dates)
@@ -524,33 +510,16 @@ export async function POST(request: NextRequest) {
       const anomalyCodes = Array.isArray(occurrence.anomalyCodes)
         ? occurrence.anomalyCodes.filter((code: unknown): code is string => typeof code === 'string')
         : [];
-      const planDataForReview = dutyPlanSnapshot.data() || {};
-      const backfillStillUnresolved =
-        Array.isArray(planDataForReview.lateBackfillDates) &&
-        planDataForReview.lateBackfillDates.includes(occurrence.dutyDate) &&
-        !(
-          Array.isArray(planDataForReview.acknowledgedBackfillDates) &&
-          planDataForReview.acknowledgedBackfillDates.includes(
-            occurrence.dutyDate,
-          )
-        );
-      const financiallyBlockingPlanAnomaly = anomalyCodes.find((code) => {
-        if (
-          code === 'DUTY_PLAN_BACKFILL_PENDING' &&
-          !backfillStillUnresolved
-        ) {
-          return false;
-        }
-        return [
+      const financiallyBlockingPlanAnomaly = anomalyCodes.find((code) =>
+        [
           'DUTY_PLAN_MISSING',
           'DUTY_PLAN_STALE',
-          'DUTY_PLAN_BACKFILL_PENDING',
           'EXTRA_NOT_OFF_DUTY',
           'EXTRA_WITH_INCOMPLETE_PRIMARY_ROSTER',
           'ABSENCE_WORK_CONFLICT',
           'DUTY_PLAN_CHANGED_AFTER_REPORT',
-        ].includes(code);
-      });
+        ].includes(code),
+      );
       if (hasApprovals && financiallyBlockingPlanAnomaly) {
         throw new HttpError(
           409,
@@ -1261,22 +1230,12 @@ export async function PUT(request: NextRequest) {
         if (
           dutyPlanSnapshot.exists &&
           Array.isArray(dutyPlanSnapshot.data()?.lateBackfillDates) &&
-          dutyPlanSnapshot
-            .data()!
-            .lateBackfillDates.includes(command.dutyDate) &&
-          !(
-            Array.isArray(
-              dutyPlanSnapshot.data()?.acknowledgedBackfillDates,
-            ) &&
-            dutyPlanSnapshot
-              .data()!
-              .acknowledgedBackfillDates.includes(command.dutyDate)
-          )
+          dutyPlanSnapshot.data()!.lateBackfillDates.includes(command.dutyDate)
         ) {
           anomalies.push({
             code: 'DUTY_PLAN_BACKFILL_PENDING',
-            severity: 'blocking',
-            message: 'Rencana dinas masih menunggu konfirmasi backfill.',
+            severity: 'warning',
+            message: 'Rencana dinas diterbitkan setelah tanggal ini dimulai (backfill).',
           });
         }
         if (

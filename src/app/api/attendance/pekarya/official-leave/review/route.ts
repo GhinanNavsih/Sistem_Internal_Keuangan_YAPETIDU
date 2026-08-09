@@ -4,6 +4,7 @@ import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   ATTENDANCE_PAYROLL_START_PERIOD,
   isPremiumAttendanceDate,
+  normalizeAttendanceTime,
   PEKARYA_ATTENDANCE_RATES,
   resolveEmployeeAttendanceNipy,
 } from '@/lib/payroll/attendance';
@@ -16,6 +17,7 @@ import { pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import {
   isPekaryaOfficialLeaveCategory,
   officialLeaveAttendanceCorrection,
+  scanAttendanceCorrection,
   PEKARYA_OFFICIAL_LEAVE_TYPE,
 } from '@/lib/payroll/pekaryaOfficialLeave';
 import {
@@ -45,6 +47,11 @@ const ACTIONS = new Set(['approve', 'decline']);
 
 function stableHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function clockMinutes(value: string): number {
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours * 60 + minutes;
 }
 
 export async function POST(request: NextRequest) {
@@ -90,25 +97,41 @@ export async function POST(request: NextRequest) {
     const category = String(leave.category || '').toUpperCase();
     const employeeId = String(leave.employeeId || '');
     const date = String(leave.date || '');
+    const reportType =
+      leave.reportType === 'scan'
+        ? 'scan'
+        : leave.reportType === 'izin_resmi' ||
+            leave.leaveType === PEKARYA_OFFICIAL_LEAVE_TYPE
+          ? 'izin_resmi'
+          : '';
     if (
       !/^\d{4}-\d{2}$/.test(period) ||
       period < ATTENDANCE_PAYROLL_START_PERIOD ||
       !isPekaryaOfficialLeaveCategory(category) ||
-      leave.leaveType !== 'izin_resmi'
+      !reportType
     ) {
-      throw new HttpError(409, 'Data periode atau kategori izin resmi tidak valid.');
+      throw new HttpError(409, 'Data periode, kategori, atau jenis pengajuan tidak valid.');
+    }
+    let scanIn: string | null = null;
+    let scanOut: string | null = null;
+    if (reportType === 'scan') {
+      scanIn = normalizeAttendanceTime(leave.scanIn);
+      scanOut = normalizeAttendanceTime(leave.scanOut);
+      if (!scanIn || !scanOut || clockMinutes(scanOut) <= clockMinutes(scanIn)) {
+        throw new HttpError(409, 'Data scan masuk atau scan pulang tidak valid.');
+      }
     }
     try {
       assertDateOnly(date);
     } catch (error) {
       throw new HttpError(
         409,
-        error instanceof Error ? error.message : 'Tanggal izin tidak valid.',
+        error instanceof Error ? error.message : 'Tanggal presensi tidak valid.',
       );
     }
     const window = pekaryaPayrollWindow(period);
     if (date < window.startsOn || date > window.endsOn) {
-      throw new HttpError(409, 'Tanggal izin berada di luar periode payroll.');
+      throw new HttpError(409, 'Tanggal presensi berada di luar periode payroll.');
     }
     if (!actor.permittedCategories.includes(category)) {
       throw new HttpError(403, `Anda tidak memiliki akses kategori ${category}.`);
@@ -124,7 +147,7 @@ export async function POST(request: NextRequest) {
       employee?.flags?.isActive === false ||
       employee?.flags?.isPayrollEligible === false
     ) {
-      throw new HttpError(409, 'Pegawai aktif pada kategori izin tidak ditemukan.');
+      throw new HttpError(409, 'Pegawai aktif pada kategori pengajuan tidak ditemukan.');
     }
     const nipy = resolveEmployeeAttendanceNipy(employee || {});
     if (action === 'approve' && !nipy) {
@@ -139,10 +162,15 @@ export async function POST(request: NextRequest) {
       throw new HttpError(409, 'Pegawai tidak tersedia dalam presensi Pekarya periode ini.');
     }
     const currentDay = employeeView?.days.find((day) => day.date === date) || null;
-    if (action === 'approve' && currentDay?.present) {
+    if (
+      action === 'approve' &&
+      (reportType === 'scan' ? currentDay?.completePunch : currentDay?.present)
+    ) {
       throw new HttpError(
         409,
-        'Pegawai sudah tercatat hadir pada tanggal ini. Selesaikan koreksi presensi sebelum menyetujui izin.',
+        reportType === 'scan'
+          ? 'Presensi lengkap sudah tercatat pada tanggal ini. Selesaikan koreksi presensi sebelum menyetujui laporan.'
+          : 'Pegawai sudah tercatat hadir pada tanggal ini. Selesaikan koreksi presensi sebelum menyetujui izin.',
       );
     }
 
@@ -164,6 +192,9 @@ export async function POST(request: NextRequest) {
       .doc(`${period.replace('-', '_')}_${employeeId}`);
     const requestHash = stableHash({
       officialLeaveRequestId,
+      reportType,
+      scanIn,
+      scanOut,
       action,
       requestId,
       reason,
@@ -221,10 +252,22 @@ export async function POST(request: NextRequest) {
       if (current.status !== 'pending') {
         throw new HttpError(409, 'Pengajuan ini sudah pernah diputuskan.');
       }
-      if (headSnapshot.data()?.present === true && action === 'approve') {
+      const headData = headSnapshot.data();
+      const headHasCompletePunch =
+        headData?.present === true &&
+        typeof headData?.scanIn === 'string' &&
+        typeof headData?.scanOut === 'string';
+      if (
+        action === 'approve' &&
+        (reportType === 'scan'
+          ? headHasCompletePunch
+          : headData?.present === true)
+      ) {
         throw new HttpError(
           409,
-          'Tanggal ini sudah memiliki koreksi hadir. Selesaikan koreksi tersebut terlebih dahulu.',
+          reportType === 'scan'
+            ? 'Tanggal ini sudah memiliki koreksi presensi lengkap. Selesaikan koreksi tersebut terlebih dahulu.'
+            : 'Tanggal ini sudah memiliki koreksi hadir. Selesaikan koreksi tersebut terlebih dahulu.',
         );
       }
 
@@ -268,7 +311,10 @@ export async function POST(request: NextRequest) {
       );
 
       if (approving) {
-        const correction = officialLeaveAttendanceCorrection();
+        const correction =
+          reportType === 'scan'
+            ? scanAttendanceCorrection(scanIn!, scanOut!)
+            : officialLeaveAttendanceCorrection();
         const record = {
           period,
           category,
@@ -292,10 +338,13 @@ export async function POST(request: NextRequest) {
           effectiveValue: correction,
           importRevisionId: view.importRevisionId,
           calendarRevision: view.calendarRevision,
-          reason: `Izin resmi: ${String(current.reason || '')}\nKeputusan: ${reason}`,
+          reason: `${reportType === 'scan' ? 'Laporan presensi' : 'Izin resmi'}: ${String(current.reason || '')}\nKeputusan: ${reason}`,
           actorUid: actor.uid,
           actorName: actor.displayName,
-          sourceType: PEKARYA_OFFICIAL_LEAVE_TYPE,
+          sourceType:
+            reportType === 'scan'
+              ? 'pekarya_scan_report'
+              : PEKARYA_OFFICIAL_LEAVE_TYPE,
           sourceId: officialLeaveRequestId,
           createdAt: now,
         };
@@ -403,9 +452,12 @@ export async function POST(request: NextRequest) {
         newFinancialAuditRef(),
         buildFinancialAuditRecord(actor, {
           action: approving
-            ? 'PEKARYA_OFFICIAL_LEAVE_APPROVED'
-            : 'PEKARYA_OFFICIAL_LEAVE_DECLINED',
-          entityType: 'PekaryaOfficialLeaveRequest',
+            ? `PEKARYA_${reportType === 'scan' ? 'ATTENDANCE' : 'OFFICIAL_LEAVE'}_APPROVED`
+            : `PEKARYA_${reportType === 'scan' ? 'ATTENDANCE' : 'OFFICIAL_LEAVE'}_DECLINED`,
+          entityType:
+            reportType === 'scan'
+              ? 'PekaryaAttendanceRequest'
+              : 'PekaryaOfficialLeaveRequest',
           entityId: officialLeaveRequestId,
           requestId,
           reason,
@@ -424,7 +476,10 @@ export async function POST(request: NextRequest) {
         actorUid: actor.uid,
         requestId,
         requestHash,
-        entityType: 'PekaryaOfficialLeaveRequest',
+        entityType:
+          reportType === 'scan'
+            ? 'PekaryaAttendanceRequest'
+            : 'PekaryaOfficialLeaveRequest',
         entityId: officialLeaveRequestId,
         revision,
         status: after.status,

@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,7 +44,11 @@ import {
   calculateNightPremium,
   getMealAllowanceForDuration,
   journeyDayCount,
+  DEFAULT_FUEL_PROCUREMENT_MODE,
+  isFuelProcurementMode,
+  type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
+import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
 
 // ─── Google Maps loader ──────────────────────────────────────────────────────
 
@@ -114,6 +120,7 @@ export interface DriverAuditReport {
   activityName: string;
   activityDate: string;
   status: string;
+  payrollPeriod?: string;
   /** Links the report back to its pre-authorized `DriverJourneys` document. */
   journeyId?: string;
   timeStart?: string;
@@ -130,6 +137,11 @@ export interface DriverAuditReport {
   startPoint?: string;
   endPoint?: string;
   baseOperationalCost?: number;
+  fuelProcurementMode?: FuelProcurementMode;
+  heldFuelAmount?: number;
+  procuredAccumulatedAmount?: number;
+  fuelAllowanceForSettlement?: number;
+  fuelTotalAllocation?: number;
   preAuthorizedMeal?: number;
   preAuthorizedToll?: number;
   fuelFee?: number;
@@ -155,6 +167,7 @@ export interface DriverReviewPayload {
   fuelDelta: number;
   tollDelta: number;
   mealDelta: number;
+  ndalemMealMoneyReceived: number;
   vehicleType: string;
   nightCount: number;
   points: string[];
@@ -225,6 +238,7 @@ export function DriverJourneyAuditDialog({
   const [auditAuthorizedDurationPP, setAuditAuthorizedDurationPP] = useState<number>(0);
   const [auditFuelDelta, setAuditFuelDelta] = useState<number>(0);
   const [auditTollDelta, setAuditTollDelta] = useState<number>(0);
+  const [auditNdalemMealMoney, setAuditNdalemMealMoney] = useState<number>(0);
   const [auditVehicleType, setAuditVehicleType] = useState<string>('Suzuki XL7');
   const [auditNightCount, setAuditNightCount] = useState<number>(0);
   const [auditPoints, setAuditPoints] = useState<string[]>([]);
@@ -242,7 +256,44 @@ export function DriverJourneyAuditDialog({
   const markerRef = React.useRef<any>(null);
   const mapElementRef = React.useRef<HTMLDivElement | null>(null);
 
-  const isEditable = report?.status === 'pending';
+  // A confirmed journey may be reopened for edits only while its payroll
+  // period is still accepting input. `null` means "checking" so the form
+  // stays locked until we actually know, rather than briefly flashing editable.
+  const [periodOpen, setPeriodOpen] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!report || report.status !== 'approved') {
+      setPeriodOpen(null);
+      return;
+    }
+    let cancelled = false;
+    const period =
+      report.payrollPeriod ||
+      pekaryaPayrollPeriodForDate(report.dateStart || report.activityDate);
+    setPeriodOpen(null);
+    getDoc(doc(db, 'PayrollPeriods', period))
+      .then((snapshot) => {
+        if (cancelled) return;
+        setPeriodOpen(snapshot.data()?.attendanceStatus !== 'closed');
+      })
+      .catch(() => {
+        if (!cancelled) setPeriodOpen(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [report?.id, report?.status, report?.payrollPeriod, report?.dateStart, report?.activityDate]);
+
+  // Hold/procure-release fuel accumulation settles against a shared vehicle
+  // balance the instant it is first approved (see the "Mode terkunci setelah
+  // klaim" badge below); only standard-direct cash reimbursement can be
+  // safely recomputed after the fact.
+  const isFuelLockedForReEdit =
+    isFuelProcurementMode(report?.fuelProcurementMode) &&
+    report?.fuelProcurementMode !== DEFAULT_FUEL_PROCUREMENT_MODE;
+  const canReEditConfirmed =
+    report?.status === 'approved' && periodOpen === true && !isFuelLockedForReEdit;
+  const isEditable = report?.status === 'pending' || canReEditConfirmed;
+  const canDecline = report?.status === 'pending';
 
   // Seed the form once per opened report, during render rather than in an
   // effect so the first paint already shows the submitted figures. Keying on
@@ -295,17 +346,24 @@ export function DriverJourneyAuditDialog({
     setIsManualDistanceOverride(false);
 
     const rate = getVehicleRate(vType);
+    const fuelMode = isFuelProcurementMode(report.fuelProcurementMode)
+      ? report.fuelProcurementMode
+      : DEFAULT_FUEL_PROCUREMENT_MODE;
+    const procuredAmount = fuelMode === 'procure_release'
+      ? Math.max(0, Number(report.procuredAccumulatedAmount || 0))
+      : 0;
     const baseFuel =
       report.baseOperationalCost !== undefined && report.baseOperationalCost !== null
         ? report.baseOperationalCost
         : Math.ceil(distKm * rate);
+    const effectiveFuel = fuelMode === 'hold_accumulate' ? 0 : baseFuel + procuredAmount;
 
     const preToll = report.preAuthorizedToll ?? 0;
     // Keep these deltas signed: allowance savings must remain visible so they
     // can offset overage in the other operational category during approval.
     const fuelDelta =
       report.fuelFee !== undefined && report.fuelFee !== null
-        ? (vType === 'Ndalem' ? 0 : Number(report.fuelFee) - baseFuel)
+        ? (fuelMode === 'hold_accumulate' || vType === 'Ndalem' ? 0 : Number(report.fuelFee) - effectiveFuel)
         : (report.extraFuelCost ?? 0);
     const tollDelta =
       report.tollParkingFee !== undefined && report.tollParkingFee !== null
@@ -314,6 +372,7 @@ export function DriverJourneyAuditDialog({
 
     setAuditFuelDelta(fuelDelta);
     setAuditTollDelta(tollDelta);
+    setAuditNdalemMealMoney(report.ndalemMealMoneyReceived ?? 0);
   }
 
   const initMap = (element: HTMLDivElement) => {
@@ -572,10 +631,22 @@ export function DriverJourneyAuditDialog({
       auditIsMultiDay !== originalIsMultiDay;
 
     // Base BBM
+    const fuelProcurementMode: FuelProcurementMode = isFuelProcurementMode(report.fuelProcurementMode)
+      ? report.fuelProcurementMode
+      : DEFAULT_FUEL_PROCUREMENT_MODE;
+    const procuredAccumulatedAmount = fuelProcurementMode === 'procure_release'
+      ? Math.max(0, Number(report.procuredAccumulatedAmount || 0))
+      : 0;
     const baselineBBM =
-      report.baseOperationalCost !== undefined && report.baseOperationalCost !== null
+      auditVehicleType !== report.vehicleType && auditVehicleType !== 'Ndalem'
+        ? Math.ceil(auditDistanceKm * rate)
+        : report.baseOperationalCost !== undefined && report.baseOperationalCost !== null
         ? report.baseOperationalCost
         : Math.ceil(auditDistanceKm * rate);
+    const effectiveFuelAllowance = fuelProcurementMode === 'hold_accumulate'
+      ? 0
+      : baselineBBM + procuredAccumulatedAmount;
+    const heldFuelAmount = fuelProcurementMode === 'hold_accumulate' ? baselineBBM : 0;
 
     let actualJourneyDurationHours = 0;
     try {
@@ -601,11 +672,13 @@ export function DriverJourneyAuditDialog({
         : getMealAllowanceForDuration(authDurForMeal, auditVehicleType));
 
     const baselineToll = report.preAuthorizedToll ?? 0;
-    const totalBaseline = baselineBBM + baselineMeal + baselineToll;
+    const totalBaseline = heldFuelAmount + effectiveFuelAllowance + baselineMeal + baselineToll;
 
-    const deltaFuel = auditVehicleType === 'Ndalem' ? 0 : auditFuelDelta;
+    const deltaFuel = fuelProcurementMode === 'hold_accumulate' || auditVehicleType === 'Ndalem'
+      ? 0
+      : auditFuelDelta;
     const deltaToll = auditTollDelta;
-    const ndalemMealMoney = report.ndalemMealMoneyReceived ?? 0;
+    const ndalemMealMoney = auditNdalemMealMoney;
     const actualMeal = getMealAllowanceForDuration(
       actualJourneyDurationHours,
       auditVehicleType,
@@ -629,10 +702,9 @@ export function DriverJourneyAuditDialog({
       auditNightCount,
     );
 
-    const actualFuel = Math.max(
-      0,
-      (auditVehicleType === 'Ndalem' ? 0 : baselineBBM) + deltaFuel,
-    );
+    const actualFuel = fuelProcurementMode === 'hold_accumulate'
+      ? 0
+      : Math.max(0, effectiveFuelAllowance + deltaFuel);
     const actualToll = Math.max(0, baselineToll + deltaToll);
     const settlement = calculateDriverReimbursementSettlement({
       fuelAllowance: auditVehicleType === 'Ndalem' ? 0 : baselineBBM,
@@ -640,6 +712,10 @@ export function DriverJourneyAuditDialog({
       tollAllowance: baselineToll,
       tollSpent: actualToll,
       additionalReimbursement: deltaMeal + extraOps,
+      fuelProcurementMode: auditVehicleType === 'Ndalem'
+        ? DEFAULT_FUEL_PROCUREMENT_MODE
+        : fuelProcurementMode,
+      procuredAccumulatedAmount,
     });
     const totalReimburseDelta = settlement.reimburseDelta;
     const upahBersih = Math.max(0, baseDriverWage - settlement.remainingUnspentCash);
@@ -647,7 +723,7 @@ export function DriverJourneyAuditDialog({
     // The report may already contain the driver's submitted actuals. The
     // audit total must start from the original allowance, then apply the
     // signed audit deltas exactly once.
-    const initialTotalOps = baselineBBM + baselineMeal + baselineToll;
+    const initialTotalOps = totalBaseline;
     const operationalCost = Math.max(
       0,
       Math.ceil(initialTotalOps + settlement.netOperationalDelta + deltaMeal + extraOps),
@@ -656,6 +732,11 @@ export function DriverJourneyAuditDialog({
     return {
       rate,
       baselineBBM,
+      fuelProcurementMode,
+      effectiveFuelAllowance,
+      heldFuelAmount,
+      procuredAccumulatedAmount,
+      totalFuelAllocation: heldFuelAmount + effectiveFuelAllowance,
       baselineMeal,
       baselineToll,
       totalBaseline,
@@ -692,6 +773,7 @@ export function DriverJourneyAuditDialog({
     auditDurationHours,
     auditFuelDelta,
     auditTollDelta,
+    auditNdalemMealMoney,
     auditVehicleType,
     auditNightCount,
     auditAuthorizedDurationPP,
@@ -710,6 +792,7 @@ export function DriverJourneyAuditDialog({
       fuelDelta: auditFuelDelta,
       tollDelta: auditTollDelta,
       mealDelta: auditCalc.deltaMeal,
+      ndalemMealMoneyReceived: auditNdalemMealMoney,
       vehicleType: auditVehicleType,
       nightCount: auditNightCount,
       points: auditPoints,
@@ -723,12 +806,36 @@ export function DriverJourneyAuditDialog({
           <DialogHeader className="pb-2.5 border-b border-slate-100 shrink-0">
             <DialogTitle className="text-xl font-extrabold flex items-center gap-2.5 text-slate-800">
               <Compass className="w-6 h-6 text-indigo-500 shrink-0" />
-              <span>{isEditable ? 'Audit & Edit Perjalanan Sopir' : 'Detail Audit Perjalanan Sopir'}</span>
+              <span>
+                {report?.status === 'pending'
+                  ? 'Audit & Edit Perjalanan Sopir'
+                  : canReEditConfirmed
+                    ? 'Edit Perjalanan Sopir (Terkonfirmasi)'
+                    : 'Detail Audit Perjalanan Sopir'}
+              </span>
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-400">
               Verifikasi rute, BBM, uang makan, dan hitung delta serta upah bersih sopir.
             </DialogDescription>
           </DialogHeader>
+
+          {report?.status === 'approved' && (
+            <div
+              className={`shrink-0 mt-2.5 rounded-xl px-3.5 py-2 text-[11px] font-bold ${
+                canReEditConfirmed
+                  ? 'bg-amber-50 border border-amber-200 text-amber-800'
+                  : 'bg-slate-100 border border-slate-200 text-slate-500'
+              }`}
+            >
+              {canReEditConfirmed
+                ? 'Perjalanan ini sudah dikonfirmasi. Periode payroll masih terbuka, sehingga masih bisa diedit dan disimpan ulang.'
+                : isFuelLockedForReEdit
+                  ? 'Perjalanan ini memakai akumulasi BBM yang sudah final saat diklaim; gunakan proses koreksi resmi untuk mengubahnya.'
+                  : periodOpen === false
+                    ? 'Periode payroll perjalanan ini sudah ditutup; data terkunci dan tidak dapat diedit lagi.'
+                    : 'Memeriksa status periode payroll…'}
+            </div>
+          )}
 
           {report && auditCalc && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0 py-2 overflow-y-auto lg:overflow-hidden">
@@ -747,6 +854,19 @@ export function DriverJourneyAuditDialog({
                       <span className="font-semibold text-slate-400 text-[11px] block">Keperluan:</span>
                       <span className="font-extrabold text-slate-700">{report.activityName.split(' (')[0]}</span>
                     </div>
+                  </div>
+
+                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 text-[10px] font-bold text-indigo-900">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span>Mode BBM: <strong>{auditCalc.fuelProcurementMode === 'hold_accumulate' ? 'Tahan & akumulasi' : auditCalc.fuelProcurementMode === 'procure_release' ? 'Cairkan saldo' : 'Standard langsung'}</strong></span>
+                      <Badge variant="outline" className="border-indigo-200 bg-white text-indigo-700 text-[9px]">Mode terkunci setelah klaim</Badge>
+                    </div>
+                    <div className="mt-1 grid grid-cols-2 gap-2 text-slate-600">
+                      <span>Ditahan: <strong className="text-amber-700">{fmtRp(auditCalc.heldFuelAmount)}</strong></span>
+                      <span>Pool dicairkan: <strong className="text-orange-700">{fmtRp(auditCalc.procuredAccumulatedAmount)}</strong></span>
+                    </div>
+                    {auditCalc.fuelProcurementMode === 'hold_accumulate' && <p className="mt-1 text-emerald-800">Mode hold tidak memakai kuitansi atau settlement tunai BBM.</p>}
+                    {auditCalc.fuelProcurementMode === 'procure_release' && auditVehicleType !== report.vehicleType && <p className="mt-1 text-indigo-800">Penggantian kendaraan akan menghitung ulang pool kendaraan pengganti di server.</p>}
                   </div>
 
                   {/* RUTE PERJALANAN TIMELINE EDITOR */}
@@ -993,15 +1113,31 @@ export function DriverJourneyAuditDialog({
                     </div>
                   </div>
 
+                  <div className="space-y-1">
+                    <Label className="text-[9.5px] font-bold text-slate-400 uppercase">
+                      Uang Diberikan Selama Perjalanan
+                    </Label>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={auditNdalemMealMoney || ''}
+                      onChange={(e) => setAuditNdalemMealMoney(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      disabled={!isEditable || actionLoading}
+                      className="rounded-xl text-xs font-bold border-slate-200 focus:border-indigo-400 text-slate-800 bg-white"
+                    />
+                  </div>
+
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1">
-                      <Label className="text-[9px] font-bold text-slate-400 uppercase">Selisih BBM (+/-)</Label>
+                      <Label className="text-[9px] font-bold text-slate-400 uppercase">
+                        {auditCalc.fuelProcurementMode === 'hold_accumulate' ? 'BBM (Hold)' : 'Selisih BBM (+/-)'}
+                      </Label>
                       <Input
                         type="number"
-                        placeholder="Sesuai Anggaran"
-                        value={auditFuelDelta || ''}
+                        placeholder={auditCalc.fuelProcurementMode === 'hold_accumulate' ? 'Tidak berlaku' : 'Sesuai Anggaran'}
+                        value={auditCalc.fuelProcurementMode === 'hold_accumulate' ? '' : (auditFuelDelta || '')}
                         onChange={(e) => setAuditFuelDelta(parseInt(e.target.value, 10) || 0)}
-                        disabled={!isEditable || actionLoading}
+                        disabled={!isEditable || actionLoading || auditCalc.fuelProcurementMode === 'hold_accumulate'}
                         className={`rounded-xl text-xs font-bold transition-all ${!auditFuelDelta || auditFuelDelta === 0
                             ? 'bg-emerald-50/80 border-emerald-300 text-emerald-700 placeholder:text-emerald-600/70 focus:border-emerald-500 font-semibold'
                             : 'border-slate-200 focus:border-indigo-400 text-slate-800'
@@ -1185,7 +1321,7 @@ export function DriverJourneyAuditDialog({
                               {auditDistanceKm} km @ {getVehicleRate(auditVehicleType)}/km
                             </span>
                           </td>
-                          <td className="py-2.5 px-3.5 text-right font-bold text-slate-600">{fmtRp(auditCalc.baselineBBM)}</td>
+                          <td className="py-2.5 px-3.5 text-right font-bold text-slate-600">{fmtRp(auditCalc.totalFuelAllocation)}</td>
                           <td className="py-2.5 px-3.5 text-right font-bold text-slate-800">{fmtRp(auditCalc.actualFuel)}</td>
                           <td className="py-2.5 px-3.5 text-right font-extrabold text-blue-600">
                             {auditCalc.deltaFuel !== 0
@@ -1262,24 +1398,24 @@ export function DriverJourneyAuditDialog({
             <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-xl font-bold text-slate-500">
               Kembali
             </Button>
+            {canDecline && (
+              <Button
+                onClick={onDecline}
+                disabled={actionLoading}
+                className="rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 font-bold"
+              >
+                Tolak Perjalanan
+              </Button>
+            )}
             {isEditable && (
-              <>
-                <Button
-                  onClick={onDecline}
-                  disabled={actionLoading}
-                  className="rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 font-bold"
-                >
-                  Tolak Perjalanan
-                </Button>
-                <Button
-                  onClick={handleApprove}
-                  disabled={actionLoading || !auditCalc || auditCalc.actualJourneyDurationHours <= 0}
-                  className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold hover:shadow-lg shadow-indigo-100"
-                >
-                  {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-                  Audit & Setujui
-                </Button>
-              </>
+              <Button
+                onClick={handleApprove}
+                disabled={actionLoading || !auditCalc || auditCalc.actualJourneyDurationHours <= 0}
+                className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold hover:shadow-lg shadow-indigo-100"
+              >
+                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+                {canReEditConfirmed ? 'Simpan Perubahan' : 'Audit & Setujui'}
+              </Button>
             )}
           </DialogFooter>
         </DialogContent>

@@ -639,17 +639,7 @@ export async function POST(request: NextRequest) {
           ? current.lateBackfillDates
           : []
         : lateBackfillDates;
-      const acknowledgedBackfillDates =
-        planBefore.exists && Array.isArray(current.acknowledgedBackfillDates)
-          ? current.acknowledgedBackfillDates
-          : [];
-      const unresolvedBackfillDates = effectiveLateBackfillDates.filter(
-        (date: string) => !acknowledgedBackfillDates.includes(date),
-      );
-      const status =
-        unresolvedBackfillDates.length > 0
-          ? 'pending_backfill_review'
-          : 'published';
+      const status = 'published';
       const now = admin.firestore.FieldValue.serverTimestamp();
       const after = {
         period,
@@ -680,7 +670,6 @@ export async function POST(request: NextRequest) {
         status,
         revision,
         lateBackfillDates: effectiveLateBackfillDates,
-        acknowledgedBackfillDates,
         staleDates: [],
         publishedAt: now,
         publishedBy: actor.uid,
@@ -1028,14 +1017,8 @@ export async function PATCH(request: NextRequest) {
         guardBId,
         postXId,
       };
-    } else if (action !== 'acknowledge_backfill') {
+    } else {
       throw new HttpError(400, 'Aksi perubahan rencana tidak valid.');
-    }
-    if (
-      action === 'acknowledge_backfill' &&
-      actor.role === 'ketua_shift_satpam'
-    ) {
-      throw new HttpError(403, 'Backfill hanya dapat dikonfirmasi Kepala SatKer.');
     }
 
     const requestHash = stableHash({
@@ -1089,7 +1072,6 @@ export async function PATCH(request: NextRequest) {
       const before = latestPlan.data()!;
       const revision = expectedRevision + 1;
       let generatedDays = before.generatedDays || [];
-      let acknowledgedBackfillDates = before.acknowledgedBackfillDates || [];
       if (replacementDay) {
         generatedDays = generatedDays.map((day: SatpamDutyPlanDay) =>
           day.dutyDate === replacementDay!.dutyDate
@@ -1117,25 +1099,10 @@ export async function PATCH(request: NextRequest) {
           swapRequest.guardBId,
           swapRequest.postXId,
         );
-      } else {
-        acknowledgedBackfillDates = Array.from(
-          new Set([
-            ...acknowledgedBackfillDates,
-            ...(before.lateBackfillDates || []),
-          ]),
-        );
       }
-      const unresolvedBackfill = (before.lateBackfillDates || []).filter(
-        (date: string) => !acknowledgedBackfillDates.includes(date),
-      );
       const after = {
         ...before,
         generatedDays,
-        acknowledgedBackfillDates,
-        status:
-          unresolvedBackfill.length > 0
-            ? 'pending_backfill_review'
-            : 'published',
         revision,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedBy: actor.uid,
@@ -1166,11 +1133,9 @@ export async function PATCH(request: NextRequest) {
         newFinancialAuditRef(),
         buildFinancialAuditRecord(actor, {
           action:
-            action === 'acknowledge_backfill'
-              ? 'SATPAM_DUTY_PLAN_BACKFILL_ACKNOWLEDGED'
-              : action === 'swap_libur_days'
-                ? 'SATPAM_DUTY_PLAN_LIBUR_SWAPPED'
-                : 'SATPAM_DUTY_PLAN_DAY_EDITED',
+            action === 'swap_libur_days'
+              ? 'SATPAM_DUTY_PLAN_LIBUR_SWAPPED'
+              : 'SATPAM_DUTY_PLAN_DAY_EDITED',
           entityType: 'SatpamDutyPlan',
           entityId: planRef.id,
           requestId,
@@ -1201,7 +1166,7 @@ export async function PATCH(request: NextRequest) {
       });
       return {
         revision,
-        status: after.status,
+        status: before.status,
         swapDateY: swapRequest?.expectedDateY || null,
         idempotent: false,
       };

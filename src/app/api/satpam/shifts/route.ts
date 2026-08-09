@@ -926,21 +926,16 @@ async function mutateShift(
       }
       if (
         dutyPlan &&
-        dutyPlan.status === 'pending_backfill_review' &&
         Array.isArray(dutyPlan.lateBackfillDates) &&
         dutyPlan.lateBackfillDates.includes(command.dutyDate) &&
-        !(
-          Array.isArray(dutyPlan.acknowledgedBackfillDates) &&
-          dutyPlan.acknowledgedBackfillDates.includes(command.dutyDate)
-        ) &&
         !anomalies.some(
           (anomaly) => anomaly.code === 'DUTY_PLAN_BACKFILL_PENDING',
         )
       ) {
         anomalies.push({
           code: 'DUTY_PLAN_BACKFILL_PENDING',
-          severity: 'blocking',
-          message: 'Rencana tanggal ini masih menunggu konfirmasi backfill Kepala SatKer.',
+          severity: 'warning',
+          message: 'Rencana dinas diterbitkan setelah tanggal ini dimulai (backfill).',
         });
       }
       if (
