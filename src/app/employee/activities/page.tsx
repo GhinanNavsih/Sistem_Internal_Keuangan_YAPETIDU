@@ -769,6 +769,12 @@ function ActivitiesContent() {
   const [copyingPreviousShift, setCopyingPreviousShift] = useState(false);
   const [satpamEmployeeSearch, setSatpamEmployeeSearch] = useState('');
   const satpamRequestIdsRef = useRef<Record<string, string>>({});
+  // The duty-plan prefill writes the system's suggested roster into
+  // postAssignments before the guard has touched anything. Without this flag
+  // the very next autosave tick would persist that untouched suggestion as a
+  // localStorage "pending draft," which then re-triggers the "draft restored"
+  // notice on every future page load even though the guard never edited it.
+  const satpamSkipNextAutosaveRef = useRef(false);
   const [isExtraPostVisible, setIsExtraPostVisible] = useState(false);
   const [loadingSubmittedSatpam, setLoadingSubmittedSatpam] = useState(false);
   const [isSatpamReportSubmitted, setIsSatpamReportSubmitted] = useState(false);
@@ -2708,6 +2714,7 @@ function ActivitiesContent() {
             : satpamRegularPayType,
       };
     });
+    satpamSkipNextAutosaveRef.current = true;
     setPostAssignments(plannedAssignments);
     setSatpamReportedShiftName(satpamDutyPlan.day.shiftName);
   }, [
@@ -2728,6 +2735,10 @@ function ActivitiesContent() {
       !satpamPendingStorageKey ||
       isSatpamReportLocked
     ) {
+      return;
+    }
+    if (satpamSkipNextAutosaveRef.current) {
+      satpamSkipNextAutosaveRef.current = false;
       return;
     }
     const assignments = Object.entries(postAssignments)
