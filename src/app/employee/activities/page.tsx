@@ -619,21 +619,41 @@ function getStatusConfig(status: string) {
   }
 }
 
+/**
+ * Anchored to WIB (Asia/Jakarta) rather than the device's local calendar so a
+ * phone with a misconfigured timezone doesn't report "today" as a different
+ * date than the rest of the system (which is Jakarta-based throughout).
+ */
 function getTodayISO(): string {
-  const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 function getInitialSatpamDateISO(): string {
-  const d = new Date();
-  const hours = d.getHours();
-  // If it's between midnight 00:00 and 08:30 in local time, default to yesterday
-  if (hours < 8 || (hours === 8 && d.getMinutes() < 30)) {
-    const yesterday = new Date(d);
-    yesterday.setDate(d.getDate() - 1);
-    return yesterday.getFullYear() + '-' + String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + String(yesterday.getDate()).padStart(2, '0');
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const todayIso = `${values.year}-${values.month}-${values.day}`;
+  const hours = Number(values.hour);
+  const minutes = Number(values.minute);
+  // If it's between midnight 00:00 and 08:30 WIB, default to yesterday.
+  if (hours < 8 || (hours === 8 && minutes < 30)) {
+    const yesterday = new Date(`${todayIso}T00:00:00Z`);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    return yesterday.toISOString().slice(0, 10);
   }
-  return getTodayISO();
+  return todayIso;
 }
 
 /**
