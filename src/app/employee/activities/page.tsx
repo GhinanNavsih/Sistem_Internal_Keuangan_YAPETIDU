@@ -4731,12 +4731,12 @@ function ActivitiesContent() {
                       ) : isSatpamReportSubmitted ? (
                         <>
                           <Save className="w-4 h-4 text-white" />
-                          <span>Simpan Perubahan Laporan</span>
+                          <span>Simpan Perubahan</span>
                         </>
                       ) : (
                         <>
                           <Send className="w-4 h-4 text-white" />
-                          <span>Kirim Laporan Regu Shift {activeShift}</span>
+                          <span>Laporkan Shift</span>
                         </>
                       )}
                     </Button>

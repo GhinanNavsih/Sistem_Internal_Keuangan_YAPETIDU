@@ -393,7 +393,6 @@ const SATPAM_ANOMALY_LABELS: Record<string, string> = {
   INACTIVE_OR_MISMATCHED_GUARD: 'Status/kategori perlu diselesaikan',
   HOLIDAY_CALENDAR_MISSING: 'Kalender upah belum tersedia',
   PAY_CLASSIFICATION_MISMATCH: 'Klasifikasi upah perlu diperbaiki',
-  FUTURE_WORK_NOT_FINISHED: 'Pekerjaan belum selesai',
   DUTY_PLAN_MISSING: 'Rencana dinas belum ada',
   DUTY_PLAN_STALE: 'Rencana dinas perlu diperbarui',
   DUTY_PLAN_BACKFILL_PENDING: 'Rencana dinas backfill (terbit setelah shift mulai)',
@@ -1477,11 +1476,9 @@ export default function ActivityReviewPage() {
       };
     });
 
-    const needsNote =
-      group.anomalyCodes.length > 0 ||
-      decisions.some((decision) => decision.action === 'decline');
+    const needsNote = decisions.some((decision) => decision.action === 'decline');
     if (needsNote && note.length < 8) {
-      setErrorMsg('Isi catatan auditor sekurang-kurangnya 8 karakter untuk laporan yang memiliki peringatan atau penolakan.');
+      setErrorMsg('Isi catatan auditor sekurang-kurangnya 8 karakter untuk menolak laporan.');
       return;
     }
 
@@ -2216,7 +2213,7 @@ export default function ActivityReviewPage() {
                                               [group.occurrenceId]: e.target.value,
                                             }))
                                           }
-                                          placeholder={group.anomalyCodes.length > 0 ? 'Catatan auditor wajib untuk laporan ini' : 'Catatan audit shift'}
+                                          placeholder="Catatan audit shift (wajib jika menolak)"
                                           className="h-10 rounded-xl text-xs bg-white border-slate-200 w-full"
                                         />
                                       </div>

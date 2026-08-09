@@ -224,7 +224,6 @@ test('flexible Satpam submission records warnings without rejecting partial rost
     ],
     activeSatpamIds: new Set(['GUARD001']),
     holidayCalendarConfigured: false,
-    now: new Date('2026-07-30T00:00:00.000Z'),
   });
 
   assert.deepEqual(
@@ -237,7 +236,6 @@ test('flexible Satpam submission records warnings without rejecting partial rost
       'COVER_DETAILS_INCOMPLETE',
       'MISSING_PHOTO',
       'HOLIDAY_CALENDAR_MISSING',
-      'FUTURE_WORK_NOT_FINISHED',
     ]),
   );
   assert.equal(

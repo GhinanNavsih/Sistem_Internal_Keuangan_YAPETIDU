@@ -53,7 +53,6 @@ export type SatpamShiftAnomalyCode =
   | 'INACTIVE_OR_MISMATCHED_GUARD'
   | 'HOLIDAY_CALENDAR_MISSING'
   | 'PAY_CLASSIFICATION_MISMATCH'
-  | 'FUTURE_WORK_NOT_FINISHED'
   | 'DUTY_PLAN_MISSING'
   | 'DUTY_PLAN_STALE'
   | 'DUTY_PLAN_BACKFILL_PENDING'
@@ -527,7 +526,6 @@ export function analyzeSatpamShiftSubmission(input: {
   activeSatpamIds?: ReadonlySet<string>;
   pos9GuardIds?: ReadonlySet<string>;
   holidayCalendarConfigured?: boolean;
-  now?: Date;
 }): SatpamShiftAnomaly[] {
   const anomalies: SatpamShiftAnomaly[] = [];
   const postIndexes = new Map<string, number[]>();
@@ -653,20 +651,6 @@ export function analyzeSatpamShiftSubmission(input: {
       code: 'HOLIDAY_CALENDAR_MISSING',
       severity: 'blocking',
       message: 'Kalender hari libur belum tersedia sehingga tarif belum dapat dipastikan.',
-    });
-  }
-
-  if (
-    !hasSatpamShiftEnded(
-      input.dutyDate,
-      input.reportedShiftName,
-      input.now || new Date(),
-    )
-  ) {
-    anomalies.push({
-      code: 'FUTURE_WORK_NOT_FINISHED',
-      severity: 'blocking',
-      message: 'Waktu dinas belum selesai. Laporan dapat disimpan tetapi belum dapat disetujui.',
     });
   }
 

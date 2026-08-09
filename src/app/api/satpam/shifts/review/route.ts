@@ -526,12 +526,6 @@ export async function POST(request: NextRequest) {
           `Klasifikasi rencana dinas belum selesai (${financiallyBlockingPlanAnomaly}). Gunakan Edit Auditor.`,
         );
       }
-      if (anomalyCodes.length > 0 && command.reason.trim().length < 8) {
-        throw new HttpError(
-          400,
-          'Catatan auditor wajib diisi untuk laporan yang memiliki peringatan.',
-        );
-      }
 
       const now = admin.firestore.FieldValue.serverTimestamp();
       let approvedCount = 0;
