@@ -242,6 +242,11 @@ export function DriverJourneyAuditDialog({
   const [auditVehicleType, setAuditVehicleType] = useState<string>('Suzuki XL7');
   const [auditNightCount, setAuditNightCount] = useState<number>(0);
   const [auditPoints, setAuditPoints] = useState<string[]>([]);
+  // Keyed by the origin point's index in `auditPoints` — the leg leaving that
+  // stop toward the next one. Only set when both stops are real (non-blank)
+  // and directly adjacent, so a still-empty "Tambah Lokasi" slot never gets
+  // attributed a leg that actually skipped over it.
+  const [auditLegWages, setAuditLegWages] = useState<Record<number, { distanceKm: number; durationHours: number }>>({});
   const [isManualDistanceOverride, setIsManualDistanceOverride] = useState<boolean>(false);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
 
@@ -373,7 +378,22 @@ export function DriverJourneyAuditDialog({
     setAuditFuelDelta(fuelDelta);
     setAuditTollDelta(tollDelta);
     setAuditNdalemMealMoney(report.ndalemMealMoneyReceived ?? 0);
+    setAuditLegWages({});
   }
+
+  // Populates per-leg distance/wage figures as soon as a report opens, rather
+  // than only after the auditor manually clicks "Hitung Ulang". Keyed on the
+  // report id alone so later point edits (which already trigger their own
+  // recalculation) don't cause a redundant second call here.
+  useEffect(() => {
+    if (!report) return;
+    const pts =
+      report.points && report.points.length > 0
+        ? report.points
+        : [report.startPoint || 'UNIPDU Jombang, Jawa Timur', report.endPoint || ''];
+    recalculateRouteFromPoints(pts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report?.id]);
 
   const initMap = (element: HTMLDivElement) => {
     loadGoogleMapsScript(() => {
@@ -510,8 +530,11 @@ export function DriverJourneyAuditDialog({
   };
 
   const recalculateRouteFromPoints = (pointsToCalc: string[]) => {
-    const validPts = pointsToCalc.filter(p => p && p.trim().length > 0);
-    if (validPts.length < 2) return;
+    const validIndices = pointsToCalc
+      .map((p, i) => (p && p.trim().length > 0 ? i : -1))
+      .filter((i) => i !== -1);
+    if (validIndices.length < 2) return;
+    const validPts = validIndices.map((i) => pointsToCalc[i]);
     setIsCalculatingRoute(true);
 
     loadGoogleMapsScript(() => {
@@ -543,11 +566,24 @@ export function DriverJourneyAuditDialog({
               const route = result.routes[0];
               let totalMeters = 0;
               let totalSeconds = 0;
+              const legWages: Record<number, { distanceKm: number; durationHours: number }> = {};
 
-              route.legs.forEach((leg: any) => {
-                if (leg.distance?.value) totalMeters += leg.distance.value;
-                if (leg.duration?.value) totalSeconds += leg.duration.value;
+              route.legs.forEach((leg: any, legIdx: number) => {
+                const distanceMeters = leg.distance?.value || 0;
+                const durationSeconds = leg.duration?.value || 0;
+                totalMeters += distanceMeters;
+                totalSeconds += durationSeconds;
+
+                const originIdx = validIndices[legIdx];
+                const nextIdx = validIndices[legIdx + 1];
+                if (nextIdx === originIdx + 1) {
+                  legWages[originIdx] = {
+                    distanceKm: distanceMeters / 1000,
+                    durationHours: durationSeconds / 3600,
+                  };
+                }
               });
+              setAuditLegWages(legWages);
 
               if (totalMeters > 0) {
                 const oneWayKm = totalMeters / 1000;
@@ -870,98 +906,111 @@ export function DriverJourneyAuditDialog({
                   </div>
 
                   {/* RUTE PERJALANAN TIMELINE EDITOR */}
-                  <div className="space-y-2 pt-1.5 border-t border-slate-200/60">
+                  <div className="space-y-3 pt-1.5 border-t border-slate-200/60">
                     <div className="flex justify-between items-center">
                       <span className="font-semibold text-slate-400 text-[10px] uppercase tracking-wider flex items-center gap-1">
                         <MapPin className="w-3 h-3 text-indigo-500" />
                         Rute Perjalanan ({auditPoints.length} Lokasi)
                       </span>
                       {isEditable && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={isCalculatingRoute || actionLoading}
-                          onClick={() => recalculateRouteFromPoints(auditPoints)}
-                          className="h-6 px-2 text-[10px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 rounded-lg cursor-pointer"
-                        >
-                          {isCalculatingRoute ? (
-                            <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                          ) : (
-                            <RefreshCw className="w-3 h-3 mr-1" />
-                          )}
-                          Hitung Ulang Rute
-                        </Button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              const newPts = [...auditPoints, ''];
+                              setAuditPoints(newPts);
+                              handleOpenMapForIndex(newPts.length - 1);
+                            }}
+                            className="h-6 px-2 text-[9px] font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-md cursor-pointer whitespace-nowrap"
+                          >
+                            <Plus className="w-3 h-3 mr-0.5" />
+                            Tambah Lokasi
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isCalculatingRoute || actionLoading}
+                            onClick={() => recalculateRouteFromPoints(auditPoints)}
+                            className="h-6 px-2 text-[9px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 rounded-md cursor-pointer whitespace-nowrap"
+                          >
+                            {isCalculatingRoute ? (
+                              <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                            ) : (
+                              <RefreshCw className="w-3 h-3 mr-1" />
+                            )}
+                            Hitung Ulang
+                          </Button>
+                        </div>
                       )}
                     </div>
 
-                    <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                      {auditPoints.map((pt, idx) => (
-                        <div key={idx} className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-slate-400 shrink-0 w-16">
-                            {idx === 0 ? '📍 Awal' : idx === 1 ? '🏁 Utama' : `📍 Extra #${idx - 1}`}
-                          </span>
-                          {isEditable ? (
-                            <div className="flex-1 flex items-center gap-1.5 min-w-0">
-                              <Input
-                                type="text"
-                                value={pt}
-                                readOnly
-                                onClick={() => handleOpenMapForIndex(idx)}
-                                placeholder={idx === 0 ? 'Titik Awal' : 'Pilih Lokasi...'}
-                                className="h-8 text-xs font-semibold rounded-xl border-slate-200 focus:border-indigo-400 bg-slate-50 hover:bg-slate-100/80 cursor-pointer transition-colors flex-1 min-w-0 truncate"
-                              />
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleOpenMapForIndex(idx)}
-                                className="h-8 px-2.5 text-[10px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 rounded-xl shrink-0 cursor-pointer flex items-center gap-1"
-                              >
-                                <MapPin className="w-3 h-3 text-indigo-600" />
-                                Pilih Map
-                              </Button>
-                            </div>
-                          ) : (
-                            <span className="text-xs font-bold text-slate-700 leading-relaxed bg-white border border-slate-200/80 p-2 rounded-xl flex-1">
-                              {pt}
-                            </span>
-                          )}
-                          {isEditable && idx > 1 && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                const newPts = auditPoints.filter((_, i) => i !== idx);
-                                setAuditPoints(newPts);
-                                recalculateRouteFromPoints(newPts);
-                              }}
-                              className="h-8 w-8 p-0 text-rose-500 hover:bg-rose-50 rounded-xl shrink-0"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    <div className="relative pl-6 space-y-3.5 max-h-[220px] overflow-y-auto pr-1">
+                      <div className="absolute left-[9px] top-2 bottom-2 w-0.5 border-l-2 border-dashed border-indigo-200" />
 
-                    {isEditable && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          const newPts = [...auditPoints, ''];
-                          setAuditPoints(newPts);
-                          handleOpenMapForIndex(newPts.length - 1);
-                        }}
-                        className="h-7 px-2.5 text-[10px] font-extrabold text-indigo-600 bg-indigo-50/60 hover:bg-indigo-100/80 border border-indigo-100 rounded-xl w-full flex items-center justify-center gap-1 mt-1 cursor-pointer"
-                      >
-                        <Plus className="w-3 h-3" />
-                        Tambah Lokasi / Destinasi
-                      </Button>
-                    )}
+                      {auditPoints.map((pt, idx) => {
+                        const isFixedNode = idx <= 1;
+                        const label = idx === 0 ? 'Titik Keberangkatan' : idx === 1 ? 'Tujuan Utama' : `Tujuan Tambahan #${idx - 1}`;
+                        const emoji = idx === 0 ? '🏫' : idx === 1 ? '🎯' : '📍';
+                        return (
+                          <div key={idx} className="relative flex items-start justify-between gap-2.5 text-xs">
+                            <div className={`absolute -left-[20px] top-1 w-3 h-3 rounded-full border-2 border-white shadow-sm ${isFixedNode ? 'bg-indigo-600' : 'bg-teal-500'}`} />
+                            <div className="space-y-0.5 min-w-0 flex-1">
+                              <span className={`text-[9px] font-black block ${isFixedNode ? 'text-indigo-700' : 'text-teal-700'}`}>
+                                {label}
+                              </span>
+                              {pt ? (
+                                <div className="font-extrabold text-black truncate" title={pt}>
+                                  {emoji} {pt.split(',')[0]}
+                                </div>
+                              ) : (
+                                <div className="text-xs font-bold text-slate-400 italic">
+                                  Belum memilih lokasi
+                                </div>
+                              )}
+                              {auditLegWages[idx] && (
+                                <div className="text-[9px] text-slate-500 font-bold">
+                                  Jarak Leg: <span className="text-emerald-700 font-extrabold">{auditLegWages[idx].distanceKm.toFixed(1)} km</span>
+                                  {' '}(Upah Bersih: <span className="text-emerald-600 font-extrabold">
+                                    {fmtRp(Math.ceil(auditLegWages[idx].distanceKm * 300 + auditLegWages[idx].durationHours * 5000))}
+                                  </span>)
+                                </div>
+                              )}
+                            </div>
+                            {isEditable && (
+                              <div className="flex items-center gap-1 shrink-0">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleOpenMapForIndex(idx)}
+                                  className="h-7 px-2.5 text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white border border-slate-200 rounded-lg cursor-pointer"
+                                >
+                                  {pt ? 'Ubah' : 'Pilih'}
+                                </Button>
+                                {idx > 1 && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      const newPts = auditPoints.filter((_, i) => i !== idx);
+                                      setAuditPoints(newPts);
+                                      recalculateRouteFromPoints(newPts);
+                                    }}
+                                    className="h-7 w-7 p-0 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* Receipt Attachments with EXIF Audit Viewer */}
