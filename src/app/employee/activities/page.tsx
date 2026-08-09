@@ -775,6 +775,13 @@ function ActivitiesContent() {
   // localStorage "pending draft," which then re-triggers the "draft restored"
   // notice on every future page load even though the guard never edited it.
   const satpamSkipNextAutosaveRef = useRef(false);
+  // The duty date this form's postAssignments actually belong to. Tracked in a
+  // ref because it has to update synchronously: when the date changes, React
+  // re-runs the autosave effect in the same pass with the *previous* day's
+  // roster still in state, and a state flag reset would not be visible yet.
+  // Without this, the outgoing day's roster gets stamped onto the incoming
+  // day's draft key, making every date look one day behind.
+  const satpamHydratedDateRef = useRef('');
   const [isExtraPostVisible, setIsExtraPostVisible] = useState(false);
   const [loadingSubmittedSatpam, setLoadingSubmittedSatpam] = useState(false);
   const [isSatpamReportSubmitted, setIsSatpamReportSubmitted] = useState(false);
@@ -2439,10 +2446,13 @@ function ActivitiesContent() {
     (Boolean(satpamAuditorActionAt) ||
       !['pending_review', 'draft'].includes(satpamReviewStatus));
 
+  // The v2 namespace retires drafts written before the cross-date autosave race
+  // was fixed; those hold the previous day's roster under the current day's key,
+  // so restoring them would keep showing a schedule that is one day behind.
   const satpamPendingStorageKey = useMemo(
     () =>
       profile?.linkedEmployeeId
-        ? `unipdu:satpam-draft:${profile.linkedEmployeeId}:${satpamReportDate}`
+        ? `unipdu:satpam-draft:v2:${profile.linkedEmployeeId}:${satpamReportDate}`
         : '',
     [profile?.linkedEmployeeId, satpamReportDate],
   );
@@ -2453,6 +2463,7 @@ function ActivitiesContent() {
     let isMounted = true;
     setLoadingSubmittedSatpam(true);
     setSatpamDraftHydrated(false);
+    satpamHydratedDateRef.current = '';
 
     authenticatedJson<{
       occurrence: null | {
@@ -2656,11 +2667,13 @@ function ActivitiesContent() {
         }
         setIsSatpamReportSubmitted(false);
       }
+      satpamHydratedDateRef.current = satpamReportDate;
       setSatpamDraftHydrated(true);
       setLoadingSubmittedSatpam(false);
     }).catch((err) => {
       console.error('Error fetching submitted Satpam reports:', err);
       if (isMounted) {
+        satpamHydratedDateRef.current = satpamReportDate;
         setSatpamDraftHydrated(true);
         setLoadingSubmittedSatpam(false);
       }
@@ -2683,6 +2696,12 @@ function ActivitiesContent() {
       isSatpamReportSubmitted ||
       !satpamDutyPlan?.day
     ) {
+      return;
+    }
+    // The duty plan is fetched separately from the report, so it can still hold
+    // the previously selected date when the date changes. Prefilling from it
+    // then would seed the form with the wrong day's roster.
+    if (satpamDutyPlan.day.dutyDate !== satpamReportDate) {
       return;
     }
     if (
@@ -2724,6 +2743,7 @@ function ActivitiesContent() {
     satpamDutyPlan,
     satpamPendingStorageKey,
     satpamRegularPayType,
+    satpamReportDate,
     myShiftTeam?.ketuaShiftId,
     pos9GuardIds,
   ]);
@@ -2735,6 +2755,10 @@ function ActivitiesContent() {
       !satpamPendingStorageKey ||
       isSatpamReportLocked
     ) {
+      return;
+    }
+    // Never let one date's roster be written under another date's key.
+    if (satpamHydratedDateRef.current !== satpamReportDate) {
       return;
     }
     if (satpamSkipNextAutosaveRef.current) {
