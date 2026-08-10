@@ -264,6 +264,7 @@ interface ActivityReport {
   photoAuditMetadata?: PhotoAuditMetadata;
   itemName?: string;
   proofPhotos?: PhotoEvidence[];
+  proofPhoto?: PhotoEvidence;
   submittedFeeRecommendation?: number;
 }
 
@@ -5375,6 +5376,45 @@ function ActivitiesContent() {
                                 )}
                               </div>
                             )}
+
+                            {/* Post-guarding photo taken by the Ketua Shift while filing the shift report */}
+                            {activity.jobCategory === 'SATPAM' &&
+                              activity.reportKind === 'satpam_shift_assignment' &&
+                              activity.photoUrl && (
+                                <div className="space-y-2 rounded-xl border border-purple-100/60 bg-purple-50/50 p-3">
+                                  <div className="flex items-center gap-2 text-sm font-bold text-purple-950">
+                                    <Camera className="h-4 w-4" />
+                                    Foto Bukti Penjagaan
+                                  </div>
+                                  <div className="overflow-hidden rounded-xl bg-slate-100">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={activity.photoUrl}
+                                      alt={`Foto bukti ${activity.postName || 'penjagaan pos'}`}
+                                      className="max-h-64 w-full object-cover"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                            {/* Proof photo attached to the general Pekarya SPJ submission */}
+                            {['KEBERSIHAN', 'KEBERSIHAN_PONTI', 'PONTI', 'TEKNISI'].includes(activity.jobCategory) &&
+                              activity.proofPhoto?.url && (
+                                <div className="space-y-2 rounded-xl border border-teal-100 bg-teal-50/60 p-3">
+                                  <div className="flex items-center gap-2 text-sm font-bold text-teal-900">
+                                    <Camera className="h-4 w-4" />
+                                    Foto Bukti Kegiatan
+                                  </div>
+                                  <div className="overflow-hidden rounded-xl bg-slate-100">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={activity.proofPhoto.url}
+                                      alt="Foto bukti kegiatan"
+                                      className="max-h-64 w-full object-cover"
+                                    />
+                                  </div>
+                                </div>
+                              )}
 
                             {activity.status === 'approved' && activity.jobCategory === 'SATPAM' && (
                               <div className="flex flex-col gap-1 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
