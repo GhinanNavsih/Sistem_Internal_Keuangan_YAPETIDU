@@ -370,6 +370,15 @@ function getStatusConfig(status: string) {
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 const CLEANING_CATEGORIES = ['KEBERSIHAN', 'TEKNISI', 'SOPIR', 'KEBERSIHAN_PONTI', 'SATPAM', 'PEKARYA', 'PONTI'];
+const JOB_CATEGORY_LABELS: Record<string, string> = {
+  KEBERSIHAN: 'Kebersihan',
+  TEKNISI: 'Teknisi',
+  SOPIR: 'Sopir',
+  KEBERSIHAN_PONTI: 'Kebersihan Ponti',
+  SATPAM: 'Satpam',
+  PEKARYA: 'Pekarya (Umum)',
+  PONTI: 'Ponti',
+};
 const SATPAM_POST_OPTIONS = [
   'Pos 1',
   'Pos 2',
@@ -565,6 +574,7 @@ export default function ActivityReviewPage() {
   const [reportTypeFilter, setReportTypeFilter] = useState<
     'all' | 'activity' | 'found_item' | 'reprimand' | 'shift'
   >('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -591,6 +601,11 @@ export default function ActivityReviewPage() {
   // ── Decline Modal ──
   const [declineTarget, setDeclineTarget] = useState<ActivityReport | null>(null);
   const [declineReason, setDeclineReason] = useState('');
+
+  // ── Admin Delete Modal (super_admin only, approved/declined reports) ──
+  const [deleteTarget, setDeleteTarget] = useState<ActivityReport | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deletingActivity, setDeletingActivity] = useState(false);
 
   // ── Driver (Sopir) Audit Modal State ──
   // The audit form itself lives in <DriverJourneyAuditDialog>, shared with the
@@ -850,6 +865,9 @@ export default function ActivityReviewPage() {
           !activity.sourceOccurrenceId,
       );
     }
+    if (categoryFilter !== 'all') {
+      filtered = filtered.filter((activity) => activity.jobCategory === categoryFilter);
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(a =>
@@ -858,7 +876,7 @@ export default function ActivityReviewPage() {
       );
     }
     return filtered;
-  }, [activities, reportTypeFilter, statusFilter, searchQuery]);
+  }, [activities, reportTypeFilter, categoryFilter, statusFilter, searchQuery]);
 
   // ── Satpam shift grouping ──
   // Satpam reports are audited as a whole shift occurrence rather than as ten
@@ -1218,6 +1236,47 @@ export default function ActivityReviewPage() {
     }
   };
 
+  // ── Admin Delete Handler (super_admin only; already-reviewed reports) ──
+  const handleDeleteActivity = async () => {
+    if (isActionLoadingRef.current || !deleteTarget || !user) return;
+    const reason = deleteReason.trim();
+    if (reason.length < 8) {
+      setErrorMsg('Isi alasan penghapusan sekurang-kurangnya 8 karakter.');
+      return;
+    }
+
+    isActionLoadingRef.current = true;
+    setDeletingActivity(true);
+    try {
+      await authenticatedJson('/api/pekarya/activities/admin-delete', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('activity_admin_delete'),
+          reportId: deleteTarget.id,
+          reason,
+        }),
+      });
+      setSuccessMsg(`Laporan "${deleteTarget.activityName}" oleh ${deleteTarget.employeeName} berhasil dihapus.`);
+      const employeeId = deleteTarget.employeeId;
+      const dutyDate = deleteTarget.dutyDate || deleteTarget.activityDate;
+      const period = deleteTarget.payrollPeriod || (dutyDate ? pekaryaPayrollPeriodForDate(dutyDate) : '');
+      setDeleteTarget(null);
+      setDeleteReason('');
+      fetchActivities();
+      try {
+        if (period) await syncActivityToPayslip(db, employeeId, period);
+      } catch (syncErr) {
+        console.error('Error syncing payslip after admin delete:', syncErr);
+      }
+    } catch (err) {
+      console.error('Error deleting activity:', err);
+      setErrorMsg(err instanceof Error ? err.message : 'Gagal menghapus laporan.');
+    } finally {
+      isActionLoadingRef.current = false;
+      setDeletingActivity(false);
+    }
+  };
+
   // ── Bulk Approve Individual Handler ──
   const handleBulkApproveIndividual = async () => {
     if (isActionLoadingRef.current || !user || selectedIds.size === 0) return;
@@ -1288,12 +1347,13 @@ export default function ActivityReviewPage() {
           }
         });
 
-        await Promise.all(
-          Array.from(uniqueKeys).map(async key => {
-            const [empId, per] = key.split('::');
-            await syncActivityToPayslip(db, empId, per);
-          })
-        );
+        // Sequential on purpose: employees sharing a jobCategory+period all sync
+        // into the same UraianGaji document, and firing these concurrently
+        // causes Firestore transactions to collide on that one document.
+        for (const key of uniqueKeys) {
+          const [empId, per] = key.split('::');
+          await syncActivityToPayslip(db, empId, per);
+        }
       } catch (syncErr) {
         console.error('Error syncing payslips in handleBulkApprove:', syncErr);
       }
@@ -1525,12 +1585,15 @@ export default function ActivityReviewPage() {
             uniqueKeys.add(`${item.employeeId}::${itemPeriod}`);
           }
         });
-        await Promise.all(
-          Array.from(uniqueKeys).map(async key => {
-            const [empId, per] = key.split('::');
-            await syncActivityToPayslip(db, empId, per);
-          }),
-        );
+        // Sequential on purpose: a whole shift's guards share one jobCategory
+        // and period, so they all sync into the same UraianGaji document.
+        // Firing these concurrently (e.g. after "Setujui Semua Pos") causes
+        // Firestore transactions to collide on that one document and some
+        // guards' fees never land.
+        for (const key of uniqueKeys) {
+          const [empId, per] = key.split('::');
+          await syncActivityToPayslip(db, empId, per);
+        }
       } catch (syncErr) {
         console.error('Error syncing payslips after Satpam shift review:', syncErr);
       }
@@ -1576,12 +1639,13 @@ export default function ActivityReviewPage() {
           }
         });
 
-        await Promise.all(
-          Array.from(uniqueKeys).map(async key => {
-            const [empId, per] = key.split('::');
-            await syncActivityToPayslip(db, empId, per);
-          })
-        );
+        // Sequential on purpose: employees sharing a jobCategory+period all sync
+        // into the same UraianGaji document, and firing these concurrently
+        // causes Firestore transactions to collide on that one document.
+        for (const key of uniqueKeys) {
+          const [empId, per] = key.split('::');
+          await syncActivityToPayslip(db, empId, per);
+        }
       } catch (syncErr) {
         console.error('Error syncing payslips in handleBulkDecline:', syncErr);
       }
@@ -1735,6 +1799,30 @@ export default function ActivityReviewPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {profile?.role === 'super_admin' && (
+                <div className="flex min-w-0 items-center gap-2">
+                  <Select
+                    value={categoryFilter}
+                    onValueChange={(value) => value && setCategoryFilter(value)}
+                  >
+                    <SelectTrigger className="h-12 w-full min-w-56 rounded-xl border-slate-200 bg-white text-base font-bold md:w-56">
+                      <SelectValue>
+                        {categoryFilter === 'all'
+                          ? 'Semua Kategori'
+                          : JOB_CATEGORY_LABELS[categoryFilter] || categoryFilter}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl bg-white">
+                      <SelectItem value="all" className="min-h-11 text-base">Semua Kategori</SelectItem>
+                      {CLEANING_CATEGORIES.map((category) => (
+                        <SelectItem key={category} value={category} className="min-h-11 text-base">
+                          {JOB_CATEGORY_LABELS[category] || category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               {/* Search */}
               <div className="relative flex-1 md:max-w-xs md:ml-auto">
                 <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-slate-400" />
@@ -1888,8 +1976,15 @@ export default function ActivityReviewPage() {
                         const missingPhotos = group.assignments.length - group.photoCount;
 
                         const displayShiftFee = group.assignments.reduce((sum, assignItem) => {
-                          const verdict = assignItem.status === 'pending' ? (shiftDecisions[assignItem.id] || 'approve') : assignItem.status;
-                          return verdict === 'approve' ? sum + (assignItem.fee || 0) : sum;
+                          // Pending rows use the auditor's in-progress local choice
+                          // ('approve'/'decline'); decided rows use the persisted
+                          // status ('approved'/'declined') — the two vocabularies
+                          // differ by a trailing "d", so they can't share one check.
+                          const isApproved =
+                            assignItem.status === 'pending'
+                              ? (shiftDecisions[assignItem.id] || 'approve') === 'approve'
+                              : assignItem.status === 'approved';
+                          return isApproved ? sum + (assignItem.fee || 0) : sum;
                         }, 0);
 
                       return (
@@ -2096,15 +2191,28 @@ export default function ActivityReviewPage() {
                                                 )}
                                               </div>
                                               {!rowPending && (
-                                                <Badge
-                                                  className={`border-none font-bold text-[9px] shrink-0 ${
-                                                    item.status === 'approved'
-                                                      ? 'bg-emerald-100 text-emerald-800'
-                                                      : 'bg-rose-100 text-rose-800'
-                                                  }`}
-                                                >
-                                                  {item.status === 'approved' ? 'Disetujui' : 'Ditolak'}
-                                                </Badge>
+                                                <div className="flex shrink-0 items-center gap-1">
+                                                  <Badge
+                                                    className={`border-none font-bold text-[9px] ${
+                                                      item.status === 'approved'
+                                                        ? 'bg-emerald-100 text-emerald-800'
+                                                        : 'bg-rose-100 text-rose-800'
+                                                    }`}
+                                                  >
+                                                    {item.status === 'approved' ? 'Disetujui' : 'Ditolak'}
+                                                  </Badge>
+                                                  {profile?.role === 'super_admin' && (
+                                                    <button
+                                                      type="button"
+                                                      title="Hapus laporan ini"
+                                                      disabled={deletingActivity}
+                                                      onClick={() => { setDeleteTarget(item); setDeleteReason(''); }}
+                                                      className="flex h-5 w-5 items-center justify-center rounded-md text-rose-500 transition-colors hover:bg-rose-50 cursor-pointer"
+                                                    >
+                                                      <Trash2 className="h-3 w-3" />
+                                                    </button>
+                                                  )}
+                                                </div>
                                               )}
                                             </div>
 
@@ -2488,6 +2596,20 @@ export default function ActivityReviewPage() {
                                     Lihat Detail
                                   </Button>
                                 )}
+                                {profile?.role === 'super_admin' &&
+                                  !isDriver &&
+                                  activity.status !== 'pending' && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={deletingActivity}
+                                    onClick={() => { setDeleteTarget(activity); setDeleteReason(''); }}
+                                    className="h-7 px-2.5 rounded-lg text-rose-600 hover:bg-rose-50 font-bold text-[11px] border-rose-200 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3 h-3 mr-1" />
+                                    Hapus
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -2752,6 +2874,71 @@ export default function ActivityReviewPage() {
             >
               {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <XCircle className="w-4 h-4 mr-2" />}
               Konfirmasi Tolak
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Admin Delete Modal (super_admin only) ─────────────────────── */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open && !deletingActivity) setDeleteTarget(null); }}>
+        <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl bg-white p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
+              <Trash2 className="w-5 h-5 text-rose-600" />
+              Hapus Laporan
+            </DialogTitle>
+            <DialogDescription className="text-slate-500">
+              Menghapus laporan <strong>“{deleteTarget?.activityName}”</strong> oleh <strong>{deleteTarget?.employeeName}</strong> secara permanen.
+              Data slip gaji dan rekapitulasi periode ini akan dihitung ulang setelah penghapusan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-100 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <p className="text-xs font-semibold text-rose-800">
+                Tindakan ini tidak dapat dibatalkan. Laporan yang sudah dibayarkan (slip terkunci) tidak dapat dihapus lewat sini.
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400 font-semibold">Tanggal</span>
+                <span className="font-bold text-slate-700">{deleteTarget?.dutyDate || deleteTarget?.activityDate}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400 font-semibold">Status Saat Ini</span>
+                <span className="font-bold text-slate-700">
+                  {deleteTarget?.status === 'approved' ? 'Disetujui' : 'Ditolak'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400 font-semibold">Fee</span>
+                <span className="font-bold text-slate-700">{fmtRp(deleteTarget?.fee || 0)}</span>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-500 uppercase">Alasan Penghapusan (Wajib)</Label>
+              <Input
+                type="text"
+                placeholder="Contoh: Laporan duplikat, salah input pos"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                className="rounded-xl border-slate-200 focus:border-rose-400 focus:ring-rose-400/20 text-sm"
+                autoFocus
+              />
+              <p className="text-[10px] font-semibold text-slate-400">Minimal 8 karakter. Dicatat pada log audit finansial.</p>
+            </div>
+          </div>
+          <DialogFooter className="gap-3">
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deletingActivity} className="rounded-xl font-bold text-slate-500">
+              Batal
+            </Button>
+            <Button
+              onClick={handleDeleteActivity}
+              disabled={deletingActivity || deleteReason.trim().length < 8}
+              className="rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 shadow-md shadow-rose-100"
+            >
+              {deletingActivity ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              Hapus Permanen
             </Button>
           </DialogFooter>
         </DialogContent>
