@@ -715,6 +715,13 @@ export function DriverJourneyAuditDialog({
       : auditFuelDelta;
     const deltaToll = auditTollDelta;
     const ndalemMealMoney = auditNdalemMealMoney;
+    // Full meal entitlement for the audited duration, before the money
+    // already given to the driver is subtracted — shown next to the input
+    // so the auditor has the same "Hak Nx Makan" context the sopir saw.
+    const totalMealEntitlement = getMealAllowanceForDuration(
+      actualJourneyDurationHours,
+      auditVehicleType,
+    );
     const actualMeal = getMealAllowanceForDuration(
       actualJourneyDurationHours,
       auditVehicleType,
@@ -778,6 +785,7 @@ export function DriverJourneyAuditDialog({
       totalBaseline,
       actualFuel,
       actualMeal,
+      totalMealEntitlement,
       actualJourneyDurationHours,
       actualToll,
       deltaFuel,
@@ -1163,17 +1171,23 @@ export function DriverJourneyAuditDialog({
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-[9.5px] font-bold text-slate-400 uppercase">
-                      Uang Diberikan Selama Perjalanan
+                    <Label className="text-[9.5px] font-bold text-slate-400 uppercase flex items-center justify-between gap-2">
+                      <span>Uang Diberikan Selama Perjalanan</span>
+                      <span className="text-slate-500 font-bold normal-case text-[9.5px] whitespace-nowrap">
+                        (Hak {Math.round(auditCalc.totalMealEntitlement / 20000)}x Makan: <strong className="text-emerald-700 font-black">{fmtRp(auditCalc.totalMealEntitlement)}</strong>)
+                      </span>
                     </Label>
-                    <Input
-                      type="number"
-                      placeholder="0"
-                      value={auditNdalemMealMoney || ''}
-                      onChange={(e) => setAuditNdalemMealMoney(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                      disabled={!isEditable || actionLoading}
-                      className="rounded-xl text-xs font-bold border-slate-200 focus:border-indigo-400 text-slate-800 bg-white"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-indigo-700">Rp</span>
+                      <Input
+                        type="number"
+                        placeholder="0"
+                        value={auditNdalemMealMoney || ''}
+                        onChange={(e) => setAuditNdalemMealMoney(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        disabled={!isEditable || actionLoading}
+                        className="pl-8 rounded-xl text-xs font-bold border-slate-200 focus:border-indigo-400 text-slate-800 bg-white"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-3">
