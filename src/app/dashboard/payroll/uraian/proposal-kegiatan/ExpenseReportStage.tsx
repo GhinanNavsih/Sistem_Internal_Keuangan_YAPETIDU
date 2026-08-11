@@ -14,16 +14,22 @@ import {
   AlertCircle,
   Check,
   CheckCircle2,
+  Eye,
   FileDown,
+  FileText,
   Link2,
   Loader2,
   Lock,
   Plus,
   Search,
   Trash2,
+  Upload,
   Users,
   X,
 } from 'lucide-react';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '@/lib/firebase';
+import { renderFileToCanvas } from '@/utils/ocrParser';
 import {
   createExpenseReport,
   createExpenseReportRow,
@@ -41,6 +47,62 @@ import {
   seedExpenseReportRows,
   validateExpenseReport,
 } from '@/lib/payroll/proposalExpenseReports';
+import { handleRowCellKeyDown } from '@/lib/tableKeyboardNav';
+
+const MAX_RECEIPT_BYTES = 1 * 1024 * 1024;
+const MAX_RECEIPT_INPUT_BYTES = 25 * 1024 * 1024;
+const RECEIPT_MAX_DIMENSION = 1600;
+const RECEIPT_ACCEPT_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+
+function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Gagal mengompresi gambar bukti.'))), 'image/jpeg', quality);
+  });
+}
+
+function scaleCanvas(source: HTMLCanvasElement, scale: number): HTMLCanvasElement {
+  const target = document.createElement('canvas');
+  target.width = Math.max(1, Math.round(source.width * scale));
+  target.height = Math.max(1, Math.round(source.height * scale));
+  const ctx = target.getContext('2d');
+  if (!ctx) throw new Error('Perangkat tidak mendukung kompresi gambar.');
+  ctx.drawImage(source, 0, 0, target.width, target.height);
+  return target;
+}
+
+/** Rasterizes an image or PDF receipt (first page) and re-encodes it as a JPEG under MAX_RECEIPT_BYTES. */
+async function compressReceiptFile(file: File): Promise<File> {
+  const rendered = await renderFileToCanvas(file);
+  const initialScale = Math.min(1, RECEIPT_MAX_DIMENSION / Math.max(rendered.width, rendered.height));
+  let canvas = initialScale < 1 ? scaleCanvas(rendered, initialScale) : rendered;
+
+  let quality = 0.85;
+  let blob = await canvasToJpegBlob(canvas, quality);
+  while (blob.size > MAX_RECEIPT_BYTES && quality > 0.35) {
+    quality -= 0.15;
+    blob = await canvasToJpegBlob(canvas, quality);
+  }
+  while (blob.size > MAX_RECEIPT_BYTES && Math.max(canvas.width, canvas.height) > 500) {
+    canvas = scaleCanvas(canvas, 0.75);
+    blob = await canvasToJpegBlob(canvas, 0.6);
+  }
+
+  const baseName = file.name.replace(/\.[^/.]+$/, '').replace(/[^A-Za-z0-9_-]/g, '_') || 'bukti';
+  return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+}
+
+async function uploadExpenseReceipt(
+  file: File,
+  reportId: string,
+  headerRowId: string,
+): Promise<{ url: string; fileName: string }> {
+  const ext = file.name.split('.').pop() || 'jpg';
+  const path = `expense_report_receipts/${reportId}/${headerRowId}_${Date.now()}.${ext}`;
+  const target = storageRef(storage, path);
+  await uploadBytes(target, file);
+  const url = await getDownloadURL(target);
+  return { url, fileName: file.name };
+}
 
 interface EmployeeOption {
   id: string;
@@ -60,6 +122,7 @@ interface ExpenseReportStageProps {
   onUpsertReport: (report: ExpenseReport) => void;
   onUnlinkReport: (reportId: string) => void;
   onPrintReport: (report: ExpenseReport) => void;
+  printingReport?: boolean;
   fmtRp: (amount: number) => string;
   parseQty?: (value: string) => number;
 }
@@ -124,19 +187,19 @@ function ReportModeCard({
 function EmployeeSearch({
   row,
   employees,
-  selectedEmployeeIds,
   disabled,
   onChange,
   onConnect,
   onDisconnect,
+  onKeyDown,
 }: {
   row: ExpenseReportRow;
   employees: EmployeeOption[];
-  selectedEmployeeIds: Set<string>;
   disabled: boolean;
   onChange: (value: string) => void;
   onConnect: (employee: EmployeeOption) => void;
   onDisconnect: () => void;
+  onKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
 }) {
   const isConnected = Boolean(row.employeeId);
   const searchText = row.employeeSearchText ?? row.employeeName;
@@ -145,16 +208,40 @@ function EmployeeSearch({
   const isActivelyEditing = !isConnected || (row.employeeSearchText !== undefined && row.employeeSearchText !== row.employeeName);
 
   const matches = isActivelyEditing && searchText.trim().length > 0
-    ? employees.filter((employee) => {
-      const isCurrent = employee.id === row.employeeId;
-      const isDuplicate = selectedEmployeeIds.has(employee.id) && !isCurrent;
-      return !isDuplicate && (
-        employee.name.toLowerCase().includes(searchText.toLowerCase()) ||
-        employee.id.toLowerCase().includes(searchText.toLowerCase()) ||
-        (employee.role || '').toLowerCase().includes(searchText.toLowerCase())
-      );
-    }).slice(0, 8)
+    ? employees.filter((employee) =>
+      employee.name.toLowerCase().includes(searchText.toLowerCase()) ||
+      employee.id.toLowerCase().includes(searchText.toLowerCase()) ||
+      (employee.role || '').toLowerCase().includes(searchText.toLowerCase())
+    ).slice(0, 8)
     : [];
+
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [searchText]);
+
+  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (matches.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setHighlightedIndex((i) => Math.min(i + 1, matches.length - 1));
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setHighlightedIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        const selected = matches[highlightedIndex] ?? matches[0];
+        if (selected) onConnect(selected);
+        return;
+      }
+    }
+    onKeyDown?.(event);
+  };
 
   return (
     <div className="w-full">
@@ -165,6 +252,7 @@ function EmployeeSearch({
           disabled={disabled}
           placeholder="Cari pegawai aktif..."
           onChange={(event) => onChange(event.target.value)}
+          onKeyDown={handleInputKeyDown}
           className={`h-8 w-full rounded-lg text-xs transition-all ${
             isConnected
               ? 'border-emerald-300 bg-emerald-50/90 font-bold text-emerald-950 pl-3 pr-8 shadow-2xs focus:bg-white focus:text-slate-900 focus:border-indigo-400'
@@ -178,13 +266,16 @@ function EmployeeSearch({
 
         {!disabled && matches.length > 0 && (
           <div className="absolute left-0 right-0 top-9 z-[80] max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
-            {matches.map((employee) => (
+            {matches.map((employee, index) => (
               <button
                 key={employee.id}
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => onConnect(employee)}
-                className="flex w-full items-center justify-between gap-2 border-b border-slate-50 px-3 py-2 text-left transition-colors last:border-0 hover:bg-indigo-50"
+                onMouseEnter={() => setHighlightedIndex(index)}
+                className={`flex w-full items-center justify-between gap-2 border-b border-slate-50 px-3 py-2 text-left transition-colors last:border-0 ${
+                  index === highlightedIndex ? 'bg-indigo-50' : 'hover:bg-indigo-50'
+                }`}
               >
                 <span className="min-w-0">
                   <span className="block truncate text-xs font-bold text-slate-900">{employee.name}</span>
@@ -211,12 +302,15 @@ export default function ExpenseReportStage({
   onUpsertReport,
   onUnlinkReport,
   onPrintReport,
+  printingReport = false,
   fmtRp,
   parseQty = parseProposalQty,
 }: ExpenseReportStageProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draftReport, setDraftReport] = useState<ExpenseReport | null>(null);
   const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [uploadingReceiptKey, setUploadingReceiptKey] = useState<string | null>(null);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
 
   const groupRows = useMemo(() => expenseRows
     .map((row, index) => ({ row, index }))
@@ -243,6 +337,7 @@ export default function ExpenseReportStage({
       title: report.title || `Laporan ${group.uraian}`,
     });
     setFormErrors([]);
+    setReceiptError(null);
     setDialogOpen(true);
   }, [expenseReports, expenseRows, unlocked]);
 
@@ -270,6 +365,41 @@ export default function ExpenseReportStage({
     }));
   };
 
+  const handleReceiptFileChange = async (headerRowId: string, headerLabel: string, file: File) => {
+    if (!RECEIPT_ACCEPT_TYPES.includes(file.type)) {
+      setReceiptError('Format bukti tidak valid. Gunakan PDF, JPG, atau PNG.');
+      return;
+    }
+    if (file.size > MAX_RECEIPT_INPUT_BYTES) {
+      setReceiptError('Ukuran file terlalu besar untuk diproses (maks 25MB).');
+      return;
+    }
+    setReceiptError(null);
+    setUploadingReceiptKey(headerRowId);
+    try {
+      const compressed = await compressReceiptFile(file);
+      const reportId = draftReport?.id || createStableId('expense-report');
+      const { url, fileName } = await uploadExpenseReceipt(compressed, reportId, headerRowId);
+      updateDraft((report) => ({
+        ...report,
+        receipts: { ...report.receipts, [headerRowId]: { url, fileName, label: headerLabel || 'Bukti Pengeluaran' } },
+      }));
+    } catch (error) {
+      console.error('Error uploading expense receipt:', error);
+      setReceiptError('Gagal mengunggah bukti. Coba lagi.');
+    } finally {
+      setUploadingReceiptKey(null);
+    }
+  };
+
+  const handleReceiptRemove = (headerRowId: string) => {
+    updateDraft((report) => {
+      const receipts = { ...report.receipts };
+      delete receipts[headerRowId];
+      return { ...report, receipts };
+    });
+  };
+
   // Live Autosave on every input / change
   useEffect(() => {
     if (!draftReport || readOnly || !dialogOpen) return;
@@ -288,6 +418,7 @@ export default function ExpenseReportStage({
     setDialogOpen(false);
     setDraftReport(null);
     setFormErrors([]);
+    setReceiptError(null);
     setAutosaveStatus('idle');
   };
 
@@ -308,12 +439,6 @@ export default function ExpenseReportStage({
     onUpsertReport(sanitizeForFirestore({ ...draftReport, source: draftReport.source || 'custom' }));
     closeDialog();
   };
-
-  const selectedEmployeeIds = new Set(
-    draftReport?.mode === 'employee'
-      ? draftReport.rows.map((row) => row.employeeId).filter(Boolean)
-      : [],
-  );
 
   return (
     <section className="space-y-4 rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/50 via-white to-slate-50/80 p-4 md:p-5">
@@ -436,11 +561,14 @@ export default function ExpenseReportStage({
                       <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">Rincian Item & Nominal Laporan</h4>
                       <p className="mt-0.5 text-[11px] text-slate-500">Isi uraian, pegawai/penerima, qty, rate, dan realisasi.</p>
                     </div>
-                    {!readOnly && (
-                      <Button type="button" variant="outline" onClick={() => updateDraft((report) => ({ ...report, rows: [...report.rows, createExpenseReportRow({ id: createStableId('expense-report-row') })] }))} className="h-8.5 rounded-xl border-indigo-200 bg-indigo-50/50 text-xs font-bold text-indigo-700 hover:bg-indigo-100">
-                        <Plus className="mr-1.5 h-3.5 w-3.5" /> Tambah Baris
-                      </Button>
-                    )}
+                    <div className="flex items-center gap-3">
+                      {receiptError && <span className="text-[11px] font-bold text-rose-600">{receiptError}</span>}
+                      {!readOnly && (
+                        <Button type="button" variant="outline" onClick={() => updateDraft((report) => ({ ...report, rows: [...report.rows, createExpenseReportRow({ id: createStableId('expense-report-row') })] }))} className="h-8.5 rounded-xl border-indigo-200 bg-indigo-50/50 text-xs font-bold text-indigo-700 hover:bg-indigo-100">
+                          <Plus className="mr-1.5 h-3.5 w-3.5" /> Tambah Baris
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="relative min-h-0 flex-1 overflow-auto rounded-2xl border border-slate-200 bg-white">
@@ -474,7 +602,6 @@ export default function ExpenseReportStage({
                                         <EmployeeSearch
                                           row={row}
                                           employees={employees}
-                                          selectedEmployeeIds={selectedEmployeeIds}
                                           disabled={readOnly}
                                           onChange={(value) => updateDraftRow(row.id, (current) => ({ ...current, employeeId: '', employeeName: '', employeeSearchText: value }))}
                                           onConnect={(employee) => updateDraftRow(row.id, (current) => ({ ...current, employeeId: employee.id, employeeName: employee.name, employeeSearchText: employee.name }))}
@@ -509,6 +636,33 @@ export default function ExpenseReportStage({
                             }, 0);
 
                             const isBalanced = childRows.length > 0 && Math.abs(childTotal - headerRealisasi) < 1;
+                            const isEmployeeMode = draftReport.mode === 'employee';
+                            const addRowLabel = isEmployeeMode ? 'Penerima' : 'Rincian';
+                            const receipt = draftReport.receipts[headerItem.rowId || ''];
+                            const receiptUploadId = `receipt-upload-${draftReport.id}-${headerItem.rowId || hIdx}`;
+                            const isUploadingReceipt = uploadingReceiptKey === (headerItem.rowId || '');
+
+                            const addPenerima = () => {
+                              const lastChild = childRows[childRows.length - 1];
+                              const initialQty = lastChild ? (lastChild.rincianQty || '1') : (headerItem.rincianQty || '1');
+                              const initialRate = lastChild ? (lastChild.rincianRate || 0) : (headerItem.rincianRate || 0);
+                              const calculatedSubtotal = parseQty(initialQty) * initialRate;
+                              const initialRealisasi = lastChild ? (lastChild.realisasi || calculatedSubtotal) : (headerItem.realisasi || calculatedSubtotal);
+
+                              const newRow = createExpenseReportRow({
+                                id: createStableId('expense-report-row'),
+                                parentRowId: headerItem.rowId,
+                                parentUraian: headerItem.uraian,
+                                uraian: isEmployeeMode ? headerItem.uraian : '',
+                                rincianQty: initialQty,
+                                rincianRate: initialRate,
+                                realisasi: initialRealisasi,
+                              });
+                              updateDraft((report) => ({
+                                ...report,
+                                rows: [...report.rows, newRow],
+                              }));
+                            };
 
                             return (
                               <React.Fragment key={headerItem.rowId || hIdx}>
@@ -543,7 +697,9 @@ export default function ExpenseReportStage({
                                           </div>
                                         )
                                       ) : (
-                                        <span className="text-[10px] font-semibold text-slate-400 italic whitespace-nowrap">Belum ada penerima</span>
+                                        <span className="text-[10px] font-semibold text-slate-400 italic whitespace-nowrap">
+                                          {isEmployeeMode ? 'Belum ada penerima' : 'Belum ada rincian'}
+                                        </span>
                                       )}
 
                                       {childRows.length === 0 && !readOnly && (
@@ -551,31 +707,52 @@ export default function ExpenseReportStage({
                                           type="button"
                                           variant="ghost"
                                           size="sm"
-                                          title="Tambah Penerima"
-                                          onClick={() => {
-                                            const initialQty = headerItem.rincianQty || '1';
-                                            const initialRate = headerItem.rincianRate || 0;
-                                            const calculatedSubtotal = parseQty(initialQty) * initialRate;
-                                            const initialRealisasi = headerItem.realisasi || calculatedSubtotal;
-
-                                            const newRow = createExpenseReportRow({
-                                              id: createStableId('expense-report-row'),
-                                              parentRowId: headerItem.rowId,
-                                              parentUraian: headerItem.uraian,
-                                              uraian: headerItem.uraian,
-                                              rincianQty: initialQty,
-                                              rincianRate: initialRate,
-                                              realisasi: initialRealisasi,
-                                            });
-                                            updateDraft((report) => ({
-                                              ...report,
-                                              rows: [...report.rows, newRow],
-                                            }));
-                                          }}
+                                          title={`Tambah ${addRowLabel}`}
+                                          onClick={addPenerima}
                                           className="h-7 px-2 rounded-lg text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs shrink-0"
                                         >
-                                          <Plus className="w-3 h-3 mr-0.5" /> Penerima
+                                          <Plus className="w-3 h-3 mr-0.5" /> {addRowLabel}
                                         </Button>
+                                      )}
+
+                                      {!isEmployeeMode && (
+                                        isUploadingReceipt ? (
+                                          <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold text-indigo-600">
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Mengunggah...
+                                          </span>
+                                        ) : receipt ? (
+                                          <span className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-1.5 py-1">
+                                            <FileText className="h-3 w-3 shrink-0 text-indigo-500" />
+                                            <span className="max-w-[70px] truncate text-[9px] font-semibold text-slate-600" title={receipt.fileName}>{receipt.fileName}</span>
+                                            <button type="button" title="Lihat bukti" onClick={() => window.open(receipt.url, '_blank', 'noopener,noreferrer')} className="text-slate-400 hover:text-indigo-600"><Eye className="h-3 w-3" /></button>
+                                            {!readOnly && (
+                                              <button type="button" title="Hapus bukti" onClick={() => handleReceiptRemove(headerItem.rowId || '')} className="text-slate-400 hover:text-rose-600"><X className="h-3 w-3" /></button>
+                                            )}
+                                          </span>
+                                        ) : !readOnly ? (
+                                          <>
+                                            <label
+                                              htmlFor={receiptUploadId}
+                                              title="Unggah bukti"
+                                              className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-indigo-300 hover:text-indigo-600"
+                                            >
+                                              <Upload className="h-3.5 w-3.5" />
+                                            </label>
+                                            <input
+                                              id={receiptUploadId}
+                                              type="file"
+                                              className="hidden"
+                                              accept=".pdf,image/*"
+                                              onChange={(event) => {
+                                                const file = event.target.files?.[0];
+                                                if (file) handleReceiptFileChange(headerItem.rowId || '', headerItem.uraian, file);
+                                                event.target.value = '';
+                                              }}
+                                            />
+                                          </>
+                                        ) : (
+                                          <span className="text-[10px] font-semibold italic text-slate-300 whitespace-nowrap">Tanpa bukti</span>
+                                        )
                                       )}
                                     </div>
                                   </td>
@@ -595,14 +772,21 @@ export default function ExpenseReportStage({
                                           <EmployeeSearch
                                             row={cRow}
                                             employees={employees}
-                                            selectedEmployeeIds={selectedEmployeeIds}
                                             disabled={readOnly}
                                             onChange={(value) => updateDraftRow(cRow.id, (current) => ({ ...current, employeeId: '', employeeName: '', employeeSearchText: value }))}
                                             onConnect={(employee) => updateDraftRow(cRow.id, (current) => ({ ...current, employeeId: employee.id, employeeName: employee.name, employeeSearchText: employee.name }))}
                                             onDisconnect={() => updateDraftRow(cRow.id, (current) => ({ ...current, employeeId: '', employeeName: '', employeeSearchText: '' }))}
+                                            onKeyDown={(event) => handleRowCellKeyDown(event, !readOnly ? addPenerima : undefined)}
                                           />
                                         ) : (
-                                          <span className="text-slate-300 font-mono text-[11px] pl-2">↳</span>
+                                          <Input
+                                            value={cRow.uraian}
+                                            disabled={readOnly}
+                                            onChange={(event) => updateDraftRow(cRow.id, (current) => ({ ...current, uraian: event.target.value }))}
+                                            onKeyDown={(event) => handleRowCellKeyDown(event, !readOnly ? addPenerima : undefined)}
+                                            placeholder="Uraian rincian..."
+                                            className="h-7.5 rounded-lg border-slate-200 text-xs font-semibold"
+                                          />
                                         )}
                                       </td>
                                       <td className="px-3 py-2.5">
@@ -618,6 +802,7 @@ export default function ExpenseReportStage({
                                               realisasi: parsedQty * current.rincianRate,
                                             }));
                                           }}
+                                          onKeyDown={(event) => handleRowCellKeyDown(event, !readOnly ? addPenerima : undefined)}
                                           placeholder="1"
                                           className="h-7.5 rounded-lg border-slate-200 text-center text-xs font-bold"
                                         />
@@ -637,6 +822,7 @@ export default function ExpenseReportStage({
                                               realisasi: parsedQty * rateVal,
                                             }));
                                           }}
+                                          onKeyDown={(event) => handleRowCellKeyDown(event, !readOnly ? addPenerima : undefined)}
                                           placeholder="Rp 0"
                                           className="h-7.5 rounded-lg border-slate-200 text-right text-xs font-bold"
                                         />
@@ -654,6 +840,7 @@ export default function ExpenseReportStage({
                                               realisasi: subtotalVal,
                                             }));
                                           }}
+                                          onKeyDown={(event) => handleRowCellKeyDown(event, !readOnly ? addPenerima : undefined)}
                                           placeholder="Rp 0"
                                           className="h-7.5 rounded-lg border-slate-200 text-right text-xs font-black text-indigo-700"
                                         />
@@ -665,31 +852,11 @@ export default function ExpenseReportStage({
                                               type="button"
                                               variant="ghost"
                                               size="sm"
-                                              title="Tambah Penerima"
-                                              onClick={() => {
-                                                const lastChild = childRows[childRows.length - 1];
-                                                const initialQty = lastChild ? (lastChild.rincianQty || '1') : (headerItem.rincianQty || '1');
-                                                const initialRate = lastChild ? (lastChild.rincianRate || 0) : (headerItem.rincianRate || 0);
-                                                const calculatedSubtotal = parseQty(initialQty) * initialRate;
-                                                const initialRealisasi = lastChild ? (lastChild.realisasi || calculatedSubtotal) : (headerItem.realisasi || calculatedSubtotal);
-
-                                                const newRow = createExpenseReportRow({
-                                                  id: createStableId('expense-report-row'),
-                                                  parentRowId: headerItem.rowId,
-                                                  parentUraian: headerItem.uraian,
-                                                  uraian: headerItem.uraian,
-                                                  rincianQty: initialQty,
-                                                  rincianRate: initialRate,
-                                                  realisasi: initialRealisasi,
-                                                });
-                                                updateDraft((report) => ({
-                                                  ...report,
-                                                  rows: [...report.rows, newRow],
-                                                }));
-                                              }}
+                                              title={`Tambah ${addRowLabel}`}
+                                              onClick={addPenerima}
                                               className="h-7 px-2 rounded-lg text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs shrink-0"
                                             >
-                                              <Plus className="w-3 h-3 mr-0.5" /> Penerima
+                                              <Plus className="w-3 h-3 mr-0.5" /> {addRowLabel}
                                             </Button>
                                           )}
                                           <Button
@@ -732,7 +899,9 @@ export default function ExpenseReportStage({
                 <Button type="button" variant="ghost" onClick={() => { onUnlinkReport(draftReport.id); closeDialog(); }} className="rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50">Lepas Hubungan</Button>
               )}
               {draftReport && (
-                <Button type="button" variant="ghost" onClick={() => onPrintReport(draftReport)} className="rounded-xl text-xs font-bold text-indigo-700 hover:bg-indigo-50"><FileDown className="mr-1.5 h-3.5 w-3.5" /> Cetak PDF</Button>
+                <Button type="button" variant="ghost" disabled={printingReport} onClick={() => onPrintReport(draftReport)} className="rounded-xl text-xs font-bold text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60">
+                  {printingReport ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileDown className="mr-1.5 h-3.5 w-3.5" />} {printingReport ? 'Membuat PDF...' : 'Cetak PDF'}
+                </Button>
               )}
             </div>
             <div className="flex items-center gap-3">

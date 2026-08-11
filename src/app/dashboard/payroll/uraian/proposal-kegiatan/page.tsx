@@ -31,8 +31,8 @@ import {
 import { db } from '@/lib/firebase';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { generateProposalKegiatanPdf } from '@/utils/generateProposalKegiatanPdf';
-import { generatePelaporanKegiatanPdf } from '@/utils/generatePelaporanKegiatanPdf';
-import { generateProposalExpenseReportPdf } from '@/utils/generateProposalExpenseReportPdf';
+import { generateLpjPdf } from '@/utils/generateLpjPdf';
+import { generateLpjExpenseReportPdf } from '@/utils/generateLpjExpenseReportPdf';
 import ExpenseReportStage from './ExpenseReportStage';
 import {
   createProposalExpenseRow,
@@ -45,6 +45,7 @@ import {
   sanitizeForFirestore,
 } from '@/lib/payroll/proposalExpenseReports';
 import { authenticatedJson } from '@/lib/payroll/client';
+import { handleRowCellKeyDown } from '@/lib/tableKeyboardNav';
 
 const clearExpenseReportLink = (row: ProposalExpenseRow): ProposalExpenseRow => {
   const cleanRow = { ...row };
@@ -52,6 +53,65 @@ const clearExpenseReportLink = (row: ProposalExpenseRow): ProposalExpenseRow => 
   delete cleanRow.reportType;
   return cleanRow;
 };
+
+const LONG_PRESS_MS = 500;
+
+/** "+" / "Sisipkan baris di bawah" button: a normal press runs `onPress`, holding it down runs `onLongPress` instead (adds a header row). */
+function InsertRowButton({
+  title,
+  onPress,
+  onLongPress,
+  className,
+}: {
+  title: string;
+  onPress: () => void;
+  onLongPress: () => void;
+  className?: string;
+}) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firedLongPressRef = useRef(false);
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const startPress = () => {
+    firedLongPressRef.current = false;
+    clearTimer();
+    timerRef.current = setTimeout(() => {
+      firedLongPressRef.current = true;
+      onLongPress();
+    }, LONG_PRESS_MS);
+  };
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      title={title}
+      onMouseDown={startPress}
+      onMouseUp={clearTimer}
+      onMouseLeave={clearTimer}
+      onTouchStart={startPress}
+      onTouchEnd={clearTimer}
+      onContextMenu={(e) => e.preventDefault()}
+      onClick={() => {
+        if (firedLongPressRef.current) {
+          firedLongPressRef.current = false;
+          return;
+        }
+        onPress();
+      }}
+      className={className}
+    >
+      <Plus className="w-3.5 h-3.5" />
+    </Button>
+  );
+}
 
 export default function ProposalKegiatanPage() {
   const { profile } = useAuth();
@@ -74,6 +134,8 @@ export default function ProposalKegiatanPage() {
   const [reportName, setReportName] = useState('');
   const [departmentUnit, setDepartmentUnit] = useState('');
   const [saving, setSaving] = useState(false);
+  const [printingPdf, setPrintingPdf] = useState(false);
+  const [printingReport, setPrintingReport] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [activeInsertMenuIdx, setActiveInsertMenuIdx] = useState<number | null>(null);
   const [activePelaporanSuggestionIndex, setActivePelaporanSuggestionIndex] = useState<number>(0);
@@ -508,7 +570,7 @@ export default function ProposalKegiatanPage() {
     return danaOperasionalAnggaran - totalPengeluaranAnggaran;
   }, [danaOperasionalAnggaran, totalPengeluaranAnggaran]);
 
-  const isProposalReadOnly = periodClosed || currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_');
+  const isProposalReadOnly = periodClosed || (profile?.role !== 'super_admin' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_')));
   const isLpjReadOnly = periodClosed || currentProposalStatus === 'lpj_submitted' || currentProposalStatus === 'lpj_approved';
 
   // ── REAL-TIME DEBOUNCED AUTO-SAVE EFFECT ──
@@ -768,18 +830,27 @@ export default function ProposalKegiatanPage() {
     setMessage({ type: 'success', text: `Hubungan laporan untuk header "${report?.expenseLabel || 'pengeluaran'}" dilepas.` });
   };
 
-  const handlePrintExpenseReport = (report: ExpenseReport) => {
-    generateProposalExpenseReportPdf({
-      report,
-      reportName: reportName || 'Kegiatan',
-      period: `${MONTHS_ID[month - 1]} ${year}`,
-      departmentUnit,
-      signatures: lpjSignatures,
-    });
+  const handlePrintExpenseReport = async (report: ExpenseReport) => {
+    setPrintingReport(true);
+    try {
+      await generateLpjExpenseReportPdf({
+        report,
+        reportName: reportName || 'Kegiatan',
+        period: `${MONTHS_ID[month - 1]} ${year}`,
+        departmentUnit,
+        signatures: lpjSignatures,
+        expenseRows: lpjPengeluaranRows,
+      });
+    } catch (error) {
+      console.error('Error generating expense report PDF:', error);
+      setMessage({ type: 'error', text: 'Gagal membuat PDF laporan. Coba lagi.' });
+    } finally {
+      setPrintingReport(false);
+    }
   };
 
   // Print PDF Handler
-  const handlePrintPdf = () => {
+  const handlePrintPdf = async () => {
     if (activeStage === 'proposal') {
       generateProposalKegiatanPdf({
         reportName: reportName || 'Proposal Event',
@@ -793,31 +864,29 @@ export default function ProposalKegiatanPage() {
         kepanitiaaanPercentage,
         signatures: proposalSignatures,
       });
-    } else {
-      generatePelaporanKegiatanPdf({
+      return;
+    }
+    setPrintingPdf(true);
+    try {
+      await generateLpjPdf({
         reportName: reportName || 'Laporan Realisasi Event',
         period: `${MONTHS_ID[month - 1]} ${year}`,
         departmentUnit,
         signatures: lpjSignatures,
         realisasiEnabled,
-        vakasiPengujiEnabled,
-        kepanitiaaanEnabled,
-        receiptEnabled,
         realisasiTitle,
         pemasukanRows: lpjPemasukanRows,
         pengeluaranRows: lpjPengeluaranRows,
         yayasanPercentage,
         unipduPercentage,
         kepanitiaaanPercentage,
-        vakasiPengujiTitle,
-        vakasiRoles,
-        vakasiPengujiRows,
-        kepanitiaaanTitle,
-        kepanitiaaanPhases,
-        kepanitiaaanRows,
-        receiptTitle,
-        receiptRows,
+        expenseReports,
       });
+    } catch (error) {
+      console.error('Error generating LPJ PDF:', error);
+      setMessage({ type: 'error', text: 'Gagal membuat PDF LPJ. Coba lagi.' });
+    } finally {
+      setPrintingPdf(false);
     }
   };
 
@@ -1146,51 +1215,12 @@ export default function ProposalKegiatanPage() {
               <Copy className="w-4 h-4 text-purple-600" /> Kloning Anggaran Event Lalu
             </Button>
             <Button
-              onClick={() => {
-                if (activeStage === 'proposal') {
-                  generateProposalKegiatanPdf({
-                    reportName: reportName || 'Proposal Event',
-                    period: `${MONTHS_ID[month - 1]} ${year}`,
-                    departmentUnit,
-                    queueNumber: currentProposalQueueNo || undefined,
-                    pemasukanRows,
-                    yayasanPercentage,
-                    unipduPercentage,
-                    pengeluaranRows,
-                    kepanitiaaanPercentage,
-                    signatures: proposalSignatures,
-                  });
-                } else {
-                  generatePelaporanKegiatanPdf({
-                    reportName: reportName || 'Laporan Realisasi Event',
-                    period: `${MONTHS_ID[month - 1]} ${year}`,
-                    departmentUnit,
-                    signatures: lpjSignatures,
-                    realisasiEnabled,
-                    vakasiPengujiEnabled,
-                    kepanitiaaanEnabled,
-                    receiptEnabled,
-                    realisasiTitle,
-                    pemasukanRows: lpjPemasukanRows,
-                    pengeluaranRows: lpjPengeluaranRows,
-                    yayasanPercentage,
-                    unipduPercentage,
-                    kepanitiaaanPercentage,
-                    vakasiPengujiTitle,
-                    vakasiRoles,
-                    vakasiPengujiRows,
-                    kepanitiaaanTitle,
-                    kepanitiaaanPhases,
-                    kepanitiaaanRows,
-                    receiptTitle,
-                    receiptRows,
-                  });
-                }
-              }}
+              onClick={handlePrintPdf}
+              disabled={printingPdf}
               variant="outline"
-              className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-semibold flex items-center gap-2 text-xs h-9"
+              className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-semibold flex items-center gap-2 text-xs h-9 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <FileDown className="w-4 h-4 text-indigo-600" /> Cetak {activeStage === 'proposal' ? 'Proposal' : 'LPJ'} (PDF)
+              {printingPdf ? <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> : <FileDown className="w-4 h-4 text-indigo-600" />} Cetak {activeStage === 'proposal' ? 'Proposal' : 'LPJ'} (PDF)
               </Button>
           </div>
         </div>
@@ -1443,6 +1473,13 @@ export default function ProposalKegiatanPage() {
                     <tbody>
                       {pemasukanRows.map((row, idx) => {
                         const anggaran = parseQty(row.rincianQty) * row.rincianRate;
+                        const insertPemasukanBelow = () => {
+                          setPemasukanRows(prev => {
+                            const c = [...prev];
+                            c.splice(idx + 1, 0, { uraian: '', rincianQty: '', rincianRate: 0 });
+                            return c;
+                          });
+                        };
                         return (
                           <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
                             <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
@@ -1460,6 +1497,7 @@ export default function ProposalKegiatanPage() {
                                     return c;
                                   });
                                 }}
+                                onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPemasukanBelow)}
                                 className={`rounded-lg font-medium text-xs h-8 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 font-bold disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
@@ -1477,6 +1515,7 @@ export default function ProposalKegiatanPage() {
                                     return c;
                                   });
                                 }}
+                                onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPemasukanBelow)}
                                 className={`rounded-lg font-bold text-xs h-8 w-full text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
@@ -1495,6 +1534,7 @@ export default function ProposalKegiatanPage() {
                                     return c;
                                   });
                                 }}
+                                onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPemasukanBelow)}
                                 className={`rounded-lg font-bold text-xs h-8 w-full text-right transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
@@ -1638,6 +1678,20 @@ export default function ProposalKegiatanPage() {
                         const itemNum = row.type === 'item'
                           ? pengeluaranRows.slice(lastHeaderIdx === -1 ? 0 : lastHeaderIdx, idx + 1).filter(r => r.type === 'item').length
                           : null;
+                        const insertPengeluaranItemBelow = () => {
+                          setPengeluaranRows(prev => {
+                            const c = [...prev];
+                            c.splice(idx + 1, 0, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0 });
+                            return c;
+                          });
+                        };
+                        const insertPengeluaranHeaderBelow = () => {
+                          setPengeluaranRows(prev => {
+                            const c = [...prev];
+                            c.splice(idx + 1, 0, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0 });
+                            return c;
+                          });
+                        };
                         if (row.type === 'group_header') {
                           return (
                             <tr key={idx} className="bg-slate-50/60 border-b border-slate-100">
@@ -1656,28 +1710,19 @@ export default function ProposalKegiatanPage() {
                                       return c;
                                     });
                                   }}
+                                  onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPengeluaranItemBelow)}
                                   className={`rounded-lg font-bold text-slate-800 text-xs h-7.5 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'bg-transparent border-none focus:ring-0'}`}
                                 />
                               </td>
                               <td className="px-2.5 py-1.5 text-center">
                                 {!isProposalReadOnly && (
                                   <div className="flex items-center justify-center gap-1">
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      title="Sisipkan baris di bawah"
-                                      onClick={() => {
-                                        setPengeluaranRows(prev => {
-                                          const c = [...prev];
-                                          c.splice(idx + 1, 0, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0 });
-                                          return c;
-                                        });
-                                      }}
+                                    <InsertRowButton
+                                      title="Sisipkan baris di bawah (tahan untuk tambah header grup)"
+                                      onPress={insertPengeluaranItemBelow}
+                                      onLongPress={insertPengeluaranHeaderBelow}
                                       className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer"
-                                    >
-                                      <Plus className="w-3.5 h-3.5" />
-                                    </Button>
+                                    />
                                     <Button
                                       type="button"
                                       variant="ghost"
@@ -1714,6 +1759,7 @@ export default function ProposalKegiatanPage() {
                                     return c;
                                   });
                                 }}
+                                onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPengeluaranItemBelow)}
                                 className={`rounded-lg font-medium text-xs h-7.5 w-full transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 font-bold disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
@@ -1731,6 +1777,7 @@ export default function ProposalKegiatanPage() {
                                     return c;
                                   });
                                 }}
+                                onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPengeluaranItemBelow)}
                                 className={`rounded-lg font-bold text-xs h-7.5 w-full text-center transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
@@ -1749,6 +1796,7 @@ export default function ProposalKegiatanPage() {
                                     return c;
                                   });
                                 }}
+                                onKeyDown={(e) => handleRowCellKeyDown(e, isProposalReadOnly ? undefined : insertPengeluaranItemBelow)}
                                 className={`rounded-lg font-bold text-xs h-7.5 w-full text-right transition-all ${isProposalReadOnly ? 'bg-slate-100/90 border-transparent text-slate-800 disabled:opacity-100 cursor-default shadow-none' : 'border-slate-200 text-slate-900'}`}
                               />
                             </td>
@@ -1757,16 +1805,19 @@ export default function ProposalKegiatanPage() {
                               {!isProposalReadOnly && (
                                 <div className="flex items-center justify-center gap-1">
                                   <div className="relative">
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      title="Sisipkan baris di bawah"
-                                      onClick={() => setActiveInsertMenuIdx(activeInsertMenuIdx === idx ? null : idx)}
+                                    <InsertRowButton
+                                      title="Sisipkan baris di bawah (tahan untuk tambah header grup)"
+                                      onPress={() => setActiveInsertMenuIdx(activeInsertMenuIdx === idx ? null : idx)}
+                                      onLongPress={() => {
+                                        setActiveInsertMenuIdx(null);
+                                        setPengeluaranRows(prev => {
+                                          const c = [...prev];
+                                          c.splice(idx + 1, 0, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0 });
+                                          return c;
+                                        });
+                                      }}
                                       className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
-                                    >
-                                      <Plus className="w-3.5 h-3.5" />
-                                    </Button>
+                                    />
                                     {activeInsertMenuIdx === idx && (
                                       <div className="absolute right-0 top-8 z-30 bg-white rounded-xl shadow-xl border border-slate-150 p-1 min-w-[170px] animate-in fade-in zoom-in-95 duration-150">
                                         <button
@@ -1932,9 +1983,10 @@ export default function ProposalKegiatanPage() {
                 <Button
                   type="button"
                   onClick={handlePrintPdf}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
+                  disabled={printingPdf}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <FileText className="w-4 h-4" /> Cetak PDF
+                  {printingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} {printingPdf ? 'Membuat PDF...' : 'Cetak PDF'}
                 </Button>
 
                 {profile?.role === 'satker_head_loyalis' && (!currentProposalStatus || currentProposalStatus === 'proposal_draft' || currentProposalStatus === 'proposal_revision') && (
@@ -2120,14 +2172,17 @@ export default function ProposalKegiatanPage() {
                                 <tbody>
                                   {lpjPemasukanRows.map((row, idx) => {
                                     const anggaran = parseQty(row.rincianQty) * row.rincianRate;
+                                    const insertLpjPemasukanBelow = () => {
+                                      setLpjPemasukanRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }); return c; });
+                                    };
                                     return (
                                       <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
                                         <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
-                                        <td className="px-3 py-2"><Input type="text" placeholder="Biaya Test, Kontribusi, dll..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
-                                        <td className="px-3 py-2"><Input type="text" placeholder="250 Siswa" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setLpjPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
-                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                                        <td className="px-3 py-2"><Input type="text" placeholder="Biaya Test, Kontribusi, dll..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
+                                        <td className="px-3 py-2"><Input type="text" placeholder="250 Siswa" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setLpjPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
+                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPemasukanRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                         <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(anggaran)}</td>
-                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPemasukanBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                         <td className="px-3 py-2 text-center">
                                           <div className="flex items-center justify-center gap-1">
                                             <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah" onClick={() => { setLpjPemasukanRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }); return c; }); }} className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer">
@@ -2233,11 +2288,17 @@ export default function ProposalKegiatanPage() {
                                   {lpjPengeluaranRows.map((row, idx) => {
                                     const lastHeaderIdx = lpjPengeluaranRows.slice(0, idx + 1).findLastIndex(r => r.type === 'group_header');
                                     const itemNum = row.type === 'item' ? lpjPengeluaranRows.slice(lastHeaderIdx === -1 ? 0 : lastHeaderIdx, idx + 1).filter(r => r.type === 'item').length : null;
+                                    const insertLpjPengeluaranItemBelow = () => {
+                                      setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('item'), realisasi: 0 }); return c; });
+                                    };
+                                    const insertLpjPengeluaranHeaderBelow = () => {
+                                      setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('group_header'), realisasi: 0 }); return c; });
+                                    };
                                     if (row.type === 'group_header') {
                                       return (
                                         <tr key={idx} className="bg-slate-50/60 border-b border-slate-100">
                                           <td className="px-3 py-2.5 text-xs font-bold text-slate-400 text-center"></td>
-                                          <td colSpan={5} className="px-3 py-2.5"><Input type="text" placeholder="Nama grup (e.g., A. Pengeluaran Panitia)..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-800 text-xs h-8 w-full bg-transparent border-none focus:ring-0" /></td>
+                                          <td colSpan={5} className="px-3 py-2.5"><Input type="text" placeholder="Nama grup (e.g., A. Pengeluaran Panitia)..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-800 text-xs h-8 w-full bg-transparent border-none focus:ring-0" /></td>
                                           <td className="px-3 py-2.5 text-center">
                                             <div className="flex items-center justify-center gap-1">
                                               <Button
@@ -2252,9 +2313,12 @@ export default function ProposalKegiatanPage() {
                                               >
                                                 <Link2 className="mr-1 h-3 w-3" /> {row.reportId ? 'Buka Laporan' : 'Hubungkan Laporan'}
                                               </Button>
-                                              <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('item'), realisasi: 0 }); return c; }); }} className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer">
-                                                <Plus className="w-3.5 h-3.5" />
-                                              </Button>
+                                              <InsertRowButton
+                                                title="Sisipkan baris di bawah (tahan untuk tambah header grup)"
+                                                onPress={insertLpjPengeluaranItemBelow}
+                                                onLongPress={insertLpjPengeluaranHeaderBelow}
+                                                className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
+                                              />
                                               <Button type="button" variant="ghost" size="icon" title="Hapus grup" onClick={() => { if (row.reportId) setExpenseReports(prev => prev.filter((report) => report.id !== row.reportId)); setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx)); }} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
                                                 <Trash2 className="w-3.5 h-3.5" />
                                               </Button>
@@ -2267,17 +2331,23 @@ export default function ProposalKegiatanPage() {
                                     return (
                                       <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
                                         <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{itemNum}</td>
-                                        <td className="px-3 py-2"><Input type="text" placeholder="Uraian pengeluaran..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
-                                        <td className="px-3 py-2"><Input type="text" placeholder="10 / 20%" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
-                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                                        <td className="px-3 py-2"><Input type="text" placeholder="Uraian pengeluaran..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
+                                        <td className="px-3 py-2"><Input type="text" placeholder="10 / 20%" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
+                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                         <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(anggaran)}</td>
-                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={(row.realisasi || 0) > 0 ? fmtRp(row.realisasi || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={(row.realisasi || 0) > 0 ? fmtRp(row.realisasi || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
                                         <td className="px-3 py-2 text-center">
                                           <div className="flex items-center justify-center gap-1">
                                             <div className="relative">
-                                              <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah" onClick={() => setActiveInsertMenuIdx(activeInsertMenuIdx === idx ? null : idx)} className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer">
-                                                <Plus className="w-3.5 h-3.5" />
-                                              </Button>
+                                              <InsertRowButton
+                                                title="Sisipkan baris di bawah (tahan untuk tambah header grup)"
+                                                onPress={() => setActiveInsertMenuIdx(activeInsertMenuIdx === idx ? null : idx)}
+                                                onLongPress={() => {
+                                                  setActiveInsertMenuIdx(null);
+                                                  insertLpjPengeluaranHeaderBelow();
+                                                }}
+                                                className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
+                                              />
                                               {activeInsertMenuIdx === idx && (
                                                 <>
                                                   <div className="fixed inset-0 z-40" onClick={() => setActiveInsertMenuIdx(null)} />
@@ -2357,6 +2427,7 @@ export default function ProposalKegiatanPage() {
                   onUpsertReport={handleUpsertExpenseReport}
                   onUnlinkReport={handleUnlinkExpenseReport}
                   onPrintReport={handlePrintExpenseReport}
+                  printingReport={printingReport}
                   fmtRp={fmtRp}
                   parseQty={parseQty}
                 />
@@ -2411,6 +2482,15 @@ export default function ProposalKegiatanPage() {
                             <tbody>
                               {kepanitiaaanRows.map((row, idx) => {
                                 const rowTotal = kepanitiaaanPhases.reduce((sum, phase) => sum + (row.phaseAmounts[phase.name] || 0), 0);
+                                const addKepanitiaanRow = () => {
+                                  setKepanitiaaanRows(prev => [...prev, { name: '', phaseAmounts: {}, searchText: '', showDropdown: false }]);
+                                };
+                                const kepanitiaanMatches = row.showDropdown && (row.searchText || '').length > 0
+                                  ? loyalisEmployees.filter(emp => emp.name.toLowerCase().includes((row.searchText || '').toLowerCase())).slice(0, 8)
+                                  : [];
+                                const selectKepanitiaanEmployee = (emp: typeof kepanitiaanMatches[number]) => {
+                                  setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], name: emp.name, employeeId: emp.id, searchText: emp.name, showDropdown: false }; return c; });
+                                };
                                 return (
                                   <tr key={idx} className={`border-b border-slate-50 hover:bg-slate-50/30 transition-colors ${row.showDropdown ? 'relative z-50' : 'relative z-0'}`}>
                                     <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{idx + 1}</td>
@@ -2420,26 +2500,31 @@ export default function ProposalKegiatanPage() {
                                           onChange={(e) => { const text = e.target.value; setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], name: text, searchText: text, showDropdown: true }; return c; }); setActivePelaporanSuggestionIndex(0); }}
                                           onFocus={() => { setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], showDropdown: true }; return c; }); setActivePelaporanSuggestionIndex(0); }}
                                           onBlur={() => { setTimeout(() => { setKepanitiaaanRows(prev => { const c = [...prev]; if (c[idx]) c[idx] = { ...c[idx], showDropdown: false }; return c; }); }, 200); }}
+                                          onKeyDown={(e) => {
+                                            if (kepanitiaanMatches.length > 0) {
+                                              if (e.key === 'ArrowDown') { e.preventDefault(); setActivePelaporanSuggestionIndex(i => Math.min(i + 1, kepanitiaanMatches.length - 1)); return; }
+                                              if (e.key === 'ArrowUp') { e.preventDefault(); setActivePelaporanSuggestionIndex(i => Math.max(i - 1, 0)); return; }
+                                              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); const emp = kepanitiaanMatches[activePelaporanSuggestionIndex] ?? kepanitiaanMatches[0]; if (emp) selectKepanitiaanEmployee(emp); return; }
+                                            }
+                                            handleRowCellKeyDown(e, addKepanitiaanRow);
+                                          }}
                                           className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full" />
-                                        {row.showDropdown && (row.searchText || '').length > 0 && (
+                                        {kepanitiaanMatches.length > 0 && (
                                           <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[999] max-h-48 overflow-y-auto divide-y divide-slate-50">
-                                            {(() => {
-                                              const filtered = loyalisEmployees.filter(emp => emp.name.toLowerCase().includes((row.searchText || '').toLowerCase()));
-                                              if (filtered.length === 0) return null;
-                                              return filtered.slice(0, 8).map((emp, empIdx) => (
-                                                <div key={emp.id} onClick={() => { setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], name: emp.name, employeeId: emp.id, searchText: emp.name, showDropdown: false }; return c; }); }}
-                                                  className={`px-3 py-2 text-xs font-semibold cursor-pointer transition-colors text-left ${empIdx === activePelaporanSuggestionIndex ? 'bg-violet-50 text-violet-600 font-bold' : 'hover:bg-violet-50 hover:text-violet-600 text-slate-900'}`}>
-                                                  <p>{emp.name}</p><p className="text-[9px] text-slate-400 mt-0.5">{emp.role} · {emp.id}</p>
-                                                </div>
-                                              ));
-                                            })()}
+                                            {kepanitiaanMatches.map((emp, empIdx) => (
+                                              <div key={emp.id} onClick={() => selectKepanitiaanEmployee(emp)}
+                                                onMouseEnter={() => setActivePelaporanSuggestionIndex(empIdx)}
+                                                className={`px-3 py-2 text-xs font-semibold cursor-pointer transition-colors text-left ${empIdx === activePelaporanSuggestionIndex ? 'bg-violet-50 text-violet-600 font-bold' : 'hover:bg-violet-50 hover:text-violet-600 text-slate-900'}`}>
+                                                <p>{emp.name}</p><p className="text-[9px] text-slate-400 mt-0.5">{emp.role} · {emp.id}</p>
+                                              </div>
+                                            ))}
                                           </div>
                                         )}
                                       </div>
                                     </td>
                                     {kepanitiaaanPhases.map((phase, pIdx) => (
                                       <td key={pIdx} className="px-3 py-2 text-center">
-                                        <Input type="text" inputMode="numeric" placeholder="0" value={(row.phaseAmounts[phase.name] || 0) > 0 ? fmtRp(row.phaseAmounts[phase.name] || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], phaseAmounts: { ...c[idx].phaseAmounts, [phase.name]: val } }; return c; }); }} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-24 text-right mx-auto" />
+                                        <Input type="text" inputMode="numeric" placeholder="0" value={(row.phaseAmounts[phase.name] || 0) > 0 ? fmtRp(row.phaseAmounts[phase.name] || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setKepanitiaaanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], phaseAmounts: { ...c[idx].phaseAmounts, [phase.name]: val } }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, addKepanitiaanRow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-24 text-right mx-auto" />
                                       </td>
                                     ))}
                                     <td className="px-3 py-2 text-xs font-black text-slate-900 text-right font-mono">{fmtRp(rowTotal)}</td>
@@ -2690,9 +2775,10 @@ export default function ProposalKegiatanPage() {
                     <Button
                       type="button"
                       onClick={handlePrintPdf}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer"
+                      disabled={printingPdf}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-6 text-xs flex items-center gap-1.5 shadow-md h-10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <FileText className="w-4 h-4" /> Cetak PDF
+                      {printingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} {printingPdf ? 'Membuat PDF...' : 'Cetak PDF'}
                     </Button>
 
                     {profile?.role === 'satker_head_loyalis' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'lpj_draft' || currentProposalStatus === 'lpj_revision') && (

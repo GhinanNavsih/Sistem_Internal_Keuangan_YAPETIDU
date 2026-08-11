@@ -46,6 +46,13 @@ export interface ExpenseReportRow {
   note: string;
 }
 
+export interface ExpenseReportReceipt {
+  url: string;
+  fileName: string;
+  /** The header item's uraian at upload time, so printouts don't need a separate lookup. */
+  label: string;
+}
+
 export interface ExpenseReport {
   id: string;
   /** Must match the rowId of an LPJ group_header row. */
@@ -55,6 +62,8 @@ export interface ExpenseReport {
   mode: ExpenseReportMode;
   notes: string;
   rows: ExpenseReportRow[];
+  /** Expense-mode only: one uploaded receipt per locked header item, keyed by its rowId. */
+  receipts: Record<string, ExpenseReportReceipt>;
   source: 'custom' | 'legacy';
   /** @deprecated Present only when this report came from an old document. */
   legacyReportType?: ExpenseReportType;
@@ -242,6 +251,7 @@ export function createExpenseReport(
     mode,
     notes: '',
     rows: seedRows.map((row, index) => normalizeRow(row, index)),
+    receipts: {},
     source: 'custom',
   };
 }
@@ -397,6 +407,22 @@ function normalizeLegacyRows(raw: Record<string, unknown>, type: ExpenseReportTy
   });
 }
 
+function normalizeReceipts(raw: unknown): Record<string, ExpenseReportReceipt> {
+  if (!raw || typeof raw !== 'object') return {};
+  const result: Record<string, ExpenseReportReceipt> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const url = normalizeText((value as Record<string, unknown>).url);
+    if (!url) continue;
+    result[key] = {
+      url,
+      fileName: normalizeText((value as Record<string, unknown>).fileName) || 'Bukti',
+      label: normalizeText((value as Record<string, unknown>).label) || 'Bukti Pengeluaran',
+    };
+  }
+  return result;
+}
+
 /**
  * Converts both the generic shape and the former example-specific shape to
  * the generic model. Unknown legacy fields are retained under `legacy`.
@@ -438,6 +464,7 @@ export function normalizeExpenseReport(
     mode,
     notes: normalizeText(value.notes),
     rows: rows.length ? rows : [createExpenseReportRow()],
+    receipts: normalizeReceipts(value.receipts),
     source: isGeneric && value.source === 'legacy' ? 'legacy' : hasValidLegacyType ? 'legacy' : 'custom',
     ...(hasValidLegacyType ? { legacyReportType: legacyType } : {}),
     ...(!isGeneric && hasValidLegacyType ? { legacy: value } : {}),

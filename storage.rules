@@ -79,6 +79,15 @@ service firebase.storage {
       allow delete: if false;
     }
 
+    // One receipt per locked header item on an expense-mode LPJ report.
+    match /expense_report_receipts/{reportId}/{filename} {
+      allow read: if isFinance() || roleIs('satker_head_loyalis');
+      allow create, update: if
+        (isFinance() || roleIs('satker_head_loyalis')) &&
+        validReportFile();
+      allow delete: if false;
+    }
+
     match /presence_corrections/{employeeId}/{filename} {
       allow read: if isFinance() || roleIs('loyalis_presence_admin') ||
         (hasActiveProfile() && profile().linkedEmployeeId == employeeId);
