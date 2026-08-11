@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   canonicalizeDriverJourneyTimeline,
+  DEFAULT_DRIVER_JOURNEY_POINT,
   DEFAULT_DRIVER_VEHICLE_NAME,
   DRIVER_VEHICLE_RATES,
   calculateDriverJourneyOperationalCosts,
@@ -14,8 +15,44 @@ import {
   calculateJourneyDateTimeTimings,
   calculateNightPremium,
   getMealAllowanceForDuration,
+  driverJourneyRoutePoints,
+  fuelProcurementModeLabel,
   journeyDayCount,
+  normalizeDriverJourneyDestinations,
 } from './driverJourney';
+
+test('fuel procurement modes have human-readable UI labels', () => {
+  assert.equal(fuelProcurementModeLabel('standard_direct'), 'Standard langsung');
+  assert.equal(fuelProcurementModeLabel('hold_accumulate'), 'Tahan & akumulasi');
+  assert.equal(fuelProcurementModeLabel('procure_release'), 'Cairkan saldo');
+  assert.equal(fuelProcurementModeLabel('unknown_mode'), 'Mode pengadaan BBM');
+});
+
+test('journey destinations preserve order and support legacy endPoint documents', () => {
+  assert.deepEqual(
+    normalizeDriverJourneyDestinations(['  Tujuan A  ', 'Tujuan B']),
+    ['Tujuan A', 'Tujuan B'],
+  );
+  assert.deepEqual(
+    normalizeDriverJourneyDestinations(undefined, 'Tujuan Lama'),
+    ['Tujuan Lama'],
+  );
+  assert.deepEqual(
+    normalizeDriverJourneyDestinations([], 'Tujuan Lama'),
+    ['Tujuan Lama'],
+  );
+});
+
+test('journey route points retain an editable start and return leg', () => {
+  assert.deepEqual(
+    driverJourneyRoutePoints('', ['Tujuan A', 'Tujuan B']),
+    [DEFAULT_DRIVER_JOURNEY_POINT, 'Tujuan A', 'Tujuan B', DEFAULT_DRIVER_JOURNEY_POINT],
+  );
+  assert.deepEqual(
+    driverJourneyRoutePoints('Titik Baru', ['Tujuan A', 'Tujuan B'], undefined, false),
+    ['Titik Baru', 'Tujuan A', 'Tujuan B'],
+  );
+});
 
 test('vehicle rates stay centralized for authorization and review calculations', () => {
   assert.equal(DRIVER_VEHICLE_RATES.Bis, 2_500);

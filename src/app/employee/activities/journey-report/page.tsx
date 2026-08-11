@@ -57,8 +57,10 @@ import {
   getShortTripMealWageComponent,
   getMealAllowanceForDuration,
   getMealTierCount,
+  DEFAULT_DRIVER_JOURNEY_POINT,
   DEFAULT_FUEL_PROCUREMENT_MODE,
   isFuelProcurementMode,
+  normalizeDriverJourneyDestinations,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
 import { prepareProofImage, type PhotoEvidence } from '@/lib/photoEvidence';
@@ -646,13 +648,6 @@ function JourneyReportContent() {
             router.replace('/employee/activities');
             return;
           }
-          setActiveReportingJourney(reportData);
-          setSelectedFuelMode(
-            isFuelProcurementMode(reportData.fuelProcurementMode)
-              ? reportData.fuelProcurementMode
-              : DEFAULT_FUEL_PROCUREMENT_MODE,
-          );
-
           // Check for local storage auto-saved draft
           const localDraftKey = `journey_draft_${targetId}`;
           let localDraft: any = null;
@@ -662,6 +657,36 @@ function JourneyReportContent() {
           } catch (e) {
             console.error('Error parsing local draft:', e);
           }
+
+          const storedStartPoint =
+            localDraft?.startPoint ??
+            reportData.draftStartPoint ??
+            reportData.startPoint ??
+            DEFAULT_DRIVER_JOURNEY_POINT;
+          const storedMainDestinations =
+            localDraft?.mainDestinations ??
+            reportData.draftMainDestinations ??
+            reportData.mainDestinations;
+          const initialMainDestinations = normalizeDriverJourneyDestinations(
+            storedMainDestinations,
+            reportData.draftEndPoint ?? reportData.endPoint,
+          );
+          const normalizedStartPoint =
+            typeof storedStartPoint === 'string' && storedStartPoint.trim()
+              ? storedStartPoint.trim()
+              : DEFAULT_DRIVER_JOURNEY_POINT;
+          const normalizedReportData = {
+            ...reportData,
+            startPoint: normalizedStartPoint,
+            mainDestinations: initialMainDestinations,
+            endPoint: initialMainDestinations[0] || reportData.endPoint || '',
+          };
+          setActiveReportingJourney(normalizedReportData);
+          setSelectedFuelMode(
+            isFuelProcurementMode(normalizedReportData.fuelProcurementMode)
+              ? normalizedReportData.fuelProcurementMode
+              : DEFAULT_FUEL_PROCUREMENT_MODE,
+          );
 
           const initialDate = localDraft?.formDate ?? reportData.activityDate ?? reportData.dateStart ?? reportData.journeyDate ?? getTodayISO();
           setFormDate(initialDate);
@@ -680,7 +705,30 @@ function JourneyReportContent() {
           );
           setFormIsMultiDay(initialIsMultiDay);
 
-          const initialExtraLocs = localDraft?.extraActivities ?? reportData.draftExtraActivities ?? reportData.extraActivities ?? [];
+          const storedExtraLocs =
+            localDraft?.extraActivities ??
+            reportData.draftExtraActivities ??
+            reportData.extraActivities ??
+            [];
+          const storedExtraActivities = Array.isArray(storedExtraLocs) ? storedExtraLocs : [];
+          const authorizedExtraLocs = initialMainDestinations.slice(1).map((destination: string) => {
+            const matching = storedExtraActivities.find(
+              (activity: any) => activity?.type === 'tambah_lokasi' && activity?.destination === destination,
+            );
+            return {
+              ...(matching || {}),
+              type: 'tambah_lokasi',
+              destination,
+              isMainDestination: true,
+            };
+          });
+          const authorizedExtraDestinationSet = new Set(initialMainDestinations.slice(1));
+          const adHocExtraLocs = storedExtraActivities.filter(
+            (activity: any) =>
+              activity?.type !== 'tambah_lokasi' ||
+              (!activity?.isMainDestination && !authorizedExtraDestinationSet.has(activity?.destination)),
+          );
+          const initialExtraLocs = [...authorizedExtraLocs, ...adHocExtraLocs];
           setExtraActivities(initialExtraLocs);
 
           const initialTimeStart = localDraft?.formTimeStart ?? reportData.draftTimeStart ?? reportData.timeStart ?? '';
@@ -807,12 +855,18 @@ function JourneyReportContent() {
     };
   }, [journeyIdParam, profile?.linkedEmployeeId, isSopir, authLoading, router, user]);
 
-  const recalculateRouteChain = useCallback(async (list: any[], overrideEndPoint?: string, forceRouteCalculation = false) => {
+  const recalculateRouteChain = useCallback(async (
+    list: any[],
+    overrideEndPoint?: string,
+    forceRouteCalculation = false,
+    overrideStartPoint?: string,
+  ) => {
     if (!activeReportingJourney) return;
     const requestId = ++routeCalculationRequestRef.current;
+    const currentStartPoint = overrideStartPoint || activeReportingJourney.startPoint;
     const currentEndPoint = overrideEndPoint || activeReportingJourney.endPoint;
     const extraLocs = list.filter(a => a.type === 'tambah_lokasi' && a.destination);
-    if (extraLocs.length === 0 && !overrideEndPoint && !forceRouteCalculation) {
+    if (extraLocs.length === 0 && !overrideEndPoint && !overrideStartPoint && !forceRouteCalculation) {
       setCalculatedDistanceKm((activeReportingJourney.distanceKm || 0) * 2);
       setCalculatedDurationHours((activeReportingJourney.durationHours || 0) * 2);
       setOutboundDistanceKm(null);
@@ -827,10 +881,10 @@ function JourneyReportContent() {
       if (!user) throw new Error('Sesi tidak ditemukan.');
       const idToken = await user.getIdToken();
       const points = [
-        activeReportingJourney.startPoint,
+        currentStartPoint,
         currentEndPoint,
         ...extraLocs.map(l => l.destination),
-        activeReportingJourney.startPoint
+        currentStartPoint,
       ];
 
       const response = await fetch('/api/calculate-route', {
@@ -916,6 +970,17 @@ function JourneyReportContent() {
 
     void recalculateRouteChain(extraActivities, undefined, true);
   }, [routeHydrationKey, activeReportingJourney?.id, extraActivities, recalculateRouteChain]);
+
+  const currentMainDestinations = useMemo(() => {
+    if (!activeReportingJourney) return [];
+    const authorizedExtraDestinations = extraActivities
+      .filter((activity: any) => activity?.type === 'tambah_lokasi' && activity?.isMainDestination && activity?.destination)
+      .map((activity: any) => activity.destination);
+    return normalizeDriverJourneyDestinations(
+      [activeReportingJourney.endPoint, ...authorizedExtraDestinations],
+      activeReportingJourney.endPoint,
+    );
+  }, [activeReportingJourney?.endPoint, extraActivities]);
 
   const getOriginForLocationIndex = (index: number): string => {
     if (!activeReportingJourney) return '';
@@ -1007,6 +1072,8 @@ function JourneyReportContent() {
       formTollReceiptUrls,
       formFuelReceiptEvidence,
       formTollReceiptEvidence,
+      startPoint: activeReportingJourney.startPoint,
+      mainDestinations: currentMainDestinations,
       extraActivities,
       calculatedDistanceKm,
       calculatedDurationHours,
@@ -1032,6 +1099,8 @@ function JourneyReportContent() {
     formTollReceiptUrls,
     formFuelReceiptEvidence,
     formTollReceiptEvidence,
+    activeReportingJourney?.startPoint,
+    currentMainDestinations,
     extraActivities,
     calculatedDistanceKm,
     calculatedDurationHours,
@@ -1075,6 +1144,8 @@ function JourneyReportContent() {
             tollReceiptUrl: draftTollReceiptUrls.join(','),
             ...(draftFuelReceiptEvidence.length > 0 ? { fuelReceiptEvidence: draftFuelReceiptEvidence } : {}),
             ...(draftTollReceiptEvidence.length > 0 ? { tollReceiptEvidence: draftTollReceiptEvidence } : {}),
+            startPoint: activeReportingJourney.startPoint,
+            mainDestinations: currentMainDestinations,
             extraActivities,
             calculatedDistanceKm,
             calculatedDurationHours,
@@ -1097,9 +1168,11 @@ function JourneyReportContent() {
         formTollParkingFee,
         formFuelReceiptUrls: draftFuelReceiptUrls,
         formTollReceiptUrls: draftTollReceiptUrls,
-        formFuelReceiptEvidence: draftFuelReceiptEvidence,
-        formTollReceiptEvidence: draftTollReceiptEvidence,
-        extraActivities,
+            formFuelReceiptEvidence: draftFuelReceiptEvidence,
+            formTollReceiptEvidence: draftTollReceiptEvidence,
+            startPoint: activeReportingJourney.startPoint,
+            mainDestinations: currentMainDestinations,
+            extraActivities,
         calculatedDistanceKm,
         calculatedDurationHours,
         updatedAt: Date.now(),
@@ -1308,17 +1381,40 @@ function JourneyReportContent() {
   };
 
   const handleRemoveExtraActivity = async (index: number) => {
+    if (extraActivities[index]?.isMainDestination) {
+      setMessage({ type: 'error', text: 'Tujuan utama terotorisasi tidak dapat dihapus; gunakan Ubah untuk mengganti lokasinya.' });
+      return;
+    }
     const updated = extraActivities.filter((_, idx) => idx !== index);
     setExtraActivities(updated);
     await recalculateRouteChain(updated);
   };
 
   const handleConfirmMapLocation = async () => {
-    if (mapTargetIndex === -1) {
-      const newEndPoint = mapAddress;
+    if (mapTargetIndex === -2) {
+      const newStartPoint = mapAddress.trim();
+      if (!newStartPoint) return;
       setActiveReportingJourney((prev: any) => ({
         ...prev,
-        endPoint: newEndPoint
+        startPoint: newStartPoint,
+      }));
+      resetMapSearch();
+      setShowMapSelector(false);
+      setMapTargetIndex(null);
+      await recalculateRouteChain(extraActivities, undefined, true, newStartPoint);
+      return;
+    }
+
+    if (mapTargetIndex === -1) {
+      const newEndPoint = mapAddress.trim();
+      if (!newEndPoint) return;
+      setActiveReportingJourney((prev: any) => ({
+        ...prev,
+        endPoint: newEndPoint,
+        mainDestinations: [
+          newEndPoint,
+          ...normalizeDriverJourneyDestinations(prev?.mainDestinations, prev?.endPoint).slice(1),
+        ],
       }));
       resetMapSearch();
       setShowMapSelector(false);
@@ -1329,11 +1425,23 @@ function JourneyReportContent() {
 
     if (mapTargetIndex === null) return;
     const updated = [...extraActivities];
+    if (!updated[mapTargetIndex]) return;
     updated[mapTargetIndex] = {
       ...updated[mapTargetIndex],
-      destination: mapAddress
+      destination: mapAddress.trim(),
     };
     setExtraActivities(updated);
+    if (updated[mapTargetIndex].isMainDestination) {
+      setActiveReportingJourney((prev: any) => ({
+        ...prev,
+        mainDestinations: [
+          prev?.endPoint,
+          ...updated
+            .filter((activity: any) => activity?.type === 'tambah_lokasi' && activity?.isMainDestination && activity?.destination)
+            .map((activity: any) => activity.destination),
+        ],
+      }));
+    }
     resetMapSearch();
     setShowMapSelector(false);
     setMapTargetIndex(null);
@@ -1469,6 +1577,10 @@ function JourneyReportContent() {
     }
     if (!profile?.linkedEmployeeId) {
       setMessage({ type: 'error', text: 'Akun Anda belum terhubung ke data Pegawai.' });
+      return;
+    }
+    if (!activeReportingJourney.startPoint?.trim() || currentMainDestinations.length === 0) {
+      setMessage({ type: 'error', text: 'Titik awal dan minimal satu tujuan utama wajib diisi.' });
       return;
     }
 
@@ -1637,6 +1749,15 @@ function JourneyReportContent() {
 
       const extraLocs = extraActivities.filter(a => a.type === 'tambah_lokasi' && a.destination);
       const extraLocsText = extraLocs.map(l => l.destination.split(',')[0]).join(' → ');
+      const adHocLocs = extraLocs.filter(
+        (location: any) =>
+          !location.isMainDestination && !currentMainDestinations.includes(location.destination),
+      );
+      const submittedRoutePoints = [
+        activeReportingJourney.startPoint,
+        ...currentMainDestinations,
+        ...adHocLocs.map((location: any) => location.destination),
+      ];
 
       const startShort = (activeReportingJourney.startPoint || '').split(',')[0].trim();
       const endShort = (activeReportingJourney.endPoint || '').split(',')[0].trim();
@@ -1672,7 +1793,9 @@ function JourneyReportContent() {
             tollReceiptUrl: submittedTollReceiptUrls.join(','),
             ...(submittedFuelReceiptEvidence.length > 0 ? { fuelReceiptEvidence: submittedFuelReceiptEvidence } : {}),
             ...(submittedTollReceiptEvidence.length > 0 ? { tollReceiptEvidence: submittedTollReceiptEvidence } : {}),
-            points: [activeReportingJourney.startPoint, activeReportingJourney.endPoint, ...extraLocs.map(l => l.destination)],
+            startPoint: activeReportingJourney.startPoint,
+            mainDestinations: currentMainDestinations,
+            points: submittedRoutePoints,
             reportedEndPoint: activeReportingJourney.endPoint,
             distanceKm: calculatedDistanceKm,
             durationHours: submittedDurationHours,
@@ -1775,7 +1898,7 @@ function JourneyReportContent() {
       };
 
       const existingAddress = mapAddress;
-      if (existingAddress && existingAddress !== 'UNIPDU Jombang, Jawa Timur' && existingAddress !== 'UNIPDU Jombang') {
+      if (existingAddress && existingAddress !== DEFAULT_DRIVER_JOURNEY_POINT && existingAddress !== 'UNIPDU Jombang') {
         geocoder.geocode({ address: existingAddress, region: 'id' }, (results: any, status: any) => {
           if (status === 'OK' && results[0] && results[0].geometry && results[0].geometry.location) {
             const loc = results[0].geometry.location;
@@ -1976,9 +2099,9 @@ function JourneyReportContent() {
                   <div className="absolute left-[9px] top-2 bottom-2 w-0.5 border-l-2 border-dashed border-blue-200" />
 
                   {/* Node 0: Start */}
-                  <div className="relative flex items-start gap-2.5 text-xs">
+                  <div className="relative flex items-start justify-between gap-3 text-xs">
                     <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
-                    <div className="space-y-0.5 min-w-0">
+                    <div className="space-y-0.5 min-w-0 flex-1">
                       <span className="text-[9px] text-blue-700 font-black block">Titik Keberangkatan</span>
                       <div className="font-extrabold text-black truncate" title={activeReportingJourney.startPoint}>
                         🏫 {activeReportingJourney.startPoint.split(',')[0]}
@@ -1987,6 +2110,22 @@ function JourneyReportContent() {
                         Jarak Leg: <span className="text-emerald-700 font-extrabold">{d0.toFixed(1)} km</span> (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil(wage0))}</span>)
                       </div>
                     </div>
+                    {canEditMainDestination && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          resetMapSearch();
+                          setMapTargetIndex(-2);
+                          setMapSearchText(activeReportingJourney.startPoint || '');
+                          setMapAddress(activeReportingJourney.startPoint || '');
+                          setShowMapSelector(true);
+                        }}
+                        className="text-[10px] font-bold text-blue-700 hover:text-blue-800 bg-white border border-slate-200 px-2.5 h-7 rounded-lg cursor-pointer shrink-0"
+                      >
+                        Ubah
+                      </Button>
+                    )}
                   </div>
 
                   {/* Node 1: Main Destination */}
@@ -2026,7 +2165,9 @@ function JourneyReportContent() {
                         <div className="flex-1 min-w-0 space-y-1">
                           {act.destination ? (
                             <div className="space-y-0.5">
-                              <span className="text-[9px] text-teal-700 font-black block">Tujuan Tambahan</span>
+                              <span className={`text-[9px] font-black block ${act.isMainDestination ? 'text-blue-700' : 'text-teal-700'}`}>
+                                {act.isMainDestination ? 'Tujuan Utama' : 'Tujuan Tambahan'}
+                              </span>
                               <div className="text-xs font-black text-black truncate" title={act.destination}>
                                 📍 {act.destination.split(',')[0]}
                               </div>
@@ -2058,14 +2199,16 @@ function JourneyReportContent() {
                           >
                             {act.destination ? 'Ubah' : 'Pilih'}
                           </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() => handleRemoveExtraActivity(index)}
-                            className="h-7 w-7 p-0 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          {!act.isMainDestination && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => handleRemoveExtraActivity(index)}
+                              className="h-7 w-7 p-0 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     );

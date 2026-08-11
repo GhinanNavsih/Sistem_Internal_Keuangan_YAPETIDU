@@ -71,10 +71,14 @@ import {
   isExtraPiketStationKey,
 } from '@/lib/payroll/driverPiket';
 import {
+  DEFAULT_DRIVER_JOURNEY_POINT,
   getMealAllowanceForDuration,
   calculateEstimatedDriverWage,
   DEFAULT_FUEL_PROCUREMENT_MODE,
+  fuelProcurementModeLabel,
   isFuelProcurementMode,
+  MAX_MAIN_DESTINATIONS,
+  normalizeDriverJourneyDestinations,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
@@ -107,6 +111,15 @@ const VEHICLE_RATES = {
 
 function fmtRp(val: number): string {
   return 'Rp' + Math.round(val).toLocaleString('id-ID');
+}
+
+function journeyDestinationLabel(journey: any): string {
+  return normalizeDriverJourneyDestinations(
+    journey?.mainDestinations,
+    journey?.endPoint,
+  )
+    .map((destination) => destination.split(',')[0].trim())
+    .join(' → ');
 }
 
 function formatIndonesianDate(dateStr: string): string {
@@ -241,8 +254,9 @@ function DriverJourneysContent() {
 
   const [activityName, setActivityName] = useState('');
   const [activityDate, setActivityDate] = useState(new Date().toISOString().slice(0, 10));
-  const [startPoint, setStartPoint] = useState('UNIPDU Jombang, Jawa Timur');
+  const [startPoint, setStartPoint] = useState(DEFAULT_DRIVER_JOURNEY_POINT);
   const [endPoint, setEndPoint] = useState('');
+  const [additionalDestinations, setAdditionalDestinations] = useState<string[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<keyof typeof VEHICLE_RATES>('Suzuki XL7');
   const [fuelProcurementMode, setFuelProcurementMode] = useState<FuelProcurementMode>(DEFAULT_FUEL_PROCUREMENT_MODE);
   const [tollFee, setTollFee] = useState<string>('');
@@ -433,12 +447,24 @@ function DriverJourneysContent() {
   const [mapSearchText, setMapSearchText] = useState('');
   const [mapAddress, setMapAddress] = useState('');
   const [mapAddressImage, setMapAddressImage] = useState<string | null>(null);
-  const [mapTarget, setMapTarget] = useState<'start' | 'end'>('end');
+  const [mapTarget, setMapTarget] = useState<'start' | 'end' | number>('end');
 
   const mapRef = React.useRef<any>(null);
   const markerRef = React.useRef<any>(null);
   const mapElementRef = React.useRef<HTMLDivElement | null>(null);
-  const lastCalculatedRef = React.useRef<{ start: string; end: string }>({ start: '', end: '' });
+  const lastCalculatedRef = React.useRef('');
+
+  const mainDestinationPoints = useMemo(
+    () => [endPoint, ...additionalDestinations]
+      .map((point) => point.trim())
+      .filter(Boolean),
+    [endPoint, additionalDestinations],
+  );
+  const authorizationRoutePoints = useMemo(
+    () => [startPoint.trim(), ...mainDestinationPoints].filter(Boolean),
+    [startPoint, mainDestinationPoints],
+  );
+  const authorizationRouteKey = authorizationRoutePoints.join('\u0000');
 
   // Dynamic preview calculations for meal allowance (Option 2: Flat Rate based on Duration)
   const totalDurationPP = inputDuration !== null ? inputDuration : (calcDuration ? calcDuration * 2 : 0);
@@ -567,8 +593,12 @@ function DriverJourneysContent() {
         });
       };
 
-      const existingAddress = mapTarget === 'start' ? startPoint : endPoint;
-      if (existingAddress && existingAddress !== 'UNIPDU Jombang, Jawa Timur' && existingAddress !== 'UNIPDU Jombang') {
+      const existingAddress = mapTarget === 'start'
+        ? startPoint
+        : mapTarget === 'end'
+          ? endPoint
+          : additionalDestinations[mapTarget] || '';
+      if (existingAddress && existingAddress !== DEFAULT_DRIVER_JOURNEY_POINT && existingAddress !== 'UNIPDU Jombang') {
         geocoder.geocode({ address: existingAddress }, (results: any, status: any) => {
           if (status === 'OK' && results[0] && results[0].geometry && results[0].geometry.location) {
             const loc = results[0].geometry.location;
@@ -889,18 +919,14 @@ function DriverJourneysContent() {
 
   // ── Automatic debounced route calculation ──
   useEffect(() => {
-    if (!startPoint.trim() || !endPoint.trim()) {
+    if (authorizationRoutePoints.length < 2) {
       setCalcDistance(null);
       setCalcDuration(null);
       return;
     }
 
     // Skip only if we already successfully calculated distance for these exact points
-    if (
-      lastCalculatedRef.current.start === startPoint &&
-      lastCalculatedRef.current.end === endPoint &&
-      calcDistance !== null
-    ) {
+    if (lastCalculatedRef.current === authorizationRouteKey && calcDistance !== null) {
       return;
     }
 
@@ -917,7 +943,7 @@ function DriverJourneysContent() {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${idToken}`,
             },
-            body: JSON.stringify({ points: [startPoint, endPoint] }),
+            body: JSON.stringify({ points: authorizationRoutePoints }),
           });
           const data = await response.json();
 
@@ -928,7 +954,7 @@ function DriverJourneysContent() {
           setCalcDistance(data.distanceKm);
           setCalcDuration(data.durationHours);
           setInputDuration(data.durationHours * 2);
-          lastCalculatedRef.current = { start: startPoint, end: endPoint };
+          lastCalculatedRef.current = authorizationRouteKey;
         } catch (err: any) {
           console.error(err);
           setCalcError(err.message || 'Terjadi kesalahan jaringan.');
@@ -941,13 +967,41 @@ function DriverJourneysContent() {
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [startPoint, endPoint, user]);
+  }, [authorizationRouteKey, authorizationRoutePoints, calcDistance, user]);
+
+  const addMainDestination = () => {
+    if (additionalDestinations.length >= MAX_MAIN_DESTINATIONS - 1) {
+      setMessage({
+        type: 'error',
+        text: `Maksimal ${MAX_MAIN_DESTINATIONS} tujuan utama dalam satu perjalanan.`,
+      });
+      return;
+    }
+    const newIndex = additionalDestinations.length;
+    setAdditionalDestinations((previous) => [...previous, '']);
+    setMapTarget(newIndex);
+    setMapSearchText('');
+    setMapAddress('');
+    setMapAddressImage(null);
+    setShowMapSelector(true);
+  };
+
+  const removeMainDestination = (index: number) => {
+    setAdditionalDestinations((previous) => previous.filter((_, itemIndex) => itemIndex !== index));
+    lastCalculatedRef.current = '';
+    setCalcDistance(null);
+    setCalcDuration(null);
+  };
 
   // ── Submit Journey Creation ──
   const handleCreateJourney = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activityName.trim() || !startPoint.trim() || !endPoint.trim() || calcDistance === null) {
+    if (!activityName.trim() || authorizationRoutePoints.length < 2 || calcDistance === null) {
       setMessage({ type: 'error', text: 'Pastikan rute telah dihitung dan Nama Kegiatan diisi.' });
+      return;
+    }
+    if (additionalDestinations.some((destination) => !destination.trim())) {
+      setMessage({ type: 'error', text: 'Pilih semua tujuan utama tambahan atau hapus baris yang kosong.' });
       return;
     }
 
@@ -975,6 +1029,7 @@ function DriverJourneysContent() {
           activityDate,
           startPoint: startPoint.trim(),
           endPoint: endPoint.trim(),
+          mainDestinations: mainDestinationPoints,
           vehicleName: selectedVehicle,
           fuelProcurementMode: selectedVehicle === 'Ndalem'
             ? DEFAULT_FUEL_PROCUREMENT_MODE
@@ -995,7 +1050,9 @@ function DriverJourneysContent() {
       // Reset form
       setActivityName('');
       setActivityDate(new Date().toISOString().slice(0, 10));
+      setStartPoint(DEFAULT_DRIVER_JOURNEY_POINT);
       setEndPoint('');
+      setAdditionalDestinations([]);
       setCalcDistance(null);
       setCalcDuration(null);
       setInputDuration(null);
@@ -1003,7 +1060,7 @@ function DriverJourneysContent() {
       setAssignedDriverId('');
       setTollFee('');
       setFuelProcurementMode(DEFAULT_FUEL_PROCUREMENT_MODE);
-      lastCalculatedRef.current = { start: '', end: '' };
+      lastCalculatedRef.current = '';
       setShowAddForm(false);
     } catch (err: any) {
       console.error(err);
@@ -1057,7 +1114,7 @@ function DriverJourneysContent() {
   const filteredJourneys = useMemo(() => {
     return journeys.filter((j) => {
       const nameMatch = j.activityName?.toLowerCase().includes(searchQuery.toLowerCase());
-      const destMatch = j.endPoint?.toLowerCase().includes(searchQuery.toLowerCase());
+      const destMatch = journeyDestinationLabel(j).toLowerCase().includes(searchQuery.toLowerCase());
       const driverMatch = j.employeeName?.toLowerCase().includes(searchQuery.toLowerCase());
       return nameMatch || destMatch || driverMatch;
     });
@@ -1290,8 +1347,17 @@ function DriverJourneysContent() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="max-w-full overflow-x-hidden">
+                <Table className="w-full max-w-full table-fixed">
+                  <colgroup>
+                    <col className="w-[31%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[8%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[10%]" />
+                  </colgroup>
                   <TableHeader className="bg-slate-50">
                     <TableRow className="border-slate-100">
                       <TableHead className="text-xs font-bold text-slate-500 pl-6">Kegiatan & Rute</TableHead>
@@ -1323,33 +1389,33 @@ function DriverJourneysContent() {
 
                         {group.journeys.map((j) => (
                           <TableRow key={j.id} className="hover:bg-slate-50/50 border-slate-100 transition-colors">
-                            <TableCell className="pl-6 py-4">
-                              <div className="font-bold text-slate-800 text-xs sm:text-sm">{j.activityName}</div>
-                              <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500 font-semibold">
+                            <TableCell className="pl-6 py-4 min-w-0 max-w-0 overflow-hidden">
+                              <div className="font-bold text-slate-800 text-xs sm:text-sm truncate max-w-full" title={j.activityName}>{j.activityName}</div>
+                              <div className="flex min-w-0 max-w-full items-center gap-1 mt-1 text-[10px] text-slate-500 font-semibold overflow-hidden">
                                 <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                <span className="truncate max-w-[150px]" title={j.startPoint}>{j.startPoint.split(',')[0]}</span>
+                                <span className="truncate min-w-0 max-w-[45%]" title={j.startPoint}>{j.startPoint.split(',')[0]}</span>
                                 <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
-                                <span className="truncate max-w-[150px] font-extrabold text-slate-700" title={j.endPoint}>{j.endPoint}</span>
+                                <span className="truncate min-w-0 flex-1 font-extrabold text-slate-700" title={journeyDestinationLabel(j)}>{journeyDestinationLabel(j)}</span>
                               </div>
                             </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1.5 font-bold text-slate-700 text-xs">
+                            <TableCell className="min-w-0 max-w-0 overflow-hidden">
+                              <div className="flex min-w-0 items-center gap-1.5 font-bold text-slate-700 text-xs">
                                 <Car className="w-4 h-4 text-slate-400 shrink-0" />
-                                {j.vehicleName}
+                                <span className="truncate">{j.vehicleName}</span>
                               </div>
-                              <div className="text-[10px] text-slate-400 font-semibold">{fmtRp(j.vehicleRate)}/km</div>
+                              <div className="text-[10px] text-slate-400 font-semibold truncate">{fmtRp(j.vehicleRate)}/km</div>
                             </TableCell>
-                            <TableCell className="font-bold text-slate-700 text-xs">
+                            <TableCell className="font-bold text-slate-700 text-xs truncate">
                               {j.distanceKm * 2} km
                             </TableCell>
-                            <TableCell>
-                              <div className="font-black text-indigo-600 text-xs sm:text-sm">{fmtRp(j.totalOperationalCost)}</div>
-                              <div className="text-[9px] text-slate-400 font-bold leading-tight">
+                            <TableCell className="min-w-0 max-w-0 overflow-hidden">
+                              <div className="font-black text-indigo-600 text-xs sm:text-sm truncate">{fmtRp(j.totalOperationalCost)}</div>
+                              <div className="text-[9px] text-slate-400 font-bold leading-tight truncate">
                                 Makan: {fmtRp(j.mealAllowance)}
                               </div>
                             </TableCell>
-                            <TableCell>
-                              <div className="font-black text-emerald-600 text-xs sm:text-sm">
+                            <TableCell className="min-w-0 max-w-0 overflow-hidden">
+                              <div className="font-black text-emerald-600 text-xs sm:text-sm truncate">
                                 {j.status === 'completed' ? (
                                   <span>{fmtRp(j.upahBersih || ((j.newTotalDistanceKm || j.distanceKm * 2) * 300 + (j.newTotalDurationHours || (j.durationHours || 0) * 2) * 5000))}</span>
                                 ) : (() => {
@@ -1364,7 +1430,7 @@ function DriverJourneysContent() {
                                 })()}
                               </div>
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="min-w-0 max-w-0 overflow-hidden">
                               {j.status === 'unassigned' && (
                                 <Badge className="bg-slate-100 text-slate-500 border border-slate-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
                                   Belum Ditugaskan
@@ -1375,7 +1441,7 @@ function DriverJourneysContent() {
                                   <Badge className="bg-purple-50 text-purple-700 border border-purple-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
                                     Ditugaskan
                                   </Badge>
-                                  <div className="text-[10px] font-bold text-slate-600 block">{j.assignedToName || 'Sopir'}</div>
+                                  <div className="text-[10px] font-bold text-slate-600 block truncate">{j.assignedToName || 'Sopir'}</div>
                                 </div>
                               )}
                               {j.status === 'claimed' && (
@@ -1383,7 +1449,7 @@ function DriverJourneysContent() {
                                   <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
                                     Aktif Jalan
                                   </Badge>
-                                  <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
+                                  <div className="text-[10px] font-bold text-slate-600 block truncate">{j.employeeName}</div>
                                 </div>
                               )}
                               {j.status === 'submitted' && (
@@ -1391,7 +1457,7 @@ function DriverJourneysContent() {
                                   <Badge className="bg-sky-50 text-sky-700 border border-sky-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
                                     Menunggu Audit
                                   </Badge>
-                                  <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
+                                  <div className="text-[10px] font-bold text-slate-600 block truncate">{j.employeeName}</div>
                                 </div>
                               )}
                               {j.status === 'declined' && (
@@ -1399,7 +1465,7 @@ function DriverJourneysContent() {
                                   <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
                                     Ditolak
                                   </Badge>
-                                  <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
+                                  <div className="text-[10px] font-bold text-slate-600 block truncate">{j.employeeName}</div>
                                 </div>
                               )}
                               {j.status === 'completed' && (
@@ -1407,12 +1473,12 @@ function DriverJourneysContent() {
                                   <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold rounded-lg px-2 py-0.5">
                                     Selesai
                                   </Badge>
-                                  <div className="text-[10px] font-bold text-slate-600 block">{j.employeeName}</div>
+                                  <div className="text-[10px] font-bold text-slate-600 block truncate">{j.employeeName}</div>
                                 </div>
                               )}
                             </TableCell>
-                            <TableCell className="text-right pr-6">
-                              <div className="flex items-center justify-end gap-1.5">
+                            <TableCell className="text-right pr-6 min-w-0 max-w-0 overflow-hidden">
+                              <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
                                 {(() => {
                                   const report = reportsByJourneyId[j.id];
                                   if (!report) return null;
@@ -1441,8 +1507,13 @@ function DriverJourneysContent() {
                                       setEditingJourneyId(j.id);
                                       setActivityName(j.activityName);
                                       setActivityDate(getJourneyDate(j));
-                                      setStartPoint(j.startPoint);
-                                      setEndPoint(j.endPoint);
+                                      setStartPoint(j.startPoint || DEFAULT_DRIVER_JOURNEY_POINT);
+                                      const destinations = normalizeDriverJourneyDestinations(
+                                        j.mainDestinations,
+                                        j.endPoint,
+                                      );
+                                      setEndPoint(destinations[0] || '');
+                                      setAdditionalDestinations(destinations.slice(1));
                                       setSelectedVehicle(j.vehicleName);
                                       setFuelProcurementMode(
                                         isFuelProcurementMode(j.fuelProcurementMode)
@@ -1454,7 +1525,7 @@ function DriverJourneysContent() {
                                       setInputDuration(j.customDurationPP || (j.durationHours ? j.durationHours * 2 : 0));
                                       setTollFee(j.tollParkingFee ? String(j.tollParkingFee) : '');
                                       setAssignedDriverId(j.assignedTo || '');
-                                      lastCalculatedRef.current = { start: j.startPoint, end: j.endPoint };
+                                      lastCalculatedRef.current = '';
                                       setShowAddForm(true);
                                     }}
                                     className="h-8 w-8 p-0 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl cursor-pointer"
@@ -1811,7 +1882,9 @@ function DriverJourneysContent() {
         if (!open) {
           setActivityName('');
           setActivityDate(new Date().toISOString().slice(0, 10));
+          setStartPoint(DEFAULT_DRIVER_JOURNEY_POINT);
           setEndPoint('');
+          setAdditionalDestinations([]);
           setCalcDistance(null);
           setCalcDuration(null);
           setInputDuration(null);
@@ -1819,11 +1892,11 @@ function DriverJourneysContent() {
           setEditingJourneyId(null);
           setAssignedDriverId('');
           setTollFee('');
-          lastCalculatedRef.current = { start: '', end: '' };
+          lastCalculatedRef.current = '';
         }
         setShowAddForm(open);
       }}>
-        <DialogContent className="md:max-w-[760px] rounded-2xl bg-white border-slate-100 shadow-2xl p-6">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-none h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl bg-white border-slate-100 shadow-2xl p-6 lg:p-8">
           <DialogHeader>
             <DialogTitle className="text-base font-extrabold text-slate-800 flex items-center gap-2">
               <Compass className="w-5 h-5 text-indigo-600" />
@@ -1834,9 +1907,11 @@ function DriverJourneysContent() {
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleCreateJourney} className="space-y-4 pt-2.5">
+          <form onSubmit={handleCreateJourney} className="space-y-5 pt-2.5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-5 items-start">
+              <div className="space-y-5 lg:contents lg:space-y-0">
             {/* Nama Kegiatan & Tanggal */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 lg:col-start-1 lg:row-start-1">
               <div className="md:col-span-2 space-y-1.5">
                 <Label htmlFor="journeyName" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                   Keperluan / Nama Kegiatan
@@ -1867,7 +1942,7 @@ function DriverJourneysContent() {
             </div>
 
             {/* Penugasan Sopir (Opsional) */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 lg:col-start-2 lg:row-start-1">
               <Label htmlFor="driverAssignment" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                 Penugasan Sopir (Opsional)
               </Label>
@@ -1918,97 +1993,8 @@ function DriverJourneysContent() {
               })()}
             </div>
 
-            {/* Titik Mulai & Tujuan */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Titik Awal
-                </Label>
-                {!startPoint ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setMapTarget('start');
-                      setMapSearchText('');
-                      setMapAddress('');
-                      setMapAddressImage(null);
-                      setShowMapSelector(true);
-                    }}
-                    className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
-                  >
-                    <MapPin className="w-4 h-4" />
-                    Pilih Titik Awal di Peta
-                  </Button>
-                ) : (
-                  <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
-                    <div className="flex items-center gap-2 overflow-hidden text-xs text-indigo-900 font-semibold flex-1">
-                      <MapPin className="w-4.5 h-4.5 text-indigo-600 shrink-0" />
-                      <span className="truncate" title={startPoint}>{startPoint}</span>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        setMapTarget('start');
-                        setMapSearchText(startPoint);
-                        setMapAddress(startPoint);
-                        setMapAddressImage(null);
-                        setShowMapSelector(true);
-                      }}
-                      className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
-                    >
-                      Ubah
-                    </Button>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Tujuan Utama
-                </Label>
-                {!endPoint ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setMapSearchText('');
-                      setMapAddress('');
-                      setMapAddressImage(null);
-                      setShowMapSelector(true);
-                    }}
-                    className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
-                  >
-                    <MapPin className="w-4 h-4" />
-                    Pilih Lokasi Tujuan di Peta
-                  </Button>
-                ) : (
-                  <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
-                    <div className="flex items-center gap-2 overflow-hidden text-xs text-indigo-900 font-semibold flex-1">
-                      <MapPin className="w-4.5 h-4.5 text-indigo-600 shrink-0" />
-                      <span className="truncate" title={endPoint}>{endPoint}</span>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        setMapSearchText(endPoint);
-                        setMapAddress(endPoint);
-                        setMapAddressImage(null);
-                        setShowMapSelector(true);
-                      }}
-                      className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
-                    >
-                      Ubah
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-
             {/* Kendaraan, Durasi & Tol */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 lg:col-start-2 lg:row-start-2">
               <div className="space-y-1.5">
                 <Label htmlFor="vehicleSelect" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                   Jenis Kendaraan
@@ -2076,7 +2062,8 @@ function DriverJourneysContent() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-2">
+            {/* Mode Pengadaan BBM */}
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-2 lg:col-start-2 lg:row-start-3">
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="fuelModeSelect" className="text-xs font-bold text-indigo-900 uppercase tracking-wider">
                   Mode Pengadaan BBM
@@ -2097,7 +2084,13 @@ function DriverJourneysContent() {
                 disabled={selectedVehicle === 'Ndalem'}
               >
                 <SelectTrigger id="fuelModeSelect" className="w-full text-xs font-bold text-slate-700 bg-white rounded-xl border border-indigo-100 h-10 px-3">
-                  <SelectValue />
+                  <SelectValue>
+                    {fuelProcurementModeLabel(
+                      selectedVehicle === 'Ndalem'
+                        ? DEFAULT_FUEL_PROCUREMENT_MODE
+                        : fuelProcurementMode,
+                    )}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
                   <SelectItem value="standard_direct">Standard langsung — aturan legacy</SelectItem>
@@ -2112,6 +2105,171 @@ function DriverJourneysContent() {
                     ? `Saldo tersedia ${fmtRp(Number(selectedFuelBalance?.availableBalance || 0))} akan dicairkan saat otorisasi; kuitansi tetap wajib.`
                     : 'Settlement BBM mengikuti alur langsung yang sudah berjalan.'}
               </p>
+            </div>
+
+              </div>
+
+              <div className="space-y-5 lg:contents lg:space-y-0">
+            {/* Titik Awal */}
+            <div className="space-y-1.5 lg:col-start-1 lg:row-start-2">
+              <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Titik Awal
+              </Label>
+              {!startPoint ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setMapTarget('start');
+                    setMapSearchText('');
+                    setMapAddress('');
+                    setMapAddressImage(null);
+                    setShowMapSelector(true);
+                  }}
+                  className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
+                >
+                  <MapPin className="w-4 h-4" />
+                  Pilih Titik Awal di Peta
+                </Button>
+              ) : (
+                <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2 overflow-hidden text-xs text-indigo-900 font-semibold flex-1">
+                    <MapPin className="w-4.5 h-4.5 text-indigo-600 shrink-0" />
+                    <span className="truncate" title={startPoint}>{startPoint}</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setMapTarget('start');
+                      setMapSearchText(startPoint);
+                      setMapAddress(startPoint);
+                      setMapAddressImage(null);
+                      setShowMapSelector(true);
+                    }}
+                    className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
+                  >
+                    Ubah
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Tujuan Utama */}
+            <div className="space-y-1.5 lg:col-start-1 lg:row-start-3">
+              <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Tujuan Utama
+              </Label>
+              {!endPoint ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                onClick={() => {
+                    setMapTarget('end');
+                    setMapSearchText('');
+                    setMapAddress('');
+                    setMapAddressImage(null);
+                    setShowMapSelector(true);
+                  }}
+                  className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
+                >
+                  <MapPin className="w-4 h-4" />
+                  Pilih Lokasi Tujuan di Peta
+                </Button>
+              ) : (
+                <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2 overflow-hidden text-xs text-indigo-900 font-semibold flex-1">
+                    <MapPin className="w-4.5 h-4.5 text-indigo-600 shrink-0" />
+                    <span className="truncate" title={endPoint}>{endPoint}</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setMapTarget('end');
+                      setMapSearchText(endPoint);
+                      setMapAddress(endPoint);
+                      setMapAddressImage(null);
+                      setShowMapSelector(true);
+                    }}
+                    className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
+                  >
+                    Ubah
+                  </Button>
+                </div>
+              )}
+
+              {additionalDestinations.map((destination, index) => (
+                <div key={`main-destination-${index}`} className="space-y-1.5 pt-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Tujuan Utama {index + 2}
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => removeMainDestination(index)}
+                      className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                      title="Hapus tujuan utama"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                  {!destination ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setMapTarget(index);
+                        setMapSearchText('');
+                        setMapAddress('');
+                        setMapAddressImage(null);
+                        setShowMapSelector(true);
+                      }}
+                      className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      Pilih Lokasi Tujuan di Peta
+                    </Button>
+                  ) : (
+                    <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                      <div className="flex items-center gap-2 overflow-hidden text-xs text-indigo-900 font-semibold flex-1">
+                        <MapPin className="w-4.5 h-4.5 text-indigo-600 shrink-0" />
+                        <span className="truncate" title={destination}>{destination}</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          setMapTarget(index);
+                          setMapSearchText(destination);
+                          setMapAddress(destination);
+                          setMapAddressImage(null);
+                          setShowMapSelector(true);
+                        }}
+                        className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
+                      >
+                        Ubah
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {additionalDestinations.length < MAX_MAIN_DESTINATIONS - 1 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={addMainDestination}
+                  className="w-full mt-3 rounded-xl border-dashed border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-9 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1.5" />
+                  Tambah Tujuan Utama
+                </Button>
+              )}
+            </div>
+
+              </div>
             </div>
 
             {/* Calculation Loader */}
@@ -2133,7 +2291,7 @@ function DriverJourneysContent() {
                   type="button"
                   size="sm"
                   onClick={() => {
-                    lastCalculatedRef.current = { start: '', end: '' };
+                    lastCalculatedRef.current = '';
                     setCalcDistance(null);
                   }}
                   className="text-[10px] font-bold bg-rose-600 hover:bg-rose-700 text-white h-7 px-2.5 rounded-lg shrink-0"
@@ -2462,10 +2620,14 @@ function DriverJourneysContent() {
                 onClick={() => {
                   if (mapTarget === 'start') {
                     setStartPoint(mapAddress);
-                  } else {
+                  } else if (mapTarget === 'end') {
                     setEndPoint(mapAddress);
+                  } else if (typeof mapTarget === 'number') {
+                    setAdditionalDestinations((previous) => previous.map((destination, index) => (
+                      index === mapTarget ? mapAddress : destination
+                    )));
                   }
-                  lastCalculatedRef.current = { start: '', end: '' };
+                  lastCalculatedRef.current = '';
                   setCalcDistance(null);
                   setShowMapSelector(false);
                 }}

@@ -136,6 +136,7 @@ export interface DriverAuditReport {
   points?: string[];
   startPoint?: string;
   endPoint?: string;
+  mainDestinations?: string[];
   baseOperationalCost?: number;
   fuelProcurementMode?: FuelProcurementMode;
   heldFuelAmount?: number;
@@ -210,6 +211,18 @@ const VEHICLE_OPTIONS = [
   'Ndalem',
 ];
 
+const MAX_MEAL_MONEY_RECEIVED = 100_000_000;
+
+function clampMealMoneyReceived(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(MAX_MEAL_MONEY_RECEIVED, Math.max(0, Math.trunc(value)));
+}
+
+function parseMealMoneyReceived(value: string): number {
+  if (value.trim() === '') return 0;
+  return clampMealMoneyReceived(Number(value));
+}
+
 function getVehicleRate(vType: string) {
   return VEHICLE_RATES[vType] ?? 1000;
 }
@@ -238,7 +251,7 @@ export function DriverJourneyAuditDialog({
   const [auditAuthorizedDurationPP, setAuditAuthorizedDurationPP] = useState<number>(0);
   const [auditFuelDelta, setAuditFuelDelta] = useState<number>(0);
   const [auditTollDelta, setAuditTollDelta] = useState<number>(0);
-  const [auditNdalemMealMoney, setAuditNdalemMealMoney] = useState<number>(0);
+  const [auditMealMoneyReceivedInput, setAuditMealMoneyReceivedInput] = useState('0');
   const [auditVehicleType, setAuditVehicleType] = useState<string>('Suzuki XL7');
   const [auditNightCount, setAuditNightCount] = useState<number>(0);
   const [auditPoints, setAuditPoints] = useState<string[]>([]);
@@ -377,7 +390,9 @@ export function DriverJourneyAuditDialog({
 
     setAuditFuelDelta(fuelDelta);
     setAuditTollDelta(tollDelta);
-    setAuditNdalemMealMoney(report.ndalemMealMoneyReceived ?? 0);
+    setAuditMealMoneyReceivedInput(
+      String(clampMealMoneyReceived(report.ndalemMealMoneyReceived ?? 0)),
+    );
     setAuditLegWages({});
   }
 
@@ -714,7 +729,7 @@ export function DriverJourneyAuditDialog({
       ? 0
       : auditFuelDelta;
     const deltaToll = auditTollDelta;
-    const ndalemMealMoney = auditNdalemMealMoney;
+    const mealMoneyReceived = parseMealMoneyReceived(auditMealMoneyReceivedInput);
     // Full meal entitlement for the audited duration, before the money
     // already given to the driver is subtracted — shown next to the input
     // so the auditor has the same "Hak Nx Makan" context the sopir saw.
@@ -725,7 +740,7 @@ export function DriverJourneyAuditDialog({
     const actualMeal = getMealAllowanceForDuration(
       actualJourneyDurationHours,
       auditVehicleType,
-      ndalemMealMoney,
+      mealMoneyReceived,
     );
     const deltaMeal = auditVehicleType === 'Ndalem'
       ? actualMeal
@@ -817,7 +832,7 @@ export function DriverJourneyAuditDialog({
     auditDurationHours,
     auditFuelDelta,
     auditTollDelta,
-    auditNdalemMealMoney,
+    auditMealMoneyReceivedInput,
     auditVehicleType,
     auditNightCount,
     auditAuthorizedDurationPP,
@@ -836,7 +851,7 @@ export function DriverJourneyAuditDialog({
       fuelDelta: auditFuelDelta,
       tollDelta: auditTollDelta,
       mealDelta: auditCalc.deltaMeal,
-      ndalemMealMoneyReceived: auditNdalemMealMoney,
+      ndalemMealMoneyReceived: parseMealMoneyReceived(auditMealMoneyReceivedInput),
       vehicleType: auditVehicleType,
       nightCount: auditNightCount,
       points: auditPoints,
@@ -1172,7 +1187,7 @@ export function DriverJourneyAuditDialog({
 
                   <div className="space-y-1">
                     <Label className="text-[9.5px] font-bold text-slate-400 uppercase flex items-center justify-between gap-2">
-                      <span>Uang Diberikan Selama Perjalanan</span>
+                      <span>Uang Didapatkan Selama Perjalanan</span>
                       <span className="text-slate-500 font-bold normal-case text-[9.5px] whitespace-nowrap">
                         (Hak {Math.round(auditCalc.totalMealEntitlement / 20000)}x Makan: <strong className="text-emerald-700 font-black">{fmtRp(auditCalc.totalMealEntitlement)}</strong>)
                       </span>
@@ -1180,14 +1195,30 @@ export function DriverJourneyAuditDialog({
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-indigo-700">Rp</span>
                       <Input
+                        id="audit-meal-money-received"
                         type="number"
-                        placeholder="0"
-                        value={auditNdalemMealMoney || ''}
-                        onChange={(e) => setAuditNdalemMealMoney(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        inputMode="numeric"
+                        min={0}
+                        max={MAX_MEAL_MONEY_RECEIVED}
+                        step={1000}
+                        value={auditMealMoneyReceivedInput}
+                        onChange={(e) => {
+                          const nextValue = e.target.value;
+                          setAuditMealMoneyReceivedInput(
+                            nextValue === ''
+                              ? ''
+                              : String(clampMealMoneyReceived(Number(nextValue))),
+                          );
+                        }}
                         disabled={!isEditable || actionLoading}
-                        className="pl-8 rounded-xl text-xs font-bold border-slate-200 focus:border-indigo-400 text-slate-800 bg-white"
+                        aria-label="Uang didapatkan selama perjalanan"
+                        aria-describedby="audit-meal-money-received-help"
+                        className="pl-8 rounded-xl text-xs font-bold border-indigo-200 hover:border-indigo-300 focus:border-indigo-500 text-slate-800 bg-white"
                       />
                     </div>
+                    <p id="audit-meal-money-received-help" className="text-[9px] font-semibold text-slate-400">
+                      Nilai ini dikurangkan dari hak uang makan saat audit.
+                    </p>
                   </div>
 
                   <div className="grid grid-cols-3 gap-3">

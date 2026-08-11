@@ -104,6 +104,7 @@ import {
   calculateEstimatedDriverWage,
   getMealAllowanceForDuration as calculateMealAllowanceForDuration,
   getShortTripMealWageComponent,
+  normalizeDriverJourneyDestinations,
   type DriverVehicleName,
 } from '@/lib/payroll/driverJourney';
 import { parseImageExif } from '@/lib/exif';
@@ -477,6 +478,15 @@ function calculateSopirDefaultFee(
 
 function fmtRp(val: number): string {
   return 'Rp' + val.toLocaleString('id-ID');
+}
+
+function journeyMainDestinationLabel(journey: any): string {
+  return normalizeDriverJourneyDestinations(
+    journey?.mainDestinations,
+    journey?.endPoint,
+  )
+    .map((destination) => destination.split(',')[0].trim())
+    .join(' → ');
 }
 
 function getNextDayISO(dateStr: string): string {
@@ -4901,7 +4911,7 @@ function ActivitiesContent() {
                           <div className="flex items-center gap-1.5 text-purple-100">
                             <MapPin className="w-4 h-4 text-purple-300 shrink-0" />
                             <span className="font-semibold text-white/95">Tujuan:</span>
-                            <span className="truncate flex-1 font-extrabold text-white" title={j.endPoint}>{j.endPoint}</span>
+                            <span className="truncate flex-1 font-extrabold text-white" title={journeyMainDestinationLabel(j)}>{journeyMainDestinationLabel(j)}</span>
                           </div>
                           <div className="flex justify-between pt-1 border-t border-white/10 text-[10px] text-purple-200">
                             <span>Kendaraan: <strong>{j.vehicleName}</strong></span>
@@ -4966,7 +4976,7 @@ function ActivitiesContent() {
                       <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl">
                         <MapPin className="w-4 h-4 text-indigo-600 shrink-0" />
                         <span className="font-bold text-slate-500">Tujuan utama:</span>
-                        <span className="truncate flex-1 font-extrabold text-slate-800" title={j.endPoint}>{j.endPoint}</span>
+                        <span className="truncate flex-1 font-extrabold text-slate-800" title={journeyMainDestinationLabel(j)}>{journeyMainDestinationLabel(j)}</span>
                       </div>
 
                       {/* 2-Column Cards Grid: Left = Biaya Operasional, Right = Estimasi Upah Sopir */}
@@ -5061,7 +5071,7 @@ function ActivitiesContent() {
                           <h4 className="text-xs sm:text-sm font-extrabold text-slate-800 leading-snug">{j.activityName}</h4>
                           <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-500 font-semibold">
                             <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                            <span className="truncate flex-1 font-extrabold text-slate-700" title={j.endPoint}>{j.endPoint}</span>
+                            <span className="truncate flex-1 font-extrabold text-slate-700" title={journeyMainDestinationLabel(j)}>{journeyMainDestinationLabel(j)}</span>
                           </div>
                         </div>
 

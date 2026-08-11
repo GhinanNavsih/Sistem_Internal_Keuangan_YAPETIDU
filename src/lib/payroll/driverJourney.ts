@@ -27,10 +27,64 @@ export type FuelProcurementMode =
 
 export const DEFAULT_FUEL_PROCUREMENT_MODE: FuelProcurementMode = 'standard_direct';
 
+export const DEFAULT_DRIVER_JOURNEY_POINT = 'UNIPDU Jombang, Jawa Timur';
+export const MAX_MAIN_DESTINATIONS = 8;
+
+/**
+ * Returns the ordered main destinations for a journey while keeping older
+ * DriverJourneys, which only have `endPoint`, readable.
+ */
+export function normalizeDriverJourneyDestinations(
+  value: unknown,
+  legacyEndPoint?: unknown,
+): string[] {
+  const rawValues = Array.isArray(value) && value.length > 0
+    ? value
+    : typeof legacyEndPoint === 'string'
+      ? [legacyEndPoint]
+      : [];
+
+  return rawValues
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, MAX_MAIN_DESTINATIONS);
+}
+
+export function driverJourneyRoutePoints(
+  startPoint: unknown,
+  destinations: unknown,
+  legacyEndPoint?: unknown,
+  returnToStart = true,
+): string[] {
+  const start = typeof startPoint === 'string' && startPoint.trim()
+    ? startPoint.trim()
+    : DEFAULT_DRIVER_JOURNEY_POINT;
+  const mainDestinations = normalizeDriverJourneyDestinations(destinations, legacyEndPoint);
+  if (mainDestinations.length === 0) return [start];
+  return returnToStart
+    ? [start, ...mainDestinations, start]
+    : [start, ...mainDestinations];
+}
+
+export const FUEL_PROCUREMENT_MODE_LABELS: Readonly<
+  Record<FuelProcurementMode, string>
+> = Object.freeze({
+  standard_direct: 'Standard langsung',
+  hold_accumulate: 'Tahan & akumulasi',
+  procure_release: 'Cairkan saldo',
+});
+
 export function isFuelProcurementMode(value: unknown): value is FuelProcurementMode {
   return value === 'hold_accumulate' ||
     value === 'procure_release' ||
     value === 'standard_direct';
+}
+
+export function fuelProcurementModeLabel(value: unknown): string {
+  return isFuelProcurementMode(value)
+    ? FUEL_PROCUREMENT_MODE_LABELS[value]
+    : 'Mode pengadaan BBM';
 }
 
 export function assertFuelProcurementMode(

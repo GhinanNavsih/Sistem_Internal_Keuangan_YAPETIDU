@@ -15,6 +15,7 @@ import {
   calculateNightPremium,
   canonicalizeDriverJourneyTimeline,
   DEFAULT_FUEL_PROCUREMENT_MODE,
+  MAX_MAIN_DESTINATIONS,
   isDriverVehicleName,
   isFuelProcurementMode,
   getMealAllowanceForDuration,
@@ -84,6 +85,8 @@ const ALLOWED_DRIVER_FIELDS = [
   'durationHours',
   'routeDurationHours',
   'journeyId',
+  'startPoint',
+  'mainDestinations',
   'extraActivities',
   'extraDistanceKm',
   'extraOperationalCost',
@@ -440,6 +443,32 @@ function sanitizeDriverData(
     (typeof result.reportedEndPoint !== 'string' || !result.reportedEndPoint.trim() || result.reportedEndPoint.length > 300)
   ) {
     throw new HttpError(400, 'Tujuan perjalanan tidak valid.');
+  }
+  if (result.startPoint !== undefined) {
+    if (
+      typeof result.startPoint !== 'string' ||
+      !result.startPoint.trim() ||
+      result.startPoint.trim().length > 300
+    ) {
+      throw new HttpError(400, 'Titik awal perjalanan tidak valid.');
+    }
+    result.startPoint = result.startPoint.trim();
+  }
+  if (result.mainDestinations !== undefined) {
+    if (
+      !Array.isArray(result.mainDestinations) ||
+      result.mainDestinations.length < 1 ||
+      result.mainDestinations.length > MAX_MAIN_DESTINATIONS ||
+      result.mainDestinations.some(
+        (destination) =>
+          typeof destination !== 'string' ||
+          !destination.trim() ||
+          destination.trim().length > 300,
+      )
+    ) {
+      throw new HttpError(400, 'Daftar tujuan utama perjalanan tidak valid.');
+    }
+    result.mainDestinations = result.mainDestinations.map((destination) => destination.trim());
   }
 
   const distanceKm = typeof result.distanceKm === 'number' ? result.distanceKm : 0;
@@ -1018,11 +1047,20 @@ export async function POST(request: NextRequest) {
           typeof journeyEvidence.reportedEndPoint === 'string'
             ? journeyEvidence.reportedEndPoint.trim()
             : '';
+        const submittedStartPoint =
+          typeof journeyEvidence.startPoint === 'string'
+            ? journeyEvidence.startPoint.trim()
+            : '';
+        const submittedMainDestinations = Array.isArray(journeyEvidence.mainDestinations)
+          ? (journeyEvidence.mainDestinations as string[])
+          : [];
         delete journeyEvidence.distanceKm;
         delete journeyEvidence.durationHours;
         delete journeyEvidence.vehicleType;
         delete journeyEvidence.tripType;
         delete journeyEvidence.reportedEndPoint;
+        delete journeyEvidence.startPoint;
+        delete journeyEvidence.mainDestinations;
         delete journeyEvidence.fuelReceiptEvidence;
         delete journeyEvidence.tollReceiptEvidence;
         const submittedPoints = Array.isArray(driverData.points) ? driverData.points : [];
@@ -1063,6 +1101,13 @@ export async function POST(request: NextRequest) {
           submittedTripType,
           newTotalDistanceKm: submittedDistanceKm,
           newTotalDurationHours: submittedDurationHours,
+          ...(submittedStartPoint ? { startPoint: submittedStartPoint } : {}),
+          ...(submittedMainDestinations.length > 0
+            ? {
+                mainDestinations: submittedMainDestinations,
+                endPoint: submittedMainDestinations[0],
+              }
+            : {}),
           submittedAt: now,
           updatedAt: now,
           draftDate: admin.firestore.FieldValue.delete(),
@@ -1081,6 +1126,8 @@ export async function POST(request: NextRequest) {
           draftExtraActivities: admin.firestore.FieldValue.delete(),
           draftCalculatedDistanceKm: admin.firestore.FieldValue.delete(),
           draftCalculatedDurationHours: admin.firestore.FieldValue.delete(),
+          draftStartPoint: admin.firestore.FieldValue.delete(),
+          draftMainDestinations: admin.firestore.FieldValue.delete(),
           draftEndPoint: admin.firestore.FieldValue.delete(),
         };
         journeyUpdate.fuelReceiptEvidence = shouldClearFuelReceiptEvidence
@@ -1089,7 +1136,10 @@ export async function POST(request: NextRequest) {
         journeyUpdate.tollReceiptEvidence = shouldClearTollReceiptEvidence
           ? admin.firestore.FieldValue.delete()
           : (driverData.tollReceiptEvidence ?? admin.firestore.FieldValue.delete());
-        if (submittedEndPoint) journeyUpdate.endPoint = submittedEndPoint;
+        if (submittedMainDestinations.length === 0 && submittedEndPoint) {
+          journeyUpdate.endPoint = submittedEndPoint;
+          journeyUpdate.mainDestinations = [submittedEndPoint];
+        }
         transaction.update(journeyRef, {
           ...journeyUpdate,
         });

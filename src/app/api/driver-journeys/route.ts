@@ -6,10 +6,12 @@ import { assertDateOnly } from '@/lib/payroll/domain';
 import {
   calculateDriverJourneyOperationalCosts,
   calculateEstimatedDriverWage,
+  DEFAULT_DRIVER_JOURNEY_POINT,
   DEFAULT_DRIVER_VEHICLE_NAME,
   DEFAULT_FUEL_PROCUREMENT_MODE,
   isFuelProcurementMode,
   isDriverVehicleName,
+  MAX_MAIN_DESTINATIONS,
   type DriverVehicleName,
 } from '@/lib/payroll/driverJourney';
 import {
@@ -89,6 +91,24 @@ function dateField(value: unknown, field: string): string {
     throw new HttpError(400, error instanceof Error ? error.message : `${field} tidak valid.`);
   }
   return date;
+}
+
+function mainDestinationsField(value: unknown, legacyEndPoint?: unknown): string[] {
+  const rawValues = value === undefined
+    ? [legacyEndPoint]
+    : value;
+  if (!Array.isArray(rawValues) || rawValues.length < 1 || rawValues.length > MAX_MAIN_DESTINATIONS) {
+    throw new HttpError(
+      400,
+      `Tujuan utama harus berisi 1 sampai ${MAX_MAIN_DESTINATIONS} lokasi.`,
+    );
+  }
+  return rawValues.map((item, index) => {
+    if (typeof item !== 'string' || !item.trim() || item.trim().length > 300) {
+      throw new HttpError(400, `Tujuan utama ke-${index + 1} tidak valid.`);
+    }
+    return item.trim();
+  });
 }
 
 function jakartaToday(): string {
@@ -258,8 +278,11 @@ export async function POST(request: NextRequest) {
       if (period !== expectedPeriod) {
         throw new HttpError(409, `Tanggal perjalanan berada pada periode payroll ${expectedPeriod}.`);
       }
-      const startPoint = stringField(body?.startPoint, 'Titik awal', 300);
-      const endPoint = stringField(body?.endPoint, 'Tujuan perjalanan', 300);
+      const startPoint = body?.startPoint === undefined
+        ? DEFAULT_DRIVER_JOURNEY_POINT
+        : stringField(body.startPoint, 'Titik awal', 300);
+      const mainDestinations = mainDestinationsField(body?.mainDestinations, body?.endPoint);
+      const endPoint = mainDestinations[0];
       const requestedVehicleName = stringField(body?.vehicleName, 'Jenis kendaraan', 80);
       if (!isDriverVehicleName(requestedVehicleName)) {
         throw new HttpError(400, 'Jenis kendaraan tidak dikenal.');
@@ -404,6 +427,7 @@ export async function POST(request: NextRequest) {
           journeyDate: activityDate,
           startPoint,
           endPoint,
+          mainDestinations,
           vehicleName,
           vehicleRate: operationalCosts.vehicleRate,
           distanceKm,
@@ -535,6 +559,7 @@ export async function POST(request: NextRequest) {
           journeyDate: activityDate,
           startPoint,
           endPoint,
+          mainDestinations: [endPoint],
           vehicleName,
           vehicleRate: operationalCosts.vehicleRate,
           distanceKm,
@@ -880,9 +905,22 @@ export async function POST(request: NextRequest) {
       for (const [source, target] of [['calculatedDistanceKm', 'draftCalculatedDistanceKm'], ['calculatedDurationHours', 'draftCalculatedDurationHours']] as const) {
         if (draft[source] !== undefined) draftData[target] = numberField(draft[source], source, { min: 0, max: 10_000 });
       }
-      if (draft.endPoint !== undefined) {
+      if (draft.startPoint !== undefined) {
+        const draftStartPoint = stringField(draft.startPoint, 'Titik awal', 300);
+        draftData.draftStartPoint = draftStartPoint;
+        draftData.startPoint = draftStartPoint;
+      }
+      if (draft.mainDestinations !== undefined) {
+        const draftMainDestinations = mainDestinationsField(draft.mainDestinations);
+        draftData.draftMainDestinations = draftMainDestinations;
+        draftData.mainDestinations = draftMainDestinations;
+        draftData.draftEndPoint = draftMainDestinations[0];
+        draftData.endPoint = draftMainDestinations[0];
+      } else if (draft.endPoint !== undefined) {
         draftData.draftEndPoint = stringField(draft.endPoint, 'Tujuan perjalanan', 300);
         draftData.endPoint = draftData.draftEndPoint;
+        draftData.draftMainDestinations = [draftData.draftEndPoint];
+        draftData.mainDestinations = [draftData.draftEndPoint];
       }
 
       const journeyRef = adminDb.collection('DriverJourneys').doc(journeyId);
