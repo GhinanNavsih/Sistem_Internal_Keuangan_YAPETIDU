@@ -112,6 +112,16 @@ service firebase.storage {
       allow delete: if false;
     }
 
+    // Optional photo attached to a broken-facility report. Scoped to the
+    // reporting Loyalis employee because the photo is uploaded before the
+    // FacilityReports document exists.
+    match /facility_reports/{employeeId}/{filename} {
+      allow read: if isFinance() || roleIs('satker_head') ||
+        (hasActiveProfile() && profile().get('linkedEmployeeId', '') == employeeId);
+      allow create, update: if false;
+      allow delete: if false;
+    }
+
     // Guard-post proof photos. Keyed by the uploading Ketua Shift because the
     // photos are taken while the shift form is still a draft, before the
     // ShiftOccurrence document exists. Kepala SatKer reads them to audit that

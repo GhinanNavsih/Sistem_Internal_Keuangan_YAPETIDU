@@ -17,6 +17,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -42,8 +49,10 @@ import {
   History,
   BookOpen,
   CalendarCheck,
+  Wrench,
   ClipboardList,
   Calendar,
+  Menu as MenuIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
@@ -1475,7 +1484,7 @@ export default function EmployeePayslipPage() {
             </div>
             <div className="min-w-0 shrink">
               <h1 className="text-xs sm:text-base font-bold text-black leading-tight truncate">Slip Gaji</h1>
-              <p className="text-[10px] sm:text-xs text-black font-semibold truncate max-w-[80px] xs:max-w-[110px] sm:max-w-none">{profile.displayName || 'Karyawan'}</p>
+              <p className="text-[10px] sm:text-xs text-black font-semibold">{profile.displayName || 'Karyawan'}</p>
             </div>
           </div>
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -1506,32 +1515,57 @@ export default function EmployeePayslipPage() {
             )}
 
             {profile.role === 'loyalis' && (
-              <Link href="/employee/presensi-correction">
-                <Button
-                  variant="outline"
-                  className="text-slate-800 hover:text-indigo-600 hover:bg-indigo-50/50 border-slate-200 bg-white rounded-xl h-8 px-2 sm:px-2.5 flex items-center gap-1 text-[11px] font-semibold shadow-sm cursor-pointer shrink-0"
-                  title="Ajukan Presensi"
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center shadow-sm cursor-pointer shrink-0"
+                      title="Menu"
+                    />
+                  }
                 >
-                  <CalendarCheck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                  <span className="hidden min-[360px]:inline">Ajukan Presensi</span>
-                </Button>
-              </Link>
+                  <MenuIcon className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-indigo-500" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem render={<Link href="/employee/presensi-correction" />}>
+                    <CalendarCheck className="text-indigo-500" />
+                    Ajukan Presensi
+                  </DropdownMenuItem>
+                  <DropdownMenuItem render={<Link href="/employee/facility-reports" />}>
+                    <Wrench className="text-amber-500" />
+                    Lapor Fasilitas
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handlePasswordReset} disabled={resetLoading}>
+                    {resetLoading ? (
+                      <Loader2 className="text-indigo-500 animate-spin" />
+                    ) : (
+                      <KeyRound className="text-indigo-500" />
+                    )}
+                    Ubah Password
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
 
-            <Button
-              onClick={handlePasswordReset}
-              disabled={resetLoading}
-              variant="outline"
-              size="icon"
-              className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30 rounded-xl h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center shadow-sm cursor-pointer shrink-0"
-              title="Ubah Password"
-            >
-              {resetLoading ? (
-                <Loader2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 animate-spin" />
-              ) : (
-                <KeyRound className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
-              )}
-            </Button>
+            {profile.role !== 'loyalis' && (
+              <Button
+                onClick={handlePasswordReset}
+                disabled={resetLoading}
+                variant="outline"
+                size="icon"
+                className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30 rounded-xl h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center shadow-sm cursor-pointer shrink-0"
+                title="Ubah Password"
+              >
+                {resetLoading ? (
+                  <Loader2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 animate-spin" />
+                ) : (
+                  <KeyRound className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+                )}
+              </Button>
+            )}
 
             <Button
               onClick={() => logout()}

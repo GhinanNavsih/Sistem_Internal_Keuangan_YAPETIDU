@@ -12,6 +12,9 @@ import {
   isFuelProcurementMode,
   isDriverVehicleName,
   MAX_MAIN_DESTINATIONS,
+  normalizeDriverJourneyDestinations,
+  normalizeDriverJourneyLocation,
+  type DriverJourneyLocation,
   type DriverVehicleName,
 } from '@/lib/payroll/driverJourney';
 import {
@@ -108,6 +111,33 @@ function mainDestinationsField(value: unknown, legacyEndPoint?: unknown): string
       throw new HttpError(400, `Tujuan utama ke-${index + 1} tidak valid.`);
     }
     return item.trim();
+  });
+}
+
+function journeyLocationField(
+  value: unknown,
+  address: string,
+  field: string,
+): DriverJourneyLocation | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const location = normalizeDriverJourneyLocation(value, address);
+  if (!location) throw new HttpError(400, `${field} tidak valid.`);
+  return location;
+}
+
+function journeyLocationsField(
+  value: unknown,
+  addresses: string[],
+  field: string,
+): Array<DriverJourneyLocation | null> | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length !== addresses.length) {
+    throw new HttpError(400, `${field} tidak valid.`);
+  }
+  return value.map((item, index) => {
+    const location = journeyLocationField(item, addresses[index], `${field} ke-${index + 1}`);
+    return location ?? null;
   });
 }
 
@@ -283,6 +313,16 @@ export async function POST(request: NextRequest) {
         : stringField(body.startPoint, 'Titik awal', 300);
       const mainDestinations = mainDestinationsField(body?.mainDestinations, body?.endPoint);
       const endPoint = mainDestinations[0];
+      const startPointLocation = journeyLocationField(
+        body?.startPointLocation,
+        startPoint,
+        'Koordinat titik awal',
+      );
+      const mainDestinationLocations = journeyLocationsField(
+        body?.mainDestinationLocations,
+        mainDestinations,
+        'Koordinat tujuan utama',
+      );
       const requestedVehicleName = stringField(body?.vehicleName, 'Jenis kendaraan', 80);
       if (!isDriverVehicleName(requestedVehicleName)) {
         throw new HttpError(400, 'Jenis kendaraan tidak dikenal.');
@@ -428,6 +468,8 @@ export async function POST(request: NextRequest) {
           startPoint,
           endPoint,
           mainDestinations,
+          ...(startPointLocation !== undefined ? { startPointLocation } : {}),
+          ...(mainDestinationLocations !== undefined ? { mainDestinationLocations } : {}),
           vehicleName,
           vehicleRate: operationalCosts.vehicleRate,
           distanceKm,
@@ -445,7 +487,9 @@ export async function POST(request: NextRequest) {
           estimatedComponentWaktu: wageEst.compWaktu,
           estimatedBaseDriverWage: wageEst.baseWage,
           estimatedMaxDriverWage: wageEst.maxWage,
-          destinationImageUrl: typeof body?.destinationImageUrl === 'string' ? body.destinationImageUrl : null,
+          // Location-only flow: clear historical Google Places photo URLs so
+          // rendering a journey cannot trigger the Places Photo SKU.
+          destinationImageUrl: null,
           assignedTo,
           assignedToName,
           status,
@@ -455,6 +499,18 @@ export async function POST(request: NextRequest) {
           authorizedBy: actor.uid,
           authorizedByName: actor.displayName,
         };
+
+        if (existing && startPointLocation === undefined && existing.startPoint !== startPoint) {
+          journeyData.startPointLocation = null;
+        }
+        if (
+          existing &&
+          mainDestinationLocations === undefined &&
+          JSON.stringify(normalizeDriverJourneyDestinations(existing.mainDestinations, existing.endPoint)) !==
+            JSON.stringify(mainDestinations)
+        ) {
+          journeyData.mainDestinationLocations = mainDestinations.map(() => null);
+        }
 
         if (!existing) {
           journeyData.id = journeyId;
@@ -475,6 +531,16 @@ export async function POST(request: NextRequest) {
       const activityName = stringField(body?.activityName, 'Nama kegiatan', 180);
       const startPoint = stringField(body?.startPoint, 'Titik awal', 300);
       const endPoint = stringField(body?.endPoint, 'Tujuan perjalanan', 300);
+      const startPointLocation = journeyLocationField(
+        body?.startPointLocation,
+        startPoint,
+        'Koordinat titik awal',
+      );
+      const endPointLocation = journeyLocationField(
+        body?.endPointLocation,
+        endPoint,
+        'Koordinat tujuan perjalanan',
+      );
       if (
         body?.vehicleName !== undefined &&
         body?.vehicleName !== null &&
@@ -560,6 +626,10 @@ export async function POST(request: NextRequest) {
           startPoint,
           endPoint,
           mainDestinations: [endPoint],
+          ...(startPointLocation !== undefined ? { startPointLocation } : {}),
+          ...(endPointLocation !== undefined
+            ? { mainDestinationLocations: [endPointLocation] }
+            : {}),
           vehicleName,
           vehicleRate: operationalCosts.vehicleRate,
           distanceKm,
@@ -921,6 +991,34 @@ export async function POST(request: NextRequest) {
         draftData.endPoint = draftData.draftEndPoint;
         draftData.draftMainDestinations = [draftData.draftEndPoint];
         draftData.mainDestinations = [draftData.draftEndPoint];
+      }
+      if (draft.startPointLocation !== undefined) {
+        const locationAddress = typeof draftData.startPoint === 'string'
+          ? draftData.startPoint
+          : (
+              draft.startPointLocation === null
+                ? ''
+                : stringField(draft.startPoint, 'Titik awal', 300)
+            );
+        const location = journeyLocationField(
+          draft.startPointLocation,
+          locationAddress,
+          'Koordinat titik awal',
+        );
+        draftData.draftStartPointLocation = location;
+        draftData.startPointLocation = location;
+      }
+      if (draft.mainDestinationLocations !== undefined) {
+        const locationAddresses = Array.isArray(draftData.mainDestinations)
+          ? draftData.mainDestinations as string[]
+          : mainDestinationsField(draft.mainDestinations, draft.endPoint);
+        const locations = journeyLocationsField(
+          draft.mainDestinationLocations,
+          locationAddresses,
+          'Koordinat tujuan utama',
+        );
+        draftData.draftMainDestinationLocations = locations;
+        draftData.mainDestinationLocations = locations;
       }
 
       const journeyRef = adminDb.collection('DriverJourneys').doc(journeyId);

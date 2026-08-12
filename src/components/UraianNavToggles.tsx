@@ -11,6 +11,7 @@ import {
   Car,
   FileText,
   UsersRound,
+  Wrench,
 } from 'lucide-react';
 
 /**
@@ -40,6 +41,7 @@ export default function UraianNavToggles() {
     if (pathname.includes('/spj-pekarya')) return 'kegiatan_spj';
     if (pathname.includes('/activity-review')) return 'activity_review';
     if (pathname.includes('/driver-journeys')) return 'driver_journeys';
+    if (pathname.includes('/facility-reports')) return 'facility_reports';
     return '';
   }, [pathname]);
 
@@ -181,6 +183,15 @@ export default function UraianNavToggles() {
               >
                 <Car className="w-4 h-4" />
                 Perjalanan Driver
+              </button>
+            )}
+            {profile.role === 'super_admin' && (
+              <button
+                onClick={() => router.push('/dashboard/payroll/facility-reports')}
+                className={btnCls(activeTab === 'facility_reports')}
+              >
+                <Wrench className="w-4 h-4" />
+                Fasilitas Rusak
               </button>
             )}
           </div>

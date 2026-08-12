@@ -1,0 +1,480 @@
+"use client";
+
+import React, { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import {
+  AlertTriangle,
+  ChevronLeft,
+  Image as ImageIcon,
+  Loader2,
+  MapPin,
+  Plus,
+  Send,
+  Trash2,
+  Wrench,
+  X,
+} from 'lucide-react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
+import { ImageExifViewer } from '@/components/ImageExifViewer';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuth } from '@/lib/AuthContext';
+import {
+  DEFAULT_FACILITY_AREA,
+  FACILITY_AREA_OTHER,
+  FACILITY_AREAS,
+  FACILITY_REPORT_STATUS_LABELS,
+  facilityReportStatusTone,
+  isFacilityArea,
+  isFacilityReportStatus,
+  MAX_FACILITY_DESCRIPTION_LENGTH,
+  MAX_FACILITY_PLACE_LENGTH,
+  MIN_FACILITY_DESCRIPTION_LENGTH,
+  type FacilityArea,
+  type FacilityReportStatus,
+} from '@/lib/facilityReports';
+import { authenticatedJson } from '@/lib/payroll/client';
+import { prepareProofImage, type PhotoAuditMetadata } from '@/lib/photoEvidence';
+import { uploadProofFile } from '@/lib/uploads';
+
+interface FacilityReportRow {
+  id: string;
+  place: string;
+  description: string;
+  photoUrl?: string | null;
+  photoAuditMetadata?: PhotoAuditMetadata | null;
+  status: FacilityReportStatus;
+  reportedDate: string;
+  reviewNote?: string | null;
+  reviewedByName?: string | null;
+}
+
+function formatReportDate(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value || '—';
+  const [year, month, day] = value.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  return `${Number(day)} ${months[Number(month) - 1] || month} ${year}`;
+}
+
+export default function FacilityReportsPage() {
+  const { profile: rawProfile, activeProfile } = useAuth();
+  const profile = activeProfile || rawProfile;
+
+  const [reports, setReports] = useState<FacilityReportRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const [showForm, setShowForm] = useState(false);
+  const [area, setArea] = useState<FacilityArea>(DEFAULT_FACILITY_AREA);
+  const [customPlace, setCustomPlace] = useState('');
+  const [description, setDescription] = useState('');
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoAuditMetadata, setPhotoAuditMetadata] = useState<PhotoAuditMetadata | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+  const [zoomImage, setZoomImage] = useState<FacilityReportRow | null>(null);
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(null), message.type === 'error' ? 7000 : 5000);
+    return () => clearTimeout(timer);
+  }, [message]);
+
+  const loadReports = useCallback(async () => {
+    try {
+      const result = await authenticatedJson<{ reports: FacilityReportRow[] }>(
+        '/api/facility-reports',
+      );
+      setReports(
+        (result.reports || []).map((report) => ({
+          ...report,
+          status: isFacilityReportStatus(report.status) ? report.status : 'pending',
+        })),
+      );
+    } catch (error) {
+      console.error('Error loading facility reports:', error);
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Gagal memuat laporan fasilitas.',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadReports();
+  }, [loadReports]);
+
+  const resetForm = () => {
+    setArea(DEFAULT_FACILITY_AREA);
+    setCustomPlace('');
+    setDescription('');
+    setPhotoUrl(null);
+    setPhotoAuditMetadata(null);
+  };
+
+  const handlePhoto = async (file: File) => {
+    if (!profile?.linkedEmployeeId) {
+      setMessage({ type: 'error', text: 'Akun Anda belum terhubung ke data Pegawai.' });
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const prepared = await prepareProofImage(file);
+      const url = await uploadProofFile('/api/uploads/facility-reports', prepared.file, {
+        employeeId: profile.linkedEmployeeId,
+      });
+      setPhotoUrl(url);
+      setPhotoAuditMetadata(prepared.auditMetadata);
+      setMessage({ type: 'success', text: 'Foto berhasil diunggah.' });
+    } catch (error) {
+      console.error('Error uploading facility photo:', error);
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Gagal mengunggah foto.',
+      });
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (submitting) return;
+    const trimmedPlace = area === FACILITY_AREA_OTHER ? customPlace.trim() : area;
+    const trimmedDescription = description.trim();
+    if (!trimmedPlace) {
+      setMessage({ type: 'error', text: 'Lokasi fasilitas wajib diisi.' });
+      return;
+    }
+    if (trimmedDescription.length < MIN_FACILITY_DESCRIPTION_LENGTH) {
+      setMessage({
+        type: 'error',
+        text: `Deskripsi kerusakan minimal ${MIN_FACILITY_DESCRIPTION_LENGTH} karakter.`,
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await authenticatedJson('/api/facility-reports', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'submit',
+          place: trimmedPlace,
+          description: trimmedDescription,
+          ...(photoUrl ? { photoUrl, photoAuditMetadata } : {}),
+        }),
+      });
+      setMessage({ type: 'success', text: 'Laporan kerusakan berhasil dikirim ke Kepala SatKer.' });
+      resetForm();
+      setShowForm(false);
+      await loadReports();
+    } catch (error) {
+      console.error('Error submitting facility report:', error);
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Gagal mengirim laporan.',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleWithdraw = async (report: FacilityReportRow) => {
+    if (withdrawingId) return;
+    if (!confirm(`Tarik kembali laporan "${report.place}"?`)) return;
+    setWithdrawingId(report.id);
+    try {
+      await authenticatedJson('/api/facility-reports', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'withdraw', reportId: report.id }),
+      });
+      setMessage({ type: 'success', text: 'Laporan berhasil ditarik kembali.' });
+      await loadReports();
+    } catch (error) {
+      console.error('Error withdrawing facility report:', error);
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Gagal menarik laporan.',
+      });
+    } finally {
+      setWithdrawingId(null);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/70 to-slate-100 font-sans text-slate-800">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-5">
+        <div className="flex items-center justify-between gap-3">
+          <Link href="/employee/payslip">
+            <Button
+              variant="outline"
+              size="icon"
+              className="rounded-xl h-9 w-9 border-slate-200 bg-white shadow-sm cursor-pointer"
+              title="Kembali"
+            >
+              <ChevronLeft className="w-4 h-4 text-slate-600" />
+            </Button>
+          </Link>
+          {!showForm && (
+            <Button
+              onClick={() => setShowForm(true)}
+              className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-3.5 shadow-sm cursor-pointer flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              Laporkan Kerusakan
+            </Button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shadow-inner shrink-0">
+            <Wrench className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+              Lapor Fasilitas Rusak
+            </h1>
+            <p className="text-slate-500 text-xs sm:text-sm">
+              Laporkan fasilitas kampus yang rusak agar segera ditindaklanjuti Kepala SatKer.
+            </p>
+          </div>
+        </div>
+
+        {showForm && (
+          <Card className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-slate-800">Laporan Baru</h2>
+              <button
+                type="button"
+                onClick={() => { setShowForm(false); resetForm(); }}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="Tutup"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-500 uppercase">
+                Lokasi Fasilitas
+              </Label>
+              <Select
+                value={area}
+                onValueChange={(value) => {
+                  if (isFacilityArea(value)) setArea(value);
+                }}
+              >
+                <SelectTrigger className="w-full rounded-xl border-slate-200 bg-white text-sm font-semibold">
+                  <SelectValue>{area}</SelectValue>
+                </SelectTrigger>
+                <SelectContent className="bg-white rounded-xl border border-slate-100 shadow-xl">
+                  {FACILITY_AREAS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {area === FACILITY_AREA_OTHER && (
+                <>
+                  <Input
+                    value={customPlace}
+                    onChange={(e) => setCustomPlace(e.target.value.slice(0, MAX_FACILITY_PLACE_LENGTH))}
+                    placeholder="Sebutkan lokasinya, contoh: Parkiran belakang Gedung B"
+                    className="rounded-xl border-slate-200 text-sm"
+                    autoFocus
+                  />
+                  <p className="text-[10px] font-semibold text-slate-400">
+                    {customPlace.length}/{MAX_FACILITY_PLACE_LENGTH} karakter
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-500 uppercase">
+                Deskripsi Kerusakan
+              </Label>
+              <textarea
+                value={description}
+                onChange={(e) =>
+                  setDescription(e.target.value.slice(0, MAX_FACILITY_DESCRIPTION_LENGTH))
+                }
+                rows={4}
+                placeholder="Jelaskan kerusakan sedetail mungkin, misalnya: keran wastafel patah dan air terus mengalir."
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 resize-y"
+              />
+              <p className="text-[10px] font-semibold text-slate-400">
+                Minimal {MIN_FACILITY_DESCRIPTION_LENGTH} karakter · {description.length}/
+                {MAX_FACILITY_DESCRIPTION_LENGTH}
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-[11px] font-bold text-slate-500 uppercase">
+                Foto (Opsional)
+              </Label>
+              {photoUrl ? (
+                <div className="relative rounded-xl overflow-hidden border border-slate-200">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photoUrl} alt="Bukti kerusakan" className="w-full max-h-64 object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => { setPhotoUrl(null); setPhotoAuditMetadata(null); }}
+                    className="absolute top-2 right-2 rounded-lg bg-white/95 p-1.5 text-rose-600 shadow-sm hover:bg-white cursor-pointer"
+                    title="Hapus foto"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 py-6 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40 transition-colors">
+                  {uploadingPhoto ? (
+                    <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+                  ) : (
+                    <ImageIcon className="w-5 h-5 text-slate-400" />
+                  )}
+                  <span className="text-[11px] font-bold text-slate-500">
+                    {uploadingPhoto ? 'Mengunggah…' : 'Ketuk untuk menambah foto'}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploadingPhoto}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      if (file) void handlePhoto(file);
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting || uploadingPhoto}
+              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm h-10 shadow-sm cursor-pointer flex items-center justify-center gap-2"
+            >
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {submitting ? 'Mengirim…' : 'Kirim Laporan'}
+            </Button>
+          </Card>
+        )}
+
+        <div className="space-y-2.5">
+          <h2 className="text-xs font-black text-slate-500 uppercase tracking-wider">
+            Riwayat Laporan Saya
+          </h2>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
+            </div>
+          ) : reports.length === 0 ? (
+            <Card className="rounded-2xl border-dashed border-slate-200 bg-white/70 p-8 text-center">
+              <Wrench className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-bold text-slate-500">Belum ada laporan</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Laporan kerusakan fasilitas yang Anda kirim akan tampil di sini.
+              </p>
+            </Card>
+          ) : (
+            reports.map((report) => (
+              <Card
+                key={report.id}
+                className="rounded-2xl border-slate-200/80 shadow-sm bg-white p-4 space-y-2.5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
+                      <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                      <span className="truncate">{report.place}</span>
+                    </div>
+                    <p className="text-[11px] font-semibold text-slate-400 mt-0.5">
+                      {formatReportDate(report.reportedDate)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span
+                      className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${facilityReportStatusTone(report.status)}`}
+                    >
+                      {FACILITY_REPORT_STATUS_LABELS[report.status]}
+                    </span>
+                    {report.status === 'pending' && (
+                      <button
+                        type="button"
+                        onClick={() => void handleWithdraw(report)}
+                        disabled={withdrawingId === report.id}
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-rose-500 hover:bg-rose-50 cursor-pointer disabled:opacity-40"
+                        title="Tarik kembali laporan"
+                      >
+                        {withdrawingId === report.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3 w-3" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">
+                  {report.description}
+                </p>
+
+                {report.photoUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={report.photoUrl}
+                    alt="Bukti kerusakan"
+                    onClick={() => setZoomImage(report)}
+                    className="w-full max-h-52 object-cover rounded-xl border border-slate-200 cursor-zoom-in"
+                  />
+                )}
+
+                {report.reviewNote && (
+                  <div className="rounded-xl bg-slate-50 border border-slate-100 p-2.5">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                      Catatan Kepala SatKer
+                      {report.reviewedByName ? ` · ${report.reviewedByName}` : ''}
+                    </p>
+                    <p className="text-xs font-semibold text-slate-700 mt-0.5 whitespace-pre-wrap">
+                      {report.reviewNote}
+                    </p>
+                  </div>
+                )}
+              </Card>
+            ))
+          )}
+        </div>
+
+        <div className="flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-100 p-3">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-[11px] font-semibold text-amber-800">
+            Laporan yang sudah ditindaklanjuti Kepala SatKer tidak dapat ditarik kembali. Hubungi
+            Kepala SatKer bila ada perubahan informasi.
+          </p>
+        </div>
+      </div>
+
+      <ImageExifViewer
+        imageUrl={zoomImage?.photoUrl || ''}
+        title={zoomImage?.place}
+        activityDate={zoomImage?.reportedDate}
+        auditMetadata={zoomImage?.photoAuditMetadata}
+        isOpen={Boolean(zoomImage?.photoUrl)}
+        onClose={() => setZoomImage(null)}
+      />
+
+      <FloatingSnackbar message={message} />
+    </div>
+  );
+}

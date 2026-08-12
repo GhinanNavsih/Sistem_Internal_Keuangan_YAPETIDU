@@ -3,7 +3,7 @@
 import React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote, FileText, UsersRound } from 'lucide-react';
+import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote, FileText, UsersRound, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function SatkerPekaryaNavBar() {
@@ -37,6 +37,7 @@ export default function SatkerPekaryaNavBar() {
   const activityUrl = `/dashboard/payroll/activity-review?month=${month}&year=${year}`;
   const journeysUrl = `/dashboard/payroll/driver-journeys?month=${month}&year=${year}`;
   const dashboardUrl = `/dashboard/payroll/journey-dashboard?month=${month}&year=${year}`;
+  const facilityUrl = '/dashboard/payroll/facility-reports';
   const vakasiUrl = `/dashboard/payroll/uraian/vakasi-loyalis${withPeriod('')}`;
   const proposalUrl = `/dashboard/payroll/uraian/proposal-kegiatan${withPeriod('')}`;
   const pelaporanUrl = `/dashboard/payroll/uraian/pelaporan-kegiatan${withPeriod('')}`;
@@ -44,6 +45,7 @@ export default function SatkerPekaryaNavBar() {
   const isActivity = pathname.startsWith('/dashboard/payroll/activity-review');
   const isJourneys = pathname.startsWith('/dashboard/payroll/driver-journeys');
   const isDashboard = pathname.startsWith('/dashboard/payroll/journey-dashboard');
+  const isFacility = pathname.startsWith('/dashboard/payroll/facility-reports');
   const isUraian =
     pathname.startsWith('/dashboard/payroll/uraian/rekap-pekarya') ||
     (pathname.startsWith('/dashboard/payroll/uraian') &&
@@ -122,6 +124,13 @@ export default function SatkerPekaryaNavBar() {
               >
                 <ClipboardCheck className="w-4 h-4" />
                 <span>Review Kegiatan</span>
+              </button>
+              <button
+                onClick={() => router.push(facilityUrl)}
+                className={navBtnClass(isFacility)}
+              >
+                <Wrench className="w-4 h-4" />
+                <span>Fasilitas Rusak</span>
               </button>
               <button
                 onClick={() => router.push(journeysUrl)}

@@ -18,6 +18,9 @@ import {
   isDriverVehicleName,
   isFuelProcurementMode,
   getMealAllowanceForDuration,
+  normalizeDriverJourneyLocation,
+  normalizeDriverJourneyLocations,
+  type DriverJourneyLocation,
 } from '@/lib/payroll/driverJourney';
 import {
   commitFuelReservation,
@@ -74,6 +77,8 @@ interface ReviewItem {
     vehicleType: string;
     nightCount: number;
     points: string[];
+    startPointLocation?: DriverJourneyLocation | null;
+    mainDestinationLocations?: Array<DriverJourneyLocation | null>;
   };
 }
 
@@ -204,7 +209,39 @@ function validateDriverReview(value: ReviewItem['driverReview']) {
   ) {
     throw new HttpError(400, 'Kendaraan atau rute audit Sopir tidak valid.');
   }
-  return value;
+
+  const startPointLocation = value.startPointLocation === undefined
+    ? undefined
+    : normalizeDriverJourneyLocation(value.startPointLocation, value.points[0]);
+  if (value.startPointLocation !== undefined && value.startPointLocation !== null && !startPointLocation) {
+    throw new HttpError(400, 'Koordinat titik awal audit tidak valid.');
+  }
+
+  let mainDestinationLocations: Array<DriverJourneyLocation | null> | undefined;
+  if (value.mainDestinationLocations !== undefined) {
+    if (
+      !Array.isArray(value.mainDestinationLocations) ||
+      value.mainDestinationLocations.length !== value.points.length - 1
+    ) {
+      throw new HttpError(400, 'Koordinat tujuan audit tidak sesuai dengan rute.');
+    }
+    mainDestinationLocations = normalizeDriverJourneyLocations(
+      value.mainDestinationLocations,
+      value.points.slice(1),
+    );
+    const hasInvalidLocation = value.mainDestinationLocations.some((location, index) => (
+      location !== null && mainDestinationLocations?.[index] === null
+    ));
+    if (hasInvalidLocation) {
+      throw new HttpError(400, 'Koordinat tujuan audit tidak valid.');
+    }
+  }
+
+  return {
+    ...value,
+    startPointLocation,
+    mainDestinationLocations,
+  };
 }
 
 function vehicleRate(vehicle: string): number {
@@ -694,6 +731,12 @@ export async function POST(request: NextRequest) {
             nightCount: effectiveNightCount,
             nightPremium: calculateNightPremium(effectiveNightCount),
             points: review.points,
+            ...(review.startPointLocation !== undefined
+              ? { startPointLocation: review.startPointLocation }
+              : {}),
+            ...(review.mainDestinationLocations !== undefined
+              ? { mainDestinationLocations: review.mainDestinationLocations }
+              : {}),
             tripType: review.distanceKm > 50 ? 'Luar Kota' : 'Dalam Kota',
             declineReason: '',
             reviewedAt: now,
@@ -833,6 +876,11 @@ export async function POST(request: NextRequest) {
                   nightCount: after.nightCount ?? 0,
                   nightPremium: after.nightPremium || 0,
                   points: after.points || [],
+                  startPoint: Array.isArray(after.points) ? after.points[0] || '' : '',
+                  endPoint: Array.isArray(after.points) ? after.points[1] || '' : '',
+                  mainDestinations: Array.isArray(after.points) ? after.points.slice(1) : [],
+                  startPointLocation: after.startPointLocation ?? null,
+                  mainDestinationLocations: after.mainDestinationLocations || [],
                   fuelProcurementMode: after.fuelProcurementMode || DEFAULT_FUEL_PROCUREMENT_MODE,
                   heldFuelAmount: after.heldFuelAmount || 0,
                   procuredAccumulatedAmount: after.procuredAccumulatedAmount || 0,
@@ -862,6 +910,11 @@ export async function POST(request: NextRequest) {
             componentJarak: after.componentJarak ?? Math.ceil(Number(after.distanceKm || 0) * 300),
             componentWaktu: after.componentWaktu ?? Math.ceil(Number(after.durationHours || 0) * 5_000),
             points: after.points || [],
+            startPoint: Array.isArray(after.points) ? after.points[0] || '' : '',
+            endPoint: Array.isArray(after.points) ? after.points[1] || '' : '',
+            mainDestinations: Array.isArray(after.points) ? after.points.slice(1) : [],
+            startPointLocation: after.startPointLocation ?? null,
+            mainDestinationLocations: after.mainDestinationLocations || [],
             extraActivities: after.extraActivities || [],
             fuelReceiptEvidence: shouldClearFuelReceiptEvidence
               ? admin.firestore.FieldValue.delete()

@@ -17,6 +17,16 @@ const KETUA_SHIFT_SATPAM_ROUTES = [
   '/employee/payslip',
 ];
 
+/**
+ * Loyalis staff see their own payslip, request presence corrections, and
+ * report broken campus facilities to the Kepala SatKer.
+ */
+const LOYALIS_ROUTES = [
+  '/employee/payslip',
+  '/employee/presensi-correction',
+  '/employee/facility-reports',
+];
+
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, activeProfile, loading, uiPreviewHydrated } = useAuth();
   const router = useRouter();
@@ -55,12 +65,13 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
             router.replace('/dashboard/users');
           }
         } else if (currentProfile.role === 'satker_head') {
-          // SatKer Heads are allowed to access /dashboard/payroll/uraian, /dashboard/payroll/activity-review, and /dashboard/payroll/driver-journeys
+          // SatKer Heads are allowed to access /dashboard/payroll/uraian, /dashboard/payroll/activity-review, /dashboard/payroll/driver-journeys, and the facility damage review
           if (
             pathname !== '/dashboard/payroll/activity-review' &&
             !pathname.startsWith('/dashboard/payroll/uraian') &&
             !pathname.startsWith('/dashboard/payroll/driver-journeys') &&
-            !pathname.startsWith('/dashboard/payroll/journey-dashboard')
+            !pathname.startsWith('/dashboard/payroll/journey-dashboard') &&
+            !pathname.startsWith('/dashboard/payroll/facility-reports')
           ) {
             router.replace('/dashboard/payroll/activity-review');
           }
@@ -88,8 +99,8 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
             router.replace('/dashboard/payroll');
           }
         } else if (currentProfile.role === 'loyalis') {
-          // Loyalis employees can access payslip and presensi-correction
-          if (pathname !== '/employee/payslip' && pathname !== '/employee/presensi-correction') {
+          // Loyalis employees can access payslip, presensi-correction, and broken-facility reporting
+          if (!LOYALIS_ROUTES.includes(pathname)) {
             router.replace('/employee/payslip');
           }
         } else if (currentProfile.role === 'loyalis_presence_admin') {
@@ -131,7 +142,8 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     pathname !== '/dashboard/payroll/activity-review' &&
     !pathname.startsWith('/dashboard/payroll/uraian') &&
     !pathname.startsWith('/dashboard/payroll/driver-journeys') &&
-    !pathname.startsWith('/dashboard/payroll/journey-dashboard')
+    !pathname.startsWith('/dashboard/payroll/journey-dashboard') &&
+    !pathname.startsWith('/dashboard/payroll/facility-reports')
   ) {
     return null;
   }
@@ -156,7 +168,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   ) {
     return null;
   }
-  if (profile.role === 'loyalis' && pathname !== '/employee/payslip' && pathname !== '/employee/presensi-correction') {
+  if (profile.role === 'loyalis' && !LOYALIS_ROUTES.includes(pathname)) {
     return null;
   }
   if (profile.role === 'loyalis_presence_admin' && pathname !== '/dashboard/payroll/uraian/presensi-loyalis-raw' && pathname !== '/dashboard/payroll/uraian/presence-corrections') {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   canonicalizeDriverJourneyTimeline,
+  DEFAULT_DRIVER_JOURNEY_LOCATION,
   DEFAULT_DRIVER_JOURNEY_POINT,
   DEFAULT_DRIVER_VEHICLE_NAME,
   DRIVER_VEHICLE_RATES,
@@ -16,9 +17,12 @@ import {
   calculateNightPremium,
   getMealAllowanceForDuration,
   driverJourneyRoutePoints,
+  driverJourneyRoutePoint,
   fuelProcurementModeLabel,
   journeyDayCount,
   normalizeDriverJourneyDestinations,
+  normalizeDriverJourneyLocation,
+  normalizeDriverJourneyLocations,
 } from './driverJourney';
 
 test('fuel procurement modes have human-readable UI labels', () => {
@@ -51,6 +55,53 @@ test('journey route points retain an editable start and return leg', () => {
   assert.deepEqual(
     driverJourneyRoutePoints('Titik Baru', ['Tujuan A', 'Tujuan B'], undefined, false),
     ['Titik Baru', 'Tujuan A', 'Tujuan B'],
+  );
+});
+
+test('journey locations retain validated addresses and coordinates for route reuse', () => {
+  assert.deepEqual(
+    normalizeDriverJourneyLocation(
+      { address: 'RSUD Jombang', latitude: -7.5462, longitude: 112.2331 },
+      'RSUD Jombang',
+    ),
+    { address: 'RSUD Jombang', latitude: -7.5462, longitude: 112.2331 },
+  );
+  assert.equal(
+    normalizeDriverJourneyLocation(
+      { address: 'Alamat Lama', latitude: -7.5, longitude: 112.2 },
+      'Alamat Baru',
+    ),
+    null,
+  );
+  assert.equal(
+    normalizeDriverJourneyLocation(
+      { address: 'Lokasi Rusak', latitude: 91, longitude: 112.2 },
+      'Lokasi Rusak',
+    ),
+    null,
+  );
+  assert.deepEqual(
+    normalizeDriverJourneyLocations(
+      [{ address: 'A', latitude: -7.1, longitude: 112.1 }, null],
+      ['A', 'B'],
+    ),
+    [{ address: 'A', latitude: -7.1, longitude: 112.1 }, null],
+  );
+  assert.equal(
+    driverJourneyRoutePoint('RSUD Jombang', {
+      address: 'RSUD Jombang',
+      latitude: -7.5462,
+      longitude: 112.2331,
+    }),
+    '-7.546200,112.233100',
+  );
+  assert.equal(driverJourneyRoutePoint('Alamat saja'), 'Alamat saja');
+  assert.equal(
+    driverJourneyRoutePoint(
+      DEFAULT_DRIVER_JOURNEY_POINT,
+      DEFAULT_DRIVER_JOURNEY_LOCATION,
+    ),
+    '-7.545800,112.285800',
   );
 });
 

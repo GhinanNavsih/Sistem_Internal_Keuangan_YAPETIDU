@@ -19,6 +19,7 @@ import {
   isDriverVehicleName,
   isFuelProcurementMode,
   getMealAllowanceForDuration,
+  normalizeDriverJourneyLocation,
 } from '@/lib/payroll/driverJourney';
 import {
   createFuelLedgerContext,
@@ -86,7 +87,9 @@ const ALLOWED_DRIVER_FIELDS = [
   'routeDurationHours',
   'journeyId',
   'startPoint',
+  'startPointLocation',
   'mainDestinations',
+  'mainDestinationLocations',
   'extraActivities',
   'extraDistanceKm',
   'extraOperationalCost',
@@ -469,6 +472,38 @@ function sanitizeDriverData(
       throw new HttpError(400, 'Daftar tujuan utama perjalanan tidak valid.');
     }
     result.mainDestinations = result.mainDestinations.map((destination) => destination.trim());
+  }
+  if (result.startPointLocation !== undefined) {
+    if (result.startPointLocation === null) {
+      result.startPointLocation = null;
+    } else {
+      const location = normalizeDriverJourneyLocation(
+        result.startPointLocation,
+        result.startPoint,
+      );
+      if (!location) throw new HttpError(400, 'Koordinat titik awal perjalanan tidak valid.');
+      result.startPointLocation = location;
+    }
+  }
+  if (result.mainDestinationLocations !== undefined) {
+    const mainDestinations = Array.isArray(result.mainDestinations)
+      ? result.mainDestinations as string[]
+      : null;
+    if (
+      !Array.isArray(result.mainDestinationLocations) ||
+      !mainDestinations ||
+      result.mainDestinationLocations.length !== mainDestinations.length
+    ) {
+      throw new HttpError(400, 'Koordinat tujuan utama perjalanan tidak valid.');
+    }
+    result.mainDestinationLocations = result.mainDestinationLocations.map((value, index) => {
+      if (value === null) return null;
+      const location = normalizeDriverJourneyLocation(value, mainDestinations[index]);
+      if (!location) {
+        throw new HttpError(400, `Koordinat tujuan utama ke-${index + 1} tidak valid.`);
+      }
+      return location;
+    });
   }
 
   const distanceKm = typeof result.distanceKm === 'number' ? result.distanceKm : 0;
@@ -1051,8 +1086,12 @@ export async function POST(request: NextRequest) {
           typeof journeyEvidence.startPoint === 'string'
             ? journeyEvidence.startPoint.trim()
             : '';
+        const submittedStartPointLocation = journeyEvidence.startPointLocation;
         const submittedMainDestinations = Array.isArray(journeyEvidence.mainDestinations)
           ? (journeyEvidence.mainDestinations as string[])
+          : [];
+        const submittedMainDestinationLocations = Array.isArray(journeyEvidence.mainDestinationLocations)
+          ? journeyEvidence.mainDestinationLocations
           : [];
         delete journeyEvidence.distanceKm;
         delete journeyEvidence.durationHours;
@@ -1060,7 +1099,9 @@ export async function POST(request: NextRequest) {
         delete journeyEvidence.tripType;
         delete journeyEvidence.reportedEndPoint;
         delete journeyEvidence.startPoint;
+        delete journeyEvidence.startPointLocation;
         delete journeyEvidence.mainDestinations;
+        delete journeyEvidence.mainDestinationLocations;
         delete journeyEvidence.fuelReceiptEvidence;
         delete journeyEvidence.tollReceiptEvidence;
         const submittedPoints = Array.isArray(driverData.points) ? driverData.points : [];
@@ -1102,10 +1143,14 @@ export async function POST(request: NextRequest) {
           newTotalDistanceKm: submittedDistanceKm,
           newTotalDurationHours: submittedDurationHours,
           ...(submittedStartPoint ? { startPoint: submittedStartPoint } : {}),
+          ...(submittedStartPointLocation !== undefined
+            ? { startPointLocation: submittedStartPointLocation }
+            : {}),
           ...(submittedMainDestinations.length > 0
             ? {
                 mainDestinations: submittedMainDestinations,
                 endPoint: submittedMainDestinations[0],
+                mainDestinationLocations: submittedMainDestinationLocations,
               }
             : {}),
           submittedAt: now,

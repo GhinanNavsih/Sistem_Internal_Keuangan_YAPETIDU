@@ -30,6 +30,78 @@ export const DEFAULT_FUEL_PROCUREMENT_MODE: FuelProcurementMode = 'standard_dire
 export const DEFAULT_DRIVER_JOURNEY_POINT = 'UNIPDU Jombang, Jawa Timur';
 export const MAX_MAIN_DESTINATIONS = 8;
 
+export interface DriverJourneyLocation {
+  address: string;
+  latitude: number;
+  longitude: number;
+}
+
+export const DEFAULT_DRIVER_JOURNEY_LOCATION: Readonly<DriverJourneyLocation> = Object.freeze({
+  address: DEFAULT_DRIVER_JOURNEY_POINT,
+  latitude: -7.5458,
+  longitude: 112.2858,
+});
+
+export function normalizeDriverJourneyLocation(
+  value: unknown,
+  expectedAddress?: unknown,
+): DriverJourneyLocation | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+  const candidate = value as Record<string, unknown>;
+  const storedAddress = typeof candidate.address === 'string' ? candidate.address.trim() : '';
+  const canonicalAddress = typeof expectedAddress === 'string' && expectedAddress.trim()
+    ? expectedAddress.trim()
+    : storedAddress;
+  if (!canonicalAddress) return null;
+  if (
+    storedAddress &&
+    typeof expectedAddress === 'string' &&
+    expectedAddress.trim() &&
+    storedAddress !== expectedAddress.trim()
+  ) {
+    return null;
+  }
+
+  const latitude = candidate.latitude;
+  const longitude = candidate.longitude;
+  if (
+    typeof latitude !== 'number' ||
+    !Number.isFinite(latitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    typeof longitude !== 'number' ||
+    !Number.isFinite(longitude) ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    return null;
+  }
+
+  return { address: canonicalAddress, latitude, longitude };
+}
+
+export function normalizeDriverJourneyLocations(
+  value: unknown,
+  addresses: unknown,
+): Array<DriverJourneyLocation | null> {
+  const destinations = normalizeDriverJourneyDestinations(addresses);
+  const values = Array.isArray(value) ? value : [];
+  return destinations.map((address, index) => (
+    normalizeDriverJourneyLocation(values[index], address)
+  ));
+}
+
+export function driverJourneyRoutePoint(
+  address: unknown,
+  location?: unknown,
+): string {
+  const normalizedAddress = typeof address === 'string' ? address.trim() : '';
+  const normalizedLocation = normalizeDriverJourneyLocation(location, normalizedAddress);
+  if (!normalizedLocation) return normalizedAddress;
+  return `${normalizedLocation.latitude.toFixed(6)},${normalizedLocation.longitude.toFixed(6)}`;
+}
+
 /**
  * Returns the ordered main destinations for a journey while keeping older
  * DriverJourneys, which only have `endPoint`, readable.

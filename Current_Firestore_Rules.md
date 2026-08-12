@@ -477,6 +477,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Broken-facility reports raised by Loyalis staff and triaged by the
+    // Kepala SatKer Pekarya, whose technicians carry out the repair. Every
+    // write (submit, review, withdraw) goes through /api/facility-reports so
+    // status transitions and reviewer authority stay server-enforced.
+    match /FacilityReports/{reportId} {
+      allow read: if isFinanceRole() || roleIs('satker_head') ||
+        ownsEmployee(resource.data.employeeId);
+      allow write: if false;
+    }
+
     match /JabatanStruktural/{docId} {
       allow read: if isFinanceRole() || isEmployeeAdmin();
       allow create, update: if isSuperAdmin();

@@ -90,12 +90,19 @@ import {
 } from 'firebase/firestore';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { syncActivityToPayslip } from '@/utils/payslipSync';
-import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import {
+  authenticatedJson,
+  createFinancialRequestId,
+  propagateUraianToSlips,
+} from '@/lib/payroll/client';
 import {
   pekaryaPayrollPeriodForDate,
   pekaryaPayrollWindow,
 } from '@/lib/payroll/pekaryaSpj';
-import { calculateDriverNetWage } from '@/lib/payroll/driverJourney';
+import {
+  calculateDriverNetWage,
+  type DriverJourneyLocation,
+} from '@/lib/payroll/driverJourney';
 import {
   DriverJourneyAuditDialog,
   type DriverReviewPayload,
@@ -171,7 +178,10 @@ interface ActivityReport {
   nightPremium?: number;
   customDurationPP?: number;
   startPoint?: string;
+  startPointLocation?: DriverJourneyLocation | null;
   endPoint?: string;
+  mainDestinations?: string[];
+  mainDestinationLocations?: Array<DriverJourneyLocation | null>;
   // SATPAM specific fields
   reportKind?:
     | 'satpam_spj'
@@ -1257,15 +1267,30 @@ export default function ActivityReviewPage() {
           reason,
         }),
       });
-      setSuccessMsg(`Laporan "${deleteTarget.activityName}" oleh ${deleteTarget.employeeName} berhasil dihapus.`);
       const employeeId = deleteTarget.employeeId;
+      const jobCategory = deleteTarget.jobCategory;
       const dutyDate = deleteTarget.dutyDate || deleteTarget.activityDate;
       const period = deleteTarget.payrollPeriod || (dutyDate ? pekaryaPayrollPeriodForDate(dutyDate) : '');
+      const deletedLabel = `Laporan "${deleteTarget.activityName}" oleh ${deleteTarget.employeeName} berhasil dihapus.`;
+      setSuccessMsg(deletedLabel);
       setDeleteTarget(null);
       setDeleteReason('');
       fetchActivities();
       try {
-        if (period) await syncActivityToPayslip(db, employeeId, period);
+        if (period) {
+          // Drop the removed SPJ out of the Uraian rekap first, then push the
+          // recalculated rekap onto the employee's draft slip so both stay in
+          // step with the deletion instead of waiting for a manual re-save.
+          await syncActivityToPayslip(db, employeeId, period);
+          if (jobCategory) {
+            const propagationNote = await propagateUraianToSlips({
+              scope: 'pekarya',
+              period,
+              jobCategory,
+            });
+            if (propagationNote) setSuccessMsg(`${deletedLabel}${propagationNote}`);
+          }
+        }
       } catch (syncErr) {
         console.error('Error syncing payslip after admin delete:', syncErr);
       }
@@ -2593,7 +2618,6 @@ export default function ActivityReviewPage() {
                                   </Button>
                                 )}
                                 {profile?.role === 'super_admin' &&
-                                  !isDriver &&
                                   activity.status !== 'pending' && (
                                   <Button
                                     size="sm"
@@ -2895,6 +2919,16 @@ export default function ActivityReviewPage() {
                 Tindakan ini tidak dapat dibatalkan. Laporan yang sudah dibayarkan (slip terkunci) tidak dapat dihapus lewat sini.
               </p>
             </div>
+            {deleteTarget?.jobCategory === 'SOPIR' && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-100 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-xs font-semibold text-amber-800">
+                  Perjalanan Piket yang dibuat sendiri oleh Sopir ikut terhapus. Perjalanan yang diotorisasi Kepala SatKer
+                  dikembalikan ke daftar agar dapat diklaim dan dilaporkan ulang. Perjalanan dengan mode BBM Tahan/Cairkan
+                  yang saldonya sudah diselesaikan tidak dapat dihapus di sini.
+                </p>
+              </div>
+            )}
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-400 font-semibold">Tanggal</span>

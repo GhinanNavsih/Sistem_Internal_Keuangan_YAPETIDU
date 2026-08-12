@@ -44,11 +44,21 @@ import {
   calculateNightPremium,
   getMealAllowanceForDuration,
   journeyDayCount,
+  DEFAULT_DRIVER_JOURNEY_LOCATION,
   DEFAULT_FUEL_PROCUREMENT_MODE,
+  driverJourneyRoutePoint,
   isFuelProcurementMode,
+  normalizeDriverJourneyLocation,
+  normalizeDriverJourneyLocations,
+  type DriverJourneyLocation,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
 import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
+import {
+  PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH,
+  useCostSafePlaceAutocomplete,
+  type CostSafePlaceSuggestion,
+} from '@/hooks/useCostSafePlaceAutocomplete';
 
 // ─── Google Maps loader ──────────────────────────────────────────────────────
 
@@ -56,7 +66,17 @@ const loadGoogleMapsScript = (callback: () => void) => {
   if (typeof window === 'undefined') return;
   const g = (window as any).google;
   if (g && g.maps && g.maps.Map) {
-    callback();
+    if (g.maps.places?.AutocompleteSuggestion) {
+      callback();
+    } else if (g.maps.importLibrary) {
+      void g.maps.importLibrary('places').then((placesLib: Record<string, unknown>) => {
+        g.maps.places = g.maps.places || {};
+        Object.assign(g.maps.places, placesLib);
+        callback();
+      }).catch(() => callback());
+    } else {
+      callback();
+    }
     return;
   }
 
@@ -135,8 +155,10 @@ export interface DriverAuditReport {
   nightCount?: number;
   points?: string[];
   startPoint?: string;
+  startPointLocation?: DriverJourneyLocation | null;
   endPoint?: string;
   mainDestinations?: string[];
+  mainDestinationLocations?: Array<DriverJourneyLocation | null>;
   baseOperationalCost?: number;
   fuelProcurementMode?: FuelProcurementMode;
   heldFuelAmount?: number;
@@ -156,6 +178,36 @@ export interface DriverAuditReport {
   tollReceiptEvidence?: PhotoEvidence[];
 }
 
+function auditReportPointLocations(
+  report: DriverAuditReport,
+  points: string[],
+): Array<DriverJourneyLocation | null> {
+  const reportStartPoint = report.startPoint || points[0];
+  const startLocation = normalizeDriverJourneyLocation(
+    report.startPointLocation,
+    reportStartPoint,
+  ) || (
+    points[0] === DEFAULT_DRIVER_JOURNEY_LOCATION.address
+      ? { ...DEFAULT_DRIVER_JOURNEY_LOCATION }
+      : null
+  );
+  const reportDestinations = Array.isArray(report.mainDestinations) && report.mainDestinations.length > 0
+    ? report.mainDestinations
+    : points.slice(1);
+  const storedDestinations = normalizeDriverJourneyLocations(
+    report.mainDestinationLocations,
+    reportDestinations,
+  );
+  const locationByAddress = new Map(
+    reportDestinations.map((address, index) => [address, storedDestinations[index]]),
+  );
+
+  return [
+    startLocation,
+    ...points.slice(1).map((address) => locationByAddress.get(address) || null),
+  ];
+}
+
 /** Exactly the `driverReview` body accepted by `/api/pekarya/activities/review`. */
 export interface DriverReviewPayload {
   distanceKm: number;
@@ -172,6 +224,8 @@ export interface DriverReviewPayload {
   vehicleType: string;
   nightCount: number;
   points: string[];
+  startPointLocation: DriverJourneyLocation | null;
+  mainDestinationLocations: Array<DriverJourneyLocation | null>;
 }
 
 interface DriverJourneyAuditDialogProps {
@@ -255,6 +309,7 @@ export function DriverJourneyAuditDialog({
   const [auditVehicleType, setAuditVehicleType] = useState<string>('Suzuki XL7');
   const [auditNightCount, setAuditNightCount] = useState<number>(0);
   const [auditPoints, setAuditPoints] = useState<string[]>([]);
+  const [auditPointLocations, setAuditPointLocations] = useState<Array<DriverJourneyLocation | null>>([]);
   // Keyed by the origin point's index in `auditPoints` — the leg leaving that
   // stop toward the next one. Only set when both stops are real (non-blank)
   // and directly adjacent, so a still-empty "Tambah Lokasi" slot never gets
@@ -267,12 +322,21 @@ export function DriverJourneyAuditDialog({
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [mapSearchText, setMapSearchText] = useState('');
   const [mapAddress, setMapAddress] = useState('');
-  const [mapAddressImage, setMapAddressImage] = useState<string | null>(null);
+  const [mapLocation, setMapLocation] = useState<DriverJourneyLocation | null>(null);
+  const [mapSearchError, setMapSearchError] = useState('');
   const [mapTargetIndex, setMapTargetIndex] = useState<number | null>(null);
 
   const mapRef = React.useRef<any>(null);
   const markerRef = React.useRef<any>(null);
   const mapElementRef = React.useRef<HTMLDivElement | null>(null);
+  const mapGeocodeRequestRef = React.useRef(0);
+  const {
+    suggestions: placeSuggestions,
+    isSearching: isSearchingPlaces,
+    searchError: placeSearchError,
+    search: searchPlaces,
+    cancelSearch: cancelPlaceSearch,
+  } = useCostSafePlaceAutocomplete({ loadGoogleMapsScript });
 
   // A confirmed journey may be reopened for edits only while its payroll
   // period is still accepting input. `null` means "checking" so the form
@@ -361,6 +425,7 @@ export function DriverJourneyAuditDialog({
         ? report.points
         : [report.startPoint || 'UNIPDU Jombang, Jawa Timur', report.endPoint || ''];
     setAuditPoints(pts);
+    setAuditPointLocations(auditReportPointLocations(report, pts));
     setIsManualDistanceOverride(false);
 
     const rate = getVehicleRate(vType);
@@ -400,25 +465,130 @@ export function DriverJourneyAuditDialog({
   // than only after the auditor manually clicks "Hitung Ulang". Keyed on the
   // report id alone so later point edits (which already trigger their own
   // recalculation) don't cause a redundant second call here.
+  //
+  // Totals are left untouched: this runs for the leg breakdown alone, and
+  // overwriting Jarak/Waktu here would silently restate an already-approved
+  // upah the moment an auditor opened the dialog to look at it.
   useEffect(() => {
     if (!report) return;
     const pts =
       report.points && report.points.length > 0
         ? report.points
         : [report.startPoint || 'UNIPDU Jombang, Jawa Timur', report.endPoint || ''];
-    recalculateRouteFromPoints(pts);
+    const reportPointLocations = auditReportPointLocations(report, pts);
+    recalculateRouteFromPoints(pts, {
+      updateTotals: false,
+      pointLocations: reportPointLocations,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report?.id]);
+
+  const resetMapSearch = () => {
+    cancelPlaceSearch();
+    mapGeocodeRequestRef.current += 1;
+    setMapSearchError('');
+  };
+
+  const geocodeMapSearch = (queryText: string) => {
+    const normalizedQuery = queryText.trim();
+    if (!normalizedQuery) return;
+    const requestId = ++mapGeocodeRequestRef.current;
+    cancelPlaceSearch();
+    setMapSearchError('');
+
+    loadGoogleMapsScript(() => {
+      const google = (window as any).google;
+      if (!google?.maps?.Geocoder) {
+        if (requestId === mapGeocodeRequestRef.current) {
+          setMapSearchError('Layanan peta belum siap. Silakan coba lagi.');
+        }
+        return;
+      }
+
+      try {
+        const geocoder = new google.maps.Geocoder();
+        geocoder.geocode(
+          { address: normalizedQuery, region: 'id' },
+          (results: any[], status: string) => {
+            if (requestId !== mapGeocodeRequestRef.current) return;
+            const firstResult = Array.isArray(results)
+              ? results.find((result: any) => result?.geometry?.location)
+              : null;
+            if (status !== 'OK' || !firstResult) {
+              setMapAddress('');
+              setMapLocation(null);
+              setMapSearchError('Lokasi tidak ditemukan. Pilih hasil lain atau geser pin di peta.');
+              return;
+            }
+
+            const location = firstResult.geometry.location;
+            const address = firstResult.formatted_address || normalizedQuery;
+            mapRef.current?.setCenter(location);
+            mapRef.current?.setZoom(16);
+            markerRef.current?.setPosition(location);
+            setMapAddress(address);
+            setMapSearchText(address);
+            setMapLocation({
+              address,
+              latitude: typeof location.lat === 'function' ? location.lat() : Number(location.lat),
+              longitude: typeof location.lng === 'function' ? location.lng() : Number(location.lng),
+            });
+          },
+        );
+      } catch (error) {
+        console.warn('Google address search failed:', error);
+        if (requestId === mapGeocodeRequestRef.current) {
+          setMapAddress('');
+          setMapLocation(null);
+          setMapSearchError('Lokasi tidak dapat dicari. Silakan coba kata kunci lain.');
+        }
+      }
+    });
+  };
+
+  const handleMapSearchChange = (value: string) => {
+    setMapSearchText(value);
+    setMapAddress('');
+    setMapLocation(null);
+    setMapSearchError('');
+    searchPlaces(value);
+  };
+
+  const handlePlaceSuggestionSelect = (suggestion: CostSafePlaceSuggestion) => {
+    cancelPlaceSearch();
+    setMapSearchText(suggestion.queryText);
+    geocodeMapSearch(suggestion.queryText);
+  };
+
+  const handleMapSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      cancelPlaceSearch();
+      return;
+    }
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    if (placeSuggestions[0]) {
+      handlePlaceSuggestionSelect(placeSuggestions[0]);
+      return;
+    }
+    setMapSearchError(
+      mapSearchText.trim().length < PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH
+        ? `Ketik minimal ${PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH} karakter untuk mencari lokasi.`
+        : 'Pilih salah satu saran lokasi sebelum melanjutkan.',
+    );
+  };
 
   const initMap = (element: HTMLDivElement) => {
     loadGoogleMapsScript(() => {
       const google = (window as any).google;
       if (!google) return;
       if (mapRef.current && mapElementRef.current === element) return;
-
       mapElementRef.current = element;
-      const unipduCoords = { lat: -7.5458, lng: 112.2858 };
 
+      const unipduCoords = {
+        lat: DEFAULT_DRIVER_JOURNEY_LOCATION.latitude,
+        lng: DEFAULT_DRIVER_JOURNEY_LOCATION.longitude,
+      };
       const map = new google.maps.Map(element, {
         center: unipduCoords,
         zoom: 13,
@@ -427,129 +597,118 @@ export function DriverJourneyAuditDialog({
         fullscreenControl: false,
       });
       mapRef.current = map;
-
       const marker = new google.maps.Marker({
         position: unipduCoords,
-        map: map,
+        map,
         draggable: true,
         animation: google.maps.Animation.DROP,
       });
       markerRef.current = marker;
-
       const geocoder = new google.maps.Geocoder();
 
-      const updateAddressImage = (queryStr: string) => {
-        try {
-          const service = new google.maps.places.PlacesService(map || document.createElement('div'));
-          service.textSearch({ query: queryStr }, (results: any, status: any) => {
-            if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-              const matchWithPhoto = results.find((r: any) => r.photos && r.photos.length > 0);
-              if (matchWithPhoto) {
-                setMapAddressImage(matchWithPhoto.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
-                return;
-              }
-            }
-            setMapAddressImage(null);
-          });
-        } catch (e) {
-          console.error(e);
-          setMapAddressImage(null);
-        }
-      };
-
       const updateAddress = (latLng: any) => {
+        cancelPlaceSearch();
+        mapGeocodeRequestRef.current += 1;
+        setMapSearchError('');
         geocoder.geocode({ location: latLng }, (results: any, status: any) => {
-          if (status === 'OK' && results[0]) {
-            setMapAddress(results[0].formatted_address);
-            updateAddressImage(results[0].formatted_address);
-          } else {
-            setMapAddress(`${latLng.lat().toFixed(5)}, ${latLng.lng().toFixed(5)}`);
-            setMapAddressImage(null);
-          }
+          const latitude = typeof latLng.lat === 'function' ? latLng.lat() : Number(latLng.lat);
+          const longitude = typeof latLng.lng === 'function' ? latLng.lng() : Number(latLng.lng);
+          const address = status === 'OK' && results?.[0]?.formatted_address
+            ? results[0].formatted_address
+            : `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+          setMapAddress(address);
+          setMapSearchText(address);
+          setMapLocation({ address, latitude, longitude });
         });
       };
 
       const existingAddress = mapAddress;
-      if (existingAddress && existingAddress !== 'UNIPDU Jombang, Jawa Timur' && existingAddress !== 'UNIPDU Jombang') {
-        geocoder.geocode({ address: existingAddress }, (results: any, status: any) => {
-          if (status === 'OK' && results[0] && results[0].geometry && results[0].geometry.location) {
-            const loc = results[0].geometry.location;
-            map.setCenter(loc);
+      const existingLocation = normalizeDriverJourneyLocation(mapLocation, existingAddress);
+      if (existingLocation) {
+        const position = { lat: existingLocation.latitude, lng: existingLocation.longitude };
+        map.setCenter(position);
+        map.setZoom(15);
+        marker.setPosition(position);
+        setMapLocation(existingLocation);
+      } else if (existingAddress) {
+        // Compatibility path for reports created before coordinates were stored.
+        geocoder.geocode({ address: existingAddress, region: 'id' }, (results: any, status: any) => {
+          if (status === 'OK' && results?.[0]?.geometry?.location) {
+            const location = results[0].geometry.location;
+            const address = results[0].formatted_address || existingAddress;
+            map.setCenter(location);
             map.setZoom(15);
-            marker.setPosition(loc);
-            setMapAddress(results[0].formatted_address);
-            updateAddressImage(results[0].formatted_address);
+            marker.setPosition(location);
+            setMapAddress(address);
+            setMapSearchText(address);
+            setMapLocation({
+              address,
+              latitude: typeof location.lat === 'function' ? location.lat() : Number(location.lat),
+              longitude: typeof location.lng === 'function' ? location.lng() : Number(location.lng),
+            });
           } else {
-            updateAddress(unipduCoords);
+            setMapSearchError('Alamat lama tidak dapat dipetakan. Cari lokasi atau geser pin.');
           }
         });
       } else {
-        updateAddress(unipduCoords);
+        setMapAddress('');
+        setMapLocation(null);
       }
 
       marker.addListener('dragend', () => {
-        const pos = marker.getPosition();
-        if (pos) {
-          updateAddress(pos);
+        const position = marker.getPosition();
+        if (position) updateAddress(position);
+      });
+      map.addListener('click', (event: any) => {
+        if (event.latLng) {
+          marker.setPosition(event.latLng);
+          updateAddress(event.latLng);
         }
       });
-
-      map.addListener('click', (e: any) => {
-        if (e.latLng) {
-          marker.setPosition(e.latLng);
-          updateAddress(e.latLng);
-        }
-      });
-    });
-  };
-
-  const initAutocomplete = (inputEl: HTMLInputElement) => {
-    loadGoogleMapsScript(() => {
-      const google = (window as any).google;
-      if (!google || !mapRef.current) return;
-
-      try {
-        const autocomplete = new google.maps.places.Autocomplete(inputEl, {
-          types: ['geocode', 'establishment'],
-        });
-
-        autocomplete.addListener('place_changed', () => {
-          const place = autocomplete.getPlace();
-          if (place.geometry && place.geometry.location) {
-            mapRef.current.setCenter(place.geometry.location);
-            mapRef.current.setZoom(16);
-            if (markerRef.current) {
-              markerRef.current.setPosition(place.geometry.location);
-            }
-            if (place.formatted_address) {
-              setMapAddress(place.formatted_address);
-              if (place.photos && place.photos.length > 0) {
-                setMapAddressImage(place.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
-              }
-            }
-          }
-        });
-      } catch (e) {
-        console.error('Autocomplete error:', e);
-      }
     });
   };
 
   const handleOpenMapForIndex = (index: number) => {
+    resetMapSearch();
     setMapTargetIndex(index);
     const currentVal = auditPoints[index] || '';
     setMapAddress(currentVal);
     setMapSearchText(currentVal);
-    setMapAddressImage(null);
+    setMapLocation(normalizeDriverJourneyLocation(auditPointLocations[index], currentVal));
     setShowMapSelector(true);
   };
 
-  const recalculateRouteFromPoints = (pointsToCalc: string[]) => {
+  /**
+   * Recomputes the route across `pointsToCalc`.
+   *
+   * The request closes the loop back to the departure point instead of
+   * doubling the one-way total. Doubling only holds for a simple A→B journey;
+   * on a multi-stop route the stored points already list every destination in
+   * order, so doubling counts each intermediate leg twice and inflates the
+   * distance component of the wage. Closing the loop mirrors how the sopir's
+   * own journey report totals the route ([start, ...stops, start]).
+   *
+   * `updateTotals` is false when this runs only to populate the per-leg
+   * breakdown as a report opens, so viewing a report never rewrites the
+   * figures the sopir submitted or that were already approved.
+   */
+  const recalculateRouteFromPoints = (
+    pointsToCalc: string[],
+    {
+      updateTotals = true,
+      pointLocations = auditPointLocations,
+    }: {
+      updateTotals?: boolean;
+      pointLocations?: Array<DriverJourneyLocation | null>;
+    } = {},
+  ) => {
     const validIndices = pointsToCalc
       .map((p, i) => (p && p.trim().length > 0 ? i : -1))
       .filter((i) => i !== -1);
     if (validIndices.length < 2) return;
-    const validPts = validIndices.map((i) => pointsToCalc[i]);
+    const validPts = validIndices.map((index) => (
+      driverJourneyRoutePoint(pointsToCalc[index], pointLocations[index])
+    ));
     setIsCalculatingRoute(true);
 
     loadGoogleMapsScript(() => {
@@ -562,8 +721,12 @@ export function DriverJourneyAuditDialog({
       try {
         const service = new g.maps.DirectionsService();
         const origin = validPts[0];
-        const destination = validPts[validPts.length - 1];
-        const waypoints = validPts.slice(1, validPts.length - 1).map(pt => ({
+        // Only append the return leg when the stored chain does not already
+        // end where it started.
+        const routePts =
+          validPts[validPts.length - 1] === origin ? validPts : [...validPts, origin];
+        const destination = routePts[routePts.length - 1];
+        const waypoints = routePts.slice(1, routePts.length - 1).map(pt => ({
           location: pt,
           stopover: true,
         }));
@@ -580,14 +743,12 @@ export function DriverJourneyAuditDialog({
             if (status === 'OK' && result && result.routes && result.routes[0]) {
               const route = result.routes[0];
               let totalMeters = 0;
-              let totalSeconds = 0;
               const legWages: Record<number, { distanceKm: number; durationHours: number }> = {};
 
               route.legs.forEach((leg: any, legIdx: number) => {
                 const distanceMeters = leg.distance?.value || 0;
                 const durationSeconds = leg.duration?.value || 0;
                 totalMeters += distanceMeters;
-                totalSeconds += durationSeconds;
 
                 const originIdx = validIndices[legIdx];
                 const nextIdx = validIndices[legIdx + 1];
@@ -600,14 +761,13 @@ export function DriverJourneyAuditDialog({
               });
               setAuditLegWages(legWages);
 
-              if (totalMeters > 0) {
-                const oneWayKm = totalMeters / 1000;
-                const oneWayHrs = totalSeconds / 3600;
-                const roundTripKm = Math.round(oneWayKm * 2 * 10) / 10;
-                const roundTripHrs = Math.round(oneWayHrs * 2 * 10) / 10;
-
-                setAuditDistanceKm(roundTripKm);
-                setAuditDurationHours(roundTripHrs);
+              if (updateTotals && totalMeters > 0) {
+                // `routePts` already returns to the departure point, so this
+                // total is the full round trip. Duration deliberately stays
+                // tied to the audited timeline (timeStart → timeEnd): Google's
+                // driving estimate excludes the time the sopir spends waiting
+                // at each destination, which the wage must still pay for.
+                setAuditDistanceKm(Math.round((totalMeters / 1000) * 10) / 10);
               }
             } else {
               console.warn('DirectionsService route status:', status);
@@ -622,13 +782,17 @@ export function DriverJourneyAuditDialog({
   };
 
   const handleConfirmMapLocation = () => {
-    if (mapTargetIndex === null || !mapAddress) return;
+    if (mapTargetIndex === null || !mapAddress || !mapLocation) return;
     const newPts = [...auditPoints];
-    newPts[mapTargetIndex] = mapAddress;
+    const newLocations = [...auditPointLocations];
+    newPts[mapTargetIndex] = mapAddress.trim();
+    newLocations[mapTargetIndex] = mapLocation;
     setAuditPoints(newPts);
+    setAuditPointLocations(newLocations);
+    resetMapSearch();
     setShowMapSelector(false);
     setMapTargetIndex(null);
-    recalculateRouteFromPoints(newPts);
+    recalculateRouteFromPoints(newPts, { pointLocations: newLocations });
   };
 
   const handleAuditTimeChange = (field: 'start' | 'end', value: string) => {
@@ -855,6 +1019,11 @@ export function DriverJourneyAuditDialog({
       vehicleType: auditVehicleType,
       nightCount: auditNightCount,
       points: auditPoints,
+      startPointLocation: normalizeDriverJourneyLocation(auditPointLocations[0], auditPoints[0]),
+      mainDestinationLocations: normalizeDriverJourneyLocations(
+        auditPointLocations.slice(1),
+        auditPoints.slice(1),
+      ),
     });
   };
 
@@ -944,6 +1113,7 @@ export function DriverJourneyAuditDialog({
                             onClick={() => {
                               const newPts = [...auditPoints, ''];
                               setAuditPoints(newPts);
+                              setAuditPointLocations([...auditPointLocations, null]);
                               handleOpenMapForIndex(newPts.length - 1);
                             }}
                             className="h-6 px-2 text-[9px] font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-md cursor-pointer whitespace-nowrap"
@@ -1020,8 +1190,10 @@ export function DriverJourneyAuditDialog({
                                     variant="ghost"
                                     onClick={() => {
                                       const newPts = auditPoints.filter((_, i) => i !== idx);
+                                      const newLocations = auditPointLocations.filter((_, i) => i !== idx);
                                       setAuditPoints(newPts);
-                                      recalculateRouteFromPoints(newPts);
+                                      setAuditPointLocations(newLocations);
+                                      recalculateRouteFromPoints(newPts, { pointLocations: newLocations });
                                     }}
                                     className="h-7 w-7 p-0 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
                                   >
@@ -1168,7 +1340,7 @@ export function DriverJourneyAuditDialog({
                         <Label className="text-[9.5px] font-bold text-slate-400 uppercase">Waktu Tempuh PP (JAM)</Label>
                         {!isManualDistanceOverride && (
                           <span className="text-[8.5px] font-extrabold text-slate-400 flex items-center gap-0.5">
-                            <Lock className="w-2.5 h-2.5" /> Otomatis Rute
+                            <Lock className="w-2.5 h-2.5" /> Otomatis Jadwal
                           </span>
                         )}
                       </div>
@@ -1529,98 +1701,88 @@ export function DriverJourneyAuditDialog({
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
-            {/* Search Input inside Map (Google Maps Themed Style) */}
-            <div className="relative flex items-center bg-white border border-slate-200 rounded-2xl shadow-sm h-11 px-3.5 gap-2.5 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 transition-all">
-              <div className="flex items-center justify-center w-5 text-indigo-500 shrink-0">
-                <Compass className="w-4.5 h-4.5 animate-pulse" />
-              </div>
-              <Input
-                ref={(el) => {
-                  if (el) {
-                    initAutocomplete(el);
-                  }
-                }}
-                placeholder="Cari lokasi tujuan dinas..."
-                value={mapSearchText}
-                onChange={(e) => setMapSearchText(e.target.value)}
-                className="flex-1 border-none bg-transparent p-0 focus-visible:ring-0 text-xs font-bold text-slate-700 h-full placeholder:text-slate-400"
-              />
-              {mapSearchText && (
+            <div className="relative">
+              <div className="flex h-11 items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-3.5 shadow-sm transition-all focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/20">
+                <Compass className="h-4.5 w-4.5 shrink-0 text-indigo-500" />
+                <Input
+                  placeholder="Cari lokasi tujuan dinas..."
+                  value={mapSearchText}
+                  onChange={(event) => handleMapSearchChange(event.target.value)}
+                  onKeyDown={handleMapSearchKeyDown}
+                  onBlur={() => window.setTimeout(cancelPlaceSearch, 150)}
+                  autoComplete="off"
+                  role="combobox"
+                  aria-expanded={placeSuggestions.length > 0}
+                  className="h-full flex-1 border-none bg-transparent p-0 text-xs font-bold text-slate-700 placeholder:text-slate-400 focus-visible:ring-0"
+                />
+                {isSearchingPlaces && <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />}
+                {mapSearchText && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetMapSearch();
+                      setMapSearchText('');
+                      setMapAddress('');
+                      setMapLocation(null);
+                    }}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600"
+                    aria-label="Hapus pencarian"
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </button>
+                )}
+                <div className="h-5 w-px shrink-0 bg-slate-200" />
                 <button
                   type="button"
                   onClick={() => {
-                    setMapSearchText('');
-                    setMapAddress('');
+                    if (placeSuggestions[0]) {
+                      handlePlaceSuggestionSelect(placeSuggestions[0]);
+                    } else {
+                      setMapSearchError(
+                        mapSearchText.trim().length < PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH
+                          ? `Ketik minimal ${PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH} karakter untuk mencari lokasi.`
+                          : 'Pilih salah satu saran lokasi sebelum melanjutkan.',
+                      );
+                    }
                   }}
-                  className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-slate-100 transition-all text-slate-400 hover:text-slate-600 shrink-0"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-indigo-500 transition-all hover:bg-indigo-50 hover:text-indigo-600"
+                  aria-label="Pilih saran lokasi pertama"
                 >
-                  <XCircle className="w-4 h-4" />
+                  <Search className="h-4.5 w-4.5" />
                 </button>
-              )}
-              <div className="w-px h-5 bg-slate-200 shrink-0" />
-              <button
-                type="button"
-                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-indigo-50 transition-all text-indigo-500 hover:text-indigo-600 shrink-0"
-              >
-                <Search className="w-4.5 h-4.5" />
-              </button>
+              </div>
 
-              <style>{`
-                .pac-container {
-                  z-index: 99999 !important;
-                  border-radius: 16px !important;
-                  border: 1px solid #e2e8f0 !important;
-                  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
-                  -webkit-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
-                  background-color: #ffffff !important;
-                  font-family: inherit !important;
-                  padding: 6px 0 !important;
-                  margin-top: 6px !important;
-                  width: min(452px, calc(100vw - 3rem)) !important;
-                  left: 50% !important;
-                  transform: translateX(-50%) !important;
-                }
-                .pac-item {
-                  padding: 10px 14px !important;
-                  font-size: 11px !important;
-                  font-weight: 600 !important;
-                  color: #475569 !important;
-                  cursor: pointer !important;
-                  display: flex !important;
-                  align-items: center !important;
-                  gap: 8px !important;
-                  border-top: 1px solid #f1f5f9 !important;
-                  transition: all 0.15s ease !important;
-                }
-                .pac-item:hover {
-                  background-color: #f8fafc !important;
-                }
-                .pac-item-query {
-                  font-size: 11px !important;
-                  font-weight: 850 !important;
-                  color: #0f172a !important;
-                }
-                .pac-matched {
-                  color: #4f46e5 !important;
-                }
-                .pac-icon {
-                  margin-top: 0 !important;
-                  background-image: none !important;
-                  position: relative !important;
-                  display: inline-block !important;
-                  width: 14px !important;
-                  height: 14px !important;
-                  flex-shrink: 0 !important;
-                }
-                .pac-icon::before {
-                  content: "📍" !important;
-                  font-size: 10px !important;
-                  position: absolute !important;
-                  left: 0 !important;
-                  top: 0 !important;
-                }
-              `}</style>
+              {placeSuggestions.length > 0 && (
+                <div className="absolute inset-x-0 top-full z-[100] mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                  {placeSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => handlePlaceSuggestionSelect(suggestion)}
+                      className="flex w-full items-start gap-2 border-b border-slate-100 px-3 py-2.5 text-left last:border-b-0 hover:bg-indigo-50"
+                    >
+                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-500" />
+                      <span className="min-w-0">
+                        <strong className="block truncate text-[11px] text-slate-800">{suggestion.primaryText}</strong>
+                        {suggestion.secondaryText && (
+                          <span className="block truncate text-[10px] text-slate-500">{suggestion.secondaryText}</span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+
+            <p className="text-[10px] text-slate-400">
+              Ketik minimal {PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH} karakter, lalu pilih salah satu saran.
+            </p>
+            {(mapSearchError || placeSearchError) && (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-[10px] font-semibold text-amber-700">
+                {mapSearchError || placeSearchError}
+              </p>
+            )}
 
             {/* Map Container */}
             <div
@@ -1636,24 +1798,6 @@ export function DriverJourneyAuditDialog({
                 <span className="text-[10px] font-bold">Memuat Google Maps...</span>
               </div>
             </div>
-
-            {/* Selected Location Image Preview */}
-            {mapAddressImage && (
-              <div className="w-full h-32 rounded-xl overflow-hidden border border-slate-100 shadow-sm relative group bg-slate-50 animate-fade-in">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={mapAddressImage}
-                  alt="Location Preview"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/10 to-transparent flex items-end p-3">
-                  <div className="text-[10px] text-white font-extrabold flex items-center gap-1 shadow-sm drop-shadow-md">
-                    <Compass className="w-3.5 h-3.5 text-indigo-300 animate-spin-slow shrink-0" />
-                    <span>Pratinjau Lokasi Terpilih</span>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Selected Address Box */}
             {mapAddress && (
@@ -1674,7 +1818,7 @@ export function DriverJourneyAuditDialog({
               </Button>
               <Button
                 type="button"
-                disabled={!mapAddress}
+                disabled={!mapAddress || !mapLocation}
                 onClick={handleConfirmMapLocation}
                 className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-10 cursor-pointer"
               >

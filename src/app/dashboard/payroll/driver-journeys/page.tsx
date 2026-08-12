@@ -72,16 +72,26 @@ import {
   isExtraPiketStationKey,
 } from '@/lib/payroll/driverPiket';
 import {
+  DEFAULT_DRIVER_JOURNEY_LOCATION,
   DEFAULT_DRIVER_JOURNEY_POINT,
+  driverJourneyRoutePoint,
   getMealAllowanceForDuration,
   calculateEstimatedDriverWage,
   DEFAULT_FUEL_PROCUREMENT_MODE,
   fuelProcurementModeLabel,
   isFuelProcurementMode,
   MAX_MAIN_DESTINATIONS,
+  normalizeDriverJourneyLocation,
+  normalizeDriverJourneyLocations,
   normalizeDriverJourneyDestinations,
+  type DriverJourneyLocation,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
+import {
+  PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH,
+  type CostSafePlaceSuggestion,
+  useCostSafePlaceAutocomplete,
+} from '@/hooks/useCostSafePlaceAutocomplete';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import { pekaryaPayrollPeriodForDate, pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import { syncActivityToPayslip } from '@/utils/payslipSync';
@@ -182,7 +192,17 @@ const loadGoogleMapsScript = (callback: () => void) => {
   if (typeof window === 'undefined') return;
   const g = (window as any).google;
   if (g && g.maps && g.maps.Map) {
-    callback();
+    if (g.maps.places?.AutocompleteSuggestion) {
+      callback();
+    } else if (g.maps.importLibrary) {
+      void g.maps.importLibrary('places').then((placesLib: Record<string, unknown>) => {
+        g.maps.places = g.maps.places || {};
+        Object.assign(g.maps.places, placesLib);
+        callback();
+      }).catch(() => callback());
+    } else {
+      callback();
+    }
     return;
   }
 
@@ -256,8 +276,13 @@ function DriverJourneysContent() {
   const [activityName, setActivityName] = useState('');
   const [activityDate, setActivityDate] = useState(new Date().toISOString().slice(0, 10));
   const [startPoint, setStartPoint] = useState(DEFAULT_DRIVER_JOURNEY_POINT);
+  const [startPointLocation, setStartPointLocation] = useState<DriverJourneyLocation | null>({
+    ...DEFAULT_DRIVER_JOURNEY_LOCATION,
+  });
   const [endPoint, setEndPoint] = useState('');
+  const [endPointLocation, setEndPointLocation] = useState<DriverJourneyLocation | null>(null);
   const [additionalDestinations, setAdditionalDestinations] = useState<string[]>([]);
+  const [additionalDestinationLocations, setAdditionalDestinationLocations] = useState<Array<DriverJourneyLocation | null>>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<keyof typeof VEHICLE_RATES>('Suzuki XL7');
   const [fuelProcurementMode, setFuelProcurementMode] = useState<FuelProcurementMode>(DEFAULT_FUEL_PROCUREMENT_MODE);
   const [tollFee, setTollFee] = useState<string>('');
@@ -447,7 +472,8 @@ function DriverJourneysContent() {
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [mapSearchText, setMapSearchText] = useState('');
   const [mapAddress, setMapAddress] = useState('');
-  const [mapAddressImage, setMapAddressImage] = useState<string | null>(null);
+  const [mapLocation, setMapLocation] = useState<DriverJourneyLocation | null>(null);
+  const [mapSearchError, setMapSearchError] = useState('');
   const [mapTarget, setMapTarget] = useState<'start' | 'end' | number>('end');
 
   const mapRef = React.useRef<any>(null);
@@ -455,15 +481,38 @@ function DriverJourneysContent() {
   const mapElementRef = React.useRef<HTMLDivElement | null>(null);
   const lastCalculatedRef = React.useRef('');
 
+  const {
+    suggestions: placeSuggestions,
+    isSearching: isSearchingPlaces,
+    searchError: placeSearchError,
+    search: searchPlaces,
+    cancelSearch: cancelPlaceSearch,
+  } = useCostSafePlaceAutocomplete({ loadGoogleMapsScript });
+
+  const mainDestinationEntries = useMemo(() => (
+    [endPoint, ...additionalDestinations]
+      .map((point, index) => ({
+        address: point.trim(),
+        location: [endPointLocation, ...additionalDestinationLocations][index] || null,
+      }))
+      .filter((entry) => Boolean(entry.address))
+  ), [endPoint, additionalDestinations, endPointLocation, additionalDestinationLocations]);
   const mainDestinationPoints = useMemo(
-    () => [endPoint, ...additionalDestinations]
-      .map((point) => point.trim())
-      .filter(Boolean),
-    [endPoint, additionalDestinations],
+    () => mainDestinationEntries.map((entry) => entry.address),
+    [mainDestinationEntries],
+  );
+  const mainDestinationLocations = useMemo(
+    () => mainDestinationEntries.map((entry) => entry.location),
+    [mainDestinationEntries],
   );
   const authorizationRoutePoints = useMemo(
-    () => [startPoint.trim(), ...mainDestinationPoints].filter(Boolean),
-    [startPoint, mainDestinationPoints],
+    () => [
+      driverJourneyRoutePoint(startPoint, startPointLocation),
+      ...mainDestinationPoints.map((point, index) => (
+        driverJourneyRoutePoint(point, mainDestinationLocations[index])
+      )),
+    ].filter(Boolean),
+    [startPoint, startPointLocation, mainDestinationPoints, mainDestinationLocations],
   );
   const authorizationRouteKey = authorizationRoutePoints.join('\u0000');
 
@@ -534,6 +583,12 @@ function DriverJourneysContent() {
     }
   };
 
+  const locationFromGoogle = (address: string, latLng: any): DriverJourneyLocation => ({
+    address,
+    latitude: typeof latLng.lat === 'function' ? latLng.lat() : Number(latLng.lat),
+    longitude: typeof latLng.lng === 'function' ? latLng.lng() : Number(latLng.lng),
+  });
+
   const initMap = (element: HTMLDivElement) => {
     loadGoogleMapsScript(() => {
       const google = (window as any).google;
@@ -541,9 +596,10 @@ function DriverJourneysContent() {
       if (mapRef.current && mapElementRef.current === element) return;
 
       mapElementRef.current = element;
-
-      const unipduCoords = { lat: -7.5458, lng: 112.2858 };
-
+      const unipduCoords = {
+        lat: DEFAULT_DRIVER_JOURNEY_LOCATION.latitude,
+        lng: DEFAULT_DRIVER_JOURNEY_LOCATION.longitude,
+      };
       const map = new google.maps.Map(element, {
         center: unipduCoords,
         zoom: 13,
@@ -555,42 +611,25 @@ function DriverJourneysContent() {
 
       const marker = new google.maps.Marker({
         position: unipduCoords,
-        map: map,
+        map,
         draggable: true,
         animation: google.maps.Animation.DROP,
       });
       markerRef.current = marker;
-
       const geocoder = new google.maps.Geocoder();
 
-      const updateAddressImage = (query: string) => {
-        try {
-          const service = new google.maps.places.PlacesService(map || document.createElement('div'));
-          service.textSearch({ query }, (results: any, status: any) => {
-            if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-              const matchWithPhoto = results.find((r: any) => r.photos && r.photos.length > 0);
-              if (matchWithPhoto) {
-                setMapAddressImage(matchWithPhoto.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
-                return;
-              }
-            }
-            setMapAddressImage(null);
-          });
-        } catch (e) {
-          console.error(e);
-          setMapAddressImage(null);
-        }
-      };
-
-      const updateAddress = (latLng: any) => {
+      const updateAddress = (latLng: any, syncSearchText = true) => {
+        cancelPlaceSearch();
+        setMapSearchError('');
         geocoder.geocode({ location: latLng }, (results: any, status: any) => {
-          if (status === 'OK' && results[0]) {
-            setMapAddress(results[0].formatted_address);
-            updateAddressImage(results[0].formatted_address);
-          } else {
-            setMapAddress(`${latLng.lat().toFixed(5)}, ${latLng.lng().toFixed(5)}`);
-            setMapAddressImage(null);
-          }
+          const latitude = typeof latLng.lat === 'function' ? latLng.lat() : Number(latLng.lat);
+          const longitude = typeof latLng.lng === 'function' ? latLng.lng() : Number(latLng.lng);
+          const address = status === 'OK' && results?.[0]?.formatted_address
+            ? results[0].formatted_address
+            : `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+          setMapAddress(address);
+          setMapLocation({ address, latitude, longitude });
+          if (syncSearchText) setMapSearchText(address);
         });
       };
 
@@ -599,157 +638,120 @@ function DriverJourneysContent() {
         : mapTarget === 'end'
           ? endPoint
           : additionalDestinations[mapTarget] || '';
-      if (existingAddress && existingAddress !== DEFAULT_DRIVER_JOURNEY_POINT && existingAddress !== 'UNIPDU Jombang') {
-        geocoder.geocode({ address: existingAddress }, (results: any, status: any) => {
-          if (status === 'OK' && results[0] && results[0].geometry && results[0].geometry.location) {
-            const loc = results[0].geometry.location;
-            map.setCenter(loc);
+      const storedLocation = mapTarget === 'start'
+        ? startPointLocation
+        : mapTarget === 'end'
+          ? endPointLocation
+          : additionalDestinationLocations[mapTarget] || null;
+      const existingLocation = normalizeDriverJourneyLocation(storedLocation, existingAddress);
+
+      if (existingLocation) {
+        const position = {
+          lat: existingLocation.latitude,
+          lng: existingLocation.longitude,
+        };
+        map.setCenter(position);
+        map.setZoom(15);
+        marker.setPosition(position);
+        setMapAddress(existingLocation.address);
+        setMapLocation(existingLocation);
+      } else if (existingAddress) {
+        // One-time compatibility path for older journey records that only
+        // stored address text. Newly selected locations reuse stored coords.
+        geocoder.geocode({ address: existingAddress, region: 'id' }, (results: any, status: any) => {
+          if (status === 'OK' && results?.[0]?.geometry?.location) {
+            const location = results[0].geometry.location;
+            const address = results[0].formatted_address || existingAddress;
+            map.setCenter(location);
             map.setZoom(15);
-            marker.setPosition(loc);
-            setMapAddress(results[0].formatted_address);
-            updateAddressImage(results[0].formatted_address);
+            marker.setPosition(location);
+            setMapAddress(address);
+            setMapSearchText(address);
+            setMapLocation(locationFromGoogle(address, location));
           } else {
-            updateAddress(unipduCoords);
+            setMapSearchError('Alamat lama tidak dapat dipetakan. Cari lokasi atau geser pin.');
           }
         });
       } else {
-        updateAddress(unipduCoords);
+        setMapAddress('');
+        setMapLocation(null);
       }
 
       marker.addListener('dragend', () => {
-        const pos = marker.getPosition();
-        if (pos) {
-          updateAddress(pos);
-        }
+        const position = marker.getPosition();
+        if (position) updateAddress(position);
       });
-
-      map.addListener('click', (e: any) => {
-        if (e.latLng) {
-          marker.setPosition(e.latLng);
-          updateAddress(e.latLng);
-        }
+      map.addListener('click', (event: any) => {
+        if (!event.latLng) return;
+        marker.setPosition(event.latLng);
+        updateAddress(event.latLng);
       });
-
     });
   };
 
   const performGeocodeSearch = (queryText: string) => {
-    if (!queryText || !queryText.trim()) return;
-    const google = (window as any).google;
-    if (!google) return;
+    const normalizedQuery = queryText.trim();
+    if (!normalizedQuery) return;
+    setMapSearchError('');
 
-    try {
-      const geocoder = new google.maps.Geocoder();
-      geocoder.geocode({ address: queryText.trim() }, (results: any, status: any) => {
-        if (status === 'OK' && results && results[0] && results[0].geometry) {
-          const loc = results[0].geometry.location;
-          const formatted = results[0].formatted_address;
-
-          if (mapRef.current) {
-            mapRef.current.setCenter(loc);
-            mapRef.current.setZoom(16);
-          }
-          if (markerRef.current) {
-            markerRef.current.setPosition(loc);
-          }
-
-          const nameAndAddress = queryText.includes(',') ? queryText : formatted;
-          setMapAddress(nameAndAddress);
-          setMapSearchText(nameAndAddress);
-
-          // Update location photo preview
-          try {
-            const service = new google.maps.places.PlacesService(mapRef.current || document.createElement('div'));
-            service.textSearch({ query: formatted }, (res: any, stat: any) => {
-              if (stat === google.maps.places.PlacesServiceStatus.OK && res && res.length > 0) {
-                const matchWithPhoto = res.find((r: any) => r.photos && r.photos.length > 0);
-                if (matchWithPhoto) {
-                  setMapAddressImage(matchWithPhoto.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
-                  return;
-                }
-              }
-              setMapAddressImage(null);
-            });
-          } catch (e) {
-            console.error(e);
-            setMapAddressImage(null);
-          }
-        }
-      });
-    } catch (err) {
-      console.error('Error during geocode search:', err);
-    }
-  };
-
-  const initAutocomplete = (inputEl: HTMLInputElement) => {
     loadGoogleMapsScript(() => {
       const google = (window as any).google;
-      if (!google || !mapRef.current) return;
+      if (!google?.maps?.Geocoder) {
+        setMapSearchError('Layanan peta belum siap. Silakan coba lagi.');
+        return;
+      }
 
-      try {
-        const autocomplete = new google.maps.places.Autocomplete(inputEl, {
-          fields: ['formatted_address', 'geometry', 'name', 'photos'],
-        });
-
-        autocomplete.addListener('place_changed', () => {
-          const place = autocomplete.getPlace();
-
-          // Fallback: If geometry is missing (e.g. invalid Place ID error from Google API), geocode directly by name or input text
-          if (!place || !place.geometry || !place.geometry.location) {
-            const fallbackQuery = place?.name || inputEl.value || mapSearchText;
-            if (fallbackQuery) {
-              performGeocodeSearch(fallbackQuery);
-            }
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode(
+        { address: normalizedQuery, region: 'id' },
+        (results: any[], status: string) => {
+          const result = Array.isArray(results)
+            ? results.find((item: any) => item?.geometry?.location)
+            : null;
+          if (status !== 'OK' || !result) {
+            setMapAddress('');
+            setMapLocation(null);
+            setMapSearchError('Lokasi tidak ditemukan. Pilih saran lain atau geser pin.');
             return;
           }
 
-          mapRef.current.setCenter(place.geometry.location);
-          mapRef.current.setZoom(16);
-          if (markerRef.current) {
-            markerRef.current.setPosition(place.geometry.location);
-          }
-
-          // Handle photos inside place object
-          if (place.photos && place.photos[0]) {
-            setMapAddressImage(place.photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
-          } else if (place.name || place.formatted_address) {
-            // Try to resolve photo via textSearch
-            const query = place.name || place.formatted_address;
-            const service = new google.maps.places.PlacesService(mapRef.current);
-            service.textSearch({ query }, (res: any, stat: any) => {
-              if (stat === google.maps.places.PlacesServiceStatus.OK && res && res[0]?.photos?.[0]) {
-                setMapAddressImage(res[0].photos[0].getUrl({ maxWidth: 1600, maxHeight: 800 }));
-              } else {
-                setMapAddressImage(null);
-              }
-            });
-          } else {
-            setMapAddressImage(null);
-          }
-
-          if (place.formatted_address) {
-            const name = place.name;
-            const address = place.formatted_address;
-            if (name && !name.toLowerCase().startsWith('jl.') && !name.toLowerCase().startsWith('jalan') && !address.toLowerCase().startsWith(name.toLowerCase())) {
-              setMapAddress(`${name}, ${address}`);
-              setMapSearchText(`${name}, ${address}`);
-            } else {
-              setMapAddress(address);
-              setMapSearchText(address);
-            }
-          } else {
-            const geocoder = new google.maps.Geocoder();
-            geocoder.geocode({ location: place.geometry.location }, (results: any, status: any) => {
-              if (status === 'OK' && results[0]) {
-                setMapAddress(results[0].formatted_address);
-              }
-            });
-          }
-        });
-      } catch (autoErr) {
-        console.warn('Google Places Autocomplete initialization failed:', autoErr);
-      }
+          const location = result.geometry.location;
+          const address = result.formatted_address || normalizedQuery;
+          mapRef.current?.setCenter(location);
+          mapRef.current?.setZoom(16);
+          markerRef.current?.setPosition(location);
+          setMapAddress(address);
+          setMapSearchText(address);
+          setMapLocation(locationFromGoogle(address, location));
+        },
+      );
     });
+  };
+
+  const handleMapSearchChange = (value: string) => {
+    setMapSearchText(value);
+    setMapAddress('');
+    setMapLocation(null);
+    setMapSearchError('');
+    searchPlaces(value);
+  };
+
+  const handlePlaceSuggestionSelect = (suggestion: CostSafePlaceSuggestion) => {
+    cancelPlaceSearch();
+    setMapSearchText(suggestion.queryText);
+    performGeocodeSearch(suggestion.queryText);
+  };
+
+  const selectFirstSuggestion = () => {
+    if (placeSuggestions[0]) {
+      handlePlaceSuggestionSelect(placeSuggestions[0]);
+      return;
+    }
+    setMapSearchError(
+      mapSearchText.trim().length < PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH
+        ? `Ketik minimal ${PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH} karakter untuk mencari lokasi.`
+        : 'Pilih salah satu saran lokasi sebelum melanjutkan.',
+    );
   };
 
   // ── Real-time listener for Journeys ──
@@ -980,15 +982,19 @@ function DriverJourneysContent() {
     }
     const newIndex = additionalDestinations.length;
     setAdditionalDestinations((previous) => [...previous, '']);
+    setAdditionalDestinationLocations((previous) => [...previous, null]);
     setMapTarget(newIndex);
     setMapSearchText('');
     setMapAddress('');
-    setMapAddressImage(null);
+    setMapLocation(null);
+    setMapSearchError('');
+    cancelPlaceSearch();
     setShowMapSelector(true);
   };
 
   const removeMainDestination = (index: number) => {
     setAdditionalDestinations((previous) => previous.filter((_, itemIndex) => itemIndex !== index));
+    setAdditionalDestinationLocations((previous) => previous.filter((_, itemIndex) => itemIndex !== index));
     lastCalculatedRef.current = '';
     setCalcDistance(null);
     setCalcDuration(null);
@@ -1029,8 +1035,10 @@ function DriverJourneysContent() {
           activityName: activityName.trim(),
           activityDate,
           startPoint: startPoint.trim(),
+          startPointLocation,
           endPoint: endPoint.trim(),
           mainDestinations: mainDestinationPoints,
+          mainDestinationLocations,
           vehicleName: selectedVehicle,
           fuelProcurementMode: selectedVehicle === 'Ndalem'
             ? DEFAULT_FUEL_PROCUREMENT_MODE
@@ -1039,7 +1047,6 @@ function DriverJourneysContent() {
           durationHours: calcDuration,
           customDurationPP: durPP,
           tollParkingFee: tollFeeVal,
-          destinationImageUrl: mapAddressImage || null,
           assignedTo: assignedDriverId || null,
         }),
       });
@@ -1052,8 +1059,11 @@ function DriverJourneysContent() {
       setActivityName('');
       setActivityDate(new Date().toISOString().slice(0, 10));
       setStartPoint(DEFAULT_DRIVER_JOURNEY_POINT);
+      setStartPointLocation({ ...DEFAULT_DRIVER_JOURNEY_LOCATION });
       setEndPoint('');
+      setEndPointLocation(null);
       setAdditionalDestinations([]);
+      setAdditionalDestinationLocations([]);
       setCalcDistance(null);
       setCalcDuration(null);
       setInputDuration(null);
@@ -1494,13 +1504,26 @@ function DriverJourneysContent() {
                                       setEditingJourneyId(j.id);
                                       setActivityName(j.activityName);
                                       setActivityDate(getJourneyDate(j));
-                                      setStartPoint(j.startPoint || DEFAULT_DRIVER_JOURNEY_POINT);
+                                      const storedStartPoint = j.startPoint || DEFAULT_DRIVER_JOURNEY_POINT;
+                                      setStartPoint(storedStartPoint);
+                                      setStartPointLocation(
+                                        normalizeDriverJourneyLocation(j.startPointLocation, storedStartPoint) ||
+                                          (storedStartPoint === DEFAULT_DRIVER_JOURNEY_POINT
+                                            ? { ...DEFAULT_DRIVER_JOURNEY_LOCATION }
+                                            : null),
+                                      );
                                       const destinations = normalizeDriverJourneyDestinations(
                                         j.mainDestinations,
                                         j.endPoint,
                                       );
+                                      const destinationLocations = normalizeDriverJourneyLocations(
+                                        j.mainDestinationLocations,
+                                        destinations,
+                                      );
                                       setEndPoint(destinations[0] || '');
+                                      setEndPointLocation(destinationLocations[0] || null);
                                       setAdditionalDestinations(destinations.slice(1));
+                                      setAdditionalDestinationLocations(destinationLocations.slice(1));
                                       setSelectedVehicle(j.vehicleName);
                                       setFuelProcurementMode(
                                         isFuelProcurementMode(j.fuelProcurementMode)
@@ -1870,8 +1893,11 @@ function DriverJourneysContent() {
           setActivityName('');
           setActivityDate(new Date().toISOString().slice(0, 10));
           setStartPoint(DEFAULT_DRIVER_JOURNEY_POINT);
+          setStartPointLocation({ ...DEFAULT_DRIVER_JOURNEY_LOCATION });
           setEndPoint('');
+          setEndPointLocation(null);
           setAdditionalDestinations([]);
+          setAdditionalDestinationLocations([]);
           setCalcDistance(null);
           setCalcDuration(null);
           setInputDuration(null);
@@ -2110,7 +2136,9 @@ function DriverJourneysContent() {
                     setMapTarget('start');
                     setMapSearchText('');
                     setMapAddress('');
-                    setMapAddressImage(null);
+                    setMapLocation(null);
+                    setMapSearchError('');
+                    cancelPlaceSearch();
                     setShowMapSelector(true);
                   }}
                   className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
@@ -2131,7 +2159,9 @@ function DriverJourneysContent() {
                       setMapTarget('start');
                       setMapSearchText(startPoint);
                       setMapAddress(startPoint);
-                      setMapAddressImage(null);
+                      setMapLocation(startPointLocation);
+                      setMapSearchError('');
+                      cancelPlaceSearch();
                       setShowMapSelector(true);
                     }}
                     className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
@@ -2155,7 +2185,9 @@ function DriverJourneysContent() {
                     setMapTarget('end');
                     setMapSearchText('');
                     setMapAddress('');
-                    setMapAddressImage(null);
+                    setMapLocation(null);
+                    setMapSearchError('');
+                    cancelPlaceSearch();
                     setShowMapSelector(true);
                   }}
                   className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
@@ -2176,7 +2208,9 @@ function DriverJourneysContent() {
                       setMapTarget('end');
                       setMapSearchText(endPoint);
                       setMapAddress(endPoint);
-                      setMapAddressImage(null);
+                      setMapLocation(endPointLocation);
+                      setMapSearchError('');
+                      cancelPlaceSearch();
                       setShowMapSelector(true);
                     }}
                     className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
@@ -2210,7 +2244,9 @@ function DriverJourneysContent() {
                         setMapTarget(index);
                         setMapSearchText('');
                         setMapAddress('');
-                        setMapAddressImage(null);
+                        setMapLocation(null);
+                        setMapSearchError('');
+                        cancelPlaceSearch();
                         setShowMapSelector(true);
                       }}
                       className="w-full rounded-xl border border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/30 hover:bg-indigo-50/50 text-indigo-700 h-10 px-4 flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer transition-all"
@@ -2231,7 +2267,9 @@ function DriverJourneysContent() {
                           setMapTarget(index);
                           setMapSearchText(destination);
                           setMapAddress(destination);
-                          setMapAddressImage(null);
+                          setMapLocation(additionalDestinationLocations[index] || null);
+                          setMapSearchError('');
+                          cancelPlaceSearch();
                           setShowMapSelector(true);
                         }}
                         className="text-[10px] font-bold text-indigo-700 hover:text-indigo-800 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 h-7 rounded-lg shrink-0 cursor-pointer"
@@ -2438,7 +2476,13 @@ function DriverJourneysContent() {
       </Dialog>
 
       {/* Google Maps Selector Dialog */}
-      <Dialog open={showMapSelector} onOpenChange={setShowMapSelector}>
+      <Dialog
+        open={showMapSelector}
+        onOpenChange={(open) => {
+          if (!open) cancelPlaceSearch();
+          setShowMapSelector(open);
+        }}
+      >
         <DialogContent className="sm:max-w-[500px] rounded-2xl bg-white border-slate-100 shadow-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-base font-extrabold text-slate-800 flex items-center gap-2">
@@ -2457,20 +2501,21 @@ function DriverJourneysContent() {
                 <Compass className="w-4.5 h-4.5 animate-pulse" />
               </div>
               <Input
-                ref={(el) => {
-                  if (el) {
-                    initAutocomplete(el);
-                  }
-                }}
                 placeholder="Cari lokasi tujuan dinas..."
                 value={mapSearchText}
-                onChange={(e) => setMapSearchText(e.target.value)}
+                onChange={(e) => handleMapSearchChange(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    cancelPlaceSearch();
+                    return;
+                  }
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    performGeocodeSearch(mapSearchText);
+                    selectFirstSuggestion();
                   }
                 }}
+                onBlur={() => window.setTimeout(cancelPlaceSearch, 150)}
+                autoComplete="off"
                 className="flex-1 border-none bg-transparent p-0 focus-visible:ring-0 text-xs font-bold text-slate-700 h-full placeholder:text-slate-400"
               />
               {mapSearchText && (
@@ -2479,6 +2524,9 @@ function DriverJourneysContent() {
                   onClick={() => {
                     setMapSearchText('');
                     setMapAddress('');
+                    setMapLocation(null);
+                    setMapSearchError('');
+                    cancelPlaceSearch();
                   }}
                   className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-slate-100 transition-all text-slate-400 hover:text-slate-600 shrink-0"
                 >
@@ -2488,69 +2536,60 @@ function DriverJourneysContent() {
               <div className="w-px h-5 bg-slate-200 shrink-0" />
               <button
                 type="button"
-                onClick={() => performGeocodeSearch(mapSearchText)}
+                onClick={selectFirstSuggestion}
                 className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-indigo-50 transition-all text-indigo-500 hover:text-indigo-600 shrink-0 cursor-pointer"
-                title="Cari Lokasi"
+                title="Pilih saran lokasi teratas"
               >
                 <Search className="w-4.5 h-4.5" />
               </button>
 
-              <style>{`
-                .pac-container {
-                  z-index: 99999 !important;
-                  border-radius: 16px !important;
-                  border: 1px solid #e2e8f0 !important;
-                  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
-                  -webkit-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
-                  background-color: #ffffff !important;
-                  font-family: inherit !important;
-                  padding: 6px 0 !important;
-                  margin-top: 6px !important;
-                  width: min(452px, calc(100vw - 3rem)) !important;
-                  left: 50% !important;
-                  transform: translateX(-50%) !important;
-                }
-                .pac-item {
-                  padding: 10px 14px !important;
-                  font-size: 11px !important;
-                  font-weight: 600 !important;
-                  color: #475569 !important;
-                  cursor: pointer !important;
-                  display: flex !important;
-                  align-items: center !important;
-                  gap: 8px !important;
-                  border-top: 1px solid #f1f5f9 !important;
-                  transition: all 0.15s ease !important;
-                }
-                .pac-item:hover {
-                  background-color: #f8fafc !important;
-                }
-                .pac-item-query {
-                  font-size: 11px !important;
-                  font-weight: 850 !important;
-                  color: #0f172a !important;
-                }
-                .pac-matched {
-                  color: #4f46e5 !important;
-                }
-                .pac-icon {
-                  margin-top: 0 !important;
-                  background-image: none !important;
-                  position: relative !important;
-                  display: inline-block !important;
-                  width: 14px !important;
-                  height: 14px !important;
-                  flex-shrink: 0 !important;
-                }
-                .pac-icon::before {
-                  content: "📍" !important;
-                  font-size: 10px !important;
-                  position: absolute !important;
-                  left: 0 !important;
-                  top: 0 !important;
-                }
-              `}</style>
+              {(isSearchingPlaces || placeSuggestions.length > 0) && (
+                <div className="absolute left-0 right-0 top-full z-[70] mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                  {isSearchingPlaces && (
+                    <div className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-slate-500">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />
+                      Mencari lokasi...
+                    </div>
+                  )}
+                  {placeSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        handlePlaceSuggestionSelect(suggestion);
+                      }}
+                      className="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-indigo-50"
+                    >
+                      <span className="block truncate text-[11px] font-extrabold text-slate-900">
+                        {suggestion.primaryText}
+                      </span>
+                      {suggestion.secondaryText && suggestion.secondaryText !== suggestion.primaryText && (
+                        <span className="block truncate text-[10px] font-medium text-slate-500">
+                          {suggestion.secondaryText}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                  {placeSuggestions.length > 0 && (
+                    <div className="border-t border-slate-100 px-3 py-1 text-right text-[8px] font-semibold text-slate-400">
+                      Powered by Google
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+
+            {mapSearchText.trim().length > 0 && mapSearchText.trim().length < PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH && (
+              <p className="-mt-2 text-[10px] font-semibold text-slate-400">
+                Ketik minimal {PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH} karakter untuk menampilkan saran.
+              </p>
+            )}
+            {(mapSearchError || placeSearchError) && (
+              <p className="-mt-2 text-[10px] font-bold text-rose-600">
+                {mapSearchError || placeSearchError}
+              </p>
+            )}
 
             {/* Map Container */}
             <div
@@ -2567,28 +2606,16 @@ function DriverJourneysContent() {
               </div>
             </div>
 
-            {/* Selected Location Image Preview (Google Maps style) */}
-            {mapAddressImage && (
-              <div className="w-full h-32 rounded-xl overflow-hidden border border-slate-100 shadow-sm relative group bg-slate-50 animate-fade-in">
-                <img
-                  src={mapAddressImage}
-                  alt="Location Preview"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/10 to-transparent flex items-end p-3">
-                  <div className="text-[10px] text-white font-extrabold flex items-center gap-1 shadow-sm drop-shadow-md">
-                    <Compass className="w-3.5 h-3.5 text-indigo-300 animate-spin-slow shrink-0" />
-                    <span>Pratinjau Lokasi Terpilih</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Selected Address Box */}
             {mapAddress && (
               <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 leading-relaxed font-semibold">
                 <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Alamat Terpilih:</span>
                 📍 {mapAddress}
+                {mapLocation && (
+                  <span className="mt-1 block text-[9px] font-medium text-slate-400">
+                    {mapLocation.latitude.toFixed(6)}, {mapLocation.longitude.toFixed(6)}
+                  </span>
+                )}
               </div>
             )}
 
@@ -2596,26 +2623,35 @@ function DriverJourneysContent() {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => setShowMapSelector(false)}
+                onClick={() => {
+                  cancelPlaceSearch();
+                  setShowMapSelector(false);
+                }}
                 className="rounded-xl font-bold text-slate-500 hover:bg-slate-50 text-xs px-4"
               >
                 Batal
               </Button>
               <Button
                 type="button"
-                disabled={!mapAddress}
+                disabled={!mapAddress || !mapLocation}
                 onClick={() => {
                   if (mapTarget === 'start') {
                     setStartPoint(mapAddress);
+                    setStartPointLocation(mapLocation);
                   } else if (mapTarget === 'end') {
                     setEndPoint(mapAddress);
+                    setEndPointLocation(mapLocation);
                   } else if (typeof mapTarget === 'number') {
                     setAdditionalDestinations((previous) => previous.map((destination, index) => (
                       index === mapTarget ? mapAddress : destination
                     )));
+                    setAdditionalDestinationLocations((previous) => previous.map((location, index) => (
+                      index === mapTarget ? mapLocation : location
+                    )));
                   }
                   lastCalculatedRef.current = '';
                   setCalcDistance(null);
+                  cancelPlaceSearch();
                   setShowMapSelector(false);
                 }}
                 className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 h-10"

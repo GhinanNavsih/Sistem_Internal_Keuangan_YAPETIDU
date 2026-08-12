@@ -11,6 +11,14 @@ import {
   buildPekaryaActivityIdentity,
   pekaryaPayrollPeriodForDate,
 } from '@/lib/payroll/pekaryaSpj';
+import { DEFAULT_FUEL_PROCUREMENT_MODE } from '@/lib/payroll/driverJourney';
+import {
+  createFuelLedgerContext,
+  flushFuelLedger,
+  releaseFuelReservation,
+  reservationFields,
+  reservationFromJourney,
+} from '@/lib/payroll/vehicleFuel';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
@@ -75,7 +83,13 @@ export async function POST(request: NextRequest) {
         if (previous.requestHash !== requestHash) {
           throw new HttpError(409, 'requestId sudah digunakan untuk penghapusan berbeda.');
         }
-        return { deleted: true, idempotent: true, employeeId: previous.employeeId || null, period: previous.period || null };
+        return {
+          deleted: true,
+          idempotent: true,
+          employeeId: previous.employeeId || null,
+          period: previous.period || null,
+          jobCategory: previous.jobCategory || null,
+        };
       }
 
       if (!reportSnapshot.exists) {
@@ -89,17 +103,6 @@ export async function POST(request: NextRequest) {
           'Hanya laporan yang sudah disetujui atau ditolak yang dapat dihapus. Laporan yang masih menunggu diproses lewat alur review biasa.',
         );
       }
-      // Driver journeys carry their own claim/fuel-reservation state machine
-      // (see DriverJourneys + PayrollLedgerEntries fuel context) that this
-      // endpoint does not unwind — deleting the ActivityReport alone would
-      // leave the journey doc pointing at a report that no longer exists.
-      if (report.journeyId) {
-        throw new HttpError(
-          409,
-          'Laporan perjalanan Sopir dikelola lewat halaman Perjalanan Dinas, bukan lewat penghapusan ini.',
-        );
-      }
-
       const employeeId = String(report.employeeId || '');
       const period = String(
         report.payrollPeriod ||
@@ -120,11 +123,16 @@ export async function POST(request: NextRequest) {
       const occurrenceRef = isSatpamShiftAssignment
         ? adminDb.collection('ShiftOccurrences').doc(String(report.sourceOccurrenceId))
         : null;
+      const journeyId = typeof report.journeyId === 'string' ? report.journeyId : '';
+      const journeyRef = journeyId
+        ? adminDb.collection('DriverJourneys').doc(journeyId)
+        : null;
 
-      const [periodSnapshot, slipSnapshot, occurrenceSnapshot] = await Promise.all([
+      const [periodSnapshot, slipSnapshot, occurrenceSnapshot, journeySnapshot] = await Promise.all([
         transaction.get(periodRef),
         transaction.get(slipRef),
         occurrenceRef ? transaction.get(occurrenceRef) : Promise.resolve(null),
+        journeyRef ? transaction.get(journeyRef) : Promise.resolve(null),
       ]);
 
       assertPeriodAcceptsInput(
@@ -137,6 +145,33 @@ export async function POST(request: NextRequest) {
           'Slip pegawai sudah dikunci/dibayar; gunakan alur koreksi finansial untuk periode ini.',
         );
       }
+
+      // A driver journey carries a fuel reservation against a shared vehicle
+      // balance. `reserved` can still be handed back, but hold-accumulate and
+      // procure-release settle into that balance the moment the journey is
+      // approved and `transitionReservation` treats `committed` as terminal.
+      // Undoing it would need a manual balance adjustment, so this mirrors the
+      // "Mode terkunci setelah klaim" rule the audit dialog already enforces
+      // for re-editing a confirmed journey.
+      const journey = journeySnapshot?.exists ? journeySnapshot.data()! : null;
+      const journeyReservation = journey ? reservationFromJourney(journey) : null;
+      if (
+        journeyReservation?.fuelReservationState === 'committed' &&
+        journeyReservation.fuelProcurementMode !== DEFAULT_FUEL_PROCUREMENT_MODE
+      ) {
+        throw new HttpError(
+          409,
+          'Reservasi BBM perjalanan ini sudah diselesaikan ke saldo kendaraan (mode Tahan/Cairkan). Sesuaikan saldo BBM kendaraan lebih dulu lewat halaman Perjalanan Dinas sebelum laporan dapat dihapus.',
+        );
+      }
+      const fuelContext =
+        journeyReservation?.fuelReservationState === 'reserved'
+          ? await createFuelLedgerContext(
+              transaction,
+              [journeyReservation.fuelReservationVehicleName],
+              { uid: actor.uid, displayName: actor.displayName, role: actor.role },
+            )
+          : null;
 
       const now = admin.firestore.FieldValue.serverTimestamp();
 
@@ -194,12 +229,68 @@ export async function POST(request: NextRequest) {
         transaction.delete(adminDb.collection('ActivityReportsIndex').doc(command.reportId));
       }
 
+      // Unwind the journey the same way the sopir's own cancellation does, so
+      // the deleted report does not leave a `completed` journey pointing at a
+      // report that no longer exists. A self-created Piket SPJ is removed
+      // outright; a manager-authorized journey keeps its authorization and
+      // returns to the pool to be claimed and reported again.
+      if (journeyRef && journey) {
+        const releasedReservation =
+          fuelContext && journeyReservation
+            ? releaseFuelReservation(
+                fuelContext,
+                journeyReservation,
+                'Penghapusan laporan perjalanan oleh Super Admin',
+                journeyId,
+              )
+            : journeyReservation;
+        if (fuelContext) flushFuelLedger(fuelContext);
+
+        const isSelfCreatedPiket = Boolean(
+          journey.isSelfCreatedPiketSpj || journeyId.startsWith('JRN-PIKET-'),
+        );
+        if (isSelfCreatedPiket) {
+          transaction.delete(journeyRef);
+        } else {
+          transaction.update(journeyRef, {
+            status: journey.assignedTo ? 'assigned' : 'unassigned',
+            activityDocId: admin.firestore.FieldValue.delete(),
+            employeeId: admin.firestore.FieldValue.delete(),
+            employeeName: admin.firestore.FieldValue.delete(),
+            claimedBy: admin.firestore.FieldValue.delete(),
+            claimedByName: admin.firestore.FieldValue.delete(),
+            claimedAt: admin.firestore.FieldValue.delete(),
+            draftTimeStart: admin.firestore.FieldValue.delete(),
+            draftTimeEnd: admin.firestore.FieldValue.delete(),
+            draftNightCount: admin.firestore.FieldValue.delete(),
+            draftFuelFee: admin.firestore.FieldValue.delete(),
+            draftTollParkingFee: admin.firestore.FieldValue.delete(),
+            draftFuelReceiptUrl: admin.firestore.FieldValue.delete(),
+            draftTollReceiptUrl: admin.firestore.FieldValue.delete(),
+            draftExtraActivities: admin.firestore.FieldValue.delete(),
+            draftCalculatedDistanceKm: admin.firestore.FieldValue.delete(),
+            draftCalculatedDurationHours: admin.firestore.FieldValue.delete(),
+            // Settlement output from the approval being deleted; leaving it
+            // would carry the old wage onto the next report for this journey.
+            fee: admin.firestore.FieldValue.delete(),
+            upahBersih: admin.firestore.FieldValue.delete(),
+            reviewedAt: admin.firestore.FieldValue.delete(),
+            reviewedBy: admin.firestore.FieldValue.delete(),
+            declineReason: admin.firestore.FieldValue.delete(),
+            ...(releasedReservation ? reservationFields(releasedReservation) : {}),
+            updatedAt: now,
+          });
+        }
+      }
+
       transaction.create(
         newFinancialAuditRef(),
         buildFinancialAuditRecord(actor, {
           action: isSatpamShiftAssignment
             ? 'SATPAM_SHIFT_ASSIGNMENT_DELETED_BY_ADMIN'
-            : 'PEKARYA_ACTIVITY_DELETED_BY_ADMIN',
+            : journeyRef
+              ? 'DRIVER_JOURNEY_REPORT_DELETED_BY_ADMIN'
+              : 'PEKARYA_ACTIVITY_DELETED_BY_ADMIN',
           entityType: 'ActivityReport',
           entityId: command.reportId,
           reason: command.reason,
@@ -212,6 +303,17 @@ export async function POST(request: NextRequest) {
             period,
             originalStatus: report.status,
             ...(isSatpamShiftAssignment ? { occurrenceId: report.sourceOccurrenceId } : {}),
+            ...(journeyRef
+              ? {
+                  journeyId,
+                  journeyDisposition:
+                    journey && (journey.isSelfCreatedPiketSpj || journeyId.startsWith('JRN-PIKET-'))
+                      ? 'deleted'
+                      : journey
+                        ? 'returned_to_pool'
+                        : 'missing',
+                }
+              : {}),
           },
         }),
       );
@@ -221,11 +323,18 @@ export async function POST(request: NextRequest) {
         entityId: command.reportId,
         employeeId,
         period,
+        jobCategory: report.jobCategory || null,
         resultingStatus: 'deleted',
         createdAt: now,
       });
 
-      return { deleted: true, idempotent: false, employeeId, period };
+      return {
+        deleted: true,
+        idempotent: false,
+        employeeId,
+        period,
+        jobCategory: report.jobCategory || null,
+      };
     });
 
     return Response.json(result);
