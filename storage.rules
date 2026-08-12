@@ -46,58 +46,41 @@ service firebase.storage {
         roleIs('finance_verifier');
     }
 
-    function payrollPeriodOpen(period) {
-      return period.matches('^\\d{4}-\\d{2}$') &&
-        (
-          !firestore.exists(
-            /databases/(default)/documents/PayrollPeriods/$(period)
-          ) ||
-          firestore.get(
-            /databases/(default)/documents/PayrollPeriods/$(period)
-          ).data.get('attendanceStatus', 'open') != 'closed'
-        );
-    }
-
-    function validReportFile() {
-      return request.resource.size < 10 * 1024 * 1024 &&
-        request.resource.contentType.matches('(application/pdf|image/.*)');
-    }
-
     // Payslips are written by the protected Admin API and served with
     // short-lived signed URLs. Direct client access is always denied.
     match /payslips/{allPaths=**} {
       allow read, write: if false;
     }
 
+    // Writes below are server-only: Storage Rules' cross-service
+    // firestore.get()/firestore.exists() calls (used by hasActiveProfile(),
+    // isFinance(), payrollPeriodOpen(), etc.) do not reliably evaluate for
+    // this project, which silently denied legitimate uploads that depended
+    // on them. Role/ownership/period checks now happen server-side via the
+    // Admin SDK in src/app/api/uploads/*/route.ts, which write through
+    // src/lib/server/storageUpload.ts. `allow read` is left as documentation
+    // of intended access — in practice viewers use the permanent
+    // token-based download URL returned at upload time, which bypasses
+    // these rules entirely, so its brokenness doesn't block reads.
+
     match /vakasi_reports/{period}/{filename} {
       allow read: if isFinance() || roleIs('satker_head') ||
         roleIs('satker_head_loyalis');
-      allow create, update: if
-        (isFinance() || roleIs('satker_head') || roleIs('satker_head_loyalis')) &&
-        payrollPeriodOpen(period) &&
-        validReportFile();
+      allow create, update: if false;
       allow delete: if false;
     }
 
     // One receipt per locked header item on an expense-mode LPJ report.
     match /expense_report_receipts/{reportId}/{filename} {
       allow read: if isFinance() || roleIs('satker_head_loyalis');
-      allow create, update: if
-        (isFinance() || roleIs('satker_head_loyalis')) &&
-        validReportFile();
+      allow create, update: if false;
       allow delete: if false;
     }
 
     match /presence_corrections/{employeeId}/{filename} {
       allow read: if isFinance() || roleIs('loyalis_presence_admin') ||
         (hasActiveProfile() && profile().linkedEmployeeId == employeeId);
-      allow create, update: if
-        (
-          roleIs('loyalis_presence_admin') ||
-          (hasActiveProfile() && profile().linkedEmployeeId == employeeId)
-        ) &&
-        request.resource.size < 5 * 1024 * 1024 &&
-        request.resource.contentType.matches('image/.*');
+      allow create, update: if false;
       allow delete: if false;
     }
 
@@ -106,11 +89,7 @@ service firebase.storage {
     match /activity_proofs/{employeeId}/{filename} {
       allow read: if isFinance() || roleIs('satker_head') ||
         (hasActiveProfile() && profile().get('linkedEmployeeId', '') == employeeId);
-      allow create, update: if
-        hasActiveProfile() &&
-        profile().get('linkedEmployeeId', '') == employeeId &&
-        request.resource.size < 5 * 1024 * 1024 &&
-        request.resource.contentType.matches('image/.*');
+      allow create, update: if false;
       allow delete: if false;
     }
 
@@ -129,17 +108,7 @@ service firebase.storage {
       allow read: if journeyExists() &&
         (isFinance() || roleIs('satker_head') ||
           (hasActiveProfile() && journey().get('employeeId', '') == profile().get('linkedEmployeeId', '')));
-      allow create, update: if
-        journeyExists() &&
-        payrollPeriodOpen(journey().get('payrollPeriod', journey().get('period', ''))) &&
-        (isFinance() ||
-          roleIs('satker_head') ||
-          (hasActiveProfile() && journey().get('employeeId', '') == profile().get('linkedEmployeeId', ''))) &&
-        request.resource.size < 5 * 1024 * 1024 &&
-        (
-          request.resource.contentType.matches('image/.*') ||
-          request.resource.contentType == 'application/pdf'
-        );
+      allow create, update: if false;
       allow delete: if false;
     }
 
@@ -150,11 +119,7 @@ service firebase.storage {
     match /satpam_shifts/{ketuaShiftId}/{filename} {
       allow read: if isFinance() || roleIs('satker_head') ||
         (hasActiveProfile() && profile().get('linkedEmployeeId', '') == ketuaShiftId);
-      allow create, update: if
-        hasActiveProfile() &&
-        profile().get('linkedEmployeeId', '') == ketuaShiftId &&
-        request.resource.size < 5 * 1024 * 1024 &&
-        request.resource.contentType.matches('image/.*');
+      allow create, update: if false;
       allow delete: if false;
     }
 

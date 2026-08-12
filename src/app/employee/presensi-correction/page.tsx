@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
+import { uploadProofFile } from '@/lib/uploads';
 import {
   collection,
   getDocs,
@@ -12,7 +14,6 @@ import {
   doc,
   setDoc
 } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import {
   Card,
   CardTitle,
@@ -309,32 +310,14 @@ export default function PresensiCorrectionPage() {
 
       // 1. Optional File Upload to Firebase Storage
       if (file) {
-        const storageRef = ref(storage, `presence_corrections/${empId}/${Date.now()}_${file.name}`);
-        const uploadTask = uploadBytesResumable(storageRef, file);
-
-        await new Promise<void>((resolve, reject) => {
-          uploadTask.on(
-            'state_changed',
-            (snapshot) => {
-              const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-              setUploadProgress(progress);
-            },
-            (error) => {
-              console.error('File upload failed:', error);
-              reject(error);
-            },
-            async () => {
-              try {
-                proofUrl = await getDownloadURL(uploadTask.snapshot.ref);
-                setUploadProgress(100);
-                resolve();
-              } catch (error) {
-                console.error('Failed to resolve uploaded file URL:', error);
-                reject(error);
-              }
-            }
-          );
-        });
+        setUploadProgress(0);
+        try {
+          proofUrl = await uploadProofFile('/api/uploads/presence-corrections', file, { employeeId: empId });
+          setUploadProgress(100);
+        } catch (error) {
+          console.error('File upload failed:', error);
+          throw error;
+        }
       }
 
       // Convert date "2026-07-11" to "260711" (yymmdd)
@@ -430,15 +413,7 @@ export default function PresensiCorrectionPage() {
           </div>
         </div>
 
-        {message && (
-          <div className={`flex items-start gap-2.5 px-4 py-3 rounded-2xl text-sm font-medium border ${message.type === 'success'
-            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-            : 'bg-rose-50 text-rose-700 border-rose-200'
-            }`}>
-            {message.type === 'success' ? <CheckCircle2 className="w-4.5 h-4.5 shrink-0 mt-0.5" /> : <AlertCircle className="w-4.5 h-4.5 shrink-0 mt-0.5" />}
-            <span>{message.text}</span>
-          </div>
-        )}
+        <FloatingSnackbar message={message} />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 

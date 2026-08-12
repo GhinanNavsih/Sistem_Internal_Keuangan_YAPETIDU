@@ -15,8 +15,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { storage } from '@/lib/firebase';
+import { uploadProofFile } from '@/lib/uploads';
 import {
   SATPAM_POSTS,
   type SatpamPostId,
@@ -1261,12 +1260,10 @@ export function SatpamAbsencePanel(props: {
       let evidenceUrl: string | null = null;
       if (evidenceFile) {
         const compressed = await compressProofImage(evidenceFile);
-        const fileRef = ref(
-          storage,
-          `activity_proofs/${employeeId}/izin_${dutyDate}_${Date.now()}.jpg`,
-        );
-        await uploadBytes(fileRef, compressed);
-        evidenceUrl = await getDownloadURL(fileRef);
+        evidenceUrl = await uploadProofFile('/api/uploads/activity-proofs', compressed, {
+          employeeId,
+          filenameHint: `izin_${dutyDate}`,
+        });
       }
       const previous = requests.find(
         (request) => request.dutyDate === dutyDate,

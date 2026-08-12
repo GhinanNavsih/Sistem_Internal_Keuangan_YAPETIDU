@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -56,8 +57,8 @@ import {
   Images,
   ShieldCheck,
 } from 'lucide-react';
-import { db, storage } from '@/lib/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db } from '@/lib/firebase';
+import { uploadProofFile } from '@/lib/uploads';
 import {
   countSubmittedSelfPiketJourneysOnDate,
   getTodayDateString,
@@ -2117,10 +2118,10 @@ function ActivitiesContent() {
 
     try {
       const processedFile = await compressImage(file);
-      const extension = processedFile.name.split('.').pop() || 'jpg';
-      const fileRef = ref(storage, `receipts/${activeReportingJourney.id}/${type}_${Date.now()}.${extension}`);
-      await uploadBytes(fileRef, processedFile);
-      const downloadUrl = await getDownloadURL(fileRef);
+      const downloadUrl = await uploadProofFile('/api/uploads/receipts', processedFile, {
+        journeyId: activeReportingJourney.id,
+        type,
+      });
       if (isBbm) {
         setFormFuelReceiptUrls(prev => [...prev, downloadUrl]);
       } else {
@@ -3253,12 +3254,10 @@ function ActivitiesContent() {
     try {
       const prepared = await prepareProofImage(file);
       const safePost = postId.replace(/[^A-Za-z0-9_-]/g, '_');
-      const fileRef = ref(
-        storage,
-        `satpam_shifts/${profile.linkedEmployeeId}/${satpamReportDate}_${activeShift}_${safePost}_${Date.now()}.jpg`,
-      );
-      await uploadBytes(fileRef, prepared.file);
-      const downloadUrl = await getDownloadURL(fileRef);
+      const downloadUrl = await uploadProofFile('/api/uploads/satpam-shifts', prepared.file, {
+        ketuaShiftId: profile.linkedEmployeeId,
+        filenameHint: `${satpamReportDate}_${activeShift}_${safePost}`,
+      });
 
       if (postId === 'extra') {
         setExtraPhotoUrl(downloadUrl);
@@ -3295,12 +3294,9 @@ function ActivitiesContent() {
     setUploadingProofPhoto(true);
     try {
       const prepared = await prepareProofImage(file);
-      const fileRef = ref(
-        storage,
-        `activity_proofs/${profile.linkedEmployeeId}/${Date.now()}.jpg`,
-      );
-      await uploadBytes(fileRef, prepared.file);
-      const url = await getDownloadURL(fileRef);
+      const url = await uploadProofFile('/api/uploads/activity-proofs', prepared.file, {
+        employeeId: profile.linkedEmployeeId,
+      });
       setFormProofPhoto({ url, auditMetadata: prepared.auditMetadata });
       setMessage({ type: 'success', text: 'Foto bukti kegiatan berhasil diunggah.' });
     } catch (error) {
@@ -3334,13 +3330,12 @@ function ActivitiesContent() {
     try {
       for (const [index, file] of files.entries()) {
         const prepared = await prepareProofImage(file);
-        const fileRef = ref(
-          storage,
-          `activity_proofs/${profile.linkedEmployeeId}/found-item-${Date.now()}-${index}.jpg`,
-        );
-        await uploadBytes(fileRef, prepared.file);
+        const url = await uploadProofFile('/api/uploads/activity-proofs', prepared.file, {
+          employeeId: profile.linkedEmployeeId,
+          filenameHint: `found-item-${index}`,
+        });
         uploaded.push({
-          url: await getDownloadURL(fileRef),
+          url,
           auditMetadata: prepared.auditMetadata,
         });
       }
@@ -3957,25 +3952,7 @@ function ActivitiesContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/80 to-slate-100 font-sans selection:bg-indigo-100 relative overflow-hidden text-slate-800">
       {/* ── Notifications ────────────────────────────────────────────── */}
-      {message && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[10000] flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-xs sm:text-sm font-semibold shadow-xl border max-w-[90%] w-[420px] animate-in fade-in slide-in-from-top-4 duration-300 ${message.type === 'success'
-          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-          : 'bg-rose-50 text-rose-800 border-rose-200'
-          }`}>
-          {message.type === 'success'
-            ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-          }
-          <span className="flex-1 leading-snug">{message.text}</span>
-          <button
-            type="button"
-            onClick={() => setMessage(null)}
-            className="text-slate-400 hover:text-slate-600 font-black ml-2 text-xs cursor-pointer focus:outline-none"
-          >
-            ✕
-          </button>
-        </div>
-      )}
+      <FloatingSnackbar message={message} onDismiss={() => setMessage(null)} />
       {/* Subtle decorative blobs */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-indigo-100/40 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-purple-100/30 blur-[100px] pointer-events-none" />

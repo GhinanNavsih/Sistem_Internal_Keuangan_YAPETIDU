@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
 import Link from 'next/link';
@@ -36,8 +37,8 @@ import {
   AlertCircle,
   Banknote,
 } from 'lucide-react';
-import { db, storage } from '@/lib/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db } from '@/lib/firebase';
+import { uploadProofFile } from '@/lib/uploads';
 import {
   doc,
   getDoc,
@@ -1456,9 +1457,10 @@ function JourneyReportContent() {
 
     try {
       const prepared = await prepareProofImage(file);
-      const fileRef = ref(storage, `receipts/${activeReportingJourney.id}/${type}_${Date.now()}.jpg`);
-      await uploadBytes(fileRef, prepared.file);
-      const downloadUrl = await getDownloadURL(fileRef);
+      const downloadUrl = await uploadProofFile('/api/uploads/receipts', prepared.file, {
+        journeyId: activeReportingJourney.id,
+        type,
+      });
       if (isBbm) {
         setFormFuelReceiptUrls(prev => [...prev, downloadUrl]);
         setFormFuelReceiptEvidence(prev => [...prev, { url: downloadUrl, auditMetadata: prepared.auditMetadata }]);
@@ -3011,18 +3013,7 @@ function JourneyReportContent() {
             );
           })()}
 
-          {/* Toast / Validation Alert placed above submit buttons */}
-          {message && (
-            <div className={`flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-xs sm:text-sm font-semibold shadow-sm border ${message.type === 'success'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                : 'bg-rose-50 border-rose-200 text-rose-900'
-              }`}>
-              <span className="text-base leading-none">
-                {message.type === 'success' ? '✓' : '⚠️'}
-              </span>
-              <span className="font-bold">{message.text}</span>
-            </div>
-          )}
+          <FloatingSnackbar message={message} />
 
           <div className="pt-2 flex flex-col sm:flex-row gap-2">
             <Button

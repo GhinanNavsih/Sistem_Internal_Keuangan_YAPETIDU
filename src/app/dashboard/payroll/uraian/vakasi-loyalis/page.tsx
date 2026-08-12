@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,8 +29,8 @@ import { useAuth } from '@/lib/AuthContext';
 import {
   collection, getDocs, doc, setDoc, getDoc, serverTimestamp, query, where, deleteDoc, onSnapshot
 } from 'firebase/firestore';
-import { db, storage } from '@/lib/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db } from '@/lib/firebase';
+import { uploadProofFile } from '@/lib/uploads';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import CetakKegiatanLoyalisDialog from '@/components/CetakKegiatanLoyalisDialog';
 import { generateKegiatanLoyalisRecapPdf } from '@/utils/generateKegiatanLoyalisRecapPdf';
@@ -285,11 +286,7 @@ export default function VakasiLoyalisPage() {
   };
 
   const uploadReportFile = async (fileToUpload: File, period: string, eventSeg: string): Promise<{ url: string; name: string }> => {
-    const ext = fileToUpload.name.split('.').pop() || 'pdf';
-    const path = `vakasi_reports/${period}/${eventSeg}_${Date.now()}.${ext}`;
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, fileToUpload);
-    const url = await getDownloadURL(storageRef);
+    const url = await uploadProofFile('/api/uploads/vakasi-reports', fileToUpload, { period, eventSeg });
     return { url, name: fileToUpload.name };
   };
 
@@ -1039,12 +1036,7 @@ export default function VakasiLoyalisPage() {
         </div>
       </div>
 
-      {message && (
-        <div className={`mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-          {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-          <div className="whitespace-pre-line">{message.text}</div>
-        </div>
-      )}
+      <FloatingSnackbar message={message} />
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
         {/* Left side list of existing events */}

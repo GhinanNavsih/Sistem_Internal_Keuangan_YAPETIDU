@@ -13,8 +13,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { storage } from '@/lib/firebase';
+import { uploadProofFile } from '@/lib/uploads';
 import {
   prepareProofImage,
   type PhotoAuditMetadata,
@@ -164,12 +163,10 @@ export function PekaryaOfficialLeavePanel(props: {
     setMessage('');
     try {
       const prepared = await prepareProofImage(file);
-      const fileRef = ref(
-        storage,
-        `activity_proofs/${employeeId}/presensi_${effectiveDate}_${Date.now()}.jpg`,
-      );
-      await uploadBytes(fileRef, prepared.file);
-      const downloadUrl = await getDownloadURL(fileRef);
+      const downloadUrl = await uploadProofFile('/api/uploads/activity-proofs', prepared.file, {
+        employeeId,
+        filenameHint: `presensi_${effectiveDate}`,
+      });
       setEvidence({ url: downloadUrl, auditMetadata: prepared.auditMetadata });
       setMessage('Foto bukti berhasil diunggah.');
     } catch (cause) {

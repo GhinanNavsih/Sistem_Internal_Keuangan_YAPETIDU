@@ -27,8 +27,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { storage } from '@/lib/firebase';
+import { uploadProofFile } from '@/lib/uploads';
 import { renderFileToCanvas } from '@/utils/ocrParser';
 import {
   createExpenseReport,
@@ -96,11 +95,10 @@ async function uploadExpenseReceipt(
   reportId: string,
   headerRowId: string,
 ): Promise<{ url: string; fileName: string }> {
-  const ext = file.name.split('.').pop() || 'jpg';
-  const path = `expense_report_receipts/${reportId}/${headerRowId}_${Date.now()}.${ext}`;
-  const target = storageRef(storage, path);
-  await uploadBytes(target, file);
-  const url = await getDownloadURL(target);
+  const url = await uploadProofFile('/api/uploads/expense-report-receipts', file, {
+    reportId,
+    headerRowId,
+  });
   return { url, fileName: file.name };
 }
 
