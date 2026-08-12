@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1187,13 +1188,7 @@ export default function ProposalKegiatanPage() {
 
   return (
     <div className="space-y-6">
-      {/* Messages */}
-      {message && (
-        <div className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-          {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-          <div className="whitespace-pre-line">{message.text}</div>
-        </div>
-      )}
+      <FloatingSnackbar message={message} />
 
       {/* ── TOP SECTION: Dedicated Event List Carousel / Cards Grid ── */}
       <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-4 md:p-6 space-y-4">

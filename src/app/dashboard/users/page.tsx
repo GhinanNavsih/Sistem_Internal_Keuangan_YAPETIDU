@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -656,19 +657,14 @@ export default function UserManagementPage() {
         </div>
 
         {/* Notifications */}
-        {successMsg && (
-          <div className="flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-sm font-semibold bg-emerald-50 text-emerald-800 border border-emerald-100 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{successMsg}</span>
-          </div>
-        )}
-
-        {errorMsg && (
-          <div className="flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-sm font-semibold bg-rose-50 text-rose-800 border border-rose-100 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
-            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
+        <FloatingSnackbar
+          message={errorMsg
+            ? { type: 'error', text: errorMsg }
+            : successMsg
+              ? { type: 'success', text: successMsg }
+              : null}
+          onDismiss={errorMsg ? () => setErrorMsg(null) : undefined}
+        />
 
         {/* Add User Section */}
         {showAddForm && (
@@ -1126,22 +1122,6 @@ export default function UserManagementPage() {
                   </div>
                 </div>
 
-                {errorMsg && (
-                  <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center justify-between gap-2.5 shadow-sm animate-in fade-in slide-in-from-top-1 mt-4">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <AlertTriangle className="w-4.5 h-4.5 text-rose-600 shrink-0" />
-                      <span className="leading-snug">{errorMsg}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setErrorMsg(null)}
-                      className="text-rose-500 hover:text-rose-700 hover:bg-rose-100 p-1 rounded-lg text-xs font-bold shrink-0 transition-colors"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-
                 <div className="border-t border-slate-100 pt-4 flex justify-end gap-3 shrink-0">
                   <Button
                     type="button"
@@ -1460,22 +1440,6 @@ export default function UserManagementPage() {
               Perbarui nama lengkap, level otoritas, atau izin unit kerja untuk <strong className="text-slate-700 font-semibold">{editingUser?.email}</strong>.
             </DialogDescription>
           </DialogHeader>
-
-          {errorMsg && (
-            <div className="mx-1 my-2 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center justify-between gap-2.5 shadow-sm animate-in fade-in slide-in-from-top-1 shrink-0">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <AlertTriangle className="w-4.5 h-4.5 text-rose-600 shrink-0" />
-                <span className="leading-snug">{errorMsg}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setErrorMsg(null)}
-                className="text-rose-500 hover:text-rose-700 hover:bg-rose-100 p-1 rounded-lg text-xs font-bold shrink-0 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-          )}
 
           {editingUser && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0 py-3 overflow-y-auto lg:overflow-hidden">

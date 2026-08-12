@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -338,15 +339,7 @@ function DriverHistoryContent() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 relative z-10">
-        {/* Toast alert */}
-        {message && (
-          <div className="flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-xs sm:text-sm font-semibold shadow-xl border bg-white border-slate-150">
-            <span className={message.type === 'success' ? 'text-emerald-500' : 'text-rose-500'}>
-              {message.type === 'success' ? '✓' : '⚠️'}
-            </span>
-            <span className="text-slate-700">{message.text}</span>
-          </div>
-        )}
+        <FloatingSnackbar message={message} />
 
         {/* ── Period Selector ──────────────────────────────────────────── */}
         <Card className="bg-white rounded-2xl shadow-sm border border-slate-100">

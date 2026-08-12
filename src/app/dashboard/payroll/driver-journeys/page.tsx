@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import GlobalHeader from '@/components/GlobalHeader';
@@ -1241,21 +1242,7 @@ function DriverJourneysContent() {
       {/* Uraian Navigation Toggles (Super Admin) */}
       <UraianNavToggles />
 
-      {message && (
-        <div
-          className={`p-4 rounded-xl border flex items-center gap-3 animate-in fade-in duration-200 text-xs font-semibold ${message.type === 'success'
-            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-            : 'bg-rose-50 border-rose-200 text-rose-800'
-            }`}
-        >
-          {message.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          ) : (
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-          )}
-          <span>{message.text}</span>
-        </div>
-      )}
+      <FloatingSnackbar message={message} />
 
       <Card className="border-slate-200/60 shadow-sm rounded-2xl bg-white">
         <CardHeader className="p-4 pb-2">

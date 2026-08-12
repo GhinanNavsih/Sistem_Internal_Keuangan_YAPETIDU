@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -1501,15 +1502,7 @@ export default function EmployeesPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            {message && (
-              <div className={`fixed top-0 left-0 right-0 z-[9999] w-full flex items-center justify-center px-6 py-4 shadow-md text-sm font-semibold transition-all duration-300 animate-in slide-in-from-top ${message.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
-                }`}>
-                <div className="flex items-center gap-2.5">
-                  {message.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
-                  <span>{message.text}</span>
-                </div>
-              </div>
-            )}
+            <FloatingSnackbar message={message} />
             <Button onClick={handleExportExcel} variant="outline" className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm px-4 cursor-pointer">
               <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" /> Export Excel
             </Button>

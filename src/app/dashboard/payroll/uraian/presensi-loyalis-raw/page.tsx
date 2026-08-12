@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1243,11 +1244,7 @@ export default function PresensiLoyalisRawPage() {
         </div>
       )}
 
-      {message && (
-        <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-          {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />} {message.text}
-        </div>
-      )}
+      <FloatingSnackbar message={message} />
 
       {presensiTargetType === 'pekarya' &&
       profile?.role !== 'loyalis_presence_admin' &&

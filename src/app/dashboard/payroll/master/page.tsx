@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import Link from 'next/link';
 import {
   Table,
@@ -320,14 +321,7 @@ export default function SalaryMasterPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            {message && (
-              <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium animate-in fade-in slide-in-from-top-2 ${
-                message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-              }`}>
-                {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4 text-red-500" />}
-                {message.text}
-              </div>
-            )}
+            <FloatingSnackbar message={message} />
             <Button variant="outline" className="rounded-xl bg-white border-slate-200 shadow-sm">
               <History className="w-4 h-4 mr-2" /> Riwayat
             </Button>

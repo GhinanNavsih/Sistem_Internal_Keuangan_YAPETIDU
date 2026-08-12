@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
 import { auth, db, secondaryDb } from '@/lib/firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
@@ -1546,25 +1547,14 @@ export default function EmployeePayslipPage() {
       </div>
 
       {/* Floating Action Notifications */}
-      {resetSuccess && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-md bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-2xl shadow-xl flex items-start gap-3 animate-in fade-in slide-in-from-bottom-5">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-          <div>
-            <div className="font-bold text-sm">Email Terkirim</div>
-            <div className="text-xs text-emerald-700 mt-0.5">{resetSuccess}</div>
-          </div>
-        </div>
-      )}
-
-      {resetError && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-md bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-2xl shadow-xl flex items-start gap-3 animate-in fade-in slide-in-from-bottom-5">
-          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-          <div>
-            <div className="font-bold text-sm">Gagal Mengirim Email</div>
-            <div className="text-xs text-rose-700 mt-0.5">{resetError}</div>
-          </div>
-        </div>
-      )}
+      <FloatingSnackbar
+        message={resetError
+          ? { type: 'error', text: resetError }
+          : resetSuccess
+            ? { type: 'success', text: resetSuccess }
+            : null}
+        title={resetError ? 'Gagal Mengirim Email' : resetSuccess ? 'Email Terkirim' : undefined}
+      />
 
       <div className="max-w-4xl mx-auto px-6 sm:px-8 md:px-12 mt-8 space-y-6 relative z-10">
 

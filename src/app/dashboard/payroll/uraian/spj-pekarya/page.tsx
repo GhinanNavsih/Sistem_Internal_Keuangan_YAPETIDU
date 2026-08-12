@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -276,11 +277,7 @@ export default function SpjPekaryaPage() {
 
   return (
     <div className="space-y-6">
-      {message && (
-        <div className={`mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-          {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />} {message.text}
-        </div>
-      )}
+      <FloatingSnackbar message={message} />
 
       {!category ? (
         <Card className="bg-white rounded-[20px] p-12 text-center flex flex-col items-center justify-center min-h-[400px] border-none shadow-sm">

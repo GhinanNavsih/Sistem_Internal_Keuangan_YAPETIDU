@@ -115,7 +115,7 @@ export default function BulkEmailGlobalUI() {
   return (
     <>
       {/* ─── Bulk Email Floating Snackbar ───────────────────── */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9998] w-[520px] max-w-[calc(100vw-2rem)]">
+      <div className={`fixed inset-x-0 top-0 flex justify-center px-4 pt-[max(1rem,env(safe-area-inset-top))] ${fatalError || hasFailures ? 'z-[2147483647]' : 'z-[9998]'}`}>
         <div
           className={`relative overflow-hidden rounded-2xl border shadow-xl transition-all duration-300 ${
             bulkEmailDone

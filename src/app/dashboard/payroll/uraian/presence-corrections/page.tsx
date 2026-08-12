@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
 import { db } from '@/lib/firebase';
 import {
@@ -481,18 +482,7 @@ export default function PresenceCorrectionsAdminPage() {
 
   return (
     <div className="space-y-6">
-      {message && (
-        <div className={`flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-sm font-semibold border shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 ${
-          message.type === 'success'
-            ? 'bg-emerald-50 text-emerald-800 border-emerald-100'
-            : 'bg-rose-50 text-rose-800 border-rose-100'
-        }`}>
-          {message.type === 'success'
-            ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            : <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
-          <span>{message.text}</span>
-        </div>
-      )}
+      <FloatingSnackbar message={message} />
 
       {/* ── Filters Row ────────────────────────────────────────────── */}
       <Card className="bg-white rounded-2xl shadow-sm border-none">

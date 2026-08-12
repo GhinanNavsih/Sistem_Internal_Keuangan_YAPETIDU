@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
+import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
 import UraianNavToggles from '@/components/UraianNavToggles';
 import { useRouter } from 'next/navigation';
@@ -1753,18 +1754,13 @@ export default function ActivityReviewPage() {
         <UraianNavToggles />
 
         {/* ── Notifications ──────────────────────────────────────────── */}
-        {successMsg && (
-          <div className="flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-sm font-semibold bg-emerald-50 text-emerald-800 border border-emerald-100 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{successMsg}</span>
-          </div>
-        )}
-        {errorMsg && (
-          <div className="flex items-center gap-2.5 px-4 py-3.5 rounded-2xl text-sm font-semibold bg-rose-50 text-rose-800 border border-rose-100 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
-            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
+        <FloatingSnackbar
+          message={errorMsg
+            ? { type: 'error', text: errorMsg }
+            : successMsg
+              ? { type: 'success', text: successMsg }
+              : null}
+        />
 
         {/* ── Filters Row ────────────────────────────────────────────── */}
         <Card className="bg-white rounded-2xl shadow-sm border-none">
