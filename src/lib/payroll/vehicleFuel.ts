@@ -108,17 +108,6 @@ function integerMoney(
   return Math.ceil(value);
 }
 
-function signedAdjustment(value: unknown): number {
-  if (
-    typeof value !== 'number' ||
-    !Number.isFinite(value) ||
-    Math.abs(value) > MAX_VEHICLE_FUEL_ADJUSTMENT
-  ) {
-    throw new Error('Penyesuaian saldo BBM tidak valid.');
-  }
-  return Math.trunc(value);
-}
-
 function emptyBalance(vehicleName: DriverVehicleName): MutableVehicleFuelBalance {
   return {
     vehicleName,
@@ -471,26 +460,26 @@ export function reconcileFuelReservation(
   });
 }
 
-export function applyManualAdjustment(
+export function setVehicleFuelBalance(
   context: FuelLedgerContext,
   input: {
     vehicleName: DriverVehicleName;
-    delta: number;
+    targetBalance: number;
     reason: string;
     requestId: string;
   },
 ): VehicleFuelBalance {
   assertAccumulationVehicle(input.vehicleName);
-  const delta = signedAdjustment(input.delta);
-  if (!input.reason.trim()) throw new Error('Alasan penyesuaian saldo wajib diisi.');
+  const targetBalance = integerMoney(
+    input.targetBalance,
+    'Saldo BBM baru',
+    MAX_VEHICLE_FUEL_ADJUSTMENT,
+  );
+  if (!input.reason.trim()) throw new Error('Alasan penetapan saldo wajib diisi.');
   const balance = context.balances.get(input.vehicleName) || emptyBalance(input.vehicleName);
   const before = { ...balance };
+  const delta = targetBalance - balance.availableBalance;
   const adjustedAvailableBalance = balance.availableBalance + delta;
-  if (adjustedAvailableBalance < 0) {
-    throw new VehicleFuelConflictError(
-      `Penyesuaian melebihi saldo BBM ${input.vehicleName}. Tersedia Rp${balance.availableBalance.toLocaleString('id-ID')}.`,
-    );
-  }
   balance.availableBalance = adjustedAvailableBalance;
   balance.schemaVersion = CURRENT_FUEL_LEDGER_VERSION;
   assertBalanceInvariant(balance);

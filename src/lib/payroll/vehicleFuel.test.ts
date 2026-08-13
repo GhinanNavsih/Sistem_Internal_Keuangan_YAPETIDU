@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  applyManualAdjustment,
   commitFuelReservation,
   createFuelLedgerContext,
   flushFuelLedger,
@@ -11,6 +10,7 @@ import {
   reservationFields,
   reservationFromJourney,
   reserveFuel,
+  setVehicleFuelBalance,
   VehicleFuelConflictError,
 } from './vehicleFuel';
 
@@ -325,30 +325,32 @@ test('reconciliation releases the old hold before locking accumulated funds', as
   });
 });
 
-test('manual adjustments are signed, append-only events, and cannot overdraw', async () => {
+test('setting a saldo records the calculated signed delta as an append-only event', async () => {
   const context = await createContext({
     Bis: { vehicleName: 'Bis', availableBalance: 1_000_000 },
   });
-  applyManualAdjustment(context, {
+  setVehicleFuelBalance(context, {
     vehicleName: 'Bis',
-    delta: 250_000,
+    targetBalance: 1_250_000,
     reason: 'Koreksi dokumen pembelian',
     requestId: 'REQ-ADD-1',
   });
-  applyManualAdjustment(context, {
+  setVehicleFuelBalance(context, {
     vehicleName: 'Bis',
-    delta: -100_000,
+    targetBalance: 1_150_000,
     reason: 'Koreksi pembatalan pembelian',
     requestId: 'REQ-ADD-2',
   });
   assert.equal(getBalanceFromContext(context, 'Bis').availableBalance, 1_150_000);
   assert.equal(context.events.length, 2);
-  assert.throws(() => applyManualAdjustment(context, {
+  assert.equal(context.events[0].input.availableDelta, 250_000);
+  assert.equal(context.events[1].input.availableDelta, -100_000);
+  assert.throws(() => setVehicleFuelBalance(context, {
     vehicleName: 'Bis',
-    delta: -2_000_000,
-    reason: 'Saldo tidak mencukupi',
+    targetBalance: -1,
+    reason: 'Saldo baru tidak valid',
     requestId: 'REQ-ADD-3',
-  }), VehicleFuelConflictError);
+  }));
   assert.equal(getBalanceFromContext(context, 'Bis').availableBalance, 1_150_000);
   assert.equal(context.events.length, 2);
 });

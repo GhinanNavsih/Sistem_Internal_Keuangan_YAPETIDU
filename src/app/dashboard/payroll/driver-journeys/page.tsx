@@ -125,6 +125,11 @@ function fmtRp(val: number): string {
   return 'Rp' + Math.round(val).toLocaleString('id-ID');
 }
 
+function formatRupiahInput(value: string): string {
+  const digits = value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+  return digits ? Number(digits).toLocaleString('id-ID') : '';
+}
+
 function journeyDestinationLabel(journey: any): string {
   return normalizeDriverJourneyDestinations(
     journey?.mainDestinations,
@@ -291,7 +296,7 @@ function DriverJourneysContent() {
   const [fuelLedgerVehicle, setFuelLedgerVehicle] = useState<string | null>(null);
   const [fuelLedgerEntries, setFuelLedgerEntries] = useState<Record<string, unknown>[]>([]);
   const [showFuelLedger, setShowFuelLedger] = useState(false);
-  const [fuelAdjustmentDelta, setFuelAdjustmentDelta] = useState('');
+  const [fuelBalanceTarget, setFuelBalanceTarget] = useState('');
   const [fuelAdjustmentReason, setFuelAdjustmentReason] = useState('');
   const [fuelAdjustmentSaving, setFuelAdjustmentSaving] = useState(false);
 
@@ -556,9 +561,10 @@ function DriverJourneysContent() {
 
   const submitFuelAdjustment = async () => {
     if (!fuelLedgerVehicle || fuelAdjustmentSaving) return;
-    const delta = Number(fuelAdjustmentDelta.replace(/\D/g, '')) * (fuelAdjustmentDelta.trim().startsWith('-') ? -1 : 1);
-    if (!Number.isSafeInteger(delta) || delta === 0 || fuelAdjustmentReason.trim().length < 8) {
-      setMessage({ type: 'error', text: 'Isi delta saldo (boleh negatif) dan alasan minimal 8 karakter.' });
+    const targetDigits = fuelBalanceTarget.replace(/\D/g, '');
+    const targetBalance = targetDigits === '' ? Number.NaN : Number(targetDigits);
+    if (!Number.isSafeInteger(targetBalance) || targetBalance < 0 || fuelAdjustmentReason.trim().length < 8) {
+      setMessage({ type: 'error', text: 'Isi saldo BBM baru dan alasan minimal 8 karakter.' });
       return;
     }
     setFuelAdjustmentSaving(true);
@@ -567,18 +573,18 @@ function DriverJourneysContent() {
         method: 'POST',
         body: JSON.stringify({
           vehicleName: fuelLedgerVehicle,
-          delta,
+          targetBalance,
           reason: fuelAdjustmentReason.trim(),
           requestId: createFinancialRequestId('vehicle_fuel_adjustment'),
         }),
       });
-      setFuelAdjustmentDelta('');
+      setFuelBalanceTarget('');
       setFuelAdjustmentReason('');
       await loadFuelBalances();
       await openFuelLedger(fuelLedgerVehicle);
-      setMessage({ type: 'success', text: 'Penyesuaian saldo BBM berhasil dicatat.' });
+      setMessage({ type: 'success', text: 'Saldo BBM berhasil ditetapkan.' });
     } catch (error: any) {
-      setMessage({ type: 'error', text: error?.message || 'Penyesuaian saldo BBM gagal.' });
+      setMessage({ type: 'error', text: error?.message || 'Penetapan saldo BBM gagal.' });
     } finally {
       setFuelAdjustmentSaving(false);
     }
@@ -2679,20 +2685,32 @@ function DriverJourneysContent() {
         <DialogContent className="sm:max-w-2xl rounded-2xl bg-white p-6">
           <DialogHeader>
             <DialogTitle className="text-base font-extrabold text-slate-800">Ledger BBM {fuelLedgerVehicle || ''}</DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">Riwayat append-only dan penyesuaian manual bertanda tangan.</DialogDescription>
+            <DialogDescription className="text-xs text-slate-500">Riwayat append-only dan penetapan saldo BBM bertanda tangan.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
             <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 grid grid-cols-1 sm:grid-cols-[150px_1fr_auto] gap-2 items-end">
               <div>
-                <Label className="text-[10px] font-bold text-indigo-900">Signed delta (Rp)</Label>
-                <Input value={fuelAdjustmentDelta} onChange={(event) => setFuelAdjustmentDelta(event.target.value.replace(/[^0-9-]/g, ''))} placeholder="+500000 / -500000" className="mt-1 h-9 text-xs bg-white" />
+                <Label htmlFor="fuel-balance-target" className="text-[10px] font-bold text-indigo-900">Set saldo BBM (Tersedia)</Label>
+                <div className="relative mt-1">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-indigo-700">
+                    Rp
+                  </span>
+                  <Input
+                    id="fuel-balance-target"
+                    type="text"
+                    value={fuelBalanceTarget}
+                    onChange={(event) => setFuelBalanceTarget(formatRupiahInput(event.target.value))}
+                    placeholder="500.000"
+                    className="h-9 bg-white pl-9 text-xs font-bold tabular-nums"
+                  />
+                </div>
               </div>
               <div>
                 <Label className="text-[10px] font-bold text-indigo-900">Alasan wajib</Label>
                 <Input value={fuelAdjustmentReason} onChange={(event) => setFuelAdjustmentReason(event.target.value)} placeholder="Koreksi saldo berdasarkan dokumen..." className="mt-1 h-9 text-xs bg-white" />
               </div>
               <Button type="button" onClick={submitFuelAdjustment} disabled={fuelAdjustmentSaving} className="h-9 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-xs font-bold">
-                {fuelAdjustmentSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Catat adjustment'}
+                {fuelAdjustmentSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Set saldo'}
               </Button>
             </div>
             <div className="space-y-2">

@@ -5,13 +5,13 @@ import {
   isDriverVehicleName,
 } from '@/lib/payroll/driverJourney';
 import {
-  applyManualAdjustment,
   createFuelLedgerContext,
   flushFuelLedger,
   getVehicleFuelBalance,
   getVehicleFuelBalances,
   getVehicleFuelLedger,
   MAX_VEHICLE_FUEL_ADJUSTMENT,
+  setVehicleFuelBalance,
   VehicleFuelConflictError,
 } from '@/lib/payroll/vehicleFuel';
 import {
@@ -98,17 +98,18 @@ export async function POST(request: NextRequest) {
     requireManager(actor);
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     const vehicleName = requireVehicle(typeof body?.vehicleName === 'string' ? body.vehicleName : null);
-    const delta = body?.delta;
+    const targetBalance = body?.targetBalance;
     if (
-      typeof delta !== 'number' ||
-      !Number.isSafeInteger(delta) ||
-      Math.abs(delta) > MAX_VEHICLE_FUEL_ADJUSTMENT
+      typeof targetBalance !== 'number' ||
+      !Number.isSafeInteger(targetBalance) ||
+      targetBalance < 0 ||
+      targetBalance > MAX_VEHICLE_FUEL_ADJUSTMENT
     ) {
-      throw new HttpError(400, 'Penyesuaian saldo BBM tidak valid.');
+      throw new HttpError(400, 'Saldo BBM baru tidak valid.');
     }
     const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
     if (reason.length < 8 || reason.length > 500) {
-      throw new HttpError(400, 'Alasan penyesuaian saldo wajib diisi antara 8 dan 500 karakter.');
+      throw new HttpError(400, 'Alasan penetapan saldo wajib diisi antara 8 dan 500 karakter.');
     }
     const requestId = typeof body?.requestId === 'string' ? body.requestId.trim() : '';
     if (!/^[A-Za-z0-9_-]{8,180}$/.test(requestId)) {
@@ -128,16 +129,16 @@ export async function POST(request: NextRequest) {
         displayName: actor.displayName,
         role: actor.role,
       });
-      const balance = applyManualAdjustment(context, {
-        vehicleName: vehicleName as Parameters<typeof applyManualAdjustment>[1]['vehicleName'],
-        delta,
+      const balance = setVehicleFuelBalance(context, {
+        vehicleName: vehicleName as Parameters<typeof setVehicleFuelBalance>[1]['vehicleName'],
+        targetBalance,
         reason,
         requestId,
       });
       flushFuelLedger(context);
-      const response = { vehicleName, balance, idempotent: false };
+      const response = { vehicleName, targetBalance, balance, idempotent: false };
       transaction.create(idempotencyRef, {
-        requestHash: `${vehicleName}:${delta}:${reason}`,
+        requestHash: `${vehicleName}:${targetBalance}:${reason}`,
         entityId: vehicleName,
         resultingStatus: 'applied',
         result: response,
