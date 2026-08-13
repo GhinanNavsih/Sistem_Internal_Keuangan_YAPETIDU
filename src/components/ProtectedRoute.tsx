@@ -25,6 +25,7 @@ const LOYALIS_ROUTES = [
   '/employee/payslip',
   '/employee/presensi-correction',
   '/employee/facility-reports',
+  '/employee/simpan-pinjam',
 ];
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
