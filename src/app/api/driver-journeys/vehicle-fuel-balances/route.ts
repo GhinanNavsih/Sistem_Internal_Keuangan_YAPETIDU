@@ -11,6 +11,7 @@ import {
   getVehicleFuelBalances,
   getVehicleFuelLedger,
   MAX_VEHICLE_FUEL_ADJUSTMENT,
+  serializeVehicleFuelBalance,
   setVehicleFuelBalance,
   VehicleFuelConflictError,
 } from '@/lib/payroll/vehicleFuel';
@@ -136,7 +137,12 @@ export async function POST(request: NextRequest) {
         requestId,
       });
       flushFuelLedger(context);
-      const response = { vehicleName, targetBalance, balance, idempotent: false };
+      const response = {
+        vehicleName,
+        targetBalance,
+        balance: serializeVehicleFuelBalance(balance),
+        idempotent: false,
+      };
       transaction.create(idempotencyRef, {
         requestHash: `${vehicleName}:${targetBalance}:${reason}`,
         entityId: vehicleName,

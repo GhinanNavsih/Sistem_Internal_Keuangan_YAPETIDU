@@ -10,6 +10,7 @@ import {
   reservationFields,
   reservationFromJourney,
   reserveFuel,
+  serializeVehicleFuelBalance,
   setVehicleFuelBalance,
   VehicleFuelConflictError,
 } from './vehicleFuel';
@@ -353,6 +354,32 @@ test('setting a saldo records the calculated signed delta as an append-only even
   }));
   assert.equal(getBalanceFromContext(context, 'Bis').availableBalance, 1_150_000);
   assert.equal(context.events.length, 2);
+});
+
+test('serialized saldo responses omit undefined metadata before Firestore writes', () => {
+  const serialized = serializeVehicleFuelBalance({
+    vehicleName: 'Bis',
+    availableBalance: 300_000,
+    pendingHoldAmount: 0,
+    accumulatedHoldAmount: 0,
+    pendingReleaseAmount: 0,
+    schemaVersion: 2,
+    updatedAt: undefined,
+    updatedBy: undefined,
+    updatedByName: undefined,
+  });
+
+  assert.deepEqual(serialized, {
+    vehicleName: 'Bis',
+    availableBalance: 300_000,
+    pendingHoldAmount: 0,
+    accumulatedHoldAmount: 0,
+    pendingReleaseAmount: 0,
+    schemaVersion: 2,
+  });
+  assert.equal('updatedAt' in serialized, false);
+  assert.equal('updatedBy' in serialized, false);
+  assert.equal('updatedByName' in serialized, false);
 });
 
 test('legacy reservations remain version 1 and use their original transition rules', async () => {

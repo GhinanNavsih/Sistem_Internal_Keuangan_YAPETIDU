@@ -162,7 +162,7 @@ function publicBalance(balance: MutableVehicleFuelBalance): VehicleFuelBalance {
   };
 }
 
-function firestoreSafeBalance(balance: VehicleFuelBalance): VehicleFuelBalance {
+export function serializeVehicleFuelBalance(balance: VehicleFuelBalance): VehicleFuelBalance {
   const safeBalance: VehicleFuelBalance = {
     vehicleName: balance.vehicleName,
     availableBalance: balance.availableBalance,
@@ -178,7 +178,7 @@ function firestoreSafeBalance(balance: VehicleFuelBalance): VehicleFuelBalance {
 }
 
 function snapshotForEvent(balance: MutableVehicleFuelBalance): VehicleFuelBalance {
-  return firestoreSafeBalance(publicBalance(balance));
+  return serializeVehicleFuelBalance(publicBalance(balance));
 }
 
 function assertBalanceInvariant(balance: MutableVehicleFuelBalance): void {
