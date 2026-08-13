@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
+import { SATPAM_RATES } from '@/lib/payroll/domain';
 import type { PhotoAuditMetadata, PhotoEvidence } from '@/lib/payroll/domain';
 import {
   Card,
@@ -402,6 +403,15 @@ const SATPAM_POST_OPTIONS = [
   'Pos 9',
 ];
 
+// Payable Satpam classifications a super_admin may correct an approved
+// assignment to. Off-Duty is a planning marker, never a payable rate.
+const SATPAM_EDITABLE_PAY_TYPES: string[] = [
+  'Harian',
+  'Jumat & Libur',
+  'Lembur Sendiri',
+  'Lembur Cover',
+];
+
 const SATPAM_ANOMALY_LABELS: Record<string, string> = {
   MISSING_POSTS: 'Pos belum lengkap',
   DUPLICATE_POST: 'Pos ganda',
@@ -617,6 +627,13 @@ export default function ActivityReviewPage() {
   const [deleteTarget, setDeleteTarget] = useState<ActivityReport | null>(null);
   const [deleteReason, setDeleteReason] = useState('');
   const [deletingActivity, setDeletingActivity] = useState(false);
+
+  // ── Satpam Pay-Type Correction Modal (super_admin, approved rows) ──
+  const [payTypeTarget, setPayTypeTarget] = useState<ActivityReport | null>(null);
+  const [payTypeValue, setPayTypeValue] = useState<string>('Harian');
+  const [payTypeCovered, setPayTypeCovered] = useState('');
+  const [payTypeReason, setPayTypeReason] = useState('');
+  const [savingPayType, setSavingPayType] = useState(false);
 
   // ── Driver (Sopir) Audit Modal State ──
   // The audit form itself lives in <DriverJourneyAuditDialog>, shared with the
@@ -1300,6 +1317,96 @@ export default function ActivityReviewPage() {
     } finally {
       isActionLoadingRef.current = false;
       setDeletingActivity(false);
+    }
+  };
+
+  // ── Satpam Pay-Type Correction (super_admin; approved assignments) ──
+  const openPayTypeEditor = async (item: ActivityReport) => {
+    setErrorMsg('');
+    setPayTypeTarget(item);
+    setPayTypeValue(
+      SATPAM_EDITABLE_PAY_TYPES.includes(item.shiftType || '')
+        ? (item.shiftType as string)
+        : 'Harian',
+    );
+    setPayTypeCovered(item.coveredEmployeeId || '');
+    setPayTypeReason('');
+    // The Lembur Cover picker needs the guard directory, which is otherwise
+    // only fetched when the auditor-edit dialog opens.
+    if (satpamEmployeeDirectory.length === 0) {
+      try {
+        const directory = await authenticatedJson<{
+          employees: Array<{ id: string; name: string; isActive: boolean }>;
+        }>('/api/satpam/shifts/review', { method: 'GET' });
+        setSatpamEmployeeDirectory(directory.employees);
+      } catch (err) {
+        console.error('Gagal memuat direktori Satpam:', err);
+      }
+    }
+  };
+
+  const handleSavePayType = async () => {
+    if (isActionLoadingRef.current || !payTypeTarget || !user) return;
+    const reason = payTypeReason.trim();
+    if (reason.length < 8) {
+      setErrorMsg('Isi alasan koreksi sekurang-kurangnya 8 karakter.');
+      return;
+    }
+    if (payTypeValue === payTypeTarget.shiftType) {
+      setErrorMsg('Kategori upah belum diubah.');
+      return;
+    }
+    if (payTypeValue === 'Lembur Cover' && !payTypeCovered.trim()) {
+      setErrorMsg('Pilih petugas yang digantikan untuk Lembur Cover.');
+      return;
+    }
+
+    isActionLoadingRef.current = true;
+    setSavingPayType(true);
+    try {
+      await authenticatedJson('/api/satpam/shifts/admin-pay-type', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('satpam_pay_type_fix'),
+          reportId: payTypeTarget.id,
+          payType: payTypeValue,
+          ...(payTypeValue === 'Lembur Cover'
+            ? { coveredEmployeeId: payTypeCovered.trim() }
+            : {}),
+          reason,
+        }),
+      });
+      const employeeId = payTypeTarget.employeeId;
+      const dutyDate = payTypeTarget.dutyDate || payTypeTarget.activityDate;
+      const period =
+        payTypeTarget.payrollPeriod || (dutyDate ? pekaryaPayrollPeriodForDate(dutyDate) : '');
+      const savedLabel = `Kategori upah ${payTypeTarget.employeeName} diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`;
+      setSuccessMsg(savedLabel);
+      setPayTypeTarget(null);
+      setPayTypeReason('');
+      fetchActivities();
+      try {
+        if (period) {
+          // The server already recomputed the Satpam shift columns in the
+          // Uraian rekap; refresh this guard's entry and push the rekap onto
+          // draft slips so the payslip moves with it.
+          await syncActivityToPayslip(db, employeeId, period);
+          const propagationNote = await propagateUraianToSlips({
+            scope: 'pekarya',
+            period,
+            jobCategory: 'SATPAM',
+          });
+          if (propagationNote) setSuccessMsg(`${savedLabel}${propagationNote}`);
+        }
+      } catch (syncErr) {
+        console.error('Error syncing payslip after pay-type correction:', syncErr);
+      }
+    } catch (err) {
+      console.error('Error correcting Satpam pay type:', err);
+      setErrorMsg(err instanceof Error ? err.message : 'Gagal mengubah kategori upah.');
+    } finally {
+      isActionLoadingRef.current = false;
+      setSavingPayType(false);
     }
   };
 
@@ -2222,6 +2329,17 @@ export default function ActivityReviewPage() {
                                                   >
                                                     {item.status === 'approved' ? 'Disetujui' : 'Ditolak'}
                                                   </Badge>
+                                                  {profile?.role === 'super_admin' && item.status === 'approved' && (
+                                                    <button
+                                                      type="button"
+                                                      title="Ubah kategori upah"
+                                                      disabled={savingPayType}
+                                                      onClick={() => openPayTypeEditor(item)}
+                                                      className="flex h-5 w-5 items-center justify-center rounded-md text-indigo-600 transition-colors hover:bg-indigo-50 cursor-pointer"
+                                                    >
+                                                      <Edit2 className="h-3 w-3" />
+                                                    </button>
+                                                  )}
                                                   {profile?.role === 'super_admin' && (
                                                     <button
                                                       type="button"
@@ -2969,6 +3087,107 @@ export default function ActivityReviewPage() {
             >
               {deletingActivity ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
               Hapus Permanen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Satpam Pay-Type Correction Modal (super_admin only) ───────── */}
+      <Dialog open={payTypeTarget !== null} onOpenChange={(open) => { if (!open && !savingPayType) setPayTypeTarget(null); }}>
+        <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl bg-white p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
+              <Edit2 className="w-5 h-5 text-indigo-600" />
+              Ubah Kategori Upah
+            </DialogTitle>
+            <DialogDescription className="text-slate-500">
+              Koreksi kategori upah <strong>{payTypeTarget?.employeeName}</strong> pada{' '}
+              <strong>{payTypeTarget?.postId || payTypeTarget?.postName}</strong>. Rekap Uraian dan slip gaji
+              periode ini dihitung ulang otomatis setelah disimpan.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400 font-semibold">Tanggal Dinas</span>
+                <span className="font-bold text-slate-700">{payTypeTarget?.dutyDate || payTypeTarget?.activityDate}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400 font-semibold">Kategori Saat Ini</span>
+                <span className="font-bold text-slate-700">
+                  {payTypeTarget?.shiftType} · {fmtRp(payTypeTarget?.fee || 0)}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-500 uppercase">Kategori Upah Baru</Label>
+              <Select value={payTypeValue} onValueChange={(v) => v && setPayTypeValue(v)}>
+                <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
+                  <SelectValue>
+                    {payTypeValue} · {fmtRp(SATPAM_RATES[payTypeValue as keyof typeof SATPAM_RATES] || 0)}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="rounded-xl bg-white">
+                  {SATPAM_EDITABLE_PAY_TYPES.map((type) => (
+                    <SelectItem key={type} value={type} className="min-h-10 text-sm">
+                      {type} · {fmtRp(SATPAM_RATES[type as keyof typeof SATPAM_RATES] || 0)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {payTypeValue === 'Lembur Cover' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-500 uppercase">Petugas yang Digantikan</Label>
+                <Select value={payTypeCovered || 'none'} onValueChange={(v) => setPayTypeCovered(v === 'none' ? '' : (v || ''))}>
+                  <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
+                    <SelectValue>
+                      {satpamEmployeeDirectory.find((e) => e.id === payTypeCovered)?.name || '-- Pilih Petugas --'}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl bg-white max-h-[280px] overflow-y-auto">
+                    <SelectItem value="none" className="min-h-10 text-sm italic text-slate-500">
+                      -- Pilih Petugas --
+                    </SelectItem>
+                    {satpamEmployeeDirectory
+                      .filter((employee) => employee.id !== payTypeTarget?.employeeId)
+                      .map((employee) => (
+                        <SelectItem key={employee.id} value={employee.id} className="min-h-10 text-sm">
+                          {employee.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-500 uppercase">Alasan Koreksi (Wajib)</Label>
+              <Input
+                type="text"
+                placeholder="Contoh: Salah klasifikasi saat audit, seharusnya lembur sendiri"
+                value={payTypeReason}
+                onChange={(e) => setPayTypeReason(e.target.value)}
+                className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm"
+              />
+              <p className="text-[10px] font-semibold text-slate-400">Minimal 8 karakter. Dicatat pada log audit finansial.</p>
+            </div>
+          </div>
+          <DialogFooter className="gap-3">
+            <Button variant="ghost" onClick={() => setPayTypeTarget(null)} disabled={savingPayType} className="rounded-xl font-bold text-slate-500">
+              Batal
+            </Button>
+            <Button
+              onClick={handleSavePayType}
+              disabled={
+                savingPayType ||
+                payTypeReason.trim().length < 8 ||
+                payTypeValue === payTypeTarget?.shiftType ||
+                (payTypeValue === 'Lembur Cover' && !payTypeCovered.trim())
+              }
+              className="rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-md shadow-indigo-100"
+            >
+              {savingPayType ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+              Simpan Koreksi
             </Button>
           </DialogFooter>
         </DialogContent>
