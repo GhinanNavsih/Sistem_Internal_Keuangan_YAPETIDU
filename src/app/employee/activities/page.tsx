@@ -4597,12 +4597,7 @@ function ActivitiesContent() {
                                 </SelectItem>
                                 <SelectGroup>
                                   <SelectLabel className="text-base font-black text-purple-700 px-2 py-2 bg-purple-50/50">Anggota Regu Anda</SelectLabel>
-                                  {visibleGroupEmployees
-                                    .filter(emp =>
-                                      !satpamDutyPlan?.day ||
-                                      emp.id === satpamDutyPlan.day.offDutyEmployeeId,
-                                    )
-                                    .map(emp => (
+                                  {visibleGroupEmployees.map(emp => (
                                     <SelectItem key={emp.id} value={emp.id} className="text-base py-3 pl-3">
                                       {emp.name} {emp.id === profile.linkedEmployeeId ? '(Anda)' : ''} {emp.isActive === false ? '· perlu verifikasi' : ''}
                                     </SelectItem>
