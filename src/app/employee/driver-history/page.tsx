@@ -51,6 +51,8 @@ import { MONTHS_ID } from '@/utils/rekapConfig';
 import {
   calculateDriverNetWage,
   calculateDriverReimbursementSettlement,
+  DEFAULT_FUEL_PROCUREMENT_MODE,
+  isFuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
 import { authenticatedJson } from '@/lib/payroll/client';
 import {
@@ -100,6 +102,8 @@ interface ActivityReport {
   remainingUnspentCash?: number;
   vehicleRate?: number;
   baseOperationalCost?: number;
+  fuelProcurementMode?: 'hold_accumulate' | 'procure_release' | 'standard_direct';
+  procuredAccumulatedAmount?: number;
   mealAllowance?: number;
   preAuthorizedToll?: number;
   totalOperationalCost?: number;
@@ -459,19 +463,28 @@ function DriverHistoryContent() {
               const sc = getStatusConfig(activity.status);
               const reimburseDelta = activity.reimburseDelta !== undefined
                 ? activity.reimburseDelta
-                : calculateDriverReimbursementSettlement({
-                  fuelAllowance: activity.vehicleType === 'Ndalem' ? 0 : Number(activity.baseOperationalCost || 0),
-                  fuelSpent: activity.vehicleType === 'Ndalem'
-                    ? 0
-                    : activity.fuelFee !== undefined
-                      ? Number(activity.fuelFee || 0)
-                      : Number(activity.baseOperationalCost || 0) + Number(activity.extraFuelCost || 0),
-                  tollAllowance: Number(activity.preAuthorizedToll || 0),
-                  tollSpent: activity.tollParkingFee !== undefined
-                    ? Number(activity.tollParkingFee || 0)
-                    : Number(activity.preAuthorizedToll || 0) + Number(activity.extraTollCost || 0),
-                  additionalReimbursement: Number(activity.extraMealAllowance || 0) + Number(activity.extraOperationalCost || 0),
-                }).reimburseDelta;
+                : (() => {
+                  const fuelMode = isFuelProcurementMode(activity.fuelProcurementMode)
+                    ? activity.fuelProcurementMode
+                    : DEFAULT_FUEL_PROCUREMENT_MODE;
+                  return calculateDriverReimbursementSettlement({
+                    fuelAllowance: activity.vehicleType === 'Ndalem' ? 0 : Number(activity.baseOperationalCost || 0),
+                    fuelSpent: activity.vehicleType === 'Ndalem'
+                      ? 0
+                      : activity.fuelFee !== undefined
+                        ? Number(activity.fuelFee || 0)
+                        : Number(activity.baseOperationalCost || 0) + Number(activity.extraFuelCost || 0),
+                    tollAllowance: Number(activity.preAuthorizedToll || 0),
+                    tollSpent: activity.tollParkingFee !== undefined
+                      ? Number(activity.tollParkingFee || 0)
+                      : Number(activity.preAuthorizedToll || 0) + Number(activity.extraTollCost || 0),
+                    additionalReimbursement: Number(activity.extraMealAllowance || 0) + Number(activity.extraOperationalCost || 0),
+                    fuelProcurementMode: fuelMode,
+                    procuredAccumulatedAmount: fuelMode === 'procure_release'
+                      ? Number(activity.procuredAccumulatedAmount || 0)
+                      : 0,
+                  }).reimburseDelta;
+                })();
 
               return (
                 <Card key={activity.id} className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden hover:border-slate-300 transition-all animate-in fade-in duration-150">

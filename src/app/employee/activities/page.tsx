@@ -99,14 +99,17 @@ import {
   calculateDriverNetWage,
   calculateDriverJourneyOperationalCosts,
   calculateDriverReimbursementSettlement,
+  cashOperationalCostFromJourney,
   calculateJourneyElapsedHours,
   calculateNightPremium,
   calculateJourneyDateTimeTimings,
   calculateEstimatedDriverWage,
   getMealAllowanceForDuration as calculateMealAllowanceForDuration,
   getShortTripMealWageComponent,
+  DEFAULT_FUEL_PROCUREMENT_MODE,
   DEFAULT_DRIVER_JOURNEY_LOCATION,
   driverJourneyRoutePoint,
+  isFuelProcurementMode,
   normalizeDriverJourneyLocation,
   normalizeDriverJourneyDestinations,
   type DriverJourneyLocation,
@@ -243,6 +246,8 @@ interface ActivityReport {
   extraActivities?: any[];
   vehicleRate?: number;
   baseOperationalCost?: number;
+  fuelProcurementMode?: 'hold_accumulate' | 'procure_release' | 'standard_direct';
+  procuredAccumulatedAmount?: number;
   mealAllowance?: number;
   preAuthorizedMeal?: number;
   preAuthorizedToll?: number;
@@ -783,6 +788,9 @@ function ActivitiesContent() {
   const [myDriverJourneys, setMyDriverJourneys] = useState<any[]>([]);
   const [loadingJourneys, setLoadingJourneys] = useState(false);
   const [activeReportingJourney, setActiveReportingJourney] = useState<any | null>(null);
+  const activeFuelProcurementMode = isFuelProcurementMode(activeReportingJourney?.fuelProcurementMode)
+    ? activeReportingJourney.fuelProcurementMode
+    : DEFAULT_FUEL_PROCUREMENT_MODE;
   const [isClaiming, setIsClaiming] = useState<boolean>(false);
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const [isSavingDraft, setIsSavingDraft] = useState<boolean>(false);
@@ -1030,7 +1038,12 @@ function ActivitiesContent() {
       setExtraActivities(activeReportingJourney.draftExtraActivities || []);
       setFormTimeStart(activeReportingJourney.draftTimeStart || '08:00');
       setFormTimeEnd(activeReportingJourney.draftTimeEnd || '17:00');
-      setFormFuelFee(activeReportingJourney.draftFuelFee || '');
+      setFormFuelFee(
+        isFuelProcurementMode(activeReportingJourney.fuelProcurementMode) &&
+          activeReportingJourney.fuelProcurementMode === 'hold_accumulate'
+          ? ''
+          : activeReportingJourney.draftFuelFee || '',
+      );
       setFormTollParkingFee(activeReportingJourney.draftTollParkingFee || '');
       const rawFuel = activeReportingJourney.draftFuelReceiptUrl || activeReportingJourney.fuelReceiptUrl || '';
       setFormFuelReceiptUrls(rawFuel ? rawFuel.split(',').filter(Boolean) : []);
@@ -1659,13 +1672,6 @@ function ActivitiesContent() {
       });
   }, [isKetuaShiftSatpam, profile?.linkedEmployeeId, userJobCategory]);
 
-  useEffect(() => {
-    if (message) {
-      const timer = setTimeout(() => setMessage(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [message]);
-
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // ── Fetch Activities (dummy/refresh trigger for backward compatibility) ──
@@ -2162,10 +2168,28 @@ function ActivitiesContent() {
     }
 
     try {
-      const fuelVal = formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0;
+      const isNdalem = activeReportingJourney.vehicleName === 'Ndalem';
+      const isHoldAccumulate = activeFuelProcurementMode === 'hold_accumulate';
+      const fuelVal = isNdalem || isHoldAccumulate
+        ? 0
+        : (formFuelFee ? (parseInt(formFuelFee.replace(/\D/g, ''), 10) || 0) : 0);
       const tollVal = formTollParkingFee ? (parseInt(formTollParkingFee.replace(/\D/g, ''), 10) || 0) : 0;
-      const submittedFuelReceiptUrls = fuelVal > 0 ? formFuelReceiptUrls.filter(Boolean) : [];
+      const submittedFuelReceiptUrls = !isHoldAccumulate && fuelVal > 0 ? formFuelReceiptUrls.filter(Boolean) : [];
       const submittedTollReceiptUrls = tollVal > 0 ? formTollReceiptUrls.filter(Boolean) : [];
+
+      if (
+        activeFuelProcurementMode === 'procure_release' &&
+        (fuelVal <= 0 || submittedFuelReceiptUrls.length === 0)
+      ) {
+        setMessage({
+          type: 'error',
+          text: 'Mode Cairkan wajib menyertakan nominal pembelian aktual dan bukti BBM.',
+        });
+        isSubmittingRef.current = false;
+        setSubmitting(false);
+        skipSaveDraftRef.current = false;
+        return;
+      }
 
       if (fuelVal <= 0 || submittedFuelReceiptUrls.length === 0) {
         setFormFuelReceiptUrls([]);
@@ -2174,7 +2198,7 @@ function ActivitiesContent() {
         setFormTollReceiptUrls([]);
       }
 
-      if (fuelVal > 0 && submittedFuelReceiptUrls.length === 0) {
+      if (!isHoldAccumulate && fuelVal > 0 && submittedFuelReceiptUrls.length === 0) {
         setMessage({ type: 'error', text: 'Mohon unggah bukti reimburse BBM terlebih dahulu.' });
         isSubmittingRef.current = false;
         setSubmitting(false);
@@ -2190,7 +2214,6 @@ function ActivitiesContent() {
       }
 
       // Calculate extra & allowance deduction values
-      const isNdalem = activeReportingJourney.vehicleName === 'Ndalem';
       const originalTotalDist = (activeReportingJourney.distanceKm || 0) * 2;
       const extraDistanceKm = Math.max(0, calculatedDistanceKm - originalTotalDist);
       const extraOperationalCost = 0; // Extra mileage is compensated via Upah Bersih Sopir (distance component), not automatic cash reimbursement without receipts
@@ -2244,10 +2267,13 @@ function ActivitiesContent() {
         tollAllowance: preAuthorizedToll,
         tollSpent: tollVal,
         additionalReimbursement: extraMealAllowance + extraOperationalCost,
+        fuelProcurementMode: isNdalem ? DEFAULT_FUEL_PROCUREMENT_MODE : activeFuelProcurementMode,
+        procuredAccumulatedAmount: activeFuelProcurementMode === 'procure_release'
+          ? Math.max(0, Number(activeReportingJourney.procuredAccumulatedAmount || 0))
+          : 0,
       });
-      const authorizedTotalOperationalCost = activeReportingJourney.totalOperationalCost !== undefined
-        ? Number(activeReportingJourney.totalOperationalCost || 0)
-        : baseCostVal + preAuthorizedMeal + preAuthorizedToll;
+      const authorizedTotalOperationalCost =
+        settlement.effectiveFuelAllowance + preAuthorizedMeal + preAuthorizedToll;
       const adjustedTotalOperationalCost = Math.max(
         0,
         authorizedTotalOperationalCost +
@@ -2330,6 +2356,10 @@ function ActivitiesContent() {
             netOperationalDelta: settlement.netOperationalDelta,
             fuelAllowanceSurplus: settlement.fuelAllowanceSurplus,
             tollAllowanceSurplus: settlement.tollAllowanceSurplus,
+            fuelProcurementMode: activeFuelProcurementMode,
+            heldFuelAmount: activeFuelProcurementMode === 'hold_accumulate' ? Math.ceil(baseCostVal) : 0,
+            fuelAllowanceForSettlement: settlement.effectiveFuelAllowance,
+            fuelTotalAllocation: settlement.effectiveFuelAllowance,
             baseOperationalCost: baseCostVal,
             preAuthorizedMeal,
             preAuthorizedToll,
@@ -3826,19 +3856,28 @@ function ActivitiesContent() {
               const sc = getStatusConfig(activity.status);
               const reimburseDelta = activity.reimburseDelta !== undefined
                 ? activity.reimburseDelta
-                : calculateDriverReimbursementSettlement({
-                  fuelAllowance: activity.vehicleType === 'Ndalem' ? 0 : Number(activity.baseOperationalCost || 0),
-                  fuelSpent: activity.vehicleType === 'Ndalem'
-                    ? 0
-                    : activity.fuelFee !== undefined
-                      ? Number(activity.fuelFee || 0)
-                      : Number(activity.baseOperationalCost || 0) + Number(activity.extraFuelCost || 0),
-                  tollAllowance: Number(activity.preAuthorizedToll || 0),
-                  tollSpent: activity.tollParkingFee !== undefined
-                    ? Number(activity.tollParkingFee || 0)
-                    : Number(activity.preAuthorizedToll || 0) + Number(activity.extraTollCost || 0),
-                  additionalReimbursement: Number(activity.extraMealAllowance || 0) + Number(activity.extraOperationalCost || 0),
-                }).reimburseDelta;
+                : (() => {
+                  const fuelMode = isFuelProcurementMode(activity.fuelProcurementMode)
+                    ? activity.fuelProcurementMode
+                    : DEFAULT_FUEL_PROCUREMENT_MODE;
+                  return calculateDriverReimbursementSettlement({
+                    fuelAllowance: activity.vehicleType === 'Ndalem' ? 0 : Number(activity.baseOperationalCost || 0),
+                    fuelSpent: activity.vehicleType === 'Ndalem'
+                      ? 0
+                      : activity.fuelFee !== undefined
+                        ? Number(activity.fuelFee || 0)
+                        : Number(activity.baseOperationalCost || 0) + Number(activity.extraFuelCost || 0),
+                    tollAllowance: Number(activity.preAuthorizedToll || 0),
+                    tollSpent: activity.tollParkingFee !== undefined
+                      ? Number(activity.tollParkingFee || 0)
+                      : Number(activity.preAuthorizedToll || 0) + Number(activity.extraTollCost || 0),
+                    additionalReimbursement: Number(activity.extraMealAllowance || 0) + Number(activity.extraOperationalCost || 0),
+                    fuelProcurementMode: fuelMode,
+                    procuredAccumulatedAmount: fuelMode === 'procure_release'
+                      ? Number(activity.procuredAccumulatedAmount || 0)
+                      : 0,
+                  }).reimburseDelta;
+                })();
 
               return (
                 <Card key={activity.id} className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden hover:border-slate-300 transition-all animate-in fade-in duration-150">
@@ -4883,7 +4922,7 @@ function ActivitiesContent() {
                           </div>
                           <div className="flex justify-between pt-1 border-t border-white/10 text-[10px] text-purple-200">
                             <span>Kendaraan: <strong>{j.vehicleName}</strong></span>
-                            <span>Operasional: <strong>{fmtRp(j.totalOperationalCost)}</strong></span>
+                            <span>Operasional: <strong>{fmtRp(cashOperationalCostFromJourney(j))}</strong></span>
                           </div>
                           {(() => {
                             const est = calculateEstimatedDriverWage(j.distanceKm * 2, (j.durationHours || 0) * 2);
@@ -4951,7 +4990,7 @@ function ActivitiesContent() {
                       <div className="grid grid-cols-2 gap-2.5 pt-1">
                         <div className="bg-indigo-50/70 border border-indigo-100 p-3.5 rounded-xl space-y-0.5">
                           <span className="block text-[9px] font-black text-indigo-600 uppercase tracking-wider">Biaya Operasional</span>
-                          <span className="text-xs sm:text-sm font-black text-indigo-900 block">{fmtRp(j.totalOperationalCost)}</span>
+                          <span className="text-xs sm:text-sm font-black text-indigo-900 block">{fmtRp(cashOperationalCostFromJourney(j))}</span>
                         </div>
                         <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-xl space-y-0.5">
                           <span className="block text-[9px] font-black text-emerald-600 uppercase tracking-wider">Estimasi Upah Sopir</span>
@@ -5047,7 +5086,7 @@ function ActivitiesContent() {
                           <div className="flex gap-4">
                             <div>
                               <span className="block text-[8px] text-slate-400 font-extrabold uppercase leading-tight">Biaya Operasional</span>
-                              <span className="text-xs font-black text-indigo-600">{fmtRp(j.totalOperationalCost)}</span>
+                              <span className="text-xs font-black text-indigo-600">{fmtRp(cashOperationalCostFromJourney(j))}</span>
                             </div>
                             {(() => {
                               const est = calculateEstimatedDriverWage(j.distanceKm * 2, (j.durationHours || 0) * 2);
@@ -6404,7 +6443,9 @@ function ActivitiesContent() {
                   {/* Biaya BBM */}
                   <div className="space-y-1.5">
                     <Label htmlFor="fuelFee" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      BBM (Reimburse)
+                      {activeFuelProcurementMode === 'hold_accumulate'
+                        ? 'BBM (Ditahan — Tidak Ada Reimburse)'
+                        : 'BBM (Reimburse)'}
                     </Label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">Rp</span>
@@ -6412,7 +6453,8 @@ function ActivitiesContent() {
                         id="fuelFee"
                         type="text"
                         placeholder="0"
-                        value={formFuelFee}
+                        value={activeFuelProcurementMode === 'hold_accumulate' ? '' : formFuelFee}
+                        disabled={activeFuelProcurementMode === 'hold_accumulate'}
                         onChange={(e) => {
                           const val = e.target.value.replace(/\D/g, '');
                           setFormFuelFee(val ? Number(val).toLocaleString('id-ID') : '');
@@ -6420,6 +6462,11 @@ function ActivitiesContent() {
                         className="pl-8 rounded-xl border-slate-200 focus:border-teal-400 focus:ring-teal-400/20 text-base sm:text-sm font-semibold text-slate-700"
                       />
                     </div>
+                    {activeFuelProcurementMode === 'hold_accumulate' && (
+                      <p className="text-[10px] font-semibold text-emerald-700">
+                        Jatah BBM sudah mengurangi Tersedia dan akan menjadi Akumulasi saat audit disetujui; tidak mengurangi Upah Bersih Sopir.
+                      </p>
+                    )}
                   </div>
 
                   {/* Biaya Tol & Parkir */}

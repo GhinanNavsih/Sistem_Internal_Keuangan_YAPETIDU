@@ -18,6 +18,7 @@ import {
   getMealAllowanceForDuration,
   driverJourneyRoutePoints,
   driverJourneyRoutePoint,
+  cashOperationalCostFromJourney,
   fuelProcurementModeLabel,
   journeyDayCount,
   normalizeDriverJourneyDestinations,
@@ -155,8 +156,8 @@ test('fuel modes calculate allocation and settlement independently', () => {
   assert.equal(hold.baseOperationalCost, 20_000);
   assert.equal(hold.effectiveFuelAllowance, 0);
   assert.equal(hold.heldFuelAmount, 20_000);
-  assert.equal(hold.totalFuelAllocation, 20_000);
-  assert.equal(hold.totalOperationalCost, 40_000);
+  assert.equal(hold.totalFuelAllocation, 0);
+  assert.equal(hold.totalOperationalCost, 20_000);
 
   const procure = calculateDriverJourneyOperationalCosts(
     10,
@@ -194,6 +195,26 @@ test('fuel modes calculate allocation and settlement independently', () => {
   });
   assert.equal(procureSettlement.effectiveFuelAllowance, 55_000);
   assert.equal(procureSettlement.fuelDelta, -5_000);
+});
+
+test('cash operational cost excludes held fuel from legacy journey totals', () => {
+  assert.equal(
+    cashOperationalCostFromJourney({
+      totalOperationalCost: 328_120,
+      fuelProcurementMode: 'hold_accumulate',
+      mealAllowance: 20_000,
+      preAuthorizedToll: 89_000,
+      heldFuelAmount: 219_120,
+    }),
+    109_000,
+  );
+  assert.equal(
+    cashOperationalCostFromJourney({
+      totalOperationalCost: 328_120,
+      fuelProcurementMode: 'standard_direct',
+    }),
+    328_120,
+  );
 });
 
 test('accumulation modes are rejected for Ndalem', () => {

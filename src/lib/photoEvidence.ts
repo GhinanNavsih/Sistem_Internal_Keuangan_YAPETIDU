@@ -96,31 +96,73 @@ async function canvasToJpeg(canvas: HTMLCanvasElement, quality: number): Promise
   return blob;
 }
 
-export async function compressProofImage(file: File): Promise<File> {
-  if (!file.type.startsWith('image/')) {
-    throw new Error('Bukti harus berupa gambar JPG, PNG, atau WebP.');
-  }
+function scaleCanvas(canvas: HTMLCanvasElement, scale: number): HTMLCanvasElement {
+  const scaled = document.createElement('canvas');
+  scaled.width = Math.max(1, Math.round(canvas.width * scale));
+  scaled.height = Math.max(1, Math.round(canvas.height * scale));
+  const context = scaled.getContext('2d');
+  if (!context) throw new Error('Perangkat tidak mendukung kompresi gambar.');
+  context.drawImage(canvas, 0, 0, scaled.width, scaled.height);
+  return scaled;
+}
 
+async function drawScaledCanvas(file: File): Promise<HTMLCanvasElement> {
   const image = await loadImage(file);
   try {
     if (!image.width || !image.height) throw new Error('Ukuran gambar tidak valid.');
     const scale = Math.min(1, PROOF_IMAGE_MAX_DIMENSION / Math.max(image.width, image.height));
-    const width = Math.max(1, Math.round(image.width * scale));
-    const height = Math.max(1, Math.round(image.height * scale));
     const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Perangkat tidak mendukung kompresi gambar.');
-    context.drawImage(image.source, 0, 0, width, height);
-    const blob = await canvasToJpeg(canvas, PROOF_IMAGE_JPEG_QUALITY);
-    if (blob.size > MAX_PROOF_IMAGE_BYTES) {
-      throw new Error('Foto masih lebih dari 5 MB setelah dikompresi. Pilih foto lain yang lebih kecil.');
-    }
-    return new File([blob], compressedFileName(file.name), { type: 'image/jpeg', lastModified: Date.now() });
+    context.drawImage(image.source, 0, 0, canvas.width, canvas.height);
+    return canvas;
   } finally {
     image.dispose();
   }
+}
+
+export async function compressProofImage(file: File): Promise<File> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Bukti harus berupa gambar JPG, PNG, atau WebP.');
+  }
+  const canvas = await drawScaledCanvas(file);
+  const blob = await canvasToJpeg(canvas, PROOF_IMAGE_JPEG_QUALITY);
+  if (blob.size > MAX_PROOF_IMAGE_BYTES) {
+    throw new Error('Foto masih lebih dari 5 MB setelah dikompresi. Pilih foto lain yang lebih kecil.');
+  }
+  return new File([blob], compressedFileName(file.name), { type: 'image/jpeg', lastModified: Date.now() });
+}
+
+/**
+ * Same pipeline as compressProofImage, but keeps degrading quality and then
+ * dimensions until the result fits under maxBytes instead of failing after
+ * one attempt at the default quality. Used where a hard cap well below the
+ * general proof-image limit is required — e.g. facility report photos capped
+ * at 1 MB each so a report with several photos stays cheap to store and load.
+ */
+export async function compressProofImageToLimit(file: File, maxBytes: number): Promise<File> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Bukti harus berupa gambar JPG, PNG, atau WebP.');
+  }
+  let canvas = await drawScaledCanvas(file);
+
+  let quality = PROOF_IMAGE_JPEG_QUALITY;
+  let blob = await canvasToJpeg(canvas, quality);
+  while (blob.size > maxBytes && quality > 0.35) {
+    quality -= 0.15;
+    blob = await canvasToJpeg(canvas, quality);
+  }
+  while (blob.size > maxBytes && Math.max(canvas.width, canvas.height) > 480) {
+    canvas = scaleCanvas(canvas, 0.75);
+    blob = await canvasToJpeg(canvas, 0.6);
+  }
+  if (blob.size > maxBytes) {
+    const limitMb = Math.round((maxBytes / (1024 * 1024)) * 10) / 10;
+    throw new Error(`Foto masih lebih dari ${limitMb} MB setelah dikompresi maksimal. Pilih foto lain yang lebih kecil.`);
+  }
+  return new File([blob], compressedFileName(file.name), { type: 'image/jpeg', lastModified: Date.now() });
 }
 
 async function resolveNearestPlace(metadata: PhotoAuditMetadata): Promise<PhotoAuditMetadata> {
@@ -149,6 +191,17 @@ export async function prepareProofImage(file: File): Promise<PreparedProofImage>
   const [auditMetadata, compressedFile] = await Promise.all([
     extractPhotoAuditMetadata(file),
     compressProofImage(file),
+  ]);
+  return {
+    file: compressedFile,
+    auditMetadata: await resolveNearestPlace(auditMetadata),
+  };
+}
+
+export async function prepareProofImageWithLimit(file: File, maxBytes: number): Promise<PreparedProofImage> {
+  const [auditMetadata, compressedFile] = await Promise.all([
+    extractPhotoAuditMetadata(file),
+    compressProofImageToLimit(file, maxBytes),
   ]);
   return {
     file: compressedFile,

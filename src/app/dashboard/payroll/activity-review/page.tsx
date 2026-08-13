@@ -3119,7 +3119,13 @@ export default function ActivityReviewPage() {
                             value={row.coveredEmployeeId || 'none'}
                             onValueChange={(value) => updateAuditorEditRow(index, { coveredEmployeeId: value === 'none' ? undefined : value || undefined })}
                           >
-                            <SelectTrigger className="h-10 rounded-lg"><SelectValue placeholder="Petugas yang digantikan" /></SelectTrigger>
+                            <SelectTrigger className="h-10 rounded-lg">
+                              <span className="truncate">
+                                {row.coveredEmployeeId
+                                  ? satpamEmployeeDirectory.find((employee) => employee.id === row.coveredEmployeeId)?.name || row.coveredEmployeeId
+                                  : 'Petugas yang digantikan'}
+                              </span>
+                            </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="none">Belum ditentukan</SelectItem>
                               {satpamEmployeeDirectory.map((employee) => <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>)}

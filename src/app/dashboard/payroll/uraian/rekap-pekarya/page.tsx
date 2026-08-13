@@ -883,7 +883,6 @@ export default function RekapPekaryaPage() {
     setIsCustomColDialogOpen(false);
 
     setMessage({ type: 'success', text: `Kolom kustom "${cleanLabel}" berhasil ditambahkan ke tabel.` });
-    setTimeout(() => setMessage(null), 3000);
   };
 
   const handleRemoveCustomColumn = (key: string) => {

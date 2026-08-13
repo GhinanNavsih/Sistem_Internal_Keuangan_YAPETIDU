@@ -300,6 +300,61 @@ export interface DriverJourneyOperationalCostResult {
   totalOperationalCost: number;
 }
 
+export interface DriverJourneyOperationalCostSnapshot {
+  totalOperationalCost?: unknown;
+  operationalCost?: unknown;
+  fee?: unknown;
+  fuelProcurementMode?: unknown;
+  mealAllowance?: unknown;
+  preAuthorizedMeal?: unknown;
+  tollParkingFee?: unknown;
+  preAuthorizedToll?: unknown;
+  heldFuelAmount?: unknown;
+  baseOperationalCost?: unknown;
+}
+
+function firstNonNegativeAmount(...values: unknown[]): number | null {
+  for (const value of values) {
+    const amount = Number(value);
+    if (Number.isFinite(amount) && amount >= 0) return amount;
+  }
+  return null;
+}
+
+/**
+ * Returns the cash operational amount shown to users. A hold journey keeps
+ * its fuel amount in the vehicle ledger, so its cash total is meal plus
+ * toll/parking rather than the persisted all-in total from older records.
+ */
+export function cashOperationalCostFromJourney(
+  snapshot: DriverJourneyOperationalCostSnapshot,
+): number {
+  const totalOperationalCost = firstNonNegativeAmount(
+    snapshot.totalOperationalCost,
+    snapshot.operationalCost,
+    snapshot.fee,
+  ) ?? 0;
+  if (snapshot.fuelProcurementMode !== 'hold_accumulate') return totalOperationalCost;
+
+  const mealAllowance = firstNonNegativeAmount(
+    snapshot.mealAllowance,
+    snapshot.preAuthorizedMeal,
+  );
+  const tollParkingFee = firstNonNegativeAmount(
+    snapshot.preAuthorizedToll,
+    snapshot.tollParkingFee,
+  );
+  if (mealAllowance !== null || tollParkingFee !== null) {
+    return (mealAllowance || 0) + (tollParkingFee || 0);
+  }
+
+  const heldFuelAmount = firstNonNegativeAmount(
+    snapshot.heldFuelAmount,
+    snapshot.baseOperationalCost,
+  ) ?? 0;
+  return Math.max(0, totalOperationalCost - heldFuelAmount);
+}
+
 export interface DriverJourneyFuelCalculationOptions {
   fuelProcurementMode?: FuelProcurementMode;
   procuredAccumulatedAmount?: number;
@@ -359,7 +414,9 @@ export function calculateDriverJourneyOperationalCosts(
     fuelProcurementMode,
     procuredAccumulatedAmount,
   );
-  const totalFuelAllocation = heldFuelAmount + effectiveFuelAllowance;
+  // Held fuel is a ledger movement, not cash handed to the driver. Keep it
+  // separate from the cash fuel allocation used by operational-cost totals.
+  const totalFuelAllocation = effectiveFuelAllowance;
   const mealAllowance = vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
     ? 0
     : getMealAllowanceForDuration(durationHoursPP, vehicleName);
@@ -452,7 +509,11 @@ export function calculateDriverReimbursementSettlement(
     procuredAccumulatedAmount,
   );
   const heldFuelAmount = fuelProcurementMode === 'hold_accumulate' ? fuelAllowance : 0;
-  const fuelDelta = fuelSpent - effectiveFuelAllowance;
+  // A hold journey has no cash fuel purchase or cash fuel allowance. The UI
+  // and API reject/clear fuel receipts for this mode, but normalize here too
+  // so a stale client cannot create a wage deduction or fuel reimbursement.
+  const settledFuelSpent = fuelProcurementMode === 'hold_accumulate' ? 0 : fuelSpent;
+  const fuelDelta = settledFuelSpent - effectiveFuelAllowance;
   const tollDelta = tollSpent - tollAllowance;
   const extraFuelCost = Math.max(0, fuelDelta);
   const extraTollCost = Math.max(0, tollDelta);
@@ -485,7 +546,7 @@ export function calculateDriverReimbursementSettlement(
     positiveReimburseDelta,
     reimburseDelta,
     totalPreAuthorizedAllowance: effectiveFuelAllowance + tollAllowance,
-    totalActualSpent: fuelSpent + tollSpent,
+    totalActualSpent: settledFuelSpent + tollSpent,
     unspentCash,
     remainingUnspentCash,
   };

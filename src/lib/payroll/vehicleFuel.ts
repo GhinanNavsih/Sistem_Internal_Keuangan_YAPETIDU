@@ -11,6 +11,8 @@ import {
 export const VEHICLE_FUEL_BALANCES_COLLECTION = 'VehicleFuelBalances';
 export const VEHICLE_FUEL_LEDGER_SUBCOLLECTION = 'ledger';
 export const MAX_VEHICLE_FUEL_ADJUSTMENT = 100_000_000;
+export const CURRENT_FUEL_LEDGER_VERSION = 2;
+export const CURRENT_FUEL_RESERVATION_VERSION = 2;
 
 export type FuelReservationState = 'none' | 'reserved' | 'committed' | 'released';
 
@@ -18,13 +20,16 @@ export interface VehicleFuelBalance {
   vehicleName: DriverVehicleName;
   availableBalance: number;
   pendingHoldAmount: number;
+  accumulatedHoldAmount: number;
   pendingReleaseAmount: number;
+  schemaVersion?: number;
   updatedAt?: unknown;
   updatedBy?: string;
   updatedByName?: string;
 }
 
 export interface FuelReservationRecord {
+  fuelReservationVersion: number;
   fuelReservationId: string;
   fuelReservationState: FuelReservationState;
   fuelReservationVehicleName: DriverVehicleName;
@@ -52,13 +57,22 @@ interface FuelLedgerEventInput {
     | 'manual_adjustment';
   journeyId?: string;
   reservationId?: string;
+  reservationVersion?: number;
   mode?: FuelProcurementMode;
   amount: number;
   availableDelta: number;
   pendingHoldDelta: number;
+  accumulatedHoldDelta: number;
   pendingReleaseDelta: number;
   reason: string;
   actor: FuelLedgerActor;
+}
+
+export class VehicleFuelConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'VehicleFuelConflictError';
+  }
 }
 
 interface MutableVehicleFuelBalance extends VehicleFuelBalance {
@@ -110,7 +124,9 @@ function emptyBalance(vehicleName: DriverVehicleName): MutableVehicleFuelBalance
     vehicleName,
     availableBalance: 0,
     pendingHoldAmount: 0,
+    accumulatedHoldAmount: 0,
     pendingReleaseAmount: 0,
+    schemaVersion: CURRENT_FUEL_LEDGER_VERSION,
     exists: false,
   };
 }
@@ -124,7 +140,11 @@ function normalizeBalance(
   value.exists = true;
   value.availableBalance = integerMoney(Number(data.availableBalance || 0), 'Saldo tersedia', Number.MAX_SAFE_INTEGER);
   value.pendingHoldAmount = integerMoney(Number(data.pendingHoldAmount || 0), 'Saldo hold tertunda', Number.MAX_SAFE_INTEGER);
+  value.accumulatedHoldAmount = integerMoney(Number(data.accumulatedHoldAmount || 0), 'Saldo hold terakumulasi', Number.MAX_SAFE_INTEGER);
   value.pendingReleaseAmount = integerMoney(Number(data.pendingReleaseAmount || 0), 'Saldo pencairan tertunda', Number.MAX_SAFE_INTEGER);
+  value.schemaVersion = Number.isSafeInteger(data.schemaVersion) && data.schemaVersion > 0
+    ? data.schemaVersion
+    : 1;
   value.updatedAt = data.updatedAt;
   value.updatedBy = typeof data.updatedBy === 'string' ? data.updatedBy : undefined;
   value.updatedByName = typeof data.updatedByName === 'string' ? data.updatedByName : undefined;
@@ -144,21 +164,39 @@ function publicBalance(balance: MutableVehicleFuelBalance): VehicleFuelBalance {
     vehicleName: balance.vehicleName,
     availableBalance: balance.availableBalance,
     pendingHoldAmount: balance.pendingHoldAmount,
+    accumulatedHoldAmount: balance.accumulatedHoldAmount,
     pendingReleaseAmount: balance.pendingReleaseAmount,
+    schemaVersion: balance.schemaVersion,
     updatedAt: balance.updatedAt,
     updatedBy: balance.updatedBy,
     updatedByName: balance.updatedByName,
   };
 }
 
+function firestoreSafeBalance(balance: VehicleFuelBalance): VehicleFuelBalance {
+  const safeBalance: VehicleFuelBalance = {
+    vehicleName: balance.vehicleName,
+    availableBalance: balance.availableBalance,
+    pendingHoldAmount: balance.pendingHoldAmount,
+    accumulatedHoldAmount: balance.accumulatedHoldAmount,
+    pendingReleaseAmount: balance.pendingReleaseAmount,
+  };
+  if (balance.schemaVersion !== undefined) safeBalance.schemaVersion = balance.schemaVersion;
+  if (balance.updatedAt !== undefined) safeBalance.updatedAt = balance.updatedAt;
+  if (balance.updatedBy !== undefined) safeBalance.updatedBy = balance.updatedBy;
+  if (balance.updatedByName !== undefined) safeBalance.updatedByName = balance.updatedByName;
+  return safeBalance;
+}
+
 function snapshotForEvent(balance: MutableVehicleFuelBalance): VehicleFuelBalance {
-  return publicBalance(balance);
+  return firestoreSafeBalance(publicBalance(balance));
 }
 
 function assertBalanceInvariant(balance: MutableVehicleFuelBalance): void {
   for (const [field, value] of [
     ['availableBalance', balance.availableBalance],
     ['pendingHoldAmount', balance.pendingHoldAmount],
+    ['accumulatedHoldAmount', balance.accumulatedHoldAmount],
     ['pendingReleaseAmount', balance.pendingReleaseAmount],
   ] as const) {
     if (!Number.isSafeInteger(value) || value < 0) {
@@ -172,13 +210,13 @@ function queueEvent(
   vehicleName: DriverVehicleName,
   input: FuelLedgerEventInput,
   before: MutableVehicleFuelBalance,
+  after: MutableVehicleFuelBalance,
 ): void {
-  const after = publicBalance(before);
   context.events.push({
     vehicleName,
     input,
     before: snapshotForEvent(before),
-    after,
+    after: snapshotForEvent(after),
   });
 }
 
@@ -228,6 +266,7 @@ export function reserveFuel(
   const baseFuelAllowance = integerMoney(input.baseFuelAllowance, 'Jatah BBM dasar');
   if (input.mode === 'standard_direct') {
     return {
+      fuelReservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
       fuelReservationId: input.reservationId,
       fuelReservationState: 'none',
       fuelReservationVehicleName: input.vehicleName,
@@ -242,14 +281,21 @@ export function reserveFuel(
   const before = { ...balance };
   const heldFuelAmount = input.mode === 'hold_accumulate' ? baseFuelAllowance : 0;
   const procuredAccumulatedAmount = input.mode === 'procure_release'
-    ? balance.availableBalance
+    ? balance.accumulatedHoldAmount
     : 0;
   if (input.mode === 'hold_accumulate') {
+    if (balance.availableBalance < heldFuelAmount) {
+      throw new VehicleFuelConflictError(
+        `Saldo BBM ${input.vehicleName} tidak mencukupi. Tersedia Rp${balance.availableBalance.toLocaleString('id-ID')}, kebutuhan hold Rp${heldFuelAmount.toLocaleString('id-ID')}.`,
+      );
+    }
+    balance.availableBalance -= heldFuelAmount;
     balance.pendingHoldAmount += heldFuelAmount;
   } else {
-    balance.availableBalance -= procuredAccumulatedAmount;
+    balance.accumulatedHoldAmount -= procuredAccumulatedAmount;
     balance.pendingReleaseAmount += procuredAccumulatedAmount;
   }
+  balance.schemaVersion = CURRENT_FUEL_LEDGER_VERSION;
   assertBalanceInvariant(balance);
   context.balances.set(input.vehicleName, balance);
   queueEvent(context, input.vehicleName, {
@@ -257,15 +303,18 @@ export function reserveFuel(
     eventType: input.mode === 'hold_accumulate' ? 'reserve_hold' : 'reserve_release',
     journeyId: input.journeyId,
     reservationId: input.reservationId,
+    reservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
     mode: input.mode,
     amount: heldFuelAmount || procuredAccumulatedAmount,
     availableDelta: balance.availableBalance - before.availableBalance,
     pendingHoldDelta: balance.pendingHoldAmount - before.pendingHoldAmount,
+    accumulatedHoldDelta: balance.accumulatedHoldAmount - before.accumulatedHoldAmount,
     pendingReleaseDelta: balance.pendingReleaseAmount - before.pendingReleaseAmount,
     reason: input.reason,
     actor: context.actor,
-  }, before);
+  }, before, balance);
   return {
+    fuelReservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
     fuelReservationId: input.reservationId,
     fuelReservationState: 'reserved',
     fuelReservationVehicleName: input.vehicleName,
@@ -282,6 +331,7 @@ function transitionReservation(
   transition: 'commit' | 'release',
   reason: string,
   journeyId?: string,
+  actualFuelExpenditure?: number,
 ): FuelReservationRecord {
   if (reservation.fuelReservationState !== 'reserved') return reservation;
   if (reservation.fuelProcurementMode === 'standard_direct') {
@@ -291,13 +341,46 @@ function transitionReservation(
   assertAccumulationVehicle(vehicleName);
   const balance = context.balances.get(vehicleName) || emptyBalance(vehicleName);
   const before = { ...balance };
-  if (reservation.fuelProcurementMode === 'hold_accumulate') {
+  const isCurrentReservation = reservation.fuelReservationVersion >= CURRENT_FUEL_RESERVATION_VERSION;
+  let realizedFuelExpenditure = 0;
+  if (
+    isCurrentReservation &&
+    reservation.fuelProcurementMode === 'procure_release' &&
+    transition === 'commit'
+  ) {
+    if (
+      typeof actualFuelExpenditure !== 'number' ||
+      !Number.isFinite(actualFuelExpenditure) ||
+      actualFuelExpenditure <= 0
+    ) {
+      throw new VehicleFuelConflictError('Pencairan BBM memerlukan nominal pembelian aktual yang disetujui.');
+    }
+    realizedFuelExpenditure = integerMoney(actualFuelExpenditure, 'Aktual pembelian BBM');
+  }
+  let eventAmount = reservation.heldFuelAmount || reservation.procuredAccumulatedAmount;
+  if (!isCurrentReservation && reservation.fuelProcurementMode === 'hold_accumulate') {
     balance.pendingHoldAmount -= reservation.heldFuelAmount;
     if (transition === 'commit') balance.availableBalance += reservation.heldFuelAmount;
-  } else {
+  } else if (!isCurrentReservation && reservation.fuelProcurementMode === 'procure_release') {
     balance.pendingReleaseAmount -= reservation.procuredAccumulatedAmount;
     if (transition === 'release') balance.availableBalance += reservation.procuredAccumulatedAmount;
+  } else if (reservation.fuelProcurementMode === 'hold_accumulate') {
+    balance.pendingHoldAmount -= reservation.heldFuelAmount;
+    if (transition === 'commit') {
+      balance.accumulatedHoldAmount += reservation.heldFuelAmount;
+    } else {
+      balance.availableBalance += reservation.heldFuelAmount;
+    }
+  } else {
+    balance.pendingReleaseAmount -= reservation.procuredAccumulatedAmount;
+    if (transition === 'release') {
+      balance.accumulatedHoldAmount += reservation.procuredAccumulatedAmount;
+    } else {
+      balance.availableBalance += realizedFuelExpenditure;
+      eventAmount = realizedFuelExpenditure;
+    }
   }
+  balance.schemaVersion = CURRENT_FUEL_LEDGER_VERSION;
   assertBalanceInvariant(balance);
   context.balances.set(vehicleName, balance);
   const eventType = reservation.fuelProcurementMode === 'hold_accumulate'
@@ -308,14 +391,16 @@ function transitionReservation(
     eventType,
     journeyId,
     reservationId: reservation.fuelReservationId,
+    reservationVersion: reservation.fuelReservationVersion,
     mode: reservation.fuelProcurementMode,
-    amount: reservation.heldFuelAmount || reservation.procuredAccumulatedAmount,
+    amount: eventAmount,
     availableDelta: balance.availableBalance - before.availableBalance,
     pendingHoldDelta: balance.pendingHoldAmount - before.pendingHoldAmount,
+    accumulatedHoldDelta: balance.accumulatedHoldAmount - before.accumulatedHoldAmount,
     pendingReleaseDelta: balance.pendingReleaseAmount - before.pendingReleaseAmount,
     reason,
     actor: context.actor,
-  }, before);
+  }, before, balance);
   return {
     ...reservation,
     fuelReservationState: transition === 'commit' ? 'committed' : 'released',
@@ -326,8 +411,16 @@ export function commitFuelReservation(
   context: FuelLedgerContext,
   reservation: FuelReservationRecord,
   journeyId?: string,
+  actualFuelExpenditure?: number,
 ): FuelReservationRecord {
-  return transitionReservation(context, reservation, 'commit', 'Persetujuan audit perjalanan', journeyId);
+  return transitionReservation(
+    context,
+    reservation,
+    'commit',
+    'Persetujuan audit perjalanan',
+    journeyId,
+    actualFuelExpenditure,
+  );
 }
 
 export function releaseFuelReservation(
@@ -392,7 +485,14 @@ export function applyManualAdjustment(
   if (!input.reason.trim()) throw new Error('Alasan penyesuaian saldo wajib diisi.');
   const balance = context.balances.get(input.vehicleName) || emptyBalance(input.vehicleName);
   const before = { ...balance };
-  balance.availableBalance += delta;
+  const adjustedAvailableBalance = balance.availableBalance + delta;
+  if (adjustedAvailableBalance < 0) {
+    throw new VehicleFuelConflictError(
+      `Penyesuaian melebihi saldo BBM ${input.vehicleName}. Tersedia Rp${balance.availableBalance.toLocaleString('id-ID')}.`,
+    );
+  }
+  balance.availableBalance = adjustedAvailableBalance;
+  balance.schemaVersion = CURRENT_FUEL_LEDGER_VERSION;
   assertBalanceInvariant(balance);
   context.balances.set(input.vehicleName, balance);
   queueEvent(context, input.vehicleName, {
@@ -402,10 +502,11 @@ export function applyManualAdjustment(
     amount: Math.abs(delta),
     availableDelta: delta,
     pendingHoldDelta: 0,
+    accumulatedHoldDelta: 0,
     pendingReleaseDelta: 0,
     reason: input.reason.trim(),
     actor: context.actor,
-  }, before);
+  }, before, balance);
   return publicBalance(balance);
 }
 
@@ -418,7 +519,9 @@ export function flushFuelLedger(context: FuelLedgerContext): void {
       vehicleName: balance.vehicleName,
       availableBalance: balance.availableBalance,
       pendingHoldAmount: balance.pendingHoldAmount,
+      accumulatedHoldAmount: balance.accumulatedHoldAmount,
       pendingReleaseAmount: balance.pendingReleaseAmount,
+      schemaVersion: CURRENT_FUEL_LEDGER_VERSION,
       updatedAt: now,
       updatedBy: context.actor.uid,
       updatedByName: context.actor.displayName || '',
@@ -432,10 +535,12 @@ export function flushFuelLedger(context: FuelLedgerContext): void {
         eventType: event.input.eventType,
         journeyId: event.input.journeyId || null,
         reservationId: event.input.reservationId || null,
+        reservationVersion: event.input.reservationVersion || null,
         mode: event.input.mode || null,
         amount: event.input.amount,
         availableDelta: event.input.availableDelta,
         pendingHoldDelta: event.input.pendingHoldDelta,
+        accumulatedHoldDelta: event.input.accumulatedHoldDelta,
         pendingReleaseDelta: event.input.pendingReleaseDelta,
         reason: event.input.reason,
         actorUid: event.input.actor.uid,
@@ -444,7 +549,7 @@ export function flushFuelLedger(context: FuelLedgerContext): void {
         before: event.before,
         after: event.after,
         createdAt: now,
-        schemaVersion: 1,
+        schemaVersion: CURRENT_FUEL_LEDGER_VERSION,
       },
     );
   }
@@ -497,6 +602,10 @@ export function reservationFromJourney(data: FirebaseFirestore.DocumentData): Fu
     return null;
   }
   return {
+    fuelReservationVersion:
+      Number.isSafeInteger(data.fuelReservationVersion) && data.fuelReservationVersion >= CURRENT_FUEL_RESERVATION_VERSION
+        ? data.fuelReservationVersion
+        : 1,
     fuelReservationId: data.fuelReservationId,
     fuelReservationState: state as FuelReservationState,
     fuelReservationVehicleName: vehicleName,
@@ -509,6 +618,7 @@ export function reservationFromJourney(data: FirebaseFirestore.DocumentData): Fu
 
 export function reservationFields(reservation: FuelReservationRecord): Record<string, unknown> {
   return {
+    fuelReservationVersion: reservation.fuelReservationVersion,
     fuelReservationId: reservation.fuelReservationId,
     fuelReservationState: reservation.fuelReservationState,
     fuelReservationVehicleName: reservation.fuelReservationVehicleName,
@@ -520,6 +630,8 @@ export function reservationFields(reservation: FuelReservationRecord): Record<st
         ? 0
         : reservation.baseFuelAllowance + reservation.procuredAccumulatedAmount,
     fuelTotalAllocation:
-      reservation.baseFuelAllowance + reservation.procuredAccumulatedAmount,
+      reservation.fuelProcurementMode === 'hold_accumulate'
+        ? 0
+        : reservation.baseFuelAllowance + reservation.procuredAccumulatedAmount,
   };
 }

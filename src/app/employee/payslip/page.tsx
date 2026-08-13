@@ -34,6 +34,7 @@ import {
   Loader2,
   LogOut,
   Download,
+  Banknote,
   CalendarDays,
   CheckCircle2,
   AlertCircle,
@@ -1536,6 +1537,10 @@ export default function EmployeePayslipPage() {
                   <DropdownMenuItem render={<Link href="/employee/facility-reports" />}>
                     <Wrench className="text-amber-500" />
                     Lapor Fasilitas
+                  </DropdownMenuItem>
+                  <DropdownMenuItem render={<Link href="/employee/simpan-pinjam" />}>
+                    <Banknote className="text-emerald-500" />
+                    Simpan Pinjam
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handlePasswordReset} disabled={resetLoading}>

@@ -12,6 +12,7 @@ import {
   getVehicleFuelBalances,
   getVehicleFuelLedger,
   MAX_VEHICLE_FUEL_ADJUSTMENT,
+  VehicleFuelConflictError,
 } from '@/lib/payroll/vehicleFuel';
 import {
   errorResponse,
@@ -146,6 +147,9 @@ export async function POST(request: NextRequest) {
     });
     return Response.json(result);
   } catch (error) {
+    if (error instanceof VehicleFuelConflictError) {
+      return errorResponse(new HttpError(409, error.message));
+    }
     return errorResponse(error);
   }
 }

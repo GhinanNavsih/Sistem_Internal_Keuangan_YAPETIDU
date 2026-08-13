@@ -24,13 +24,14 @@ import {
 import {
   createFuelLedgerContext,
   flushFuelLedger,
+  releaseFuelReservation,
   reservationFields,
   reservationFromJourney,
   reserveFuel,
   type FuelLedgerContext,
   type FuelReservationRecord,
+  VehicleFuelConflictError,
 } from '@/lib/payroll/vehicleFuel';
-import { releaseFuelReservation } from '@/lib/payroll/vehicleFuel';
 import {
   activityDurationMinutes,
   assertSatpamFoundItemPhotoCount,
@@ -864,7 +865,31 @@ export async function POST(request: NextRequest) {
                   preAuthorizedToll,
               );
         const heldFuelAmount = Number(journeyBefore.heldFuelAmount || 0);
-        const procuredAccumulatedAmount = Number(journeyBefore.procuredAccumulatedAmount || 0);
+        let procuredAccumulatedAmount = Number(journeyBefore.procuredAccumulatedAmount || 0);
+        const existingReservation = reservationFromJourney(journeyBefore);
+        if (
+          journeyBefore.status === 'declined' &&
+          existingReservation &&
+          existingReservation.fuelProcurementMode !== DEFAULT_FUEL_PROCUREMENT_MODE &&
+          existingReservation.fuelReservationState !== 'reserved'
+        ) {
+          fuelContext = await createFuelLedgerContext(transaction, [vehicleType], {
+            uid: actor.uid,
+            displayName: actor.displayName,
+            role: actor.role,
+          });
+          fuelReservationAfterSubmission = reserveFuel(fuelContext, {
+            journeyId,
+            reservationId: `FUEL-${journeyId}-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`,
+            vehicleName: vehicleType,
+            mode: fuelProcurementMode,
+            baseFuelAllowance: baseOperationalCost,
+            reason: 'Reservasi ulang BBM saat pengajuan ulang laporan',
+          });
+          procuredAccumulatedAmount = fuelReservationAfterSubmission.procuredAccumulatedAmount;
+        } else {
+          fuelReservationAfterSubmission = existingReservation;
+        }
         const fuelFee = fuelProcurementMode === 'hold_accumulate'
           ? 0
           : Number(driverData.fuelFee || 0);
@@ -902,9 +927,7 @@ export async function POST(request: NextRequest) {
           baseDriverWage - settlement.remainingUnspentCash,
         );
         const authorizedTotalOperationalCost =
-          typeof journeyBefore.totalOperationalCost === 'number'
-            ? journeyBefore.totalOperationalCost
-            : baseOperationalCost + preAuthorizedMeal + preAuthorizedToll;
+          settlement.effectiveFuelAllowance + preAuthorizedMeal + preAuthorizedToll;
         const totalOperationalCost = Math.max(
           0,
           authorizedTotalOperationalCost +
@@ -921,7 +944,7 @@ export async function POST(request: NextRequest) {
           heldFuelAmount: vehicleType === 'Ndalem' ? 0 : heldFuelAmount,
           procuredAccumulatedAmount: vehicleType === 'Ndalem' ? 0 : procuredAccumulatedAmount,
           fuelAllowanceForSettlement: settlement.effectiveFuelAllowance,
-          fuelTotalAllocation: settlement.effectiveFuelAllowance + (vehicleType === 'Ndalem' ? 0 : heldFuelAmount),
+          fuelTotalAllocation: settlement.effectiveFuelAllowance,
           baseOperationalCost,
           fuelFee: fuelSpent,
           extraFuelCost: settlement.extraFuelCost,
@@ -941,30 +964,8 @@ export async function POST(request: NextRequest) {
           totalOperationalCost,
           vehicleRate: Number(journeyBefore.vehicleRate || 0),
         });
-
-        const existingReservation = reservationFromJourney(journeyBefore);
-        if (
-          journeyBefore.status === 'declined' &&
-          existingReservation &&
-          existingReservation.fuelProcurementMode !== DEFAULT_FUEL_PROCUREMENT_MODE &&
-          existingReservation.fuelReservationState !== 'reserved'
-        ) {
-          fuelContext = await createFuelLedgerContext(transaction, [vehicleType], {
-            uid: actor.uid,
-            displayName: actor.displayName,
-            role: actor.role,
-          });
-          fuelReservationAfterSubmission = reserveFuel(fuelContext, {
-            journeyId,
-            reservationId: `FUEL-${journeyId}-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`,
-            vehicleName: vehicleType,
-            mode: fuelProcurementMode,
-            baseFuelAllowance: baseOperationalCost,
-            reason: 'Reservasi ulang BBM saat pengajuan ulang laporan',
-          });
+        if (fuelReservationAfterSubmission) {
           Object.assign(driverData, reservationFields(fuelReservationAfterSubmission));
-        } else {
-          fuelReservationAfterSubmission = existingReservation;
         }
       }
 
@@ -1213,6 +1214,9 @@ export async function POST(request: NextRequest) {
 
     return Response.json(result, { status: 201 });
   } catch (error) {
+    if (error instanceof VehicleFuelConflictError) {
+      return errorResponse(new HttpError(409, error.message));
+    }
     return errorResponse(error);
   }
 }
@@ -1381,6 +1385,9 @@ export async function DELETE(request: NextRequest) {
 
     return Response.json(result, { status: 200 });
   } catch (error) {
+    if (error instanceof VehicleFuelConflictError) {
+      return errorResponse(new HttpError(409, error.message));
+    }
     return errorResponse(error);
   }
 }

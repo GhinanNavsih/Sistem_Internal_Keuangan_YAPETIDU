@@ -1129,7 +1129,6 @@ export default function EmployeesPage() {
       });
       setIsDialogOpen(false);
       fetchEmployees();
-      setTimeout(() => setMessage(null), propagationNote ? 8000 : 3000);
     } catch (err) {
       console.error('Error saving employee:', err);
       setMessage({
@@ -1173,11 +1172,9 @@ export default function EmployeesPage() {
       localStorage.removeItem('pending_employee_edits');
       setIsLogOpen(false);
       setMessage({ type: 'success', text: 'Perubahan berhasil dikonfirmasi & dicatat ke EmpEditLog!' });
-      setTimeout(() => setMessage(null), 4000);
     } catch (err) {
       console.error('Error writing edit log:', err);
       setMessage({ type: 'error', text: 'Gagal menulis log ke EmpEditLog.' });
-      setTimeout(() => setMessage(null), 3000);
     } finally {
       isSavingRef.current = false;
       setConfirming(false);
@@ -1231,11 +1228,9 @@ export default function EmployeesPage() {
       await fetchEmployees();
 
       setMessage({ type: 'success', text: 'Seluruh perubahan berhasil dibatalkan dan dikembalikan (revert)!' });
-      setTimeout(() => setMessage(null), 4000);
     } catch (err) {
       console.error('Error reverting changes:', err);
       setMessage({ type: 'error', text: 'Gagal membatalkan dan mengembalikan perubahan.' });
-      setTimeout(() => setMessage(null), 4000);
     } finally {
       setLocalLoading(false);
     }

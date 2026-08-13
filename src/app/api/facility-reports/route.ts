@@ -7,6 +7,7 @@ import {
   isFacilityReportOpen,
   isFacilityReportStatus,
   MAX_FACILITY_DESCRIPTION_LENGTH,
+  MAX_FACILITY_PHOTOS,
   MAX_FACILITY_PLACE_LENGTH,
   MAX_FACILITY_REVIEW_NOTE_LENGTH,
   MIN_FACILITY_DECLINE_REASON_LENGTH,
@@ -69,16 +70,24 @@ export async function POST(request: NextRequest) {
         MIN_FACILITY_DESCRIPTION_LENGTH,
       );
 
-      const rawPhotoUrl = typeof body?.photoUrl === 'string' ? body.photoUrl.trim() : '';
-      if (rawPhotoUrl && !rawPhotoUrl.startsWith(STORAGE_PHOTO_PREFIX)) {
-        throw new HttpError(400, 'URL foto tidak valid.');
+      const rawPhotos = Array.isArray(body?.photos) ? body.photos : [];
+      if (rawPhotos.length > MAX_FACILITY_PHOTOS) {
+        throw new HttpError(400, `Maksimal ${MAX_FACILITY_PHOTOS} foto per laporan.`);
       }
-      const photoUrl = rawPhotoUrl || null;
-      const photoAuditMetadata = photoUrl
-        ? normalizePhotoAuditMetadata(
-            (body?.photoAuditMetadata as Record<string, unknown> | undefined) ?? undefined,
-          )
-        : null;
+      const photos = rawPhotos.map((entry, index) => {
+        const url = typeof (entry as Record<string, unknown>)?.url === 'string'
+          ? (entry as Record<string, unknown>).url as string
+          : '';
+        if (!url.trim().startsWith(STORAGE_PHOTO_PREFIX)) {
+          throw new HttpError(400, `URL foto ke-${index + 1} tidak valid.`);
+        }
+        return {
+          url: url.trim(),
+          auditMetadata: normalizePhotoAuditMetadata(
+            (entry as Record<string, unknown>)?.auditMetadata as Record<string, unknown> | undefined,
+          ),
+        };
+      });
 
       const reportId = `FAC-${todayJakartaISO().replaceAll('-', '')}-${randomUUID()
         .replaceAll('-', '')
@@ -93,8 +102,7 @@ export async function POST(request: NextRequest) {
         reportedByUid: actor.uid,
         place,
         description,
-        photoUrl,
-        photoAuditMetadata,
+        photos,
         status: 'pending' satisfies FacilityReportStatus,
         reportedDate: todayJakartaISO(),
         reportedAt: now,

@@ -45,6 +45,7 @@ import {
 import type { DocumentData, QuerySnapshot } from 'firebase/firestore';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { PEKARYA_JOB_CATEGORIES } from '@/lib/payroll/pekaryaSpj';
+import { cashOperationalCostFromJourney } from '@/lib/payroll/driverJourney';
 
 function fmtRp(val: number): string {
   return 'Rp' + Math.round(val || 0).toLocaleString('id-ID');
@@ -205,7 +206,7 @@ function JourneyDashboardContent() {
           activityDate: jDate,
           distanceKm: numberValue(d.newTotalDistanceKm || d.totalDistanceKm || d.distanceKm),
           durationHours: numberValue(d.newTotalDurationHours || d.durationHours),
-          operationalCost: numberValue(d.totalOperationalCost || d.operationalCost || d.fee),
+          operationalCost: cashOperationalCostFromJourney(d),
           upahBersih: numberValue(d.upahBersih),
           fuelFee: numberValue(d.fuelFee),
           tollParkingFee: numberValue(d.tollParkingFee),
@@ -248,7 +249,7 @@ function JourneyDashboardContent() {
           durationHours: numberValue(rd.durationHours),
           // Non-SOPIR fees are approved wages, not operational SPJ costs.
           operationalCost: isSopir
-            ? numberValue(rd.totalOperationalCost || rd.operationalCost || rd.fee)
+            ? cashOperationalCostFromJourney(rd)
             : 0,
           upahBersih: isSopir ? numberValue(rd.upahBersih) : numberValue(rd.fee),
           fuelFee: numberValue(rd.fuelFee),

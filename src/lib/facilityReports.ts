@@ -1,4 +1,4 @@
-import type { PhotoAuditMetadata } from '@/lib/payroll/domain';
+import type { PhotoEvidence } from '@/lib/payroll/domain';
 
 export const FACILITY_REPORTS_COLLECTION = 'FacilityReports';
 
@@ -61,6 +61,11 @@ export const MIN_FACILITY_DESCRIPTION_LENGTH = 10;
 export const MAX_FACILITY_REVIEW_NOTE_LENGTH = 500;
 export const MIN_FACILITY_DECLINE_REASON_LENGTH = 8;
 
+/** Each photo is compressed client-side to this cap before upload, so a
+ * report with several photos still stays cheap to store and quick to load. */
+export const MAX_FACILITY_PHOTO_BYTES = 1 * 1024 * 1024;
+export const MAX_FACILITY_PHOTOS = 5;
+
 export interface FacilityReport {
   id: string;
   employeeId: string;
@@ -68,8 +73,7 @@ export interface FacilityReport {
   reportedByUid: string;
   place: string;
   description: string;
-  photoUrl?: string | null;
-  photoAuditMetadata?: PhotoAuditMetadata | null;
+  photos?: PhotoEvidence[];
   status: FacilityReportStatus;
   reportedAt?: unknown;
   /** ISO date (YYYY-MM-DD) of submission, kept for grouping and filtering. */

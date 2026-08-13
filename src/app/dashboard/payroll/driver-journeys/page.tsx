@@ -77,6 +77,7 @@ import {
   driverJourneyRoutePoint,
   getMealAllowanceForDuration,
   calculateEstimatedDriverWage,
+  cashOperationalCostFromJourney,
   DEFAULT_FUEL_PROCUREMENT_MODE,
   fuelProcurementModeLabel,
   isFuelProcurementMode,
@@ -852,6 +853,7 @@ function DriverJourneysContent() {
           items: [{ reportId: auditReport.id, driverReview }],
         }),
       });
+      await loadFuelBalances();
 
       setMessage({
         type: 'success',
@@ -893,6 +895,7 @@ function DriverJourneysContent() {
           items: [{ reportId: declineTarget.id, reason }],
         }),
       });
+      await loadFuelBalances();
       setMessage({
         type: 'success',
         text: `Perjalanan "${declineTarget.activityName}" oleh ${declineTarget.employeeName} telah ditolak.`,
@@ -1050,6 +1053,7 @@ function DriverJourneysContent() {
           assignedTo: assignedDriverId || null,
         }),
       });
+      await loadFuelBalances();
 
       setMessage({
         type: 'success',
@@ -1075,7 +1079,10 @@ function DriverJourneysContent() {
       setShowAddForm(false);
     } catch (err: any) {
       console.error(err);
-      setMessage({ type: 'error', text: 'Gagal membuat perjalanan. Coba lagi.' });
+      setMessage({
+        type: 'error',
+        text: err?.message || 'Gagal membuat perjalanan. Coba lagi.',
+      });
     } finally {
       setSaving(false);
     }
@@ -1109,6 +1116,7 @@ function DriverJourneysContent() {
       await authenticatedJson(`/api/driver-journeys?journeyId=${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
+      await loadFuelBalances();
       setMessage({ type: 'success', text: 'Perjalanan dinas berhasil dihapus.' });
     } catch (err: any) {
       console.error(err);
@@ -1273,9 +1281,10 @@ function DriverJourneysContent() {
                   Ledger
                 </Button>
               </div>
-              <div className="grid grid-cols-3 gap-1 text-[10px] font-bold">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 text-[10px] font-bold">
                 <div><span className="block text-slate-400">Tersedia</span><span className="text-emerald-700">{fmtRp(Number(balance.availableBalance || 0))}</span></div>
                 <div><span className="block text-slate-400">Hold</span><span className="text-amber-700">{fmtRp(Number(balance.pendingHoldAmount || 0))}</span></div>
+                <div><span className="block text-slate-400">Akumulasi</span><span className="text-blue-700">{fmtRp(Number(balance.accumulatedHoldAmount || 0))}</span></div>
                 <div><span className="block text-slate-400">Cair</span><span className="text-orange-700">{fmtRp(Number(balance.pendingReleaseAmount || 0))}</span></div>
               </div>
             </div>
@@ -1406,7 +1415,7 @@ function DriverJourneysContent() {
                               {j.distanceKm * 2} km
                             </TableCell>
                             <TableCell className="min-w-0 max-w-0 overflow-hidden">
-                              <div className="font-black text-indigo-600 text-xs sm:text-sm truncate">{fmtRp(j.totalOperationalCost)}</div>
+                              <div className="font-black text-indigo-600 text-xs sm:text-sm truncate">{fmtRp(cashOperationalCostFromJourney(j))}</div>
                               <div className="text-[9px] text-slate-400 font-bold leading-tight truncate">
                                 Makan: {fmtRp(j.mealAllowance)}
                               </div>
@@ -2082,8 +2091,9 @@ function DriverJourneysContent() {
                   Mode Pengadaan BBM
                 </Label>
                 {selectedVehicle !== 'Ndalem' && selectedFuelBalance && (
-                  <span className="text-[10px] font-bold text-slate-600">
-                    Saldo tersedia: <strong className="text-emerald-700">{fmtRp(Number(selectedFuelBalance.availableBalance || 0))}</strong>
+                  <span className="text-right text-[10px] font-bold text-slate-600">
+                    Tersedia <strong className="text-emerald-700">{fmtRp(Number(selectedFuelBalance.availableBalance || 0))}</strong>
+                    {' · '}Akumulasi <strong className="text-blue-700">{fmtRp(Number(selectedFuelBalance.accumulatedHoldAmount || 0))}</strong>
                   </span>
                 )}
               </div>
@@ -2107,15 +2117,15 @@ function DriverJourneysContent() {
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
                   <SelectItem value="standard_direct">Standard langsung — aturan legacy</SelectItem>
-                  <SelectItem value="hold_accumulate">Tahan & akumulasi — tambah saldo saat disetujui</SelectItem>
-                  <SelectItem value="procure_release">Cairkan saldo — gunakan pool + jatah trip</SelectItem>
+                  <SelectItem value="hold_accumulate">Tahan & akumulasi — kurangi saldo dan simpan jatah</SelectItem>
+                  <SelectItem value="procure_release">Cairkan saldo — akumulasi + jatah trip</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-[10px] leading-relaxed text-indigo-800">
                 {fuelProcurementMode === 'hold_accumulate'
-                  ? 'Tidak ada kuitansi BBM. Jatah perjalanan ditahan dan menjadi saldo kendaraan ketika audit disetujui.'
+                  ? `Jatah perjalanan mengurangi Tersedia saat otorisasi, lalu menjadi Akumulasi setelah audit disetujui. Kuitansi BBM tidak diperlukan.`
                   : fuelProcurementMode === 'procure_release'
-                    ? `Saldo tersedia ${fmtRp(Number(selectedFuelBalance?.availableBalance || 0))} akan dicairkan saat otorisasi; kuitansi tetap wajib.`
+                    ? `Akumulasi ${fmtRp(Number(selectedFuelBalance?.accumulatedHoldAmount || 0))} dikunci dan digabung dengan jatah perjalanan. Nominal pembelian aktual dan kuitansi wajib.`
                     : 'Settlement BBM mengikuti alur langsung yang sudah berjalan.'}
               </p>
             </div>
@@ -2330,14 +2340,12 @@ function DriverJourneysContent() {
             {calcDistance !== null && (() => {
               const baseFuelPreview = calcDistance * 2 * VEHICLE_RATES[selectedVehicle];
               const releasedFuelPreview = fuelProcurementMode === 'procure_release'
-                ? Number(selectedFuelBalance?.availableBalance || 0)
+                ? Number(selectedFuelBalance?.accumulatedHoldAmount || 0)
                 : 0;
               const effectiveFuelPreview = fuelProcurementMode === 'hold_accumulate'
                 ? 0
                 : baseFuelPreview + releasedFuelPreview;
-              const totalFuelAllocationPreview = fuelProcurementMode === 'hold_accumulate'
-                ? baseFuelPreview
-                : effectiveFuelPreview;
+              const totalFuelAllocationPreview = effectiveFuelPreview;
               return (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {/* Rincian Estimasi Biaya Otorisasi */}
@@ -2366,13 +2374,13 @@ function DriverJourneysContent() {
                     </div>
                     {fuelProcurementMode === 'procure_release' && (
                       <div className="flex justify-between text-orange-700 font-medium">
-                        <span>Saldo kendaraan dicairkan</span>
+                        <span>Akumulasi dicairkan</span>
                         <span className="font-bold">+{fmtRp(releasedFuelPreview)}</span>
                       </div>
                     )}
                     {fuelProcurementMode === 'hold_accumulate' && (
                       <div className="flex justify-between text-amber-700 font-medium">
-                        <span>Masuk pool saat audit disetujui</span>
+                        <span>Kurangi Tersedia; masuk Akumulasi setelah audit</span>
                         <span className="font-bold">{fmtRp(baseFuelPreview)}</span>
                       </div>
                     )}
@@ -2391,7 +2399,11 @@ function DriverJourneysContent() {
                             </div>
                           )}
                           <div className="flex justify-between text-slate-800 font-black border-t border-indigo-200/60 pt-1.5 mt-1 text-sm">
-                            <span>Total Uang Jalan (Operasional)</span>
+                            <span>
+                              {fuelProcurementMode === 'hold_accumulate'
+                                ? 'Total Kas Operasional'
+                                : 'Total Uang Jalan (Operasional)'}
+                            </span>
                             <span className="text-indigo-700">{fmtRp(totalFuelAllocationPreview + dynamicMealAllowance + tollFeeVal)}</span>
                           </div>
                         </>
@@ -2688,7 +2700,10 @@ function DriverJourneysContent() {
                 <div key={String(entry.id)} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-[10px]">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-black text-slate-800">{String(entry.eventType || 'event')}</span>
-                    <span className="font-bold text-slate-500">Δ tersedia {fmtRp(Number(entry.availableDelta || 0))}</span>
+                    <div className="flex flex-wrap gap-2 font-bold text-slate-500">
+                      <span>Δ tersedia {fmtRp(Number(entry.availableDelta || 0))}</span>
+                      <span>Δ akumulasi {fmtRp(Number(entry.accumulatedHoldDelta || 0))}</span>
+                    </div>
                   </div>
                   <div className="mt-1 text-slate-500">{String(entry.reason || '')}</div>
                   <div className="mt-1 text-slate-400">{String(entry.actorName || entry.actorUid || '')}</div>

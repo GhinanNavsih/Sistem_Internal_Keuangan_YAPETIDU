@@ -1271,6 +1271,11 @@ function JourneyReportContent() {
       const result = await authenticatedJson<{
         fuelProcurementMode: FuelProcurementMode;
         fuelBalance: any;
+        heldFuelAmount?: number;
+        procuredAccumulatedAmount?: number;
+        fuelAllowanceForSettlement?: number;
+        fuelTotalAllocation?: number;
+        totalOperationalCost?: number;
       }>('/api/driver-journeys', {
         method: 'POST',
         body: JSON.stringify({
@@ -1288,6 +1293,13 @@ function JourneyReportContent() {
       setActiveReportingJourney((previous: any) => previous ? {
         ...previous,
         fuelProcurementMode: result.fuelProcurementMode,
+        heldFuelAmount: result.heldFuelAmount ?? previous.heldFuelAmount,
+        procuredAccumulatedAmount:
+          result.procuredAccumulatedAmount ?? previous.procuredAccumulatedAmount,
+        fuelAllowanceForSettlement:
+          result.fuelAllowanceForSettlement ?? previous.fuelAllowanceForSettlement,
+        fuelTotalAllocation: result.fuelTotalAllocation ?? previous.fuelTotalAllocation,
+        totalOperationalCost: result.totalOperationalCost ?? previous.totalOperationalCost,
         fuelModeSelectionRequired: false,
         fuelBalance: result.fuelBalance ?? previous.fuelBalance,
       } : previous);
@@ -1418,6 +1430,20 @@ function JourneyReportContent() {
           ? formTollReceiptEvidence
           : [];
 
+      if (
+        activeFuelMode === 'procure_release' &&
+        (fuelVal <= 0 || submittedFuelReceiptUrls.length === 0)
+      ) {
+        setMessage({
+          type: 'error',
+          text: 'Mode Cairkan wajib menyertakan nominal pembelian aktual dan bukti BBM.',
+        });
+        isSubmittingRef.current = false;
+        setSubmitting(false);
+        skipSaveDraftRef.current = false;
+        return;
+      }
+
       if (fuelVal <= 0 || submittedFuelReceiptUrls.length === 0) {
         setFormFuelReceiptUrls([]);
         setFormFuelReceiptEvidence([]);
@@ -1493,9 +1519,8 @@ function JourneyReportContent() {
         fuelProcurementMode: isNdalem ? DEFAULT_FUEL_PROCUREMENT_MODE : activeFuelMode,
         procuredAccumulatedAmount,
       });
-      const authorizedTotalOperationalCost = activeReportingJourney.totalOperationalCost !== undefined
-        ? Number(activeReportingJourney.totalOperationalCost || 0)
-        : baseCostVal + preAuthorizedMeal + preAuthorizedToll;
+      const authorizedTotalOperationalCost =
+        settlement.effectiveFuelAllowance + preAuthorizedMeal + preAuthorizedToll;
       const adjustedTotalOperationalCost = Math.max(
         0,
         authorizedTotalOperationalCost +
@@ -1585,9 +1610,7 @@ function JourneyReportContent() {
             fuelAllowanceSurplus: settlement.fuelAllowanceSurplus,
             tollAllowanceSurplus: settlement.tollAllowanceSurplus,
             fuelAllowanceForSettlement: settlement.effectiveFuelAllowance,
-            fuelTotalAllocation:
-              settlement.effectiveFuelAllowance +
-              (activeFuelMode === 'hold_accumulate' ? Math.ceil(baseCostVal) : 0),
+            fuelTotalAllocation: settlement.effectiveFuelAllowance,
             baseOperationalCost: baseCostVal,
             preAuthorizedMeal,
             preAuthorizedToll,
@@ -1814,6 +1837,7 @@ function JourneyReportContent() {
                   {activeReportingJourney.vehicleName !== 'Ndalem' && activeReportingJourney.fuelBalance && (
                     <div className="text-right text-[10px] font-bold text-slate-600">
                       <div>Tersedia: <span className="text-emerald-700">{fmtRp(Number(activeReportingJourney.fuelBalance.availableBalance || 0))}</span></div>
+                      <div>Akumulasi: <span className="text-blue-700">{fmtRp(Number(activeReportingJourney.fuelBalance.accumulatedHoldAmount || 0))}</span></div>
                       <div>Menunggu: <span className="text-amber-700">{fmtRp(Number(activeReportingJourney.fuelBalance.pendingHoldAmount || 0) + Number(activeReportingJourney.fuelBalance.pendingReleaseAmount || 0))}</span></div>
                     </div>
                   )}
@@ -1822,8 +1846,8 @@ function JourneyReportContent() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {([
                       ['standard_direct', 'Standard langsung', 'BBM dibayar dan disettle sesuai aturan lama.'],
-                      ['hold_accumulate', 'Tahan & akumulasi', 'Jatah trip masuk saldo kendaraan setelah disetujui; tanpa kuitansi.'],
-                      ['procure_release', 'Cairkan saldo', 'Saldo kendaraan yang tersedia ikut dicairkan; kuitansi wajib.'],
+                      ['hold_accumulate', 'Tahan & akumulasi', 'Jatah trip mengurangi Tersedia lalu masuk Akumulasi setelah disetujui; tanpa kuitansi.'],
+                      ['procure_release', 'Cairkan saldo', 'Akumulasi digabung dengan jatah trip; nominal pembelian dan kuitansi wajib.'],
                     ] as const).map(([mode, title, description]) => (
                       <button
                         key={mode}
@@ -1846,8 +1870,8 @@ function JourneyReportContent() {
                           ? 'Cairkan saldo'
                           : 'Standard langsung'}
                     </span>
-                    {activeFuelMode === 'hold_accumulate' && <span>Jangan unggah kuitansi BBM; jatah akan masuk ledger kendaraan saat audit disetujui.</span>}
-                    {activeFuelMode === 'procure_release' && <span>Saldo tersedia ditambahkan ke jatah trip dan kuitansi BBM wajib.</span>}
+                    {activeFuelMode === 'hold_accumulate' && <span>Jangan unggah kuitansi BBM; jatah sudah mengurangi Tersedia dan akan menjadi Akumulasi saat audit disetujui.</span>}
+                    {activeFuelMode === 'procure_release' && <span>Akumulasi yang dikunci ditambahkan ke jatah trip; nominal pembelian dan kuitansi BBM wajib.</span>}
                   </div>
                 )}
               </CardContent>
@@ -2373,7 +2397,7 @@ function JourneyReportContent() {
                       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
                         <div className="font-black">BBM ditahan untuk akumulasi kendaraan</div>
                         <div className="mt-1 font-semibold leading-relaxed">
-                          Alokasi {fmtRp(Math.ceil(baseCostVal))} akan masuk saldo {activeReportingJourney.vehicleName} setelah audit disetujui. Kuitansi BBM tidak diperlukan dan input BBM dinonaktifkan.
+                          Alokasi {fmtRp(Math.ceil(baseCostVal))} sudah mengurangi Tersedia {activeReportingJourney.vehicleName} dan akan menjadi Akumulasi setelah audit disetujui. Kuitansi BBM tidak diperlukan dan input BBM dinonaktifkan.
                         </div>
                       </div>
                     ) : (
@@ -2635,6 +2659,10 @@ function JourneyReportContent() {
               tollAllowance: preAuthorizedTollInCalc,
               tollSpent: tollVal,
               additionalReimbursement: extraMealAllowance + extraOperationalCost,
+              fuelProcurementMode: isNdalem ? DEFAULT_FUEL_PROCUREMENT_MODE : activeFuelMode,
+              procuredAccumulatedAmount: activeFuelMode === 'procure_release'
+                ? Math.max(0, Number(activeReportingJourney.procuredAccumulatedAmount || 0))
+                : 0,
             });
 
             return (
@@ -2687,9 +2715,15 @@ function JourneyReportContent() {
                             </td>
                           </tr>
                           <tr>
-                            <td className="py-2 text-black font-extrabold">BBM</td>
-                            <td className="py-2 text-center font-extrabold text-blue-700"><span>{fmtRp(Math.ceil(baseCostVal))}</span></td>
-                            <td className="py-2 text-center font-black text-blue-700">{fmtRp(Math.ceil(fuelVal))}</td>
+                            <td className="py-2 text-black font-extrabold">
+                              {activeFuelMode === 'hold_accumulate' ? 'BBM (ditahan; bukan kas)' : 'BBM'}
+                            </td>
+                            <td className="py-2 text-center font-extrabold text-blue-700">
+                              {activeFuelMode === 'hold_accumulate' ? '—' : fmtRp(Math.ceil(settlement.effectiveFuelAllowance))}
+                            </td>
+                            <td className="py-2 text-center font-black text-blue-700">
+                              {activeFuelMode === 'hold_accumulate' ? '—' : fmtRp(Math.ceil(fuelVal))}
+                            </td>
                             <td className="py-2 text-right font-black text-blue-700">
                               {settlement.fuelDelta !== 0 ? (
                                 <span>

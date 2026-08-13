@@ -31,21 +31,22 @@ import {
   isFacilityArea,
   isFacilityReportStatus,
   MAX_FACILITY_DESCRIPTION_LENGTH,
+  MAX_FACILITY_PHOTO_BYTES,
+  MAX_FACILITY_PHOTOS,
   MAX_FACILITY_PLACE_LENGTH,
   MIN_FACILITY_DESCRIPTION_LENGTH,
   type FacilityArea,
   type FacilityReportStatus,
 } from '@/lib/facilityReports';
 import { authenticatedJson } from '@/lib/payroll/client';
-import { prepareProofImage, type PhotoAuditMetadata } from '@/lib/photoEvidence';
+import { prepareProofImageWithLimit, type PhotoEvidence } from '@/lib/photoEvidence';
 import { uploadProofFile } from '@/lib/uploads';
 
 interface FacilityReportRow {
   id: string;
   place: string;
   description: string;
-  photoUrl?: string | null;
-  photoAuditMetadata?: PhotoAuditMetadata | null;
+  photos?: PhotoEvidence[];
   status: FacilityReportStatus;
   reportedDate: string;
   reviewNote?: string | null;
@@ -71,18 +72,11 @@ export default function FacilityReportsPage() {
   const [area, setArea] = useState<FacilityArea>(DEFAULT_FACILITY_AREA);
   const [customPlace, setCustomPlace] = useState('');
   const [description, setDescription] = useState('');
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [photoAuditMetadata, setPhotoAuditMetadata] = useState<PhotoAuditMetadata | null>(null);
+  const [photos, setPhotos] = useState<PhotoEvidence[]>([]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
-  const [zoomImage, setZoomImage] = useState<FacilityReportRow | null>(null);
-
-  useEffect(() => {
-    if (!message) return;
-    const timer = setTimeout(() => setMessage(null), message.type === 'error' ? 7000 : 5000);
-    return () => clearTimeout(timer);
-  }, [message]);
+  const [zoomPhoto, setZoomPhoto] = useState<{ report: FacilityReportRow; photo: PhotoEvidence } | null>(null);
 
   const loadReports = useCallback(async () => {
     try {
@@ -114,25 +108,47 @@ export default function FacilityReportsPage() {
     setArea(DEFAULT_FACILITY_AREA);
     setCustomPlace('');
     setDescription('');
-    setPhotoUrl(null);
-    setPhotoAuditMetadata(null);
+    setPhotos([]);
   };
 
-  const handlePhoto = async (file: File) => {
+  const handlePhotos = async (files: File[]) => {
     if (!profile?.linkedEmployeeId) {
       setMessage({ type: 'error', text: 'Akun Anda belum terhubung ke data Pegawai.' });
       return;
     }
-    setUploadingPhoto(true);
-    try {
-      const prepared = await prepareProofImage(file);
-      const url = await uploadProofFile('/api/uploads/facility-reports', prepared.file, {
-        employeeId: profile.linkedEmployeeId,
+    const remainingSlots = MAX_FACILITY_PHOTOS - photos.length;
+    if (remainingSlots <= 0) {
+      setMessage({ type: 'error', text: `Maksimal ${MAX_FACILITY_PHOTOS} foto per laporan.` });
+      return;
+    }
+    const toUpload = files.slice(0, remainingSlots);
+    if (files.length > remainingSlots) {
+      setMessage({
+        type: 'error',
+        text: `Hanya ${remainingSlots} foto lagi yang dapat ditambahkan (maks ${MAX_FACILITY_PHOTOS}).`,
       });
-      setPhotoUrl(url);
-      setPhotoAuditMetadata(prepared.auditMetadata);
-      setMessage({ type: 'success', text: 'Foto berhasil diunggah.' });
+    }
+
+    setUploadingPhoto(true);
+    const uploaded: PhotoEvidence[] = [];
+    try {
+      // Uploaded one at a time rather than in parallel — each photo is already
+      // compressed client-side, so this keeps the loading state meaningful and
+      // avoids firing a burst of concurrent uploads on a mobile connection.
+      for (const file of toUpload) {
+        const prepared = await prepareProofImageWithLimit(file, MAX_FACILITY_PHOTO_BYTES);
+        const url = await uploadProofFile('/api/uploads/facility-reports', prepared.file, {
+          employeeId: profile.linkedEmployeeId,
+        });
+        uploaded.push({ url, auditMetadata: prepared.auditMetadata });
+      }
+      setPhotos((prev) => [...prev, ...uploaded]);
+      setMessage({
+        type: 'success',
+        text: uploaded.length > 1 ? `${uploaded.length} foto berhasil diunggah.` : 'Foto berhasil diunggah.',
+      });
     } catch (error) {
+      if (uploaded.length > 0) setPhotos((prev) => [...prev, ...uploaded]);
       console.error('Error uploading facility photo:', error);
       setMessage({
         type: 'error',
@@ -141,6 +157,10 @@ export default function FacilityReportsPage() {
     } finally {
       setUploadingPhoto(false);
     }
+  };
+
+  const removePhoto = (url: string) => {
+    setPhotos((prev) => prev.filter((photo) => photo.url !== url));
   };
 
   const handleSubmit = async () => {
@@ -167,7 +187,7 @@ export default function FacilityReportsPage() {
           action: 'submit',
           place: trimmedPlace,
           description: trimmedDescription,
-          ...(photoUrl ? { photoUrl, photoAuditMetadata } : {}),
+          photos,
         }),
       });
       setMessage({ type: 'success', text: 'Laporan kerusakan berhasil dikirim ke Kepala SatKer.' });
@@ -317,23 +337,42 @@ export default function FacilityReportsPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-[11px] font-bold text-slate-500 uppercase">
-                Foto (Opsional)
-              </Label>
-              {photoUrl ? (
-                <div className="relative rounded-xl overflow-hidden border border-slate-200">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photoUrl} alt="Bukti kerusakan" className="w-full max-h-64 object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => { setPhotoUrl(null); setPhotoAuditMetadata(null); }}
-                    className="absolute top-2 right-2 rounded-lg bg-white/95 p-1.5 text-rose-600 shadow-sm hover:bg-white cursor-pointer"
-                    title="Hapus foto"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+              <div className="flex items-center justify-between">
+                <Label className="text-[11px] font-bold text-slate-500 uppercase">
+                  Foto (Opsional)
+                </Label>
+                <span className="text-[10px] font-bold text-slate-400">
+                  {photos.length}/{MAX_FACILITY_PHOTOS} foto
+                </span>
+              </div>
+
+              {photos.length > 0 && (
+                <div className="grid grid-cols-3 gap-2">
+                  {photos.map((photo, index) => (
+                    <div
+                      key={photo.url}
+                      className="relative aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photo.url}
+                        alt={`Bukti kerusakan ${index + 1}`}
+                        className="h-full w-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(photo.url)}
+                        className="absolute top-1.5 right-1.5 rounded-lg bg-white/95 p-1 text-rose-600 shadow-sm hover:bg-white cursor-pointer"
+                        title="Hapus foto"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ) : (
+              )}
+
+              {photos.length < MAX_FACILITY_PHOTOS && (
                 <label className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 py-6 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40 transition-colors">
                   {uploadingPhoto ? (
                     <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
@@ -341,17 +380,22 @@ export default function FacilityReportsPage() {
                     <ImageIcon className="w-5 h-5 text-slate-400" />
                   )}
                   <span className="text-[11px] font-bold text-slate-500">
-                    {uploadingPhoto ? 'Mengunggah…' : 'Ketuk untuk menambah foto'}
+                    {uploadingPhoto
+                      ? 'Mengunggah…'
+                      : photos.length === 0
+                        ? 'Ketuk untuk menambah foto'
+                        : 'Tambah foto lagi'}
                   </span>
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
                     className="hidden"
                     disabled={uploadingPhoto}
                     onChange={(e) => {
-                      const file = e.target.files?.[0];
+                      const files = Array.from(e.target.files || []);
                       e.target.value = '';
-                      if (file) void handlePhoto(file);
+                      if (files.length > 0) void handlePhotos(files);
                     }}
                   />
                 </label>
@@ -430,14 +474,19 @@ export default function FacilityReportsPage() {
                   {report.description}
                 </p>
 
-                {report.photoUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={report.photoUrl}
-                    alt="Bukti kerusakan"
-                    onClick={() => setZoomImage(report)}
-                    className="w-full max-h-52 object-cover rounded-xl border border-slate-200 cursor-zoom-in"
-                  />
+                {report.photos && report.photos.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {report.photos.map((photo, index) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={photo.url}
+                        src={photo.url}
+                        alt={`Bukti kerusakan ${index + 1}`}
+                        onClick={() => setZoomPhoto({ report, photo })}
+                        className="aspect-square w-full object-cover rounded-xl border border-slate-200 cursor-zoom-in"
+                      />
+                    ))}
+                  </div>
                 )}
 
                 {report.reviewNote && (
@@ -466,15 +515,15 @@ export default function FacilityReportsPage() {
       </div>
 
       <ImageExifViewer
-        imageUrl={zoomImage?.photoUrl || ''}
-        title={zoomImage?.place}
-        activityDate={zoomImage?.reportedDate}
-        auditMetadata={zoomImage?.photoAuditMetadata}
-        isOpen={Boolean(zoomImage?.photoUrl)}
-        onClose={() => setZoomImage(null)}
+        imageUrl={zoomPhoto?.photo.url || ''}
+        title={zoomPhoto?.report.place}
+        activityDate={zoomPhoto?.report.reportedDate}
+        auditMetadata={zoomPhoto?.photo.auditMetadata}
+        isOpen={Boolean(zoomPhoto?.photo.url)}
+        onClose={() => setZoomPhoto(null)}
       />
 
-      <FloatingSnackbar message={message} />
+      <FloatingSnackbar message={message} onDismiss={() => setMessage(null)} />
     </div>
   );
 }

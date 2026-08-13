@@ -1,4 +1,6 @@
+import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
+import { MAX_FACILITY_PHOTO_BYTES } from '@/lib/facilityReports';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
 import { assertValidProofFile, saveUploadedFile } from '@/lib/server/storageUpload';
 
@@ -12,7 +14,7 @@ export async function POST(request: NextRequest) {
     if (!employeeId) {
       throw new HttpError(400, 'ID pegawai wajib diisi.');
     }
-    assertValidProofFile(file, 5 * 1024 * 1024);
+    assertValidProofFile(file, MAX_FACILITY_PHOTO_BYTES);
 
     // The photo is uploaded before the report document exists, so it is scoped
     // to the reporting employee rather than to a report id.
@@ -20,7 +22,9 @@ export async function POST(request: NextRequest) {
       throw new HttpError(403, 'Anda tidak memiliki kewenangan untuk mengunggah berkas ini.');
     }
 
-    const storagePath = `facility_reports/${employeeId}/${Date.now()}.jpg`;
+    // A short random suffix (not just Date.now()) keeps concurrent uploads of
+    // multiple photos for the same report from colliding on the same path.
+    const storagePath = `facility_reports/${employeeId}/${Date.now()}_${randomUUID().slice(0, 8)}.jpg`;
     const url = await saveUploadedFile(storagePath, file, actor.uid);
     return NextResponse.json({ url });
   } catch (error) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertCircle, CheckCircle2, X } from "lucide-react";
 
@@ -12,14 +13,43 @@ type FloatingSnackbarProps = {
   message?: SnackbarMessage | null;
   onDismiss?: () => void;
   title?: string;
+  /** Auto-dismiss delay in ms. Defaults to 5000; pass 0 to disable. */
+  duration?: number;
 };
+
+const DEFAULT_DURATION_MS = 5000;
 
 /**
  * Renders transient feedback above the application UI, including modal and
  * transformed stacking contexts created by page-level layouts.
+ *
+ * Auto-dismisses after `duration` on its own — callers used to have to
+ * re-implement a setTimeout/useEffect pair to clear their message state,
+ * and several never did, so their banners sat on screen until the next
+ * unrelated action happened to overwrite them. Hiding here (via local state)
+ * works even for callers that don't pass `onDismiss`; callers that do also
+ * get their state cleared so a later identical message still shows.
  */
-export function FloatingSnackbar({ message, onDismiss, title }: FloatingSnackbarProps) {
-  if (!message || typeof document === "undefined") return null;
+export function FloatingSnackbar({ message, onDismiss, title, duration = DEFAULT_DURATION_MS }: FloatingSnackbarProps) {
+  const [hidden, setHidden] = useState(false);
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
+  useEffect(() => {
+    setHidden(false);
+    if (!message || duration <= 0) return;
+    const timer = setTimeout(() => {
+      setHidden(true);
+      onDismissRef.current?.();
+    }, duration);
+    return () => clearTimeout(timer);
+    // `message` is a fresh object per setMessage() call at every existing
+    // call site, so this correctly restarts the timer even when the same
+    // text/type is shown again back to back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message, duration]);
+
+  if (!message || hidden || typeof document === "undefined") return null;
 
   const isError = message.type === "error";
 

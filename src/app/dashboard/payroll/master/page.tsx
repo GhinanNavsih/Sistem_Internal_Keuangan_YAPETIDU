@@ -285,9 +285,6 @@ export default function SalaryMasterPage() {
 
       await batch.commit();
       setMessage({ type: 'success', text: 'Perubahan berhasil disimpan!' });
-      
-      // Clear success message after 3 seconds
-      setTimeout(() => setMessage(null), 3000);
     } catch (error) {
       console.error("Error saving changes:", error);
       setMessage({ type: 'error', text: 'Gagal menyimpan perubahan. Silakan coba lagi.' });

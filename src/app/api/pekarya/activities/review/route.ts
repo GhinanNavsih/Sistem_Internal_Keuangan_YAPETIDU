@@ -23,6 +23,7 @@ import {
   type DriverJourneyLocation,
 } from '@/lib/payroll/driverJourney';
 import {
+  CURRENT_FUEL_RESERVATION_VERSION,
   commitFuelReservation,
   createFuelLedgerContext,
   flushFuelLedger,
@@ -30,8 +31,8 @@ import {
   reservationFields,
   reservationFromJourney,
   reserveFuel,
-  type FuelLedgerContext,
   type FuelReservationRecord,
+  VehicleFuelConflictError,
 } from '@/lib/payroll/vehicleFuel';
 import {
   activityDurationMinutes,
@@ -70,6 +71,7 @@ interface ReviewItem {
     dateStart?: string;
     dateEnd?: string;
     isMultiDay?: boolean;
+    actualFuelExpenditure: number;
     fuelDelta: number;
     tollDelta: number;
     mealDelta: number;
@@ -183,7 +185,11 @@ function validateDriverReview(value: ReviewItem['driverReview']) {
   if (value.isMultiDay !== undefined && typeof value.isMultiDay !== 'boolean') {
     throw new HttpError(400, 'Status lintas hari audit tidak valid.');
   }
+  if (!Number.isSafeInteger(value.actualFuelExpenditure)) {
+    throw new HttpError(400, 'Nilai pembelian BBM aktual tidak valid.');
+  }
   for (const [label, number, allowNegative] of [
+    ['pembelian BBM aktual', value.actualFuelExpenditure, false],
     ['selisih BBM', value.fuelDelta, true],
     ['selisih tol', value.tollDelta, true],
     ['selisih makan', value.mealDelta, false],
@@ -514,6 +520,7 @@ export async function POST(request: NextRequest) {
             ? reservationFromJourney(authorizedJourney)
             : null;
           let finalReservation: FuelReservationRecord = existingReservation || {
+            fuelReservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
             fuelReservationId: `FUEL-${before.journeyId || item.reportId}-REVIEW-${command.requestId}`,
             fuelReservationState: 'none',
             fuelReservationVehicleName: review.vehicleType,
@@ -522,30 +529,62 @@ export async function POST(request: NextRequest) {
             heldFuelAmount: 0,
             procuredAccumulatedAmount: 0,
           };
-          if (fuelContext && existingReservation?.fuelReservationState === 'reserved') {
+          const journeyId = String(before.journeyId || item.reportId);
+          const auditedBaseFuelAllowance = Math.ceil(baseOperationalCost);
+          const mustRebuildReservation = Boolean(
+            existingReservation?.fuelReservationState === 'reserved' &&
+            (
+              existingReservation.fuelReservationVehicleName !== review.vehicleType ||
+              existingReservation.fuelProcurementMode !== fuelProcurementMode ||
+              existingReservation.baseFuelAllowance !== auditedBaseFuelAllowance
+            ),
+          );
+          if (
+            fuelContext &&
+            existingReservation?.fuelReservationState === 'reserved' &&
+            mustRebuildReservation
+          ) {
             finalReservation = releaseFuelReservation(
               fuelContext,
               existingReservation,
               'Rekonsiliasi reservasi saat audit perjalanan',
-              String(before.journeyId || item.reportId),
+              journeyId,
             );
           }
           if (fuelProcurementMode !== DEFAULT_FUEL_PROCUREMENT_MODE) {
             if (!fuelContext) {
               throw new HttpError(409, 'Ledger saldo BBM tidak tersedia untuk audit perjalanan.');
             }
-            const reservedReservation = reserveFuel(fuelContext, {
-              journeyId: String(before.journeyId || item.reportId),
-              reservationId: `FUEL-${before.journeyId || item.reportId}-REVIEW-${command.requestId}`,
-              vehicleName: review.vehicleType,
-              mode: fuelProcurementMode,
-              baseFuelAllowance: baseOperationalCost,
-              reason: 'Reservasi ulang BBM berdasarkan hasil audit perjalanan',
-            });
+            const reservedReservation =
+              existingReservation?.fuelReservationState === 'reserved' && !mustRebuildReservation
+                ? existingReservation
+                : reserveFuel(fuelContext, {
+                    journeyId,
+                    reservationId: `FUEL-${before.journeyId || item.reportId}-REVIEW-${command.requestId}`,
+                    vehicleName: review.vehicleType,
+                    mode: fuelProcurementMode,
+                    baseFuelAllowance: auditedBaseFuelAllowance,
+                    reason: 'Reservasi ulang BBM berdasarkan hasil audit perjalanan',
+                  });
+            const approvedFuelExpenditure = fuelProcurementMode === 'procure_release'
+              ? Math.ceil(review.actualFuelExpenditure)
+              : undefined;
+            if (fuelProcurementMode === 'procure_release') {
+              const fuelReceiptUrl = String(
+                before.fuelReceiptUrl || authorizedJourney?.fuelReceiptUrl || '',
+              ).trim();
+              if (!approvedFuelExpenditure || !fuelReceiptUrl) {
+                throw new HttpError(
+                  409,
+                  'Pencairan BBM wajib memiliki nominal pembelian aktual dan struk yang disetujui.',
+                );
+              }
+            }
             finalReservation = commitFuelReservation(
               fuelContext,
               reservedReservation,
-              String(before.journeyId || item.reportId),
+              journeyId,
+              approvedFuelExpenditure,
             );
           } else if (fuelContext && existingReservation?.fuelReservationState === 'reserved') {
             finalReservation = {
@@ -562,7 +601,7 @@ export async function POST(request: NextRequest) {
             ...finalReservation,
             fuelProcurementMode,
             fuelReservationVehicleName: review.vehicleType,
-            baseFuelAllowance: Math.ceil(baseOperationalCost),
+            baseFuelAllowance: auditedBaseFuelAllowance,
             heldFuelAmount: fuelProcurementMode === 'hold_accumulate'
               ? Math.ceil(baseOperationalCost)
               : 0,
@@ -627,21 +666,12 @@ export async function POST(request: NextRequest) {
                 : Number(before.preAuthorizedToll || 0);
           const fuelAllowance = review.vehicleType === 'Ndalem' ? 0 : baseOperationalCost;
           const extraOperationalCost = Math.max(0, Number(before.extraOperationalCost || 0));
-          const fuelDelta =
-            fuelProcurementMode === 'hold_accumulate' || review.vehicleType === 'Ndalem'
-              ? 0
-              : review.fuelDelta;
           const settlement = calculateDriverReimbursementSettlement({
             fuelAllowance,
             fuelSpent:
-              fuelProcurementMode === 'hold_accumulate'
+              fuelProcurementMode === 'hold_accumulate' || review.vehicleType === 'Ndalem'
                 ? 0
-                : Math.max(
-                    0,
-                    fuelAllowance +
-                      finalReservation.procuredAccumulatedAmount +
-                      fuelDelta,
-                  ),
+                : Math.ceil(review.actualFuelExpenditure),
             tollAllowance: preAuthorizedToll,
             tollSpent: Math.max(0, preAuthorizedToll + review.tollDelta),
             additionalReimbursement: mealDelta + extraOperationalCost,
@@ -649,15 +679,14 @@ export async function POST(request: NextRequest) {
             procuredAccumulatedAmount: finalReservation.procuredAccumulatedAmount,
           });
           const actualFuel =
-            fuelProcurementMode === 'hold_accumulate'
+            fuelProcurementMode === 'hold_accumulate' || review.vehicleType === 'Ndalem'
               ? 0
-              : settlement.effectiveFuelAllowance + fuelDelta;
+              : Math.ceil(review.actualFuelExpenditure);
           const actualToll = Math.max(0, preAuthorizedToll + review.tollDelta);
           // The journey document is updated with the driver's submitted
           // actuals before review. Rebuild from the original allowance
           // components here so approval never applies the delta twice.
           const initialTotalOperationalCost =
-            (fuelProcurementMode === 'hold_accumulate' ? fuelAllowance : 0) +
             settlement.effectiveFuelAllowance +
             preAuthorizedMeal +
             preAuthorizedToll;
@@ -722,9 +751,7 @@ export async function POST(request: NextRequest) {
             heldFuelAmount: finalReservation.heldFuelAmount,
             procuredAccumulatedAmount: finalReservation.procuredAccumulatedAmount,
             fuelAllowanceForSettlement: settlement.effectiveFuelAllowance,
-            fuelTotalAllocation:
-              (fuelProcurementMode === 'hold_accumulate' ? fuelAllowance : 0) +
-              settlement.effectiveFuelAllowance,
+            fuelTotalAllocation: settlement.effectiveFuelAllowance,
             vehicleType: review.vehicleType,
             vehicleRate: rate,
             baseOperationalCost: fuelAllowance,
@@ -966,6 +993,9 @@ export async function POST(request: NextRequest) {
 
     return Response.json(result);
   } catch (error) {
+    if (error instanceof VehicleFuelConflictError) {
+      return errorResponse(new HttpError(409, error.message));
+    }
     return errorResponse(error);
   }
 }

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import GlobalHeader from '@/components/GlobalHeader';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
+import UraianNavToggles from '@/components/UraianNavToggles';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -55,7 +56,7 @@ import {
   type FacilityReportStatus,
 } from '@/lib/facilityReports';
 import { authenticatedJson } from '@/lib/payroll/client';
-import type { PhotoAuditMetadata } from '@/lib/photoEvidence';
+import type { PhotoEvidence } from '@/lib/photoEvidence';
 
 interface FacilityReportRow {
   id: string;
@@ -63,8 +64,7 @@ interface FacilityReportRow {
   employeeName: string;
   place: string;
   description: string;
-  photoUrl?: string | null;
-  photoAuditMetadata?: PhotoAuditMetadata | null;
+  photos?: PhotoEvidence[];
   status: FacilityReportStatus;
   reportedDate: string;
   reviewNote?: string | null;
@@ -90,19 +90,13 @@ function FacilityReportReviewContent() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
   const [search, setSearch] = useState('');
-  const [zoomImage, setZoomImage] = useState<FacilityReportRow | null>(null);
+  const [zoomPhoto, setZoomPhoto] = useState<{ report: FacilityReportRow; photo: PhotoEvidence } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   const [reviewTarget, setReviewTarget] = useState<
     { report: FacilityReportRow; nextStatus: FacilityReportStatus } | null
   >(null);
   const [reviewNote, setReviewNote] = useState('');
-
-  useEffect(() => {
-    if (!message) return;
-    const timer = setTimeout(() => setMessage(null), message.type === 'error' ? 7000 : 5000);
-    return () => clearTimeout(timer);
-  }, [message]);
 
   const loadReports = useCallback(async () => {
     try {
@@ -246,22 +240,84 @@ function FacilityReportReviewContent() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {(['all', ...FACILITY_REPORT_STATUSES] as StatusFilter[]).map((status) => (
-            <button
-              key={status}
-              type="button"
-              onClick={() => setStatusFilter(status)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
-                statusFilter === status
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              {status === 'all' ? 'Semua' : FACILITY_REPORT_STATUS_LABELS[status]}
-              <span className="ml-1.5 opacity-70">{counts[status] ?? 0}</span>
-            </button>
-          ))}
+        <UraianNavToggles />
+
+        {/* ── Stats Cards (clickable filters) ──────────────────────── */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'pending' ? 'all' : 'pending')}
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
+              statusFilter === 'pending'
+                ? 'bg-amber-50 ring-2 ring-amber-400 shadow-amber-100'
+                : 'bg-white hover:bg-amber-50/40 hover:ring-1 hover:ring-amber-200'
+            }`}
+          >
+            <div className="text-2xl font-extrabold text-amber-500">{counts.pending ?? 0}</div>
+            <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'pending' ? 'text-amber-600' : 'text-slate-400'}`}>
+              {FACILITY_REPORT_STATUS_LABELS.pending}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'in_progress' ? 'all' : 'in_progress')}
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
+              statusFilter === 'in_progress'
+                ? 'bg-blue-50 ring-2 ring-blue-400 shadow-blue-100'
+                : 'bg-white hover:bg-blue-50/40 hover:ring-1 hover:ring-blue-200'
+            }`}
+          >
+            <div className="text-2xl font-extrabold text-blue-500">{counts.in_progress ?? 0}</div>
+            <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'in_progress' ? 'text-blue-600' : 'text-slate-400'}`}>
+              {FACILITY_REPORT_STATUS_LABELS.in_progress}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'resolved' ? 'all' : 'resolved')}
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
+              statusFilter === 'resolved'
+                ? 'bg-emerald-50 ring-2 ring-emerald-400 shadow-emerald-100'
+                : 'bg-white hover:bg-emerald-50/40 hover:ring-1 hover:ring-emerald-200'
+            }`}
+          >
+            <div className="text-2xl font-extrabold text-emerald-500">{counts.resolved ?? 0}</div>
+            <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'resolved' ? 'text-emerald-600' : 'text-slate-400'}`}>
+              {FACILITY_REPORT_STATUS_LABELS.resolved}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'declined' ? 'all' : 'declined')}
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
+              statusFilter === 'declined'
+                ? 'bg-rose-50 ring-2 ring-rose-400 shadow-rose-100'
+                : 'bg-white hover:bg-rose-50/40 hover:ring-1 hover:ring-rose-200'
+            }`}
+          >
+            <div className="text-2xl font-extrabold text-rose-500">{counts.declined ?? 0}</div>
+            <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'declined' ? 'text-rose-600' : 'text-slate-400'}`}>
+              {FACILITY_REPORT_STATUS_LABELS.declined}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
+              statusFilter === 'all'
+                ? 'bg-slate-100 ring-2 ring-slate-400'
+                : 'bg-white hover:bg-slate-50 hover:ring-1 hover:ring-slate-200'
+            }`}
+          >
+            <div className="text-2xl font-extrabold text-slate-700">{counts.all ?? 0}</div>
+            <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'all' ? 'text-slate-600' : 'text-slate-400'}`}>
+              Total Laporan
+            </div>
+          </button>
         </div>
 
         <Card className="rounded-2xl border-slate-200/80 shadow-sm bg-white overflow-hidden p-0">
@@ -336,12 +392,13 @@ function FacilityReportReviewContent() {
                             <span className="block text-xs text-slate-500 truncate mt-0.5">
                               {report.description}
                             </span>
-                            {report.photoUrl && (
+                            {report.photos && report.photos.length > 0 && (
                               <Badge
                                 variant="outline"
                                 className="mt-1.5 inline-flex h-5 items-center gap-1 border-slate-200 bg-white px-2 py-0 text-[10px] font-bold text-slate-600"
                               >
-                                <ImageIcon className="h-3 w-3" /> Ada foto
+                                <ImageIcon className="h-3 w-3" />
+                                {report.photos.length > 1 ? `${report.photos.length} foto` : 'Ada foto'}
                               </Badge>
                             )}
                           </TableCell>
@@ -434,16 +491,21 @@ function FacilityReportReviewContent() {
 
                                 <div>
                                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">
-                                    Bukti Foto
+                                    Bukti Foto {report.photos && report.photos.length > 0 ? `(${report.photos.length})` : ''}
                                   </p>
-                                  {report.photoUrl ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img
-                                      src={report.photoUrl}
-                                      alt={`Kerusakan di ${report.place}`}
-                                      onClick={() => setZoomImage(report)}
-                                      className="w-full max-h-72 object-cover rounded-xl border border-slate-200 cursor-zoom-in bg-white"
-                                    />
+                                  {report.photos && report.photos.length > 0 ? (
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {report.photos.map((photo, index) => (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          key={photo.url}
+                                          src={photo.url}
+                                          alt={`Kerusakan di ${report.place} — foto ${index + 1}`}
+                                          onClick={() => setZoomPhoto({ report, photo })}
+                                          className="aspect-square w-full object-cover rounded-xl border border-slate-200 cursor-zoom-in bg-white"
+                                        />
+                                      ))}
+                                    </div>
                                   ) : (
                                     <div className="w-full aspect-[4/3] max-h-72 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl font-bold text-[11px] flex flex-col items-center justify-center gap-1 p-3 text-center">
                                       <ImageIcon className="w-5 h-5 text-amber-600" />
@@ -529,15 +591,15 @@ function FacilityReportReviewContent() {
       </Dialog>
 
       <ImageExifViewer
-        imageUrl={zoomImage?.photoUrl || ''}
-        title={zoomImage ? `${zoomImage.place} — ${zoomImage.employeeName}` : undefined}
-        activityDate={zoomImage?.reportedDate}
-        auditMetadata={zoomImage?.photoAuditMetadata}
-        isOpen={Boolean(zoomImage?.photoUrl)}
-        onClose={() => setZoomImage(null)}
+        imageUrl={zoomPhoto?.photo.url || ''}
+        title={zoomPhoto ? `${zoomPhoto.report.place} — ${zoomPhoto.report.employeeName}` : undefined}
+        activityDate={zoomPhoto?.report.reportedDate}
+        auditMetadata={zoomPhoto?.photo.auditMetadata}
+        isOpen={Boolean(zoomPhoto?.photo.url)}
+        onClose={() => setZoomPhoto(null)}
       />
 
-      <FloatingSnackbar message={message} />
+      <FloatingSnackbar message={message} onDismiss={() => setMessage(null)} />
     </div>
   );
 }

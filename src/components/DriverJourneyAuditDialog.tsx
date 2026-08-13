@@ -217,6 +217,7 @@ export interface DriverReviewPayload {
   dateStart: string;
   dateEnd: string;
   isMultiDay: boolean;
+  actualFuelExpenditure: number;
   fuelDelta: number;
   tollDelta: number;
   mealDelta: number;
@@ -887,7 +888,9 @@ export function DriverJourneyAuditDialog({
         : getMealAllowanceForDuration(authDurForMeal, auditVehicleType));
 
     const baselineToll = report.preAuthorizedToll ?? 0;
-    const totalBaseline = heldFuelAmount + effectiveFuelAllowance + baselineMeal + baselineToll;
+    // Held fuel is committed to the vehicle ledger after approval; it is not
+    // cash operational money and must not enter reimbursement or wage math.
+    const totalBaseline = effectiveFuelAllowance + baselineMeal + baselineToll;
 
     const deltaFuel = fuelProcurementMode === 'hold_accumulate' || auditVehicleType === 'Ndalem'
       ? 0
@@ -924,7 +927,7 @@ export function DriverJourneyAuditDialog({
       auditNightCount,
     );
 
-    const actualFuel = fuelProcurementMode === 'hold_accumulate'
+    const actualFuel = fuelProcurementMode === 'hold_accumulate' || auditVehicleType === 'Ndalem'
       ? 0
       : Math.max(0, effectiveFuelAllowance + deltaFuel);
     const actualToll = Math.max(0, baselineToll + deltaToll);
@@ -958,7 +961,7 @@ export function DriverJourneyAuditDialog({
       effectiveFuelAllowance,
       heldFuelAmount,
       procuredAccumulatedAmount,
-      totalFuelAllocation: heldFuelAmount + effectiveFuelAllowance,
+      totalFuelAllocation: effectiveFuelAllowance,
       baselineMeal,
       baselineToll,
       totalBaseline,
@@ -1012,6 +1015,7 @@ export function DriverJourneyAuditDialog({
       dateStart: auditDateStart,
       dateEnd: auditDateEnd,
       isMultiDay: auditIsMultiDay,
+      actualFuelExpenditure: auditCalc.actualFuel,
       fuelDelta: auditFuelDelta,
       tollDelta: auditTollDelta,
       mealDelta: auditCalc.deltaMeal,
@@ -1090,11 +1094,16 @@ export function DriverJourneyAuditDialog({
                       <Badge variant="outline" className="border-indigo-200 bg-white text-indigo-700 text-[9px]">Mode terkunci setelah klaim</Badge>
                     </div>
                     <div className="mt-1 grid grid-cols-2 gap-2 text-slate-600">
-                      <span>Ditahan: <strong className="text-amber-700">{fmtRp(auditCalc.heldFuelAmount)}</strong></span>
-                      <span>Pool dicairkan: <strong className="text-orange-700">{fmtRp(auditCalc.procuredAccumulatedAmount)}</strong></span>
+                      <span>Hold perjalanan: <strong className="text-amber-700">{fmtRp(auditCalc.heldFuelAmount)}</strong></span>
+                      <span>Akumulasi dikunci: <strong className="text-orange-700">{fmtRp(auditCalc.procuredAccumulatedAmount)}</strong></span>
                     </div>
-                    {auditCalc.fuelProcurementMode === 'hold_accumulate' && <p className="mt-1 text-emerald-800">Mode hold tidak memakai kuitansi atau settlement tunai BBM.</p>}
-                    {auditCalc.fuelProcurementMode === 'procure_release' && auditVehicleType !== report.vehicleType && <p className="mt-1 text-indigo-800">Penggantian kendaraan akan menghitung ulang pool kendaraan pengganti di server.</p>}
+                    {auditCalc.fuelProcurementMode === 'hold_accumulate' && <p className="mt-1 text-emerald-800">Saat disetujui, Hold berpindah ke Akumulasi tanpa kas atau kuitansi BBM.</p>}
+                    {auditCalc.fuelProcurementMode === 'procure_release' && (
+                      <p className="mt-1 text-orange-800">
+                        Jatah gabungan {fmtRp(auditCalc.effectiveFuelAllowance)}; pembelian aktual yang akan menambah Tersedia {fmtRp(auditCalc.actualFuel)}.
+                      </p>
+                    )}
+                    {auditCalc.fuelProcurementMode === 'procure_release' && auditVehicleType !== report.vehicleType && <p className="mt-1 text-indigo-800">Penggantian kendaraan akan menghitung ulang Akumulasi kendaraan pengganti di server.</p>}
                   </div>
 
                   {/* RUTE PERJALANAN TIMELINE EDITOR */}
@@ -1582,7 +1591,9 @@ export function DriverJourneyAuditDialog({
                       <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
                         <tr>
                           <td className="py-2.5 px-3.5 font-semibold text-slate-800">
-                            Biaya BBM (PP)
+                            {auditCalc.fuelProcurementMode === 'hold_accumulate'
+                              ? 'BBM (cash — tidak berlaku; jatah ditahan)'
+                              : 'Biaya BBM (PP)'}
                             <span className="block text-[9px] text-slate-400 font-normal">
                               {auditDistanceKm} km @ {getVehicleRate(auditVehicleType)}/km
                             </span>

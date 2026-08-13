@@ -18,7 +18,7 @@ import {
   type DriverVehicleName,
 } from '@/lib/payroll/driverJourney';
 import {
-  commitFuelReservation,
+  CURRENT_FUEL_RESERVATION_VERSION,
   createFuelLedgerContext,
   flushFuelLedger,
   getBalanceFromContext,
@@ -29,6 +29,7 @@ import {
   reservationFromJourney,
   reserveFuel,
   type FuelReservationRecord,
+  VehicleFuelConflictError,
 } from '@/lib/payroll/vehicleFuel';
 import { hasClaimedDriverJourney } from '@/lib/payroll/driverPiket';
 import {
@@ -429,6 +430,7 @@ export async function POST(request: NextRequest) {
         let reservation: FuelReservationRecord;
         if (requestedFuelMode === DEFAULT_FUEL_PROCUREMENT_MODE) {
           reservation = {
+            fuelReservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
             fuelReservationId: reservationId,
             fuelReservationState: 'none',
             fuelReservationVehicleName: vehicleName,
@@ -605,6 +607,7 @@ export async function POST(request: NextRequest) {
         const selfFuelFields = vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
           ? {
               fuelProcurementMode: DEFAULT_FUEL_PROCUREMENT_MODE,
+              fuelReservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
               fuelReservationId: `FUEL-${journeyId}`,
               fuelReservationState: 'none',
               fuelReservationVehicleName: vehicleName,
@@ -697,6 +700,10 @@ export async function POST(request: NextRequest) {
             return {
               journeyId,
               fuelProcurementMode: journeyFuelMode(journey),
+              heldFuelAmount: Number(journey.heldFuelAmount || 0),
+              procuredAccumulatedAmount: Number(journey.procuredAccumulatedAmount || 0),
+              fuelAllowanceForSettlement: Number(journey.fuelAllowanceForSettlement || 0),
+              fuelTotalAllocation: Number(journey.fuelTotalAllocation || 0),
               fuelBalance: null,
               idempotent: true,
             };
@@ -723,6 +730,7 @@ export async function POST(request: NextRequest) {
         let reservation: FuelReservationRecord;
         if (requestedFuelMode === DEFAULT_FUEL_PROCUREMENT_MODE) {
           reservation = {
+            fuelReservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
             fuelReservationId: reservationId,
             fuelReservationState: 'none',
             fuelReservationVehicleName: vehicleName,
@@ -744,13 +752,15 @@ export async function POST(request: NextRequest) {
           throw new HttpError(409, 'Saldo BBM kendaraan tidak dapat diproses.');
         }
         const totalOperationalCost =
-          reservation.baseFuelAllowance +
-          reservation.procuredAccumulatedAmount +
+          (reservation.fuelProcurementMode === 'hold_accumulate'
+            ? 0
+            : reservation.baseFuelAllowance + reservation.procuredAccumulatedAmount) +
           Number(journey.mealAllowance || 0) +
           Number(journey.tollParkingFee || 0);
         if (fuelContext) flushFuelLedger(fuelContext);
+        const selectedFuelFields = reservationFields(reservation);
         transaction.update(journeyRef, {
-          ...reservationFields(reservation),
+          ...selectedFuelFields,
           fuelModeSelectionRequired: false,
           totalOperationalCost,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -758,6 +768,8 @@ export async function POST(request: NextRequest) {
         return {
           journeyId,
           fuelProcurementMode: requestedFuelMode,
+          ...selectedFuelFields,
+          totalOperationalCost,
           fuelBalance: fuelContext && vehicleName !== DEFAULT_DRIVER_VEHICLE_NAME
             ? getBalanceFromContext(fuelContext, vehicleName)
             : null,
@@ -1046,6 +1058,9 @@ export async function POST(request: NextRequest) {
 
     throw new HttpError(400, 'Aksi perjalanan tidak dikenal.');
   } catch (error) {
+    if (error instanceof VehicleFuelConflictError) {
+      return errorResponse(new HttpError(409, error.message));
+    }
     return errorResponse(error);
   }
 }
@@ -1171,6 +1186,9 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof VehicleFuelConflictError) {
+      return errorResponse(new HttpError(409, error.message));
+    }
     return errorResponse(error);
   }
 }
