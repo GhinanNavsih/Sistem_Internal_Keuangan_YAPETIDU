@@ -9,6 +9,9 @@
 
 export type ExpenseReportMode = 'employee' | 'expense';
 
+/** Maximum size of a receipt persisted for an expense-only report. */
+export const MAX_EXPENSE_REPORT_RECEIPT_BYTES = 1 * 1024 * 1024;
+
 /** @deprecated Only used while normalizing old example-based documents. */
 export type ExpenseReportType =
   | 'proposal_examiner'
@@ -96,6 +99,7 @@ export function createStableId(prefix: string): string {
 export function parseProposalQty(value: string): number {
   if (!value) return 0;
   const trimmed = String(value).trim();
+  if (!trimmed) return 0;
   const parts = trimmed.split(/[xX\*]/);
   if (parts.length > 1) {
     let product = 1;
@@ -111,10 +115,11 @@ export function parseProposalQty(value: string): number {
   }
   if (trimmed.endsWith('%')) {
     const match = trimmed.match(/[\d.]+/);
-    return match ? parseFloat(match[0]) / 100 : 0;
+    return match ? parseFloat(match[0]) / 100 : 1;
   }
   const match = trimmed.match(/[\d.]+/);
-  return match ? parseFloat(match[0]) : 0;
+  // Descriptive quantities such as "Penanggung Jawab" represent one unit.
+  return match ? parseFloat(match[0]) : 1;
 }
 
 export function createProposalExpenseRow(type: 'item' | 'group_header' = 'item'): ProposalExpenseRow {
@@ -171,15 +176,20 @@ function normalizeRow(raw: Partial<ExpenseReportRow> | Record<string, unknown>, 
   const employeeName = normalizeText(raw.employeeName);
   const employeeId = normalizeText(raw.employeeId);
   const employeeSearchText = normalizeText(raw.employeeSearchText || employeeName);
+  const rincianQty = normalizeText(raw.rincianQty);
+  const rincianRate = Math.max(0, toFiniteNumber(raw.rincianRate));
+  const storedRealisasi = Math.max(0, toFiniteNumber(raw.realisasi));
+  const parsedQty = parseProposalQty(rincianQty);
+  const calculatedRealisasi = Number.isFinite(parsedQty) ? parsedQty * rincianRate : 0;
   const row: ExpenseReportRow = {
     id: normalizeText(raw.id) || `expense-report-row-${index + 1}`,
     uraian: normalizeText(raw.uraian),
     employeeId,
     employeeName,
     employeeSearchText,
-    rincianQty: normalizeText(raw.rincianQty),
-    rincianRate: Math.max(0, toFiniteNumber(raw.rincianRate)),
-    realisasi: Math.max(0, toFiniteNumber(raw.realisasi)),
+    rincianQty,
+    rincianRate,
+    realisasi: storedRealisasi > 0 ? storedRealisasi : calculatedRealisasi,
     note: normalizeText(raw.note),
   };
   if (raw.parentRowId) row.parentRowId = normalizeText(raw.parentRowId);
@@ -228,12 +238,26 @@ export function seedExpenseReportRows(
     .filter((row) => row.uraian.trim() || row.rincianQty.trim() || row.rincianRate || row.realisasi)
     .map((row, index) => createExpenseReportRow({
       id: createStableId(`expense-report-row-${index + 1}`),
+      parentRowId: row.rowId,
+      parentUraian: row.uraian,
       uraian: row.uraian,
       rincianQty: row.rincianQty,
       rincianRate: Math.max(0, toFiniteNumber(row.rincianRate)),
       realisasi: Math.max(0, toFiniteNumber(row.realisasi ?? parseProposalQty(row.rincianQty) * row.rincianRate)),
     }));
   return seeded.length > 0 ? seeded : [createExpenseReportRow()];
+}
+
+/** Returns report rows assigned to one locked LPJ detail item. */
+export function getExpenseReportRowsForItem(
+  report: ExpenseReport,
+  item: Pick<ProposalExpenseRow, 'rowId' | 'uraian'>,
+): ExpenseReportRow[] {
+  return report.rows.filter((row) => {
+    if (row.parentRowId) return row.parentRowId === item.rowId;
+    if (row.parentUraian) return row.parentUraian === item.uraian;
+    return row.uraian === item.uraian;
+  });
 }
 
 export function createExpenseReport(
@@ -298,6 +322,7 @@ function isPopulatedRow(row: ExpenseReportRow): boolean {
 export function validateExpenseReport(
   report: ExpenseReport,
   parseQty: (value: string) => number = parseProposalQty,
+  getRowLabel: (row: ExpenseReportRow, index: number) => string = (_row, index) => `Baris ${index + 1}`,
 ): ExpenseReportValidation {
   const errors: string[] = [];
   const populatedRows = report.rows.filter(isPopulatedRow);
@@ -308,8 +333,9 @@ export function validateExpenseReport(
   if (populatedRows.length === 0) errors.push('Tambahkan setidaknya satu rincian laporan.');
 
   const seenEmployeeIds = new Set<string>();
-  populatedRows.forEach((row, index) => {
-    const rowLabel = `Baris ${index + 1}`;
+  report.rows.forEach((row, index) => {
+    if (!isPopulatedRow(row)) return;
+    const rowLabel = getRowLabel(row, index);
     const qty = parseQty(row.rincianQty);
     const rate = toFiniteNumber(row.rincianRate, NaN);
     const actual = toFiniteNumber(row.realisasi, NaN);

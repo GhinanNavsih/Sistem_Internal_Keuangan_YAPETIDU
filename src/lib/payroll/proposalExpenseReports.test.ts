@@ -8,6 +8,7 @@ import {
   getExpenseGroupRows,
   getExpenseReportActualTotal,
   getExpenseReportBudgetTotal,
+  getExpenseReportRowsForItem,
   normalizeExpenseReportLinksToGroups,
   normalizeExpenseReport,
   parseProposalQty,
@@ -46,6 +47,23 @@ test('uses the proposal quantity parser for generic report totals', () => {
   assert.equal(getExpenseReportActualTotal(report), 200_000);
 });
 
+test('treats a descriptive quantity as one when the rate is populated', () => {
+  const report = createExpenseReport('report-1', 'group-1', 'Pembayaran Penanggung Jawab', 'employee', [
+    createExpenseReportRow({
+      uraian: 'Pembayaran Penanggung Jawab',
+      employeeId: 'e1',
+      employeeName: 'Muhammad Syafii',
+      rincianQty: 'Penanggung Jawab',
+      rincianRate: 100_000,
+      realisasi: 0,
+    }),
+  ]);
+
+  assert.equal(parseProposalQty('Penanggung Jawab'), 1);
+  assert.equal(report.rows[0].realisasi, 100_000);
+  assert.equal(getExpenseReportActualTotal(report), 100_000);
+});
+
 test('seeds a report only from the selected LPJ header group children', () => {
   const rows = ensureExpenseRowIds([
     { type: 'group_header', uraian: 'A. Penguji', rincianQty: '', rincianRate: 0 },
@@ -60,6 +78,31 @@ test('seeds a report only from the selected LPJ header group children', () => {
     ['Ujian 1', '2', 40_000, 35_000],
     ['Ujian 2', '1', 60_000, 60_000],
   ]);
+});
+
+test('matches assigned report rows to their LPJ detail item', () => {
+  const report = createExpenseReport('report-1', 'group-1', 'Vakasi', 'employee', [
+    createExpenseReportRow({ parentRowId: 'item-1', uraian: 'PJ', employeeName: 'Muhammad Syafii' }),
+    createExpenseReportRow({ parentRowId: 'item-2', uraian: 'Ketua', employeeName: 'Pegawai Lain' }),
+  ]);
+
+  assert.deepEqual(
+    getExpenseReportRowsForItem(report, { rowId: 'item-1', uraian: 'PJ' }).map((row) => row.employeeName),
+    ['Muhammad Syafii'],
+  );
+});
+
+test('allows modal validation errors to use hierarchical row labels', () => {
+  const report = createExpenseReport('report-1', 'group-1', 'Konsumsi', 'expense', [
+    createExpenseReportRow({ id: 'child-1', uraian: 'Nasi Bungkus', rincianQty: '', rincianRate: 18_000, realisasi: 18_000 }),
+  ]);
+  report.title = 'Laporan Konsumsi';
+
+  const result = validateExpenseReport(report, parseProposalQty, (row, index) => (
+    row.id === 'child-1' ? 'Baris 1.1' : `Baris ${index + 1}`
+  ));
+
+  assert.deepEqual(result.errors, ['Baris 1.1: QTY harus lebih besar dari 0.']);
 });
 
 test('validates connected employees, stale searches, and duplicate employees', () => {

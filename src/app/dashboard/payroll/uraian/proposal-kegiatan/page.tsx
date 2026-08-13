@@ -40,8 +40,11 @@ import {
   createStableId,
   ensureExpenseRowIds,
   ExpenseReport,
+  getExpenseGroupRows,
+  getExpenseReportRowsForItem,
   normalizeExpenseReportLinksToGroups,
   normalizeExpenseReports,
+  parseProposalQty,
   ProposalExpenseRow,
   sanitizeForFirestore,
 } from '@/lib/payroll/proposalExpenseReports';
@@ -275,29 +278,7 @@ export default function ProposalKegiatanPage() {
   const [departments, setDepartments] = useState<string[]>([]);
 
   // Qty Parser Utility
-  const parseQty = (q: string): number => {
-    if (!q) return 0;
-    const trimmed = q.trim();
-    const parts = trimmed.split(/[xX\*]/);
-    if (parts.length > 1) {
-      let product = 1;
-      for (const part of parts) {
-        const cleanPart = part.trim();
-        const match = cleanPart.match(/[\d\.]+/);
-        if (!match) continue;
-        let val = parseFloat(match[0]);
-        if (cleanPart.includes('%')) val /= 100;
-        product *= val;
-      }
-      return product;
-    }
-    if (trimmed.endsWith('%')) {
-      const match = trimmed.match(/[\d\.]+/);
-      return match ? parseFloat(match[0]) / 100 : 0;
-    }
-    const match = trimmed.match(/[\d\.]+/);
-    return match ? parseFloat(match[0]) : 0;
-  };
+  const parseQty = parseProposalQty;
 
   const canManageProposal = Boolean(
     profile && ['super_admin', 'finance_verifier', 'satker_head_loyalis'].includes(profile.role),
@@ -2283,6 +2264,15 @@ export default function ProposalKegiatanPage() {
                                   {lpjPengeluaranRows.map((row, idx) => {
                                     const lastHeaderIdx = lpjPengeluaranRows.slice(0, idx + 1).findLastIndex(r => r.type === 'group_header');
                                     const itemNum = row.type === 'item' ? lpjPengeluaranRows.slice(lastHeaderIdx === -1 ? 0 : lastHeaderIdx, idx + 1).filter(r => r.type === 'item').length : null;
+                                    const groupHeader = lastHeaderIdx >= 0 ? lpjPengeluaranRows[lastHeaderIdx] : undefined;
+                                    const linkedReport = row.type === 'item' && groupHeader?.reportId
+                                      ? expenseReports.find((report) => report.id === groupHeader.reportId)
+                                      : undefined;
+                                    const assignedEmployeeRows = row.type === 'item' && linkedReport?.mode === 'employee'
+                                      ? getExpenseReportRowsForItem(linkedReport, row).filter((reportRow) => (
+                                        reportRow.employeeId.trim() || reportRow.employeeName.trim()
+                                      ))
+                                      : [];
                                     const insertLpjPengeluaranItemBelow = () => {
                                       setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('item'), realisasi: 0 }); return c; });
                                     };
@@ -2290,10 +2280,21 @@ export default function ProposalKegiatanPage() {
                                       setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('group_header'), realisasi: 0 }); return c; });
                                     };
                                     if (row.type === 'group_header') {
+                                      const groupChildren = getExpenseGroupRows(lpjPengeluaranRows, idx);
+                                      const groupAnggaran = groupChildren.reduce(
+                                        (sum, child) => sum + (parseQty(child.rincianQty) * child.rincianRate),
+                                        0,
+                                      );
+                                      const groupRealisasi = groupChildren.reduce(
+                                        (sum, child) => sum + (child.realisasi || 0),
+                                        0,
+                                      );
                                       return (
                                         <tr key={idx} className="bg-slate-50/60 border-b border-slate-100">
                                           <td className="px-3 py-2.5 text-xs font-bold text-slate-400 text-center"></td>
-                                          <td colSpan={5} className="px-3 py-2.5"><Input type="text" placeholder="Nama grup (e.g., A. Pengeluaran Panitia)..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-800 text-xs h-8 w-full bg-transparent border-none focus:ring-0" /></td>
+                                          <td colSpan={3} className="px-3 py-2.5"><Input type="text" placeholder="Nama grup (e.g., A. Pengeluaran Panitia)..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-800 text-xs h-8 w-full bg-transparent border-none focus:ring-0" /></td>
+                                          <td className="px-3 py-2.5 text-xs font-black text-slate-700 text-right font-mono">{fmtRp(groupAnggaran)}</td>
+                                          <td className="px-3 py-2.5 text-xs font-black text-indigo-700 text-right font-mono">{fmtRp(groupRealisasi)}</td>
                                           <td className="px-3 py-2.5 text-center">
                                             <div className="flex items-center justify-center gap-1">
                                               <Button
@@ -2324,41 +2325,63 @@ export default function ProposalKegiatanPage() {
                                     }
                                     const anggaran = parseQty(row.rincianQty) * row.rincianRate;
                                     return (
-                                      <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
-                                        <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{itemNum}</td>
-                                        <td className="px-3 py-2"><Input type="text" placeholder="Uraian pengeluaran..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
-                                        <td className="px-3 py-2"><Input type="text" placeholder="10 / 20%" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
-                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
-                                        <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(anggaran)}</td>
-                                        <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={(row.realisasi || 0) > 0 ? fmtRp(row.realisasi || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
-                                        <td className="px-3 py-2 text-center">
-                                          <div className="flex items-center justify-center gap-1">
-                                            <div className="relative">
-                                              <InsertRowButton
-                                                title="Sisipkan baris di bawah (tahan untuk tambah header grup)"
-                                                onPress={() => setActiveInsertMenuIdx(activeInsertMenuIdx === idx ? null : idx)}
-                                                onLongPress={() => {
-                                                  setActiveInsertMenuIdx(null);
-                                                  insertLpjPengeluaranHeaderBelow();
-                                                }}
-                                                className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
-                                              />
-                                              {activeInsertMenuIdx === idx && (
-                                                <>
-                                                  <div className="fixed inset-0 z-40" onClick={() => setActiveInsertMenuIdx(null)} />
-                                                  <div className="absolute right-0 bottom-8 z-50 w-44 bg-white border border-slate-150 rounded-xl shadow-xl py-1.5 text-left">
-                                                    <button type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('item'), realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><FileText className="w-3.5 h-3.5 text-indigo-500" /><span>Baris Biasa</span></button>
-                                                    <button type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('group_header'), realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><Layers className="w-3.5 h-3.5 text-indigo-500" /><span>Header Grup</span></button>
-                                                  </div>
-                                                </>
-                                              )}
+                                      <React.Fragment key={idx}>
+                                        <tr className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
+                                          <td className="px-3 py-2 text-xs font-bold text-slate-400 text-center">{itemNum}</td>
+                                          <td className="px-3 py-2"><Input type="text" placeholder="Uraian pengeluaran..." value={row.uraian} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-medium text-slate-900 text-xs h-8 w-full" /></td>
+                                          <td className="px-3 py-2"><Input type="text" placeholder="10 / 20%" value={row.rincianQty} onChange={(e) => { const val = e.target.value; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianQty: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(val) * c[idx].rincianRate; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-center" /></td>
+                                          <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; const oldAnggaran = parseQty(c[idx].rincianQty) * c[idx].rincianRate; const isRealisasiMatching = c[idx].realisasi === oldAnggaran || c[idx].realisasi === 0; c[idx] = { ...c[idx], rincianRate: val }; if (isRealisasiMatching) { c[idx].realisasi = parseQty(c[idx].rincianQty) * val; } return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                                          <td className="px-3 py-2 text-xs font-bold text-slate-600 text-right font-mono">{fmtRp(anggaran)}</td>
+                                          <td className="px-3 py-2"><Input type="text" inputMode="numeric" placeholder="0" value={(row.realisasi || 0) > 0 ? fmtRp(row.realisasi || 0) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setLpjPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleRowCellKeyDown(e, insertLpjPengeluaranItemBelow)} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-8 w-full text-right" /></td>
+                                          <td className="px-3 py-2 text-center">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <div className="relative">
+                                                <InsertRowButton
+                                                  title="Sisipkan baris di bawah (tahan untuk tambah header grup)"
+                                                  onPress={() => setActiveInsertMenuIdx(activeInsertMenuIdx === idx ? null : idx)}
+                                                  onLongPress={() => {
+                                                    setActiveInsertMenuIdx(null);
+                                                    insertLpjPengeluaranHeaderBelow();
+                                                  }}
+                                                  className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
+                                                />
+                                                {activeInsertMenuIdx === idx && (
+                                                  <>
+                                                    <div className="fixed inset-0 z-40" onClick={() => setActiveInsertMenuIdx(null)} />
+                                                    <div className="absolute right-0 bottom-8 z-50 w-44 bg-white border border-slate-150 rounded-xl shadow-xl py-1.5 text-left">
+                                                      <button type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('item'), realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><FileText className="w-3.5 h-3.5 text-indigo-500" /><span>Baris Biasa</span></button>
+                                                      <button type="button" onClick={() => { setLpjPengeluaranRows(prev => { const c = [...prev]; c.splice(idx + 1, 0, { ...createProposalExpenseRow('group_header'), realisasi: 0 }); return c; }); setActiveInsertMenuIdx(null); }} className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors cursor-pointer"><Layers className="w-3.5 h-3.5 text-indigo-500" /><span>Header Grup</span></button>
+                                                    </div>
+                                                  </>
+                                                )}
+                                              </div>
+                                              <Button type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </Button>
                                             </div>
-                                            <Button type="button" variant="ghost" size="icon" title="Hapus baris" onClick={() => setLpjPengeluaranRows(prev => prev.filter((_, i) => i !== idx))} className="h-7 w-7 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer">
-                                              <Trash2 className="w-3.5 h-3.5" />
-                                            </Button>
-                                          </div>
-                                        </td>
-                                      </tr>
+                                          </td>
+                                        </tr>
+                                        {assignedEmployeeRows.map((assignedRow, assignedIndex) => {
+                                          const assignedAnggaran = parseQty(assignedRow.rincianQty || '1') * assignedRow.rincianRate;
+                                          const assignedRealisasi = assignedRow.realisasi > 0 ? assignedRow.realisasi : assignedAnggaran;
+                                          return (
+                                            <tr key={`${row.rowId || idx}-employee-${assignedRow.id}`} className="border-b border-indigo-50 bg-indigo-50/20">
+                                              <td className="px-3 py-1.5 text-center text-[10px] font-bold text-indigo-300">{itemNum}.{assignedIndex + 1}</td>
+                                              <td className="px-3 py-1.5 pl-8">
+                                                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                                                  <Users className="h-3 w-3 shrink-0 text-emerald-500" />
+                                                  <span className="truncate">{assignedRow.employeeName || assignedRow.employeeId || 'Pegawai belum dipilih'}</span>
+                                                </div>
+                                              </td>
+                                              <td className="px-3 py-1.5 text-center text-xs font-semibold text-slate-500">{assignedRow.rincianQty || '-'}</td>
+                                              <td className="px-3 py-1.5 text-right text-xs font-mono font-semibold text-slate-600">{fmtRp(assignedRow.rincianRate)}</td>
+                                              <td className="px-3 py-1.5 text-right text-xs font-mono font-semibold text-slate-600">{fmtRp(assignedAnggaran)}</td>
+                                              <td className="px-3 py-1.5 text-right text-xs font-mono font-black text-indigo-700">{fmtRp(assignedRealisasi)}</td>
+                                              <td className="px-3 py-1.5 text-center text-[9px] font-bold text-emerald-600">Pegawai ditugaskan</td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </React.Fragment>
                                     );
                                   })}
                                   <tr className="border-b border-slate-100 hover:bg-slate-50/10 transition-colors">

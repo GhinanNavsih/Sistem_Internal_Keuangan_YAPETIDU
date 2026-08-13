@@ -304,7 +304,6 @@ export default function PayrollValidationDashboard() {
   // Runs once: the landing period is resolved from the previous period's
   // closure, and an operator's own choice must never be overwritten by it.
   const defaultPeriodResolvedRef = useRef(false);
-  const [activeTab, setActiveTab] = useState('Tagihan');
   const [notification, setNotification] = useState<{
     show: boolean;
     type: 'success' | 'error';
@@ -3095,10 +3094,6 @@ export default function PayrollValidationDashboard() {
     isTransferEligibleStatus(slipStates[emp.id]?.status),
   ).length;
 
-  const tabs = [
-    { name: 'Tagihan', icon: <FileText className="w-4 h-4 mr-2" /> },
-  ];
-
   const payrollPeriod = getPayrollPeriod(targetDate);
 
   return (
@@ -3271,25 +3266,6 @@ export default function PayrollValidationDashboard() {
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Navigation Tabs */}
-            <div className="flex gap-6 border-b border-slate-100 overflow-x-auto no-scrollbar">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.name}
-                  onClick={() => setActiveTab(tab.name)}
-                  className={`flex items-center pb-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === tab.name
-                    ? 'border-indigo-500 text-indigo-700'
-                    : 'border-transparent text-slate-500 hover:text-slate-700'
-                    }`}
-                >
-                  <span className={`${activeTab === tab.name ? 'text-indigo-500' : 'text-slate-400'}`}>
-                    {tab.icon}
-                  </span>
-                  {tab.name}
-                </button>
-              ))}
             </div>
           </div>
 

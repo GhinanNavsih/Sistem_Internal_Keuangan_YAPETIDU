@@ -7,6 +7,7 @@ import {
   getExpenseGroupRows,
   getExpenseReportActualTotal,
   getExpenseReportBudgetTotal,
+  getExpenseReportRowsForItem,
   parseProposalQty,
   ProposalExpenseRow,
 } from '@/lib/payroll/proposalExpenseReports';
@@ -145,11 +146,7 @@ export function renderExpenseReportSection(
         { content: formatIDR(headerRealisasi), styles: { fontStyle: 'bold' as const, fillColor: [237, 233, 254], halign: 'right' as const } },
       ]);
 
-      const childRows = report.rows.filter((r) => {
-        if (r.parentRowId) return r.parentRowId === headerItem.rowId;
-        if (r.parentUraian) return r.parentUraian === headerItem.uraian;
-        return r.uraian === headerItem.uraian;
-      });
+      const childRows = getExpenseReportRowsForItem(report, headerItem);
 
       childRows.forEach((row, cIdx) => {
         tableRows.push([

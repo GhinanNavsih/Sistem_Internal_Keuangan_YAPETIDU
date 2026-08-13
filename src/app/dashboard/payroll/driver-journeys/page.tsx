@@ -1284,7 +1284,7 @@ function DriverJourneysContent() {
                   onClick={() => openFuelLedger(balance.vehicleName)}
                   className="h-7 px-2 text-[10px] font-bold text-indigo-700 hover:bg-indigo-50 rounded-lg"
                 >
-                  Ledger
+                  Riwayat
                 </Button>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 text-[10px] font-bold">
@@ -2684,7 +2684,7 @@ function DriverJourneysContent() {
       <Dialog open={showFuelLedger} onOpenChange={setShowFuelLedger}>
         <DialogContent className="sm:max-w-2xl rounded-2xl bg-white p-6">
           <DialogHeader>
-            <DialogTitle className="text-base font-extrabold text-slate-800">Ledger BBM {fuelLedgerVehicle || ''}</DialogTitle>
+            <DialogTitle className="text-base font-extrabold text-slate-800">Riwayat Saldo BBM {fuelLedgerVehicle || ''}</DialogTitle>
             <DialogDescription className="text-xs text-slate-500">Riwayat append-only dan penetapan saldo BBM bertanda tangan.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
@@ -2727,7 +2727,7 @@ function DriverJourneysContent() {
                   <div className="mt-1 text-slate-400">{String(entry.actorName || entry.actorUid || '')}</div>
                 </div>
               ))}
-              {fuelLedgerEntries.length === 0 && <p className="text-xs text-slate-400 font-semibold">Belum ada entri ledger.</p>}
+              {fuelLedgerEntries.length === 0 && <p className="text-xs text-slate-400 font-semibold">Belum ada riwayat.</p>}
             </div>
           </div>
           <DialogFooter>

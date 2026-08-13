@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import { errorResponse, HttpError, requireAuthenticatedProfile } from '@/lib/server/auth';
+import { compressExpenseReportReceipt } from '@/lib/server/expenseReportReceipt';
 import { assertValidProofFile, saveUploadedFile, sanitizePathSegment } from '@/lib/server/storageUpload';
 
 export async function POST(request: NextRequest) {
@@ -21,12 +22,13 @@ export async function POST(request: NextRequest) {
       throw new HttpError(403, 'Anda tidak memiliki kewenangan untuk mengunggah berkas ini.');
     }
 
-    const ext = file.name.split('.').pop() || 'jpg';
+    const storedFile = await compressExpenseReportReceipt(file);
+    const ext = storedFile.type === 'application/pdf' ? 'pdf' : 'jpg';
     const safeReportId = sanitizePathSegment(reportId);
     const safeHeaderRowId = sanitizePathSegment(headerRowId);
     const storagePath = `expense_report_receipts/${safeReportId}/${safeHeaderRowId}_${Date.now()}.${ext}`;
-    const url = await saveUploadedFile(storagePath, file, actor.uid);
-    return NextResponse.json({ url, fileName: file.name });
+    const url = await saveUploadedFile(storagePath, storedFile, actor.uid);
+    return NextResponse.json({ url, fileName: storedFile.name });
   } catch (error) {
     return errorResponse(error);
   }

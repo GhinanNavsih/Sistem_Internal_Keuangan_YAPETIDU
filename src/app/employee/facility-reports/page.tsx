@@ -234,11 +234,10 @@ export default function FacilityReportsPage() {
           <Link href="/employee/payslip">
             <Button
               variant="outline"
-              size="icon"
-              className="rounded-xl h-9 w-9 border-slate-200 bg-white shadow-sm cursor-pointer"
-              title="Kembali"
+              className="rounded-xl h-9 px-3 border-slate-200 bg-white shadow-sm cursor-pointer flex items-center gap-1.5 text-slate-600 font-bold text-xs"
             >
-              <ChevronLeft className="w-4 h-4 text-slate-600" />
+              <ChevronLeft className="w-4 h-4" />
+              Kembali
             </Button>
           </Link>
           {!showForm && (
