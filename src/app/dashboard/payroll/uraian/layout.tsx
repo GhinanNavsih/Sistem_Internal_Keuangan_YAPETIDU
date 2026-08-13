@@ -182,7 +182,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
 
     if (profile.role === 'loyalis_presence_admin') {
       const params = new URLSearchParams(searchParams.toString());
-      if (activeTab !== 'presensi_loyalis_raw') {
+      if (activeTab !== 'presensi_loyalis_raw' && activeTab !== 'presence_corrections') {
         params.delete('category');
         router.replace(`/dashboard/payroll/uraian/presensi-loyalis-raw?${params.toString()}`);
       }
