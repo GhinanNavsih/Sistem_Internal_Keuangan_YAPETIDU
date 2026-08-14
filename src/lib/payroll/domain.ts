@@ -423,16 +423,17 @@ export function resolveExternalSatpamPayType(
 }
 
 /**
- * The Ketua Shift may classify their own primary assignment as ordinary
- * Harian or Lembur Sendiri. Harian is deliberately the safe default and is
- * independent of the Friday/holiday suggestion shown for ordinary guards.
+ * The Ketua Shift's own primary assignment follows the same Friday/holiday
+ * calendar rate as an ordinary guard's post, with an explicit choice of
+ * Harian or Lembur Sendiri overriding that calendar suggestion.
  */
 export function resolveKetuaSatpamPayType(
   requestedShiftType: string | undefined,
-): 'Harian' | 'Lembur Sendiri' {
-  return requestedShiftType === 'Lembur Sendiri'
-    ? 'Lembur Sendiri'
-    : 'Harian';
+  regularPayType: 'Harian' | 'Jumat & Libur',
+): 'Harian' | 'Jumat & Libur' | 'Lembur Sendiri' {
+  if (requestedShiftType === 'Lembur Sendiri') return 'Lembur Sendiri';
+  if (requestedShiftType === 'Harian') return 'Harian';
+  return regularPayType;
 }
 
 /**

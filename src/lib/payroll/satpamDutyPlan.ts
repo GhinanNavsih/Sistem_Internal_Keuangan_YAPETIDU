@@ -593,7 +593,7 @@ export function classifySatpamDutyAssignments(input: {
                     input.regularPayType,
                   )
               : isKetua
-                ? resolveKetuaSatpamPayType(assignment.shiftType)
+                ? resolveKetuaSatpamPayType(assignment.shiftType, input.regularPayType)
                 : input.regularPayType;
           return {
             ...assignment,
@@ -701,7 +701,7 @@ export function classifySatpamDutyAssignments(input: {
               input.regularPayType,
             )
           : isKetua
-            ? resolveKetuaSatpamPayType(assignment.shiftType)
+            ? resolveKetuaSatpamPayType(assignment.shiftType, input.regularPayType)
             : input.regularPayType,
         coveredEmployeeId: null,
         scheduleRelation:

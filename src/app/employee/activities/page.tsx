@@ -4255,9 +4255,9 @@ function ActivitiesContent() {
                           isPos9 && val.employeeId && pos9GuardIds.has(val.employeeId),
                         );
                         const selectedShiftType = isKetuaGuard
-                          ? (['Harian', 'Lembur Sendiri'].includes(val.shiftType)
+                          ? (['Harian', 'Jumat & Libur', 'Lembur Sendiri'].includes(val.shiftType)
                             ? val.shiftType
-                            : 'Harian')
+                            : defaultShiftTypeForRender)
                           : isCrossTeamPos9
                           ? (['Harian', 'Lembur Sendiri', 'Lembur Cover'].includes(val.shiftType)
                             ? val.shiftType
@@ -4402,6 +4402,11 @@ function ActivitiesContent() {
                                       <SelectItem value="Harian" className="text-base font-bold">
                                         Harian (Rp12.500)
                                       </SelectItem>
+                                      {defaultShiftTypeForRender === 'Jumat & Libur' && (
+                                        <SelectItem value="Jumat & Libur" className="text-base font-bold">
+                                          Jumat &amp; Libur (Rp25.000)
+                                        </SelectItem>
+                                      )}
                                       <SelectItem value="Lembur Sendiri" className="text-base font-bold">
                                         Lembur Sendiri (Rp30.000)
                                       </SelectItem>

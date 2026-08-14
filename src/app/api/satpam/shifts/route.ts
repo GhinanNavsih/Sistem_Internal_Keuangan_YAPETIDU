@@ -437,7 +437,7 @@ function buildAssignmentRecords(input: {
               input.regularPayType,
             )
         : isKetua
-            ? resolveKetuaSatpamPayType(assignment.shiftType)
+            ? resolveKetuaSatpamPayType(assignment.shiftType, input.regularPayType)
             : resolveSatpamAssignmentPayType(
                 assignment.shiftType,
                 false,
