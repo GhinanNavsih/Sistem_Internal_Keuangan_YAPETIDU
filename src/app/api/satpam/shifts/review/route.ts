@@ -28,8 +28,6 @@ import {
   requireRole,
 } from '@/lib/server/auth';
 import {
-  annualCalendarRef,
-  annualDatesFrom,
   assertPeriodAcceptsInput,
   buildPeriodMaterialization,
 } from '@/lib/server/payrollPeriod';
@@ -40,6 +38,7 @@ import {
   satpamDutyPlanId,
   type SatpamDutyPlanDay,
 } from '@/lib/payroll/satpamDutyPlan';
+import { satpamAttendanceReportType } from '@/lib/payroll/satpamAttendance';
 import {
   SATPAM_ABSENCE_REQUESTS_COLLECTION,
   SATPAM_DUTY_PLANS_COLLECTION,
@@ -570,7 +569,12 @@ export async function POST(request: NextRequest) {
               `Status aktif atau kategori ${String(before.employeeName || before.employeeId)} belum sesuai.`,
             );
           }
-          if (absenceSnapshots[index]?.data()?.status === 'approved') {
+          if (
+            absenceSnapshots[index]?.data()?.status === 'approved' &&
+            satpamAttendanceReportType(
+              absenceSnapshots[index]?.data() || {},
+            ) === 'izin_resmi'
+          ) {
             throw new HttpError(
               409,
               `${String(before.employeeName || before.employeeId)} memiliki izin dibayar pada tanggal ini. Selesaikan konflik izin terlebih dahulu.`,

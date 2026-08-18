@@ -1,19 +1,16 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import {
-  Banknote,
   CalendarDays,
-  ClipboardList,
   Loader2,
   LogOut,
-  Printer,
   RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { Button } from '@/components/ui/button';
+import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import {
   SatpamDutyPlanPanel,
   type EmployeeOption,
@@ -104,28 +101,7 @@ export default function SatpamDutyPlanPage() {
                 className={`w-4.5 h-4.5 text-indigo-500 ${loading ? 'animate-spin' : ''}`}
               />
             </Button>
-            {isKetuaShiftSatpam && (
-              <Link href="/employee/activities">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
-                  title="Lapor Kegiatan"
-                >
-                  <ClipboardList className="w-4.5 h-4.5 text-indigo-500" />
-                </Button>
-              </Link>
-            )}
-            <Link href="/employee/payslip">
-              <Button
-                variant="outline"
-                size="icon"
-                className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
-                title="Slip Gaji"
-              >
-                <Banknote className="w-4.5 h-4.5 text-emerald-600" />
-              </Button>
-            </Link>
+            <EmployeeNavigationMenu />
             <Button
               onClick={() => logout()}
               variant="ghost"

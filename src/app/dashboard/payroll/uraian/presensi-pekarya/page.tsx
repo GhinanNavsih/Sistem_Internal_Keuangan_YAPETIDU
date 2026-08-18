@@ -33,6 +33,10 @@ import {
   pekaryaAttendanceReportType,
   type PekaryaOfficialLeaveRequest,
 } from '@/lib/payroll/pekaryaOfficialLeave';
+import {
+  satpamAttendanceReportType,
+  type SatpamAttendanceReportType,
+} from '@/lib/payroll/satpamAttendance';
 
 type AttendanceDay = {
   date: string;
@@ -142,6 +146,11 @@ type SatpamAbsenceAdminView = {
     employeeId: string;
     employeeName?: string;
     dutyDate: string;
+    shiftName?: string;
+    postId?: string;
+    reportType?: SatpamAttendanceReportType;
+    scanIn?: string | null;
+    scanOut?: string | null;
     absenceType?: string;
     reason?: string;
     status: string;
@@ -410,9 +419,10 @@ export default function PekaryaAttendancePage() {
     absence: SatpamAbsenceAdminView['requests'][number],
     action: 'approve' | 'decline' | 'supersede_approve' | 'supersede_decline',
   ) => {
+    const reportType = satpamAttendanceReportType(absence);
     const reason = (absenceDecisionReasons[absence.id] || '').trim();
     if (reason.length < 8) {
-      setError('Alasan keputusan izin minimal delapan karakter.');
+      setError('Alasan keputusan minimal delapan karakter.');
       return;
     }
     setWorking(true);
@@ -429,9 +439,13 @@ export default function PekaryaAttendancePage() {
         }),
       });
       setMessage(
-        action.endsWith('approve')
-          ? 'Izin disetujui. Hak Rp12.500 dan rekonsiliasi telah diperbarui.'
-          : 'Izin ditolak dan rekonsiliasi telah diperbarui.',
+        reportType === 'scan'
+          ? action === 'approve'
+            ? 'Laporan scan disetujui dan presensi Satpam telah diperbarui.'
+            : 'Laporan scan ditolak.'
+          : action.endsWith('approve')
+            ? 'Izin disetujui. Hak Rp12.500 dan rekonsiliasi telah diperbarui.'
+            : 'Izin ditolak dan rekonsiliasi telah diperbarui.',
       );
       setAbsenceDecisionReasons((current) => ({
         ...current,
@@ -451,7 +465,7 @@ export default function PekaryaAttendancePage() {
   ) => {
     const reason = (officialLeaveDecisionReasons[leave.id] || '').trim();
     if (reason.length < 8) {
-      setError('Alasan keputusan izin minimal delapan karakter.');
+      setError('Alasan keputusan minimal delapan karakter.');
       return;
     }
     setWorking(true);
@@ -734,7 +748,10 @@ export default function PekaryaAttendancePage() {
             >
               {[
                 ['plans', 'Rencana Dinas'],
-                ['absences', `Izin (${satpamOperations.reconciliation.pendingAbsenceCount})`],
+                [
+                  'absences',
+                  `Pengajuan (${satpamOperations.absences.requests.filter((request) => request.status === 'pending').length})`,
+                ],
                 ['reconciliation', 'Bonus & Kewajiban'],
                 ['mismatches', `Presensi (${data.mismatches.length})`],
               ].map(([tab, label]) => (
@@ -851,19 +868,21 @@ export default function PekaryaAttendancePage() {
           {satpamOperations && satpamTab === 'absences' && (
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-200 p-5">
-                <h2 className="font-bold">Pengajuan Izin Satpam</h2>
+                <h2 className="font-bold">Pengajuan Presensi &amp; Izin Satpam</h2>
                 <p className="text-sm text-slate-500">
-                  Izin disetujui memenuhi kewajiban dinas dan membayar tetap
-                  Rp12.500. Riwayat keputusan tidak ditimpa.
+                  Laporan scan memperbaiki bukti presensi tanpa mengubah upah
+                  shift. Izin disetujui memenuhi kewajiban dinas dan membayar
+                  tetap Rp12.500.
                 </p>
               </div>
               <div className="divide-y divide-slate-100">
                 {satpamOperations.absences.requests.length === 0 ? (
                   <div className="p-8 text-center text-slate-500">
-                    Belum ada pengajuan izin.
+                    Belum ada pengajuan presensi atau izin.
                   </div>
                 ) : (
                   satpamOperations.absences.requests.map((absence) => {
+                    const requestType = satpamAttendanceReportType(absence);
                     const approveAction =
                       absence.status === 'pending'
                         ? 'approve'
@@ -879,14 +898,21 @@ export default function PekaryaAttendancePage() {
                             {absence.employeeName || absence.employeeId} ·{' '}
                             {absence.dutyDate}
                           </p>
+                          <p className="text-sm font-semibold text-indigo-700">
+                            {requestType === 'scan'
+                              ? `Scan Masuk & Scan Keluar · ${absence.scanIn?.slice(0, 5) || '--:--'}–${absence.scanOut?.slice(0, 5) || '--:--'}`
+                              : satpamAbsenceTypeLabel(absence.absenceType)}
+                            {absence.shiftName ? ` · ${absence.shiftName}` : ''}
+                            {absence.postId ? ` · ${absence.postId}` : ''}
+                          </p>
                           <p className="text-sm text-slate-600">
-                            {satpamAbsenceTypeLabel(absence.absenceType)} ·{' '}
                             {absence.reason}
                           </p>
                           <p className="mt-1 text-xs font-semibold uppercase text-slate-400">
                             {decisionStatusLabel(absence.status)}
                             {absence.late ? ' · diajukan terlambat' : ''}
-                            {absence.status === 'approved'
+                            {requestType === 'izin_resmi' &&
+                            absence.status === 'approved'
                               ? ` · ${money(absence.approvedAmount || 12_500)}`
                               : ''}
                           </p>
@@ -896,7 +922,9 @@ export default function PekaryaAttendancePage() {
                             </p>
                           )}
                         </div>
-                        {canEdit && (
+                        {canEdit &&
+                          (requestType === 'izin_resmi' ||
+                            absence.status === 'pending') && (
                           <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
                             <textarea
                               className="min-h-20 rounded-xl border border-slate-300 p-3 text-sm"
@@ -909,7 +937,9 @@ export default function PekaryaAttendancePage() {
                               }
                               placeholder="Alasan keputusan Kepala SatKer (wajib)"
                             />
-                            {absence.status !== 'approved' && (
+                            {absence.status !== 'approved' &&
+                              (requestType === 'izin_resmi' ||
+                                absence.status === 'pending') && (
                               <Button
                                 className="min-h-12 bg-emerald-600 hover:bg-emerald-700"
                                 disabled={
@@ -924,7 +954,9 @@ export default function PekaryaAttendancePage() {
                                 Setujui
                               </Button>
                             )}
-                            {absence.status !== 'declined' && (
+                            {absence.status !== 'declined' &&
+                              (requestType === 'izin_resmi' ||
+                                absence.status === 'pending') && (
                               <Button
                                 variant="outline"
                                 className="min-h-12 border-rose-200 text-rose-700"

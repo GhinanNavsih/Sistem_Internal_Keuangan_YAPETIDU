@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SATPAM_POSTS } from './domain';
 import {
+  defaultSatpamScanTimes,
+  isValidSatpamAttendanceScanRange,
+  satpamAttendanceReportType,
+} from './satpamAttendance';
+import {
   applyLiburDateSwap,
   classifySatpamDutyAssignments,
   findFirstUpcomingSwapDate,
@@ -44,6 +49,31 @@ test('Ketua may plan exactly the next Jakarta calendar month', () => {
 
   const yearEnd = new Date('2026-12-31T23:30:00+07:00');
   assert.equal(isSatpamAdvancePlanningPeriod('2027-01', yearEnd), true);
+});
+
+test('Satpam attendance reports preserve overnight Malam scan ranges', () => {
+  assert.deepEqual(defaultSatpamScanTimes('Pagi'), {
+    scanIn: '08:00',
+    scanOut: '14:00',
+  });
+  assert.deepEqual(defaultSatpamScanTimes('Malam'), {
+    scanIn: '22:00',
+    scanOut: '08:00',
+  });
+  assert.equal(
+    isValidSatpamAttendanceScanRange('22:00', '08:00', 'Malam'),
+    true,
+  );
+  assert.equal(
+    isValidSatpamAttendanceScanRange('22:00', '08:00', 'Pagi'),
+    false,
+  );
+  assert.equal(
+    isValidSatpamAttendanceScanRange('08:00', '08:00', 'Malam'),
+    false,
+  );
+  assert.equal(satpamAttendanceReportType({ reportType: 'scan' }), 'scan');
+  assert.equal(satpamAttendanceReportType({}), 'izin_resmi');
 });
 
 const ketuaShiftId = roster[0];

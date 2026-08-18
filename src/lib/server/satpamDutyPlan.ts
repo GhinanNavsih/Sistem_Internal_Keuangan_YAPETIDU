@@ -13,6 +13,7 @@ import {
   type SatpamDutyPlanStatus,
   type SatpamRotationSlotAssignment,
 } from '@/lib/payroll/satpamDutyPlan';
+import { satpamAttendanceReportType } from '@/lib/payroll/satpamAttendance';
 
 export const SATPAM_DUTY_PLANS_COLLECTION = 'SatpamDutyPlans';
 export const SATPAM_DUTY_PLAN_REVISIONS_COLLECTION =
@@ -251,7 +252,12 @@ export async function buildSatpamDutyReconciliation(
 
   for (const absenceDocument of absenceSnapshot.docs) {
     const absence = absenceDocument.data();
-    if (absence.status !== 'approved') continue;
+    if (
+      absence.status !== 'approved' ||
+      satpamAttendanceReportType(absence) === 'scan'
+    ) {
+      continue;
+    }
     const employeeId = String(absence.employeeId || '');
     const dutyDate = String(absence.dutyDate || '');
     if (!employeeId || !dutyDate) continue;
@@ -350,7 +356,9 @@ export async function buildSatpamDutyReconciliation(
   });
 
   const pendingAbsenceCount = absenceSnapshot.docs.filter(
-    (snapshot) => snapshot.data().status === 'pending',
+    (snapshot) =>
+      snapshot.data().status === 'pending' &&
+      satpamAttendanceReportType(snapshot.data()) === 'izin_resmi',
   ).length;
   const blockers: string[] = [];
   if (!uraianSnapshot.exists) {

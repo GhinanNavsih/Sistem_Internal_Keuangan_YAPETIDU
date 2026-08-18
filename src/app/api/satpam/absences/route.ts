@@ -8,11 +8,17 @@ import {
   getShiftIsoBounds,
 } from '@/lib/payroll/domain';
 import { payrollPeriodForDutyDate } from '@/lib/payroll/domain';
+import { normalizeAttendanceTime } from '@/lib/payroll/attendance';
 import {
   isSatpamDutyPlanRequired,
   isSatpamPlanDayStarted,
   satpamDutyKey,
 } from '@/lib/payroll/satpamDutyPlan';
+import {
+  isValidSatpamAttendanceScanRange,
+  satpamAttendanceReportType,
+  type SatpamAttendanceReportType,
+} from '@/lib/payroll/satpamAttendance';
 import {
   findSatpamTeamForEmployee,
   loadSatpamDutyPlanContext,
@@ -159,6 +165,9 @@ export async function POST(request: NextRequest) {
     const requestId = String(body.requestId || '');
     const dutyDate = String(body.dutyDate || '');
     const expectedRevision = Number(body.expectedRevision || 0);
+    if (action !== 'submit' && action !== 'withdraw') {
+      throw new HttpError(400, 'Aksi pengajuan tidak valid.');
+    }
     try {
       assertRequestId(requestId);
       assertDateOnly(dutyDate);
@@ -179,7 +188,7 @@ export async function POST(request: NextRequest) {
     ) {
       throw new HttpError(
         409,
-        'Pengajuan izin hanya tersedia pada periode rencana dinas yang terbuka.',
+        'Pengajuan hanya tersedia pada periode rencana dinas yang terbuka.',
       );
     }
     const team = await findSatpamTeamForEmployee(actor.linkedEmployeeId);
@@ -214,17 +223,47 @@ export async function POST(request: NextRequest) {
       .collection('SatpamDutyPlans')
       .doc(plan.id);
 
+    let reportType: SatpamAttendanceReportType =
+      body.reportType === 'scan' ? 'scan' : 'izin_resmi';
+    let scanIn: string | null = null;
+    let scanOut: string | null = null;
     let absenceType = '';
     let reason = '';
     let evidenceUrl: string | null = null;
     if (action === 'submit') {
-      absenceType = String(body.absenceType || '');
+      if (body.reportType !== 'scan' && body.reportType !== 'izin_resmi') {
+        throw new HttpError(400, 'Jenis pengajuan presensi tidak valid.');
+      }
+      reportType = body.reportType;
       reason = String(body.reason || '').trim();
-      if (!ABSENCE_TYPES.has(absenceType) || reason.length < 8) {
+      if (reason.length < 8 || reason.length > 500) {
         throw new HttpError(
           400,
-          'Jenis izin dan alasan minimal delapan karakter wajib diisi.',
+          'Alasan pengajuan wajib diisi antara 8 dan 500 karakter.',
         );
+      }
+      if (reportType === 'scan') {
+        scanIn = normalizeAttendanceTime(body.scanIn);
+        scanOut = normalizeAttendanceTime(body.scanOut);
+        if (
+          !scanIn ||
+          !scanOut ||
+          !isValidSatpamAttendanceScanRange(
+            scanIn,
+            scanOut,
+            day.shiftName,
+          )
+        ) {
+          throw new HttpError(
+            400,
+            'Scan masuk dan scan keluar tidak membentuk rentang waktu yang valid untuk shift terpilih.',
+          );
+        }
+      } else {
+        absenceType = String(body.absenceType || '');
+        if (!ABSENCE_TYPES.has(absenceType)) {
+          throw new HttpError(400, 'Jenis izin tidak valid.');
+        }
       }
       if (body.evidenceUrl) {
         if (typeof body.evidenceUrl !== 'string') {
@@ -243,14 +282,15 @@ export async function POST(request: NextRequest) {
         }
         evidenceUrl = body.evidenceUrl;
       }
-    } else if (action !== 'withdraw') {
-      throw new HttpError(400, 'Aksi pengajuan izin tidak valid.');
     }
     const requestHash = stableHash({
       action,
       employeeId: actor.linkedEmployeeId,
       dutyDate,
       expectedRevision,
+      reportType,
+      scanIn,
+      scanOut,
       absenceType,
       reason,
       evidenceUrl,
@@ -284,7 +324,7 @@ export async function POST(request: NextRequest) {
       if (isPeriodClosed(latestPeriodSnapshot.data())) {
         throw new HttpError(
           409,
-          'Periode payroll sudah ditutup; pengajuan izin tidak dapat diubah.',
+          'Periode payroll sudah ditutup; pengajuan tidak dapat diubah.',
         );
       }
       if (
@@ -296,10 +336,14 @@ export async function POST(request: NextRequest) {
       ) {
         throw new HttpError(
           409,
-          'Rencana dinas berubah. Muat ulang sebelum mengajukan izin.',
+          'Rencana dinas berubah. Muat ulang sebelum mengajukan.',
         );
       }
       const before = beforeSnapshot.exists ? beforeSnapshot.data()! : null;
+      const effectiveReportType =
+        action === 'withdraw' && before
+          ? satpamAttendanceReportType(before)
+          : reportType;
       const currentRevision = Number(before?.revision || 0);
       if (currentRevision !== expectedRevision) {
         throw new HttpError(409, 'Pengajuan telah berubah. Muat ulang lalu coba lagi.');
@@ -355,6 +399,9 @@ export async function POST(request: NextRequest) {
               postId: plannedAssignment.postId,
               startsAtIso,
               endsAtIso,
+              reportType,
+              scanIn,
+              scanOut,
               absenceType,
               reason,
               evidenceUrl,
@@ -364,7 +411,7 @@ export async function POST(request: NextRequest) {
               submittedAt: now,
               submittedBy: actor.uid,
               updatedAt: now,
-              schemaVersion: 1,
+              schemaVersion: 2,
             };
       transaction.set(absenceRef, after);
       transaction.create(
@@ -387,12 +434,17 @@ export async function POST(request: NextRequest) {
         buildFinancialAuditRecord(actor, {
           action:
             action === 'withdraw'
-              ? 'SATPAM_ABSENCE_WITHDRAWN'
-              : 'SATPAM_ABSENCE_SUBMITTED',
-          entityType: 'SatpamAbsenceRequest',
+              ? `SATPAM_${effectiveReportType === 'scan' ? 'ATTENDANCE' : 'ABSENCE'}_WITHDRAWN`
+              : `SATPAM_${effectiveReportType === 'scan' ? 'ATTENDANCE' : 'ABSENCE'}_SUBMITTED`,
+          entityType:
+            effectiveReportType === 'scan'
+              ? 'SatpamAttendanceRequest'
+              : 'SatpamAbsenceRequest',
           entityId: documentId,
           requestId,
-          reason: reason || 'Pengajuan izin ditarik oleh Satpam.',
+          reason:
+            reason ||
+            `Pengajuan ${effectiveReportType === 'scan' ? 'presensi' : 'izin'} ditarik oleh Satpam.`,
           before,
           after,
           metadata: { late, planRevision: plan.revision },
@@ -402,7 +454,10 @@ export async function POST(request: NextRequest) {
         actorUid: actor.uid,
         requestId,
         requestHash,
-        entityType: 'SatpamAbsenceRequest',
+        entityType:
+          effectiveReportType === 'scan'
+            ? 'SatpamAttendanceRequest'
+            : 'SatpamAbsenceRequest',
         entityId: documentId,
         revision,
         status: after.status,

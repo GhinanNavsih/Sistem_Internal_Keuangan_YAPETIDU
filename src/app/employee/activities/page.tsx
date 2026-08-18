@@ -55,7 +55,6 @@ import {
   Camera,
   PackageSearch,
   Images,
-  ShieldCheck,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { uploadProofFile } from '@/lib/uploads';
@@ -122,8 +121,7 @@ import {
 } from '@/hooks/useCostSafePlaceAutocomplete';
 import { parseImageExif } from '@/lib/exif';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
-import { SatpamAbsencePanel } from '@/components/satpam/SatpamDutyAndAbsencePanels';
-import { PekaryaOfficialLeavePanel } from '@/components/pekarya/PekaryaOfficialLeavePanel';
+import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import {
   SwapLiburConfirmModal,
   type SwapLiburPrompt,
@@ -713,8 +711,6 @@ function ActivitiesContent() {
   // ── Form state ──
   const [showForm, setShowForm] = useState(false);
   const [showSatpamSpjChoice, setShowSatpamSpjChoice] = useState(false);
-  const [showSatpamAbsenceForm, setShowSatpamAbsenceForm] = useState(false);
-  const [showPekaryaOfficialLeaveForm, setShowPekaryaOfficialLeaveForm] = useState(false);
   const [showFoundItemForm, setShowFoundItemForm] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ActivityReport | null>(null);
   const [formActivityType, setFormActivityType] = useState<'Piket' | 'Standby' | 'Ro\'an' | 'Lainnya' | 'Buang Sampah'>('Piket');
@@ -734,6 +730,52 @@ function ActivitiesContent() {
   const isSubmittingRef = useRef(false);
   const activityRequestIdRef = useRef<string | null>(null);
   const skipSaveDraftRef = useRef(false);
+  const employeeActionModalOpen =
+    showForm ||
+    showSatpamSpjChoice ||
+    showFoundItemForm;
+  const employeeActionModalHistoryRef = useRef(false);
+  const revertingEmployeeActionModalHistoryRef = useRef(false);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (revertingEmployeeActionModalHistoryRef.current) {
+        revertingEmployeeActionModalHistoryRef.current = false;
+        return;
+      }
+      if (!employeeActionModalHistoryRef.current) return;
+
+      employeeActionModalHistoryRef.current = false;
+      setShowForm(false);
+      setShowSatpamSpjChoice(false);
+      setShowFoundItemForm(false);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (employeeActionModalOpen && !employeeActionModalHistoryRef.current) {
+      const currentHistoryState =
+        window.history.state && typeof window.history.state === 'object'
+          ? window.history.state
+          : {};
+      window.history.pushState(
+        { ...currentHistoryState, __employeeActionModal: true },
+        '',
+        window.location.href,
+      );
+      employeeActionModalHistoryRef.current = true;
+      return;
+    }
+
+    if (!employeeActionModalOpen && employeeActionModalHistoryRef.current) {
+      employeeActionModalHistoryRef.current = false;
+      revertingEmployeeActionModalHistoryRef.current = true;
+      window.history.back();
+    }
+  }, [employeeActionModalOpen]);
 
   // ── SOPIR specific form states ──
   const [formTripType, setFormTripType] = useState<'Dalam Kota' | 'Luar Kota'>('Dalam Kota');
@@ -4012,28 +4054,7 @@ function ActivitiesContent() {
                 </Button>
               </Link>
             )}
-            {isKetuaShiftSatpam && (
-              <Link href="/employee/satpam-duty-plan">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
-                  title="Jadwal Regu"
-                >
-                  <CalendarDays className="w-4.5 h-4.5 text-indigo-500" />
-                </Button>
-              </Link>
-            )}
-            <Link href="/employee/payslip">
-              <Button
-                variant="outline"
-                size="icon"
-                className="text-slate-600 hover:text-indigo-650 hover:bg-slate-50 border border-slate-200 bg-white rounded-xl h-9 w-9 flex items-center justify-center shadow-sm cursor-pointer"
-                title="Slip Gaji"
-              >
-                <Banknote className="w-4.5 h-4.5 text-emerald-600" />
-              </Button>
-            </Link>
+            <EmployeeNavigationMenu />
 
             <Button
               onClick={() => logout()}
@@ -5629,81 +5650,6 @@ function ActivitiesContent() {
           </span>
         </button>
       )}
-
-      {/* ── Ajukan Izin FAB (Satpam) ───────────────────────────────────── */}
-      {userJobCategory === 'SATPAM' && profile.linkedEmployeeId && (
-        <button
-          onClick={() => setShowSatpamAbsenceForm(true)}
-          className="fixed bottom-6 left-6 z-40 min-w-14 h-14 px-4 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-xl shadow-amber-300/40 hover:shadow-2xl hover:shadow-amber-300/50 hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2"
-        >
-          <ShieldCheck className="w-6 h-6" />
-          <span className="font-bold">Ajukan Izin</span>
-        </button>
-      )}
-
-      {/* ── Ajukan Izin Resmi FAB (all non-Satpam Pekarya) ─────────────── */}
-      {userJobCategory && userJobCategory !== 'SATPAM' && profile.linkedEmployeeId && (
-        <button
-          onClick={() => setShowPekaryaOfficialLeaveForm(true)}
-          className="fixed bottom-6 left-6 z-40 min-w-14 h-14 px-4 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white shadow-xl shadow-indigo-300/40 hover:shadow-2xl hover:shadow-indigo-300/50 hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2"
-        >
-          <ShieldCheck className="w-6 h-6" />
-          <span className="font-bold">Ajukan Izin Resmi</span>
-        </button>
-      )}
-
-      {/* ── Ajukan Izin Satpam ─────────────────────────────────────────── */}
-      <Dialog open={showSatpamAbsenceForm} onOpenChange={setShowSatpamAbsenceForm}>
-        <DialogContent className="max-h-[calc(100dvh-2rem)] sm:max-w-lg max-w-[calc(100%-2rem)] rounded-3xl border-none bg-white p-0 shadow-2xl overflow-y-auto">
-          <div className="sticky top-0 z-10 bg-gradient-to-r from-amber-500 to-orange-500 p-5">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-xl font-bold text-white">
-                <ShieldCheck className="h-5 w-5" />
-                Ajukan Izin Satpam
-              </DialogTitle>
-              <DialogDescription className="mt-1 text-base text-amber-50">
-                Anda sendiri yang mengajukan alasan kepada Kepala SatKer. Bukti
-                foto boleh dikosongkan.
-              </DialogDescription>
-            </DialogHeader>
-          </div>
-          {profile.linkedEmployeeId && (
-            <SatpamAbsencePanel
-              embedded
-              employeeId={profile.linkedEmployeeId}
-              openPeriods={satpamOpenPeriods}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Ajukan Izin Resmi Pekarya ──────────────────────────────────── */}
-      <Dialog
-        open={showPekaryaOfficialLeaveForm}
-        onOpenChange={setShowPekaryaOfficialLeaveForm}
-      >
-        <DialogContent className="max-h-[calc(100dvh-2rem)] sm:max-w-lg max-w-[calc(100%-2rem)] rounded-3xl border-none bg-white p-0 shadow-2xl overflow-y-auto">
-          <div className="sticky top-0 z-10 bg-gradient-to-r from-indigo-500 to-blue-600 p-5">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-xl font-bold text-white">
-                <ShieldCheck className="h-5 w-5" />
-                Ajukan Izin Resmi
-              </DialogTitle>
-              <DialogDescription className="mt-1 text-base text-indigo-50">
-                Pilih laporan scan masuk &amp; scan keluar atau izin resmi untuk
-                diperiksa oleh Kepala SatKer.
-              </DialogDescription>
-            </DialogHeader>
-          </div>
-          {profile.linkedEmployeeId && (
-            <PekaryaOfficialLeavePanel
-              embedded
-              employeeId={profile.linkedEmployeeId}
-              openPeriods={satpamOpenPeriods}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* ── Satpam personal-SPJ report type chooser ─────────────────── */}
       <Dialog open={showSatpamSpjChoice} onOpenChange={setShowSatpamSpjChoice}>

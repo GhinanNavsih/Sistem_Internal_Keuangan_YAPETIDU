@@ -162,7 +162,11 @@ function JourneyDashboardContent() {
       return;
     }
 
-    const journeysRef = collection(db, 'DriverJourneys');
+    // DriverJourneys can only be read by satker_head when they hold the
+    // SOPIR category (see Firestore rules); a satker_head scoped to e.g.
+    // KEBERSIHAN/TEKNISI only would get "Missing or insufficient permissions"
+    // from this unfiltered collection listener, so skip it entirely for them.
+    const canReadDriverJourneys = allowedCategories.includes('SOPIR');
     const reportsRef = collection(db, 'ActivityReports');
     const reportsQuery = query(
       reportsRef,
@@ -170,17 +174,18 @@ function JourneyDashboardContent() {
     );
     let cancelled = false;
     let journeysSnapshot: QuerySnapshot<DocumentData> | null = null;
+    let journeysSettled = !canReadDriverJourneys;
     let reportsSnapshot: QuerySnapshot<DocumentData> | null = null;
     let reportsSettled = false;
 
     const rebuildDashboardData = () => {
-      if (cancelled || !journeysSnapshot || !reportsSettled) return;
+      if (cancelled || !journeysSettled || !reportsSettled) return;
 
       const journeyList: CompletedJourney[] = [];
       const seenJourneyIds = new Set<string>();
       const seenReportIds = new Set<string>();
 
-      journeysSnapshot.forEach((docSnap) => {
+      journeysSnapshot?.forEach((docSnap) => {
         const d = docSnap.data();
         const status = String(d.status || '');
         if (status !== 'completed' && status !== 'approved') return;
@@ -266,20 +271,22 @@ function JourneyDashboardContent() {
       setLoading(false);
     };
 
-    const unsubscribeJourneys = onSnapshot(
-      journeysRef,
-      (snapshot) => {
-        journeysSnapshot = snapshot;
-        rebuildDashboardData();
-      },
-      (error) => {
-        console.error('Error listening to completed DriverJourneys:', error);
-        if (!cancelled) {
-          setJourneys([]);
-          setLoading(false);
-        }
-      },
-    );
+    const unsubscribeJourneys = canReadDriverJourneys
+      ? onSnapshot(
+          collection(db, 'DriverJourneys'),
+          (snapshot) => {
+            journeysSnapshot = snapshot;
+            journeysSettled = true;
+            rebuildDashboardData();
+          },
+          (error) => {
+            console.error('Error listening to completed DriverJourneys:', error);
+            journeysSnapshot = null;
+            journeysSettled = true;
+            rebuildDashboardData();
+          },
+        )
+      : () => {};
 
     const unsubscribeReports = onSnapshot(
       reportsQuery,

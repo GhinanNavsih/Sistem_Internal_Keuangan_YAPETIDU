@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
+import EmployeeNavigationMenu from '@/components/EmployeeNavigationMenu';
 import { auth, db, secondaryDb } from '@/lib/firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import {
@@ -51,7 +52,6 @@ import {
   BookOpen,
   CalendarCheck,
   Wrench,
-  ClipboardList,
   Calendar,
   Menu as MenuIcon,
 } from 'lucide-react';
@@ -1489,31 +1489,7 @@ export default function EmployeePayslipPage() {
             </div>
           </div>
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-            {(profile.role === 'honorer' || (profile.role as string) === 'ketua_shift_satpam') && (
-              <Link href="/employee/activities">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center shadow-sm cursor-pointer"
-                  title="Laporan Kegiatan"
-                >
-                  <ClipboardList className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-indigo-500" />
-                </Button>
-              </Link>
-            )}
-
-            {(profile.role as string) === 'ketua_shift_satpam' && (
-              <Link href="/employee/satpam-duty-plan">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="text-black hover:text-indigo-650 hover:bg-slate-50 border-slate-200 bg-white rounded-xl h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center shadow-sm cursor-pointer"
-                  title="Jadwal Regu"
-                >
-                  <CalendarDays className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-indigo-500" />
-                </Button>
-              </Link>
-            )}
+            <EmployeeNavigationMenu />
 
             {profile.role === 'loyalis' && (
               <DropdownMenu>
@@ -1553,23 +1529,6 @@ export default function EmployeePayslipPage() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            )}
-
-            {profile.role !== 'loyalis' && (
-              <Button
-                onClick={handlePasswordReset}
-                disabled={resetLoading}
-                variant="outline"
-                size="icon"
-                className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 bg-indigo-50/30 rounded-xl h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center shadow-sm cursor-pointer shrink-0"
-                title="Ubah Password"
-              >
-                {resetLoading ? (
-                  <Loader2 className="w-4 h-4 sm:w-4.5 sm:h-4.5 animate-spin" />
-                ) : (
-                  <KeyRound className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
-                )}
-              </Button>
             )}
 
             <Button

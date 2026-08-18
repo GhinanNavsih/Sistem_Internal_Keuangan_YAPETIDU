@@ -5,6 +5,8 @@ import {
   AlertTriangle,
   CalendarDays,
   ClipboardList,
+  Clock3,
+  FileClock,
   Loader2,
   Pencil,
   Printer,
@@ -27,6 +29,13 @@ import {
   type SatpamRotationSlot,
   type SatpamRotationSlotAssignment,
 } from '@/lib/payroll/satpamDutyPlan';
+import {
+  defaultSatpamScanTimes,
+  isValidSatpamAttendanceScanRange,
+  satpamAttendanceReportType,
+  type SatpamAttendanceReportType,
+} from '@/lib/payroll/satpamAttendance';
+import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
 import {
   SwapLiburConfirmModal,
   type SwapLiburPrompt,
@@ -129,7 +138,10 @@ type AbsenceRequest = {
   dutyDate: string;
   shiftName: string;
   postId: string;
-  absenceType: string;
+  reportType?: SatpamAttendanceReportType;
+  scanIn?: string | null;
+  scanOut?: string | null;
+  absenceType?: string;
   reason: string;
   evidenceUrl?: string | null;
   late?: boolean;
@@ -141,7 +153,7 @@ type AbsenceRequest = {
 
 type ScheduledDuty = {
   dutyDate: string;
-  shiftName: string;
+  shiftName: SatpamShiftName;
   postId: string;
 };
 
@@ -1207,11 +1219,29 @@ export function SatpamAbsencePanel(props: {
 }) {
   const { employeeId, openPeriods, embedded } = props;
   const [selectedPeriod, setPeriod] = useState('');
-  const period =
-    selectedPeriod || openPeriods[openPeriods.length - 1]?.period || '';
+  const defaultPeriod = useMemo(() => {
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const currentPeriod = pekaryaPayrollPeriodForDate(today);
+    return (
+      openPeriods.find((item) => item.period === currentPeriod)?.period ||
+      openPeriods.filter((item) => item.startDate <= today).at(-1)?.period ||
+      openPeriods[0]?.period ||
+      ''
+    );
+  }, [openPeriods]);
+  const period = selectedPeriod || defaultPeriod;
   const [requests, setRequests] = useState<AbsenceRequest[]>([]);
   const [scheduledDuties, setScheduledDuties] = useState<ScheduledDuty[]>([]);
   const [dutyDate, setDutyDate] = useState('');
+  const [reportType, setReportType] =
+    useState<SatpamAttendanceReportType>('scan');
+  const [scanIn, setScanIn] = useState('08:00');
+  const [scanOut, setScanOut] = useState('14:00');
   const [absenceType, setAbsenceType] = useState('sakit');
   const [reason, setReason] = useState('');
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
@@ -1219,6 +1249,34 @@ export function SatpamAbsencePanel(props: {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const selectedDuty = useMemo(
+    () => scheduledDuties.find((duty) => duty.dutyDate === dutyDate) || null,
+    [dutyDate, scheduledDuties],
+  );
+  const scanRangeInvalid = Boolean(
+    reportType === 'scan' &&
+      selectedDuty &&
+      !isValidSatpamAttendanceScanRange(
+        scanIn,
+        scanOut,
+        selectedDuty.shiftName,
+      ),
+  );
+
+  const selectDutyDate = useCallback((nextDutyDate: string) => {
+    setDutyDate(nextDutyDate);
+    setError('');
+  }, []);
+
+  useEffect(() => {
+    if (!selectedDuty) return;
+    const defaults = defaultSatpamScanTimes(selectedDuty.shiftName);
+    const timer = window.setTimeout(() => {
+      setScanIn(defaults.scanIn);
+      setScanOut(defaults.scanOut);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [selectedDuty]);
 
   const load = useCallback(async () => {
     if (!period) return;
@@ -1254,6 +1312,18 @@ export function SatpamAbsencePanel(props: {
 
   const submit = async () => {
     if (!dutyDate || reason.trim().length < 8) return;
+    if (!selectedDuty) {
+      setError('Pilih tanggal kewajiban dinas terlebih dahulu.');
+      return;
+    }
+    if (reportType === 'scan' && scanRangeInvalid) {
+      setError(
+        selectedDuty.shiftName === 'Malam'
+          ? 'Jam scan Shift Malam harus membentuk rentang dinas yang valid hingga hari berikutnya.'
+          : 'Scan keluar harus lebih lambat dari scan masuk.',
+      );
+      return;
+    }
     setWorking(true);
     setError('');
     try {
@@ -1262,7 +1332,7 @@ export function SatpamAbsencePanel(props: {
         const compressed = await compressProofImage(evidenceFile);
         evidenceUrl = await uploadProofFile('/api/uploads/activity-proofs', compressed, {
           employeeId,
-          filenameHint: `izin_${dutyDate}`,
+          filenameHint: `${reportType === 'scan' ? 'presensi' : 'izin'}_${dutyDate}`,
         });
       }
       const previous = requests.find(
@@ -1274,7 +1344,10 @@ export function SatpamAbsencePanel(props: {
           action: 'submit',
           requestId: createFinancialRequestId('satpam-absence'),
           dutyDate,
-          absenceType,
+          reportType,
+          scanIn: reportType === 'scan' ? scanIn : null,
+          scanOut: reportType === 'scan' ? scanOut : null,
+          absenceType: reportType === 'izin_resmi' ? absenceType : null,
           reason,
           evidenceUrl,
           expectedRevision: previous?.revision || 0,
@@ -1283,7 +1356,9 @@ export function SatpamAbsencePanel(props: {
       setReason('');
       setEvidenceFile(null);
       setMessage(
-        'Pengajuan dikirim kepada Kepala SatKer. Pengajuan terlambat tetap diterima dan akan diberi tanda.',
+        reportType === 'scan'
+          ? 'Laporan scan dikirim kepada Kepala SatKer.'
+          : 'Pengajuan izin dikirim kepada Kepala SatKer. Pengajuan terlambat tetap diterima dan akan diberi tanda.',
       );
       await load();
     } catch (cause) {
@@ -1305,6 +1380,7 @@ export function SatpamAbsencePanel(props: {
           action: 'withdraw',
           requestId: createFinancialRequestId('satpam-absence-withdraw'),
           dutyDate: request.dutyDate,
+          reportType: satpamAttendanceReportType(request),
           expectedRevision: request.revision,
         }),
       });
@@ -1357,11 +1433,11 @@ export function SatpamAbsencePanel(props: {
         ) : (
           <>
             <div className="space-y-2">
-              <Label htmlFor="absence-duty-date">Tanggal kewajiban dinas</Label>
+              <Label htmlFor="absence-duty-date">Tanggal Kewajiban Dinas</Label>
               <LargeSelect
                 id="absence-duty-date"
                 value={dutyDate}
-                onValueChange={setDutyDate}
+                onValueChange={selectDutyDate}
                 options={scheduledDuties.map((duty) => ({
                   value: duty.dutyDate,
                   label: `${duty.dutyDate} · ${duty.shiftName} · ${formatSatpamPostLabel(duty.postId)}`,
@@ -1369,19 +1445,73 @@ export function SatpamAbsencePanel(props: {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="absence-type">Jenis alasan</Label>
+              <Label htmlFor="satpam-report-type">Jenis pengajuan</Label>
               <LargeSelect
-                id="absence-type"
-                value={absenceType}
-                onValueChange={setAbsenceType}
+                id="satpam-report-type"
+                value={reportType}
+                onValueChange={(value) => {
+                  setReportType(value as SatpamAttendanceReportType);
+                  setError('');
+                }}
                 options={[
-                  { value: 'sakit', label: 'Sakit' },
-                  { value: 'izin_resmi', label: 'Izin Resmi' },
-                  { value: 'darurat', label: 'Keperluan Darurat' },
-                  { value: 'lainnya', label: 'Lainnya' },
+                  { value: 'scan', label: 'Scan Masuk & Scan Keluar' },
+                  { value: 'izin_resmi', label: 'Izin Resmi / Tidak Dapat Dinas' },
                 ]}
               />
             </div>
+            {reportType === 'scan' ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="satpam-scan-in">Scan masuk</Label>
+                    <Input
+                      id="satpam-scan-in"
+                      type="time"
+                      value={scanIn}
+                      onChange={(event) => setScanIn(event.target.value)}
+                      className="min-h-14 rounded-xl text-base font-mono"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="satpam-scan-out">Scan keluar</Label>
+                    <Input
+                      id="satpam-scan-out"
+                      type="time"
+                      value={scanOut}
+                      onChange={(event) => setScanOut(event.target.value)}
+                      className="min-h-14 rounded-xl text-base font-mono"
+                    />
+                  </div>
+                </div>
+                {selectedDuty?.shiftName === 'Malam' && (
+                  <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900">
+                    Shift Malam berakhir pada hari berikutnya. Rentang{' '}
+                    <strong>{scanIn || '--:--'}–{scanOut || '--:--'}</strong>{' '}
+                    akan dicatat sebagai satu kewajiban dinas.
+                  </div>
+                )}
+                {scanRangeInvalid && (
+                  <p className="text-sm font-semibold text-rose-700">
+                    Rentang waktu scan tidak valid untuk shift yang dipilih.
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="absence-type">Jenis alasan</Label>
+                <LargeSelect
+                  id="absence-type"
+                  value={absenceType}
+                  onValueChange={setAbsenceType}
+                  options={[
+                    { value: 'sakit', label: 'Sakit' },
+                    { value: 'izin_resmi', label: 'Izin Resmi' },
+                    { value: 'darurat', label: 'Keperluan Darurat' },
+                    { value: 'lainnya', label: 'Lainnya' },
+                  ]}
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="absence-reason">Alasan lengkap</Label>
               <textarea
@@ -1389,7 +1519,11 @@ export function SatpamAbsencePanel(props: {
                 className="min-h-28 w-full rounded-xl border border-slate-300 p-3 text-base"
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
-                placeholder="Contoh: Sakit demam dan sudah memberi kabar kepada Ketua Shift."
+                placeholder={
+                  reportType === 'scan'
+                    ? 'Contoh: Lupa melakukan finger scan saat mulai dan selesai dinas.'
+                    : 'Contoh: Sakit demam dan sudah memberi kabar kepada Ketua Shift.'
+                }
               />
             </div>
             <div className="space-y-2">
@@ -1407,7 +1541,11 @@ export function SatpamAbsencePanel(props: {
             <Button
               type="button"
               className="min-h-12 w-full gap-2 bg-amber-600 hover:bg-amber-700"
-              disabled={working || reason.trim().length < 8}
+              disabled={
+                working ||
+                reason.trim().length < 8 ||
+                (reportType === 'scan' && scanRangeInvalid)
+              }
               onClick={() => void submit()}
             >
               {working ? (
@@ -1423,41 +1561,57 @@ export function SatpamAbsencePanel(props: {
         {requests.length > 0 && (
           <section className="space-y-3 border-t border-slate-200 pt-5">
             <h3 className="font-bold">Riwayat Pengajuan</h3>
-            {requests.map((request) => (
-              <article
-                key={request.id}
-                className="rounded-xl border border-slate-200 p-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-bold">
-                      {request.dutyDate} · {statusLabel(request.status)}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {request.reason}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {request.late ? 'Diajukan setelah shift dimulai · ' : ''}
-                      Revisi {request.revision}
-                      {request.status === 'approved'
-                        ? ' · Dibayar Rp12.500'
-                        : ''}
-                    </p>
+            {requests.map((request) => {
+              const requestType = satpamAttendanceReportType(request);
+              return (
+                <article
+                  key={request.id}
+                  className="rounded-xl border border-slate-200 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-bold">
+                        {request.dutyDate} · {request.shiftName} ·{' '}
+                        {formatSatpamPostLabel(request.postId)}
+                      </p>
+                      <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-indigo-700">
+                        {requestType === 'scan' ? (
+                          <Clock3 className="h-4 w-4" />
+                        ) : (
+                          <FileClock className="h-4 w-4" />
+                        )}
+                        {requestType === 'scan'
+                          ? `Scan Masuk & Scan Keluar · ${request.scanIn?.slice(0, 5) || '--:--'}–${request.scanOut?.slice(0, 5) || '--:--'}`
+                          : 'Izin Resmi / Tidak Dapat Dinas'}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {request.reason}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {statusLabel(request.status)} ·{' '}
+                        {request.late ? 'Diajukan setelah shift dimulai · ' : ''}
+                        Revisi {request.revision}
+                        {requestType === 'izin_resmi' &&
+                        request.status === 'approved'
+                          ? ' · Dibayar Rp12.500'
+                          : ''}
+                      </p>
+                    </div>
+                    {request.status === 'pending' && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="min-h-12"
+                        disabled={working}
+                        onClick={() => void withdraw(request)}
+                      >
+                        Tarik
+                      </Button>
+                    )}
                   </div>
-                  {request.status === 'pending' && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="min-h-12"
-                      disabled={working}
-                      onClick={() => void withdraw(request)}
-                    >
-                      Tarik
-                    </Button>
-                  )}
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </section>
         )}
       </CardContent>
@@ -1470,11 +1624,11 @@ export function SatpamAbsencePanel(props: {
       <CardHeader className="border-b border-amber-100 bg-amber-50/70 p-5">
         <CardTitle className="flex items-center gap-2 text-xl">
           <ShieldCheck className="h-6 w-6 text-amber-700" />
-          Ajukan Izin Satpam
+          Ajukan Izin &amp; Presensi Satpam
         </CardTitle>
         <p className="text-base text-slate-600">
-          Anda sendiri yang mengajukan alasan kepada Kepala SatKer. Bukti foto
-          boleh dikosongkan.
+          Laporkan scan masuk &amp; keluar yang terlupa atau ajukan izin untuk
+          kewajiban dinas yang terjadwal.
         </p>
       </CardHeader>
       {body}

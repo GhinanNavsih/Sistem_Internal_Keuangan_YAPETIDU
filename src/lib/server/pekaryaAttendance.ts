@@ -16,6 +16,7 @@ import {
 } from '@/lib/server/attendanceStore';
 import { isPeriodClosed } from './payrollPeriod';
 import { SATPAM_ABSENCE_REQUESTS_COLLECTION } from '@/lib/server/satpamDutyPlan';
+import { satpamAttendanceReportType } from '@/lib/payroll/satpamAttendance';
 
 export interface PekaryaAttendanceEmployeeView {
   employeeId: string;
@@ -258,7 +259,8 @@ export async function buildSatpamAttendanceMismatches(
   const approvedAbsenceKeys = new Set(
     absenceSnapshot.docs.flatMap((snapshot) => {
       const absence = snapshot.data();
-      return absence.status === 'approved'
+      return absence.status === 'approved' &&
+        satpamAttendanceReportType(absence) === 'izin_resmi'
         ? [`${String(absence.employeeId || '')}__${String(absence.dutyDate || '')}`]
         : [];
     }),

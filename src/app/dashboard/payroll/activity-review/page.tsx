@@ -963,6 +963,10 @@ export default function ActivityReviewPage() {
       if (activity.photoUrl) group.photoCount += 1;
     });
 
+    // Menunggu stays oldest-first (audit the backlog in order); Disetujui
+    // flips to newest-first (the most recently approved shift surfaces first).
+    const dateDirection = statusFilter === 'approved' ? -1 : 1;
+
     return Array.from(groups.values())
       .map((group) => ({
         ...group,
@@ -973,10 +977,10 @@ export default function ActivityReviewPage() {
         ),
       }))
       .sort((a, b) =>
-        a.dutyDate.localeCompare(b.dutyDate) ||
-        a.shiftName.localeCompare(b.shiftName),
+        (a.dutyDate.localeCompare(b.dutyDate) ||
+          a.shiftName.localeCompare(b.shiftName)) * dateDirection,
       );
-  }, [filteredActivities]);
+  }, [filteredActivities, statusFilter]);
 
   const groupedSatpamIds = useMemo(() => {
     const ids = new Set<string>();
@@ -987,25 +991,26 @@ export default function ActivityReviewPage() {
     return ids;
   }, [satpamShiftGroups]);
 
-  const ungroupedActivities = useMemo(
-    () =>
-      filteredActivities
-        .filter((activity) => !groupedSatpamIds.has(activity.id))
-        .sort((left, right) => {
-          const dateA = left.activityDate || left.dutyDate || '';
-          const dateB = right.activityDate || right.dutyDate || '';
-          const dateDiff = dateA.localeCompare(dateB);
-          if (dateDiff !== 0) return dateDiff;
-          const getMs = (ts: any): number => {
-            if (!ts) return 0;
-            if (typeof ts.toMillis === 'function') return ts.toMillis();
-            if (typeof ts.seconds === 'number') return ts.seconds * 1000;
-            return 0;
-          };
-          return getMs(left.submittedAt) - getMs(right.submittedAt);
-        }),
-    [filteredActivities, groupedSatpamIds],
-  );
+  const ungroupedActivities = useMemo(() => {
+    // Menunggu stays oldest-first (audit the backlog in order); Disetujui
+    // flips to newest-first (the most recently approved report surfaces first).
+    const dateDirection = statusFilter === 'approved' ? -1 : 1;
+    return filteredActivities
+      .filter((activity) => !groupedSatpamIds.has(activity.id))
+      .sort((left, right) => {
+        const dateA = left.activityDate || left.dutyDate || '';
+        const dateB = right.activityDate || right.dutyDate || '';
+        const dateDiff = dateA.localeCompare(dateB);
+        if (dateDiff !== 0) return dateDiff * dateDirection;
+        const getMs = (ts: any): number => {
+          if (!ts) return 0;
+          if (typeof ts.toMillis === 'function') return ts.toMillis();
+          if (typeof ts.seconds === 'number') return ts.seconds * 1000;
+          return 0;
+        };
+        return (getMs(left.submittedAt) - getMs(right.submittedAt)) * dateDirection;
+      });
+  }, [filteredActivities, groupedSatpamIds, statusFilter]);
 
   type ReviewTableItem =
     | { type: 'satpam_group'; id: string; date: string; group: SatpamShiftGroup }
@@ -1053,23 +1058,27 @@ export default function ActivityReviewPage() {
       return 0;
     };
 
-    items.sort((a, b) => {
-      // Primary sort: Date ascending (oldest date to latest date)
-      const dateDiff = a.date.localeCompare(b.date);
-      if (dateDiff !== 0) return dateDiff;
+    // Menunggu stays oldest-first (audit the backlog in order); Disetujui
+    // flips to newest-first (the most recently approved report surfaces first).
+    const dateDirection = statusFilter === 'approved' ? -1 : 1;
 
-      // Secondary sort: Submitted timestamp ascending
+    items.sort((a, b) => {
+      // Primary sort: Date, direction depends on the active status filter
+      const dateDiff = a.date.localeCompare(b.date);
+      if (dateDiff !== 0) return dateDiff * dateDirection;
+
+      // Secondary sort: Submitted timestamp, same direction
       const timeA = getTimestampMs(a);
       const timeB = getTimestampMs(b);
       if (timeA !== 0 && timeB !== 0 && timeA !== timeB) {
-        return timeA - timeB;
+        return (timeA - timeB) * dateDirection;
       }
 
       return a.id.localeCompare(b.id);
     });
 
     return items;
-  }, [satpamShiftGroups, ungroupedActivities]);
+  }, [satpamShiftGroups, ungroupedActivities, statusFilter]);
 
   // ── Stats ──
   const stats = useMemo(() => {

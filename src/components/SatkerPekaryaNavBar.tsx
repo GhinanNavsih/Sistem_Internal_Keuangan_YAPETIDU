@@ -58,6 +58,11 @@ export default function SatkerPekaryaNavBar() {
   const isProposal = pathname.startsWith('/dashboard/payroll/uraian/proposal-kegiatan');
   const isPelaporan = pathname.startsWith('/dashboard/payroll/uraian/pelaporan-kegiatan');
 
+  const permittedCategories = profile?.permittedCategories ?? [];
+  const canSeeFacility =
+    permittedCategories.includes('KEBERSIHAN') || permittedCategories.includes('TEKNISI');
+  const canSeeJourneys = permittedCategories.includes('SOPIR');
+
   const navBtnClass = (active: boolean) =>
     `px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap ${
       active
@@ -125,20 +130,24 @@ export default function SatkerPekaryaNavBar() {
                 <ClipboardCheck className="w-4 h-4" />
                 <span>Review Kegiatan</span>
               </button>
-              <button
-                onClick={() => router.push(facilityUrl)}
-                className={navBtnClass(isFacility)}
-              >
-                <Wrench className="w-4 h-4" />
-                <span>Fasilitas Rusak</span>
-              </button>
-              <button
-                onClick={() => router.push(journeysUrl)}
-                className={navBtnClass(isJourneys)}
-              >
-                <Compass className="w-4 h-4" />
-                <span>Pre-Otorisasi</span>
-              </button>
+              {canSeeFacility && (
+                <button
+                  onClick={() => router.push(facilityUrl)}
+                  className={navBtnClass(isFacility)}
+                >
+                  <Wrench className="w-4 h-4" />
+                  <span>Fasilitas Rusak</span>
+                </button>
+              )}
+              {canSeeJourneys && (
+                <button
+                  onClick={() => router.push(journeysUrl)}
+                  className={navBtnClass(isJourneys)}
+                >
+                  <Compass className="w-4 h-4" />
+                  <span>Pre-Otorisasi</span>
+                </button>
+              )}
               <button
                 onClick={() => router.push(dashboardUrl)}
                 className={navBtnClass(isDashboard)}

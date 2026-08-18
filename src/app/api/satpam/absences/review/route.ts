@@ -6,12 +6,29 @@ import {
   isImmutablePayrollStatus,
 } from '@/lib/payroll/domain';
 import {
+  normalizeAttendanceTime,
+  resolveEmployeeAttendanceNipy,
+  satpamAttendanceEvidenceDates,
+} from '@/lib/payroll/attendance';
+import {
+  isValidSatpamAttendanceScanRange,
+  satpamAttendanceReportType,
+} from '@/lib/payroll/satpamAttendance';
+import { scanAttendanceCorrection } from '@/lib/payroll/pekaryaOfficialLeave';
+import {
   absenceEntitlementData,
   loadSatpamDutyPlan,
   SATPAM_ABSENCE_ENTITLEMENTS_COLLECTION,
   SATPAM_ABSENCE_REQUESTS_COLLECTION,
   syncSatpamDutyReconciliation,
 } from '@/lib/server/satpamDutyPlan';
+import {
+  attendanceCorrectionHeadId,
+  ATTENDANCE_IMPORTS_COLLECTION,
+  PEKARYA_CORRECTIONS_COLLECTION,
+  PEKARYA_CORRECTION_HEADS_COLLECTION,
+} from '@/lib/server/attendanceStore';
+import { buildPekaryaAttendanceView } from '@/lib/server/pekaryaAttendance';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
@@ -109,6 +126,329 @@ export async function POST(request: NextRequest) {
         409,
         'Pegawai tidak lagi memiliki kewajiban dinas pada tanggal tersebut.',
       );
+    }
+    const reportType = satpamAttendanceReportType(absence);
+    if (reportType === 'scan') {
+      if (action !== 'approve' && action !== 'decline') {
+        throw new HttpError(
+          409,
+          'Keputusan laporan scan yang sudah final tidak dapat digantikan.',
+        );
+      }
+      const scanIn = normalizeAttendanceTime(absence.scanIn);
+      const scanOut = normalizeAttendanceTime(absence.scanOut);
+      if (
+        !scanIn ||
+        !scanOut ||
+        !isValidSatpamAttendanceScanRange(
+          scanIn,
+          scanOut,
+          planDay.shiftName,
+        )
+      ) {
+        throw new HttpError(409, 'Data scan masuk atau scan keluar tidak valid.');
+      }
+      const nipy = resolveEmployeeAttendanceNipy(employee || {});
+      if (action === 'approve' && !nipy) {
+        throw new HttpError(
+          409,
+          'NIPY Satpam wajib dilengkapi sebelum laporan scan disetujui.',
+        );
+      }
+      const attendanceView = await buildPekaryaAttendanceView(
+        period,
+        'SATPAM',
+        { allowMissingActiveImport: action === 'decline' },
+      );
+      const employeeView = attendanceView.employees.find(
+        (candidate) => candidate.employeeId === employeeId,
+      );
+      if (!employeeView) {
+        throw new HttpError(
+          409,
+          'Pegawai tidak tersedia dalam data presensi Satpam periode ini.',
+        );
+      }
+      const evidenceDates = new Set(
+        satpamAttendanceEvidenceDates(
+          String(absence.dutyDate || ''),
+          planDay.shiftName,
+        ),
+      );
+      const currentDay =
+        employeeView.days.find(
+          (day) => day.date === String(absence.dutyDate || ''),
+        ) || null;
+      if (
+        action === 'approve' &&
+        employeeView.days.some(
+          (day) => evidenceDates.has(day.date) && day.completePunch,
+        )
+      ) {
+        throw new HttpError(
+          409,
+          'Presensi lengkap sudah tercatat untuk kewajiban dinas ini.',
+        );
+      }
+
+      const scanRequestHash = stableHash({
+        absenceRequestId,
+        reportType,
+        scanIn,
+        scanOut,
+        action,
+        requestId,
+        reason,
+        expectedRevision,
+        planRevision: plan.revision,
+        importRevisionId: attendanceView.importRevisionId,
+        calendarRevision: attendanceView.calendarRevision,
+      });
+      const scanIdempotencyRef = adminDb
+        .collection('FinancialIdempotencyKeys')
+        .doc(`${actor.uid}__${requestId}`);
+      const scanPlanRef = adminDb.collection('SatpamDutyPlans').doc(plan.id);
+      const scanPeriodRef = adminDb.collection('PayrollPeriods').doc(period);
+      const scanSlipRef = adminDb
+        .collection('PayrollSlipStates')
+        .doc(`${period.replace('-', '_')}_${employeeId}`);
+      const scanHeadRef = adminDb
+        .collection(PEKARYA_CORRECTION_HEADS_COLLECTION)
+        .doc(
+          attendanceCorrectionHeadId(
+            period,
+            employeeId,
+            String(absence.dutyDate || ''),
+          ),
+        );
+      const scanCorrectionRef = adminDb
+        .collection(PEKARYA_CORRECTIONS_COLLECTION)
+        .doc();
+      const scanImportRef = adminDb
+        .collection(ATTENDANCE_IMPORTS_COLLECTION)
+        .doc(period);
+      const scanResult = await adminDb.runTransaction(async (transaction) => {
+        const [
+          latestRequest,
+          latestPlan,
+          latestPeriod,
+          latestSlip,
+          latestEmployee,
+          latestHead,
+          latestImport,
+          idempotencySnapshot,
+        ] = await Promise.all([
+          transaction.get(absenceRef),
+          transaction.get(scanPlanRef),
+          transaction.get(scanPeriodRef),
+          transaction.get(scanSlipRef),
+          transaction.get(employeeRef),
+          transaction.get(scanHeadRef),
+          transaction.get(scanImportRef),
+          transaction.get(scanIdempotencyRef),
+        ]);
+        if (idempotencySnapshot.exists) {
+          if (idempotencySnapshot.data()?.requestHash !== scanRequestHash) {
+            throw new HttpError(409, 'requestId sudah digunakan untuk keputusan lain.');
+          }
+          return {
+            id: absenceRequestId,
+            revision: Number(
+              idempotencySnapshot.data()?.revision || expectedRevision,
+            ),
+            status: idempotencySnapshot.data()?.status,
+            amount: 0,
+            idempotent: true,
+          };
+        }
+        assertPeriodAcceptsInput(
+          latestPeriod.data(),
+          'Periode payroll sudah ditutup; keputusan presensi tidak dapat diubah.',
+        );
+        if (
+          latestSlip.exists &&
+          isImmutablePayrollStatus(latestSlip.data()?.status)
+        ) {
+          throw new HttpError(
+            409,
+            'Slip pegawai sudah immutable; gunakan koreksi finansial.',
+          );
+        }
+        const latestEmployeeData = latestEmployee.data();
+        if (
+          !latestEmployee.exists ||
+          latestEmployeeData?.employment?.jobCategory !== 'SATPAM' ||
+          latestEmployeeData?.employment?.status !== 'active' ||
+          latestEmployeeData?.flags?.isActive === false ||
+          latestEmployeeData?.flags?.isPayrollEligible === false
+        ) {
+          throw new HttpError(409, 'Pegawai Satpam aktif tidak ditemukan.');
+        }
+        const current = latestRequest.data();
+        if (!current) {
+          throw new HttpError(404, 'Laporan scan tidak ditemukan.');
+        }
+        if (Number(current.revision || 0) !== expectedRevision) {
+          throw new HttpError(
+            409,
+            'Pengajuan telah berubah. Muat ulang sebelum memutuskan.',
+          );
+        }
+        if (current.status !== 'pending') {
+          throw new HttpError(409, 'Laporan scan ini sudah pernah diputuskan.');
+        }
+        if (Number(latestPlan.data()?.revision || 0) !== plan.revision) {
+          throw new HttpError(
+            409,
+            'Rencana dinas berubah. Muat ulang sebelum memutuskan.',
+          );
+        }
+        if (
+          String(latestImport.data()?.activeRevisionId || '') !==
+          attendanceView.importRevisionId
+        ) {
+          throw new HttpError(
+            409,
+            'Revisi import presensi berubah. Muat ulang sebelum memutuskan.',
+          );
+        }
+        const currentCalendarRevision = Number(
+          latestPeriod.data()?.workCalendar?.revision || 1,
+        );
+        if (currentCalendarRevision !== attendanceView.calendarRevision) {
+          throw new HttpError(
+            409,
+            'Kalender kerja berubah. Muat ulang sebelum memutuskan.',
+          );
+        }
+        const headHasCompletePunch =
+          latestHead.data()?.present === true &&
+          typeof latestHead.data()?.scanIn === 'string' &&
+          typeof latestHead.data()?.scanOut === 'string';
+        if (action === 'approve' && headHasCompletePunch) {
+          throw new HttpError(
+            409,
+            'Tanggal ini sudah memiliki koreksi presensi lengkap.',
+          );
+        }
+
+        const approvingScan = action === 'approve';
+        const revision = expectedRevision + 1;
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const after = {
+          ...current,
+          status: approvingScan ? 'approved' : 'declined',
+          revision,
+          decisionReason: reason,
+          decidedAt: now,
+          decidedBy: actor.uid,
+          decidedByName: actor.displayName,
+          decisionAction: action,
+          approvedPayType: null,
+          approvedAmount: 0,
+          updatedAt: now,
+        };
+        transaction.set(absenceRef, after);
+        transaction.create(
+          adminDb
+            .collection('SatpamAbsenceRequestRevisions')
+            .doc(`${absenceRequestId}__r${revision}`),
+          {
+            absenceRequestId,
+            revision,
+            action,
+            before: current,
+            after,
+            actorUid: actor.uid,
+            requestId,
+            reason,
+            createdAt: now,
+          },
+        );
+
+        if (approvingScan) {
+          const correction = scanAttendanceCorrection(scanIn, scanOut);
+          const correctionRecord = {
+            period,
+            category: 'SATPAM',
+            employeeId,
+            employeeName: String(employee.name || ''),
+            nipy,
+            date: String(current.dutyDate || ''),
+            revision: Number(latestHead.data()?.revision || 0) + 1,
+            supersedesCorrectionId:
+              latestHead.data()?.correctionId || null,
+            rawValue:
+              (currentDay as typeof currentDay & { rawValue?: unknown } | null)
+                ?.rawValue || [],
+            beforeEffectiveValue: currentDay
+              ? {
+                  workStatus: currentDay.workStatus,
+                  scanIn: currentDay.scanIn,
+                  scanOut: currentDay.scanOut,
+                  present: currentDay.present,
+                }
+              : null,
+            effectiveValue: correction,
+            importRevisionId: attendanceView.importRevisionId,
+            calendarRevision: attendanceView.calendarRevision,
+            reason: `Laporan presensi Satpam: ${String(current.reason || '')}\nKeputusan: ${reason}`,
+            actorUid: actor.uid,
+            actorName: actor.displayName,
+            sourceType: 'satpam_scan_report',
+            sourceId: absenceRequestId,
+            createdAt: now,
+          };
+          transaction.create(scanCorrectionRef, correctionRecord);
+          transaction.set(scanHeadRef, {
+            ...correctionRecord,
+            ...correction,
+            correctionId: scanCorrectionRef.id,
+            updatedAt: now,
+          });
+        }
+
+        transaction.create(
+          newFinancialAuditRef(),
+          buildFinancialAuditRecord(actor, {
+            action: approvingScan
+              ? 'SATPAM_ATTENDANCE_APPROVED'
+              : 'SATPAM_ATTENDANCE_DECLINED',
+            entityType: 'SatpamAttendanceRequest',
+            entityId: absenceRequestId,
+            requestId,
+            reason,
+            before: current,
+            after,
+            metadata: {
+              employeeId,
+              dutyDate: current.dutyDate,
+              attendanceCorrection: approvingScan,
+              amount: 0,
+            },
+          }),
+        );
+        transaction.create(scanIdempotencyRef, {
+          actorUid: actor.uid,
+          requestId,
+          requestHash: scanRequestHash,
+          entityType: 'SatpamAttendanceRequest',
+          entityId: absenceRequestId,
+          revision,
+          status: after.status,
+          createdAt: now,
+        });
+        return {
+          id: absenceRequestId,
+          revision,
+          status: after.status,
+          amount: 0,
+          idempotent: false,
+        };
+      });
+      return Response.json(scanResult, {
+        headers: { 'Cache-Control': 'no-store' },
+      });
     }
     const approving =
       action === 'approve' || action === 'supersede_approve';
