@@ -628,7 +628,7 @@ export default function ActivityReviewPage() {
   const [deleteReason, setDeleteReason] = useState('');
   const [deletingActivity, setDeletingActivity] = useState(false);
 
-  // ── Satpam Pay-Type Correction Modal (super_admin, approved rows) ──
+  // ── Satpam Pay-Type Correction Modal (super_admin/satker_head, approved rows) ──
   const [payTypeTarget, setPayTypeTarget] = useState<ActivityReport | null>(null);
   const [payTypeValue, setPayTypeValue] = useState<string>('Harian');
   const [payTypeCovered, setPayTypeCovered] = useState('');
@@ -1320,7 +1320,7 @@ export default function ActivityReviewPage() {
     }
   };
 
-  // ── Satpam Pay-Type Correction (super_admin; approved assignments) ──
+  // ── Satpam Pay-Type Correction (super_admin/satker_head; approved assignments) ──
   const openPayTypeEditor = async (item: ActivityReport) => {
     setErrorMsg('');
     setPayTypeTarget(item);
@@ -1898,35 +1898,61 @@ export default function ActivityReviewPage() {
         <Card className="bg-white rounded-2xl shadow-sm border-none">
           <CardContent className="p-4">
             <div className="flex flex-col md:flex-row md:items-center gap-3">
-              <div className="flex min-w-0 items-center gap-2">
-                <Filter className="h-4 w-4 shrink-0 text-slate-400" />
-                <Select
-                  value={reportTypeFilter}
-                  onValueChange={(value) =>
-                    value &&
-                    setReportTypeFilter(
-                      value as 'all' | 'activity' | 'found_item' | 'reprimand' | 'shift',
-                    )
-                  }
-                >
-                  <SelectTrigger className="h-12 w-full min-w-56 rounded-xl border-slate-200 bg-white text-base font-bold md:w-64">
-                    <SelectValue>
-                      {reportTypeFilter === 'all' && 'Semua Jenis Laporan'}
-                      {reportTypeFilter === 'activity' && 'SPJ / Kegiatan Pribadi'}
-                      {reportTypeFilter === 'found_item' && 'Penemuan Barang'}
-                      {reportTypeFilter === 'reprimand' && 'Teguran Pengendara'}
-                      {reportTypeFilter === 'shift' && 'Shift Regu Satpam'}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl bg-white">
-                    <SelectItem value="all" className="min-h-11 text-base">Semua Jenis Laporan</SelectItem>
-                    <SelectItem value="activity" className="min-h-11 text-base">SPJ / Kegiatan Pribadi</SelectItem>
-                    <SelectItem value="found_item" className="min-h-11 text-base">Penemuan Barang</SelectItem>
-                    <SelectItem value="reprimand" className="min-h-11 text-base">Teguran Pengendara</SelectItem>
-                    <SelectItem value="shift" className="min-h-11 text-base">Shift Regu Satpam</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {profile?.role === 'satker_head' ? (
+                <div className="flex min-w-0 items-center gap-2">
+                  <Filter className="h-4 w-4 shrink-0 text-slate-400" />
+                  <Select
+                    value={categoryFilter}
+                    onValueChange={(value) => value && setCategoryFilter(value)}
+                  >
+                    <SelectTrigger className="h-12 w-full min-w-56 rounded-xl border-slate-200 bg-white text-base font-bold md:w-64">
+                      <SelectValue>
+                        {categoryFilter === 'all'
+                          ? 'Semua Kategori Pekarya'
+                          : JOB_CATEGORY_LABELS[categoryFilter] || categoryFilter}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl bg-white">
+                      <SelectItem value="all" className="min-h-11 text-base">Semua Kategori Pekarya</SelectItem>
+                      {allowedCategories.map((category) => (
+                        <SelectItem key={category} value={category} className="min-h-11 text-base">
+                          {JOB_CATEGORY_LABELS[category] || category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="flex min-w-0 items-center gap-2">
+                  <Filter className="h-4 w-4 shrink-0 text-slate-400" />
+                  <Select
+                    value={reportTypeFilter}
+                    onValueChange={(value) =>
+                      value &&
+                      setReportTypeFilter(
+                        value as 'all' | 'activity' | 'found_item' | 'reprimand' | 'shift',
+                      )
+                    }
+                  >
+                    <SelectTrigger className="h-12 w-full min-w-56 rounded-xl border-slate-200 bg-white text-base font-bold md:w-64">
+                      <SelectValue>
+                        {reportTypeFilter === 'all' && 'Semua Jenis Laporan'}
+                        {reportTypeFilter === 'activity' && 'SPJ / Kegiatan Pribadi'}
+                        {reportTypeFilter === 'found_item' && 'Penemuan Barang'}
+                        {reportTypeFilter === 'reprimand' && 'Teguran Pengendara'}
+                        {reportTypeFilter === 'shift' && 'Shift Regu Satpam'}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl bg-white">
+                      <SelectItem value="all" className="min-h-11 text-base">Semua Jenis Laporan</SelectItem>
+                      <SelectItem value="activity" className="min-h-11 text-base">SPJ / Kegiatan Pribadi</SelectItem>
+                      <SelectItem value="found_item" className="min-h-11 text-base">Penemuan Barang</SelectItem>
+                      <SelectItem value="reprimand" className="min-h-11 text-base">Teguran Pengendara</SelectItem>
+                      <SelectItem value="shift" className="min-h-11 text-base">Shift Regu Satpam</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               {profile?.role === 'super_admin' && (
                 <div className="flex min-w-0 items-center gap-2">
                   <Select
@@ -2329,7 +2355,7 @@ export default function ActivityReviewPage() {
                                                   >
                                                     {item.status === 'approved' ? 'Disetujui' : 'Ditolak'}
                                                   </Badge>
-                                                  {profile?.role === 'super_admin' && item.status === 'approved' && (
+                                                  {(profile?.role === 'super_admin' || profile?.role === 'satker_head') && item.status === 'approved' && (
                                                     <button
                                                       type="button"
                                                       title="Ubah kategori upah"
@@ -3092,7 +3118,7 @@ export default function ActivityReviewPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Satpam Pay-Type Correction Modal (super_admin only) ───────── */}
+      {/* ── Satpam Pay-Type Correction Modal (super_admin/satker_head) ── */}
       <Dialog open={payTypeTarget !== null} onOpenChange={(open) => { if (!open && !savingPayType) setPayTypeTarget(null); }}>
         <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl bg-white p-6">
           <DialogHeader>

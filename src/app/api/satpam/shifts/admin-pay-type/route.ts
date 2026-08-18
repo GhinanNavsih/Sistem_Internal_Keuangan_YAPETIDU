@@ -83,7 +83,10 @@ function parseCommand(raw: unknown): PayTypeCommand {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin']);
+    requireRole(actor, ['super_admin', 'satker_head']);
+    if (actor.role === 'satker_head' && !actor.permittedCategories.includes('SATPAM')) {
+      throw new HttpError(403, 'Anda tidak memiliki akses kategori SATPAM.');
+    }
 
     const command = parseCommand(await request.json());
     const requestHash = createHash('sha256').update(JSON.stringify(command)).digest('hex');
