@@ -106,12 +106,19 @@ interface ActivityReport {
   fuelProcurementMode?: 'hold_accumulate' | 'procure_release' | 'standard_direct';
   procuredAccumulatedAmount?: number;
   mealAllowance?: number;
+  preAuthorizedMeal?: number;
   preAuthorizedToll?: number;
   totalOperationalCost?: number;
   authorizedAt?: any;
   journeyDate?: string;
   claimedAt?: any;
   completedAt?: any;
+  // Detail fields, only needed for the read-only "Tinjau" review dialog
+  componentJarak?: number;
+  componentWaktu?: number;
+  nightPremium?: number;
+  actualMealAllowance?: number;
+  isSelfAuthorizedWithoutPiket?: boolean;
 }
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
@@ -180,6 +187,15 @@ function getActivityReimburseDelta(activity: ActivityReport): number {
   }).reimburseDelta;
 }
 
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex justify-between items-center gap-3 text-xs">
+      <span className="text-slate-500 font-semibold shrink-0">{label}</span>
+      <span className="text-right font-extrabold text-slate-800">{value}</span>
+    </div>
+  );
+}
+
 function DriverHistoryContent() {
   const { profile: rawProfile, activeProfile, logout } = useAuth();
   const profile = activeProfile || rawProfile;
@@ -200,6 +216,7 @@ function DriverHistoryContent() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'declined'>('all');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [targetDeleteActivity, setTargetDeleteActivity] = useState<ActivityReport | null>(null);
+  const [reviewActivity, setReviewActivity] = useState<ActivityReport | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleConfirmDeleteActivity = async () => {
@@ -283,6 +300,16 @@ function DriverHistoryContent() {
     const totalApprovedReimburse = approved.reduce((sum, a) => sum + getActivityReimburseDelta(a), 0);
     return { pending, approved: approved.length, declined, totalApprovedWage, totalApprovedReimburse };
   }, [activities]);
+
+  const reviewWageBreakdown = useMemo(() => {
+    if (!reviewActivity) return null;
+    const componentJarak = reviewActivity.componentJarak ?? Math.ceil((reviewActivity.distanceKm || 0) * 300);
+    const componentWaktu = reviewActivity.componentWaktu ?? Math.ceil(
+      (reviewActivity.routeDurationHours ?? reviewActivity.durationHours ?? 0) * 5000,
+    );
+    const nightPremium = reviewActivity.nightPremium ?? ((reviewActivity.nightCount || 0) * 50000);
+    return { componentJarak, componentWaktu, nightPremium };
+  }, [reviewActivity]);
 
   if (!profile?.linkedEmployeeId) {
     return (
@@ -579,6 +606,17 @@ function DriverHistoryContent() {
                             </Link>
                           </>
                         )}
+                        {activity.status === 'approved' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setReviewActivity(activity)}
+                            className="rounded-lg border-emerald-200 text-emerald-700 hover:bg-emerald-50 font-bold text-xs h-7 px-2.5 gap-1 cursor-pointer"
+                          >
+                            <ClipboardList className="w-3 h-3 text-emerald-600" />
+                            <span>Tinjau</span>
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </CardContent>
@@ -618,6 +656,129 @@ function DriverHistoryContent() {
               className="flex-1 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white gap-1.5 cursor-pointer"
             >
               {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Ya, Hapus'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Read-only Journey Review Dialog ("Tinjau") ─────────── */}
+      <Dialog open={Boolean(reviewActivity)} onOpenChange={(open) => !open && setReviewActivity(null)}>
+        <DialogContent className="rounded-3xl max-w-lg w-[95vw] p-6 bg-white shadow-2xl border-none max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="space-y-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className={`w-2.5 h-2.5 rounded-full ${getStatusConfig(reviewActivity?.status).dotClass}`} />
+              <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-md ${getStatusConfig(reviewActivity?.status).bgClass} ${getStatusConfig(reviewActivity?.status).textClass} border ${getStatusConfig(reviewActivity?.status).borderClass}`}>
+                {getStatusConfig(reviewActivity?.status).label}
+              </span>
+              <span className="text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded-md">
+                {reviewActivity?.vehicleType || 'Kendaraan'}
+              </span>
+              {reviewActivity?.isSelfAuthorizedWithoutPiket && (
+                <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md bg-orange-50 text-orange-700 border border-orange-200">
+                  SPJ Mandiri (Tanpa Piket)
+                </span>
+              )}
+            </div>
+            <DialogTitle className="text-base font-extrabold text-slate-900">
+              {reviewActivity?.activityName}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 leading-relaxed">
+              Tinjauan perjalanan yang sudah disetujui. Data ini bersifat baca-saja (read-only) dan tidak dapat diubah.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 pt-1">
+            <div className="p-3 rounded-xl bg-slate-50/70 border border-slate-100 space-y-1.5">
+              <span className="text-[9px] font-extrabold text-slate-400 uppercase block">Rute Perjalanan</span>
+              {(reviewActivity?.points && reviewActivity.points.length > 0 ? reviewActivity.points : []).map((point, idx) => (
+                <div key={idx} className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  <MapPin className="w-3 h-3 text-indigo-500 shrink-0" />
+                  <span>{point}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 p-3 rounded-xl bg-slate-50/70 border border-slate-100">
+              <DetailRow label="Tanggal" value={reviewActivity?.activityDate} />
+              <DetailRow label="Waktu" value={`${reviewActivity?.timeStart} – ${reviewActivity?.timeEnd}`} />
+              <DetailRow label="Jarak Tempuh" value={`${(reviewActivity?.distanceKm || 0).toFixed(1)} km`} />
+              <DetailRow
+                label="Waktu Tempuh"
+                value={`${(reviewActivity?.routeDurationHours ?? reviewActivity?.durationHours ?? 0).toFixed(1)} jam`}
+              />
+            </div>
+
+            <div className="p-3 rounded-2xl bg-indigo-50/40 border border-indigo-100/60 space-y-2">
+              <span className="text-[9px] font-extrabold text-indigo-600 uppercase block">Komponen Upah Bersih Sopir</span>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="flex justify-between bg-white p-2 rounded-lg border border-indigo-100/50">
+                  <span className="text-slate-500">Komponen Jarak</span>
+                  <span className="font-extrabold text-slate-800">{fmtRp(reviewWageBreakdown?.componentJarak || 0)}</span>
+                </div>
+                <div className="flex justify-between bg-white p-2 rounded-lg border border-indigo-100/50">
+                  <span className="text-slate-500">Komponen Waktu</span>
+                  <span className="font-extrabold text-slate-800">{fmtRp(reviewWageBreakdown?.componentWaktu || 0)}</span>
+                </div>
+              </div>
+              {(reviewWageBreakdown?.nightPremium || 0) > 0 && (
+                <div className="flex justify-between bg-white p-2 rounded-lg border border-indigo-100/50 text-xs">
+                  <span className="text-slate-500">Premium Malam ({reviewActivity?.nightCount || 0}×)</span>
+                  <span className="font-extrabold text-slate-800">+{fmtRp(reviewWageBreakdown?.nightPremium || 0)}</span>
+                </div>
+              )}
+              <div className="flex justify-between pt-2 border-t border-indigo-200/50 text-sm font-extrabold text-slate-800">
+                <span>Upah Bersih</span>
+                <span className="text-emerald-600">{fmtRp(reviewActivity?.upahBersih || 0)}</span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50/70 border border-slate-100 space-y-1.5">
+              <span className="text-[9px] font-extrabold text-slate-400 uppercase block">Operasional &amp; Reimburse</span>
+              <DetailRow label="BBM" value={fmtRp(reviewActivity?.fuelFee || 0)} />
+              <DetailRow label="Tol &amp; Parkir" value={fmtRp(reviewActivity?.tollParkingFee || 0)} />
+              <DetailRow label="Uang Makan" value={fmtRp(reviewActivity?.actualMealAllowance ?? reviewActivity?.mealAllowance ?? 0)} />
+              <div className="flex justify-between items-center pt-1.5 border-t border-slate-200">
+                <span className="text-slate-500 font-semibold text-xs">Total Reimburse (Delta)</span>
+                <span className="font-extrabold text-blue-600 text-xs">
+                  {fmtRp(reviewActivity ? getActivityReimburseDelta(reviewActivity) : 0)}
+                </span>
+              </div>
+            </div>
+
+            {(reviewActivity?.fuelReceiptUrl || reviewActivity?.tollReceiptUrl) && (
+              <div className="flex gap-2">
+                {reviewActivity?.fuelReceiptUrl && (
+                  <a
+                    href={reviewActivity.fuelReceiptUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 text-center text-[10px] font-bold text-indigo-600 border border-indigo-200 rounded-lg py-1.5 hover:bg-indigo-50"
+                  >
+                    Lihat Bukti BBM
+                  </a>
+                )}
+                {reviewActivity?.tollReceiptUrl && (
+                  <a
+                    href={reviewActivity.tollReceiptUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 text-center text-[10px] font-bold text-indigo-600 border border-indigo-200 rounded-lg py-1.5 hover:bg-indigo-50"
+                  >
+                    Lihat Bukti Tol
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setReviewActivity(null)}
+              className="w-full rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+            >
+              Tutup
             </Button>
           </DialogFooter>
         </DialogContent>
