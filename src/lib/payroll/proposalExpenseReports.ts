@@ -78,13 +78,8 @@ export interface ExpenseReportValidation {
   valid: boolean;
   errors: string[];
   populatedRows: ExpenseReportRow[];
+  /** Informational only; repeated employee rows are valid in the report sandbox. */
   duplicateEmployeeIds: string[];
-}
-
-export interface ExpenseReportWorker {
-  employeeId: string;
-  employeeName: string;
-  payGiven: number;
 }
 
 export function createStableId(prefix: string): string {
@@ -350,7 +345,6 @@ export function validateExpenseReport(
       }
       if (row.employeeId && seenEmployeeIds.has(row.employeeId)) {
         duplicateEmployeeIds.push(row.employeeId);
-        errors.push(`${rowLabel}: pegawai yang sama tidak boleh muncul dua kali.`);
       }
       if (row.employeeId) seenEmployeeIds.add(row.employeeId);
       if (row.employeeSearchText?.trim() && !row.employeeId) {
@@ -360,28 +354,6 @@ export function validateExpenseReport(
   });
 
   return { valid: errors.length === 0, errors, populatedRows, duplicateEmployeeIds };
-}
-
-export function buildExpenseReportWorkers(
-  report: ExpenseReport,
-  parseQty: (value: string) => number = parseProposalQty,
-): ExpenseReportWorker[] {
-  if (report.mode !== 'employee') return [];
-  const workers = new Map<string, ExpenseReportWorker>();
-  report.rows.forEach((row) => {
-    if (!row.employeeId.trim()) return;
-    const previous = workers.get(row.employeeId);
-    const payGiven = Math.max(0, toFiniteNumber(row.realisasi));
-    workers.set(row.employeeId, {
-      employeeId: row.employeeId,
-      employeeName: row.employeeName,
-      payGiven: (previous?.payGiven || 0) + payGiven,
-    });
-  });
-  // Keep the parser in this function's signature for callers that share the
-  // same validation/build pipeline; REALISASI, not budget, is intentionally pay.
-  void parseQty;
-  return Array.from(workers.values());
 }
 
 function normalizeLegacyRows(raw: Record<string, unknown>, type: ExpenseReportType): ExpenseReportRow[] {

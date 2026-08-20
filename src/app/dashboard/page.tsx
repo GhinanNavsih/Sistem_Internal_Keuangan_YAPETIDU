@@ -13,6 +13,7 @@ import {
   DashboardVakasiItem,
   sumSlipFields,
 } from '@/lib/payroll/dashboardSlipData';
+import { isPayableVakasiTambahan } from '@/lib/payroll/vakasiTambahan';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -673,7 +674,7 @@ export default function TreasuryDashboard() {
 
         vakasiSnapshot.docs.forEach(d => {
           const data = d.data();
-          if (!data.period || (data.status && data.status !== 'approved')) return;
+          if (!data.period || !isPayableVakasiTambahan(data)) return;
           const period = String(data.period).replace('-', '_');
           if (!/^\d{4}_\d{2}$/.test(period)) return;
 

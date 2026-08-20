@@ -29,7 +29,7 @@ test('rejects links stored on child expense rows', () => {
   assert.ok(result.errors.some((error) => error.includes('Baris anak LPJ')));
 });
 
-test('requires active employees and produces report workers from actuals', () => {
+test('requires active employee assignments without producing payroll output', () => {
   const rows = makeRows();
   const report = createExpenseReport('report-1', rows[0].rowId!, rows[0].uraian, 'employee', [
     createExpenseReportRow({
@@ -46,7 +46,8 @@ test('requires active employees and produces report workers from actuals', () =>
 
   const result = validateLpjApproval(rows, [report], new Set(['e1']));
   assert.equal(result.valid, true);
-  assert.deepEqual(result.workersByReport.get('report-1'), [{ employeeId: 'e1', employeeName: 'Pegawai Satu', payGiven: 150_000 }]);
+  assert.deepEqual(result.linkedReports, [report]);
+  assert.equal('workersByReport' in result, false);
 });
 
 test('rejects an employee that is no longer active', () => {

@@ -11,6 +11,7 @@ import {
   hasClaimedDriverJourney,
   countSubmittedSelfPiketJourneysOnDate,
   isSelfCreatedDriverJourney,
+  classifyDriverPiketDatesInPeriod,
 } from './driverPiket';
 
 const mockSchedules: DriverPiketSchedule[] = [
@@ -201,5 +202,41 @@ test('a driver can self-authorize without a Piket schedule, flagged distinctly f
   assert.equal(
     countSubmittedSelfPiketJourneysOnDate('2026-08-01', 'D1', mixedJourneys),
     1,
+  );
+});
+
+test('Piket days split into Harian/Jumat & Libur exactly like real attendance days, and always sum to the Piket count', () => {
+  // Scheduled every day 1–7 Aug 2026: only 7 Aug is a Friday, so this is the
+  // user's own example — 7 Piket, 6 Harian, 1 Jumat & Libur.
+  const dailySchedules: DriverPiketSchedule[] = [
+    '2026-08-01', '2026-08-02', '2026-08-03', '2026-08-04',
+    '2026-08-05', '2026-08-06', '2026-08-07',
+  ].map((date) => ({
+    id: `PIKET-${date}-pak_ufik`,
+    period: '2026-08',
+    date,
+    stationKey: 'pak_ufik',
+    stationName: 'Pak Ufik',
+    driverId: 'D1',
+    driverName: 'Abdul Kholik',
+  }));
+
+  const noHolidays = new Set<string>();
+  const result = classifyDriverPiketDatesInPeriod('D1', '2026-08', dailySchedules, noHolidays);
+  assert.deepEqual(result, { harian: 6, jumatLibur: 1 });
+  assert.equal(
+    result.harian + result.jumatLibur,
+    countDriverPiketInPeriod('D1', '2026-08', dailySchedules),
+  );
+
+  // A non-Friday date that's an explicit designated holiday also counts as
+  // Jumat & Libur, same rule real published attendance uses.
+  const withNationalHoliday = new Set<string>(['2026-08-17']);
+  const mondayHolidaySchedule: DriverPiketSchedule[] = [
+    { id: 'PIKET-2026-08-17-sekolah', period: '2026-08', date: '2026-08-17', stationKey: 'sekolah', stationName: 'Sekolah', driverId: 'D1', driverName: 'Abdul Kholik' },
+  ];
+  assert.deepEqual(
+    classifyDriverPiketDatesInPeriod('D1', '2026-08', mondayHolidaySchedule, withNationalHoliday),
+    { harian: 0, jumatLibur: 1 },
   );
 });

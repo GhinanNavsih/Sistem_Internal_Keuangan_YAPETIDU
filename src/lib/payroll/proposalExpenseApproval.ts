@@ -1,7 +1,5 @@
 import {
-  buildExpenseReportWorkers,
   ExpenseReport,
-  ExpenseReportWorker,
   ProposalExpenseRow,
   validateExpenseReport,
 } from './proposalExpenseReports';
@@ -10,7 +8,6 @@ export interface LpjApprovalValidation {
   valid: boolean;
   errors: string[];
   linkedReports: ExpenseReport[];
-  workersByReport: Map<string, ExpenseReportWorker[]>;
 }
 /**
  * Pure approval validation shared by the protected API and focused tests.
@@ -24,7 +21,6 @@ export function validateLpjApproval(
   const errors: string[] = [];
   const reportsById = new Map(reports.map((report) => [report.id, report]));
   const linkedReports: ExpenseReport[] = [];
-  const workersByReport = new Map<string, ExpenseReportWorker[]>();
   const referencedReportIds = new Set<string>();
 
   lpjRows.forEach((row, index) => {
@@ -58,9 +54,6 @@ export function validateLpjApproval(
           errors.push(`${report.title || `Laporan ${index + 1}`}: pegawai "${reportRow.employeeName || reportRow.employeeId}" tidak aktif atau tidak ditemukan.`);
         }
       });
-      if (!validation.errors.length) {
-        workersByReport.set(report.id, buildExpenseReportWorkers(report));
-      }
     }
     linkedReports.push(report);
   });
@@ -75,6 +68,5 @@ export function validateLpjApproval(
     valid: errors.length === 0,
     errors: Array.from(new Set(errors)),
     linkedReports,
-    workersByReport,
   };
 }

@@ -35,6 +35,7 @@ import { MONTHS_ID } from '@/utils/rekapConfig';
 import CetakKegiatanLoyalisDialog from '@/components/CetakKegiatanLoyalisDialog';
 import { generateKegiatanLoyalisRecapPdf } from '@/utils/generateKegiatanLoyalisRecapPdf';
 import { generateKegiatanLoyalisRecapXlsx } from '@/utils/generateKegiatanLoyalisRecapXlsx';
+import { isProposalLpjSandboxSource } from '@/lib/payroll/vakasiTambahan';
 
 type WorkerRow = {
   employeeId: string;
@@ -232,10 +233,12 @@ export default function VakasiLoyalisPage() {
     );
 
     const unsubscribe = onSnapshot(q, (snap) => {
-      let list = snap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      })) as any[];
+      let list = snap.docs
+        .map(d => ({
+          id: d.id,
+          ...d.data()
+        }))
+        .filter((event) => !isProposalLpjSandboxSource(event)) as any[];
 
       if (profile.role === 'satker_head_loyalis') {
         list = list.filter(evt => evt.submittedBy === profile.uid);

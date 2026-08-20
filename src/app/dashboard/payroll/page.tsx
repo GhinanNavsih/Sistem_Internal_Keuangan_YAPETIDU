@@ -93,6 +93,7 @@ import {
 } from '@/lib/payroll/dashboardSlipData';
 import { buildKoperasiPayrollAmountMaps } from '@/lib/payroll/koperasiAmounts';
 import { isPayrollEmployeeEligible } from '@/lib/payroll/payrollRoster';
+import { isPayableVakasiTambahan } from '@/lib/payroll/vakasiTambahan';
 
 import {
   calculateTotalEarnings,
@@ -1510,7 +1511,7 @@ export default function PayrollValidationDashboard() {
         const processDocs = (docs: any[]) => {
           docs.forEach(d => {
             const data = d.data();
-            if (data.period === periodToken && (!data.status || data.status === 'approved')) {
+            if (data.period === periodToken && isPayableVakasiTambahan(data)) {
               const eventNameVal = data.eventName || '';
               const workers = data.eventWorkers || {};
               Object.entries(workers).forEach(([empId, w]: [string, any]) => {
@@ -2187,7 +2188,7 @@ export default function PayrollValidationDashboard() {
         const freshVakasiList: { eventName: string; payGiven: number }[] = [];
         vakasiSnap.docs.forEach(d => {
           const data = d.data();
-          if (data.period === periodToken && (!data.status || data.status === 'approved')) {
+          if (data.period === periodToken && isPayableVakasiTambahan(data)) {
             const eventName = data.eventName || '';
             const worker = data.eventWorkers?.[emp.id];
             if (worker && worker.payGiven) {
@@ -2689,7 +2690,7 @@ export default function PayrollValidationDashboard() {
     const freshVakasiList: { eventName: string; payGiven: number }[] = [];
     vakasiSnap.docs.forEach(d => {
       const data = d.data();
-      if (data.period === periodToken && (!data.status || data.status === 'approved')) {
+      if (data.period === periodToken && isPayableVakasiTambahan(data)) {
         const eventName = data.eventName || '';
         const worker = data.eventWorkers?.[employeeId];
         if (worker && worker.payGiven) {

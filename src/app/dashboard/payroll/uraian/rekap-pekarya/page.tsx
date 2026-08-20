@@ -51,7 +51,8 @@ import {
   sumApprovedActivitySpj,
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
-import { DriverPiketSchedule, countDriverPiketInPeriod } from '@/lib/payroll/driverPiket';
+import { DriverPiketSchedule, countDriverPiketInPeriod, classifyDriverPiketDatesInPeriod } from '@/lib/payroll/driverPiket';
+import { periodCalendarFromData } from '@/lib/payroll/calendar';
 
 export default function RekapPekaryaPage() {
   const { user, profile } = useAuth();
@@ -92,6 +93,7 @@ export default function RekapPekaryaPage() {
   const [historicalSpjCorrectionMode, setHistoricalSpjCorrectionMode] = useState(false);
   const [historicalSpjCorrectionSaving, setHistoricalSpjCorrectionSaving] = useState(false);
   const [satpamDutyPlanRequired, setSatpamDutyPlanRequired] = useState(false);
+  const [periodPremiumDates, setPeriodPremiumDates] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -106,10 +108,19 @@ export default function RekapPekaryaPage() {
                 snapshot.data() || null,
               ),
           );
+          // Same "Friday or designated holiday" set real attendance publish
+          // uses, so a driver's Piket-derived Harian/Jumat & Libur estimate
+          // classifies dates identically to how the real data eventually will.
+          setPeriodPremiumDates(
+            new Set(periodCalendarFromData(period, snapshot.exists() ? snapshot.data() : null).premiumDates),
+          );
         }
       })
       .catch(() => {
-        if (active) setSatpamDutyPlanRequired(false);
+        if (active) {
+          setSatpamDutyPlanRequired(false);
+          setPeriodPremiumDates(new Set());
+        }
       });
     return () => {
       active = false;
@@ -376,6 +387,11 @@ export default function RekapPekaryaPage() {
     const periodToken = `${year}-${String(month).padStart(2, '0')}`;
     return countDriverPiketInPeriod(empId, periodToken, driverPiketSchedules);
   }, [year, month, driverPiketSchedules]);
+
+  const getComputedSopirHarianJumatLibur = useCallback((empId: string) => {
+    const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+    return classifyDriverPiketDatesInPeriod(empId, periodToken, driverPiketSchedules, periodPremiumDates);
+  }, [year, month, driverPiketSchedules, periodPremiumDates]);
 
   // ── File states ──
   const [file, setFile] = useState<File | null>(null);
@@ -649,6 +665,7 @@ export default function RekapPekaryaPage() {
       key === 'spj' &&
       allowsHistoricalPaperSpjEntry(category, period, employeeId);
     if (isLocked && !isHistoricalSpjCell) return;
+    if (category === 'SOPIR' && key === 'piket') return;
     if (
       satpamDutyPlanRequired &&
       category === 'SATPAM' &&
@@ -710,8 +727,20 @@ export default function RekapPekaryaPage() {
       ) {
         storedValues.bonusPresensiBulanan = 0;
       }
-      if (category === 'SOPIR' && storedValues.piket === undefined) {
+      // Piket always tracks the current DriverPiketSchedules roster, exactly
+      // like SPJ tracks approved activities — never frozen at whatever count
+      // existed the last time this row was saved.
+      if (category === 'SOPIR') {
         storedValues.piket = getComputedSopirPiketCount(emp.employeeId);
+        // Harian/Jumat & Libur, unlike Piket, has a superior data source that
+        // arrives later (real published attendance) — only fill the Piket-
+        // derived estimate while nothing has been saved for these yet, so a
+        // later attendance publish is never overwritten back to the estimate.
+        if (storedValues.harian === undefined || storedValues.jumatLibur === undefined) {
+          const sopirAttendanceEstimate = getComputedSopirHarianJumatLibur(emp.employeeId);
+          if (storedValues.harian === undefined) storedValues.harian = sopirAttendanceEstimate.harian;
+          if (storedValues.jumatLibur === undefined) storedValues.jumatLibur = sopirAttendanceEstimate.jumatLibur;
+        }
       }
       const storedCounts: Record<string, number> = {};
       const empCols = [...getRekapColumns(category, period), ...customColumns];
@@ -924,8 +953,12 @@ export default function RekapPekaryaPage() {
             rawVal = ketuaShiftIds.has(emp.employeeId) ? 100000 : 0;
           }
         }
-        if (category === 'SOPIR' && col.key === 'piket' && rawValues[col.key] === undefined) {
+        if (category === 'SOPIR' && col.key === 'piket') {
           rawVal = getComputedSopirPiketCount(emp.employeeId);
+        }
+        if (category === 'SOPIR' && (col.key === 'harian' || col.key === 'jumatLibur') && rawValues[col.key] === undefined) {
+          const sopirAttendanceEstimate = getComputedSopirHarianJumatLibur(emp.employeeId);
+          rawVal = col.key === 'harian' ? sopirAttendanceEstimate.harian : sopirAttendanceEstimate.jumatLibur;
         }
         if (rawVal === 0) return { col, count: 0, value: 0, isDual: false };
         const isDual = (DUAL_MAP_KEYS as readonly string[]).includes(col.key) && !!col.multiplier;
@@ -963,8 +996,13 @@ export default function RekapPekaryaPage() {
           computedValues.tunjanganJabatan = ketuaShiftIds.has(emp.employeeId) ? 100000 : 0;
         }
       }
-      if (category === 'SOPIR' && computedValues.piket === undefined) {
+      if (category === 'SOPIR') {
         computedValues.piket = getComputedSopirPiketCount(emp.employeeId);
+        if (computedValues.harian === undefined || computedValues.jumatLibur === undefined) {
+          const sopirAttendanceEstimate = getComputedSopirHarianJumatLibur(emp.employeeId);
+          if (computedValues.harian === undefined) computedValues.harian = sopirAttendanceEstimate.harian;
+          if (computedValues.jumatLibur === undefined) computedValues.jumatLibur = sopirAttendanceEstimate.jumatLibur;
+        }
       }
       const computedCounts: Record<string, number> = {};
       const baseCols = getRekapColumns(category, period);
@@ -1385,6 +1423,8 @@ export default function RekapPekaryaPage() {
                           const isSatpamShift = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'].includes(col.key);
                           const isTunjanganJabatan = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && col.key === 'tunjanganJabatan';
                           const isSopirPiket = category === 'SOPIR' && col.key === 'piket';
+                          const isSopirHarianOrJumatLibur =
+                            category === 'SOPIR' && (col.key === 'harian' || col.key === 'jumatLibur');
                           const isAttendanceDerived =
                             isAttendanceDerivedRekapColumn(category, period, col.key);
                           const isDutyPlanDerived =
@@ -1405,9 +1445,13 @@ export default function RekapPekaryaPage() {
                               ? (getComputedSatpamShiftCount(emp.employeeId, col.key) || 0)
                               : (isTunjanganJabatan && tableData[emp.employeeId]?.[col.key] === undefined)
                                 ? (ketuaShiftIds.has(emp.employeeId) ? 100000 : 0)
-                                : (isSopirPiket && tableData[emp.employeeId]?.[col.key] === undefined)
+                                : isSopirPiket
                                   ? (getComputedSopirPiketCount(emp.employeeId) || 0)
-                                  : (tableData[emp.employeeId]?.[col.key] ?? '');
+                                  : (isSopirHarianOrJumatLibur && tableData[emp.employeeId]?.[col.key] === undefined)
+                                    ? ((col.key === 'harian'
+                                        ? getComputedSopirHarianJumatLibur(emp.employeeId).harian
+                                        : getComputedSopirHarianJumatLibur(emp.employeeId).jumatLibur) || 0)
+                                    : (tableData[emp.employeeId]?.[col.key] ?? '');
                           return (
                             <td
                               key={col.key}
@@ -1427,28 +1471,33 @@ export default function RekapPekaryaPage() {
                                   (isLocked && !canEditThisHistoricalSpj) ||
                                   (isSpj && !manualSpjEnabled && !canEditThisHistoricalSpj) ||
                                   isAttendanceDerived ||
-                                  isDutyPlanDerived
+                                  isDutyPlanDerived ||
+                                  isSopirPiket
                                 }
                                 title={
                                   isManualSatpamBonus
                                     ? 'Bonus manual khusus Satpam periode Juli 2026. Isi 0 atau 1.'
                                     : isDutyPlanDerived
                                     ? 'Bonus dihitung otomatis dari pemenuhan rencana dinas Satpam.'
+                                  : (isSopirHarianOrJumatLibur && tableData[emp.employeeId]?.[col.key] === undefined)
+                                    ? 'Estimasi dari jadwal Piket; akan diganti otomatis oleh publikasi Presensi Pekarya.'
                                   : isAttendanceDerived
                                     ? 'Nilai ini bersumber dari publikasi Presensi Pekarya.'
-                                    : isLocked && !canEditThisHistoricalSpj
-                                      ? 'Tabel rekap sedang dikunci. Klik "Buka Kunci" jika ingin mengubah data.'
-                                      : isSpj
-                                        ? (manualSpjEnabled || canEditThisHistoricalSpj)
-                                          ? 'Periode Juli 2026 (26 Jun–31 Jul) masih berbasis kertas. Isi akumulasi SPJ secara manual; kosongkan untuk memakai nilai kegiatan.'
-                                          : 'SPJ dihitung otomatis dari kegiatan yang disetujui.'
-                                        : undefined
+                                    : isSopirPiket
+                                      ? 'Piket dihitung otomatis dari jadwal Piket Sopir dan selalu diperbarui setiap kali rekap disimpan.'
+                                      : isLocked && !canEditThisHistoricalSpj
+                                        ? 'Tabel rekap sedang dikunci. Klik "Buka Kunci" jika ingin mengubah data.'
+                                        : isSpj
+                                          ? (manualSpjEnabled || canEditThisHistoricalSpj)
+                                            ? 'Periode Juli 2026 (26 Jun–31 Jul) masih berbasis kertas. Isi akumulasi SPJ secara manual; kosongkan untuk memakai nilai kegiatan.'
+                                            : 'SPJ dihitung otomatis dari kegiatan yang disetujui.'
+                                          : undefined
                                 }
                                 className={`h-10 text-center font-extrabold transition-all ${isLocked
                                   ? 'bg-slate-50/60 border-slate-200/80 text-slate-900 disabled:opacity-100 cursor-default shadow-2xs'
-                                  : isAttendanceDerived || isDutyPlanDerived
+                                  : isAttendanceDerived || isDutyPlanDerived || isSopirPiket
                                     ? 'bg-indigo-50 border-indigo-200 text-indigo-800 disabled:opacity-100 cursor-not-allowed'
-                                  : isManualSatpamBonus || (isSpj && canEditThisHistoricalSpj) || isSatpamShift || isSopirPiket || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
+                                  : isManualSatpamBonus || (isSpj && canEditThisHistoricalSpj) || isSatpamShift || (isTunjanganJabatan && ketuaShiftIds.has(emp.employeeId))
                                     ? 'bg-indigo-50/30 border-indigo-200 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'
                                     : hasScanData
                                       ? 'rounded-xl border-slate-400 bg-slate-50/50 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10'

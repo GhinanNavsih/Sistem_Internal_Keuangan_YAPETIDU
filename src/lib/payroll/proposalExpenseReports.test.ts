@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  buildExpenseReportWorkers,
   createExpenseReport,
   createExpenseReportRow,
   ensureExpenseRowIds,
@@ -17,6 +16,10 @@ import {
   seedExpenseReportRows,
   validateExpenseReport,
 } from './proposalExpenseReports';
+import {
+  isPayableVakasiTambahan,
+  PROPOSAL_LPJ_SANDBOX_SOURCE_KIND,
+} from './vakasiTambahan';
 
 test('removes undefined fields without altering Firestore-compatible class values', () => {
   class Sentinel {}
@@ -105,35 +108,45 @@ test('allows modal validation errors to use hierarchical row labels', () => {
   assert.deepEqual(result.errors, ['Baris 1.1: QTY harus lebih besar dari 0.']);
 });
 
-test('validates connected employees, stale searches, and duplicate employees', () => {
+test('allows an employee on multiple sandbox report rows', () => {
   const report = createExpenseReport('report-1', 'group-1', 'Pembayaran Penguji', 'employee', [
     createExpenseReportRow({ id: 'row-1', uraian: 'Penguji', employeeId: 'e1', employeeName: 'Satu', employeeSearchText: 'Satu', rincianQty: '1', rincianRate: 100_000, realisasi: 90_000 }),
-    createExpenseReportRow({ id: 'row-2', uraian: 'Ketua', employeeId: 'e1', employeeName: 'Satu', employeeSearchText: 'Satu', rincianQty: '1', rincianRate: 100_000, realisasi: 90_000 }),
-    createExpenseReportRow({ id: 'row-3', uraian: 'Sekretaris', employeeSearchText: 'Nama tidak ditemukan', rincianQty: '1', rincianRate: 50_000, realisasi: 50_000 }),
+    createExpenseReportRow({ id: 'row-2', uraian: 'Ketua', employeeId: 'e1', employeeName: 'Satu', employeeSearchText: 'Satu', rincianQty: '1', rincianRate: 100_000, realisasi: 80_000 }),
+  ]);
+  report.title = 'Pembayaran Penguji';
+
+  const result = validateExpenseReport(report);
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.duplicateEmployeeIds, ['e1']);
+});
+
+test('rejects an employee search that has not been connected', () => {
+  const report = createExpenseReport('report-1', 'group-1', 'Pembayaran Penguji', 'employee', [
+    createExpenseReportRow({ id: 'row-1', uraian: 'Sekretaris', employeeSearchText: 'Nama tidak ditemukan', rincianQty: '1', rincianRate: 50_000, realisasi: 50_000 }),
   ]);
   report.title = 'Pembayaran Penguji';
 
   const result = validateExpenseReport(report);
   assert.equal(result.valid, false);
-  assert.deepEqual(result.duplicateEmployeeIds, ['e1']);
-  assert.ok(result.errors.some((error) => error.includes('pegawai yang sama')));
   assert.ok(result.errors.some((error) => error.includes('pencarian pegawai belum dihubungkan')));
 });
 
-test('expense-only reports do not require employees and use actual amounts for payroll workers only in employee mode', () => {
+test('expense-only reports do not require employees', () => {
   const report = createExpenseReport('report-1', 'group-1', 'Konsumsi', 'expense', [
     createExpenseReportRow({ uraian: 'Konsumsi rapat', rincianQty: '4', rincianRate: 25_000, realisasi: 90_000 }),
   ]);
   report.title = 'Kwitansi Konsumsi';
   assert.equal(validateExpenseReport(report).valid, true);
-  assert.deepEqual(buildExpenseReportWorkers(report), []);
 });
 
-test('approved employee workers are paid from REALISASI and not ANGGARAN', () => {
-  const report = createExpenseReport('report-1', 'group-1', 'Pembayaran', 'employee', [
-    createExpenseReportRow({ uraian: 'Penguji', employeeId: 'e1', employeeName: 'Satu', rincianQty: '2', rincianRate: 100_000, realisasi: 125_000 }),
-  ]);
-  assert.deepEqual(buildExpenseReportWorkers(report), [{ employeeId: 'e1', employeeName: 'Satu', payGiven: 125_000 }]);
+test('excludes proposal LPJ sandbox records from payable vakasi earnings', () => {
+  assert.equal(isPayableVakasiTambahan({
+    status: 'approved',
+    sourceKind: PROPOSAL_LPJ_SANDBOX_SOURCE_KIND,
+  }), false);
+  assert.equal(isPayableVakasiTambahan({ status: 'approved' }), true);
+  assert.equal(isPayableVakasiTambahan({ status: 'submitted' }), false);
 });
 
 test('normalizes the old example-based report shape into generic rows', () => {

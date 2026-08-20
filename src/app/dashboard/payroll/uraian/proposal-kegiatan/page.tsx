@@ -1083,7 +1083,7 @@ export default function ProposalKegiatanPage() {
       let actionLabel = '';
       if (action === 'proposal_approved') actionLabel = 'Proposal Disetujui (Event Siap & LPJ Terbuka)';
       else if (action === 'proposal_revision') actionLabel = 'Proposal Diminta Revisi';
-      else if (action === 'lpj_approved') actionLabel = 'LPJ Disetujui & Nominal Honorarium Cair ke Payroll!';
+      else if (action === 'lpj_approved') actionLabel = 'LPJ Disetujui (Sandbox, tanpa dampak payroll)';
       else if (action === 'lpj_revision') actionLabel = 'LPJ Diminta Revisi';
       else actionLabel = 'Ditolak';
 
@@ -1155,7 +1155,7 @@ export default function ProposalKegiatanPage() {
       case 'lpj_approved':
         return (
           <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-emerald-600" /> LPJ Disetujui & Payroll Cair
+            <Sparkles className="w-3 h-3 text-emerald-600" /> LPJ Disetujui (Sandbox)
           </span>
         );
       case 'declined':
@@ -1170,6 +1170,14 @@ export default function ProposalKegiatanPage() {
   return (
     <div className="space-y-6">
       <FloatingSnackbar message={message} />
+
+      <div role="status" className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 shadow-sm">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+        <div>
+          <p className="font-black">Mode Sandbox — tidak terhubung ke payroll</p>
+          <p className="mt-0.5 font-medium leading-relaxed">Data proposal dan LPJ hanya untuk simulasi. Pegawai yang dipilih dan nominal yang diisi tidak dibuat sebagai penghasilan atau dikirim ke slip gaji.</p>
+        </div>
+      </div>
 
       {/* ── TOP SECTION: Dedicated Event List Carousel / Cards Grid ── */}
       <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-4 md:p-6 space-y-4">
@@ -1349,7 +1357,7 @@ export default function ProposalKegiatanPage() {
           <img src="/Logo UNIPDU.png" alt="UNIPDU" className="w-12 h-12 shrink-0 object-contain" />
           <div className="space-y-0.5">
             <h4 className="text-xs font-black text-slate-800 tracking-wide uppercase">UNIVERSITAS PESANTREN TINGGI DARUL 'ULUM</h4>
-            <p className="text-[10px] text-slate-500 font-medium">Pusat Pengisian Gaji & Administrasi Keuangan Kepegawaian</p>
+            <p className="text-[10px] text-slate-500 font-medium">Sandbox Proposal & LPJ — tanpa dampak ke payroll pegawai</p>
           </div>
         </div>
 
@@ -2045,8 +2053,8 @@ export default function ProposalKegiatanPage() {
                   <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex gap-3 text-emerald-900 text-xs shadow-sm">
                     <Sparkles className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                     <div>
-                      <p className="font-bold text-emerald-800 text-sm mb-0.5">LPJ Disetujui & Pencairan Dana Selesai!</p>
-                      <p className="leading-relaxed font-medium">Laporan pertanggungjawaban kegiatan disetujui secara final. Nominal honorarium/vakasi otomatis disinkronkan ke payroll pegawai.</p>
+                      <p className="font-bold text-emerald-800 text-sm mb-0.5">LPJ Sandbox Disetujui</p>
+                      <p className="leading-relaxed font-medium">Persetujuan ini hanya memperbarui status laporan. Pegawai dan nominal di dalamnya tidak memengaruhi payroll atau slip gaji.</p>
                     </div>
                   </div>
                 )}
@@ -2818,7 +2826,7 @@ export default function ProposalKegiatanPage() {
                           disabled={saving}
                           className="rounded-xl px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 flex items-center gap-1.5 shadow-md cursor-pointer"
                         >
-                          <Sparkles className="w-4 h-4" /> Setujui LPJ & Sync Payroll
+                          <Sparkles className="w-4 h-4" /> Setujui LPJ Sandbox
                         </Button>
                         <Button
                           onClick={() => { setReviewTarget('lpj'); setReviewAction('lpj_revision'); setReviewNoteInput(''); setShowReviewDialog(true); }}

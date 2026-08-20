@@ -193,7 +193,7 @@ function ReportModeCard({
       </div>
       <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
         {employee
-          ? 'Setiap rincian harus terhubung ke pegawai aktif. REALISASI menjadi nominal yang dikirim ke payroll.'
+          ? 'Setiap rincian harus terhubung ke pegawai aktif. Nominal hanya untuk simulasi laporan dan tidak dikirim ke payroll.'
           : 'Gunakan untuk konsumsi, ATK, rapat, bukti pembelian, atau pengeluaran lain tanpa penerima pegawai.'}
       </p>
     </button>

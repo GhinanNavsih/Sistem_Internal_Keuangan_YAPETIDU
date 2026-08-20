@@ -13,6 +13,7 @@ import {
   loyalisPresenceAmounts,
   type LoyalisPresenceDocument,
 } from '@/lib/payroll/uraianPropagation';
+import { isPayableVakasiTambahan } from '@/lib/payroll/vakasiTambahan';
 import {
   errorResponse,
   HttpError,
@@ -142,7 +143,7 @@ export async function GET(request: NextRequest) {
     let vakasiTambahanSum = 0;
     vakasiSnapshot.docs.forEach((eventSnapshot) => {
       const data = eventSnapshot.data();
-      if (data.period !== period || (data.status && data.status !== 'approved')) return;
+      if (data.period !== period || !isPayableVakasiTambahan(data)) return;
       const worker = data.eventWorkers?.[employeeId];
       const payGiven = asNumber(worker?.payGiven);
       if (!payGiven) return;

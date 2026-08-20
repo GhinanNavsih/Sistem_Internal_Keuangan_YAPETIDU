@@ -65,6 +65,8 @@ import {
   activityBelongsToPayrollPeriod,
   sumApprovedActivitySpj,
 } from '@/lib/payroll/pekaryaSpj';
+import { countDriverPiketInPeriod, classifyDriverPiketDatesInPeriod, type DriverPiketSchedule } from '@/lib/payroll/driverPiket';
+import { periodCalendarFromData } from '@/lib/payroll/calendar';
 import {
   composeKoperasiLoanHistoryTrail,
   koperasiProjectedPaidInstallments,
@@ -785,6 +787,7 @@ export default function EmployeePayslipPage() {
         }
 
         setEmployeeData(employee);
+        const jobCategory = String(employee.employment?.jobCategory || 'PEKARYA').toUpperCase();
 
         // A final PayrollSlipStates snapshot remains authoritative.  When it
         // does not exist yet (the normal state while Finance is preparing a
@@ -802,6 +805,33 @@ export default function EmployeePayslipPage() {
             console.warn('Unable to load approved activity reports for payslip draft:', error);
             return null;
           });
+
+        // Piket, like SPJ above, is otherwise sourced solely from a locked
+        // Uraian entry — without this, a SOPIR employee sees "-" for Piket
+        // whenever Finance hasn't saved this period's rekap yet, even though
+        // the driver's own duty roster already has the real count.
+        const driverPiketQuery = jobCategory === 'SOPIR'
+          ? query(
+            collection(db, 'DriverPiketSchedules'),
+            where('driverId', '==', empId),
+          )
+          : null;
+        const driverPiketPromise = driverPiketQuery
+          ? getDocsFromServer(driverPiketQuery).catch((error) => {
+            console.warn('Unable to load driver Piket schedules for payslip draft:', error);
+            return null;
+          })
+          : Promise.resolve(null);
+
+        // Same Friday/holiday calendar real attendance publish uses, so the
+        // Piket-derived Harian/Jumat & Libur estimate below classifies dates
+        // the same way the eventual real data will.
+        const periodDocPromise = jobCategory === 'SOPIR'
+          ? getDocFromServer(doc(db, 'PayrollPeriods', periodToken)).catch((error) => {
+            console.warn('Unable to load period calendar for payslip draft:', error);
+            return null;
+          })
+          : Promise.resolve(null);
 
         const loanPromise = employee.koperasiAuthUid
           ? getDocsFromServer(query(
@@ -823,10 +853,12 @@ export default function EmployeePayslipPage() {
           })
           : Promise.resolve(null);
 
-        const [activitySnapshot, loanSnapshot, memberSnapshot] = await Promise.all([
+        const [activitySnapshot, loanSnapshot, memberSnapshot, driverPiketSnapshot, periodDocSnapshot] = await Promise.all([
           activityPromise,
           loanPromise,
           memberPromise,
+          driverPiketPromise,
+          periodDocPromise,
         ]);
         if (cancelled) return;
 
@@ -834,7 +866,16 @@ export default function EmployeePayslipPage() {
           id: activityDoc.id,
           ...activityDoc.data(),
         })) || [];
-        const jobCategory = String(employee.employment?.jobCategory || 'PEKARYA').toUpperCase();
+        const driverPiketSchedules = (driverPiketSnapshot?.docs.map((scheduleDoc) => ({
+          id: scheduleDoc.id,
+          ...scheduleDoc.data(),
+        })) || []) as DriverPiketSchedule[];
+        const periodPremiumDates = new Set(
+          periodCalendarFromData(
+            periodToken,
+            periodDocSnapshot?.exists() ? periodDocSnapshot.data() : null,
+          ).premiumDates,
+        );
         const approvedSpj = sumApprovedActivitySpj(
           activityReports,
           empId,
@@ -939,6 +980,24 @@ export default function EmployeePayslipPage() {
               }
             }
             if (column.key === 'spj' && amount === 0) amount = approvedSpj;
+            if (column.key === 'piket' && amount === 0) {
+              amount = computeSlipAmount(
+                column,
+                countDriverPiketInPeriod(empId, periodToken, driverPiketSchedules),
+              );
+            }
+            if ((column.key === 'harian' || column.key === 'jumatLibur') && amount === 0) {
+              const sopirAttendanceEstimate = classifyDriverPiketDatesInPeriod(
+                empId,
+                periodToken,
+                driverPiketSchedules,
+                periodPremiumDates,
+              );
+              amount = computeSlipAmount(
+                column,
+                column.key === 'harian' ? sopirAttendanceEstimate.harian : sopirAttendanceEstimate.jumatLibur,
+              );
+            }
             fallbackEarnings.push({ label: column.slipLabel, amount });
           }
 

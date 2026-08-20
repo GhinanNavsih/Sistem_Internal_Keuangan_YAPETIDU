@@ -1,3 +1,5 @@
+import { isPremiumAttendanceDate } from './attendance';
+
 export type PiketStationKey = 'pak_ufik' | 'pak_zuem' | 'pak_heri' | 'bu_afifah' | 'sekolah';
 
 export interface PiketStationConfig {
@@ -184,4 +186,28 @@ export function getDriverPiketDatesInPeriod(
       .filter(s => s.driverId === driverId && (s.period === period || s.date.startsWith(period)))
       .map(s => s.date),
   )].sort();
+}
+
+/**
+ * A day a driver is scheduled for Piket is a day he was present, so it's an
+ * interim Harian/Jumat & Libur estimate before real attendance is published
+ * — split the same way real attendance days are (`isPremiumAttendanceDate`),
+ * so the estimate and the eventual real data use one consistent rule. Built
+ * on `getDriverPiketDatesInPeriod` so `harian + jumatLibur` always equals
+ * `countDriverPiketInPeriod` for the same inputs.
+ */
+export function classifyDriverPiketDatesInPeriod(
+  driverId: string,
+  period: string,
+  schedules: readonly DriverPiketSchedule[],
+  premiumDates: ReadonlySet<string>,
+): { harian: number; jumatLibur: number } {
+  const dates = getDriverPiketDatesInPeriod(driverId, period, schedules);
+  let harian = 0;
+  let jumatLibur = 0;
+  for (const date of dates) {
+    if (isPremiumAttendanceDate(date, premiumDates)) jumatLibur += 1;
+    else harian += 1;
+  }
+  return { harian, jumatLibur };
 }

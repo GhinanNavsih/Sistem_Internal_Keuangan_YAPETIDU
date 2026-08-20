@@ -8,6 +8,7 @@ import {
   ProposalExpenseRow,
 } from '@/lib/payroll/proposalExpenseReports';
 import { validateLpjApproval } from '@/lib/payroll/proposalExpenseApproval';
+import { PROPOSAL_LPJ_SANDBOX_SOURCE_KIND } from '@/lib/payroll/vakasiTambahan';
 import {
   errorResponse,
   HttpError,
@@ -83,10 +84,6 @@ function getEmployeeIds(reports: ExpenseReport[]): string[] {
     .flatMap((report) => report.rows.map((row) => row.employeeId.trim()).filter(Boolean))));
 }
 
-function payrollDocumentId(proposalId: string, reportId: string): string {
-  return `proposal_lpj_${proposalId}_${reportId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 140);
-}
-
 async function readActiveEmployees(employeeIds: string[]): Promise<Map<string, string>> {
   const snapshots = await Promise.all(employeeIds.map((employeeId) => adminDb.collection('Employees_Loyalis').doc(employeeId).get()));
   const names = new Map<string, string>();
@@ -132,7 +129,9 @@ export async function POST(request: NextRequest) {
       .collection('VakasiTambahan')
       .where('sourceProposalId', '==', command.proposalId)
       .get();
-    const previousSourceDocs = previousSourceSnapshot.docs.filter((snapshot) => snapshot.data().sourceKind === 'proposal_lpj_report');
+    const previousSourceDocs = previousSourceSnapshot.docs.filter(
+      (snapshot) => snapshot.data().sourceKind === PROPOSAL_LPJ_SANDBOX_SOURCE_KIND,
+    );
 
     const result = await adminDb.runTransaction(async (transaction) => {
       const proposalSnapshot = await transaction.get(proposalRef);
@@ -158,56 +157,19 @@ export async function POST(request: NextRequest) {
       const currentValidation = validateLpjApproval(currentNormalized.rows, currentNormalized.reports, new Set(currentEmployeeNames.keys()));
       if (!currentValidation.valid) throw approvalError(currentValidation.errors);
 
-      const activePayrollIds = new Set<string>();
-      let totalPayout = 0;
-      let syncedReports = 0;
-      currentValidation.linkedReports.forEach((report) => {
-        if (report.mode !== 'employee') return;
-        const workers = (currentValidation.workersByReport.get(report.id) || []).map((worker) => ({
-          employeeName: currentEmployeeNames.get(worker.employeeId) || worker.employeeName,
-          payGiven: worker.payGiven,
-        }));
-        const sourceId = payrollDocumentId(command.proposalId, report.id);
-        activePayrollIds.add(sourceId);
-        const totalReportPayout = workers.reduce((sum, worker) => sum + worker.payGiven, 0);
-        totalPayout += totalReportPayout;
-        transaction.set(adminDb.collection('VakasiTambahan').doc(sourceId), {
-          eventName: report.title || report.expenseLabel || 'Laporan LPJ',
-          period,
-          totalPayout: totalReportPayout,
-          isEndOfMonth: false,
-          departmentUnit: typeof currentData.departmentUnit === 'string' ? currentData.departmentUnit : '',
-          eventWorkers: Object.fromEntries(currentValidation.workersByReport.get(report.id)?.map((worker) => [worker.employeeId, {
-            employeeName: currentEmployeeNames.get(worker.employeeId) || worker.employeeName,
-            payGiven: worker.payGiven,
-          }]) || []),
-          status: 'approved',
-          active: true,
-          sourceKind: 'proposal_lpj_report',
-          sourceProposalId: command.proposalId,
-          sourceExpenseReportId: report.id,
-          sourceExpenseRowId: report.expenseRowId,
-          approvedBy: actor.uid,
-          approvedByName: actor.displayName,
-          approvedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          createdAt: previousSourceDocs.find((snapshot) => snapshot.id === sourceId)?.data().createdAt || admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-        syncedReports += 1;
-      });
-
-      let staleReports = 0;
+      // Proposal kegiatan is currently a reporting sandbox. Retire records
+      // created by earlier versions, but never create or update payroll pay.
+      let retiredPayrollRecords = 0;
       previousSourceDocs.forEach((snapshot) => {
-        if (activePayrollIds.has(snapshot.id)) return;
         transaction.set(adminDb.collection('VakasiTambahan').doc(snapshot.id), {
           status: 'void',
           active: false,
           voidedAt: admin.firestore.FieldValue.serverTimestamp(),
           voidedBy: actor.uid,
-          voidedReason: 'Tidak lagi terhubung ke laporan LPJ yang disetujui.',
+          voidedReason: 'Proposal kegiatan merupakan sandbox dan tidak memengaruhi payroll.',
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
-        staleReports += 1;
+        retiredPayrollRecords += 1;
       });
 
       transaction.set(proposalRef, {
@@ -216,13 +178,18 @@ export async function POST(request: NextRequest) {
         reviewedByName: actor.displayName,
         reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
         reviewNote: command.note || null,
-        payrollSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
-        payrollSyncedBy: actor.uid,
-        payrollReportIds: Array.from(activePayrollIds),
+        payrollSyncedAt: admin.firestore.FieldValue.delete(),
+        payrollSyncedBy: admin.firestore.FieldValue.delete(),
+        payrollReportIds: [],
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
 
-      return { syncedReports, staleReports, totalPayout };
+      return {
+        syncedReports: 0,
+        staleReports: retiredPayrollRecords,
+        totalPayout: 0,
+        payrollEffect: 'none',
+      };
     });
 
     return Response.json({ status: 'lpj_approved', ...result }, { status: 200, headers: { 'Cache-Control': 'no-store' } });

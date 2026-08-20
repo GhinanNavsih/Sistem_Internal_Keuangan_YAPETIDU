@@ -156,6 +156,30 @@ function getStatusConfig(status?: string) {
   }
 }
 
+function getActivityReimburseDelta(activity: ActivityReport): number {
+  if (activity.reimburseDelta !== undefined) return activity.reimburseDelta;
+  const fuelMode = isFuelProcurementMode(activity.fuelProcurementMode)
+    ? activity.fuelProcurementMode
+    : DEFAULT_FUEL_PROCUREMENT_MODE;
+  return calculateDriverReimbursementSettlement({
+    fuelAllowance: activity.vehicleType === 'Ndalem' ? 0 : Number(activity.baseOperationalCost || 0),
+    fuelSpent: activity.vehicleType === 'Ndalem'
+      ? 0
+      : activity.fuelFee !== undefined
+        ? Number(activity.fuelFee || 0)
+        : Number(activity.baseOperationalCost || 0) + Number(activity.extraFuelCost || 0),
+    tollAllowance: Number(activity.preAuthorizedToll || 0),
+    tollSpent: activity.tollParkingFee !== undefined
+      ? Number(activity.tollParkingFee || 0)
+      : Number(activity.preAuthorizedToll || 0) + Number(activity.extraTollCost || 0),
+    additionalReimbursement: Number(activity.extraMealAllowance || 0) + Number(activity.extraOperationalCost || 0),
+    fuelProcurementMode: fuelMode,
+    procuredAccumulatedAmount: fuelMode === 'procure_release'
+      ? Number(activity.procuredAccumulatedAmount || 0)
+      : 0,
+  }).reimburseDelta;
+}
+
 function DriverHistoryContent() {
   const { profile: rawProfile, activeProfile, logout } = useAuth();
   const profile = activeProfile || rawProfile;
@@ -256,7 +280,8 @@ function DriverHistoryContent() {
     const approved = activities.filter(a => a.status === 'approved');
     const declined = activities.filter(a => a.status === 'declined').length;
     const totalApprovedWage = approved.reduce((sum, a) => sum + (a.upahBersih || 0), 0);
-    return { pending, approved: approved.length, declined, totalApprovedWage };
+    const totalApprovedReimburse = approved.reduce((sum, a) => sum + getActivityReimburseDelta(a), 0);
+    return { pending, approved: approved.length, declined, totalApprovedWage, totalApprovedReimburse };
   }, [activities]);
 
   if (!profile?.linkedEmployeeId) {
@@ -385,8 +410,8 @@ function DriverHistoryContent() {
         <div className="grid grid-cols-2 gap-3">
           <Card className="bg-white rounded-2xl shadow-sm border border-slate-100">
             <CardContent className="p-4 text-center">
-              <div className="text-2xl font-extrabold text-indigo-600">{stats.approved + stats.pending + stats.declined}</div>
-              <div className="text-[11px] font-semibold text-slate-400 mt-0.5">Total Perjalanan</div>
+              <div className="text-2xl font-extrabold text-indigo-600">{fmtRp(stats.totalApprovedReimburse)}</div>
+              <div className="text-[11px] font-semibold text-slate-400 mt-0.5">Total Reimburse Didapatkan</div>
             </CardContent>
           </Card>
           <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-lg shadow-indigo-200/40 border-none">
@@ -462,30 +487,7 @@ function DriverHistoryContent() {
           <div className="space-y-2.5">
             {filteredActivities.map((activity) => {
               const sc = getStatusConfig(activity.status);
-              const reimburseDelta = activity.reimburseDelta !== undefined
-                ? activity.reimburseDelta
-                : (() => {
-                  const fuelMode = isFuelProcurementMode(activity.fuelProcurementMode)
-                    ? activity.fuelProcurementMode
-                    : DEFAULT_FUEL_PROCUREMENT_MODE;
-                  return calculateDriverReimbursementSettlement({
-                    fuelAllowance: activity.vehicleType === 'Ndalem' ? 0 : Number(activity.baseOperationalCost || 0),
-                    fuelSpent: activity.vehicleType === 'Ndalem'
-                      ? 0
-                      : activity.fuelFee !== undefined
-                        ? Number(activity.fuelFee || 0)
-                        : Number(activity.baseOperationalCost || 0) + Number(activity.extraFuelCost || 0),
-                    tollAllowance: Number(activity.preAuthorizedToll || 0),
-                    tollSpent: activity.tollParkingFee !== undefined
-                      ? Number(activity.tollParkingFee || 0)
-                      : Number(activity.preAuthorizedToll || 0) + Number(activity.extraTollCost || 0),
-                    additionalReimbursement: Number(activity.extraMealAllowance || 0) + Number(activity.extraOperationalCost || 0),
-                    fuelProcurementMode: fuelMode,
-                    procuredAccumulatedAmount: fuelMode === 'procure_release'
-                      ? Number(activity.procuredAccumulatedAmount || 0)
-                      : 0,
-                  }).reimburseDelta;
-                })();
+              const reimburseDelta = getActivityReimburseDelta(activity);
 
               return (
                 <Card key={activity.id} className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden hover:border-slate-300 transition-all animate-in fade-in duration-150">
