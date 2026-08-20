@@ -69,6 +69,7 @@ import {
   type DriverJourneyLocation,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
+import { isSelfCreatedDriverJourney } from '@/lib/payroll/driverPiket';
 import { prepareProofImage, type PhotoEvidence } from '@/lib/photoEvidence';
 import type { PhotoAuditMetadata } from '@/lib/payroll/domain';
 import {
@@ -1244,10 +1245,7 @@ function JourneyReportContent() {
   const [showCancelModal, setShowCancelModal] = useState(false);
 
   const isSelfCreatedJourney = useMemo(() => {
-    return Boolean(
-      activeReportingJourney?.isSelfCreatedPiketSpj ||
-      (typeof activeReportingJourney?.id === 'string' && activeReportingJourney.id.startsWith('JRN-PIKET-'))
-    );
+    return activeReportingJourney ? isSelfCreatedDriverJourney(activeReportingJourney) : false;
   }, [activeReportingJourney]);
 
   const canEditMainDestination = useMemo(() => {

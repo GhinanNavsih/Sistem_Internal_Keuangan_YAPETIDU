@@ -8,6 +8,7 @@ import {
   type PhotoAuditMetadata,
   type PhotoEvidence,
 } from '@/lib/payroll/domain';
+import { isSelfCreatedDriverJourney } from '@/lib/payroll/driverPiket';
 import {
   calculateJourneyDateTimeTimings,
   calculateDriverNetWage,
@@ -1052,6 +1053,9 @@ export async function POST(request: NextRequest) {
         submittedFeeEstimate:
           typeof driverData.upahBersih === 'number' ? driverData.upahBersih : 0,
         upahBersih: 0,
+        // Derived from the linked journey doc itself (never trusted from the
+        // request body) so the activity review table can flag it distinctly.
+        isSelfAuthorizedWithoutPiket: journeyBefore?.isSelfAuthorizedWithoutPiket === true,
       };
 
       transaction.set(reportRef, after);
@@ -1348,9 +1352,7 @@ export async function DELETE(request: NextRequest) {
       if (jData && jRef && targetJourneyId) {
         const owns = jData.employeeId === employeeId || jData.claimedBy === actor.uid || jData.assignedTo === employeeId;
         if (owns) {
-          const isSelfCreated = Boolean(
-            jData.isSelfCreatedPiketSpj || targetJourneyId.startsWith('JRN-PIKET-'),
-          );
+          const isSelfCreated = isSelfCreatedDriverJourney({ ...jData, id: jData.id || targetJourneyId });
           if (isSelfCreated) {
             transaction.delete(jRef);
           } else {

@@ -31,7 +31,7 @@ import {
   type FuelReservationRecord,
   VehicleFuelConflictError,
 } from '@/lib/payroll/vehicleFuel';
-import { hasClaimedDriverJourney } from '@/lib/payroll/driverPiket';
+import { hasClaimedDriverJourney, isSelfCreatedDriverJourney } from '@/lib/payroll/driverPiket';
 import {
   buildPekaryaActivityIdentity,
   pekaryaPayrollPeriodForDate,
@@ -563,8 +563,6 @@ export async function POST(request: NextRequest) {
       const tollParkingFee = numberField(body?.tollParkingFee ?? 0, 'Tol & parkir', { min: 0, max: MAX_MONEY });
       const activityDate = jakartaToday();
       const period = pekaryaPayrollPeriodForDate(activityDate);
-      const journeyId = `JRN-PIKET-${activityDate.replaceAll('-', '')}-${randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase()}`;
-      const journeyRef = adminDb.collection('DriverJourneys').doc(journeyId);
 
       const result = await adminDb.runTransaction(async (transaction) => {
         const scheduleQuery = adminDb.collection('DriverPiketSchedules').where('date', '==', activityDate);
@@ -583,18 +581,21 @@ export async function POST(request: NextRequest) {
             `Periode payroll ${period} sudah ditutup; perjalanan baru tidak dapat dibuat.`,
           );
         }
+        // A driver may self-authorize whether or not they're on today's Piket
+        // roster; `hasSchedule` only decides which of the two self-authorized
+        // kinds this journey is, for reporting purposes — it is not a gate.
         const hasSchedule = scheduleSnapshot.docs.some(
           (schedule) => schedule.data().driverId === actor.linkedEmployeeId,
         );
-        if (!hasSchedule) {
-          throw new HttpError(409, 'Anda tidak memiliki jadwal Piket aktif untuk hari ini.');
-        }
         // Read the driver's complete journey set in this transaction. A
         // submitted journey is deliberately not a blocker; only an unresolved
         // claimed journey prevents overlapping reports.
         if (hasClaimedDriverJourney(activeJourneySnapshot.docs.map((journey) => journey.data()))) {
           throw new HttpError(409, 'Anda masih memiliki perjalanan aktif yang belum diselesaikan.');
         }
+
+        const journeyId = `${hasSchedule ? 'JRN-PIKET' : 'JRN-MANDIRI'}-${activityDate.replaceAll('-', '')}-${randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase()}`;
+        const journeyRef = adminDb.collection('DriverJourneys').doc(journeyId);
 
         const selfWageEst = calculateEstimatedDriverWage(distanceKm * 2, durationHours * 2);
         const operationalCosts = calculateDriverJourneyOperationalCosts(
@@ -655,12 +656,13 @@ export async function POST(request: NextRequest) {
           claimedByName: actor.displayName,
           claimedAt: now,
           status: 'claimed',
-          isSelfCreatedPiketSpj: true,
+          isSelfCreatedPiketSpj: hasSchedule,
+          isSelfAuthorizedWithoutPiket: !hasSchedule,
           createdAt: now,
           authorizedAt: now,
           authorizedBy: actor.uid,
           authorizedByName: actor.displayName,
-          authorizationMode: 'driver_piket_self',
+          authorizationMode: hasSchedule ? 'driver_piket_self' : 'driver_self_unassigned',
           createdBy: actor.uid,
           period,
           payrollPeriod: period,
@@ -689,8 +691,8 @@ export async function POST(request: NextRequest) {
         if (!canDriverAccessJourney(journey, actor)) {
           throw new HttpError(403, 'Perjalanan dinas ini bukan milik Anda.');
         }
-        if (!journey.isSelfCreatedPiketSpj && !journeyId.startsWith('JRN-PIKET-')) {
-          throw new HttpError(403, 'Mode BBM mandiri hanya berlaku untuk SPJ Piket mandiri.');
+        if (!isSelfCreatedDriverJourney({ ...journey, id: journey.id || journeyId })) {
+          throw new HttpError(403, 'Mode BBM mandiri hanya berlaku untuk SPJ mandiri.');
         }
         if (String(journey.status || '') !== 'claimed') {
           throw new HttpError(409, 'Mode BBM hanya dapat dipilih saat perjalanan masih aktif.');
@@ -867,9 +869,7 @@ export async function POST(request: NextRequest) {
         ) {
           throw new HttpError(403, 'Perjalanan ini bukan klaim aktif Anda.');
         }
-        const isSelfCreated = Boolean(
-          journey.isSelfCreatedPiketSpj || journeyId.startsWith('JRN-PIKET-'),
-        );
+        const isSelfCreated = isSelfCreatedDriverJourney({ ...journey, id: journey.id || journeyId });
         const reservation = reservationFromJourney(journey);
         const fuelContext = reservation?.fuelReservationState === 'reserved'
           ? await createFuelLedgerContext(transaction, [reservation.fuelReservationVehicleName], {

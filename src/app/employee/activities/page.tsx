@@ -5009,14 +5009,32 @@ function ActivitiesContent() {
                 </div>
               </div>
             ) : (
-              <div className="bg-slate-100 border border-slate-200 text-slate-700 rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4 text-slate-500 shrink-0" />
-                  <span>
-                    {myClaimedJourneys.length > 0
-                      ? `Anda memiliki ${myClaimedJourneys.length} perjalanan aktif. Selesaikan laporan perjalanan Anda di bawah ini.`
-                      : 'Pembuatan SPJ mandiri hanya aktif pada hari jadwal piket Anda.'}
-                  </span>
+              <div className="bg-slate-100 border border-slate-200 text-slate-700 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-2">
+                    <CalendarDays className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800">Buat SPJ Mandiri</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Anda dapat mengotorisasi SPJ (Surat Perintah Jalan) sendiri kapan saja, termasuk di luar jadwal Piket.
+                      </p>
+                      {myClaimedJourneys.length > 0 && (
+                        <p className="text-[11px] font-bold text-amber-700 mt-1.5 flex items-center gap-1.5 bg-amber-50 p-2 rounded-xl border border-amber-200">
+                          <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                          Anda memiliki perjalanan aktif yang sedang berjalan. Selesaikan laporan perjalanan tersebut terlebih dahulu untuk dapat membuat SPJ baru.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <Button
+                    disabled={myClaimedJourneys.length > 0}
+                    onClick={openSelfPiketSpjModal}
+                    className="shrink-0 rounded-xl bg-slate-800 text-white hover:bg-slate-700 font-extrabold text-xs h-10 px-4 gap-2 cursor-pointer shadow-sm border-none disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Buat SPJ Mandiri
+                  </Button>
                 </div>
               </div>
             )}
@@ -7008,7 +7026,7 @@ function ActivitiesContent() {
           <DialogHeader className="border-b border-slate-100 pb-4">
             <DialogTitle className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2">
               <Compass className="w-5 h-5 text-emerald-600 animate-spin-slow" />
-              Otorisasi SPJ Piket Mandiri
+              Otorisasi SPJ Mandiri
             </DialogTitle>
           </DialogHeader>
 
@@ -7016,7 +7034,7 @@ function ActivitiesContent() {
             {myClaimedJourneys.length > 0 && (
               <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl text-xs font-semibold flex items-center gap-2.5 animate-in fade-in duration-200">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>Anda masih memiliki tugas perjalanan aktif yang belum selesai dilaporkan. Selesaikan laporan perjalanan aktif terlebih dahulu sebelum membuat SPJ Piket baru.</span>
+                <span>Anda masih memiliki tugas perjalanan aktif yang belum selesai dilaporkan. Selesaikan laporan perjalanan aktif terlebih dahulu sebelum membuat SPJ baru.</span>
               </div>
             )}
             {/* Nama Kegiatan & Tanggal Perjalanan */}
@@ -7217,7 +7235,7 @@ function ActivitiesContent() {
                     Rincian Perjalanan & Estimasi Upah Sopir
                   </span>
                   <Badge className="bg-emerald-200/80 text-emerald-950 border-none text-[9px] font-black">
-                    Piket Mandiri
+                    {isPiketActiveToday ? 'Piket Mandiri' : 'SPJ Mandiri'}
                   </Badge>
                 </div>
 

@@ -12,6 +12,7 @@ import {
   pekaryaPayrollPeriodForDate,
 } from '@/lib/payroll/pekaryaSpj';
 import { DEFAULT_FUEL_PROCUREMENT_MODE } from '@/lib/payroll/driverJourney';
+import { isSelfCreatedDriverJourney } from '@/lib/payroll/driverPiket';
 import {
   createFuelLedgerContext,
   flushFuelLedger,
@@ -246,9 +247,7 @@ export async function POST(request: NextRequest) {
             : journeyReservation;
         if (fuelContext) flushFuelLedger(fuelContext);
 
-        const isSelfCreatedPiket = Boolean(
-          journey.isSelfCreatedPiketSpj || journeyId.startsWith('JRN-PIKET-'),
-        );
+        const isSelfCreatedPiket = isSelfCreatedDriverJourney({ ...journey, id: journey.id || journeyId });
         if (isSelfCreatedPiket) {
           transaction.delete(journeyRef);
         } else {
@@ -307,7 +306,7 @@ export async function POST(request: NextRequest) {
               ? {
                   journeyId,
                   journeyDisposition:
-                    journey && (journey.isSelfCreatedPiketSpj || journeyId.startsWith('JRN-PIKET-'))
+                    journey && isSelfCreatedDriverJourney({ ...journey, id: journey.id || journeyId })
                       ? 'deleted'
                       : journey
                         ? 'returned_to_pool'

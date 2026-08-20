@@ -40,6 +40,7 @@ export interface DriverPiketJourneyLike {
   activityDate?: string;
   journeyDate?: string;
   isSelfCreatedPiketSpj?: boolean;
+  isSelfAuthorizedWithoutPiket?: boolean;
 }
 
 const SUBMITTED_DRIVER_JOURNEY_STATUSES = new Set([
@@ -52,6 +53,10 @@ const SUBMITTED_DRIVER_JOURNEY_STATUSES = new Set([
 /**
  * Self-authorized journeys carry an explicit marker. The ID fallback keeps
  * the counter compatible with records created before that marker was added.
+ * Piket-specific on purpose: a driver may also self-authorize without a
+ * Piket schedule (`isSelfAuthorizedWithoutPiket`), and those must NOT count
+ * toward Piket-day quotas here — use `isSelfCreatedDriverJourney` for the
+ * generic "was this self-created by the driver at all" question instead.
  */
 export function isSelfCreatedDriverPiketJourney(
   journey: DriverPiketJourneyLike,
@@ -59,6 +64,22 @@ export function isSelfCreatedDriverPiketJourney(
   return Boolean(
     journey.isSelfCreatedPiketSpj === true ||
       (typeof journey.id === 'string' && journey.id.startsWith('JRN-PIKET-')),
+  );
+}
+
+/**
+ * True for any journey the driver self-authorized directly — whether backed
+ * by an active Piket schedule or not. Operational gates (fuel-mode
+ * selection, cancel-claim, delete-on-resubmit, admin-delete disposition)
+ * care about this broader question, not specifically about Piket.
+ */
+export function isSelfCreatedDriverJourney(
+  journey: DriverPiketJourneyLike,
+): boolean {
+  return Boolean(
+    isSelfCreatedDriverPiketJourney(journey) ||
+      journey.isSelfAuthorizedWithoutPiket === true ||
+      (typeof journey.id === 'string' && journey.id.startsWith('JRN-MANDIRI-')),
   );
 }
 

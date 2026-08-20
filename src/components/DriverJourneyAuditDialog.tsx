@@ -150,6 +150,7 @@ export interface DriverAuditReport {
   isMultiDay?: boolean;
   distanceKm?: number;
   durationHours?: number;
+  routeDurationHours?: number;
   customDurationPP?: number;
   vehicleType?: string;
   nightCount?: number;
@@ -318,19 +319,16 @@ export function DriverJourneyAuditDialog({
   // and directly adjacent, so a still-empty "Tambah Lokasi" slot never gets
   // attributed a leg that actually skipped over it.
   const [auditLegWages, setAuditLegWages] = useState<Record<number, { distanceKm: number; durationHours: number }>>({});
+  // Cumulative Google Directions travel time between destinations for the
+  // whole round trip. Drives Komponen Waktu. Seeded from the stored
+  // `report.routeDurationHours` and only overwritten when the auditor
+  // explicitly recalculates the route (same gating as `auditDistanceKm`) —
+  // it must NOT come from summing `auditLegWages`, which only keys legs
+  // that land on two directly-adjacent point indices and therefore silently
+  // drops the route's final closing leg.
+  const [auditRouteDurationHours, setAuditRouteDurationHours] = useState<number>(0);
   const [isManualDistanceOverride, setIsManualDistanceOverride] = useState<boolean>(false);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
-
-  // Cumulative Google Directions travel time between destinations (sum of
-  // `auditLegWages`, which is refreshed whenever the dialog opens or the
-  // auditor edits a point). Drives Komponen Waktu; falls back to the elapsed
-  // clock-time value only while legs haven't resolved yet (e.g. Directions
-  // API still loading, or a route that failed to calculate).
-  const auditRouteDurationHours = useMemo(() => {
-    const legValues = Object.values(auditLegWages);
-    if (legValues.length === 0) return auditDurationHours;
-    return legValues.reduce((sum, leg) => sum + leg.durationHours, 0);
-  }, [auditLegWages, auditDurationHours]);
 
   // Google Maps Location Picker Modal state
   const [showMapSelector, setShowMapSelector] = useState(false);
@@ -426,8 +424,14 @@ export function DriverJourneyAuditDialog({
     setAuditDateStart(initialTimeline.dateStart);
     setAuditDateEnd(initialTimeline.dateEnd);
     setAuditIsMultiDay(initialTimeline.isMultiDay);
+    const seededElapsedHours = initialTimeline.durationHours > 0 ? initialTimeline.durationHours : durHrs;
     setAuditDistanceKm(distKm);
-    setAuditDurationHours(initialTimeline.durationHours > 0 ? initialTimeline.durationHours : durHrs);
+    setAuditDurationHours(seededElapsedHours);
+    setAuditRouteDurationHours(
+      report.routeDurationHours && report.routeDurationHours > 0
+        ? report.routeDurationHours
+        : seededElapsedHours,
+    );
     setAuditAuthorizedDurationPP(authDurPP);
     setAuditVehicleType(vType);
     setAuditNightCount(
@@ -757,12 +761,20 @@ export function DriverJourneyAuditDialog({
             if (status === 'OK' && result && result.routes && result.routes[0]) {
               const route = result.routes[0];
               let totalMeters = 0;
+              let totalSeconds = 0;
               const legWages: Record<number, { distanceKm: number; durationHours: number }> = {};
 
               route.legs.forEach((leg: any, legIdx: number) => {
                 const distanceMeters = leg.distance?.value || 0;
                 const durationSeconds = leg.duration?.value || 0;
+                // Unconditional totals (every leg, including the closing
+                // return-to-origin leg) feed Komponen Jarak/Waktu. The
+                // per-leg `legWages` map below is display-only and
+                // intentionally skips legs that don't land on two
+                // directly-adjacent point indices, so it must never be
+                // summed to get a route total.
                 totalMeters += distanceMeters;
+                totalSeconds += durationSeconds;
 
                 const originIdx = validIndices[legIdx];
                 const nextIdx = validIndices[legIdx + 1];
@@ -777,11 +789,9 @@ export function DriverJourneyAuditDialog({
 
               if (updateTotals && totalMeters > 0) {
                 // `routePts` already returns to the departure point, so this
-                // total is the full round trip. Duration deliberately stays
-                // tied to the audited timeline (timeStart → timeEnd): Google's
-                // driving estimate excludes the time the sopir spends waiting
-                // at each destination, which the wage must still pay for.
+                // total is the full round trip.
                 setAuditDistanceKm(Math.round((totalMeters / 1000) * 10) / 10);
+                setAuditRouteDurationHours(totalSeconds / 3600);
               }
             } else {
               console.warn('DirectionsService route status:', status);

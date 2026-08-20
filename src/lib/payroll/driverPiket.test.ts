@@ -10,6 +10,7 @@ import {
   getTodayDateString,
   hasClaimedDriverJourney,
   countSubmittedSelfPiketJourneysOnDate,
+  isSelfCreatedDriverJourney,
 } from './driverPiket';
 
 const mockSchedules: DriverPiketSchedule[] = [
@@ -177,5 +178,28 @@ test('Piket SPJ count is date, driver, and journey-type scoped', () => {
   assert.equal(
     countSubmittedSelfPiketJourneysOnDate('2026-08-01', 'D1', journeys),
     2,
+  );
+});
+
+test('a driver can self-authorize without a Piket schedule, flagged distinctly from Piket self-journeys', () => {
+  const piketSelf = { id: 'JRN-PIKET-20260801-ABC', isSelfCreatedPiketSpj: true };
+  const mandiriSelf = { id: 'JRN-MANDIRI-20260801-XYZ', isSelfAuthorizedWithoutPiket: true };
+  const legacyPiketById = { id: 'JRN-PIKET-20260801-LEGACY' };
+  const adminAuthorized = { id: 'JRN-20260801-ADMIN', assignedTo: 'D1' };
+
+  assert.equal(isSelfCreatedDriverJourney(piketSelf), true);
+  assert.equal(isSelfCreatedDriverJourney(mandiriSelf), true);
+  assert.equal(isSelfCreatedDriverJourney(legacyPiketById), true);
+  assert.equal(isSelfCreatedDriverJourney(adminAuthorized), false);
+
+  // The Piket-specific counter must stay Piket-only: a self-authorized
+  // journey without a schedule must never be counted as a Piket SPJ.
+  const mixedJourneys = [
+    { id: 'JRN-PIKET-20260801-ABC', employeeId: 'D1', status: 'submitted', activityDate: '2026-08-01', isSelfCreatedPiketSpj: true },
+    { id: 'JRN-MANDIRI-20260801-XYZ', employeeId: 'D1', status: 'submitted', activityDate: '2026-08-01', isSelfAuthorizedWithoutPiket: true },
+  ];
+  assert.equal(
+    countSubmittedSelfPiketJourneysOnDate('2026-08-01', 'D1', mixedJourneys),
+    1,
   );
 });

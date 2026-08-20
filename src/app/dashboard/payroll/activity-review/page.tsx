@@ -142,6 +142,7 @@ interface ActivityReport {
   distanceKm?: number;
   durationHours?: number;
   routeDurationHours?: number;
+  isSelfAuthorizedWithoutPiket?: boolean;
   journeyId?: string;
   fuelReceiptUrl?: string;
   tollReceiptUrl?: string;
@@ -2598,6 +2599,11 @@ export default function ActivityReviewPage() {
                                 {activity.reportKind === 'satpam_spj' && (
                                   <Badge className="text-[9px] px-1.5 py-0 h-4 border-none bg-teal-100 text-teal-800 font-bold">
                                     SPJ Pribadi Satpam
+                                  </Badge>
+                                )}
+                                {activity.jobCategory === 'SOPIR' && activity.isSelfAuthorizedWithoutPiket && (
+                                  <Badge className="text-[9px] px-1.5 py-0 h-4 border-none bg-orange-100 text-orange-800 font-bold">
+                                    SPJ Mandiri (Tanpa Piket)
                                   </Badge>
                                 )}
                                 {activity.reportKind === 'satpam_found_item' && (
