@@ -197,6 +197,7 @@ export async function GET(request: NextRequest) {
     );
     return Response.json(
       {
+        requestedDutyDate: dutyDate,
         team: {
           id: teamSnapshot.id,
           ketuaShiftId: actor.linkedEmployeeId,
@@ -236,7 +237,9 @@ export async function GET(request: NextRequest) {
       },
       {
         headers: {
-          'Cache-Control': 'no-store, max-age=0, must-revalidate',
+          'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+          Pragma: 'no-cache',
+          Vary: 'Authorization',
         },
       },
     );

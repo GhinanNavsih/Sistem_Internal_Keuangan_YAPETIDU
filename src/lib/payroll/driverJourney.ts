@@ -567,21 +567,30 @@ export function getShortTripMealWageComponent(durationHours: number): number {
   return (remainingHours > 0 && remainingHours <= 2) ? DRIVER_SHORT_TRIP_MEAL_ALLOWANCE : 0;
 }
 
-export function calculateDriverNetWage(
-  distanceKm: number,
-  durationHours: number,
-  nightCount: number,
-): number {
+export interface DriverNetWageInput {
+  distanceKm: number;
+  /** Cumulative Google Directions driving time between destinations. Drives Komponen Waktu only. */
+  travelTimeHours: number;
+  /** Wall-clock departure-to-arrival span. Drives the short-trip meal component (uang makan), not Komponen Waktu. */
+  elapsedDurationHours: number;
+  nightCount: number;
+}
+
+export function calculateDriverNetWage(input: DriverNetWageInput): number {
+  const { distanceKm, travelTimeHours, elapsedDurationHours, nightCount } = input;
   if (!Number.isFinite(distanceKm) || distanceKm < 0) {
     throw new Error('Jarak perjalanan tidak valid.');
   }
-  if (!Number.isFinite(durationHours) || durationHours < 0) {
+  if (!Number.isFinite(travelTimeHours) || travelTimeHours < 0) {
+    throw new Error('Durasi tempuh perjalanan tidak valid.');
+  }
+  if (!Number.isFinite(elapsedDurationHours) || elapsedDurationHours < 0) {
     throw new Error('Durasi perjalanan tidak valid.');
   }
   return (
     Math.ceil(distanceKm * DRIVER_DISTANCE_RATE) +
-    Math.ceil(durationHours * DRIVER_DURATION_RATE) +
-    getShortTripMealWageComponent(durationHours) +
+    Math.ceil(travelTimeHours * DRIVER_DURATION_RATE) +
+    getShortTripMealWageComponent(elapsedDurationHours) +
     calculateNightPremium(nightCount)
   );
 }

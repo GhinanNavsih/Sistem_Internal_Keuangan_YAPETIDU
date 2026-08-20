@@ -78,6 +78,11 @@ import { getSatpamShiftForTeam } from '@/utils/satpamRotation';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import {
+  parseSatpamShiftPendingDraft,
+  satpamShiftDraftStorageKey,
+  type SatpamShiftPendingDraft,
+} from '@/lib/satpamShiftDraft';
+import {
   payrollPeriodForDutyDate,
   SatpamPostId,
   SatpamPayType,
@@ -360,9 +365,15 @@ function calculateSopirDefaultFee(
   _fuelFee?: number,
   _tollParkingFee?: number,
   distanceKm?: number,
-  durationHours?: number
+  durationHours?: number,
+  routeDurationHours?: number
 ): number {
-  return calculateDriverNetWage(distanceKm || 0, durationHours || 0, nightCount);
+  return calculateDriverNetWage({
+    distanceKm: distanceKm || 0,
+    travelTimeHours: routeDurationHours ?? durationHours ?? 0,
+    elapsedDurationHours: durationHours || 0,
+    nightCount,
+  });
 }
 
 function fmtRp(val: number): string {
@@ -556,26 +567,15 @@ function getInitialSatpamDateISO(): string {
   return todayIso;
 }
 
-/**
- * A locally queued Satpam draft only counts as work in progress once it holds a
- * real assignment. An empty payload must read as "no draft", otherwise the
- * autosave would keep the published duty plan from ever prefilling the form.
- */
-function satpamDraftHasContent(raw: string | null): boolean {
-  if (!raw) return false;
-  try {
-    const parsed = JSON.parse(raw);
-    const assignments = parsed?.payload?.assignments;
-    return (
-      (Array.isArray(assignments) &&
-        assignments.some(
-          (assignment: { employeeId?: string }) => assignment?.employeeId,
-        )) ||
-      Boolean(parsed?.payload?.extraAssignment?.employeeId)
-    );
-  } catch {
-    return false;
-  }
+function createBlankSatpamAssignments(
+  shiftType: string,
+): Record<string, SatpamPostAssignment> {
+  return Object.fromEntries(
+    POSTS_CONFIG.map((post) => [
+      post.id,
+      { employeeId: '', shiftType },
+    ]),
+  ) as Record<string, SatpamPostAssignment>;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -629,17 +629,9 @@ function ActivitiesContent() {
   const [loadingSatpamConfig, setLoadingSatpamConfig] = useState(false);
   const [satpamReportDate, setSatpamReportDate] = useState<string>(getInitialSatpamDateISO());
   const [satpamSubmitting, setSatpamSubmitting] = useState(false);
-  const [postAssignments, setPostAssignments] = useState<Record<string, SatpamPostAssignment>>({
-    'Pos 1': { employeeId: '', shiftType: 'Harian' },
-    'Pos 2': { employeeId: '', shiftType: 'Harian' },
-    'Pos 3': { employeeId: '', shiftType: 'Harian' },
-    'Pos 4': { employeeId: '', shiftType: 'Harian' },
-    'Pos 5': { employeeId: '', shiftType: 'Harian' },
-    'Pos 6': { employeeId: '', shiftType: 'Harian' },
-    'Pos 7': { employeeId: '', shiftType: 'Harian' },
-    'Pos 8': { employeeId: '', shiftType: 'Harian' },
-    'Pos 9': { employeeId: '', shiftType: 'Harian' },
-  });
+  const [postAssignments, setPostAssignments] = useState<
+    Record<string, SatpamPostAssignment>
+  >(() => createBlankSatpamAssignments('Harian'));
   const [extraPostName, setExtraPostName] = useState('');
   const [extraEmployeeId, setExtraEmployeeId] = useState('');
   const [extraShiftType, setExtraShiftType] = useState('Lembur Sendiri');
@@ -682,6 +674,10 @@ function ActivitiesContent() {
   // Without this, the outgoing day's roster gets stamped onto the incoming
   // day's draft key, making every date look one day behind.
   const satpamHydratedDateRef = useRef('');
+  // Async uploads and requests may finish after a slow mobile user has changed
+  // the date. Compare their captured date with this ref before committing any
+  // result so an old photo/response cannot mutate the newly selected form.
+  const satpamSelectedDateRef = useRef(satpamReportDate);
   const [isExtraPostVisible, setIsExtraPostVisible] = useState(false);
   const [loadingSubmittedSatpam, setLoadingSubmittedSatpam] = useState(false);
   const [isSatpamReportSubmitted, setIsSatpamReportSubmitted] = useState(false);
@@ -1649,10 +1645,13 @@ function ActivitiesContent() {
   useEffect(() => {
     if (!isKetuaShiftSatpam || !profile?.linkedEmployeeId) return;
 
+    const requestedDate = satpamReportDate;
+    let isCurrentRequest = true;
     const loadSatpamConfig = async () => {
       setLoadingSatpamConfig(true);
       try {
         const config = await authenticatedJson<{
+          requestedDutyDate: string;
           team: any;
           employees: { id: string; name: string; isActive?: boolean }[];
           pos9Guards: Array<{ employeeId: string; teamId: string; name: string }>;
@@ -1677,9 +1676,17 @@ function ActivitiesContent() {
             day: SatpamDutyPlanDay | null;
             generatedDays: SatpamDutyPlanDay[];
           };
-        }>(`/api/satpam/config?dutyDate=${encodeURIComponent(satpamReportDate)}`, {
+        }>(`/api/satpam/config?dutyDate=${encodeURIComponent(requestedDate)}`, {
           method: 'GET',
+          cache: 'no-store',
         });
+        if (
+          !isCurrentRequest ||
+          satpamSelectedDateRef.current !== requestedDate ||
+          config.requestedDutyDate !== requestedDate
+        ) {
+          return;
+        }
         setMyShiftTeam(config.team);
         setAllSatpamEmployees(config.employees);
         setSatpamPos9Guards(config.pos9Guards || []);
@@ -1690,17 +1697,21 @@ function ActivitiesContent() {
         setSatpamFlexibilityEnabled(config.flexibilityEnabled !== false);
         setSatpamDutyPlan(config.dutyPlan || null);
       } catch (err) {
+        if (!isCurrentRequest) return;
         console.error('Error loading Satpam shift configuration:', err);
         setMessage({
           type: 'error',
           text: err instanceof Error ? err.message : 'Konfigurasi Satpam gagal dimuat.',
         });
       } finally {
-        setLoadingSatpamConfig(false);
+        if (isCurrentRequest) setLoadingSatpamConfig(false);
       }
     };
 
-    loadSatpamConfig();
+    void loadSatpamConfig();
+    return () => {
+      isCurrentRequest = false;
+    };
   }, [isKetuaShiftSatpam, profile?.linkedEmployeeId, satpamReportDate]);
 
   useEffect(() => {
@@ -2326,11 +2337,12 @@ function ActivitiesContent() {
 
       // Driver Base Wage & Final Net Wage
       const nightPremium = calculateNightPremium(effectiveNightCount);
-      const baseDriverWage = calculateDriverNetWage(
-        calculatedDistanceKm,
-        submittedDurationHours,
-        effectiveNightCount,
-      );
+      const baseDriverWage = calculateDriverNetWage({
+        distanceKm: calculatedDistanceKm,
+        travelTimeHours: routeDurationHours,
+        elapsedDurationHours: submittedDurationHours,
+        nightCount: effectiveNightCount,
+      });
       const finalUpahBersih = Math.max(0, baseDriverWage - settlement.remainingUnspentCash);
 
       const extraLocs = extraActivities.filter(a => a.type === 'tambah_lokasi' && a.destination);
@@ -2520,29 +2532,127 @@ function ActivitiesContent() {
     isSatpamReportSubmitted &&
     (Boolean(satpamAuditorActionAt) ||
       !['pending_review', 'draft'].includes(satpamReviewStatus));
+  const isSatpamPhotoUploadInProgress = Object.values(
+    postPhotoUploading,
+  ).some(Boolean);
 
-  // The v2 namespace retires drafts written before the cross-date autosave race
-  // was fixed; those hold the previous day's roster under the current day's key,
-  // so restoring them would keep showing a schedule that is one day behind.
-  const satpamPendingStorageKey = useMemo(
-    () =>
-      profile?.linkedEmployeeId
-        ? `unipdu:satpam-draft:v2:${profile.linkedEmployeeId}:${satpamReportDate}`
-        : '',
-    [profile?.linkedEmployeeId, satpamReportDate],
-  );
+  // v3 retires v2 drafts that could still be poisoned when a production/mobile
+  // GET failed: the old error path relabelled the previous date's in-memory form
+  // as hydrated for the newly selected date and then autosaved it.
+  const satpamPendingStorageKey = profile?.linkedEmployeeId
+    ? satpamShiftDraftStorageKey(
+        profile.linkedEmployeeId,
+        satpamReportDate,
+      )
+    : '';
 
   useEffect(() => {
     if (!isKetuaShiftSatpam || !profile?.linkedEmployeeId || !satpamReportDate) return;
 
+    const requestedDate = satpamReportDate;
+    const defaultShiftTypeForDate = satpamRegularPayType;
     let isMounted = true;
     setLoadingSubmittedSatpam(true);
     setSatpamDraftHydrated(false);
     satpamHydratedDateRef.current = '';
 
+    // Clear every date-scoped value before starting the request. In particular,
+    // never leave the previous day's photo URLs visible while production/mobile
+    // networking is slow or fails.
+    setPostAssignments(createBlankSatpamAssignments(defaultShiftTypeForDate));
+    setSatpamOccurrenceId('');
+    setSatpamOccurrenceRevision(0);
+    setSatpamAuditorActionAt(null);
+    setSatpamReviewStatus('draft');
+    setSatpamAnomalies([]);
+    setSatpamSuggestedShiftName(calculatedSuggestedShift);
+    setSatpamReportedShiftName(calculatedSuggestedShift);
+    setExtraEmployeeId('');
+    setExtraPostName('');
+    setExtraShiftType('Lembur Sendiri');
+    setExtraOvertimeReason('');
+    setExtraPhotoUrl('');
+    setExtraPhotoAuditMetadata(undefined);
+    setIsExtraPostVisible(false);
+    setIsSatpamReportSubmitted(false);
+
+    const restorePendingDraft = (
+      pending: SatpamShiftPendingDraft | null,
+      showRestoredMessage: boolean,
+    ): boolean => {
+      const restoredAssignments = createBlankSatpamAssignments(
+        defaultShiftTypeForDate,
+      );
+      if (!pending) {
+        setPostAssignments(restoredAssignments);
+        setExtraEmployeeId('');
+        setExtraPostName('');
+        setExtraShiftType('Lembur Sendiri');
+        setExtraOvertimeReason('');
+        setExtraPhotoUrl('');
+        setExtraPhotoAuditMetadata(undefined);
+        setIsExtraPostVisible(false);
+        return false;
+      }
+
+      if (pending.payload.shiftName) {
+        setSatpamReportedShiftName(pending.payload.shiftName);
+      }
+      for (const assignment of pending.payload.assignments) {
+        if (!restoredAssignments[assignment.postId]) continue;
+        restoredAssignments[assignment.postId] = {
+          employeeId: assignment.employeeId || '',
+          shiftType: assignment.coveredEmployeeId
+            ? 'Lembur Cover'
+            : assignment.shiftType || defaultShiftTypeForDate,
+          coveredEmployeeId: assignment.coveredEmployeeId || '',
+          overtimeReason: assignment.overtimeReason || '',
+          photoUrl: assignment.photoUrl || '',
+          photoAuditMetadata: assignment.photoAuditMetadata,
+        };
+      }
+      const pendingExtra = pending.payload.extraAssignment;
+      setPostAssignments(restoredAssignments);
+      setExtraEmployeeId(pendingExtra?.employeeId || '');
+      setExtraPostName(pendingExtra?.postId || '');
+      setExtraShiftType('Lembur Sendiri');
+      setExtraOvertimeReason(pendingExtra?.overtimeReason || '');
+      setExtraPhotoUrl(pendingExtra?.photoUrl || '');
+      setExtraPhotoAuditMetadata(pendingExtra?.photoAuditMetadata);
+      setIsExtraPostVisible(Boolean(pendingExtra));
+      if (pending.requestId) {
+        satpamRequestIdsRef.current[
+          `${requestedDate}_${pending.payload.shiftName || calculatedSuggestedShift}`
+        ] = pending.requestId;
+      }
+      if (showRestoredMessage) {
+        setMessage({
+          type: 'success',
+          text: 'Draf laporan yang belum selesai berhasil dipulihkan.',
+        });
+      }
+      return true;
+    };
+
+    const readPendingDraft = (): SatpamShiftPendingDraft | null => {
+      if (!satpamPendingStorageKey) return null;
+      try {
+        return parseSatpamShiftPendingDraft(
+          window.localStorage.getItem(satpamPendingStorageKey),
+          requestedDate,
+        );
+      } catch (error) {
+        console.warn('Draf antrean Satpam lokal tidak dapat dibaca:', error);
+        return null;
+      }
+    };
+
     authenticatedJson<{
+      requestedDutyDate: string;
+      resolvedDutyDate: string | null;
       occurrence: null | {
         id: string;
+        dutyDate?: string;
         revision?: number;
         status?: string;
         reviewStatus?: string;
@@ -2561,26 +2671,39 @@ function ActivitiesContent() {
         overtimeReason?: string;
         photoUrl?: string;
         photoAuditMetadata?: PhotoAuditMetadata;
+        dutyDate?: string;
       }>;
-    }>(`/api/satpam/shifts?dutyDate=${encodeURIComponent(satpamReportDate)}`, {
+    }>(`/api/satpam/shifts?dutyDate=${encodeURIComponent(requestedDate)}`, {
       method: 'GET',
-    }).then(({ occurrence, assignments }) => {
-      if (!isMounted) return;
-
-      const defaultShiftTypeForDate = getDefaultShiftTypeForDate(satpamReportDate);
+      cache: 'no-store',
+    }).then((response) => {
+      if (
+        !isMounted ||
+        satpamSelectedDateRef.current !== requestedDate
+      ) {
+        return;
+      }
+      const { occurrence, assignments } = response;
+      if (
+        response.requestedDutyDate !== requestedDate ||
+        response.resolvedDutyDate !== (occurrence ? requestedDate : null) ||
+        (occurrence?.dutyDate !== undefined &&
+          occurrence.dutyDate !== requestedDate) ||
+        assignments.some(
+          (assignment) =>
+            assignment.dutyDate !== undefined &&
+            assignment.dutyDate !== requestedDate,
+        )
+      ) {
+        throw new Error(
+          'Server mengembalikan laporan untuk tanggal yang berbeda.',
+        );
+      }
 
       if (occurrence) {
-        const newAssignments: Record<string, SatpamPostAssignment> = {
-          'Pos 1': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 2': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 3': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 4': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 5': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 6': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 7': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 8': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 9': { employeeId: '', shiftType: defaultShiftTypeForDate },
-        };
+        const newAssignments = createBlankSatpamAssignments(
+          defaultShiftTypeForDate,
+        );
         let foundExtra = false;
         let extraEmpId = '';
         let extraPName = '';
@@ -2663,105 +2786,43 @@ function ActivitiesContent() {
         }
         setIsSatpamReportSubmitted(true);
       } else {
-        setSatpamOccurrenceId('');
-        setSatpamOccurrenceRevision(0);
-        setSatpamAuditorActionAt(null);
-        setSatpamReviewStatus('draft');
-        setSatpamAnomalies([]);
-        setSatpamSuggestedShiftName(calculatedSuggestedShift);
-        setSatpamReportedShiftName(calculatedSuggestedShift);
-        const blankAssignments: Record<string, SatpamPostAssignment> = {
-          'Pos 1': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 2': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 3': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 4': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 5': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 6': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 7': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 8': { employeeId: '', shiftType: defaultShiftTypeForDate },
-          'Pos 9': { employeeId: '', shiftType: defaultShiftTypeForDate },
-        };
-        let restoredPending = false;
-        if (satpamPendingStorageKey) {
-          try {
-            const rawPending = window.localStorage.getItem(satpamPendingStorageKey);
-            const pending = satpamDraftHasContent(rawPending)
-              ? JSON.parse(rawPending!)
-              : null;
-            if (
-              pending &&
-              pending?.payload?.dutyDate === satpamReportDate &&
-              Array.isArray(pending.payload.assignments)
-            ) {
-              if (['Pagi', 'Sore', 'Malam'].includes(pending.payload.shiftName)) {
-                setSatpamReportedShiftName(pending.payload.shiftName);
-              }
-              for (const assignment of pending.payload.assignments) {
-                if (!blankAssignments[assignment.postId]) continue;
-                blankAssignments[assignment.postId] = {
-                  employeeId: assignment.employeeId || '',
-                  shiftType: assignment.coveredEmployeeId
-                    ? 'Lembur Cover'
-                    : defaultShiftTypeForDate,
-                  coveredEmployeeId: assignment.coveredEmployeeId || '',
-                  overtimeReason: assignment.overtimeReason || '',
-                  photoUrl: assignment.photoUrl || '',
-                  photoAuditMetadata: assignment.photoAuditMetadata,
-                };
-              }
-              const pendingExtra = pending.payload.extraAssignment;
-              setExtraEmployeeId(pendingExtra?.employeeId || '');
-              setExtraPostName(pendingExtra?.postId || '');
-              setExtraShiftType('Lembur Sendiri');
-              setExtraOvertimeReason(pendingExtra?.overtimeReason || '');
-              setExtraPhotoUrl(pendingExtra?.photoUrl || '');
-              setExtraPhotoAuditMetadata(pendingExtra?.photoAuditMetadata);
-              setIsExtraPostVisible(Boolean(pendingExtra));
-              if (pending.requestId) {
-                satpamRequestIdsRef.current[
-                  `${satpamReportDate}_${pending.payload.shiftName || calculatedSuggestedShift}`
-                ] = pending.requestId;
-              }
-              restoredPending = true;
-              setMessage({
-                type: 'success',
-                text: 'Draf laporan yang belum selesai berhasil dipulihkan.',
-              });
-            }
-          } catch (error) {
-            console.warn('Draf antrean Satpam lokal tidak dapat dipulihkan:', error);
-          }
-        }
-        setPostAssignments(blankAssignments);
-        if (!restoredPending) {
-          setExtraEmployeeId('');
-          setExtraPostName('');
-          setExtraShiftType('Lembur Sendiri');
-          setExtraOvertimeReason('');
-          setIsExtraPostVisible(false);
-        }
+        restorePendingDraft(readPendingDraft(), true);
         setIsSatpamReportSubmitted(false);
       }
-      satpamHydratedDateRef.current = satpamReportDate;
+      satpamHydratedDateRef.current = requestedDate;
       setSatpamDraftHydrated(true);
       setLoadingSubmittedSatpam(false);
     }).catch((err) => {
-      console.error('Error fetching submitted Satpam reports:', err);
-      if (isMounted) {
-        satpamHydratedDateRef.current = satpamReportDate;
-        setSatpamDraftHydrated(true);
-        setLoadingSubmittedSatpam(false);
+      if (
+        !isMounted ||
+        satpamSelectedDateRef.current !== requestedDate
+      ) {
+        return;
       }
+      console.error('Error fetching submitted Satpam reports:', err);
+      // The old implementation left the previous date's state intact here and
+      // then marked it as hydrated for requestedDate. Restore only a v3 draft
+      // whose payload independently names requestedDate; otherwise stay blank.
+      restorePendingDraft(readPendingDraft(), false);
+      satpamHydratedDateRef.current = requestedDate;
+      setSatpamDraftHydrated(true);
+      setLoadingSubmittedSatpam(false);
+      setMessage({
+        type: 'error',
+        text: 'Status laporan tanggal ini gagal dimuat. Form dikosongkan agar data tanggal lain tidak ikut tersalin; coba muat ulang sebelum mengirim.',
+      });
     });
 
     return () => {
       isMounted = false;
     };
   }, [
+    isKetuaShiftSatpam,
     satpamReportDate,
     profile?.linkedEmployeeId,
     satpamPendingStorageKey,
     calculatedSuggestedShift,
+    satpamRegularPayType,
   ]);
 
   useEffect(() => {
@@ -2779,25 +2840,23 @@ function ActivitiesContent() {
     if (satpamDutyPlan.day.dutyDate !== satpamReportDate) {
       return;
     }
-    if (
-      satpamPendingStorageKey &&
-      satpamDraftHasContent(
-        window.localStorage.getItem(satpamPendingStorageKey),
-      )
-    ) {
-      return;
+    if (satpamPendingStorageKey) {
+      try {
+        if (
+          parseSatpamShiftPendingDraft(
+            window.localStorage.getItem(satpamPendingStorageKey),
+            satpamReportDate,
+          )
+        ) {
+          return;
+        }
+      } catch (error) {
+        console.warn('Draf Satpam lokal tidak dapat diperiksa:', error);
+      }
     }
-    const plannedAssignments: Record<string, SatpamPostAssignment> = {
-      'Pos 1': { employeeId: '', shiftType: satpamRegularPayType },
-      'Pos 2': { employeeId: '', shiftType: satpamRegularPayType },
-      'Pos 3': { employeeId: '', shiftType: satpamRegularPayType },
-      'Pos 4': { employeeId: '', shiftType: satpamRegularPayType },
-      'Pos 5': { employeeId: '', shiftType: satpamRegularPayType },
-      'Pos 6': { employeeId: '', shiftType: satpamRegularPayType },
-      'Pos 7': { employeeId: '', shiftType: satpamRegularPayType },
-      'Pos 8': { employeeId: '', shiftType: satpamRegularPayType },
-      'Pos 9': { employeeId: '', shiftType: satpamRegularPayType },
-    };
+    const plannedAssignments = createBlankSatpamAssignments(
+      satpamRegularPayType,
+    );
     satpamDutyPlan.day.assignments.forEach((assignment) => {
       plannedAssignments[assignment.postId] = {
         employeeId: assignment.employeeId,
@@ -2929,13 +2988,44 @@ function ActivitiesContent() {
     return isFriday(dateStr) ? 'Jumat & Libur' : 'Harian';
   };
 
+  const beginSatpamDateTransition = (nextValue: string) => {
+    if (nextValue === satpamReportDate) return;
+    // Invalidate old async work before React renders the new date. Event updates
+    // are batched, so doing this synchronously closes the small window in which
+    // a slow prior-date request/upload could otherwise commit its result.
+    satpamSelectedDateRef.current = nextValue;
+    satpamHydratedDateRef.current = '';
+    setSatpamDraftHydrated(false);
+    setLoadingSubmittedSatpam(true);
+    setSatpamDutyPlan(null);
+    setPostAssignments(
+      createBlankSatpamAssignments(getDefaultShiftTypeForDate(nextValue)),
+    );
+    setSatpamOccurrenceId('');
+    setSatpamOccurrenceRevision(0);
+    setSatpamAuditorActionAt(null);
+    setSatpamReviewStatus('draft');
+    setSatpamAnomalies([]);
+    setExtraEmployeeId('');
+    setExtraPostName('');
+    setExtraShiftType('Lembur Sendiri');
+    setExtraOvertimeReason('');
+    setExtraPhotoUrl('');
+    setExtraPhotoAuditMetadata(undefined);
+    setIsExtraPostVisible(false);
+    setIsSatpamReportSubmitted(false);
+    setPendingDailyLiburSwap(null);
+    setDailyLiburSwapError('');
+    setSatpamReportDate(nextValue);
+  };
+
   const setSatpamDateShortcut = (dayOffset: number) => {
-    const nextDate = new Date();
-    nextDate.setDate(nextDate.getDate() + dayOffset);
+    const nextDate = new Date(`${getTodayISO()}T00:00:00Z`);
+    nextDate.setUTCDate(nextDate.getUTCDate() + dayOffset);
     const nextValue = [
-      nextDate.getFullYear(),
-      String(nextDate.getMonth() + 1).padStart(2, '0'),
-      String(nextDate.getDate()).padStart(2, '0'),
+      nextDate.getUTCFullYear(),
+      String(nextDate.getUTCMonth() + 1).padStart(2, '0'),
+      String(nextDate.getUTCDate()).padStart(2, '0'),
     ].join('-');
     const isOpen = satpamOpenPeriods.some(
       (period) => nextValue >= period.startDate && nextValue <= period.endDate,
@@ -2944,7 +3034,7 @@ function ActivitiesContent() {
       setMessage({ type: 'error', text: 'Tanggal tersebut belum termasuk periode payroll yang terbuka.' });
       return;
     }
-    setSatpamReportDate(nextValue);
+    beginSatpamDateTransition(nextValue);
   };
 
   const handleSatpamDateChange = (nextValue: string) => {
@@ -2959,7 +3049,7 @@ function ActivitiesContent() {
       });
       return;
     }
-    setSatpamReportDate(nextValue);
+    beginSatpamDateTransition(nextValue);
   };
 
   const setPersonalSpjDate = (nextValue: string) => {
@@ -3304,6 +3394,15 @@ function ActivitiesContent() {
 
   const handleUploadPostPhoto = async (postId: string, file: File) => {
     if (!profile?.linkedEmployeeId) return;
+    const uploadDutyDate = satpamReportDate;
+    const uploadShiftName = activeShift;
+    if (satpamHydratedDateRef.current !== uploadDutyDate) {
+      setMessage({
+        type: 'error',
+        text: 'Tunggu sampai jadwal tanggal ini selesai dimuat sebelum mengunggah foto.',
+      });
+      return;
+    }
     if (!file.type.startsWith('image/')) {
       setMessage({ type: 'error', text: 'Bukti pos harus berupa foto (JPG/PNG).' });
       return;
@@ -3319,8 +3418,15 @@ function ActivitiesContent() {
       const safePost = postId.replace(/[^A-Za-z0-9_-]/g, '_');
       const downloadUrl = await uploadProofFile('/api/uploads/satpam-shifts', prepared.file, {
         ketuaShiftId: profile.linkedEmployeeId,
-        filenameHint: `${satpamReportDate}_${activeShift}_${safePost}`,
+        filenameHint: `${uploadDutyDate}_${uploadShiftName}_${safePost}`,
       });
+
+      if (
+        satpamSelectedDateRef.current !== uploadDutyDate ||
+        satpamHydratedDateRef.current !== uploadDutyDate
+      ) {
+        return;
+      }
 
       if (postId === 'extra') {
         setExtraPhotoUrl(downloadUrl);
@@ -3440,16 +3546,24 @@ function ActivitiesContent() {
 
   const executeSubmitSatpamShift = async () => {
     if (!profile?.linkedEmployeeId) return;
+    const submissionDate = satpamReportDate;
+    if (satpamHydratedDateRef.current !== submissionDate) {
+      setMessage({
+        type: 'error',
+        text: 'Tunggu sampai status laporan tanggal ini selesai dimuat.',
+      });
+      return;
+    }
     setSatpamSubmitting(true);
     try {
-      const requestKey = `${satpamReportDate}_${activeShift}`;
+      const requestKey = `${submissionDate}_${activeShift}`;
       const requestId =
         satpamRequestIdsRef.current[requestKey] ||
         createFinancialRequestId('satpam_shift');
       satpamRequestIdsRef.current[requestKey] = requestId;
       const payload = {
         requestId,
-        dutyDate: satpamReportDate,
+        dutyDate: submissionDate,
         shiftName: activeShift,
         ...(satpamDutyPlan?.planId && satpamDutyPlan.revision > 0
           ? {
@@ -3468,7 +3582,7 @@ function ActivitiesContent() {
           .map(([postId, assignment]) => ({
             postId: postId as SatpamPostId,
             employeeId: assignment.employeeId,
-            shiftType: (assignment.shiftType || getDefaultShiftTypeForDate(satpamReportDate)) as SatpamPayType,
+            shiftType: (assignment.shiftType || getDefaultShiftTypeForDate(submissionDate)) as SatpamPayType,
             ...(assignment.shiftType === 'Lembur Cover' && {
               coveredEmployeeId: assignment.coveredEmployeeId,
               overtimeReason: assignment.overtimeReason,
@@ -3509,12 +3623,13 @@ function ActivitiesContent() {
       if (satpamPendingStorageKey) {
         window.localStorage.removeItem(satpamPendingStorageKey);
       }
+      if (satpamSelectedDateRef.current !== submissionDate) return;
 
       setMessage({
         type: 'success',
         text: satpamOccurrenceId
           ? 'Perubahan laporan tersimpan dan menunggu pemeriksaan auditor.'
-          : `Laporan shift ${activeShift} tanggal ${satpamReportDate} terkirim dan menunggu audit Kepala SatKer.`,
+          : `Laporan shift ${activeShift} tanggal ${submissionDate} terkirim dan menunggu audit Kepala SatKer.`,
       });
       setSatpamOccurrenceId(result.occurrenceId);
       setSatpamOccurrenceRevision(result.revision);
@@ -4171,7 +4286,12 @@ function ActivitiesContent() {
                         type="date"
                         value={satpamReportDate}
                         onChange={(e) => handleSatpamDateChange(e.target.value)}
-                        disabled={isSatpamReportLocked || !satpamFlexibilityEnabled}
+                        disabled={
+                          isSatpamReportLocked ||
+                          !satpamFlexibilityEnabled ||
+                          satpamSubmitting ||
+                          isSatpamPhotoUploadInProgress
+                        }
                         className="h-12 rounded-xl border-slate-200 focus:border-purple-400 focus:ring-purple-400/20 text-base font-bold text-slate-700 bg-white"
                         required
                       />

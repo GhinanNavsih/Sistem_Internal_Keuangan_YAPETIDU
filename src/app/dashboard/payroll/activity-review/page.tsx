@@ -141,6 +141,7 @@ interface ActivityReport {
   points?: string[];
   distanceKm?: number;
   durationHours?: number;
+  routeDurationHours?: number;
   journeyId?: string;
   fuelReceiptUrl?: string;
   tollReceiptUrl?: string;
@@ -274,9 +275,15 @@ function calculateSopirDefaultFee(
   _fuelFee?: number,
   _tollParkingFee?: number,
   distanceKm?: number,
-  durationHours?: number
+  durationHours?: number,
+  routeDurationHours?: number
 ): number {
-  return calculateDriverNetWage(distanceKm || 0, durationHours || 0, nightCount);
+  return calculateDriverNetWage({
+    distanceKm: distanceKm || 0,
+    travelTimeHours: routeDurationHours ?? durationHours ?? 0,
+    elapsedDurationHours: durationHours || 0,
+    nightCount,
+  });
 }
 
 function fmtRp(val: number): string {
@@ -312,7 +319,8 @@ function calculateDefaultFee(
   fuelFee?: number,
   tollParkingFee?: number,
   distanceKm?: number,
-  durationHours?: number
+  durationHours?: number,
+  routeDurationHours?: number
 ): number {
   if (jobCategory === 'SOPIR') {
     return calculateSopirDefaultFee(
@@ -323,7 +331,8 @@ function calculateDefaultFee(
       fuelFee,
       tollParkingFee,
       distanceKm,
-      durationHours
+      durationHours,
+      routeDurationHours
     );
   }
 
@@ -819,6 +828,7 @@ export default function ActivityReviewPage() {
                       a.tollParkingFee,
                       a.distanceKm,
                       a.durationHours,
+                      a.routeDurationHours,
                     );
               newFees[a.id] = String(defaultFee);
             }
@@ -2627,7 +2637,12 @@ export default function ActivityReviewPage() {
                                     {fmtRp(
                                       activity.status === 'approved'
                                         ? (activity.upahBersih || 0)
-                                        : (activity.submittedFeeEstimate ?? activity.baseDriverWage ?? calculateDriverNetWage(activity.distanceKm || 0, activity.durationHours || 0, activity.nightCount || 0))
+                                        : (activity.submittedFeeEstimate ?? activity.baseDriverWage ?? calculateDriverNetWage({
+                                            distanceKm: activity.distanceKm || 0,
+                                            travelTimeHours: activity.routeDurationHours ?? activity.durationHours ?? 0,
+                                            elapsedDurationHours: activity.durationHours || 0,
+                                            nightCount: activity.nightCount || 0,
+                                          }))
                                     )}
                                   </span>
                                   {(activity.reimburseDelta || 0) > 0 && (

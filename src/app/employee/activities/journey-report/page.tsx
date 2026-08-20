@@ -1530,11 +1530,12 @@ function JourneyReportContent() {
       );
 
       const nightPremium = calculateNightPremium(effectiveNightCount);
-      const baseDriverWage = calculateDriverNetWage(
-        calculatedDistanceKm,
-        submittedDurationHours,
-        effectiveNightCount,
-      );
+      const baseDriverWage = calculateDriverNetWage({
+        distanceKm: calculatedDistanceKm,
+        travelTimeHours: routeDurationHours,
+        elapsedDurationHours: submittedDurationHours,
+        nightCount: effectiveNightCount,
+      });
       const finalUpahBersih = Math.max(0, baseDriverWage - settlement.remainingUnspentCash);
 
       const extraLocs = extraActivities.filter(a => a.type === 'tambah_lokasi' && a.destination);
@@ -1620,7 +1621,7 @@ function JourneyReportContent() {
             totalOperationalCost: adjustedTotalOperationalCost,
             vehicleRate: activeReportingJourney.vehicleRate ?? 1000,
             componentJarak: Math.ceil(calculatedDistanceKm * 300),
-            componentWaktu: Math.ceil(submittedDurationHours * 5000),
+            componentWaktu: Math.ceil(routeDurationHours * 5000),
             nightPremium,
           },
         }),
@@ -2781,11 +2782,12 @@ function JourneyReportContent() {
                   return null;
                 })()}
                 {(() => {
-                  const baseDriverWage = calculateDriverNetWage(
-                    calculatedDistanceKm,
-                    submittedDurationHours,
-                    effectiveTableNights,
-                  );
+                  const baseDriverWage = calculateDriverNetWage({
+                    distanceKm: calculatedDistanceKm,
+                    travelTimeHours: calculatedDurationHours,
+                    elapsedDurationHours: submittedDurationHours,
+                    nightCount: effectiveTableNights,
+                  });
                   const finalUpahBersih = Math.max(0, baseDriverWage - settlement.remainingUnspentCash);
 
                   return (
@@ -2801,12 +2803,13 @@ function JourneyReportContent() {
                       </div>
                       {(() => {
                         const activeHours = submittedDurationHours;
+                        const travelHours = calculatedDurationHours;
                         const shortTripMeal = getShortTripMealWageComponent(activeHours);
                         return (
                           <>
                             <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
-                              <span>• Komponen Waktu ({activeHours.toFixed(1)} jam)</span>
-                              <span className="text-emerald-700 font-black">{fmtRp(Math.ceil(activeHours * 5000))}</span>
+                              <span>• Komponen Waktu ({travelHours.toFixed(1)} jam)</span>
+                              <span className="text-emerald-700 font-black">{fmtRp(Math.ceil(travelHours * 5000))}</span>
                             </div>
                             {shortTripMeal > 0 && (
                               <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">

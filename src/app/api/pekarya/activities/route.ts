@@ -417,7 +417,7 @@ function sanitizeDriverData(
   normalizeReceipt('fuelFee', 'fuelReceiptUrl', 'fuelReceiptEvidence', 'Metadata bukti BBM');
   normalizeReceipt('tollParkingFee', 'tollReceiptUrl', 'tollReceiptEvidence', 'Metadata bukti Tol & Parkir');
 
-  for (const key of ['distanceKm', 'durationHours', 'extraDistanceKm', 'customDurationPP']) {
+  for (const key of ['distanceKm', 'durationHours', 'routeDurationHours', 'extraDistanceKm', 'customDurationPP']) {
     const number = result[key];
     if (
       number !== undefined &&
@@ -509,16 +509,21 @@ function sanitizeDriverData(
 
   const distanceKm = typeof result.distanceKm === 'number' ? result.distanceKm : 0;
   const durationHours = typeof result.durationHours === 'number' ? result.durationHours : 0;
+  // Cumulative Google Directions travel time between destinations, distinct from
+  // `durationHours` (elapsed clock time). Drives Komponen Waktu; falls back to the
+  // elapsed value only for older clients that never sent a route-derived figure.
+  const routeDurationHours = typeof result.routeDurationHours === 'number' ? result.routeDurationHours : durationHours;
   const nightCount = typeof result.nightCount === 'number' ? result.nightCount : 0;
-  result.routeDurationHours = durationHours;
+  result.routeDurationHours = routeDurationHours;
   result.componentJarak = Math.ceil(distanceKm * 300);
-  result.componentWaktu = Math.ceil(durationHours * 5_000);
+  result.componentWaktu = Math.ceil(routeDurationHours * 5_000);
   result.nightPremium = calculateNightPremium(nightCount);
-  result.baseDriverWage = calculateDriverNetWage(
+  result.baseDriverWage = calculateDriverNetWage({
     distanceKm,
-    durationHours,
+    travelTimeHours: routeDurationHours,
+    elapsedDurationHours: durationHours,
     nightCount,
-  );
+  });
   result.upahBersih = result.baseDriverWage;
   return result;
 }
@@ -772,14 +777,22 @@ export async function POST(request: NextRequest) {
           const actualJourneyDurationHours = journeyTimings.durationHours;
           const distanceKm = typeof driverData.distanceKm === 'number' ? driverData.distanceKm : 0;
           const nightCount = typeof driverData.nightCount === 'number' ? driverData.nightCount : 0;
+          // Travel time (Google Directions leg sum), already validated/defaulted in
+          // sanitizeDriverData above. Komponen Waktu is charged from this, not from
+          // the elapsed clock time below (which only feeds meal allowance/night count).
+          const travelTimeHours = typeof driverData.routeDurationHours === 'number'
+            ? driverData.routeDurationHours
+            : actualJourneyDurationHours;
           driverData.durationHours = actualJourneyDurationHours;
-          driverData.componentWaktu = Math.ceil(actualJourneyDurationHours * 5_000);
+          driverData.routeDurationHours = travelTimeHours;
+          driverData.componentWaktu = Math.ceil(travelTimeHours * 5_000);
           driverData.nightPremium = calculateNightPremium(nightCount);
-          driverData.baseDriverWage = calculateDriverNetWage(
+          driverData.baseDriverWage = calculateDriverNetWage({
             distanceKm,
-            actualJourneyDurationHours,
+            travelTimeHours,
+            elapsedDurationHours: actualJourneyDurationHours,
             nightCount,
-          );
+          });
           driverData.upahBersih = driverData.baseDriverWage;
           const vehicleType =
             typeof driverData.vehicleType === 'string' ? driverData.vehicleType : '';

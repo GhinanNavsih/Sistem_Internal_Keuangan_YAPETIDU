@@ -212,6 +212,8 @@ function auditReportPointLocations(
 export interface DriverReviewPayload {
   distanceKm: number;
   durationHours: number;
+  /** Cumulative Google Directions travel time between destinations; drives Komponen Waktu. */
+  routeDurationHours: number;
   timeStart: string;
   timeEnd: string;
   dateStart: string;
@@ -318,6 +320,17 @@ export function DriverJourneyAuditDialog({
   const [auditLegWages, setAuditLegWages] = useState<Record<number, { distanceKm: number; durationHours: number }>>({});
   const [isManualDistanceOverride, setIsManualDistanceOverride] = useState<boolean>(false);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
+
+  // Cumulative Google Directions travel time between destinations (sum of
+  // `auditLegWages`, which is refreshed whenever the dialog opens or the
+  // auditor edits a point). Drives Komponen Waktu; falls back to the elapsed
+  // clock-time value only while legs haven't resolved yet (e.g. Directions
+  // API still loading, or a route that failed to calculate).
+  const auditRouteDurationHours = useMemo(() => {
+    const legValues = Object.values(auditLegWages);
+    if (legValues.length === 0) return auditDurationHours;
+    return legValues.reduce((sum, leg) => sum + leg.durationHours, 0);
+  }, [auditLegWages, auditDurationHours]);
 
   // Google Maps Location Picker Modal state
   const [showMapSelector, setShowMapSelector] = useState(false);
@@ -918,14 +931,15 @@ export function DriverJourneyAuditDialog({
       ? actualJourneyDurationHours
       : auditDurationHours;
     const componentJarak = Math.ceil(auditDistanceKm * 300);
-    const componentWaktu = Math.ceil(wageDurationHours * 5000);
+    const componentWaktu = Math.ceil(auditRouteDurationHours * 5000);
     const premiumWeekend = 0;
     const nightPremium = calculateNightPremium(auditNightCount);
-    const baseDriverWage = calculateDriverNetWage(
-      auditDistanceKm,
-      wageDurationHours,
-      auditNightCount,
-    );
+    const baseDriverWage = calculateDriverNetWage({
+      distanceKm: auditDistanceKm,
+      travelTimeHours: auditRouteDurationHours,
+      elapsedDurationHours: wageDurationHours,
+      nightCount: auditNightCount,
+    });
 
     const actualFuel = fuelProcurementMode === 'hold_accumulate' || auditVehicleType === 'Ndalem'
       ? 0
@@ -984,6 +998,7 @@ export function DriverJourneyAuditDialog({
       nightPremium,
       upahBersih,
       durationHours: wageDurationHours,
+      routeDurationHours: auditRouteDurationHours,
       timelineChanged,
       operationalCost,
     };
@@ -997,6 +1012,7 @@ export function DriverJourneyAuditDialog({
     auditTimeEnd,
     auditDistanceKm,
     auditDurationHours,
+    auditRouteDurationHours,
     auditFuelDelta,
     auditTollDelta,
     auditMealMoneyReceivedInput,
@@ -1010,6 +1026,7 @@ export function DriverJourneyAuditDialog({
     onApprove({
       distanceKm: auditDistanceKm,
       durationHours: auditCalc.durationHours,
+      routeDurationHours: auditCalc.routeDurationHours,
       timeStart: auditTimeStart,
       timeEnd: auditTimeEnd,
       dateStart: auditDateStart,
@@ -1532,7 +1549,7 @@ export function DriverJourneyAuditDialog({
                       <span className="font-extrabold text-slate-800">{fmtRp(auditCalc.componentJarak)}</span>
                     </div>
                     <div className="flex justify-between bg-white p-2.5 rounded-xl border border-indigo-100/50">
-                      <span>Komponen Waktu ({auditDurationHours} jam x Rp5.000)</span>
+                      <span>Komponen Waktu ({auditRouteDurationHours.toFixed(1)} jam x Rp5.000)</span>
                       <span className="font-extrabold text-slate-800">{fmtRp(auditCalc.componentWaktu)}</span>
                     </div>
                   </div>

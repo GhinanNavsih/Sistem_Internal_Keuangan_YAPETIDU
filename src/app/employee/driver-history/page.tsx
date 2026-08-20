@@ -87,6 +87,7 @@ interface ActivityReport {
   points?: string[];
   distanceKm?: number;
   durationHours?: number;
+  routeDurationHours?: number;
   upahBersih?: number;
   submittedFeeEstimate?: number;
   baseDriverWage?: number;
@@ -539,7 +540,12 @@ function DriverHistoryContent() {
                             {fmtRp(
                               activity.status === 'approved'
                                 ? (activity.upahBersih || 0)
-                                : (activity.submittedFeeEstimate ?? activity.baseDriverWage ?? calculateDriverNetWage(activity.distanceKm || 0, activity.durationHours || 0, activity.nightCount || 0))
+                                : (activity.submittedFeeEstimate ?? activity.baseDriverWage ?? calculateDriverNetWage({
+                                    distanceKm: activity.distanceKm || 0,
+                                    travelTimeHours: activity.routeDurationHours ?? activity.durationHours ?? 0,
+                                    elapsedDurationHours: activity.durationHours || 0,
+                                    nightCount: activity.nightCount || 0,
+                                  }))
                             )}
                           </span>
                         </div>

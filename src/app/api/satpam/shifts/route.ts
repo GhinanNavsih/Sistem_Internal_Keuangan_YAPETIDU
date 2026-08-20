@@ -1157,10 +1157,22 @@ export async function GET(request: NextRequest) {
       )[0];
     if (!occurrence) {
       return Response.json(
-        { occurrence: null, assignments: [] },
-        { headers: { 'Cache-Control': 'no-store' } },
+        {
+          requestedDutyDate: dutyDate,
+          resolvedDutyDate: null,
+          occurrence: null,
+          assignments: [],
+        },
+        {
+          headers: {
+            'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+            Pragma: 'no-cache',
+            Vary: 'Authorization',
+          },
+        },
       );
     }
+    const resolvedDutyDate = String(occurrence.dutyDate || '');
     const reportIds = Array.isArray(occurrence.reportIds)
       ? occurrence.reportIds.filter((id): id is string => typeof id === 'string')
       : [];
@@ -1170,11 +1182,31 @@ export async function GET(request: NextRequest) {
       ),
     );
     const assignments = reportSnapshots
-      .filter((report) => report.exists)
+      .filter((report) => {
+        if (!report.exists) return false;
+        const data = report.data()!;
+        const reportDutyDate = String(data.dutyDate || data.activityDate || '');
+        const sourceOccurrenceId = String(data.sourceOccurrenceId || '');
+        return (
+          reportDutyDate === resolvedDutyDate &&
+          (!sourceOccurrenceId || sourceOccurrenceId === occurrence.id)
+        );
+      })
       .map((report) => ({ id: report.id, ...report.data() }));
     return Response.json(
-      { occurrence, assignments },
-      { headers: { 'Cache-Control': 'no-store' } },
+      {
+        requestedDutyDate: dutyDate,
+        resolvedDutyDate,
+        occurrence,
+        assignments,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+          Pragma: 'no-cache',
+          Vary: 'Authorization',
+        },
+      },
     );
   } catch (error) {
     return errorResponse(error);

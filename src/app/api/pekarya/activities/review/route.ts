@@ -66,6 +66,8 @@ interface ReviewItem {
   driverReview?: {
     distanceKm: number;
     durationHours: number;
+    /** Cumulative Google Directions travel time between destinations; drives Komponen Waktu. */
+    routeDurationHours?: number;
     timeStart?: string;
     timeEnd?: string;
     dateStart?: string;
@@ -151,6 +153,14 @@ function validateDriverReview(value: ReviewItem['driverReview']) {
     value.durationHours > 10_000
   ) {
     throw new HttpError(400, 'Jarak atau durasi audit Sopir tidak valid.');
+  }
+  if (
+    value.routeDurationHours !== undefined &&
+    (!Number.isFinite(value.routeDurationHours) ||
+      value.routeDurationHours < 0 ||
+      value.routeDurationHours > 10_000)
+  ) {
+    throw new HttpError(400, 'Durasi tempuh rute audit Sopir tidak valid.');
   }
   try {
     assertNightCount(value.nightCount);
@@ -622,11 +632,18 @@ export async function POST(request: NextRequest) {
           const finalDurationHours = timelineChanged
             ? actualJourneyDurationHours
             : review.durationHours;
-          const baseDriverWage = calculateDriverNetWage(
-            review.distanceKm,
-            finalDurationHours,
-            effectiveNightCount,
-          );
+          // Cumulative Google Directions travel time between destinations, as
+          // recomputed by the auditor's route. Drives Komponen Waktu only —
+          // finalDurationHours (elapsed clock time) keeps driving meal allowance.
+          const travelTimeHours = typeof review.routeDurationHours === 'number'
+            ? review.routeDurationHours
+            : finalDurationHours;
+          const baseDriverWage = calculateDriverNetWage({
+            distanceKm: review.distanceKm,
+            travelTimeHours,
+            elapsedDurationHours: finalDurationHours,
+            nightCount: effectiveNightCount,
+          });
           const originalPreAuthorizedMeal =
             typeof authorizedJourney?.mealAllowance === 'number' &&
               authorizedJourney.mealAllowance > 0
@@ -712,9 +729,7 @@ export async function POST(request: NextRequest) {
             totalOperationalCost,
             distanceKm: review.distanceKm,
             durationHours: finalDurationHours,
-            routeDurationHours: timelineChanged
-              ? finalDurationHours
-              : before.routeDurationHours,
+            routeDurationHours: travelTimeHours,
             timeStart: reviewTimeStart,
             timeEnd: reviewTimeEnd,
             dateStart: editedTimeline.dateStart,
@@ -727,7 +742,7 @@ export async function POST(request: NextRequest) {
               ? finalDurationHours
               : before.customDurationPP,
             componentJarak: Math.ceil(review.distanceKm * 300),
-            componentWaktu: Math.ceil(finalDurationHours * 5_000),
+            componentWaktu: Math.ceil(travelTimeHours * 5_000),
             fuelFee: actualFuel,
             extraFuelCost: settlement.extraFuelCost,
             tollParkingFee: actualToll,
@@ -935,7 +950,7 @@ export async function POST(request: NextRequest) {
             submittedDurationHours: after.durationHours || 0,
             newTotalDurationHours: after.durationHours || 0,
             componentJarak: after.componentJarak ?? Math.ceil(Number(after.distanceKm || 0) * 300),
-            componentWaktu: after.componentWaktu ?? Math.ceil(Number(after.durationHours || 0) * 5_000),
+            componentWaktu: after.componentWaktu ?? Math.ceil(Number(after.routeDurationHours ?? after.durationHours ?? 0) * 5_000),
             points: after.points || [],
             startPoint: Array.isArray(after.points) ? after.points[0] || '' : '',
             endPoint: Array.isArray(after.points) ? after.points[1] || '' : '',

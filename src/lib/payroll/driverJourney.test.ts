@@ -346,9 +346,42 @@ test('all vehicle types subtract meal money already provided from the meal right
 test('night premium and driver net wage use quantitative night count', () => {
   assert.equal(calculateNightPremium(0), 0);
   assert.equal(calculateNightPremium(3), 150_000);
-  assert.equal(calculateDriverNetWage(100, 30, 2), 280_000);
+  assert.equal(
+    calculateDriverNetWage({
+      distanceKm: 100,
+      travelTimeHours: 30,
+      elapsedDurationHours: 30,
+      nightCount: 2,
+    }),
+    280_000,
+  );
   assert.throws(() => calculateNightPremium(-1));
   assert.throws(() => calculateNightPremium(1.5));
+});
+
+test('driver net wage charges Komponen Waktu from travel time, not elapsed clock time', () => {
+  // Travel time (Directions leg sum) is short enough to skip the short-trip meal
+  // component, but elapsed clock time (waiting at stops included) is what decides
+  // that component, per the uang makan strata rule.
+  const wage = calculateDriverNetWage({
+    distanceKm: 50,
+    travelTimeHours: 3,
+    elapsedDurationHours: 8,
+    nightCount: 0,
+  });
+  // (50 * 300) + (3 * 5000) = 15000 + 15000 = 30000. No short-trip meal component
+  // since elapsedDurationHours (8h) is above the <=2h threshold.
+  assert.equal(wage, 30_000);
+
+  const shortElapsedWage = calculateDriverNetWage({
+    distanceKm: 50,
+    travelTimeHours: 3,
+    elapsedDurationHours: 2,
+    nightCount: 0,
+  });
+  // Same distance/travel time, but elapsedDurationHours <= 2h now adds the flat
+  // Rp 5.000 short-trip meal component: 15000 + 15000 + 5000 = 35000.
+  assert.equal(shortElapsedWage, 35_000);
 });
 
 test('journey day count rounds partial 24-hour cycles up', () => {
@@ -401,7 +434,12 @@ test('calculateJourneyDateTimeTimings enforces 05:00 AM cutoff threshold for ove
 
   assert.equal(result.durationHours, 26);
   assert.equal(result.nightCount, 1);
-  const wage = calculateDriverNetWage(173.4, result.durationHours, result.nightCount);
+  const wage = calculateDriverNetWage({
+    distanceKm: 173.4,
+    travelTimeHours: result.durationHours,
+    elapsedDurationHours: result.durationHours,
+    nightCount: result.nightCount,
+  });
   // (173.4 * 300) + (26 * 5000) + (1 * 50000) + (5000 short trip meal) = 52020 + 130000 + 50000 + 5000 = 237020
   assert.equal(wage, 237_020);
 });
