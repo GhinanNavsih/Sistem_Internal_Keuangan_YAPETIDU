@@ -11,6 +11,7 @@
     "audit:satpam-payroll": "tsx scripts/auditSatpamPayrollReadOnly.ts",
     "reconcile:satpam-flexible": "tsx scripts/reconcileSatpamFlexibleReports.ts",
     "recompute:driver-komponen-waktu": "tsx scripts/recomputeDriverKomponenWaktu.ts",
+    "fix:driver-short-trip-meal": "tsx scripts/fixDriverShortTripMealWage.ts",
     "audit:pekarya-spj": "tsx scripts/auditPekaryaSpjReadOnly.ts",
     "migrate:salary-matrix": "tsx scripts/migrateSalaryMatrix.ts",
     "migrate:employees": "tsx scripts/migrateEmployees.ts",
