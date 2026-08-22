@@ -24,6 +24,7 @@ import {
   normalizeDriverJourneyDestinations,
   normalizeDriverJourneyLocation,
   normalizeDriverJourneyLocations,
+  formatDurationHoursAsJamMenit,
 } from './driverJourney';
 
 test('fuel procurement modes have human-readable UI labels', () => {
@@ -511,4 +512,16 @@ test('calculateEstimatedDriverWage includes short-trip meal allowance when durat
   assert.equal(estLong.shortTripMeal, 0);
   assert.equal(estLong.baseWage, 18_000);
   assert.equal(estLong.maxWage, 22_500);
+});
+
+test('formatDurationHoursAsJamMenit spells out hours and minutes instead of decimal hours', () => {
+  assert.equal(formatDurationHoursAsJamMenit(2.6), '2j 36m');
+  assert.equal(formatDurationHoursAsJamMenit(0.2), '0j 12m');
+  assert.equal(formatDurationHoursAsJamMenit(2), '2j 00m');
+  assert.equal(formatDurationHoursAsJamMenit(0), '0j 00m');
+  // Rounds to the nearest minute rather than truncating.
+  assert.equal(formatDurationHoursAsJamMenit(0.3591666666666667), '0j 22m');
+  // 59.6 minutes rounds up into the next hour, not "1j 60m".
+  assert.equal(formatDurationHoursAsJamMenit(1.993), '2j 00m');
+  assert.equal(formatDurationHoursAsJamMenit(-1), '0j 00m');
 });

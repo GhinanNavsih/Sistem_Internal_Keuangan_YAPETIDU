@@ -53,6 +53,7 @@ import {
   calculateDriverReimbursementSettlement,
   DEFAULT_FUEL_PROCUREMENT_MODE,
   isFuelProcurementMode,
+  formatDurationHoursAsJamMenit,
 } from '@/lib/payroll/driverJourney';
 import { authenticatedJson } from '@/lib/payroll/client';
 import {
@@ -704,7 +705,7 @@ function DriverHistoryContent() {
               <DetailRow label="Jarak Tempuh" value={`${(reviewActivity?.distanceKm || 0).toFixed(1)} km`} />
               <DetailRow
                 label="Waktu Tempuh"
-                value={`${(reviewActivity?.routeDurationHours ?? reviewActivity?.durationHours ?? 0).toFixed(1)} jam`}
+                value={formatDurationHoursAsJamMenit(reviewActivity?.routeDurationHours ?? reviewActivity?.durationHours ?? 0)}
               />
             </div>
 

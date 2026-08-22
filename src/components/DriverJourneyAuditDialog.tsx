@@ -50,6 +50,7 @@ import {
   isFuelProcurementMode,
   normalizeDriverJourneyLocation,
   normalizeDriverJourneyLocations,
+  formatDurationHoursAsJamMenit,
   type DriverJourneyLocation,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
@@ -1559,7 +1560,7 @@ export function DriverJourneyAuditDialog({
                       <span className="font-extrabold text-slate-800">{fmtRp(auditCalc.componentJarak)}</span>
                     </div>
                     <div className="flex justify-between bg-white p-2.5 rounded-xl border border-indigo-100/50">
-                      <span>Komponen Waktu ({auditRouteDurationHours.toFixed(1)} jam x Rp5.000)</span>
+                      <span>Komponen Waktu ({formatDurationHoursAsJamMenit(auditRouteDurationHours)} x Rp5.000)</span>
                       <span className="font-extrabold text-slate-800">{fmtRp(auditCalc.componentWaktu)}</span>
                     </div>
                   </div>

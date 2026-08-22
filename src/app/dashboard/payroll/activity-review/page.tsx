@@ -885,11 +885,11 @@ export default function ActivityReviewPage() {
   }, [hasAccess, periodToken, profile?.role, allowedCategories, refreshTrigger]);
 
   // ── Filtered activities ──
-  const filteredActivities = useMemo(() => {
+  // Split out the non-status filters (report type, category, search) so the
+  // stat cards can reflect them without also collapsing to whichever status
+  // the cards themselves are currently toggled to.
+  const scopedActivities = useMemo(() => {
     let filtered = activities;
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(a => a.status === statusFilter);
-    }
     if (reportTypeFilter === 'found_item') {
       filtered = filtered.filter((activity) => activity.reportKind === 'satpam_found_item');
     } else if (reportTypeFilter === 'reprimand') {
@@ -915,7 +915,12 @@ export default function ActivityReviewPage() {
       );
     }
     return filtered;
-  }, [activities, reportTypeFilter, categoryFilter, statusFilter, searchQuery]);
+  }, [activities, reportTypeFilter, categoryFilter, searchQuery]);
+
+  const filteredActivities = useMemo(() => {
+    if (statusFilter === 'all') return scopedActivities;
+    return scopedActivities.filter(a => a.status === statusFilter);
+  }, [scopedActivities, statusFilter]);
 
   // ── Satpam shift grouping ──
   // Satpam reports are audited as a whole shift occurrence rather than as ten
@@ -1093,12 +1098,12 @@ export default function ActivityReviewPage() {
 
   // ── Stats ──
   const stats = useMemo(() => {
-    const pending = activities.filter(a => a.status === 'pending').length;
-    const approved = activities.filter(a => a.status === 'approved');
-    const declined = activities.filter(a => a.status === 'declined').length;
+    const pending = scopedActivities.filter(a => a.status === 'pending').length;
+    const approved = scopedActivities.filter(a => a.status === 'approved');
+    const declined = scopedActivities.filter(a => a.status === 'declined').length;
     const totalFee = approved.reduce((sum, a) => sum + (a.fee || 0), 0);
-    return { total: activities.length, pending, approved: approved.length, declined, totalFee };
-  }, [activities]);
+    return { total: scopedActivities.length, pending, approved: approved.length, declined, totalFee };
+  }, [scopedActivities]);
 
   // ── Employee Summary ──
   const employeeSummary = useMemo(() => {

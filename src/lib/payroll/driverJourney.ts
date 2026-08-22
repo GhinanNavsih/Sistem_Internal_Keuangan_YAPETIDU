@@ -785,3 +785,18 @@ export function calculateEstimatedDriverWage(
     maxWage,
   };
 }
+
+/**
+ * Formats a decimal-hours duration as "{H}j {MM}m" (e.g. 2.6 -> "2j 36m").
+ * Decimal hours reads ambiguously at a glance (0.4 jam is easy to misread as
+ * "almost no time" when it's really 24 minutes) — this spells out hours and
+ * minutes directly, matching how the driver and auditor actually think about
+ * a trip's length.
+ */
+export function formatDurationHoursAsJamMenit(hours: number): string {
+  const safeHours = Number.isFinite(hours) && hours > 0 ? hours : 0;
+  const totalMinutes = Math.round(safeHours * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h}j ${String(m).padStart(2, '0')}m`;
+}
