@@ -4319,8 +4319,11 @@ function ActivitiesContent() {
                         type="date"
                         value={satpamReportDate}
                         onChange={(e) => handleSatpamDateChange(e.target.value)}
+                        // Deliberately excludes isSatpamReportLocked: an
+                        // auditor-locked report still locks every other
+                        // field, but the Ketua must still be able to switch
+                        // dates to view/report a different day.
                         disabled={
-                          isSatpamReportLocked ||
                           !satpamFlexibilityEnabled ||
                           satpamSubmitting ||
                           isSatpamPhotoUploadInProgress
