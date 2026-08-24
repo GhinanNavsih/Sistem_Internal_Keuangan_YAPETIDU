@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -51,7 +51,7 @@ import {
   seedExpenseReportRows,
   validateExpenseReport,
 } from '@/lib/payroll/proposalExpenseReports';
-import { focusCellInDirection, handleRowCellKeyDown } from '@/lib/tableKeyboardNav';
+import { focusCellInDirection, focusFirstCellInAdjacentRow, handleRowCellKeyDown } from '@/lib/tableKeyboardNav';
 
 const MAX_RECEIPT_INPUT_BYTES = 25 * 1024 * 1024;
 const RECEIPT_MAX_DIMENSION = 1600;
@@ -358,6 +358,7 @@ export default function ExpenseReportStage({
   const [uploadingReceiptKey, setUploadingReceiptKey] = useState<string | null>(null);
   const [receiptError, setReceiptError] = useState<string | null>(null);
   const [pendingSave, setPendingSave] = useState<PendingReportSave | null>(null);
+  const reportTableRef = useRef<HTMLTableElement | null>(null);
 
   const groupRows = useMemo(() => expenseRows
     .map((row, index) => ({ row, index }))
@@ -459,6 +460,38 @@ export default function ExpenseReportStage({
       return;
     }
     handleRowCellKeyDown(event, onShiftEnter);
+  };
+
+  const addStandaloneReportRow = (afterRowId?: string) => {
+    const newRow = createExpenseReportRow({ id: createStableId('expense-report-row') });
+    updateDraft((report) => {
+      const requestedIndex = afterRowId
+        ? report.rows.findIndex((row) => row.id === afterRowId)
+        : -1;
+      const insertionIndex = requestedIndex >= 0 ? requestedIndex + 1 : report.rows.length;
+      return {
+        ...report,
+        rows: [
+          ...report.rows.slice(0, insertionIndex),
+          newRow,
+          ...report.rows.slice(insertionIndex),
+        ],
+      };
+    });
+  };
+
+  const focusLastReportRow = () => {
+    window.setTimeout(() => {
+      const rows = reportTableRef.current?.querySelectorAll<HTMLTableRowElement>('tbody > tr');
+      if (!rows) return;
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        const target = rows[index].querySelector<HTMLInputElement>('input:not([disabled])');
+        if (!target) continue;
+        target.focus();
+        target.select();
+        return;
+      }
+    }, 0);
   };
 
   const handleReceiptFileChange = async (headerRowId: string, headerLabel: string, file: File) => {
@@ -687,7 +720,15 @@ export default function ExpenseReportStage({
                     <div className="flex items-center gap-3">
                       {receiptError && <span className="text-[11px] font-bold text-rose-600">{receiptError}</span>}
                       {!readOnly && (
-                        <Button type="button" variant="outline" onClick={() => updateDraft((report) => ({ ...report, rows: [...report.rows, createExpenseReportRow({ id: createStableId('expense-report-row') })] }))} className="h-8.5 rounded-xl border-indigo-200 bg-indigo-50/50 text-xs font-bold text-indigo-700 hover:bg-indigo-100">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            addStandaloneReportRow();
+                            focusLastReportRow();
+                          }}
+                          className="h-8.5 rounded-xl border-indigo-200 bg-indigo-50/50 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
+                        >
                           <Plus className="mr-1.5 h-3.5 w-3.5" /> Tambah Baris
                         </Button>
                       )}
@@ -695,7 +736,7 @@ export default function ExpenseReportStage({
                   </div>
 
                   <div className="relative min-h-0 flex-1 overflow-auto rounded-2xl border border-slate-200 bg-white">
-                    <table className="w-full min-w-[1000px] border-collapse text-left">
+                    <table ref={reportTableRef} className="w-full min-w-[1000px] border-collapse text-left">
                       <thead>
                         <tr className="sticky top-0 z-20 border-b border-slate-200 bg-slate-100 shadow-2xs">
                           <th className="w-12 px-3 py-3 text-center text-[10px] font-black uppercase text-slate-600">No</th>
@@ -720,7 +761,7 @@ export default function ExpenseReportStage({
                                   <td className="px-3 py-3 text-center text-xs font-bold text-slate-400">{index + 1}</td>
                                   <td className="px-3 py-3">
                                     <div className="space-y-2">
-                                      <Input value={row.uraian} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, uraian: event.target.value }))} placeholder="Uraian rincian..." className="h-8 rounded-lg border-slate-200 text-xs font-semibold" />
+                                      <Input value={row.uraian} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, uraian: event.target.value }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="Uraian rincian..." className="h-8 rounded-lg border-slate-200 text-xs font-semibold" />
                                       {draftReport.mode === 'employee' && (
                                         <EmployeeSearch
                                           row={row}
@@ -729,13 +770,14 @@ export default function ExpenseReportStage({
                                           onChange={(value) => updateDraftRow(row.id, (current) => ({ ...current, employeeId: '', employeeName: '', employeeSearchText: value }))}
                                           onConnect={(employee) => updateDraftRow(row.id, (current) => ({ ...current, employeeId: employee.id, employeeName: employee.name, employeeSearchText: employee.name }))}
                                           onDisconnect={() => updateDraftRow(row.id, (current) => ({ ...current, employeeId: '', employeeName: '', employeeSearchText: '' }))}
+                                          onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)}
                                         />
                                       )}
                                     </div>
                                   </td>
-                                  <td className="px-3 py-3"><Input value={row.rincianQty} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, rincianQty: event.target.value }))} placeholder="10 / 20%" className="h-8 rounded-lg border-slate-200 text-center text-xs font-bold" /></td>
-                                  <td className="px-3 py-3"><Input type="text" inputMode="numeric" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, rincianRate: parseMoney(event.target.value) }))} placeholder="Rp 0" className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" /></td>
-                                  <td className="px-3 py-3"><Input type="text" inputMode="numeric" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, realisasi: parseMoney(event.target.value) }))} placeholder="Rp 0" className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" /></td>
+                                  <td className="px-3 py-3"><Input value={row.rincianQty} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, rincianQty: event.target.value }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="10 / 20%" className="h-8 rounded-lg border-slate-200 text-center text-xs font-bold" /></td>
+                                  <td className="px-3 py-3"><Input type="text" inputMode="numeric" value={row.rincianRate > 0 ? fmtRp(row.rincianRate) : ''} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, rincianRate: parseMoney(event.target.value) }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="Rp 0" className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" /></td>
+                                  <td className="px-3 py-3"><Input type="text" inputMode="numeric" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} disabled={readOnly} onChange={(event) => updateDraftRow(row.id, (current) => ({ ...current, realisasi: parseMoney(event.target.value) }))} onKeyDown={(event) => handleReportRowCellKeyDown(event, !readOnly ? () => addStandaloneReportRow(row.id) : undefined)} placeholder="Rp 0" className="h-8 rounded-lg border-slate-200 text-right text-xs font-bold" /></td>
                                   <td className="px-3 py-3 text-right"><Button type="button" variant="ghost" size="icon-xs" disabled={readOnly || draftReport.rows.length <= 1} onClick={() => updateDraft((report) => ({ ...report, rows: report.rows.filter((item) => item.id !== row.id) }))} className="text-rose-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"><Trash2 /></Button></td>
                                 </tr>
                               );
@@ -759,7 +801,7 @@ export default function ExpenseReportStage({
                             const receiptUploadId = `receipt-upload-${draftReport.id}-${headerItem.rowId || hIdx}`;
                             const isUploadingReceipt = uploadingReceiptKey === (headerItem.rowId || '');
 
-                            const addPenerima = (afterRowId?: string) => {
+                            const addPenerima = (afterRowId?: string, trigger?: HTMLElement) => {
                               const sourceChild = afterRowId
                                 ? childRows.find((child) => child.id === afterRowId)
                                 : childRows[childRows.length - 1];
@@ -790,6 +832,9 @@ export default function ExpenseReportStage({
                                   ];
                                 })(),
                               }));
+                              if (trigger) {
+                                window.setTimeout(() => focusFirstCellInAdjacentRow(trigger, 'down'), 0);
+                              }
                             };
 
                             return (
@@ -847,7 +892,10 @@ export default function ExpenseReportStage({
                                           variant="ghost"
                                           size="sm"
                                           title={`Tambah ${addRowLabel}`}
-                                          onClick={() => addPenerima()}
+                                          onClick={(event) => {
+                                            const trigger = event.currentTarget.closest('tr') || event.currentTarget;
+                                            addPenerima(undefined, trigger);
+                                          }}
                                           className="h-7 px-2 rounded-lg text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs shrink-0"
                                         >
                                           <Plus className="w-3 h-3 mr-0.5" /> {addRowLabel}
@@ -992,7 +1040,10 @@ export default function ExpenseReportStage({
                                               variant="ghost"
                                               size="sm"
                                               title={`Tambah ${addRowLabel}`}
-                                              onClick={() => addPenerima()}
+                                              onClick={(event) => {
+                                                const trigger = event.currentTarget.closest('tr') || event.currentTarget;
+                                                addPenerima(undefined, trigger);
+                                              }}
                                               className="h-7 px-2 rounded-lg text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs shrink-0"
                                             >
                                               <Plus className="w-3 h-3 mr-0.5" /> {addRowLabel}

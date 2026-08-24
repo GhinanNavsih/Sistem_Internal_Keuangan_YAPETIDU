@@ -325,7 +325,7 @@ export default function PelaporanKegiatanPage() {
 
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (e.altKey) {
+      if (e.shiftKey || e.altKey) {
         if (table === 'pemasukan') {
           setPemasukanRows(prev => {
             const c = [...prev];
@@ -909,7 +909,7 @@ export default function PelaporanKegiatanPage() {
                                 <td className="px-2.5 py-1"><Input type="text" inputMode="numeric" placeholder="0" value={row.realisasi > 0 ? fmtRp(row.realisasi) : ''} onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0; setPemasukanRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], realisasi: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pemasukan', idx, 3)} data-table="pemasukan" data-row={idx} data-col={3} className="rounded-lg border-slate-200 font-bold text-slate-900 text-xs h-7.5 w-full text-right" /></td>
                                 <td className="px-2.5 py-1 text-center">
                                   <div className="flex items-center justify-center gap-1">
-                                    <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah (Alt+Enter)" onClick={() => {
+                                    <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah (Shift+Enter)" onClick={() => {
                                       setPemasukanRows(prev => {
                                         const c = [...prev];
                                         c.splice(idx + 1, 0, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 });
@@ -930,7 +930,10 @@ export default function PelaporanKegiatanPage() {
                           <tr className="border-b border-slate-100 hover:bg-slate-50/10 transition-colors">
                             <td></td>
                             <td colSpan={6} className="px-2.5 py-1.5">
-                              <Button type="button" size="sm" onClick={() => setPemasukanRows(prev => [...prev, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }])} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                              <Button type="button" size="sm" onClick={() => {
+                                setPemasukanRows(prev => [...prev, { uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
+                                setFocusTarget({ table: 'pemasukan', row: pemasukanRows.length, col: 0 });
+                              }} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
                                 <Plus className="w-3.5 h-3.5" /> Tambah Pemasukan
                               </Button>
                             </td>
@@ -1028,7 +1031,7 @@ export default function PelaporanKegiatanPage() {
                                   <td colSpan={5} className="px-2.5 py-1.5"><Input type="text" placeholder="Nama grup (e.g., A. Pengeluaran)..." value={row.uraian} onChange={(e) => { const val = e.target.value; setPengeluaranRows(prev => { const c = [...prev]; c[idx] = { ...c[idx], uraian: val }; return c; }); }} onKeyDown={(e) => handleTableKeyDown(e, 'pengeluaran', idx, 0)} data-table="pengeluaran" data-row={idx} data-col={0} className="rounded-lg border-slate-200 font-bold text-slate-800 text-xs h-7.5 w-full bg-transparent border-none focus:ring-0" /></td>
                                   <td className="px-2.5 py-1.5 text-center">
                                     <div className="flex items-center justify-center gap-1">
-                                      <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah (Alt+Enter)" onClick={() => {
+                                      <Button type="button" variant="ghost" size="icon" title="Sisipkan baris di bawah (Shift+Enter)" onClick={() => {
                                         setPengeluaranRows(prev => {
                                           const c = [...prev];
                                           c.splice(idx + 1, 0, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 });
@@ -1083,10 +1086,16 @@ export default function PelaporanKegiatanPage() {
                             <td></td>
                             <td colSpan={6} className="px-3 py-3">
                               <div className="flex items-center gap-2">
-                                <Button type="button" size="sm" onClick={() => setPengeluaranRows(prev => [...prev, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }])} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                                <Button type="button" size="sm" onClick={() => {
+                                  setPengeluaranRows(prev => [...prev, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
+                                  setFocusTarget({ table: 'pengeluaran', row: pengeluaranRows.length, col: 0 });
+                                }} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
                                   <Plus className="w-3.5 h-3.5" /> Tambah Baris
                                 </Button>
-                                <Button type="button" size="sm" onClick={() => setPengeluaranRows(prev => [...prev, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }])} variant="outline" className="border-indigo-200 text-indigo-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
+                                <Button type="button" size="sm" onClick={() => {
+                                  setPengeluaranRows(prev => [...prev, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0, realisasi: 0 }]);
+                                  setFocusTarget({ table: 'pengeluaran', row: pengeluaranRows.length, col: 0 });
+                                }} variant="outline" className="border-indigo-200 text-indigo-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer">
                                   <Layers className="w-3.5 h-3.5" /> Tambah Header Grup
                                 </Button>
                               </div>
