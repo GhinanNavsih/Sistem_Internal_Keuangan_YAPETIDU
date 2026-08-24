@@ -81,6 +81,7 @@ import {
 import { db } from '@/lib/firebase';
 import {
   collection,
+  documentId,
   getDocs,
   query,
   where,
@@ -664,6 +665,11 @@ export default function ActivityReviewPage() {
   const [auditorEditReason, setAuditorEditReason] = useState('');
   const [auditorEditRows, setAuditorEditRows] = useState<SatpamAuditorEditRow[]>([]);
   const [satpamEmployeeDirectory, setSatpamEmployeeDirectory] = useState<Array<{ id: string; name: string; isActive: boolean }>>([]);
+  // A "planned" guard (the "Rencana:" line on an audit card) can be someone
+  // no longer classified as SATPAM by the time this renders, so they may be
+  // missing from the SATPAM-only directory above. This resolves those ids
+  // straight off Employees_BlueCollar instead of falling back to the raw id.
+  const [resolvedPlannedNames, setResolvedPlannedNames] = useState<Record<string, string>>({});
   const [savingAuditorEdit, setSavingAuditorEdit] = useState(false);
 
   const handleOpenAuditSopir = (activity: ActivityReport) => {
@@ -884,6 +890,27 @@ export default function ActivityReviewPage() {
     };
   }, [hasAccess, periodToken, profile?.role, allowedCategories, refreshTrigger]);
 
+  // Fetch eagerly (not just when a modal opens) so the "Rencana"/"Aktual"
+  // audit cards can resolve a planned employee's name instead of falling
+  // back to its raw document id the moment the SATPAM group is expanded.
+  useEffect(() => {
+    if (!hasAccess || !allowedCategories.includes('SATPAM') || satpamEmployeeDirectory.length > 0) {
+      return;
+    }
+    let cancelled = false;
+    authenticatedJson<{ employees: Array<{ id: string; name: string; isActive: boolean }> }>(
+      '/api/satpam/shifts/review',
+      { method: 'GET' },
+    )
+      .then((directory) => {
+        if (!cancelled) setSatpamEmployeeDirectory(directory.employees);
+      })
+      .catch((err) => console.error('Gagal memuat direktori Satpam:', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [hasAccess, allowedCategories, satpamEmployeeDirectory.length]);
+
   // ── Filtered activities ──
   // Split out the non-status filters (report type, category, search) so the
   // stat cards can reflect them without also collapsing to whichever status
@@ -997,6 +1024,49 @@ export default function ActivityReviewPage() {
           a.shiftName.localeCompare(b.shiftName)) * dateDirection,
       );
   }, [filteredActivities, statusFilter]);
+
+  // Batch-resolve any "Rencana:" planned-employee id that neither the report
+  // itself nor the SATPAM directory could name (see resolvedPlannedNames
+  // above) — an unfiltered id-based lookup covers a planned guard who has
+  // since moved off SATPAM, not just an ordinary SATPAM roster member.
+  useEffect(() => {
+    if (!hasAccess) return;
+    const missingIds = new Set<string>();
+    satpamShiftGroups.forEach((group) => {
+      group.assignments.forEach((item) => {
+        if (
+          item.plannedEmployeeId &&
+          !item.plannedEmployeeName &&
+          !satpamEmployeeDirectory.some((employee) => employee.id === item.plannedEmployeeId) &&
+          !(item.plannedEmployeeId in resolvedPlannedNames)
+        ) {
+          missingIds.add(item.plannedEmployeeId);
+        }
+      });
+    });
+    if (missingIds.size === 0) return;
+    let cancelled = false;
+    const idList = Array.from(missingIds).slice(0, 30);
+    getDocs(
+      query(collection(db, 'Employees_BlueCollar'), where(documentId(), 'in', idList)),
+    )
+      .then((snapshot) => {
+        if (cancelled) return;
+        setResolvedPlannedNames((previous) => {
+          const next = { ...previous };
+          idList.forEach((id) => {
+            next[id] = String(
+              snapshot.docs.find((document) => document.id === id)?.data()?.name || id,
+            );
+          });
+          return next;
+        });
+      })
+      .catch((err) => console.error('Gagal memuat nama petugas rencana:', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [hasAccess, satpamShiftGroups, satpamEmployeeDirectory, resolvedPlannedNames]);
 
   const groupedSatpamIds = useMemo(() => {
     const ids = new Set<string>();
@@ -1610,9 +1680,14 @@ export default function ActivityReviewPage() {
       setAuditorEditDate(group.dutyDate);
       setAuditorEditShiftName(group.shiftName || 'Pagi');
       setAuditorEditReason('');
+      // A group with a pending assignment is still pre-approval (edit rows
+      // come from the pending set, per the existing flow below). Once
+      // nothing is pending, this is a correction to an already-approved
+      // report, so the editable rows are the approved ones instead.
+      const hasPending = group.assignments.some((assignment) => assignment.status === 'pending');
       setAuditorEditRows(
         group.assignments
-          .filter((assignment) => assignment.status === 'pending')
+          .filter((assignment) => assignment.status === (hasPending ? 'pending' : 'approved'))
           .map((assignment) => ({
             reportId: assignment.id,
             assignmentKind: assignment.assignmentKind || 'primary',
@@ -1651,8 +1726,12 @@ export default function ActivityReviewPage() {
     }
     setSavingAuditorEdit(true);
     setErrorMsg('');
+    const wasApprovedEdit = !auditorEditShift.assignments.some((item) => item.status === 'pending');
     try {
-      await authenticatedJson('/api/satpam/shifts/review', {
+      const result = await authenticatedJson<{
+        affectedEmployeeIds?: string[];
+        affectedPeriods?: string[];
+      }>('/api/satpam/shifts/review', {
         method: 'PUT',
         body: JSON.stringify({
           requestId: createFinancialRequestId('satpam_shift_auditor_edit'),
@@ -1664,10 +1743,31 @@ export default function ActivityReviewPage() {
           assignments: auditorEditRows,
         }),
       });
-      setSuccessMsg('Koreksi auditor tersimpan. Ketua Shift tidak dapat mengubah laporan ini lagi.');
+      setSuccessMsg(
+        wasApprovedEdit
+          ? 'Koreksi auditor tersimpan. Slip gaji dan rekap Uraian Pekarya diperbarui otomatis.'
+          : 'Koreksi auditor tersimpan. Ketua Shift tidak dapat mengubah laporan ini lagi.',
+      );
       setAuditorEditShift(null);
       setAuditorEditRows([]);
       fetchActivities();
+
+      // Approved-edit only: the server already reconciled UraianGaji via
+      // syncSatpamDutyReconciliation, but push the same recompute through
+      // the client sync too so the affected payslips reflect it immediately
+      // without waiting on a manual refresh, mirroring what a normal
+      // approval already does in handleSubmitShiftReview below.
+      if (wasApprovedEdit && result.affectedEmployeeIds?.length && result.affectedPeriods?.length) {
+        try {
+          for (const employeeId of result.affectedEmployeeIds) {
+            for (const period of result.affectedPeriods) {
+              await syncActivityToPayslip(db, employeeId, period);
+            }
+          }
+        } catch (syncErr) {
+          console.error('Error syncing payslip after auditor edit:', syncErr);
+        }
+      }
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : 'Koreksi auditor gagal disimpan.');
     } finally {
@@ -2258,7 +2358,7 @@ export default function ActivityReviewPage() {
                                     </div>
 
                                     {/* Bulk Action Buttons */}
-                                    {group.assignments.some(item => item.status === 'pending') && (
+                                    {group.assignments.some(item => item.status === 'pending') ? (
                                       <div className="flex items-center gap-2">
                                         <button
                                           type="button"
@@ -2282,6 +2382,19 @@ export default function ActivityReviewPage() {
                                           <XCircle className="w-3.5 h-3.5 text-rose-600" /> Tolak Semua Pos
                                         </button>
                                       </div>
+                                    ) : (
+                                      // Nothing pending left to bulk-decide, but a past-approved
+                                      // report can still be corrected as a direct financial edit.
+                                      group.approvedCount > 0 &&
+                                      (profile?.role === 'super_admin' || profile?.role === 'satker_head') && (
+                                        <button
+                                          type="button"
+                                          onClick={() => openAuditorShiftEdit(group)}
+                                          className="px-3 py-1.5 rounded-xl text-[10px] font-extrabold bg-indigo-100 hover:bg-indigo-200 text-indigo-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" /> Edit Auditor
+                                        </button>
+                                      )
                                     )}
                                   </div>
 
@@ -2347,7 +2460,10 @@ export default function ActivityReviewPage() {
                                                 {item.plannedEmployeeId &&
                                                   item.plannedEmployeeId !== item.employeeId && (
                                                   <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900">
-                                                    Rencana: {item.plannedEmployeeName || item.plannedEmployeeId}
+                                                    Rencana: {item.plannedEmployeeName
+                                                      || satpamEmployeeDirectory.find((employee) => employee.id === item.plannedEmployeeId)?.name
+                                                      || (item.plannedEmployeeId ? resolvedPlannedNames[item.plannedEmployeeId] : undefined)
+                                                      || item.plannedEmployeeId}
                                                     <span className="block font-bold">
                                                       Aktual: {item.employeeName}
                                                     </span>
