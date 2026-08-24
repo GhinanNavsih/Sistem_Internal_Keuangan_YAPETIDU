@@ -35,6 +35,25 @@ export const focusCellInDirection = (input: HTMLInputElement, direction: 'left' 
   }
 };
 
+/** Focuses the first editable input in the row adjacent to a non-input control. */
+export const focusFirstCellInAdjacentRow = (element: HTMLElement, direction: 'up' | 'down') => {
+  const row = element.closest('tr');
+  const table = element.closest('table');
+  if (!row || !table) return;
+
+  const rows = Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody > tr'));
+  const rowIndex = rows.indexOf(row as HTMLTableRowElement);
+  if (rowIndex === -1) return;
+
+  const step = direction === 'up' ? -1 : 1;
+  for (let index = rowIndex + step; index >= 0 && index < rows.length; index += step) {
+    const target = rows[index].querySelector<HTMLInputElement>('input:not([disabled])');
+    if (!target) continue;
+    focusRowCell(target);
+    return;
+  }
+};
+
 /**
  * Spreadsheet-style keyboard nav for editable table rows:
  * Enter moves right, Shift+Enter fires `onShiftEnter` (typically "add row"),
@@ -47,6 +66,9 @@ export const handleRowCellKeyDown = (event: KeyboardEvent<HTMLInputElement>, onS
     event.preventDefault();
     if (event.shiftKey) {
       onShiftEnter?.();
+      if (onShiftEnter) {
+        window.setTimeout(() => focusCellInDirection(input, 'down'), 0);
+      }
     } else {
       focusCellInDirection(input, 'right');
     }

@@ -52,7 +52,7 @@ import {
   sanitizeForFirestore,
 } from '@/lib/payroll/proposalExpenseReports';
 import { authenticatedJson } from '@/lib/payroll/client';
-import { handleRowCellKeyDown } from '@/lib/tableKeyboardNav';
+import { focusFirstCellInAdjacentRow, handleRowCellKeyDown } from '@/lib/tableKeyboardNav';
 
 const clearExpenseReportLink = (row: ProposalExpenseRow): ProposalExpenseRow => {
   const cleanRow = { ...row };
@@ -82,8 +82,8 @@ function InsertRowButton({
   className,
 }: {
   title: string;
-  onPress: () => void;
-  onLongPress: () => void;
+  onPress: (button: HTMLButtonElement) => void;
+  onLongPress: (button: HTMLButtonElement) => void;
   className?: string;
 }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,12 +96,12 @@ function InsertRowButton({
     }
   };
 
-  const startPress = () => {
+  const startPress = (button: HTMLButtonElement) => {
     firedLongPressRef.current = false;
     clearTimer();
     timerRef.current = setTimeout(() => {
       firedLongPressRef.current = true;
-      onLongPress();
+      onLongPress(button);
     }, LONG_PRESS_MS);
   };
 
@@ -111,18 +111,18 @@ function InsertRowButton({
       variant="ghost"
       size="icon"
       title={title}
-      onMouseDown={startPress}
+      onMouseDown={(event) => startPress(event.currentTarget)}
       onMouseUp={clearTimer}
       onMouseLeave={clearTimer}
-      onTouchStart={startPress}
+      onTouchStart={(event) => startPress(event.currentTarget)}
       onTouchEnd={clearTimer}
       onContextMenu={(e) => e.preventDefault()}
-      onClick={() => {
+      onClick={(event) => {
         if (firedLongPressRef.current) {
           firedLongPressRef.current = false;
           return;
         }
-        onPress();
+        onPress(event.currentTarget);
       }}
       className={className}
     >
@@ -1540,12 +1540,15 @@ export default function ProposalKegiatanPage() {
                     <tbody>
                       {pemasukanRows.map((row, idx) => {
                         const anggaran = parseQty(row.rincianQty) * row.rincianRate;
-                        const insertPemasukanBelow = () => {
+                        const insertPemasukanBelow = (trigger?: HTMLElement) => {
                           setPemasukanRows(prev => {
                             const c = [...prev];
                             c.splice(idx + 1, 0, { uraian: '', rincianQty: '', rincianRate: 0 });
                             return c;
                           });
+                          if (trigger) {
+                            window.setTimeout(() => focusFirstCellInAdjacentRow(trigger, 'down'), 0);
+                          }
                         };
                         return (
                           <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
@@ -1614,13 +1617,7 @@ export default function ProposalKegiatanPage() {
                                     variant="ghost"
                                     size="icon"
                                     title="Sisipkan baris di bawah"
-                                    onClick={() => {
-                                      setPemasukanRows(prev => {
-                                        const c = [...prev];
-                                        c.splice(idx + 1, 0, { uraian: '', rincianQty: '', rincianRate: 0 });
-                                        return c;
-                                      });
-                                    }}
+                                    onClick={(event) => insertPemasukanBelow(event.currentTarget)}
                                     className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer"
                                   >
                                     <Plus className="w-3.5 h-3.5" />
@@ -1648,7 +1645,11 @@ export default function ProposalKegiatanPage() {
                             <Button
                               type="button"
                               size="sm"
-                              onClick={() => setPemasukanRows(prev => [...prev, { uraian: '', rincianQty: '', rincianRate: 0 }])}
+                              onClick={(event) => {
+                                const trigger = event.currentTarget;
+                                setPemasukanRows(prev => [...prev, { uraian: '', rincianQty: '', rincianRate: 0 }]);
+                                window.setTimeout(() => focusFirstCellInAdjacentRow(trigger, 'up'), 0);
+                              }}
                               className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"
                             >
                               <Plus className="w-3.5 h-3.5" /> Tambah Pemasukan
@@ -1745,19 +1746,25 @@ export default function ProposalKegiatanPage() {
                         const itemNum = row.type === 'item'
                           ? pengeluaranRows.slice(lastHeaderIdx === -1 ? 0 : lastHeaderIdx, idx + 1).filter(r => r.type === 'item').length
                           : null;
-                        const insertPengeluaranItemBelow = () => {
+                        const insertPengeluaranItemBelow = (trigger?: HTMLElement) => {
                           setPengeluaranRows(prev => {
                             const c = [...prev];
                             c.splice(idx + 1, 0, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0 });
                             return c;
                           });
+                          if (trigger) {
+                            window.setTimeout(() => focusFirstCellInAdjacentRow(trigger, 'down'), 0);
+                          }
                         };
-                        const insertPengeluaranHeaderBelow = () => {
+                        const insertPengeluaranHeaderBelow = (trigger?: HTMLElement) => {
                           setPengeluaranRows(prev => {
                             const c = [...prev];
                             c.splice(idx + 1, 0, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0 });
                             return c;
                           });
+                          if (trigger) {
+                            window.setTimeout(() => focusFirstCellInAdjacentRow(trigger, 'down'), 0);
+                          }
                         };
                         if (row.type === 'group_header') {
                           return (
@@ -1786,8 +1793,8 @@ export default function ProposalKegiatanPage() {
                                   <div className="flex items-center justify-center gap-1">
                                     <InsertRowButton
                                       title="Sisipkan baris di bawah (tahan untuk tambah header grup)"
-                                      onPress={insertPengeluaranItemBelow}
-                                      onLongPress={insertPengeluaranHeaderBelow}
+                                      onPress={(button) => insertPengeluaranItemBelow(button)}
+                                      onLongPress={(button) => insertPengeluaranHeaderBelow(button)}
                                       className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer"
                                     />
                                     <Button
@@ -1875,13 +1882,9 @@ export default function ProposalKegiatanPage() {
                                     <InsertRowButton
                                       title="Sisipkan baris di bawah (tahan untuk tambah header grup)"
                                       onPress={() => setActiveInsertMenuIdx(activeInsertMenuIdx === idx ? null : idx)}
-                                      onLongPress={() => {
+                                      onLongPress={(button) => {
                                         setActiveInsertMenuIdx(null);
-                                        setPengeluaranRows(prev => {
-                                          const c = [...prev];
-                                          c.splice(idx + 1, 0, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0 });
-                                          return c;
-                                        });
+                                        insertPengeluaranHeaderBelow(button);
                                       }}
                                       className="h-7 w-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
                                     />
@@ -1889,12 +1892,9 @@ export default function ProposalKegiatanPage() {
                                       <div className="absolute right-0 top-8 z-30 bg-white rounded-xl shadow-xl border border-slate-150 p-1 min-w-[170px] animate-in fade-in zoom-in-95 duration-150">
                                         <button
                                           type="button"
-                                          onClick={() => {
-                                            setPengeluaranRows(prev => {
-                                              const c = [...prev];
-                                              c.splice(idx + 1, 0, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0 });
-                                              return c;
-                                            });
+                                          onClick={(event) => {
+                                            const trigger = event.currentTarget.closest('tr') || event.currentTarget;
+                                            insertPengeluaranItemBelow(trigger);
                                             setActiveInsertMenuIdx(null);
                                           }}
                                           className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 cursor-pointer"
@@ -1903,12 +1903,9 @@ export default function ProposalKegiatanPage() {
                                         </button>
                                         <button
                                           type="button"
-                                          onClick={() => {
-                                            setPengeluaranRows(prev => {
-                                              const c = [...prev];
-                                              c.splice(idx + 1, 0, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0 });
-                                              return c;
-                                            });
+                                          onClick={(event) => {
+                                            const trigger = event.currentTarget.closest('tr') || event.currentTarget;
+                                            insertPengeluaranHeaderBelow(trigger);
                                             setActiveInsertMenuIdx(null);
                                           }}
                                           className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-purple-50 hover:text-purple-700 rounded-lg flex items-center gap-2 cursor-pointer"
@@ -1944,7 +1941,11 @@ export default function ProposalKegiatanPage() {
                               <Button
                                 type="button"
                                 size="sm"
-                                onClick={() => setPengeluaranRows(prev => [...prev, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0 }])}
+                                onClick={(event) => {
+                                  const trigger = event.currentTarget;
+                                  setPengeluaranRows(prev => [...prev, { type: 'item', uraian: '', rincianQty: '', rincianRate: 0 }]);
+                                  window.setTimeout(() => focusFirstCellInAdjacentRow(trigger, 'up'), 0);
+                                }}
                                 className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"
                               >
                                 <Plus className="w-3.5 h-3.5" /> Tambah Baris
@@ -1952,7 +1953,11 @@ export default function ProposalKegiatanPage() {
                               <Button
                                 type="button"
                                 size="sm"
-                                onClick={() => setPengeluaranRows(prev => [...prev, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0 }])}
+                                onClick={(event) => {
+                                  const trigger = event.currentTarget;
+                                  setPengeluaranRows(prev => [...prev, { type: 'group_header', uraian: '', rincianQty: '', rincianRate: 0 }]);
+                                  window.setTimeout(() => focusFirstCellInAdjacentRow(trigger, 'up'), 0);
+                                }}
                                 variant="outline"
                                 className="border-indigo-200 text-indigo-600 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer"
                               >
