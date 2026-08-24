@@ -40,6 +40,9 @@ import {
   getExpenseReportActualTotal,
   getExpenseReportBudgetTotal,
   getExpenseReportRowsForItem,
+  getExpenseReportRowsQuantity,
+  getExpenseReportRowsSubtotal,
+  hasExpenseReportContent,
   MAX_EXPENSE_REPORT_RECEIPT_BYTES,
   normalizeExpenseReport,
   parseProposalQty,
@@ -119,6 +122,7 @@ interface ExpenseReportStageProps {
   openGroupRowId?: string | null;
   onOpenGroupHandled?: () => void;
   onUpsertReport: (report: ExpenseReport) => void;
+  onReportSaved?: (report: ExpenseReport) => void;
   onUnlinkReport: (reportId: string) => void;
   onPrintReport: (report: ExpenseReport) => void;
   printingReport?: boolean;
@@ -126,9 +130,34 @@ interface ExpenseReportStageProps {
   parseQty?: (value: string) => number;
 }
 
+interface ReportSaveChange {
+  headerLabel: string;
+  currentQty: string;
+  nextQty: string;
+  currentRealisasi: number;
+  nextRealisasi: number;
+  qtyChanged: boolean;
+  realisasiChanged: boolean;
+}
+
+interface PendingReportSave {
+  report: ExpenseReport;
+  changes: ReportSaveChange[];
+}
+
 const parseMoney = (value: string): number => {
   const parsed = parseInt(value.replace(/\D/g, ''), 10);
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatQuantity = (value: number): string => {
+  if (Number.isInteger(value)) return String(value);
+  return String(Number(value.toFixed(2)));
+};
+
+const formatQuantityLike = (value: number, source: string): string => {
+  const suffix = source.trim().replace(/^[\d.\s]+/, '').trim();
+  return suffix ? `${formatQuantity(value)} ${suffix}` : formatQuantity(value);
 };
 
 function modeLabel(mode: ExpenseReportMode): string {
@@ -316,6 +345,7 @@ export default function ExpenseReportStage({
   openGroupRowId = null,
   onOpenGroupHandled,
   onUpsertReport,
+  onReportSaved,
   onUnlinkReport,
   onPrintReport,
   printingReport = false,
@@ -327,6 +357,7 @@ export default function ExpenseReportStage({
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [uploadingReceiptKey, setUploadingReceiptKey] = useState<string | null>(null);
   const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [pendingSave, setPendingSave] = useState<PendingReportSave | null>(null);
 
   const groupRows = useMemo(() => expenseRows
     .map((row, index) => ({ row, index }))
@@ -334,7 +365,9 @@ export default function ExpenseReportStage({
 
   const openReport = useCallback((group: ProposalExpenseRow, groupIndex: number) => {
     if (!unlocked) return;
-    const linked = group.reportId ? expenseReports.find((report) => report.id === group.reportId) : undefined;
+    const linked = group.reportId
+      ? expenseReports.find((report) => report.id === group.reportId && hasExpenseReportContent(report))
+      : undefined;
     const normalized = linked ? normalizeExpenseReport(linked, {
       expenseRowId: group.rowId || '',
       expenseLabel: group.uraian,
@@ -379,6 +412,37 @@ export default function ExpenseReportStage({
       ...report,
       rows: report.rows.map((row) => row.id === rowId ? updater(row) : row),
     }));
+  };
+
+  const getReportSaveChanges = (report: ExpenseReport): ReportSaveChange[] => {
+    const groupHeaderIndex = expenseRows.findIndex(
+      (row) => row.type === 'group_header' && row.rowId === report.expenseRowId,
+    );
+    if (groupHeaderIndex === -1) return [];
+
+    return getExpenseGroupRows(expenseRows, groupHeaderIndex).flatMap((headerItem) => {
+      const childRows = getExpenseReportRowsForItem(report, headerItem);
+      if (childRows.length === 0) return [];
+
+      const headerAnggaran = parseQty(headerItem.rincianQty) * headerItem.rincianRate;
+      const currentRealisasi = headerItem.realisasi ?? headerAnggaran;
+      const childQty = getExpenseReportRowsQuantity(childRows, parseQty);
+      const nextRealisasi = getExpenseReportRowsSubtotal(childRows, parseQty);
+      const qtyChanged = Math.abs(childQty - parseQty(headerItem.rincianQty)) >= 0.001;
+      const realisasiChanged = Math.abs(nextRealisasi - currentRealisasi) >= 1;
+
+      if (!qtyChanged && !realisasiChanged) return [];
+
+      return [{
+        headerLabel: headerItem.uraian,
+        currentQty: headerItem.rincianQty || '-',
+        nextQty: formatQuantityLike(childQty, headerItem.rincianQty),
+        currentRealisasi,
+        nextRealisasi,
+        qtyChanged,
+        realisasiChanged,
+      }];
+    });
   };
 
   const handleReportRowCellKeyDown = (
@@ -455,6 +519,13 @@ export default function ExpenseReportStage({
     setFormErrors([]);
     setReceiptError(null);
     setAutosaveStatus('idle');
+    setPendingSave(null);
+  };
+
+  const applySavedReport = (savedReport: ExpenseReport) => {
+    onUpsertReport(savedReport);
+    onReportSaved?.(savedReport);
+    closeDialog();
   };
 
   const saveDraft = () => {
@@ -476,8 +547,18 @@ export default function ExpenseReportStage({
       setFormErrors(Array.from(new Set(errors)));
       return;
     }
-    onUpsertReport(sanitizeForFirestore({ ...draftReport, source: draftReport.source || 'custom' }));
-    closeDialog();
+    const savedReport = sanitizeForFirestore({ ...draftReport, source: draftReport.source || 'custom' });
+    const changes = getReportSaveChanges(savedReport);
+    if (changes.length > 0) {
+      setPendingSave({ report: savedReport, changes });
+      return;
+    }
+    applySavedReport(savedReport);
+  };
+
+  const confirmPendingSave = () => {
+    if (!pendingSave) return;
+    applySavedReport(pendingSave.report);
   };
 
   return (
@@ -510,7 +591,9 @@ export default function ExpenseReportStage({
       ) : (
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {groupRows.map(({ row, index }) => {
-            const linked = row.reportId ? expenseReports.find((report) => report.id === row.reportId) : undefined;
+            const linked = row.reportId
+              ? expenseReports.find((report) => report.id === row.reportId && hasExpenseReportContent(report))
+              : undefined;
             const budget = getGroupBudget(expenseRows, index, parseQty);
             const actual = getGroupActual(expenseRows, index);
             return (
@@ -665,13 +748,11 @@ export default function ExpenseReportStage({
 
                             const childRows = getExpenseReportRowsForItem(draftReport, headerItem);
 
-                            const childTotal = childRows.reduce((sum, c) => {
-                              const qty = parseQty(c.rincianQty || '1');
-                              const sub = c.realisasi > 0 ? c.realisasi : qty * c.rincianRate;
-                              return sum + sub;
-                            }, 0);
-
-                            const isBalanced = childRows.length > 0 && Math.abs(childTotal - headerRealisasi) < 1;
+                            const childTotal = getExpenseReportRowsSubtotal(childRows, parseQty);
+                            const childQty = getExpenseReportRowsQuantity(childRows, parseQty);
+                            const isQtyBalanced = childRows.length > 0 && Math.abs(childQty - parseQty(headerItem.rincianQty)) < 0.001;
+                            const isSubtotalBalanced = childRows.length > 0 && Math.abs(childTotal - headerRealisasi) < 1;
+                            const hasWarning = !isQtyBalanced || !isSubtotalBalanced;
                             const isEmployeeMode = draftReport.mode === 'employee';
                             const addRowLabel = isEmployeeMode ? 'Penerima' : 'Rincian';
                             const receipt = draftReport.receipts[headerItem.rowId || ''];
@@ -726,20 +807,31 @@ export default function ExpenseReportStage({
                                   <td className="w-[260px] px-3 py-2.5 text-right">
                                     <div className="flex items-center justify-end gap-2">
                                       {childRows.length > 0 ? (
-                                        isBalanced ? (
+                                        hasWarning ? (
+                                          <div className="inline-flex items-center gap-1.5 text-left text-amber-900 bg-amber-100/90 px-2.5 py-1 rounded-lg shrink-0">
+                                            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                                            <div className="flex flex-col leading-tight">
+                                              {!isQtyBalanced && (
+                                                <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-800">
+                                                  QTY: {formatQuantity(childQty)} / {headerItem.rincianQty || '-'}
+                                                </span>
+                                              )}
+                                              {!isSubtotalBalanced ? (
+                                                <>
+                                                  <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-800">Penerima: {fmtRp(childTotal)}</span>
+                                                  <span className="text-[10px] font-bold font-mono text-amber-700">LPJ: {fmtRp(headerRealisasi)}</span>
+                                                </>
+                                              ) : (
+                                                <span className="text-[10px] font-bold font-mono text-amber-700">Subtotal sesuai: {fmtRp(headerRealisasi)}</span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ) : (
                                           <div className="inline-flex items-center gap-1.5 text-left text-emerald-800 bg-emerald-100/90 px-2.5 py-1 rounded-lg shrink-0">
                                             <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
                                             <div className="flex flex-col leading-tight">
                                               <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-800">Total Sesuai</span>
                                               <span className="text-[11px] font-black font-mono text-emerald-700">{fmtRp(headerRealisasi)}</span>
-                                            </div>
-                                          </div>
-                                        ) : (
-                                          <div className="inline-flex items-center gap-1.5 text-left text-amber-900 bg-amber-100/90 px-2.5 py-1 rounded-lg shrink-0">
-                                            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                                            <div className="flex flex-col leading-tight">
-                                              <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-800">Penerima: {fmtRp(childTotal)}</span>
-                                              <span className="text-[10px] font-bold font-mono text-amber-700">LPJ: {fmtRp(headerRealisasi)}</span>
                                             </div>
                                           </div>
                                         )
@@ -966,6 +1058,54 @@ export default function ExpenseReportStage({
               <Button type="button" variant="ghost" onClick={closeDialog} className="rounded-xl text-xs font-bold text-slate-500">Tutup</Button>
               {!readOnly && <Button type="button" onClick={saveDraft} className="rounded-xl bg-indigo-600 px-5 text-xs font-bold text-white hover:bg-indigo-700"><Check className="mr-1.5 h-3.5 w-3.5" /> Simpan & Selesai</Button>}
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pendingSave !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingSave(null);
+        }}
+      >
+        <DialogContent className="max-w-xl overflow-hidden rounded-3xl border-none bg-white p-0 shadow-2xl">
+          <DialogHeader className="border-b border-amber-100 bg-gradient-to-r from-amber-50 to-orange-50 p-5">
+            <DialogTitle className="flex items-center gap-2.5 text-lg font-bold text-amber-950">
+              <AlertCircle className="h-5 w-5 text-amber-600" /> Konfirmasi Perubahan Nilai SPJ
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="max-h-[60vh] space-y-4 overflow-y-auto p-5">
+            <p className="text-xs leading-relaxed text-slate-600">
+              Total child rows berbeda dari nilai heading. Jika dilanjutkan, QTY dan Realisasi SPJ akan disesuaikan ke nilai peringatan berikut:
+            </p>
+
+            <div className="space-y-3">
+              {pendingSave?.changes.map((change, index) => (
+                <div key={`${change.headerLabel}-${index}`} className="rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+                  <p className="text-sm font-black text-slate-800">{change.headerLabel}</p>
+                  <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+                    {change.qtyChanged && (
+                      <>
+                        <span className="font-bold uppercase tracking-wider text-amber-700">QTY</span>
+                        <span className="font-mono font-bold text-slate-700">{change.currentQty} <span className="px-1 text-amber-600">→</span> {change.nextQty}</span>
+                      </>
+                    )}
+                    {change.realisasiChanged && (
+                      <>
+                        <span className="font-bold uppercase tracking-wider text-amber-700">Realisasi</span>
+                        <span className="font-mono font-bold text-slate-700">{fmtRp(change.currentRealisasi)} <span className="px-1 text-amber-600">→</span> {fmtRp(change.nextRealisasi)}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2.5 border-t border-slate-100 bg-slate-50 p-4">
+            <Button type="button" variant="ghost" onClick={() => setPendingSave(null)} className="rounded-xl text-xs font-bold text-slate-500 hover:bg-white">Batal</Button>
+            <Button type="button" onClick={confirmPendingSave} className="rounded-xl bg-indigo-600 text-xs font-bold text-white hover:bg-indigo-700">Konfirmasi & Simpan</Button>
           </div>
         </DialogContent>
       </Dialog>

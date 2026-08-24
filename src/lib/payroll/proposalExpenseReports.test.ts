@@ -8,6 +8,9 @@ import {
   getExpenseReportActualTotal,
   getExpenseReportBudgetTotal,
   getExpenseReportRowsForItem,
+  getExpenseReportRowsQuantity,
+  getExpenseReportRowsSubtotal,
+  hasExpenseReportContent,
   normalizeExpenseReportLinksToGroups,
   normalizeExpenseReport,
   parseProposalQty,
@@ -48,6 +51,44 @@ test('uses the proposal quantity parser for generic report totals', () => {
   assert.equal(parseProposalQty('2 x 50%'), 1);
   assert.equal(getExpenseReportBudgetTotal(report), 250_000);
   assert.equal(getExpenseReportActualTotal(report), 200_000);
+});
+
+test('sums report child quantities and subtotals for an LPJ detail item', () => {
+  const rows = [
+    createExpenseReportRow({ rincianQty: '100 Mahasiswa', rincianRate: 140_000, realisasi: 9_000_000 }),
+    createExpenseReportRow({ rincianQty: '58 Mahasiswa', rincianRate: 140_000, realisasi: 6_000_000 }),
+  ];
+
+  assert.equal(getExpenseReportRowsQuantity(rows), 158);
+  assert.equal(getExpenseReportRowsSubtotal(rows), 15_000_000);
+});
+
+test('does not treat an untouched report draft as linked content', () => {
+  const report = createExpenseReport(
+    'report-1',
+    'group-1',
+    'D. Rapat Skripsi',
+    'employee',
+  );
+  report.title = 'Laporan D. Rapat Skripsi';
+
+  assert.equal(hasExpenseReportContent(report), false);
+  assert.equal(hasExpenseReportContent({
+    ...report,
+    rows: [createExpenseReportRow({ employeeId: 'employee-1', employeeName: 'Pegawai 1' })],
+  }), true);
+});
+
+test('clears an untouched report link while normalizing LPJ groups', () => {
+  const rows: ProposalExpenseRow[] = ensureExpenseRowIds([
+    { type: 'group_header', uraian: 'D. Rapat Skripsi', rincianQty: '', rincianRate: 0, reportId: 'empty-report' },
+  ]);
+  const emptyReport = createExpenseReport('empty-report', rows[0].rowId || '', 'D. Rapat Skripsi', 'employee');
+  emptyReport.title = 'Laporan D. Rapat Skripsi';
+
+  const normalized = normalizeExpenseReportLinksToGroups(rows, [emptyReport]);
+  assert.equal(normalized.rows[0].reportId, undefined);
+  assert.deepEqual(normalized.reports, []);
 });
 
 test('treats a descriptive quantity as one when the rate is populated', () => {

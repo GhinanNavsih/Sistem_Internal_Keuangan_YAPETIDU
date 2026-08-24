@@ -255,6 +255,25 @@ export function getExpenseReportRowsForItem(
   });
 }
 
+/** Sums the quantities assigned to one locked LPJ detail item. */
+export function getExpenseReportRowsQuantity(
+  rows: ExpenseReportRow[],
+  parseQty: (value: string) => number = parseProposalQty,
+): number {
+  return rows.reduce((sum, row) => sum + parseQty(row.rincianQty || '1'), 0);
+}
+
+/** Matches the report table's displayed subtotal for one locked LPJ detail item. */
+export function getExpenseReportRowsSubtotal(
+  rows: ExpenseReportRow[],
+  parseQty: (value: string) => number = parseProposalQty,
+): number {
+  return rows.reduce((sum, row) => {
+    const qty = parseQty(row.rincianQty || '1');
+    return sum + (row.realisasi > 0 ? row.realisasi : qty * row.rincianRate);
+  }, 0);
+}
+
 export function createExpenseReport(
   id: string,
   expenseRowId: string,
@@ -287,6 +306,30 @@ export function getExpenseReportBudgetTotal(
 
 export function getExpenseReportActualTotal(report: ExpenseReport): number {
   return report.rows.reduce((sum, row) => sum + Math.max(0, toFiniteNumber(row.realisasi)), 0);
+}
+
+/**
+ * Returns whether a report contains user-entered content worth keeping linked.
+ * The title assigned by the editor when it opens a new report is only a
+ * placeholder and must not turn an untouched draft into a linked report.
+ */
+export function hasExpenseReportContent(report: ExpenseReport): boolean {
+  const title = report.title.trim();
+  const defaultTitle = report.expenseLabel.trim() ? `Laporan ${report.expenseLabel.trim()}` : '';
+  const hasCustomTitle = Boolean(title && title !== defaultTitle);
+  const hasReceipt = Object.keys(report.receipts).length > 0;
+  const hasRowContent = report.rows.some((row) => Boolean(
+    row.uraian.trim() ||
+    row.employeeId.trim() ||
+    row.employeeName.trim() ||
+    row.employeeSearchText?.trim() ||
+    row.rincianQty.trim() ||
+    row.rincianRate > 0 ||
+    row.realisasi > 0 ||
+    row.note.trim(),
+  ));
+
+  return hasCustomTitle || Boolean(report.notes.trim()) || hasReceipt || hasRowContent;
 }
 
 /** Kept as the generic replacement for the former type-specific total helper. */
@@ -491,7 +534,18 @@ export function normalizeExpenseReportLinksToGroups(
   reports: ExpenseReport[],
 ): { rows: ProposalExpenseRow[]; reports: ExpenseReport[] } {
   const nextRows = rows.map((row) => ({ ...row }));
-  const nextReports = reports.map((report) => ({ ...report }));
+  const nextReports = reports
+    .filter(hasExpenseReportContent)
+    .map((report) => ({ ...report }));
+  const reportIds = new Set(nextReports.map((report) => report.id));
+
+  nextRows.forEach((row) => {
+    if (row.reportId && !reportIds.has(row.reportId)) {
+      delete row.reportId;
+      delete row.reportType;
+    }
+  });
+
   let groupIndex = -1;
 
   nextRows.forEach((row, index) => {

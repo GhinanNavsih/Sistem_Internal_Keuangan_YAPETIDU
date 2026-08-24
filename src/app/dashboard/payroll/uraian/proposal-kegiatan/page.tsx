@@ -42,6 +42,9 @@ import {
   ExpenseReport,
   getExpenseGroupRows,
   getExpenseReportRowsForItem,
+  getExpenseReportRowsQuantity,
+  getExpenseReportRowsSubtotal,
+  hasExpenseReportContent,
   normalizeExpenseReportLinksToGroups,
   normalizeExpenseReports,
   parseProposalQty,
@@ -56,6 +59,17 @@ const clearExpenseReportLink = (row: ProposalExpenseRow): ProposalExpenseRow => 
   delete cleanRow.reportId;
   delete cleanRow.reportType;
   return cleanRow;
+};
+
+const formatQuantityValue = (value: number): string => {
+  if (Number.isInteger(value)) return String(value);
+  return String(Number(value.toFixed(2)));
+};
+
+const formatQuantityLike = (value: number, source: string): string => {
+  const trimmedSource = source.trim();
+  const suffix = trimmedSource.replace(/^[\d.\s]+/, '').trim();
+  return suffix ? `${formatQuantityValue(value)} ${suffix}` : formatQuantityValue(value);
 };
 
 const LONG_PRESS_MS = 500;
@@ -792,6 +806,19 @@ export default function ProposalKegiatanPage() {
   // autosave effect; recreating it on every parent render would restart that
   // effect after each autosave and leave the UI stuck on "Menyimpan...".
   const handleUpsertExpenseReport = useCallback((report: ExpenseReport) => {
+    if (!hasExpenseReportContent(report)) {
+      setExpenseReports((prev) => prev.filter((item) => (
+        item.id !== report.id &&
+        !(item.expenseRowId === report.expenseRowId && !hasExpenseReportContent(item))
+      )));
+      setLpjPengeluaranRows((prev) => prev.map((row) => (
+        row.type === 'group_header' && (row.reportId === report.id || row.rowId === report.expenseRowId)
+          ? clearExpenseReportLink(row)
+          : row
+      )));
+      return;
+    }
+
     setExpenseReports((prev) => [
       ...prev.filter((item) => item.id !== report.id),
       report,
@@ -802,6 +829,31 @@ export default function ProposalKegiatanPage() {
       return { ...linkedRow, reportId: report.id };
     }));
     setMessage({ type: 'success', text: `Laporan untuk header "${report.expenseLabel}" berhasil disimpan.` });
+  }, []);
+
+  const handleSavedExpenseReport = useCallback((report: ExpenseReport) => {
+    setLpjPengeluaranRows((prev) => {
+      const groupHeaderIndex = prev.findIndex((row) => row.type === 'group_header' && row.rowId === report.expenseRowId);
+      if (groupHeaderIndex === -1) return prev;
+
+      const nextGroupHeaderIndex = prev.findIndex(
+        (row, index) => index > groupHeaderIndex && row.type === 'group_header',
+      );
+      const groupEndIndex = nextGroupHeaderIndex === -1 ? prev.length : nextGroupHeaderIndex;
+
+      return prev.map((row, index) => {
+        if (index <= groupHeaderIndex || index >= groupEndIndex || row.type !== 'item') return row;
+
+        const childRows = getExpenseReportRowsForItem(report, row);
+        if (childRows.length === 0) return row;
+
+        return {
+          ...row,
+          rincianQty: formatQuantityLike(getExpenseReportRowsQuantity(childRows, parseQty), row.rincianQty),
+          realisasi: getExpenseReportRowsSubtotal(childRows, parseQty),
+        };
+      });
+    });
   }, []);
 
   const handleUnlinkExpenseReport = (reportId: string) => {
@@ -2273,8 +2325,11 @@ export default function ProposalKegiatanPage() {
                                     const lastHeaderIdx = lpjPengeluaranRows.slice(0, idx + 1).findLastIndex(r => r.type === 'group_header');
                                     const itemNum = row.type === 'item' ? lpjPengeluaranRows.slice(lastHeaderIdx === -1 ? 0 : lastHeaderIdx, idx + 1).filter(r => r.type === 'item').length : null;
                                     const groupHeader = lastHeaderIdx >= 0 ? lpjPengeluaranRows[lastHeaderIdx] : undefined;
+                                    const linkedGroupReport = row.type === 'group_header' && row.reportId
+                                      ? expenseReports.find((report) => report.id === row.reportId && hasExpenseReportContent(report))
+                                      : undefined;
                                     const linkedReport = row.type === 'item' && groupHeader?.reportId
-                                      ? expenseReports.find((report) => report.id === groupHeader.reportId)
+                                      ? expenseReports.find((report) => report.id === groupHeader.reportId && hasExpenseReportContent(report))
                                       : undefined;
                                     const assignedEmployeeRows = row.type === 'item' && linkedReport?.mode === 'employee'
                                       ? getExpenseReportRowsForItem(linkedReport, row).filter((reportRow) => (
@@ -2309,13 +2364,13 @@ export default function ProposalKegiatanPage() {
                                                 type="button"
                                                 variant="ghost"
                                                 size="sm"
-                                                disabled={(!row.reportId && isLpjReadOnly) || !row.rowId}
+                                                disabled={(!linkedGroupReport && isLpjReadOnly) || !row.rowId}
                                                 onClick={() => setReportEditorGroupId(row.rowId || null)}
-                                                className={`h-7 rounded-lg px-2 text-[10px] font-bold ${row.reportId
+                                                className={`h-7 rounded-lg px-2 text-[10px] font-bold ${linkedGroupReport
                                                   ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                                                   : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
                                               >
-                                                <Link2 className="mr-1 h-3 w-3" /> {row.reportId ? 'Buka Laporan' : 'Hubungkan Laporan'}
+                                                <Link2 className="mr-1 h-3 w-3" /> {linkedGroupReport ? 'Buka Laporan' : 'Hubungkan Laporan'}
                                               </Button>
                                               <InsertRowButton
                                                 title="Sisipkan baris di bawah (tahan untuk tambah header grup)"
@@ -2370,8 +2425,9 @@ export default function ProposalKegiatanPage() {
                                           </td>
                                         </tr>
                                         {assignedEmployeeRows.map((assignedRow, assignedIndex) => {
-                                          const assignedAnggaran = parseQty(assignedRow.rincianQty || '1') * assignedRow.rincianRate;
-                                          const assignedRealisasi = assignedRow.realisasi > 0 ? assignedRow.realisasi : assignedAnggaran;
+                                          const assignedRealisasi = assignedRow.realisasi > 0
+                                            ? assignedRow.realisasi
+                                            : parseQty(assignedRow.rincianQty || '1') * assignedRow.rincianRate;
                                           return (
                                             <tr key={`${row.rowId || idx}-employee-${assignedRow.id}`} className="border-b border-indigo-50 bg-indigo-50/20">
                                               <td className="px-3 py-1.5 text-center text-[10px] font-bold text-indigo-300">{itemNum}.{assignedIndex + 1}</td>
@@ -2383,7 +2439,7 @@ export default function ProposalKegiatanPage() {
                                               </td>
                                               <td className="px-3 py-1.5 text-center text-xs font-semibold text-slate-500">{assignedRow.rincianQty || '-'}</td>
                                               <td className="px-3 py-1.5 text-right text-xs font-mono font-semibold text-slate-600">{fmtRp(assignedRow.rincianRate)}</td>
-                                              <td className="px-3 py-1.5 text-right text-xs font-mono font-semibold text-slate-600">{fmtRp(assignedAnggaran)}</td>
+                                              <td className="px-3 py-1.5 text-right text-xs font-mono font-semibold text-slate-600"></td>
                                               <td className="px-3 py-1.5 text-right text-xs font-mono font-black text-indigo-700">{fmtRp(assignedRealisasi)}</td>
                                               <td className="px-3 py-1.5 text-center text-[9px] font-bold text-emerald-600">Pegawai ditugaskan</td>
                                             </tr>
@@ -2451,6 +2507,7 @@ export default function ProposalKegiatanPage() {
                   openGroupRowId={reportEditorGroupId}
                   onOpenGroupHandled={() => setReportEditorGroupId(null)}
                   onUpsertReport={handleUpsertExpenseReport}
+                  onReportSaved={handleSavedExpenseReport}
                   onUnlinkReport={handleUnlinkExpenseReport}
                   onPrintReport={handlePrintExpenseReport}
                   printingReport={printingReport}
