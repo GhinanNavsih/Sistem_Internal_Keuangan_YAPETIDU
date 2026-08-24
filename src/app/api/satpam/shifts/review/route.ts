@@ -882,7 +882,14 @@ export async function PUT(request: NextRequest) {
         throw new HttpError(404, 'Shift tidak ditemukan.');
       }
       const before = occurrenceSnapshot.data()!;
-      if (!['pending_review', 'under_review'].includes(String(before.status))) {
+      // A 'reviewed' occurrence still accepts edits, but as a direct financial
+      // correction (approved-in-place) rather than the pre-approval
+      // delete-and-resubmit-as-pending flow below.
+      const isApprovedEditBranch = before.status === 'reviewed';
+      if (
+        !isApprovedEditBranch &&
+        !['pending_review', 'under_review'].includes(String(before.status))
+      ) {
         throw new HttpError(409, 'Shift ini sudah selesai diaudit.');
       }
       if (
@@ -952,7 +959,26 @@ export async function PUT(request: NextRequest) {
       if (!teamSnapshot.exists) {
         throw new HttpError(409, 'Regu Satpam tidak ditemukan.');
       }
-      if (
+      // Pre-approval: the whole roster must still be undecided (delete-all/
+      // recreate-all below). Approved-edit: partition into the editable
+      // approved set and the untouched declined set; anything else on a
+      // reviewed occurrence is unexpected.
+      const oldApprovedReportSnapshots: FirebaseFirestore.DocumentSnapshot[] = [];
+      const oldDeclinedReportSnapshots: FirebaseFirestore.DocumentSnapshot[] = [];
+      if (isApprovedEditBranch) {
+        for (const snapshot of oldReportSnapshots) {
+          if (!snapshot.exists) continue;
+          const status = String(snapshot.data()?.status || '');
+          if (status === 'approved') oldApprovedReportSnapshots.push(snapshot);
+          else if (status === 'declined') oldDeclinedReportSnapshots.push(snapshot);
+          else {
+            throw new HttpError(
+              409,
+              'Ada penugasan berstatus tidak terduga untuk diedit.',
+            );
+          }
+        }
+      } else if (
         oldReportSnapshots.some(
           (snapshot) => snapshot.exists && snapshot.data()?.status !== 'pending',
         )
@@ -981,10 +1007,24 @@ export async function PUT(request: NextRequest) {
           .map((snapshot) => snapshot.id),
       );
       const oldReportById = new Map(
-        oldReportSnapshots
+        (isApprovedEditBranch ? oldApprovedReportSnapshots : oldReportSnapshots)
           .filter((snapshot) => snapshot.exists)
           .map((snapshot) => [snapshot.id, snapshot.data()!]),
       );
+      // Approved-edit only: a client-provided reportId must name a row that is
+      // actually part of this occurrence's current approved set. Trusting an
+      // unverified id here would let `transaction.set` overwrite an unrelated
+      // report belonging to a different occurrence entirely.
+      if (isApprovedEditBranch) {
+        for (const assignment of command.assignments) {
+          if (assignment.reportId && !oldReportById.has(assignment.reportId)) {
+            throw new HttpError(
+              409,
+              'ID penugasan edit tidak dikenal untuk laporan yang sudah disetujui.',
+            );
+          }
+        }
+      }
       const suggestedShiftName = getSatpamShiftForTeam(teamNumber, command.dutyDate);
       const annualHolidayDates =
         holidaySnapshot.exists && Array.isArray(holidaySnapshot.data()?.dates)
@@ -1103,12 +1143,16 @@ export async function PUT(request: NextRequest) {
           (assignment) =>
             assignment.assignmentKind === 'primary' &&
             assignment.employeeId === String(teamData.ketuaShiftId || '') &&
-            !['Harian', 'Lembur Sendiri'].includes(assignment.shiftType),
+            // Matches resolveKetuaSatpamPayType's own contract: Harian and
+            // Lembur Sendiri are explicit overrides, while Jumat & Libur is
+            // the calendar default the Ketua's own post falls back to on a
+            // Friday/holiday, same as an ordinary guard's post.
+            !['Harian', 'Jumat & Libur', 'Lembur Sendiri'].includes(assignment.shiftType),
         )
       ) {
         throw new HttpError(
           409,
-          'Jenis upah Ketua Shift hanya dapat Harian atau Lembur Sendiri.',
+          'Jenis upah Ketua Shift hanya dapat Harian, Jumat & Libur, atau Lembur Sendiri.',
         );
       }
       if (
@@ -1254,6 +1298,187 @@ export async function PUT(request: NextRequest) {
         (anomaly, index, list) =>
           list.findIndex((candidate) => candidate.code === anomaly.code) === index,
       );
+
+      // Approved-edit only: this saves straight to 'approved', so it must
+      // clear every gate the normal POST approval flow would otherwise apply
+      // (duplicate post/guard, incomplete cover, inactive/mismatched
+      // employee, pay-classification vs calendar, stale duty plan, ...).
+      // 'blocking' anomalies are exactly that gate set.
+      const referencedApprovedIds = new Set(
+        command.assignments.flatMap((assignment) =>
+          assignment.reportId ? [assignment.reportId] : [],
+        ),
+      );
+      const removedApprovedSnapshots = isApprovedEditBranch
+        ? oldApprovedReportSnapshots.filter(
+            (snapshot) => !referencedApprovedIds.has(snapshot.id),
+          )
+        : [];
+      let approvedEditContext: {
+        oldPeriod: string;
+        periodChanged: boolean;
+        guardKeyForAssignment: Map<number, { oldKey: string | null; newKey: string }>;
+      } | null = null;
+
+      if (isApprovedEditBranch) {
+        const blockingAnomalies = uniqueAnomalies.filter(
+          (anomaly) => anomaly.severity === 'blocking',
+        );
+        if (blockingAnomalies.length > 0) {
+          throw new HttpError(
+            409,
+            `Koreksi tidak dapat langsung disetujui: ${blockingAnomalies
+              .map((anomaly) => anomaly.message)
+              .join(' ')}`,
+          );
+        }
+
+        const oldPeriod = String(before.payrollPeriod || '');
+        const periodChanged = oldPeriod !== period;
+        const oldShiftName = String(before.reportedShiftName || before.shiftName || '');
+
+        const guardKeyForAssignment = new Map<
+          number,
+          { oldKey: string | null; newKey: string }
+        >();
+        const guardKeysToRead = new Set<string>();
+        canonicalAssignments.forEach((assignment, index) => {
+          const original = assignment.reportId
+            ? oldReportById.get(assignment.reportId)
+            : undefined;
+          const oldKey = original
+            ? guardDutyIndexId(
+                String(original.dutyDate || before.dutyDate || ''),
+                String(
+                  original.reportedShiftName || original.shiftName || oldShiftName,
+                ) as SatpamShiftName,
+                String(original.employeeId || ''),
+              )
+            : null;
+          const newKey = guardDutyIndexId(
+            command.dutyDate,
+            command.shiftName,
+            assignment.employeeId,
+          );
+          guardKeyForAssignment.set(index, { oldKey, newKey });
+          if (oldKey !== newKey) guardKeysToRead.add(newKey);
+        });
+
+        const touchedEmployeeIds = Array.from(
+          new Set(
+            [
+              ...canonicalAssignments.map((assignment) => assignment.employeeId),
+              ...removedApprovedSnapshots.map((snapshot) =>
+                String(snapshot.data()?.employeeId || ''),
+              ),
+            ].filter(Boolean),
+          ),
+        );
+        const slipKeysToRead: Array<[string, string, string]> = [];
+        for (const employeeId of touchedEmployeeIds) {
+          slipKeysToRead.push([`${period}::${employeeId}`, period, employeeId]);
+          if (periodChanged) {
+            slipKeysToRead.push([`${oldPeriod}::${employeeId}`, oldPeriod, employeeId]);
+          }
+        }
+        const guardKeyList = Array.from(guardKeysToRead);
+        const absenceRefsByEmployee = new Map(
+          canonicalAssignments.map((assignment) => [
+            assignment.employeeId,
+            adminDb
+              .collection(SATPAM_ABSENCE_REQUESTS_COLLECTION)
+              .doc(satpamDutyKey(assignment.employeeId, command.dutyDate).replaceAll('-', '')),
+          ]),
+        );
+
+        const [oldPeriodSnapshot, ...restSnapshots] = await Promise.all([
+          periodChanged
+            ? transaction.get(adminDb.collection('PayrollPeriods').doc(oldPeriod))
+            : Promise.resolve(null),
+          ...slipKeysToRead.map(([, per, empId]) =>
+            transaction.get(
+              adminDb.collection('PayrollSlipStates').doc(`${per.replace('-', '_')}_${empId}`),
+            ),
+          ),
+          ...guardKeyList.map((key) =>
+            transaction.get(adminDb.collection('GuardDutyIndexes').doc(key)),
+          ),
+          ...Array.from(absenceRefsByEmployee.values()).map((ref) => transaction.get(ref)),
+        ]);
+        const slipSnapshots = restSnapshots.slice(0, slipKeysToRead.length);
+        const guardIndexSnapshots = restSnapshots.slice(
+          slipKeysToRead.length,
+          slipKeysToRead.length + guardKeyList.length,
+        );
+        const absenceSnapshots = restSnapshots.slice(
+          slipKeysToRead.length + guardKeyList.length,
+        );
+
+        if (periodChanged) {
+          assertPeriodAcceptsInput(
+            oldPeriodSnapshot?.data() ?? null,
+            'Periode payroll lama sudah ditutup; koreksi tidak dapat memindahkan tanggal dinas.',
+          );
+        }
+        const slipSnapshotsByKey = new Map(
+          slipKeysToRead.map(([key], idx) => [key, slipSnapshots[idx]]),
+        );
+        for (const employeeId of touchedEmployeeIds) {
+          const newSlip = slipSnapshotsByKey.get(`${period}::${employeeId}`);
+          if (newSlip?.exists && isImmutablePayrollStatus(newSlip.data()?.status)) {
+            throw new HttpError(
+              409,
+              'Slip pegawai sudah dikunci/dibayar; gunakan alur koreksi finansial untuk periode ini.',
+            );
+          }
+          if (periodChanged) {
+            const oldSlip = slipSnapshotsByKey.get(`${oldPeriod}::${employeeId}`);
+            if (oldSlip?.exists && isImmutablePayrollStatus(oldSlip.data()?.status)) {
+              throw new HttpError(
+                409,
+                'Slip pegawai sudah dikunci/dibayar; gunakan alur koreksi finansial untuk periode ini.',
+              );
+            }
+          }
+        }
+        const guardIndexSnapshotsByKey = new Map(
+          guardKeyList.map((key, idx) => [key, guardIndexSnapshots[idx]]),
+        );
+        for (const [index, { newKey, oldKey }] of guardKeyForAssignment) {
+          if (oldKey === newKey) continue;
+          const existing = guardIndexSnapshotsByKey.get(newKey);
+          if (existing?.exists && existing.data()?.occurrenceId !== command.occurrenceId) {
+            const assignment = canonicalAssignments[index];
+            const employeeName = String(
+              employeeById.get(assignment.employeeId)?.data()?.name || assignment.employeeId,
+            );
+            throw new HttpError(
+              409,
+              `${employeeName} sudah memiliki pembayaran pada shift yang sama.`,
+            );
+          }
+        }
+        const absenceEmployeeIds = Array.from(absenceRefsByEmployee.keys());
+        absenceEmployeeIds.forEach((employeeId, idx) => {
+          const snapshot = absenceSnapshots[idx];
+          if (
+            snapshot?.exists &&
+            snapshot.data()?.status === 'approved' &&
+            satpamAttendanceReportType(snapshot.data() || {}) === 'izin_resmi'
+          ) {
+            const employeeName = String(
+              employeeById.get(employeeId)?.data()?.name || employeeId,
+            );
+            throw new HttpError(
+              409,
+              `${employeeName} memiliki izin dibayar pada tanggal ini. Selesaikan konflik izin terlebih dahulu.`,
+            );
+          }
+        });
+
+        approvedEditContext = { oldPeriod, periodChanged, guardKeyForAssignment };
+      }
+
       const revision = command.expectedRevision + 1;
       const { startsAtIso, endsAtIso } = getShiftIsoBounds(
         command.dutyDate,
@@ -1271,7 +1496,40 @@ export async function PUT(request: NextRequest) {
           `auditor_${index}_${command.requestId.slice(-8)}`,
         ),
       );
-      oldReportRefs.forEach((reference) => transaction.delete(reference));
+      if (isApprovedEditBranch) {
+        // Only rows the auditor actually dropped are removed. Untouched
+        // declined rows and kept/modified approved rows (overwritten below
+        // via `transaction.set`) are left alone.
+        removedApprovedSnapshots.forEach((snapshot) => {
+          transaction.delete(snapshot.ref);
+          transaction.delete(adminDb.collection('PayrollLedgerEntries').doc(snapshot.id));
+          const removedData = snapshot.data() || {};
+          const removedDutyDate = String(removedData.dutyDate || before.dutyDate || '');
+          const removedShiftName = String(
+            removedData.reportedShiftName ||
+              removedData.shiftName ||
+              before.reportedShiftName ||
+              before.shiftName ||
+              '',
+          );
+          const removedEmployeeId = String(removedData.employeeId || '');
+          if (removedDutyDate && removedShiftName && removedEmployeeId) {
+            transaction.delete(
+              adminDb
+                .collection('GuardDutyIndexes')
+                .doc(
+                  guardDutyIndexId(
+                    removedDutyDate,
+                    removedShiftName as SatpamShiftName,
+                    removedEmployeeId,
+                  ),
+                ),
+            );
+          }
+        });
+      } else {
+        oldReportRefs.forEach((reference) => transaction.delete(reference));
+      }
       canonicalAssignments.forEach((assignment, index) => {
         const original = assignment.reportId
           ? oldReportById.get(assignment.reportId)
@@ -1297,6 +1555,18 @@ export async function PUT(request: NextRequest) {
         const reportId = reportIds[index];
         const assignmentKey =
           String(original?.assignmentKey || `auditor_${assignment.postId}_${index}`);
+        const approvedNow = isApprovedEditBranch
+          ? {
+              status: 'approved' as const,
+              reviewedAt: now,
+              reviewedBy: actor.uid,
+              reviewedByRole: actor.role,
+              approvedAt: now,
+              approvedBy: actor.uid,
+              declineReason: '',
+              reviewRevision: Number(original?.reviewRevision || 0) + 1,
+            }
+          : { status: 'pending' as const };
         transaction.set(adminDb.collection('ActivityReports').doc(reportId), {
           employeeId: assignment.employeeId,
           employeeName: String(employee?.data()?.name || assignment.employeeId),
@@ -1319,7 +1589,7 @@ export async function PUT(request: NextRequest) {
           timeEnd: SHIFT_TIMES[command.shiftName].end,
           startsAt,
           endsAt,
-          status: 'pending',
+          ...approvedNow,
           fee: SATPAM_RATES[assignment.shiftType],
           shiftType: assignment.shiftType,
           assignmentKind: assignment.assignmentKind,
@@ -1378,8 +1648,66 @@ export async function PUT(request: NextRequest) {
           auditorEditedBy: actor.uid,
           schemaVersion: 3,
         });
+
+        if (isApprovedEditBranch) {
+          transaction.set(
+            adminDb.collection('PayrollLedgerEntries').doc(reportId),
+            {
+              employeeId: assignment.employeeId,
+              payrollPeriod: period,
+              sourceType: 'satpam_shift',
+              sourceId: reportId,
+              sourceOccurrenceId: command.occurrenceId,
+              payType: assignment.shiftType,
+              amount: SATPAM_RATES[assignment.shiftType],
+              currency: 'IDR',
+              status: 'posted',
+              rateVersion: before.rateVersion || null,
+              dutyDate: command.dutyDate,
+              startsAt,
+              endsAt,
+              approvedBy: actor.uid,
+              correctedAt: now,
+              correctedBy: actor.uid,
+              // `original` is the ActivityReport, which never carried its own
+              // `createdAt` (only `submittedAt`) — merge:true means omitting
+              // this field here preserves whatever the ledger doc already has
+              // for a kept-in-place row, and only a genuinely new row falls
+              // back to `now`.
+              ...(original ? {} : { createdAt: now }),
+              schemaVersion: 1,
+            },
+            { merge: true },
+          );
+
+          const guardKey = approvedEditContext!.guardKeyForAssignment.get(index)!;
+          if (guardKey.oldKey !== guardKey.newKey) {
+            if (guardKey.oldKey) {
+              transaction.delete(
+                adminDb.collection('GuardDutyIndexes').doc(guardKey.oldKey),
+              );
+            }
+            transaction.set(
+              adminDb.collection('GuardDutyIndexes').doc(guardKey.newKey),
+              {
+                employeeId: assignment.employeeId,
+                occurrenceId: command.occurrenceId,
+                reportId,
+                dutyDate: command.dutyDate,
+                shiftName: command.shiftName,
+                startsAt,
+                endsAt,
+                approvedAt: now,
+              },
+              { merge: true },
+            );
+          }
+        }
       });
 
+      const finalReportIds = isApprovedEditBranch
+        ? [...oldDeclinedReportSnapshots.map((snapshot) => snapshot.id), ...reportIds]
+        : reportIds;
       const after = {
         ...before,
         dutyDate: command.dutyDate,
@@ -1389,8 +1717,12 @@ export async function PUT(request: NextRequest) {
         suggestedShiftName,
         startsAt,
         endsAt,
-        status: 'under_review',
-        reviewStatus: 'auditor_editing',
+        status: isApprovedEditBranch ? 'reviewed' : 'under_review',
+        reviewStatus: isApprovedEditBranch
+          ? oldDeclinedReportSnapshots.length > 0
+            ? 'partially_approved'
+            : 'approved'
+          : 'auditor_editing',
         revision,
         auditorActionAt: before.auditorActionAt || now,
         reviewOwnerUid: before.reviewOwnerUid || actor.uid,
@@ -1402,12 +1734,14 @@ export async function PUT(request: NextRequest) {
         warningAnomalyCount: uniqueAnomalies.filter(
           (anomaly) => anomaly.severity === 'warning',
         ).length,
-        reportIds,
-        pendingReportIds: reportIds,
-        assignmentCount: reportIds.length,
-        pendingAssignmentCount: reportIds.length,
-        approvedAssignmentCount: 0,
-        declinedAssignmentCount: 0,
+        reportIds: finalReportIds,
+        pendingReportIds: isApprovedEditBranch ? [] : reportIds,
+        assignmentCount: finalReportIds.length,
+        pendingAssignmentCount: isApprovedEditBranch ? 0 : reportIds.length,
+        approvedAssignmentCount: isApprovedEditBranch ? reportIds.length : 0,
+        declinedAssignmentCount: isApprovedEditBranch
+          ? oldDeclinedReportSnapshots.length
+          : 0,
         holidayCalendarVersion: `PERIOD-${period}-R${periodCalendar.revision}`,
         calendarRevision: periodCalendar.revision,
         dutyPlanId: dutyPlanSnapshot.exists ? dutyPlanRef.id : null,
@@ -1454,23 +1788,48 @@ export async function PUT(request: NextRequest) {
         anomalies: uniqueAnomalies,
         createdAt: now,
       });
+      const affectedEmployeeIds = isApprovedEditBranch
+        ? Array.from(
+            new Set(
+              [
+                ...canonicalAssignments.map((assignment) => assignment.employeeId),
+                ...removedApprovedSnapshots.map((snapshot) =>
+                  String(snapshot.data()?.employeeId || ''),
+                ),
+              ].filter(Boolean),
+            ),
+          )
+        : [];
+      const affectedPeriods = isApprovedEditBranch
+        ? Array.from(
+            new Set(
+              [period, approvedEditContext?.periodChanged ? approvedEditContext.oldPeriod : null].filter(
+                (value): value is string => Boolean(value),
+              ),
+            ),
+          )
+        : [period];
       return {
         occurrenceId: command.occurrenceId,
         revision,
         anomalies: uniqueAnomalies,
+        affectedEmployeeIds,
+        affectedPeriods,
         idempotent: false,
       };
     });
 
-    const updatedOccurrence = await adminDb
-      .collection('ShiftOccurrences')
-      .doc(command.occurrenceId)
-      .get();
-    const updatedPeriod = String(
-      updatedOccurrence.data()?.payrollPeriod || '',
-    );
-    if (updatedPeriod) {
-      await syncSatpamDutyReconciliation(updatedPeriod, actor.uid);
+    const periodsToReconcile = result.affectedPeriods?.length
+      ? result.affectedPeriods
+      : [
+          String(
+            (
+              await adminDb.collection('ShiftOccurrences').doc(command.occurrenceId).get()
+            ).data()?.payrollPeriod || '',
+          ),
+        ].filter(Boolean);
+    for (const period of periodsToReconcile) {
+      await syncSatpamDutyReconciliation(period, actor.uid);
     }
     return Response.json(result, {
       headers: { 'Cache-Control': 'no-store' },
