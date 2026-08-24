@@ -14,6 +14,7 @@ import { Loader2 } from 'lucide-react';
 const KETUA_SHIFT_SATPAM_ROUTES = [
   '/employee/activities',
   '/employee/satpam-duty-plan',
+  '/employee/leave',
   '/employee/payslip',
 ];
 
