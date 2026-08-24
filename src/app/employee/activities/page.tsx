@@ -2858,13 +2858,14 @@ function ActivitiesContent() {
       satpamRegularPayType,
     );
     satpamDutyPlan.day.assignments.forEach((assignment) => {
+      // Both the Ketua's own post and the designated Pos 9 guard follow the
+      // same Friday/holiday calendar rate as an ordinary post by default
+      // (resolveKetuaSatpamPayType / resolveDesignatedPos9PayType) — an
+      // explicit Harian or Lembur Sendiri choice is what overrides that, not
+      // the other way around.
       plannedAssignments[assignment.postId] = {
         employeeId: assignment.employeeId,
-        shiftType:
-          assignment.employeeId === myShiftTeam?.ketuaShiftId ||
-          (assignment.postId === 'Pos 9' && pos9GuardIds.has(assignment.employeeId))
-            ? 'Harian'
-            : satpamRegularPayType,
+        shiftType: satpamRegularPayType,
       };
     });
     satpamSkipNextAutosaveRef.current = true;
@@ -2878,8 +2879,6 @@ function ActivitiesContent() {
     satpamPendingStorageKey,
     satpamRegularPayType,
     satpamReportDate,
-    myShiftTeam?.ketuaShiftId,
-    pos9GuardIds,
   ]);
 
   useEffect(() => {
@@ -3441,6 +3440,35 @@ function ActivitiesContent() {
           ...prev,
           [postId]: { ...prev[postId], photoUrl: downloadUrl, photoAuditMetadata: prepared.auditMetadata },
         }));
+      }
+
+      // Once an auditor has acted on this report, the normal "Kirim Laporan"
+      // resubmission (which is what would otherwise persist this) is
+      // rejected outright by satpamKetuaEditConflict. A missing proof photo
+      // is the one narrow exception: it doesn't change who's assigned, the
+      // post, or the pay type, so it's persisted straight away here instead
+      // of waiting on a submission that will never be allowed to happen.
+      if (isSatpamReportLocked && satpamOccurrenceId) {
+        try {
+          await authenticatedJson('/api/satpam/shifts/photo', {
+            method: 'POST',
+            body: JSON.stringify({
+              requestId: createFinancialRequestId('satpam_shift_photo'),
+              occurrenceId: satpamOccurrenceId,
+              assignmentKind: postId === 'extra' ? 'extra' : 'primary',
+              postId: postId === 'extra' ? extraPostName : postId,
+              photoUrl: downloadUrl,
+              photoAuditMetadata: prepared.auditMetadata,
+            }),
+          });
+        } catch (persistErr) {
+          console.error('Error persisting post-lock photo:', persistErr);
+          setMessage({
+            type: 'error',
+            text: `Foto terunggah tetapi gagal disimpan ke laporan: ${persistErr instanceof Error ? persistErr.message : 'Coba lagi.'}`,
+          });
+          return;
+        }
       }
       setMessage({ type: 'success', text: `Foto bukti ${postId === 'extra' ? 'Lembur Sendiri' : postId} berhasil diunggah.` });
     } catch (err) {
@@ -4411,7 +4439,7 @@ function ActivitiesContent() {
                           : isDesignatedPos9
                             ? (['Harian', 'Jumat & Libur', 'Lembur Sendiri'].includes(val.shiftType)
                               ? val.shiftType
-                              : 'Harian')
+                              : defaultShiftTypeForRender)
                           : isExternalGuard
                             ? (['Harian', 'Lembur Cover'].includes(val.shiftType)
                               ? val.shiftType
@@ -4664,22 +4692,23 @@ function ActivitiesContent() {
                                   </div>
                                 </div>
                               ) : (
-                                !isSatpamReportLocked && (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    disabled={postPhotoUploading[post.id] || loadingSubmittedSatpam}
-                                    onClick={() => postPhotoInputRefs.current[post.id]?.click()}
-                                    className="w-full h-12 rounded-lg border-dashed border-slate-300 bg-slate-50/60 hover:bg-slate-100 text-base font-bold text-slate-700 gap-2"
-                                  >
-                                    {postPhotoUploading[post.id] ? (
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    ) : (
-                                      <Camera className="w-3.5 h-3.5 text-slate-500" />
-                                    )}
-                                    <span>{postPhotoUploading[post.id] ? 'Mengunggah...' : 'Upload Foto'}</span>
-                                  </Button>
-                                )
+                                // A missing photo can still be supplied after an auditor
+                                // lock (see handleUploadPostPhoto) — everything else about
+                                // this post stays read-only.
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  disabled={postPhotoUploading[post.id] || loadingSubmittedSatpam}
+                                  onClick={() => postPhotoInputRefs.current[post.id]?.click()}
+                                  className="w-full h-12 rounded-lg border-dashed border-slate-300 bg-slate-50/60 hover:bg-slate-100 text-base font-bold text-slate-700 gap-2"
+                                >
+                                  {postPhotoUploading[post.id] ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Camera className="w-3.5 h-3.5 text-slate-500" />
+                                  )}
+                                  <span>{postPhotoUploading[post.id] ? 'Mengunggah...' : 'Upload Foto'}</span>
+                                </Button>
                               )}
                             </div>
                           </div>
@@ -4827,7 +4856,10 @@ function ActivitiesContent() {
                                 </div>
                               </div>
                             ) : (
-                              !isSatpamReportLocked && (
+                              // A missing photo can still be supplied after an auditor lock
+                              // (see handleUploadPostPhoto), but only once the extra post is
+                              // known — before that there's no report row to attach it to.
+                              (!isSatpamReportLocked || extraPostName) && (
                                 <Button
                                   type="button"
                                   variant="outline"
