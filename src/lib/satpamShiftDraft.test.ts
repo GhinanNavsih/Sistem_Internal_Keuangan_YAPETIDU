@@ -59,6 +59,78 @@ test('a valid same-date pending submission keeps its assignment and photo', () =
   );
 });
 
+test('an extra-officer photo taken before the post/officer are picked still survives', () => {
+  const raw = JSON.stringify({
+    payload: {
+      dutyDate: '2026-08-20',
+      assignments: [],
+      extraAssignment: {
+        postId: '',
+        employeeId: '',
+        photoUrl: 'https://example.test/lembur-sendiri.jpg',
+      },
+    },
+  });
+
+  const parsed = parseSatpamShiftPendingDraft(raw, '2026-08-20');
+  assert.equal(
+    parsed?.payload.extraAssignment?.photoUrl,
+    'https://example.test/lembur-sendiri.jpg',
+  );
+  assert.equal(parsed?.payload.extraAssignment?.postId, '');
+  assert.equal(parsed?.payload.extraAssignment?.employeeId, '');
+});
+
+test('an extra-officer pick with no post yet still survives', () => {
+  const raw = JSON.stringify({
+    payload: {
+      dutyDate: '2026-08-20',
+      assignments: [],
+      extraAssignment: {
+        postId: '',
+        employeeId: 'guard-overtime',
+      },
+    },
+  });
+
+  const parsed = parseSatpamShiftPendingDraft(raw, '2026-08-20');
+  assert.equal(parsed?.payload.extraAssignment?.employeeId, 'guard-overtime');
+  assert.equal(parsed?.payload.extraAssignment?.postId, '');
+});
+
+test('a blank extra-officer card with no other progress is not a draft', () => {
+  assert.equal(
+    parseSatpamShiftPendingDraft(
+      JSON.stringify({
+        payload: {
+          dutyDate: '2026-08-20',
+          assignments: [],
+          extraAssignment: { postId: '', employeeId: '' },
+        },
+      }),
+      '2026-08-20',
+    ),
+    null,
+  );
+});
+
+test('an invalid extra-officer post id is dropped but the rest of the card survives', () => {
+  const raw = JSON.stringify({
+    payload: {
+      dutyDate: '2026-08-20',
+      assignments: [],
+      extraAssignment: {
+        postId: 'Pos 99',
+        employeeId: 'guard-overtime',
+      },
+    },
+  });
+
+  const parsed = parseSatpamShiftPendingDraft(raw, '2026-08-20');
+  assert.equal(parsed?.payload.extraAssignment?.employeeId, 'guard-overtime');
+  assert.equal(parsed?.payload.extraAssignment?.postId, '');
+});
+
 test('empty and malformed drafts do not block duty-plan prefill', () => {
   assert.equal(
     parseSatpamShiftPendingDraft(

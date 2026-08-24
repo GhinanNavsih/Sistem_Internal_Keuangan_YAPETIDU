@@ -85,13 +85,41 @@ export function parseSatpamShiftPendingDraft(
         typeof assignment.employeeId === 'string' &&
         Boolean(assignment.employeeId.trim()),
     );
+    // A guard may fill in the extra-officer card in any order (photo first,
+    // post first, officer first) before being backgrounded mid-entry. Restore
+    // whatever was captured instead of discarding the whole card just because
+    // one field — often the post, picked last — isn't filled in yet.
+    const rawExtra = payload.extraAssignment;
+    const extraPostId =
+      isRecord(rawExtra) &&
+      typeof rawExtra.postId === 'string' &&
+      VALID_POST_IDS.has(rawExtra.postId)
+        ? rawExtra.postId
+        : '';
+    const extraEmployeeId =
+      isRecord(rawExtra) && typeof rawExtra.employeeId === 'string'
+        ? rawExtra.employeeId
+        : '';
+    const extraPhotoUrl =
+      isRecord(rawExtra) && typeof rawExtra.photoUrl === 'string'
+        ? rawExtra.photoUrl
+        : '';
+    const extraOvertimeReason =
+      isRecord(rawExtra) && typeof rawExtra.overtimeReason === 'string'
+        ? rawExtra.overtimeReason
+        : '';
     const extraAssignment =
-      isRecord(payload.extraAssignment) &&
-      typeof payload.extraAssignment.postId === 'string' &&
-      VALID_POST_IDS.has(payload.extraAssignment.postId) &&
-      typeof payload.extraAssignment.employeeId === 'string' &&
-      Boolean(payload.extraAssignment.employeeId.trim())
-        ? (payload.extraAssignment as unknown as SatpamShiftDraftAssignment)
+      isRecord(rawExtra) &&
+      (extraPostId || extraEmployeeId.trim() || extraPhotoUrl.trim() || extraOvertimeReason.trim())
+        ? ({
+            postId: extraPostId,
+            employeeId: extraEmployeeId,
+            overtimeReason: extraOvertimeReason,
+            photoUrl: extraPhotoUrl,
+            photoAuditMetadata: isRecord(rawExtra.photoAuditMetadata)
+              ? (rawExtra.photoAuditMetadata as unknown as PhotoAuditMetadata)
+              : undefined,
+          } satisfies SatpamShiftDraftAssignment)
         : undefined;
 
     if (assignments.length === 0 && !extraAssignment) return null;

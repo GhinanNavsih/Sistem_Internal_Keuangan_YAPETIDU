@@ -2910,8 +2910,13 @@ function ActivitiesContent() {
         photoUrl: assignment.photoUrl,
         photoAuditMetadata: assignment.photoAuditMetadata,
       }));
+    // Gating this on extraEmployeeId alone used to drop a photo or post taken
+    // before the officer dropdown was filled in: the card stayed open on
+    // screen but nothing reached localStorage, so a background/close before
+    // the officer was picked lost that work silently.
     const extraAssignment =
-      isExtraPostVisible && extraEmployeeId
+      isExtraPostVisible &&
+      (extraEmployeeId || extraPostName || extraPhotoUrl || extraOvertimeReason)
         ? {
             postId: extraPostName,
             employeeId: extraEmployeeId,
