@@ -297,6 +297,7 @@ export default function ProposalKegiatanPage() {
   const canManageProposal = Boolean(
     profile && ['super_admin', 'finance_verifier', 'satker_head_loyalis'].includes(profile.role),
   );
+  const isLoyalisSandbox = profile?.role === 'satker_head_loyalis';
 
   useEffect(() => {
     if (!profile) return;
@@ -438,9 +439,14 @@ export default function ProposalKegiatanPage() {
     }, 500);
   };
 
-  const isProposalApproved = useMemo(() => {
-    return Boolean(profile?.role === 'super_admin' || currentProposalStatus === 'proposal_approved' || currentProposalStatus?.startsWith('lpj_'));
-  }, [currentProposalStatus, profile]);
+  const hasLpjAccess = useMemo(() => {
+    return Boolean(
+      profile?.role === 'super_admin' ||
+      isLoyalisSandbox ||
+      currentProposalStatus === 'proposal_approved' ||
+      currentProposalStatus?.startsWith('lpj_'),
+    );
+  }, [currentProposalStatus, isLoyalisSandbox, profile]);
 
   const handleSelectProposal = (item: any) => {
     skipAutoSaveRef.current = true;
@@ -566,8 +572,8 @@ export default function ProposalKegiatanPage() {
     return danaOperasionalAnggaran - totalPengeluaranAnggaran;
   }, [danaOperasionalAnggaran, totalPengeluaranAnggaran]);
 
-  const isProposalReadOnly = periodClosed || (profile?.role !== 'super_admin' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_')));
-  const isLpjReadOnly = periodClosed || currentProposalStatus === 'lpj_submitted' || currentProposalStatus === 'lpj_approved';
+  const isProposalReadOnly = periodClosed || (!isLoyalisSandbox && profile?.role !== 'super_admin' && (currentProposalStatus === 'proposal_approved' || currentProposalStatus === 'proposal_submitted' || currentProposalStatus?.startsWith('lpj_')));
+  const isLpjReadOnly = periodClosed || (!isLoyalisSandbox && (currentProposalStatus === 'lpj_submitted' || currentProposalStatus === 'lpj_approved'));
 
   // ── REAL-TIME DEBOUNCED AUTO-SAVE EFFECT ──
   useEffect(() => {
@@ -997,6 +1003,10 @@ export default function ProposalKegiatanPage() {
 
     setSaving(true);
     try {
+      const nextLpjStatus = currentProposalStatus === 'proposal_approved' ||
+        (isLoyalisSandbox && !currentProposalStatus?.startsWith('lpj_'))
+        ? 'lpj_draft'
+        : currentProposalStatus;
       const payload = {
         realisasiEnabled,
         vakasiPengujiEnabled,
@@ -1017,14 +1027,12 @@ export default function ProposalKegiatanPage() {
         receiptRows,
         lpjSignatures,
         expenseReports,
-        status: currentProposalStatus === 'proposal_approved' ? 'lpj_draft' : currentProposalStatus,
+        status: nextLpjStatus,
         updatedAt: serverTimestamp(),
       };
 
       await setDoc(doc(db, 'ProposalKegiatan', selectedProposalId), sanitizeForFirestore(payload), { merge: true });
-      if (currentProposalStatus === 'proposal_approved') {
-        setCurrentProposalStatus('lpj_draft');
-      }
+      if (nextLpjStatus && nextLpjStatus !== currentProposalStatus) setCurrentProposalStatus(nextLpjStatus);
       setMessage({ type: 'success', text: `Draft LPJ / Realisasi "${reportName}" berhasil disimpan.` });
     } catch (err) {
       console.error(err);
@@ -1338,7 +1346,11 @@ export default function ProposalKegiatanPage() {
                   </span>
                 )}
               </div>
-              <p className="text-slate-400 text-xs mt-0.5">Alur berurutan: Proposal Anggaran ➔ Approval Ketua BAK & WarKu ➔ Pelaporan Realisasi (LPJ).</p>
+              <p className="text-slate-400 text-xs mt-0.5">
+                {isLoyalisSandbox
+                  ? 'Mode Sandbox Kepala SatKer Loyalis — LPJ dapat diisi langsung tanpa menunggu approval proposal.'
+                  : 'Alur berurutan: Proposal Anggaran ➔ Approval Ketua BAK & WarKu ➔ Pelaporan Realisasi (LPJ).'}
+              </p>
             </div>
 
             {/* Real-time Auto-save Indicator Badge */}
@@ -1392,7 +1404,7 @@ export default function ProposalKegiatanPage() {
                 : 'text-slate-500 hover:text-slate-800'
                 }`}
             >
-              {!isProposalApproved ? (
+              {!hasLpjAccess ? (
                 <Lock className="w-3.5 h-3.5 text-amber-500" />
               ) : (
                 <Unlock className="w-3.5 h-3.5 text-teal-600" />
@@ -1463,8 +1475,27 @@ export default function ProposalKegiatanPage() {
               </div>
             )}
 
+            {/* Direct LPJ access for the Loyalis sandbox */}
+            {isLoyalisSandbox && (
+              <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-center justify-between gap-3 text-indigo-900 text-xs shadow-sm">
+                <div className="flex items-center gap-3">
+                  <Unlock className="w-6 h-6 text-indigo-600 shrink-0" />
+                  <div>
+                    <p className="font-bold text-indigo-800 text-sm">LPJ Sandbox Terbuka</p>
+                    <p className="leading-relaxed font-medium">Anda dapat mengisi dan menyimpan LPJ langsung. Persetujuan proposal tidak diperlukan untuk sandbox ini.</p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => setActiveStage('lpj')}
+                  className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-4 shrink-0 shadow"
+                >
+                  Buka Form LPJ <Unlock className="w-3.5 h-3.5 ml-1.5" />
+                </Button>
+              </div>
+            )}
+
             {/* Proposal Approved Banner */}
-            {isProposalApproved && (
+            {hasLpjAccess && !isLoyalisSandbox && (
               <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl flex items-center justify-between gap-3 text-teal-900 text-xs shadow-sm">
                 <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-6 h-6 text-teal-600 shrink-0" />
@@ -2066,7 +2097,7 @@ export default function ProposalKegiatanPage() {
         {activeStage === 'lpj' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             {/* Locked Warning Banner */}
-            {!isProposalApproved ? (
+            {!hasLpjAccess ? (
               <div className="p-6 bg-amber-50/60 border border-amber-200/80 rounded-2xl text-center space-y-3">
                 <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-sm">
                   <Lock className="w-6 h-6" />
@@ -2502,7 +2533,7 @@ export default function ProposalKegiatanPage() {
                   expenseRows={lpjPengeluaranRows}
                   expenseReports={expenseReports}
                   employees={loyalisEmployees}
-                  unlocked={isProposalApproved}
+                  unlocked={hasLpjAccess}
                   readOnly={isLpjReadOnly}
                   openGroupRowId={reportEditorGroupId}
                   onOpenGroupHandled={() => setReportEditorGroupId(null)}
