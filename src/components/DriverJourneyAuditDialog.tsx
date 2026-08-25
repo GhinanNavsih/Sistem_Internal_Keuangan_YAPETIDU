@@ -845,6 +845,33 @@ export function DriverJourneyAuditDialog({
     }
   };
 
+  const handleAuditDateChange = (field: 'start' | 'end', value: string) => {
+    if (!report || !value) return;
+    const nextDateStart = field === 'start' ? value : auditDateStart;
+    const nextDateEnd = field === 'end' ? value : auditDateEnd;
+
+    if (field === 'start') setAuditDateStart(value);
+
+    // dateEnd is always re-derived from the timeline: it clamps back to
+    // dateStart if the new start moved past it, and infers the next day when
+    // dates read as same-day but the times still wrap past midnight.
+    const timeline = calculateEditableDriverJourneyTimeline({
+      dateStart: nextDateStart,
+      dateEnd: nextDateEnd,
+      timeStart: auditTimeStart,
+      timeEnd: auditTimeEnd,
+      isMultiDay: auditIsMultiDay,
+    });
+
+    setAuditDateEnd(timeline.dateEnd);
+    setAuditIsMultiDay(timeline.isMultiDay);
+    setAuditNightCount(timeline.nightCount);
+    if (timeline.durationHours > 0) {
+      setAuditDurationHours(timeline.durationHours);
+      setAuditAuthorizedDurationPP(timeline.durationHours);
+    }
+  };
+
   const auditTimeline = useMemo(() => {
     if (!report) return null;
     return calculateEditableDriverJourneyTimeline({
@@ -1310,6 +1337,19 @@ export function DriverJourneyAuditDialog({
 
                   <div className="grid grid-cols-2 gap-3.5 border-y border-indigo-100/70 py-3">
                     <div className="space-y-1">
+                      <Label htmlFor="auditDateStart" className="text-[9.5px] font-bold text-slate-400 uppercase">
+                        Tanggal Berangkat
+                      </Label>
+                      <Input
+                        id="auditDateStart"
+                        type="date"
+                        value={auditDateStart}
+                        onChange={(event) => handleAuditDateChange('start', event.target.value)}
+                        disabled={!isEditable || actionLoading}
+                        className="h-9 rounded-xl border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
+                      />
+                    </div>
+                    <div className="space-y-1">
                       <Label htmlFor="auditTimeStart" className="text-[9.5px] font-bold text-slate-400 uppercase">
                         Jam Berangkat
                       </Label>
@@ -1318,6 +1358,20 @@ export function DriverJourneyAuditDialog({
                         type="time"
                         value={auditTimeStart}
                         onChange={(event) => handleAuditTimeChange('start', event.target.value)}
+                        disabled={!isEditable || actionLoading}
+                        className="h-9 rounded-xl border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="auditDateEnd" className="text-[9.5px] font-bold text-slate-400 uppercase">
+                        Tanggal Tiba / Selesai
+                      </Label>
+                      <Input
+                        id="auditDateEnd"
+                        type="date"
+                        value={auditDateEnd}
+                        min={auditDateStart || undefined}
+                        onChange={(event) => handleAuditDateChange('end', event.target.value)}
                         disabled={!isEditable || actionLoading}
                         className="h-9 rounded-xl border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-indigo-400"
                       />
