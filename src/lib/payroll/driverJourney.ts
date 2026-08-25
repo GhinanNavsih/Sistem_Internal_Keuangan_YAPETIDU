@@ -723,14 +723,17 @@ export function calculateEditableDriverJourneyTimeline(
   let dateEnd = input.dateEnd && input.dateEnd >= dateStart
     ? input.dateEnd
     : dateStart;
-  let isMultiDay = input.isMultiDay === true || dateEnd > dateStart;
   const hasValidTimes =
     /^([01]\d|2[0-3]):([0-5]\d)$/.test(input.timeStart) &&
     /^([01]\d|2[0-3]):([0-5]\d)$/.test(input.timeEnd);
 
-  if (isMultiDay && dateEnd <= dateStart) {
-    dateEnd = nextCalendarDate(dateStart);
-  }
+  // A journey crosses a date boundary only when its recorded dates differ or
+  // its clock times wrap past midnight. `input.isMultiDay` deliberately gets no
+  // vote here: the submit path stores the flag as true with an unchanged end
+  // date whenever the sopir leaves the toggle on, and scores that as zero
+  // nights, so advancing dateEnd off the flag alone billed a premium malam to
+  // trips that ended the same evening.
+  let isMultiDay = dateEnd > dateStart;
 
   if (
     !isMultiDay &&

@@ -55,6 +55,7 @@ import {
   calculateNightPremium,
   journeyDayCount,
   calculateJourneyDateTimeTimings,
+  calculateEditableDriverJourneyTimeline,
   getShortTripMealWageComponent,
   getMealAllowanceForDuration,
   getMealTierCount,
@@ -464,18 +465,34 @@ function JourneyReportContent() {
           const initialDate = localDraft?.formDate ?? reportData.activityDate ?? reportData.dateStart ?? reportData.journeyDate ?? getTodayISO();
           setFormDate(initialDate);
 
-          const todayISO = getTodayISO();
-          const isOvernightOrMultiDay = initialDate < todayISO;
+          const initialTimeStart = localDraft?.formTimeStart ?? reportData.draftTimeStart ?? reportData.timeStart ?? '';
+          setFormTimeStart(initialTimeStart);
 
-          const initialDateEnd = localDraft?.formDateEnd ?? reportData.draftDateEnd ?? reportData.dateEnd ?? (isOvernightOrMultiDay ? todayISO : initialDate);
+          const initialTimeEnd = localDraft?.formTimeEnd ?? reportData.draftTimeEnd ?? reportData.timeEnd ?? '';
+          setFormTimeEnd(initialTimeEnd);
+
+          // Whether a journey ran overnight is decided by its own clock times, never
+          // by how long after the trip the sopir got around to filling in the report.
+          // Seeding it from `activityDate < today` marked same-day trips as lintas
+          // hari and handed them a phantom premium malam during audit.
+          const explicitIsMultiDay = localDraft?.formIsMultiDay ?? reportData.draftIsMultiDay ?? reportData.isMultiDay;
+          const explicitDateEnd = localDraft?.formDateEnd ?? reportData.draftDateEnd ?? reportData.dateEnd;
+          const hasNightSignal = Boolean(
+            (reportData.nightCount && reportData.nightCount > 0) ||
+            (reportData.draftNightCount && reportData.draftNightCount > 0),
+          );
+          const seedTimeline = calculateEditableDriverJourneyTimeline({
+            dateStart: initialDate,
+            timeStart: initialTimeStart,
+            dateEnd: typeof explicitDateEnd === 'string' ? explicitDateEnd : undefined,
+            timeEnd: initialTimeEnd,
+            isMultiDay: explicitIsMultiDay === true || hasNightSignal,
+          });
+
+          const initialDateEnd = explicitDateEnd ?? seedTimeline.dateEnd;
           setFormDateEnd(initialDateEnd);
 
-          const initialIsMultiDay = localDraft?.formIsMultiDay ?? reportData.draftIsMultiDay ?? reportData.isMultiDay ?? (
-            isOvernightOrMultiDay ||
-            (reportData.nightCount && reportData.nightCount > 0) ||
-            (reportData.draftNightCount && reportData.draftNightCount > 0) ||
-            false
-          );
+          const initialIsMultiDay = explicitIsMultiDay ?? (seedTimeline.isMultiDay || hasNightSignal);
           setFormIsMultiDay(initialIsMultiDay);
 
           const storedExtraLocs =
@@ -505,12 +522,6 @@ function JourneyReportContent() {
           );
           const initialExtraLocs = [...authorizedExtraLocs, ...adHocExtraLocs];
           setExtraActivities(initialExtraLocs);
-
-          const initialTimeStart = localDraft?.formTimeStart ?? reportData.draftTimeStart ?? reportData.timeStart ?? '';
-          setFormTimeStart(initialTimeStart);
-
-          const initialTimeEnd = localDraft?.formTimeEnd ?? reportData.draftTimeEnd ?? reportData.timeEnd ?? '';
-          setFormTimeEnd(initialTimeEnd);
 
           const rawFuelVal = localDraft?.formFuelFee !== undefined
             ? localDraft.formFuelFee

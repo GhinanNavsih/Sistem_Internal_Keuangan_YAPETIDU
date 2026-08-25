@@ -477,6 +477,48 @@ test('editable audit timeline infers overnight journeys from edited times', () =
   assert.equal(sameDay.nightCount, 0);
 });
 
+test('a stale isMultiDay flag on same-day dates never invents a premium malam', () => {
+  // The submit path stores `isMultiDay: true` with an unchanged end date
+  // whenever the sopir leaves the toggle on, and scores it as zero nights.
+  // Advancing dateEnd off that flag made an evening errand audit as a
+  // 25.4-hour lintas-hari journey worth a phantom Rp 50.000, so the audit
+  // dialog disagreed with the stored figure the review table shows.
+  const staleFlag = calculateEditableDriverJourneyTimeline({
+    dateStart: '2026-08-23',
+    dateEnd: '2026-08-23',
+    timeStart: '19:50',
+    timeEnd: '21:15',
+    isMultiDay: true,
+  });
+  assert.equal(staleFlag.isMultiDay, false);
+  assert.equal(staleFlag.dateEnd, '2026-08-23');
+  assert.equal(staleFlag.nightCount, 0);
+  assert.equal(calculateNightPremium(staleFlag.nightCount), 0);
+  assert.ok(Math.abs(staleFlag.durationHours - 85 / 60) < 1e-9);
+
+  // The submit path and the audit path must agree on that same record.
+  const submitted = calculateJourneyDateTimeTimings({
+    dateStart: '2026-08-23',
+    dateEnd: '2026-08-23',
+    timeStart: '19:50',
+    timeEnd: '21:15',
+    isMultiDay: true,
+  });
+  assert.equal(staleFlag.nightCount, submitted.nightCount);
+  assert.equal(staleFlag.durationHours, submitted.durationHours);
+
+  // A flag left on must still not survive when the dates really are the same.
+  const staleAcrossDays = calculateEditableDriverJourneyTimeline({
+    dateStart: '2026-08-23',
+    dateEnd: '2026-08-25',
+    timeStart: '19:50',
+    timeEnd: '21:15',
+    isMultiDay: true,
+  });
+  assert.equal(staleAcrossDays.isMultiDay, true);
+  assert.equal(staleAcrossDays.nightCount, 2);
+});
+
 test('canonicalizeDriverJourneyTimeline clears stale overnight data for a single-day journey', () => {
   assert.deepEqual(
     canonicalizeDriverJourneyTimeline({
