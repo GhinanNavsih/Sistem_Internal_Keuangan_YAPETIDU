@@ -76,6 +76,7 @@ import {
   DEFAULT_DRIVER_JOURNEY_POINT,
   driverJourneyRoutePoint,
   getMealAllowanceForDuration,
+  calculateDriverNetWage,
   calculateEstimatedDriverWage,
   cashOperationalCostFromJourney,
   DEFAULT_FUEL_PROCUREMENT_MODE,
@@ -123,6 +124,54 @@ const VEHICLE_RATES = {
 
 function fmtRp(val: number): string {
   return 'Rp' + Math.round(val).toLocaleString('id-ID');
+}
+
+function isReportedDriverJourney(journey: Record<string, unknown>): boolean {
+  return journey.status === 'submitted' || journey.status === 'completed';
+}
+
+function reportedDriverJourneyDistance(journey: Record<string, unknown>): number | null {
+  for (const value of [
+    journey.measuredDistanceKm,
+    journey.newTotalDistanceKm,
+    journey.submittedDistanceKm,
+  ]) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+  }
+  return null;
+}
+
+function driverJourneyDisplayDistance(journey: Record<string, unknown>): number {
+  if (isReportedDriverJourney(journey)) {
+    const measuredDistance = reportedDriverJourneyDistance(journey);
+    if (measuredDistance !== null) return measuredDistance;
+  }
+  return Math.max(0, Number(journey.distanceKm || 0) * 2);
+}
+
+function reportedDriverJourneyWage(journey: Record<string, unknown>): number {
+  for (const value of [journey.upahBersih, journey.submittedUpahEstimate]) {
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value;
+  }
+
+  const elapsedDurationHours = Math.max(
+    0,
+    Number(journey.newTotalDurationHours || journey.submittedDurationHours || 0),
+  );
+  const baseWage = calculateDriverNetWage({
+    distanceKm: driverJourneyDisplayDistance(journey),
+    travelTimeHours: Math.max(
+      0,
+      Number(journey.routeDurationHours || journey.newTotalDurationHours || 0),
+    ),
+    elapsedDurationHours,
+    nightCount: typeof journey.nightCount === 'number' &&
+      Number.isSafeInteger(journey.nightCount) &&
+      journey.nightCount >= 0
+      ? Number(journey.nightCount)
+      : 0,
+  });
+  return Math.max(0, baseWage - Math.max(0, Number(journey.remainingUnspentCash || 0)));
 }
 
 function formatRupiahInput(value: string): string {
@@ -1418,7 +1467,10 @@ function DriverJourneysContent() {
                               <div className="text-[10px] text-slate-400 font-semibold truncate">{fmtRp(j.vehicleRate)}/km</div>
                             </TableCell>
                             <TableCell className="font-bold text-slate-700 text-xs truncate">
-                              {j.distanceKm * 2} km
+                              <div>{driverJourneyDisplayDistance(j)} km</div>
+                              <div className={`text-[9px] font-black ${isReportedDriverJourney(j) ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                {isReportedDriverJourney(j) ? 'Terukur PP' : 'Rencana PP'}
+                              </div>
                             </TableCell>
                             <TableCell className="min-w-0 max-w-0 overflow-hidden">
                               <div className="font-black text-indigo-600 text-xs sm:text-sm truncate">{fmtRp(cashOperationalCostFromJourney(j))}</div>
@@ -1428,8 +1480,8 @@ function DriverJourneysContent() {
                             </TableCell>
                             <TableCell className="min-w-0 max-w-0 overflow-hidden">
                               <div className="font-black text-emerald-600 text-xs sm:text-sm truncate">
-                                {j.status === 'completed' ? (
-                                  <span>{fmtRp(j.upahBersih || ((j.newTotalDistanceKm || j.distanceKm * 2) * 300 + (j.newTotalDurationHours || (j.durationHours || 0) * 2) * 5000))}</span>
+                                {isReportedDriverJourney(j) ? (
+                                  <span>{fmtRp(reportedDriverJourneyWage(j))}</span>
                                 ) : (() => {
                                   const est = calculateEstimatedDriverWage(j.distanceKm * 2, (j.durationHours || 0) * 2);
                                   const baseW = j.estimatedBaseDriverWage || est.baseWage;

@@ -72,7 +72,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
             pathname !== '/dashboard/payroll/activity-review' &&
             !pathname.startsWith('/dashboard/payroll/uraian') &&
             !pathname.startsWith('/dashboard/payroll/driver-journeys') &&
-            !pathname.startsWith('/dashboard/payroll/journey-dashboard') &&
+            !pathname.startsWith('/dashboard/payroll/pekarya-dashboard') &&
             !pathname.startsWith('/dashboard/payroll/facility-reports')
           ) {
             router.replace('/dashboard/payroll/activity-review');
@@ -144,7 +144,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     pathname !== '/dashboard/payroll/activity-review' &&
     !pathname.startsWith('/dashboard/payroll/uraian') &&
     !pathname.startsWith('/dashboard/payroll/driver-journeys') &&
-    !pathname.startsWith('/dashboard/payroll/journey-dashboard') &&
+    !pathname.startsWith('/dashboard/payroll/pekarya-dashboard') &&
     !pathname.startsWith('/dashboard/payroll/facility-reports')
   ) {
     return null;

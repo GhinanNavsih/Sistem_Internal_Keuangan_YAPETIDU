@@ -92,6 +92,81 @@ export function normalizeDriverJourneyLocations(
   ));
 }
 
+export interface DriverJourneyPointLocationSources {
+  /** The full ordered route, `[startPoint, ...stops]`. */
+  points: string[];
+  startPoint?: unknown;
+  startPointLocation?: unknown;
+  /** Pre-authorized stops; positionally paired with `mainDestinationLocations`. */
+  mainDestinations?: unknown;
+  mainDestinationLocations?: unknown;
+  /** The sopir's stop log — the only carrier of ad hoc stops' coordinates. */
+  extraActivities?: unknown;
+}
+
+/**
+ * Resolves one coordinate per entry in `points`, so a route can be re-measured
+ * against the exact places the sopir picked rather than re-geocoded from
+ * ambiguous address text.
+ *
+ * Coordinates live in two places: pre-authorized stops carry theirs in
+ * `mainDestinationLocations`, while stops the sopir added mid-journey carry
+ * theirs only inside `extraActivities`. Authorized coordinates win; the stop
+ * log fills the gaps, including where a stored authorized coordinate fails
+ * validation.
+ *
+ * Both sources are paired positionally rather than through
+ * `normalizeDriverJourneyLocations`, which routes addresses through
+ * `normalizeDriverJourneyDestinations` and so truncates at
+ * `MAX_MAIN_DESTINATIONS`; `points` accepts far more stops than that.
+ */
+export function resolveDriverJourneyPointLocations(
+  input: DriverJourneyPointLocationSources,
+): Array<DriverJourneyLocation | null> {
+  const points = Array.isArray(input.points) ? input.points : [];
+  if (points.length === 0) return [];
+
+  const startAddress = typeof input.startPoint === 'string' && input.startPoint.trim()
+    ? input.startPoint.trim()
+    : points[0];
+  const startLocation = normalizeDriverJourneyLocation(input.startPointLocation, startAddress)
+    || (points[0] === DEFAULT_DRIVER_JOURNEY_LOCATION.address
+      ? { ...DEFAULT_DRIVER_JOURNEY_LOCATION }
+      : null);
+
+  const mainDestinations = Array.isArray(input.mainDestinations) && input.mainDestinations.length > 0
+    ? input.mainDestinations
+    : points.slice(1);
+  const mainLocationValues = Array.isArray(input.mainDestinationLocations)
+    ? input.mainDestinationLocations
+    : [];
+  const locationByAddress = new Map<string, DriverJourneyLocation | null>();
+  mainDestinations.forEach((address, index) => {
+    const trimmed = typeof address === 'string' ? address.trim() : '';
+    if (!trimmed || locationByAddress.has(trimmed)) return;
+    locationByAddress.set(trimmed, normalizeDriverJourneyLocation(mainLocationValues[index], trimmed));
+  });
+
+  const fallbackByAddress = new Map<string, DriverJourneyLocation | null>();
+  (Array.isArray(input.extraActivities) ? input.extraActivities : []).forEach((entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    const activity = entry as Record<string, unknown>;
+    if (activity.type !== 'tambah_lokasi') return;
+    const address = typeof activity.destination === 'string' ? activity.destination.trim() : '';
+    if (!address || fallbackByAddress.has(address)) return;
+    fallbackByAddress.set(address, normalizeDriverJourneyLocation(activity.destinationLocation, address));
+  });
+
+  return [
+    startLocation,
+    ...points.slice(1).map((address) => {
+      const trimmed = typeof address === 'string' ? address.trim() : '';
+      if (!trimmed) return null;
+      return locationByAddress.get(trimmed) || fallbackByAddress.get(trimmed) || null;
+    }),
+  ];
+}
+
 export function driverJourneyRoutePoint(
   address: unknown,
   location?: unknown,
@@ -100,6 +175,19 @@ export function driverJourneyRoutePoint(
   const normalizedLocation = normalizeDriverJourneyLocation(location, normalizedAddress);
   if (!normalizedLocation) return normalizedAddress;
   return `${normalizedLocation.latitude.toFixed(6)},${normalizedLocation.longitude.toFixed(6)}`;
+}
+
+/**
+ * Closes an already-resolved route back to its origin for one real Google
+ * Directions measurement. This is deliberately different from multiplying an
+ * outbound distance by two: the return leg may follow different roads.
+ */
+export function closeDriverJourneyRoundTrip(points: readonly string[]): string[] {
+  const activePoints = points.map((point) => point.trim()).filter(Boolean);
+  if (activePoints.length < 2) return activePoints;
+  return activePoints[activePoints.length - 1] === activePoints[0]
+    ? activePoints
+    : [...activePoints, activePoints[0]];
 }
 
 /**

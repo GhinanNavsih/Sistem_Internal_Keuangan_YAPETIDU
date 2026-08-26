@@ -36,7 +36,7 @@ graph TD
 * **Sekarang (Digital):**
   * Halaman **Rekap Pekarya** ([rekap-pekarya/page.tsx](file:///Users/ghinannavsih/Documents/Internal-BAK/src/app/dashboard/payroll/uraian/rekap-pekarya/page.tsx)) secara otomatis menarik seluruh data `ActivityReports` kategori `SATPAM` yang telah disetujui untuk periode tersebut.
   * Data diakumulasikan secara instan ke dalam kolom-kolom shift (*harian*, *jumatLibur*, *lemburSendiri*, *lemburCover*) hanya dengan satu klik.
-  * Sistem juga menyediakan opsi transisi OCR (Optical Character Recognition) via [parse_rekap.py](file:///Users/ghinannavsih/Documents/Internal-BAK/scripts/parse_rekap.py) jika ada data rekapitulasi cetak / legacy spreadsheet yang perlu diproses secara otomatis.
+  * Sistem juga menyediakan opsi transisi OCR (Optical Character Recognition) via [/api/parse-rekap](file:///Users/ghinannavsih/Documents/Internal-BAK/src/app/api/parse-rekap/route.ts) jika ada data rekapitulasi cetak / legacy spreadsheet yang perlu diproses secara otomatis.
 
 ## 4. Sinkronisasi Langsung ke Master Payroll (Zero Manual Entry)
 * **Sebelumnya (Manual):** Petugas Badan Keuangan harus mengetik ulang seluruh informasi jam kerja dan variabel shift dari lembar rekapitulasi cetak ke dalam database master payroll.

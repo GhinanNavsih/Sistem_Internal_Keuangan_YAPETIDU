@@ -91,16 +91,19 @@ export default function Sidebar() {
       icon: Banknote
     },
     {
+      // Starts the "monitoring" group — rendered below a separator so the
+      // two dashboards read apart from the operational menus above.
       name: 'Dashboard',
       path: '/dashboard',
       icon: LayoutDashboard,
-      exact: true
+      exact: true,
+      startsGroup: true
     },
     {
       name: 'Dashboard Pekarya',
-      path: `/dashboard/payroll/journey-dashboard?month=${currentMonth}&year=${currentYear}`,
+      path: `/dashboard/payroll/pekarya-dashboard?month=${currentMonth}&year=${currentYear}`,
       icon: BarChart3,
-      activePattern: '/dashboard/payroll/journey-dashboard'
+      activePattern: '/dashboard/payroll/pekarya-dashboard'
     }
   ].filter(item => {
     if (currentProfile.role === 'super_admin') return true;
@@ -137,19 +140,23 @@ export default function Sidebar() {
   // Reusable Navigation Link List (expanded)
   const NavigationLinks = ({ onLinkClick }: { onLinkClick?: () => void }) => (
     <nav className="flex flex-col gap-1.5 py-4">
-      {menuItems.map((item) => {
+      {menuItems.map((item, index) => {
         const isActive = getIsActive(item);
         const Icon = item.icon;
         return (
-          <Link
-            key={item.name}
-            href={item.path}
-            onClick={onLinkClick}
-            className={getLinkStyle(isActive)}
-          >
-            <Icon className={`w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110 ${isActive ? 'text-indigo-500' : 'text-slate-400 group-hover:text-indigo-500'}`} />
-            <span>{item.name}</span>
-          </Link>
+          <React.Fragment key={item.name}>
+            {item.startsGroup && index > 0 && (
+              <div className="my-2 border-t border-slate-200/80" />
+            )}
+            <Link
+              href={item.path}
+              onClick={onLinkClick}
+              className={getLinkStyle(isActive)}
+            >
+              <Icon className={`w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110 ${isActive ? 'text-indigo-500' : 'text-slate-400 group-hover:text-indigo-500'}`} />
+              <span>{item.name}</span>
+            </Link>
+          </React.Fragment>
         );
       })}
     </nav>
@@ -158,22 +165,26 @@ export default function Sidebar() {
   // Navigation Links for collapsed mode (icons only + tooltip)
   const CollapsedNavigationLinks = () => (
     <nav className="flex flex-col items-center gap-2 py-4">
-      {menuItems.map((item) => {
+      {menuItems.map((item, index) => {
         const isActive = getIsActive(item);
         const Icon = item.icon;
         return (
-          <Link
-            key={item.name}
-            href={item.path}
-            className={getCollapsedLinkStyle(isActive)}
-            title={item.name}
-          >
-            <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-500' : ''}`} />
-            {/* Tooltip */}
-            <span className="absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-semibold whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-lg z-50">
-              {item.name}
-            </span>
-          </Link>
+          <React.Fragment key={item.name}>
+            {item.startsGroup && index > 0 && (
+              <div className="my-1.5 w-8 border-t border-slate-200/80" />
+            )}
+            <Link
+              href={item.path}
+              className={getCollapsedLinkStyle(isActive)}
+              title={item.name}
+            >
+              <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-500' : ''}`} />
+              {/* Tooltip */}
+              <span className="absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-semibold whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 shadow-lg z-50">
+                {item.name}
+              </span>
+            </Link>
+          </React.Fragment>
         );
       })}
     </nav>

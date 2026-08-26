@@ -34,6 +34,13 @@ import {
   Banknote,
   CheckCircle2,
   Sparkles,
+  Shield,
+  Wrench,
+  Trash2,
+  Building2,
+  Home,
+  HardHat,
+  type LucideIcon,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import {
@@ -65,6 +72,106 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 function categoryLabel(category: string): string {
   return CATEGORY_LABELS[category] || category;
+}
+
+interface CategoryMeta {
+  icon: LucideIcon;
+  workerLabel: string;
+  itemLabel: string;
+  sectionTitle: string;
+  sectionSubtitle: string;
+  showVehicle: boolean;
+  accent: keyof typeof ACCENT_STYLES;
+}
+
+const ACCENT_STYLES = {
+  indigo: { iconBg: 'bg-indigo-50 text-indigo-600', badgeBg: 'bg-indigo-50', badgeText: 'text-indigo-700', badgeBorder: 'border-indigo-200' },
+  blue: { iconBg: 'bg-blue-50 text-blue-600', badgeBg: 'bg-blue-50', badgeText: 'text-blue-700', badgeBorder: 'border-blue-200' },
+  orange: { iconBg: 'bg-orange-50 text-orange-600', badgeBg: 'bg-orange-50', badgeText: 'text-orange-700', badgeBorder: 'border-orange-200' },
+  emerald: { iconBg: 'bg-emerald-50 text-emerald-600', badgeBg: 'bg-emerald-50', badgeText: 'text-emerald-700', badgeBorder: 'border-emerald-200' },
+  teal: { iconBg: 'bg-teal-50 text-teal-600', badgeBg: 'bg-teal-50', badgeText: 'text-teal-700', badgeBorder: 'border-teal-200' },
+  purple: { iconBg: 'bg-purple-50 text-purple-600', badgeBg: 'bg-purple-50', badgeText: 'text-purple-700', badgeBorder: 'border-purple-200' },
+  slate: { iconBg: 'bg-slate-100 text-slate-600', badgeBg: 'bg-slate-50', badgeText: 'text-slate-700', badgeBorder: 'border-slate-200' },
+} as const;
+
+const DEFAULT_CATEGORY_META: CategoryMeta = {
+  icon: BarChart3,
+  workerLabel: 'Pekarya',
+  itemLabel: 'Aktivitas',
+  sectionTitle: 'Statistik Kegiatan (Activity Stats)',
+  sectionSubtitle: 'Kegiatan terverifikasi menurut kategori',
+  showVehicle: true,
+  accent: 'indigo',
+};
+
+const CATEGORY_META: Record<string, CategoryMeta> = {
+  SATPAM: {
+    icon: Shield,
+    workerLabel: 'Satpam',
+    itemLabel: 'Piket',
+    sectionTitle: 'Statistik Piket Satpam',
+    sectionSubtitle: 'Piket & tugas jaga yang terverifikasi',
+    showVehicle: false,
+    accent: 'blue',
+  },
+  SOPIR: {
+    icon: Car,
+    workerLabel: 'Sopir',
+    itemLabel: 'Perjalanan',
+    sectionTitle: 'Statistik Kendaraan (Car Stats)',
+    sectionSubtitle: 'Performa kilometrase & penggunaan armada',
+    showVehicle: true,
+    accent: 'indigo',
+  },
+  PEKARYA: {
+    icon: HardHat,
+    workerLabel: 'Pekarya',
+    itemLabel: 'Aktivitas',
+    sectionTitle: 'Statistik Kegiatan Pekarya',
+    sectionSubtitle: 'Kegiatan umum yang terverifikasi',
+    showVehicle: false,
+    accent: 'slate',
+  },
+  TEKNISI: {
+    icon: Wrench,
+    workerLabel: 'Teknisi',
+    itemLabel: 'Perbaikan',
+    sectionTitle: 'Statistik Perbaikan Teknisi',
+    sectionSubtitle: 'Pekerjaan teknis yang terverifikasi',
+    showVehicle: false,
+    accent: 'orange',
+  },
+  KEBERSIHAN: {
+    icon: Trash2,
+    workerLabel: 'Petugas Kebersihan',
+    itemLabel: 'Tugas Kebersihan',
+    sectionTitle: 'Statistik Tugas Kebersihan',
+    sectionSubtitle: "Ro'an & tugas kebersihan yang terverifikasi",
+    showVehicle: false,
+    accent: 'emerald',
+  },
+  KEBERSIHAN_PONTI: {
+    icon: Building2,
+    workerLabel: 'Petugas Kebersihan Pondok',
+    itemLabel: 'Tugas Kebersihan Pondok',
+    sectionTitle: 'Statistik Kebersihan Pondok',
+    sectionSubtitle: 'Kebersihan area pondok yang terverifikasi',
+    showVehicle: false,
+    accent: 'teal',
+  },
+  PONTI: {
+    icon: Home,
+    workerLabel: 'Petugas Pondok',
+    itemLabel: 'Tugas Pondok',
+    sectionTitle: 'Statistik Piket Pondok',
+    sectionSubtitle: 'Piket & tugas pondok yang terverifikasi',
+    showVehicle: false,
+    accent: 'purple',
+  },
+};
+
+function categoryMeta(category: string): CategoryMeta {
+  return CATEGORY_META[category] || DEFAULT_CATEGORY_META;
 }
 
 function numberValue(value: unknown): number {
@@ -117,6 +224,29 @@ interface CompletedJourney {
   nightCount?: number;
   points?: string[];
   status: string;
+  // Piket/Standby/Ro'an/etc. for generic Pekarya reports, or Harian/Jumat &
+  // Libur/Lembur Sendiri/Lembur Cover for Satpam shift assignments. Only
+  // SOPIR carries distance/duration/reimburse, so non-SOPIR categories use
+  // this instead to describe what kind of work was actually completed.
+  workType?: string;
+}
+
+function typeBreakdown(items: { workType?: string }[]): {
+  counts: Record<string, number>;
+  dominant: { label: string; count: number } | null;
+  distinctCount: number;
+} {
+  const counts: Record<string, number> = {};
+  items.forEach((item) => {
+    if (!item.workType) return;
+    counts[item.workType] = (counts[item.workType] || 0) + 1;
+  });
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  return {
+    counts,
+    dominant: entries.length > 0 ? { label: entries[0][0], count: entries[0][1] } : null,
+    distinctCount: entries.length,
+  };
 }
 
 function JourneyDashboardContent() {
@@ -263,6 +393,16 @@ function JourneyDashboardContent() {
           nightCount: numberValue(rd.nightCount),
           points: stringArrayValue(rd.points),
           status,
+          // Satpam shift-assignment docs carry shiftType (Harian/Jumat & Libur/
+          // Lembur Sendiri/Lembur Cover); the generic Pekarya activity form
+          // (used by Satpam personal SPJ + every other non-SOPIR category)
+          // carries activityType (Piket/Standby/Ro'an/etc.) instead.
+          workType:
+            typeof rd.shiftType === 'string'
+              ? rd.shiftType
+              : typeof rd.activityType === 'string'
+                ? rd.activityType
+                : undefined,
         });
       });
 
@@ -336,6 +476,8 @@ function JourneyDashboardContent() {
     const totalSPJCost = filteredJourneys.reduce((sum, j) => sum + (j.operationalCost || 0), 0);
     const totalUpahBersih = filteredJourneys.reduce((sum, j) => sum + (j.upahBersih || 0), 0);
     const totalReimburse = filteredJourneys.reduce((sum, j) => sum + (j.reimburseDelta || 0), 0);
+    const workTypes = typeBreakdown(filteredJourneys);
+    const avgUpahPerItem = totalTrips > 0 ? totalUpahBersih / totalTrips : 0;
 
     return {
       totalTrips,
@@ -344,6 +486,8 @@ function JourneyDashboardContent() {
       totalSPJCost,
       totalUpahBersih,
       totalReimburse,
+      workTypes,
+      avgUpahPerItem,
     };
   }, [filteredJourneys]);
 
@@ -360,6 +504,7 @@ function JourneyDashboardContent() {
       totalUpahBersih: number;
       totalReimburse: number;
       totalNights: number;
+      journeys: CompletedJourney[];
     }> = {};
 
     filteredJourneys.forEach((j) => {
@@ -369,7 +514,9 @@ function JourneyDashboardContent() {
         : j.jobCategory + ':' + (j.activityName || 'Kegiatan lainnya');
       const displayName = isSopir
         ? j.vehicleName || 'Kendaraan tidak tercatat'
-        : categoryLabel(j.jobCategory) + ' · ' + (j.activityName || 'Kegiatan lainnya');
+        : activeCategory === ALL_CATEGORY_VALUE
+          ? categoryLabel(j.jobCategory) + ' · ' + (j.activityName || 'Kegiatan lainnya')
+          : j.activityName || 'Kegiatan lainnya';
       if (!map[groupKey]) {
         map[groupKey] = {
           vehicleName: displayName,
@@ -381,6 +528,7 @@ function JourneyDashboardContent() {
           totalUpahBersih: 0,
           totalReimburse: 0,
           totalNights: 0,
+          journeys: [],
         };
       }
       map[groupKey].trips += 1;
@@ -391,9 +539,14 @@ function JourneyDashboardContent() {
       map[groupKey].totalUpahBersih += j.upahBersih || 0;
       map[groupKey].totalReimburse += j.reimburseDelta || 0;
       map[groupKey].totalNights += j.nightCount || 0;
+      map[groupKey].journeys.push(j);
     });
 
-    const list = Object.values(map);
+    const list = Object.values(map).map((entry) => ({
+      ...entry,
+      workTypes: typeBreakdown(entry.journeys),
+      avgUpahPerItem: entry.trips > 0 ? entry.totalUpahBersih / entry.trips : 0,
+    }));
     list.sort((a, b) => b.trips - a.trips);
     return list;
   }, [filteredJourneys, activeCategory]);
@@ -409,6 +562,7 @@ function JourneyDashboardContent() {
       totalUpahBersih: number;
       totalReimburse: number;
       totalNights: number;
+      journeys: CompletedJourney[];
     }> = {};
 
     filteredJourneys.forEach((j) => {
@@ -424,6 +578,7 @@ function JourneyDashboardContent() {
           totalUpahBersih: 0,
           totalReimburse: 0,
           totalNights: 0,
+          journeys: [],
         };
       }
       map[dId].trips += 1;
@@ -432,18 +587,26 @@ function JourneyDashboardContent() {
       map[dId].totalUpahBersih += j.upahBersih || 0;
       map[dId].totalReimburse += j.reimburseDelta || 0;
       map[dId].totalNights += j.nightCount || 0;
+      map[dId].journeys.push(j);
     });
 
-    const list = Object.values(map);
+    const list = Object.values(map).map((entry) => ({
+      ...entry,
+      workTypes: typeBreakdown(entry.journeys),
+      avgUpahPerItem: entry.trips > 0 ? entry.totalUpahBersih / entry.trips : 0,
+    }));
     list.sort((a, b) => b.totalUpahBersih - a.totalUpahBersih);
     return list;
   }, [filteredJourneys, activeCategory]);
 
   const isSopirView = activeCategory === 'SOPIR';
-  const categoryTitle =
-    activeCategory === ALL_CATEGORY_VALUE ? 'Semua Pekarya' : categoryLabel(activeCategory);
-  const workerLabel = isSopirView ? 'Sopir' : 'Pekarya';
-  const completedItemLabel = isSopirView ? 'Perjalanan' : 'Aktivitas';
+  const isAllView = activeCategory === ALL_CATEGORY_VALUE;
+  const categoryTitle = isAllView ? 'Semua Pekarya' : categoryLabel(activeCategory);
+  const activeMeta = isAllView ? DEFAULT_CATEGORY_META : categoryMeta(activeCategory);
+  const accentStyles = ACCENT_STYLES[activeMeta.accent];
+  const ActiveCategoryIcon = activeMeta.icon;
+  const workerLabel = activeMeta.workerLabel;
+  const completedItemLabel = activeMeta.itemLabel;
 
   const handleFilterChange = (
     m: string,
@@ -459,7 +622,7 @@ function JourneyDashboardContent() {
     params.set('month', m);
     params.set('year', y);
     if (nextCategory !== ALL_CATEGORY_VALUE) params.set('category', nextCategory);
-    router.push('/dashboard/payroll/journey-dashboard?' + params.toString());
+    router.push('/dashboard/payroll/pekarya-dashboard?' + params.toString());
   };
 
   return (
@@ -481,6 +644,9 @@ function JourneyDashboardContent() {
             )}
           </div>
           <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+            <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg ${accentStyles.iconBg}`}>
+              <ActiveCategoryIcon className="w-4 h-4" />
+            </span>
             Dashboard Pekarya · {categoryTitle}
           </h1>
           <p className="text-xs text-slate-500 font-medium">
@@ -551,7 +717,7 @@ function JourneyDashboardContent() {
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black uppercase tracking-widest text-indigo-100">Total {completedItemLabel} Selesai</span>
             <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center">
-              <Compass className="w-5 h-5 text-white" />
+              {isAllView ? <Compass className="w-5 h-5 text-white" /> : <ActiveCategoryIcon className="w-5 h-5 text-white" />}
             </div>
           </div>
           <div>
@@ -559,31 +725,55 @@ function JourneyDashboardContent() {
             <span className="text-xs text-indigo-100 font-semibold ml-2">{completedItemLabel}</span>
           </div>
           <div className="text-[10px] text-indigo-100/80 font-medium pt-1 border-t border-white/10 flex justify-between">
-            <span>{isSopirView ? 'Total Kilometrase:' : 'Total Durasi:'}</span>
+            <span>{activeMeta.showVehicle ? (isSopirView ? 'Total Kilometrase:' : 'Total Durasi:') : 'Jenis Terbanyak:'}</span>
             <span className="font-extrabold text-white">
-              {isSopirView
-                ? overallKPI.totalMileage.toFixed(1) + ' KM'
-                : overallKPI.totalHours.toFixed(1) + ' Jam'}
+              {activeMeta.showVehicle
+                ? (isSopirView
+                    ? overallKPI.totalMileage.toFixed(1) + ' KM'
+                    : overallKPI.totalHours.toFixed(1) + ' Jam')
+                : (overallKPI.workTypes.dominant
+                    ? `${overallKPI.workTypes.dominant.label} (${overallKPI.workTypes.dominant.count}x)`
+                    : '—')}
             </span>
           </div>
         </Card>
 
-        {/* Card 2: Total Biaya Operasional (SPJ) */}
-        <Card className="rounded-2xl border-none shadow-sm bg-white p-5 space-y-3 border border-slate-100">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Biaya Operasional (SPJ)</span>
-            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <Banknote className="w-5 h-5" />
+        {/* Card 2: Total Biaya Operasional (SPJ) for SOPIR/mixed views;
+            headcount for a specific non-vehicle category, since operationalCost
+            is always 0 there (non-SOPIR fees are wages, not SPJ costs). */}
+        {activeMeta.showVehicle ? (
+          <Card className="rounded-2xl border-none shadow-sm bg-white p-5 space-y-3 border border-slate-100">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Biaya Operasional (SPJ)</span>
+              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                <Banknote className="w-5 h-5" />
+              </div>
             </div>
-          </div>
-          <div>
-            <span className="text-2xl font-black text-slate-800">{fmtRp(overallKPI.totalSPJCost)}</span>
-          </div>
-          <div className="text-[10px] text-slate-500 font-medium pt-1 border-t border-slate-100 flex justify-between">
-            <span>{isSopirView ? 'Aggregat BBM + Tol + Makan' : 'Biaya operasional tercatat'}</span>
-            <span className="font-bold text-blue-600">Terverifikasi</span>
-          </div>
-        </Card>
+            <div>
+              <span className="text-2xl font-black text-slate-800">{fmtRp(overallKPI.totalSPJCost)}</span>
+            </div>
+            <div className="text-[10px] text-slate-500 font-medium pt-1 border-t border-slate-100 flex justify-between">
+              <span>{isSopirView ? 'Aggregat BBM + Tol + Makan' : 'Biaya operasional tercatat'}</span>
+              <span className="font-bold text-blue-600">Terverifikasi</span>
+            </div>
+          </Card>
+        ) : (
+          <Card className="rounded-2xl border-none shadow-sm bg-white p-5 space-y-3 border border-slate-100">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Personil Terlibat</span>
+              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                <Users className="w-5 h-5" />
+              </div>
+            </div>
+            <div>
+              <span className="text-2xl font-black text-slate-800">{driverStats.length}</span>
+            </div>
+            <div className="text-[10px] text-slate-500 font-medium pt-1 border-t border-slate-100 flex justify-between">
+              <span>{workerLabel} unik pada periode ini</span>
+              <span className="font-bold text-blue-600">Terverifikasi</span>
+            </div>
+          </Card>
+        )}
 
         {/* Card 3: Total net wage */}
         <Card className="rounded-2xl border-none shadow-sm bg-white p-5 space-y-3 border border-slate-100">
@@ -597,27 +787,53 @@ function JourneyDashboardContent() {
             <span className="text-2xl font-black text-emerald-600">{fmtRp(overallKPI.totalUpahBersih)}</span>
           </div>
           <div className="text-[10px] text-slate-500 font-medium pt-1 border-t border-slate-100 flex justify-between">
-            <span>{isSopirView ? 'Komponen Jarak + Waktu + Premi' : 'Fee kegiatan yang disetujui'}</span>
+            <span>
+              {isSopirView
+                ? 'Komponen Jarak + Waktu + Premi'
+                : isAllView
+                  ? 'Fee kegiatan yang disetujui'
+                  : `Fee ${completedItemLabel.toLowerCase()} yang disetujui`}
+            </span>
             <span className="font-bold text-emerald-600">Sudah Diaudit</span>
           </div>
         </Card>
 
-        {/* Card 4: Total Out-of-Pocket Reimbursement */}
-        <Card className="rounded-2xl border-none shadow-sm bg-white p-5 space-y-3 border border-slate-100">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Reimburse Delta</span>
-            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5" />
+        {/* Card 4: Out-of-pocket reimbursement for SOPIR/mixed views; average
+            wage per completed item for a specific non-vehicle category, since
+            reimburseDelta is always 0 there (reimbursement is SOPIR-only). */}
+        {activeMeta.showVehicle ? (
+          <Card className="rounded-2xl border-none shadow-sm bg-white p-5 space-y-3 border border-slate-100">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Reimburse Delta</span>
+              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5" />
+              </div>
             </div>
-          </div>
-          <div>
-            <span className="text-2xl font-black text-amber-600">+{fmtRp(overallKPI.totalReimburse)}</span>
-          </div>
-          <div className="text-[10px] text-slate-500 font-medium pt-1 border-t border-slate-100 flex justify-between">
-            <span>{isSopirView ? 'Talangan Driver Terganti' : 'Reimburse kegiatan tercatat'}</span>
-            <span className="font-bold text-amber-600">Biaya Tambahan</span>
-          </div>
-        </Card>
+            <div>
+              <span className="text-2xl font-black text-amber-600">+{fmtRp(overallKPI.totalReimburse)}</span>
+            </div>
+            <div className="text-[10px] text-slate-500 font-medium pt-1 border-t border-slate-100 flex justify-between">
+              <span>{isSopirView ? 'Talangan Driver Terganti' : 'Reimburse kegiatan tercatat'}</span>
+              <span className="font-bold text-amber-600">Biaya Tambahan</span>
+            </div>
+          </Card>
+        ) : (
+          <Card className="rounded-2xl border-none shadow-sm bg-white p-5 space-y-3 border border-slate-100">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Rata-rata Upah per {completedItemLabel}</span>
+              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+            </div>
+            <div>
+              <span className="text-2xl font-black text-amber-600">{fmtRp(overallKPI.avgUpahPerItem)}</span>
+            </div>
+            <div className="text-[10px] text-slate-500 font-medium pt-1 border-t border-slate-100 flex justify-between">
+              <span>Dihitung otomatis dari upah bersih terverifikasi</span>
+              <span className="font-bold text-amber-600">Kalkulasi Otomatis</span>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* ── Main Section: Category-specific work stats & worker stats ─────── */}
@@ -626,26 +842,26 @@ function JourneyDashboardContent() {
         <Card className="rounded-3xl border-none shadow-sm bg-white p-6 space-y-5">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                {isSopirView ? <Car className="w-5 h-5" /> : <BarChart3 className="w-5 h-5" />}
+              <div className={`w-9 h-9 rounded-2xl flex items-center justify-center ${accentStyles.iconBg}`}>
+                {isSopirView ? <Car className="w-5 h-5" /> : <ActiveCategoryIcon className="w-5 h-5" />}
               </div>
               <div>
                 <h3 className="text-base font-extrabold text-slate-800">
-                  {isSopirView ? 'Statistik Kendaraan (Car Stats)' : 'Statistik Kegiatan (Activity Stats)'}
+                  {activeMeta.sectionTitle}
                 </h3>
                 <p className="text-[11px] text-slate-400 font-semibold">
-                  {isSopirView ? 'Performa kilometrase & penggunaan armada' : 'Kegiatan terverifikasi menurut kategori'}
+                  {activeMeta.sectionSubtitle}
                 </p>
               </div>
             </div>
-            <Badge variant="outline" className="bg-indigo-50 border-indigo-200 text-indigo-700 text-[10px] font-bold">
-              {carStats.length} {isSopirView ? 'Kendaraan Terpakai' : 'Kegiatan Tercatat'}
+            <Badge variant="outline" className={`${accentStyles.badgeBg} ${accentStyles.badgeBorder} ${accentStyles.badgeText} text-[10px] font-bold`}>
+              {carStats.length} {isSopirView ? 'Kendaraan Terpakai' : isAllView ? 'Kegiatan Tercatat' : `${completedItemLabel} Tercatat`}
             </Badge>
           </div>
 
           {carStats.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400 font-medium">
-              Belum ada data {isSopirView ? 'perjalanan kendaraan' : 'kegiatan'} pada periode ini.
+              Belum ada data {isSopirView ? 'perjalanan kendaraan' : completedItemLabel.toLowerCase()} pada periode ini.
             </div>
           ) : (
             <div className="space-y-4 max-h-[460px] overflow-y-auto pr-1">
@@ -680,12 +896,14 @@ function JourneyDashboardContent() {
                     <div className="grid grid-cols-3 gap-2 pt-1 text-xs">
                       <div className="bg-white p-2.5 rounded-xl border border-slate-100">
                         <span className="text-[9px] text-slate-400 font-bold block uppercase">
-                          {isSopirView ? 'Total Jarak' : 'Total Durasi'}
+                          {isSopirView ? 'Total Jarak' : 'Jenis Terbanyak'}
                         </span>
                         <span className="font-extrabold text-slate-800">
                           {isSopirView
                             ? car.totalDistanceKm.toFixed(1) + ' KM'
-                            : car.totalDurationHours.toFixed(1) + ' Jam'}
+                            : (car.workTypes.dominant
+                                ? `${car.workTypes.dominant.label} (${car.workTypes.dominant.count}x)`
+                                : '—')}
                         </span>
                       </div>
                       <div className="bg-white p-2.5 rounded-xl border border-slate-100">
@@ -698,12 +916,12 @@ function JourneyDashboardContent() {
                       </div>
                       <div className="bg-white p-2.5 rounded-xl border border-slate-100">
                         <span className="text-[9px] text-slate-400 font-bold block uppercase">
-                          {isSopirView ? 'BBM / KM' : 'Total Reimburse'}
+                          {isSopirView ? 'BBM / KM' : 'Rata-rata Upah'}
                         </span>
                         <span className="font-extrabold text-emerald-600">
                           {isSopirView
                             ? (avgFuelPerKm > 0 ? fmtRp(avgFuelPerKm) : '—')
-                            : '+' + fmtRp(car.totalReimburse)}
+                            : fmtRp(car.avgUpahPerItem)}
                         </span>
                       </div>
                     </div>
@@ -723,7 +941,7 @@ function JourneyDashboardContent() {
               </div>
               <div>
                 <h3 className="text-base font-extrabold text-slate-800">
-                  Statistik {workerLabel} ({isSopirView ? 'Driver' : 'Worker'} Stats)
+                  Statistik {workerLabel} ({isSopirView ? 'Driver' : 'Personil'} Stats)
                 </h3>
                 <p className="text-[11px] text-slate-400 font-semibold">
                   Leaderboard upah bersih & total {completedItemLabel.toLowerCase()}
@@ -751,7 +969,7 @@ function JourneyDashboardContent() {
                       <div>
                         <span className="font-extrabold text-slate-800 text-sm block leading-tight">{drv.driverName}</span>
                         <span className="text-[10px] text-slate-400 font-semibold">
-                          {drv.trips} {isSopirView ? 'Trip' : 'Aktivitas'} Selesai
+                          {drv.trips} {completedItemLabel} Selesai
                         </span>
                       </div>
                     </div>
@@ -765,25 +983,31 @@ function JourneyDashboardContent() {
                   <div className="grid grid-cols-3 gap-2 pt-1 text-xs">
                     <div className="bg-white p-2.5 rounded-xl border border-slate-100">
                       <span className="text-[9px] text-slate-400 font-bold block uppercase">
-                        {isSopirView ? 'Jarak Ditempuh' : 'Total Durasi'}
+                        {isSopirView ? 'Jarak Ditempuh' : 'Jenis Terbanyak'}
                       </span>
                       <span className="font-extrabold text-slate-800">
                         {isSopirView
                           ? drv.totalDistanceKm.toFixed(1) + ' KM'
-                          : drv.totalDurationHours.toFixed(1) + ' Jam'}
+                          : (drv.workTypes.dominant
+                              ? `${drv.workTypes.dominant.label} (${drv.workTypes.dominant.count}x)`
+                              : '—')}
                       </span>
                     </div>
                     <div className="bg-white p-2.5 rounded-xl border border-slate-100">
                       <span className="text-[9px] text-slate-400 font-bold block uppercase">
-                        {isSopirView ? 'Jam Mengemudi' : 'Jumlah Menginap'}
+                        {isSopirView ? 'Jam Mengemudi' : 'Rata-rata Upah'}
                       </span>
                       <span className="font-extrabold text-slate-800">
-                        {isSopirView ? drv.totalDurationHours.toFixed(1) + ' Jam' : drv.totalNights + ' Malam'}
+                        {isSopirView ? drv.totalDurationHours.toFixed(1) + ' Jam' : fmtRp(drv.avgUpahPerItem)}
                       </span>
                     </div>
                     <div className="bg-white p-2.5 rounded-xl border border-slate-100">
-                      <span className="text-[9px] text-slate-400 font-bold block uppercase">Total Reimburse</span>
-                      <span className="font-extrabold text-blue-600">+{fmtRp(drv.totalReimburse)}</span>
+                      <span className="text-[9px] text-slate-400 font-bold block uppercase">
+                        {isSopirView ? 'Total Reimburse' : 'Ragam Kegiatan'}
+                      </span>
+                      <span className="font-extrabold text-blue-600">
+                        {isSopirView ? '+' + fmtRp(drv.totalReimburse) : `${drv.workTypes.distinctCount} Jenis`}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -819,10 +1043,10 @@ function JourneyDashboardContent() {
                 <TableRow className="border-slate-100 text-[10px] uppercase font-black text-slate-500">
                   <TableHead className="py-3 px-4">Tanggal</TableHead>
                   <TableHead className="py-3 px-4">Kegiatan & Rute</TableHead>
-                  <TableHead className="py-3 px-4">Kendaraan</TableHead>
-                  <TableHead className="py-3 px-4">Pekarya</TableHead>
-                  <TableHead className="py-3 px-4 text-right">Jarak / Durasi</TableHead>
-                  <TableHead className="py-3 px-4 text-right">Biaya SPJ</TableHead>
+                  {activeMeta.showVehicle && <TableHead className="py-3 px-4">Kendaraan</TableHead>}
+                  <TableHead className="py-3 px-4">{workerLabel}</TableHead>
+                  <TableHead className="py-3 px-4 text-right">{activeMeta.showVehicle ? 'Jarak / Durasi' : 'Durasi'}</TableHead>
+                  {activeMeta.showVehicle && <TableHead className="py-3 px-4 text-right">Biaya SPJ</TableHead>}
                   <TableHead className="py-3 px-4 text-right">Upah Bersih</TableHead>
                 </TableRow>
               </TableHeader>
@@ -845,24 +1069,30 @@ function JourneyDashboardContent() {
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="py-3 px-4">
-                      {j.vehicleName ? (
-                        <Badge variant="outline" className="bg-indigo-50/60 border-indigo-100 text-indigo-700 text-[10px] font-bold">
-                          {j.vehicleName}
-                        </Badge>
-                      ) : '—'}
-                    </TableCell>
+                    {activeMeta.showVehicle && (
+                      <TableCell className="py-3 px-4">
+                        {j.vehicleName ? (
+                          <Badge variant="outline" className="bg-indigo-50/60 border-indigo-100 text-indigo-700 text-[10px] font-bold">
+                            {j.vehicleName}
+                          </Badge>
+                        ) : '—'}
+                      </TableCell>
+                    )}
                     <TableCell className="py-3 px-4 font-extrabold text-slate-800">
                       {j.employeeName}
                     </TableCell>
                     <TableCell className="py-3 px-4 text-right font-bold text-slate-600 whitespace-nowrap">
-                      {j.distanceKm > 0 || j.durationHours > 0
-                        ? j.distanceKm.toFixed(1) + ' km (' + j.durationHours.toFixed(1) + ' jam)'
-                        : '—'}
+                      {activeMeta.showVehicle
+                        ? (j.distanceKm > 0 || j.durationHours > 0
+                            ? j.distanceKm.toFixed(1) + ' km (' + j.durationHours.toFixed(1) + ' jam)'
+                            : '—')
+                        : (j.durationHours > 0 ? j.durationHours.toFixed(1) + ' jam' : '—')}
                     </TableCell>
-                    <TableCell className="py-3 px-4 text-right font-extrabold text-blue-700 whitespace-nowrap">
-                      {j.operationalCost > 0 ? fmtRp(j.operationalCost) : '—'}
-                    </TableCell>
+                    {activeMeta.showVehicle && (
+                      <TableCell className="py-3 px-4 text-right font-extrabold text-blue-700 whitespace-nowrap">
+                        {j.operationalCost > 0 ? fmtRp(j.operationalCost) : '—'}
+                      </TableCell>
+                    )}
                     <TableCell className="py-3 px-4 text-right font-black text-emerald-600 whitespace-nowrap">
                       {fmtRp(j.upahBersih)}
                     </TableCell>

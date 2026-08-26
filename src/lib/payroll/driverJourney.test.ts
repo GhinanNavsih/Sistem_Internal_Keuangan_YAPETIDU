@@ -16,13 +16,16 @@ import {
   calculateJourneyDateTimeTimings,
   calculateNightPremium,
   getMealAllowanceForDuration,
+  closeDriverJourneyRoundTrip,
   driverJourneyRoutePoints,
   driverJourneyRoutePoint,
   cashOperationalCostFromJourney,
   fuelProcurementModeLabel,
   journeyDayCount,
+  MAX_MAIN_DESTINATIONS,
   normalizeDriverJourneyDestinations,
   normalizeDriverJourneyLocation,
+  resolveDriverJourneyPointLocations,
   normalizeDriverJourneyLocations,
   formatDurationHoursAsJamMenit,
 } from './driverJourney';
@@ -57,6 +60,17 @@ test('journey route points retain an editable start and return leg', () => {
   assert.deepEqual(
     driverJourneyRoutePoints('Titik Baru', ['Tujuan A', 'Tujuan B'], undefined, false),
     ['Titik Baru', 'Tujuan A', 'Tujuan B'],
+  );
+});
+
+test('a single-stop payable route measures the real return leg instead of doubling outbound', () => {
+  assert.deepEqual(
+    closeDriverJourneyRoundTrip(['UNIPDU', 'RSUD Jombang']),
+    ['UNIPDU', 'RSUD Jombang', 'UNIPDU'],
+  );
+  assert.deepEqual(
+    closeDriverJourneyRoundTrip(['UNIPDU', 'RSUD Jombang', 'UNIPDU']),
+    ['UNIPDU', 'RSUD Jombang', 'UNIPDU'],
   );
 });
 
@@ -104,6 +118,76 @@ test('journey locations retain validated addresses and coordinates for route reu
       DEFAULT_DRIVER_JOURNEY_LOCATION,
     ),
     '-7.545800,112.285800',
+  );
+});
+
+test('ad hoc stops keep the coordinates the sopir picked when a route is re-measured', () => {
+  const authorized = { address: 'RSUD Jombang', latitude: -7.5462, longitude: 112.2331 };
+  const adHoc = { address: 'SPBU Peterongan', latitude: -7.5501, longitude: 112.2707 };
+
+  // `points` carries the ad hoc stop, but `mainDestinations` covers only the
+  // pre-authorized one — the ad hoc coordinate lives solely in the stop log.
+  const resolved = resolveDriverJourneyPointLocations({
+    points: [DEFAULT_DRIVER_JOURNEY_POINT, 'RSUD Jombang', 'SPBU Peterongan'],
+    startPoint: DEFAULT_DRIVER_JOURNEY_POINT,
+    startPointLocation: DEFAULT_DRIVER_JOURNEY_LOCATION,
+    mainDestinations: ['RSUD Jombang'],
+    mainDestinationLocations: [authorized],
+    extraActivities: [
+      { type: 'tambah_lokasi', destination: 'SPBU Peterongan', destinationLocation: adHoc },
+    ],
+  });
+
+  assert.deepEqual(resolved, [DEFAULT_DRIVER_JOURNEY_LOCATION, authorized, adHoc]);
+  // Without the stop-log fallback this degraded to bare address text, which
+  // Google re-geocodes to a possibly different place than the sopir picked.
+  assert.equal(driverJourneyRoutePoint('SPBU Peterongan', resolved[2]), '-7.550100,112.270700');
+});
+
+test('route coordinates survive past MAX_MAIN_DESTINATIONS and fall back per stop', () => {
+  const destinations = Array.from({ length: MAX_MAIN_DESTINATIONS + 2 }, (_, i) => `Tujuan ${i + 1}`);
+  const locations = destinations.map((address, i) => ({
+    address,
+    latitude: -7.5 - i / 1000,
+    longitude: 112.2 + i / 1000,
+  }));
+
+  const resolved = resolveDriverJourneyPointLocations({
+    points: [DEFAULT_DRIVER_JOURNEY_POINT, ...destinations],
+    startPoint: DEFAULT_DRIVER_JOURNEY_POINT,
+    startPointLocation: DEFAULT_DRIVER_JOURNEY_LOCATION,
+    mainDestinations: destinations,
+    mainDestinationLocations: locations,
+  });
+
+  assert.equal(resolved.length, destinations.length + 1);
+  // The stop past the cap used to resolve to null because the lookup was built
+  // through `normalizeDriverJourneyDestinations`, which slices at the cap.
+  assert.deepEqual(resolved[MAX_MAIN_DESTINATIONS + 2], locations[MAX_MAIN_DESTINATIONS + 1]);
+
+  // A stored authorized coordinate that fails validation still falls back to
+  // the sopir's log rather than degrading to address text.
+  const repaired = resolveDriverJourneyPointLocations({
+    points: [DEFAULT_DRIVER_JOURNEY_POINT, 'Tujuan 1'],
+    mainDestinations: ['Tujuan 1'],
+    mainDestinationLocations: [{ address: 'Alamat Lain', latitude: -7.5, longitude: 112.2 }],
+    extraActivities: [
+      {
+        type: 'tambah_lokasi',
+        destination: 'Tujuan 1',
+        destinationLocation: { address: 'Tujuan 1', latitude: -7.51, longitude: 112.21 },
+      },
+    ],
+  });
+  assert.deepEqual(repaired[1], { address: 'Tujuan 1', latitude: -7.51, longitude: 112.21 });
+
+  // Non-location entries in the stop log are ignored.
+  assert.deepEqual(
+    resolveDriverJourneyPointLocations({
+      points: [DEFAULT_DRIVER_JOURNEY_POINT, 'Tanpa Koordinat'],
+      extraActivities: [{ type: 'tambah_kegiatan', destination: 'Tanpa Koordinat' }],
+    })[1],
+    null,
   );
 });
 

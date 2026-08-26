@@ -19,7 +19,6 @@ import {
   isFuelProcurementMode,
   getMealAllowanceForDuration,
   normalizeDriverJourneyLocation,
-  normalizeDriverJourneyLocations,
   type DriverJourneyLocation,
 } from '@/lib/payroll/driverJourney';
 import {
@@ -235,17 +234,22 @@ function validateDriverReview(value: ReviewItem['driverReview']) {
 
   let mainDestinationLocations: Array<DriverJourneyLocation | null> | undefined;
   if (value.mainDestinationLocations !== undefined) {
+    const rawLocations = value.mainDestinationLocations;
     if (
-      !Array.isArray(value.mainDestinationLocations) ||
-      value.mainDestinationLocations.length !== value.points.length - 1
+      !Array.isArray(rawLocations) ||
+      rawLocations.length !== value.points.length - 1
     ) {
       throw new HttpError(400, 'Koordinat tujuan audit tidak sesuai dengan rute.');
     }
-    mainDestinationLocations = normalizeDriverJourneyLocations(
-      value.mainDestinationLocations,
-      value.points.slice(1),
-    );
-    const hasInvalidLocation = value.mainDestinationLocations.some((location, index) => (
+    // Paired positionally rather than through `normalizeDriverJourneyLocations`,
+    // which caps its addresses at MAX_MAIN_DESTINATIONS. `points` accepts up to
+    // 30 stops, so normalizing through it returned a short array: coordinates
+    // past the cap were dropped on write, and the length check above could
+    // never be satisfied by a client that capped its payload the same way.
+    mainDestinationLocations = value.points.slice(1).map((address, index) => (
+      normalizeDriverJourneyLocation(rawLocations[index], address)
+    ));
+    const hasInvalidLocation = rawLocations.some((location, index) => (
       location !== null && mainDestinationLocations?.[index] === null
     ));
     if (hasInvalidLocation) {
@@ -728,6 +732,7 @@ export async function POST(request: NextRequest) {
             baseDriverWage,
             totalOperationalCost,
             distanceKm: review.distanceKm,
+            measuredDistanceKm: review.distanceKm,
             durationHours: finalDurationHours,
             routeDurationHours: travelTimeHours,
             timeStart: reviewTimeStart,
@@ -890,6 +895,7 @@ export async function POST(request: NextRequest) {
               ? {
                   totalOperationalCost: after.totalOperationalCost || 0,
                   newTotalDistanceKm: after.distanceKm || 0,
+                  measuredDistanceKm: after.distanceKm || 0,
                   newTotalDurationHours: after.durationHours || 0,
                   fuelFee: after.fuelFee || 0,
                   extraFuelCost: after.extraFuelCost || 0,

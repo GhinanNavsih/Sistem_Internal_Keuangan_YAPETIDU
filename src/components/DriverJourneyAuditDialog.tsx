@@ -34,6 +34,7 @@ import {
   Edit2,
   MapPin,
   RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 import type { PhotoAuditMetadata, PhotoEvidence } from '@/lib/payroll/domain';
 import {
@@ -46,15 +47,17 @@ import {
   journeyDayCount,
   DEFAULT_DRIVER_JOURNEY_LOCATION,
   DEFAULT_FUEL_PROCUREMENT_MODE,
+  closeDriverJourneyRoundTrip,
   driverJourneyRoutePoint,
   isFuelProcurementMode,
   normalizeDriverJourneyLocation,
-  normalizeDriverJourneyLocations,
+  resolveDriverJourneyPointLocations,
   formatDurationHoursAsJamMenit,
   type DriverJourneyLocation,
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
 import { pekaryaPayrollPeriodForDate } from '@/lib/payroll/pekaryaSpj';
+import { authenticatedJson } from '@/lib/payroll/client';
 import {
   PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH,
   useCostSafePlaceAutocomplete,
@@ -161,6 +164,13 @@ export interface DriverAuditReport {
   endPoint?: string;
   mainDestinations?: string[];
   mainDestinationLocations?: Array<DriverJourneyLocation | null>;
+  /**
+   * The sopir's own stop log. Ad hoc stops keep their picked coordinates only
+   * here — `mainDestinations`/`mainDestinationLocations` cover the
+   * pre-authorized stops alone — so this is the only place the auditor can
+   * recover exact coordinates for a stop the sopir added mid-journey.
+   */
+  extraActivities?: Array<Record<string, unknown>>;
   baseOperationalCost?: number;
   fuelProcurementMode?: FuelProcurementMode;
   heldFuelAmount?: number;
@@ -184,30 +194,14 @@ function auditReportPointLocations(
   report: DriverAuditReport,
   points: string[],
 ): Array<DriverJourneyLocation | null> {
-  const reportStartPoint = report.startPoint || points[0];
-  const startLocation = normalizeDriverJourneyLocation(
-    report.startPointLocation,
-    reportStartPoint,
-  ) || (
-    points[0] === DEFAULT_DRIVER_JOURNEY_LOCATION.address
-      ? { ...DEFAULT_DRIVER_JOURNEY_LOCATION }
-      : null
-  );
-  const reportDestinations = Array.isArray(report.mainDestinations) && report.mainDestinations.length > 0
-    ? report.mainDestinations
-    : points.slice(1);
-  const storedDestinations = normalizeDriverJourneyLocations(
-    report.mainDestinationLocations,
-    reportDestinations,
-  );
-  const locationByAddress = new Map(
-    reportDestinations.map((address, index) => [address, storedDestinations[index]]),
-  );
-
-  return [
-    startLocation,
-    ...points.slice(1).map((address) => locationByAddress.get(address) || null),
-  ];
+  return resolveDriverJourneyPointLocations({
+    points,
+    startPoint: report.startPoint,
+    startPointLocation: report.startPointLocation,
+    mainDestinations: report.mainDestinations,
+    mainDestinationLocations: report.mainDestinationLocations,
+    extraActivities: report.extraActivities,
+  });
 }
 
 /** Exactly the `driverReview` body accepted by `/api/pekarya/activities/review`. */
@@ -290,6 +284,62 @@ function fmtRp(val: number): string {
   return 'Rp' + val.toLocaleString('id-ID');
 }
 
+// Prefer the geocoded lat/lng (exact) over the raw address text (ambiguous —
+// Google Maps may resolve a bare place name to the wrong branch/city).
+function auditPointToMapValue(loc: DriverJourneyLocation | null, address: string): string | null {
+  if (loc && Number.isFinite(loc.latitude) && Number.isFinite(loc.longitude)) {
+    return `${loc.latitude},${loc.longitude}`;
+  }
+  const trimmed = address.trim();
+  return trimmed || null;
+}
+
+// Builds a Google Maps directions deep link so the auditor can visually
+// replicate the exact route (origin + waypoints + destination, in order)
+// with one click, instead of re-entering each stop manually.
+function buildGoogleMapsRouteUrl(
+  points: string[],
+  locations: Array<DriverJourneyLocation | null>,
+): string | null {
+  const values = points
+    .map((pt, idx) => auditPointToMapValue(locations[idx] ?? null, pt))
+    .filter((v): v is string => Boolean(v));
+  if (values.length < 2) return null;
+
+  const origin = values[0];
+  const destination = values[values.length - 1];
+  const waypoints = values.slice(1, -1);
+
+  const params = new URLSearchParams({
+    api: '1',
+    origin,
+    destination,
+    travelmode: 'driving',
+  });
+  if (waypoints.length > 0) {
+    params.set('waypoints', waypoints.join('|'));
+  }
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+function auditRoundTripRoutePoints(
+  points: string[],
+  locations: Array<DriverJourneyLocation | null>,
+): string[] {
+  if (points.length < 2 || points.some((point) => !point.trim())) return [];
+  return closeDriverJourneyRoundTrip(points.map((point, index) => (
+    driverJourneyRoutePoint(point, locations[index])
+  )));
+}
+
+function auditRoundTripRouteKey(
+  points: string[],
+  locations: Array<DriverJourneyLocation | null>,
+): string {
+  const routePoints = auditRoundTripRoutePoints(points, locations);
+  return routePoints.length >= 3 ? JSON.stringify(routePoints) : '';
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function DriverJourneyAuditDialog({
@@ -321,15 +371,14 @@ export function DriverJourneyAuditDialog({
   // attributed a leg that actually skipped over it.
   const [auditLegWages, setAuditLegWages] = useState<Record<number, { distanceKm: number; durationHours: number }>>({});
   // Cumulative Google Directions travel time between destinations for the
-  // whole round trip. Drives Komponen Waktu. Seeded from the stored
-  // `report.routeDurationHours` and only overwritten when the auditor
-  // explicitly recalculates the route (same gating as `auditDistanceKm`) —
-  // it must NOT come from summing `auditLegWages`, which only keys legs
-  // that land on two directly-adjacent point indices and therefore silently
-  // drops the route's final closing leg.
+  // whole round trip. Drives Komponen Waktu. It must NOT come from summing
+  // `auditLegWages`, which only keys legs that land on two directly-adjacent
+  // point indices and therefore silently drops the route's final closing leg.
   const [auditRouteDurationHours, setAuditRouteDurationHours] = useState<number>(0);
-  const [isManualDistanceOverride, setIsManualDistanceOverride] = useState<boolean>(false);
+  const [isManualDurationOverride, setIsManualDurationOverride] = useState<boolean>(false);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState<boolean>(false);
+  const [routeCalcError, setRouteCalcError] = useState<string>('');
+  const [measuredRouteKey, setMeasuredRouteKey] = useState<string>('');
 
   // Google Maps Location Picker Modal state
   const [showMapSelector, setShowMapSelector] = useState(false);
@@ -343,6 +392,7 @@ export function DriverJourneyAuditDialog({
   const markerRef = React.useRef<any>(null);
   const mapElementRef = React.useRef<HTMLDivElement | null>(null);
   const mapGeocodeRequestRef = React.useRef(0);
+  const routeCalculationRequestRef = React.useRef(0);
   const {
     suggestions: placeSuggestions,
     isSearching: isSearchingPlaces,
@@ -445,7 +495,10 @@ export function DriverJourneyAuditDialog({
         : [report.startPoint || 'UNIPDU Jombang, Jawa Timur', report.endPoint || ''];
     setAuditPoints(pts);
     setAuditPointLocations(auditReportPointLocations(report, pts));
-    setIsManualDistanceOverride(false);
+    setIsManualDurationOverride(false);
+    setIsCalculatingRoute(false);
+    setMeasuredRouteKey('');
+    setRouteCalcError('');
 
     const rate = getVehicleRate(vType);
     const fuelMode = isFuelProcurementMode(report.fuelProcurementMode)
@@ -480,14 +533,9 @@ export function DriverJourneyAuditDialog({
     setAuditLegWages({});
   }
 
-  // Populates per-leg distance/wage figures as soon as a report opens, rather
-  // than only after the auditor manually clicks "Hitung Ulang". Keyed on the
-  // report id alone so later point edits (which already trigger their own
-  // recalculation) don't cause a redundant second call here.
-  //
-  // Totals are left untouched: this runs for the leg breakdown alone, and
-  // overwriting Jarak/Waktu here would silently restate an already-approved
-  // upah the moment an auditor opened the dialog to look at it.
+  // Measure every editable audit as a real round trip as soon as it opens. A
+  // locked historical approval is measured only for its leg breakdown; its
+  // stored payroll value is never restated merely by viewing it.
   useEffect(() => {
     if (!report) return;
     const pts =
@@ -495,12 +543,12 @@ export function DriverJourneyAuditDialog({
         ? report.points
         : [report.startPoint || 'UNIPDU Jombang, Jawa Timur', report.endPoint || ''];
     const reportPointLocations = auditReportPointLocations(report, pts);
-    recalculateRouteFromPoints(pts, {
-      updateTotals: false,
+    void recalculateRouteFromPoints(pts, {
+      updateTotals: isEditable,
       pointLocations: reportPointLocations,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [report?.id]);
+  }, [report?.id, isEditable]);
 
   const resetMapSearch = () => {
     cancelPlaceSearch();
@@ -698,7 +746,12 @@ export function DriverJourneyAuditDialog({
   };
 
   /**
-   * Recomputes the route across `pointsToCalc`.
+   * Recomputes the route across `pointsToCalc` through the same
+   * `/api/calculate-route` endpoint the sopir's own journey report submission
+   * uses, instead of querying the browser Directions SDK directly. Re-auditing
+   * an unedited route now reproduces the stored figure exactly rather than
+   * merely agreeing with it, since both sides are one measurement, not two
+   * that happen to use the same formula.
    *
    * The request closes the loop back to the departure point instead of
    * doubling the one-way total. Doubling only holds for a simple A→B journey;
@@ -707,11 +760,10 @@ export function DriverJourneyAuditDialog({
    * distance component of the wage. Closing the loop mirrors how the sopir's
    * own journey report totals the route ([start, ...stops, start]).
    *
-   * `updateTotals` is false when this runs only to populate the per-leg
-   * breakdown as a report opens, so viewing a report never rewrites the
-   * figures the sopir submitted or that were already approved.
+   * `updateTotals` is false only for a locked historical approval. Every
+   * editable audit replaces its wage distance with this measured total.
    */
-  const recalculateRouteFromPoints = (
+  async function recalculateRouteFromPoints(
     pointsToCalc: string[],
     {
       updateTotals = true,
@@ -720,91 +772,82 @@ export function DriverJourneyAuditDialog({
       updateTotals?: boolean;
       pointLocations?: Array<DriverJourneyLocation | null>;
     } = {},
-  ) => {
+  ): Promise<boolean> {
+    const requestId = ++routeCalculationRequestRef.current;
     const validIndices = pointsToCalc
       .map((p, i) => (p && p.trim().length > 0 ? i : -1))
       .filter((i) => i !== -1);
-    if (validIndices.length < 2) return;
-    const validPts = validIndices.map((index) => (
-      driverJourneyRoutePoint(pointsToCalc[index], pointLocations[index])
-    ));
+    const routePts = auditRoundTripRoutePoints(pointsToCalc, pointLocations);
+    if (validIndices.length !== pointsToCalc.length || routePts.length < 3) {
+      if (updateTotals) setMeasuredRouteKey('');
+      setRouteCalcError('Lengkapi titik awal dan seluruh tujuan sebelum mengukur rute.');
+      return false;
+    }
+    const routeKey = JSON.stringify(routePts);
+
     setIsCalculatingRoute(true);
-
-    loadGoogleMapsScript(() => {
-      const g = (window as any).google;
-      if (!g || !g.maps) {
-        setIsCalculatingRoute(false);
-        return;
+    setRouteCalcError('');
+    if (updateTotals) setMeasuredRouteKey('');
+    try {
+      const resData = await authenticatedJson<{
+        success: boolean;
+        distanceKm: number;
+        durationHours: number;
+        legs: Array<{ distanceKm: number; durationHours: number }>;
+      }>('/api/calculate-route', {
+        method: 'POST',
+        body: JSON.stringify({ points: routePts }),
+      });
+      if (requestId !== routeCalculationRequestRef.current) return false;
+      if (
+        !(resData.distanceKm > 0) ||
+        !Number.isFinite(resData.durationHours) ||
+        resData.durationHours < 0
+      ) {
+        throw new Error('Google Maps tidak mengembalikan jarak dan waktu tempuh yang valid.');
       }
 
-      try {
-        const service = new g.maps.DirectionsService();
-        const origin = validPts[0];
-        // Only append the return leg when the stored chain does not already
-        // end where it started.
-        const routePts =
-          validPts[validPts.length - 1] === origin ? validPts : [...validPts, origin];
-        const destination = routePts[routePts.length - 1];
-        const waypoints = routePts.slice(1, routePts.length - 1).map(pt => ({
-          location: pt,
-          stopover: true,
-        }));
+      const legWages: Record<number, { distanceKm: number; durationHours: number }> = {};
+      (resData.legs || []).forEach((leg, legIdx) => {
+        // Display-only, and intentionally skips legs that don't land on two
+        // directly-adjacent point indices — a blank "Tambah Lokasi" slot
+        // widens a leg across a gap in `pointsToCalc` — so this must never be
+        // summed to get a route total; `resData.distanceKm`/`durationHours`
+        // below already cover every leg, including the closing one home.
+        const originIdx = validIndices[legIdx];
+        const nextIdx = validIndices[legIdx + 1];
+        if (nextIdx === originIdx + 1) {
+          legWages[originIdx] = {
+            distanceKm: leg.distanceKm || 0,
+            durationHours: leg.durationHours || 0,
+          };
+        }
+      });
+      setAuditLegWages(legWages);
 
-        service.route(
-          {
-            origin: origin,
-            destination: destination,
-            waypoints: waypoints,
-            travelMode: g.maps.TravelMode.DRIVING,
-          },
-          (result: any, status: any) => {
-            setIsCalculatingRoute(false);
-            if (status === 'OK' && result && result.routes && result.routes[0]) {
-              const route = result.routes[0];
-              let totalMeters = 0;
-              let totalSeconds = 0;
-              const legWages: Record<number, { distanceKm: number; durationHours: number }> = {};
-
-              route.legs.forEach((leg: any, legIdx: number) => {
-                const distanceMeters = leg.distance?.value || 0;
-                const durationSeconds = leg.duration?.value || 0;
-                // Unconditional totals (every leg, including the closing
-                // return-to-origin leg) feed Komponen Jarak/Waktu. The
-                // per-leg `legWages` map below is display-only and
-                // intentionally skips legs that don't land on two
-                // directly-adjacent point indices, so it must never be
-                // summed to get a route total.
-                totalMeters += distanceMeters;
-                totalSeconds += durationSeconds;
-
-                const originIdx = validIndices[legIdx];
-                const nextIdx = validIndices[legIdx + 1];
-                if (nextIdx === originIdx + 1) {
-                  legWages[originIdx] = {
-                    distanceKm: distanceMeters / 1000,
-                    durationHours: durationSeconds / 3600,
-                  };
-                }
-              });
-              setAuditLegWages(legWages);
-
-              if (updateTotals && totalMeters > 0) {
-                // `routePts` already returns to the departure point, so this
-                // total is the full round trip.
-                setAuditDistanceKm(Math.round((totalMeters / 1000) * 10) / 10);
-                setAuditRouteDurationHours(totalSeconds / 3600);
-              }
-            } else {
-              console.warn('DirectionsService route status:', status);
-            }
-          }
-        );
-      } catch (err) {
-        console.error('Error in recalculateRouteFromPoints:', err);
+      if (updateTotals && resData.distanceKm > 0) {
+        setAuditDistanceKm(resData.distanceKm);
+        setAuditRouteDurationHours(resData.durationHours);
+        setMeasuredRouteKey(routeKey);
+      }
+      return true;
+    } catch (err) {
+      if (requestId !== routeCalculationRequestRef.current) return false;
+      console.error('Error in recalculateRouteFromPoints:', err);
+      setRouteCalcError(err instanceof Error ? err.message : 'Gagal menghitung ulang rute.');
+      if (updateTotals) setMeasuredRouteKey('');
+      return false;
+    } finally {
+      if (requestId === routeCalculationRequestRef.current) {
         setIsCalculatingRoute(false);
       }
-    });
-  };
+    }
+  }
+
+  const currentRouteKey = auditRoundTripRouteKey(auditPoints, auditPointLocations);
+  const hasMeasuredCurrentRoute = Boolean(
+    currentRouteKey && measuredRouteKey === currentRouteKey,
+  );
 
   const handleConfirmMapLocation = () => {
     if (mapTargetIndex === null || !mapAddress || !mapLocation) return;
@@ -1060,7 +1103,7 @@ export function DriverJourneyAuditDialog({
   ]);
 
   const handleApprove = () => {
-    if (!auditCalc) return;
+    if (!auditCalc || !hasMeasuredCurrentRoute || isCalculatingRoute) return;
     onApprove({
       distanceKm: auditDistanceKm,
       durationHours: auditCalc.durationHours,
@@ -1079,12 +1122,17 @@ export function DriverJourneyAuditDialog({
       nightCount: auditNightCount,
       points: auditPoints,
       startPointLocation: normalizeDriverJourneyLocation(auditPointLocations[0], auditPoints[0]),
-      mainDestinationLocations: normalizeDriverJourneyLocations(
-        auditPointLocations.slice(1),
-        auditPoints.slice(1),
-      ),
+      // Positional, so the array always stays exactly `points.length - 1` long.
+      // `normalizeDriverJourneyLocations` caps at MAX_MAIN_DESTINATIONS, which
+      // made the server's matching length check unsatisfiable — and therefore
+      // any route past that cap unapprovable.
+      mainDestinationLocations: auditPoints.slice(1).map((address, index) => (
+        normalizeDriverJourneyLocation(auditPointLocations[index + 1], address)
+      )),
     });
   };
+
+  const mapsRouteUrl = buildGoogleMapsRouteUrl(auditPoints, auditPointLocations);
 
   return (
     <>
@@ -1168,41 +1216,68 @@ export function DriverJourneyAuditDialog({
                         <MapPin className="w-3 h-3 text-indigo-500" />
                         Rute Perjalanan ({auditPoints.length} Lokasi)
                       </span>
-                      {isEditable && (
-                        <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {mapsRouteUrl && (
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              const newPts = [...auditPoints, ''];
-                              setAuditPoints(newPts);
-                              setAuditPointLocations([...auditPointLocations, null]);
-                              handleOpenMapForIndex(newPts.length - 1);
-                            }}
-                            className="h-6 px-2 text-[9px] font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-md cursor-pointer whitespace-nowrap"
+                            onClick={() => window.open(mapsRouteUrl, '_blank', 'noopener,noreferrer')}
+                            className="h-6 px-2 text-[9px] font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-md cursor-pointer whitespace-nowrap"
                           >
-                            <Plus className="w-3 h-3 mr-0.5" />
-                            Tambah Lokasi
+                            <ExternalLink className="w-3 h-3 mr-1" />
+                            Buka di Google Maps
                           </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={isCalculatingRoute || actionLoading}
-                            onClick={() => recalculateRouteFromPoints(auditPoints)}
-                            className="h-6 px-2 text-[9px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 rounded-md cursor-pointer whitespace-nowrap"
-                          >
-                            {isCalculatingRoute ? (
-                              <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                            ) : (
-                              <RefreshCw className="w-3 h-3 mr-1" />
-                            )}
-                            Hitung Ulang
-                          </Button>
-                        </div>
-                      )}
+                        )}
+                        {isEditable && (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const newPts = [...auditPoints, ''];
+                                routeCalculationRequestRef.current += 1;
+                                setIsCalculatingRoute(false);
+                                setMeasuredRouteKey('');
+                                setRouteCalcError('Pilih lokasi baru agar rute pulang-pergi dapat diukur ulang.');
+                                setAuditPoints(newPts);
+                                setAuditPointLocations([...auditPointLocations, null]);
+                                handleOpenMapForIndex(newPts.length - 1);
+                              }}
+                              className="h-6 px-2 text-[9px] font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-md cursor-pointer whitespace-nowrap"
+                            >
+                              <Plus className="w-3 h-3 mr-0.5" />
+                              Tambah Lokasi
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={isCalculatingRoute || actionLoading}
+                              onClick={() => recalculateRouteFromPoints(auditPoints)}
+                              className="h-6 px-2 text-[9px] font-bold text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 rounded-md cursor-pointer whitespace-nowrap"
+                            >
+                              {isCalculatingRoute ? (
+                                <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                              ) : (
+                                <RefreshCw className="w-3 h-3 mr-1" />
+                              )}
+                              Hitung Ulang
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
+
+                    {routeCalcError && (
+                      <p className="text-[10px] font-bold text-rose-600">{routeCalcError}</p>
+                    )}
+                    {isEditable && isCalculatingRoute && (
+                      <p className="text-[10px] font-bold text-indigo-600">
+                        Mengukur jarak pulang-pergi aktual untuk Upah Bersih…
+                      </p>
+                    )}
 
                     <div className="relative pl-6 space-y-3.5 max-h-[220px] overflow-y-auto pr-1">
                       <div className="absolute left-[9px] top-2 bottom-2 w-0.5 border-l-2 border-dashed border-indigo-200" />
@@ -1326,11 +1401,11 @@ export function DriverJourneyAuditDialog({
                     {isEditable && (
                       <button
                         type="button"
-                        onClick={() => setIsManualDistanceOverride(!isManualDistanceOverride)}
+                        onClick={() => setIsManualDurationOverride(!isManualDurationOverride)}
                         className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-1 cursor-pointer"
                       >
-                        {isManualDistanceOverride ? <Lock className="w-3 h-3 text-slate-400" /> : <Edit2 className="w-3 h-3" />}
-                        {isManualDistanceOverride ? 'Kunci (Otomatis Rute)' : 'Ubah Manual'}
+                        {isManualDurationOverride ? <Lock className="w-3 h-3 text-slate-400" /> : <Edit2 className="w-3 h-3" />}
+                        {isManualDurationOverride ? 'Kunci Durasi' : 'Ubah Durasi Manual'}
                       </button>
                     )}
                   </div>
@@ -1409,27 +1484,27 @@ export function DriverJourneyAuditDialog({
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <Label className="text-[9.5px] font-bold text-slate-400 uppercase">Jarak Tempuh PP (KM)</Label>
-                        {!isManualDistanceOverride && (
-                          <span className="text-[8.5px] font-extrabold text-slate-400 flex items-center gap-0.5">
-                            <Lock className="w-2.5 h-2.5" /> Otomatis Rute
-                          </span>
-                        )}
+                        <span className={`text-[8.5px] font-extrabold flex items-center gap-0.5 ${hasMeasuredCurrentRoute ? 'text-emerald-600' : 'text-slate-400'}`}>
+                          {isCalculatingRoute ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Lock className="w-2.5 h-2.5" />}
+                          {!isEditable
+                            ? 'Nilai Disetujui'
+                            : hasMeasuredCurrentRoute
+                              ? 'Google Terukur'
+                              : 'Menunggu Pengukuran'}
+                        </span>
                       </div>
                       <Input
                         type="number"
                         value={auditDistanceKm || ''}
-                        onChange={(e) => setAuditDistanceKm(Math.max(0, parseFloat(e.target.value) || 0))}
-                        disabled={!isManualDistanceOverride || !isEditable || actionLoading}
-                        className={`rounded-xl text-xs font-bold transition-all ${!isManualDistanceOverride
-                            ? 'bg-slate-100/70 border-slate-200 text-slate-600 cursor-not-allowed'
-                            : 'border-slate-200 focus:border-indigo-400 text-slate-800 bg-white'
-                          }`}
+                        readOnly
+                        disabled
+                        className="rounded-xl text-xs font-bold bg-slate-100/70 border-slate-200 text-slate-600 cursor-not-allowed"
                       />
                     </div>
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <Label className="text-[9.5px] font-bold text-slate-400 uppercase">Waktu Tempuh PP (JAM)</Label>
-                        {!isManualDistanceOverride && (
+                        {!isManualDurationOverride && (
                           <span className="text-[8.5px] font-extrabold text-slate-400 flex items-center gap-0.5">
                             <Lock className="w-2.5 h-2.5" /> Otomatis Jadwal
                           </span>
@@ -1439,8 +1514,8 @@ export function DriverJourneyAuditDialog({
                         type="number"
                         value={auditDurationHours || ''}
                         onChange={(e) => setAuditDurationHours(Math.max(0, parseFloat(e.target.value) || 0))}
-                        disabled={!isManualDistanceOverride || !isEditable || actionLoading}
-                        className={`rounded-xl text-xs font-bold transition-all ${!isManualDistanceOverride
+                        disabled={!isManualDurationOverride || !isEditable || actionLoading}
+                        className={`rounded-xl text-xs font-bold transition-all ${!isManualDurationOverride
                             ? 'bg-slate-100/70 border-slate-200 text-slate-600 cursor-not-allowed'
                             : 'border-slate-200 focus:border-indigo-400 text-slate-800 bg-white'
                           }`}
@@ -1769,7 +1844,14 @@ export function DriverJourneyAuditDialog({
             {isEditable && (
               <Button
                 onClick={handleApprove}
-                disabled={actionLoading || !auditCalc || auditCalc.actualJourneyDurationHours <= 0}
+                disabled={
+                  actionLoading ||
+                  isCalculatingRoute ||
+                  !hasMeasuredCurrentRoute ||
+                  Boolean(routeCalcError) ||
+                  !auditCalc ||
+                  auditCalc.actualJourneyDurationHours <= 0
+                }
                 className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold hover:shadow-lg shadow-indigo-100"
               >
                 {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}

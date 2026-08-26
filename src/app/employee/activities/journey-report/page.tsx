@@ -21,6 +21,8 @@ import { Label } from '@/components/ui/label';
 import {
   Loader2,
   ArrowLeft,
+  ArrowUp,
+  ArrowDown,
   Clock,
   Compass,
   MapPin,
@@ -62,6 +64,7 @@ import {
   DEFAULT_DRIVER_JOURNEY_LOCATION,
   DEFAULT_DRIVER_JOURNEY_POINT,
   DEFAULT_FUEL_PROCUREMENT_MODE,
+  closeDriverJourneyRoundTrip,
   driverJourneyRoutePoint,
   isFuelProcurementMode,
   normalizeDriverJourneyLocation,
@@ -261,6 +264,7 @@ function JourneyReportContent() {
   const [outboundDurationHours, setOutboundDurationHours] = useState<number | null>(null);
   const [isCalculatingExtraRoute, setIsCalculatingExtraRoute] = useState(false);
   const [extraRouteError, setExtraRouteError] = useState('');
+  const [hasMeasuredRoundTrip, setHasMeasuredRoundTrip] = useState(false);
   const [routeHydrationKey, setRouteHydrationKey] = useState<string | null>(null);
 
   const isInvalidSingleDayTime = useMemo(() => {
@@ -501,26 +505,51 @@ function JourneyReportContent() {
             reportData.extraActivities ??
             [];
           const storedExtraActivities = Array.isArray(storedExtraLocs) ? storedExtraLocs : [];
-          const authorizedExtraLocs = initialMainDestinations.slice(1).map((destination: string, index: number) => {
-            const matching = storedExtraActivities.find(
-              (activity: any) => activity?.type === 'tambah_lokasi' && activity?.destination === destination,
-            );
-            return {
-              ...(matching || {}),
-              type: 'tambah_lokasi',
-              destination,
-              destinationLocation: initialMainDestinationLocations[index + 1] ||
-                normalizeDriverJourneyLocation(matching?.destinationLocation, destination),
-              isMainDestination: true,
-            };
-          });
-          const authorizedExtraDestinationSet = new Set(initialMainDestinations.slice(1));
-          const adHocExtraLocs = storedExtraActivities.filter(
-            (activity: any) =>
-              activity?.type !== 'tambah_lokasi' ||
-              (!activity?.isMainDestination && !authorizedExtraDestinationSet.has(activity?.destination)),
+
+          // Every destination is an equal stop on one ordered list, so the route
+          // can follow the order actually driven — a place the sopir stopped at
+          // mid-journey may sit before an authorized one. Older reports kept the
+          // first destination outside `extraActivities`; it is folded back in
+          // here so the whole route lives in a single array.
+          const storedStops = storedExtraActivities.filter(
+            (activity) => activity?.type === 'tambah_lokasi' && activity?.destination,
           );
-          const initialExtraLocs = [...authorizedExtraLocs, ...adHocExtraLocs];
+          const storedStopAddresses = new Set<string>(
+            storedStops.map((activity) => String(activity.destination).trim()),
+          );
+          const authorizedLocationFor = (address: string) => {
+            const index = initialMainDestinations.indexOf(address);
+            return index >= 0 ? initialMainDestinationLocations[index] : null;
+          };
+          const toStop = (address: string, existing?: Record<string, unknown>) => {
+            const { isMainDestination: _legacyFlag, ...rest } = existing || {};
+            return {
+              ...rest,
+              type: 'tambah_lokasi',
+              destination: address,
+              // The approver's coordinate wins where a stop is part of the plan
+              // (they may have refined it); the sopir's own pick covers the rest.
+              destinationLocation:
+                normalizeDriverJourneyLocation(authorizedLocationFor(address), address) ||
+                normalizeDriverJourneyLocation(existing?.destinationLocation, address) ||
+                null,
+            };
+          };
+          const [firstAuthorized, ...laterAuthorized] = initialMainDestinations;
+          const initialExtraLocs = [
+            // A legacy report's first destination leads the route.
+            ...(firstAuthorized && !storedStopAddresses.has(firstAuthorized)
+              ? [toStop(firstAuthorized)]
+              : []),
+            ...storedStops.map((activity) => (
+              toStop(String(activity.destination).trim(), activity)
+            )),
+            // Destinations authorized after the sopir last saved land at the end,
+            // where they can be moved into place.
+            ...laterAuthorized
+              .filter((address: string) => !storedStopAddresses.has(address))
+              .map((address: string) => toStop(address)),
+          ];
           setExtraActivities(initialExtraLocs);
 
           const rawFuelVal = localDraft?.formFuelFee !== undefined
@@ -606,6 +635,7 @@ function JourneyReportContent() {
           setCalculatedDurationHours(initialDur);
           setOutboundDistanceKm(localDraft?.outboundDistanceKm ?? null);
           setOutboundDurationHours(localDraft?.outboundDurationHours ?? null);
+          setHasMeasuredRoundTrip(false);
           setRouteHydrationKey(targetId);
 
           setTimeout(() => {
@@ -643,45 +673,34 @@ function JourneyReportContent() {
 
   const recalculateRouteChain = useCallback(async (
     list: any[],
-    overrideEndPoint?: string,
-    forceRouteCalculation = false,
     overrideStartPoint?: string,
-    overrideEndPointLocation?: DriverJourneyLocation | null,
     overrideStartPointLocation?: DriverJourneyLocation | null,
   ) => {
     if (!activeReportingJourney) return;
     const requestId = ++routeCalculationRequestRef.current;
     const currentStartPoint = overrideStartPoint || activeReportingJourney.startPoint;
-    const currentEndPoint = overrideEndPoint || activeReportingJourney.endPoint;
     const currentStartPointLocation = overrideStartPoint
       ? overrideStartPointLocation
       : activeReportingJourney.startPointLocation;
-    const currentEndPointLocation = overrideEndPoint
-      ? overrideEndPointLocation
-      : activeReportingJourney.mainDestinationLocations?.[0];
     const extraLocs = list.filter(a => a.type === 'tambah_lokasi' && a.destination);
-    if (extraLocs.length === 0 && !overrideEndPoint && !overrideStartPoint && !forceRouteCalculation) {
-      setCalculatedDistanceKm((activeReportingJourney.distanceKm || 0) * 2);
-      setCalculatedDurationHours((activeReportingJourney.durationHours || 0) * 2);
-      setOutboundDistanceKm(null);
-      setOutboundDurationHours(null);
-      setIsCalculatingExtraRoute(false);
-      return;
-    }
 
     setIsCalculatingExtraRoute(true);
     setExtraRouteError('');
+    setHasMeasuredRoundTrip(false);
     try {
       if (!user) throw new Error('Sesi tidak ditemukan.');
       const idToken = await user.getIdToken();
-      const points = [
+      // The stop list is the route, in order, and closes back at the departure
+      // point. Nothing is pinned to a fixed position any more.
+      const points = closeDriverJourneyRoundTrip([
         driverJourneyRoutePoint(currentStartPoint, currentStartPointLocation),
-        driverJourneyRoutePoint(currentEndPoint, currentEndPointLocation),
         ...extraLocs.map((location) => (
           driverJourneyRoutePoint(location.destination, location.destinationLocation)
         )),
-        driverJourneyRoutePoint(currentStartPoint, currentStartPointLocation),
-      ];
+      ]);
+      if (points.length < 3) {
+        throw new Error('Titik awal dan minimal satu tujuan wajib diisi sebelum rute diukur.');
+      }
 
       const response = await fetch('/api/calculate-route', {
         method: 'POST',
@@ -694,6 +713,9 @@ function JourneyReportContent() {
       const resData = await response.json();
       if (!response.ok || !resData.success) {
         throw new Error(resData.error || 'Gagal menghitung rute.');
+      }
+      if (!(resData.distanceKm > 0) || !Number.isFinite(resData.durationHours)) {
+        throw new Error('Google Maps tidak mengembalikan jarak pulang-pergi yang valid.');
       }
       if (requestId !== routeCalculationRequestRef.current) return;
 
@@ -712,7 +734,11 @@ function JourneyReportContent() {
       updated.forEach((act, idx) => {
         if (act.type === 'tambah_lokasi') {
           if (act.destination) {
-            const leg = resData.legs[locCounter + 1];
+            // `points` opens with the departure point and every stop follows in
+            // order, so the leg arriving at stop `n` is `legs[n]`. It used to be
+            // `legs[n + 1]` only because the first destination was pinned ahead
+            // of the list rather than being part of it.
+            const leg = resData.legs[locCounter];
             if (leg) {
               const dist = parseLegDistance(leg.distanceText);
               const dur = leg.durationHours || 0;
@@ -740,10 +766,12 @@ function JourneyReportContent() {
         }
       });
       setExtraActivities(updated);
+      setHasMeasuredRoundTrip(true);
 
     } catch (err: any) {
       if (requestId !== routeCalculationRequestRef.current) return;
       console.error(err);
+      setHasMeasuredRoundTrip(false);
       setExtraRouteError(err.message || 'Terjadi kesalahan saat menghitung rute.');
     } finally {
       if (requestId === routeCalculationRequestRef.current) {
@@ -764,33 +792,27 @@ function JourneyReportContent() {
     if (routeHydratedJourneyRef.current === routeHydrationKey) return;
     routeHydratedJourneyRef.current = routeHydrationKey;
 
-    void recalculateRouteChain(extraActivities, undefined, true);
+    void recalculateRouteChain(extraActivities);
   }, [routeHydrationKey, activeReportingJourney?.id, extraActivities, recalculateRouteChain]);
 
-  const currentMainDestinations = useMemo(() => {
-    if (!activeReportingJourney) return [];
-    const authorizedExtraDestinations = extraActivities
-      .filter((activity: any) => activity?.type === 'tambah_lokasi' && activity?.isMainDestination && activity?.destination)
-      .map((activity: any) => activity.destination);
-    return normalizeDriverJourneyDestinations(
-      [activeReportingJourney.endPoint, ...authorizedExtraDestinations],
-      activeReportingJourney.endPoint,
-    );
-  }, [activeReportingJourney?.endPoint, extraActivities]);
+  // Every stop, in the order the sopir drove it. There is no privileged first
+  // destination any more, so both of these are just the stop list projected
+  // onto the shapes the rest of the app already stores.
+  const currentStops = useMemo(() => (
+    extraActivities.filter((activity) => (
+      activity?.type === 'tambah_lokasi' && activity?.destination
+    ))
+  ), [extraActivities]);
 
-  const currentMainDestinationLocations = useMemo(() => {
-    if (!activeReportingJourney) return [];
-    const primaryLocation = normalizeDriverJourneyLocation(
-      activeReportingJourney.mainDestinationLocations?.[0],
-      activeReportingJourney.endPoint,
-    );
-    const additionalLocations = extraActivities
-      .filter((activity: any) => activity?.type === 'tambah_lokasi' && activity?.isMainDestination && activity?.destination)
-      .map((activity: any) => (
-        normalizeDriverJourneyLocation(activity.destinationLocation, activity.destination)
-      ));
-    return [primaryLocation, ...additionalLocations];
-  }, [activeReportingJourney, extraActivities]);
+  const currentMainDestinations = useMemo<string[]>(() => (
+    currentStops.map((activity) => String(activity.destination).trim()).filter(Boolean)
+  ), [currentStops]);
+
+  const currentMainDestinationLocations = useMemo(() => (
+    currentStops.map((activity) => (
+      normalizeDriverJourneyLocation(activity.destinationLocation, activity.destination)
+    ))
+  ), [currentStops]);
 
   const getOriginForLocationIndex = (index: number): string => {
     if (!activeReportingJourney) return '';
@@ -799,50 +821,13 @@ function JourneyReportContent() {
         return extraActivities[i].destination;
       }
     }
-    return activeReportingJourney.endPoint;
-  };
-
-  const getOutboundLegDetails = () => {
-    if (!activeReportingJourney) return { distanceKm: 0, durationHours: 0 };
-    if (outboundDistanceKm !== null && outboundDistanceKm > 0) {
-      return {
-        distanceKm: outboundDistanceKm,
-        durationHours: outboundDurationHours || 0,
-      };
-    }
-
-    let extraSum = 0;
-    let extraDurSum = 0;
-    extraActivities.forEach(act => {
-      if (act.type === 'tambah_lokasi' && act.distanceKm) {
-        extraSum += act.distanceKm;
-        extraDurSum += act.durationHours || 0;
-      }
-    });
-
-    const baseDist = activeReportingJourney.distanceKm || 0;
-    const baseDur = activeReportingJourney.durationHours || 0;
-    const totalDist = activeReportingJourney.totalDistanceKm || (baseDist * 2);
-
-    if (baseDist > 0 && (Math.abs(baseDist - totalDist) < 1 || baseDist >= calculatedDistanceKm - 0.5)) {
-      const halfDist = Math.max(0, (calculatedDistanceKm - extraSum) / 2);
-      const halfDur = Math.max(0, (calculatedDurationHours - extraDurSum) / 2);
-      return {
-        distanceKm: halfDist,
-        durationHours: halfDur,
-      };
-    }
-
-    return {
-      distanceKm: baseDist,
-      durationHours: baseDur,
-    };
+    // The first stop is reached from the departure point, not from another stop.
+    return activeReportingJourney.startPoint;
   };
 
   const getReturnLegDetails = () => {
     if (!activeReportingJourney) return { distanceText: '', legCost: 0, distanceKm: 0, durationHours: 0 };
 
-    const outbound = getOutboundLegDetails();
     let extraSum = 0;
     let extraDurSum = 0;
     extraActivities.forEach(act => {
@@ -852,8 +837,11 @@ function JourneyReportContent() {
       }
     });
 
-    const returnDist = Math.max(0, calculatedDistanceKm - outbound.distanceKm - extraSum);
-    const returnDur = Math.max(0, calculatedDurationHours - outbound.durationHours - extraDurSum);
+    // Every stop now carries the leg that arrives at it, the first destination
+    // included, so the legs already sum to the whole route minus the closing
+    // leg home. Subtracting a separate outbound leg here would count it twice.
+    const returnDist = Math.max(0, calculatedDistanceKm - extraSum);
+    const returnDur = Math.max(0, calculatedDurationHours - extraDurSum);
     const returnCost = returnDist * (activeReportingJourney.vehicleRate || 0);
 
     return {
@@ -1116,7 +1104,11 @@ function JourneyReportContent() {
 
   const handleAddLocation = () => {
     const newIdx = extraActivities.length;
+    routeCalculationRequestRef.current += 1;
     resetMapSearch();
+    setIsCalculatingExtraRoute(false);
+    setHasMeasuredRoundTrip(false);
+    setExtraRouteError('Pilih lokasi baru agar rute pulang-pergi dapat diukur ulang.');
     setExtraActivities([...extraActivities, {
       type: 'tambah_lokasi',
       destination: '',
@@ -1130,11 +1122,18 @@ function JourneyReportContent() {
   };
 
   const handleRemoveExtraActivity = async (index: number) => {
-    if (extraActivities[index]?.isMainDestination) {
-      setMessage({ type: 'error', text: 'Tujuan utama terotorisasi tidak dapat dihapus; gunakan Ubah untuk mengganti lokasinya.' });
-      return;
-    }
     const updated = extraActivities.filter((_, idx) => idx !== index);
+    setExtraActivities(updated);
+    await recalculateRouteChain(updated);
+  };
+
+  // Reordering is how the sopir records the order actually driven, so a stop
+  // added mid-journey can be moved ahead of one that was planned.
+  const handleMoveExtraActivity = async (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= extraActivities.length) return;
+    const updated = [...extraActivities];
+    [updated[index], updated[target]] = [updated[target], updated[index]];
     setExtraActivities(updated);
     await recalculateRouteChain(updated);
   };
@@ -1153,37 +1152,9 @@ function JourneyReportContent() {
       setMapTargetIndex(null);
       await recalculateRouteChain(
         extraActivities,
-        undefined,
-        true,
         newStartPoint,
-        undefined,
         mapLocation,
       );
-      return;
-    }
-
-    if (mapTargetIndex === -1) {
-      const newEndPoint = mapAddress.trim();
-      if (!newEndPoint || !mapLocation) return;
-      setActiveReportingJourney((prev: any) => ({
-        ...prev,
-        endPoint: newEndPoint,
-        mainDestinations: [
-          newEndPoint,
-          ...normalizeDriverJourneyDestinations(prev?.mainDestinations, prev?.endPoint).slice(1),
-        ],
-        mainDestinationLocations: [
-          mapLocation,
-          ...normalizeDriverJourneyLocations(
-            prev?.mainDestinationLocations,
-            normalizeDriverJourneyDestinations(prev?.mainDestinations, prev?.endPoint),
-          ).slice(1),
-        ],
-      }));
-      resetMapSearch();
-      setShowMapSelector(false);
-      setMapTargetIndex(null);
-      await recalculateRouteChain(extraActivities, newEndPoint, false, undefined, mapLocation);
       return;
     }
 
@@ -1196,28 +1167,6 @@ function JourneyReportContent() {
       destinationLocation: mapLocation,
     };
     setExtraActivities(updated);
-    if (updated[mapTargetIndex].isMainDestination) {
-      setActiveReportingJourney((prev: any) => ({
-        ...prev,
-        mainDestinations: [
-          prev?.endPoint,
-          ...updated
-            .filter((activity: any) => activity?.type === 'tambah_lokasi' && activity?.isMainDestination && activity?.destination)
-            .map((activity: any) => activity.destination),
-        ],
-        mainDestinationLocations: [
-          normalizeDriverJourneyLocation(
-            prev?.mainDestinationLocations?.[0],
-            prev?.endPoint,
-          ),
-          ...updated
-            .filter((activity: any) => activity?.type === 'tambah_lokasi' && activity?.isMainDestination && activity?.destination)
-            .map((activity: any) => (
-              normalizeDriverJourneyLocation(activity.destinationLocation, activity.destination)
-            )),
-        ],
-      }));
-    }
     resetMapSearch();
     setShowMapSelector(false);
     setMapTargetIndex(null);
@@ -1357,6 +1306,13 @@ function JourneyReportContent() {
   const handleCompleteJourneySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeReportingJourney || isSubmittingRef.current) return;
+    if (isCalculatingExtraRoute || !hasMeasuredRoundTrip || extraRouteError) {
+      setMessage({
+        type: 'error',
+        text: 'Jarak pulang-pergi aktual harus berhasil diukur Google Maps sebelum laporan dikirim.',
+      });
+      return;
+    }
     if (fuelModeSelectionRequired) {
       setMessage({ type: 'error', text: 'Pilih mode pengadaan BBM sebelum mengirim laporan.' });
       return;
@@ -1547,21 +1503,17 @@ function JourneyReportContent() {
       });
       const finalUpahBersih = Math.max(0, baseDriverWage - settlement.remainingUnspentCash);
 
-      const extraLocs = extraActivities.filter(a => a.type === 'tambah_lokasi' && a.destination);
-      const extraLocsText = extraLocs.map(l => l.destination.split(',')[0]).join(' → ');
-      const adHocLocs = extraLocs.filter(
-        (location: any) =>
-          !location.isMainDestination && !currentMainDestinations.includes(location.destination),
-      );
+      // The stop list is the route: one ordered chain from the departure point
+      // through every destination, no stop grouped ahead of another.
       const submittedRoutePoints = [
         activeReportingJourney.startPoint,
         ...currentMainDestinations,
-        ...adHocLocs.map((location: any) => location.destination),
       ];
 
       const startShort = (activeReportingJourney.startPoint || '').split(',')[0].trim();
-      const endShort = (activeReportingJourney.endPoint || '').split(',')[0].trim();
-      const routeText = ` (${startShort} → ${endShort}${extraLocsText ? ' → ' + extraLocsText : ''})`;
+      const routeText = ` (${[startShort, ...currentMainDestinations.map((destination: string) => (
+        destination.split(',')[0].trim()
+      ))].join(' → ')})`;
       let finalActivityName = ((activeReportingJourney.activityName || 'Perjalanan Sopir') + routeText).trim();
       if (finalActivityName.length > 180) {
         finalActivityName = finalActivityName.slice(0, 177) + '...';
@@ -1890,11 +1842,6 @@ function JourneyReportContent() {
 
           {/* Line Separator 1: Unified Route Timeline Section */}
           {(() => {
-            const outbound = getOutboundLegDetails();
-            const d0 = outbound.distanceKm;
-            const dur0 = outbound.durationHours;
-            const wage0 = (d0 * 300) + (dur0 * 5000);
-
             return (
               <div className="border-t border-slate-200/70 pt-5 space-y-3">
                 <div className="flex items-center justify-between">
@@ -1924,9 +1871,6 @@ function JourneyReportContent() {
                       <div className="font-extrabold text-black truncate" title={activeReportingJourney.startPoint}>
                         🏫 {activeReportingJourney.startPoint.split(',')[0]}
                       </div>
-                      <div className="text-[9px] text-slate-800 font-bold">
-                        Jarak Leg: <span className="text-emerald-700 font-extrabold">{d0.toFixed(1)} km</span> (Upah Bersih: <span className="text-emerald-600 font-extrabold">{fmtRp(Math.ceil(wage0))}</span>)
-                      </div>
                     </div>
                     {canEditMainDestination && (
                       <Button
@@ -1952,51 +1896,28 @@ function JourneyReportContent() {
                     )}
                   </div>
 
-                  {/* Node 1: Main Destination */}
-                  <div className="relative flex items-center justify-between gap-3 text-xs">
-                    <div className="absolute -left-[20px] top-1 w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
-                    <div className="space-y-0.5 min-w-0 flex-1">
-                      <span className="text-[9px] text-blue-700 font-black block">Tujuan Utama</span>
-                      <div className="font-extrabold text-black truncate" title={activeReportingJourney.endPoint}>
-                        🎯 {activeReportingJourney.endPoint}
-                      </div>
-                    </div>
-                    {canEditMainDestination && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          resetMapSearch();
-                          setMapTargetIndex(-1);
-                          setMapSearchText(activeReportingJourney.endPoint || '');
-                          setMapAddress(activeReportingJourney.endPoint || '');
-                          setMapLocation(
-                            normalizeDriverJourneyLocation(
-                              activeReportingJourney.mainDestinationLocations?.[0],
-                              activeReportingJourney.endPoint,
-                            ),
-                          );
-                          setShowMapSelector(true);
-                        }}
-                        className="text-[10px] font-bold text-blue-700 hover:text-blue-800 bg-white border border-slate-200 px-2.5 h-7 rounded-lg cursor-pointer shrink-0"
-                      >
-                        Ubah
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Extra Location Nodes */}
+                  {/* Destination Nodes — every stop is equal and reorderable, so
+                      the list can record the order actually driven. */}
                   {extraActivities.map((act, index) => {
                     if (act.type !== 'tambah_lokasi') return null;
+                    const stopNumber = extraActivities
+                      .slice(0, index + 1)
+                      .filter((entry) => entry?.type === 'tambah_lokasi').length;
+                    const isFirstStop = !extraActivities
+                      .slice(0, index)
+                      .some((entry) => entry?.type === 'tambah_lokasi');
+                    const isLastStop = !extraActivities
+                      .slice(index + 1)
+                      .some((entry) => entry?.type === 'tambah_lokasi');
                     return (
                       <div key={index} className="relative flex items-center justify-between gap-3 text-xs pl-0.5">
-                        <div className="absolute -left-[20px] top-[5px] w-3 h-3 rounded-full bg-teal-500 border-2 border-white shadow-sm" />
+                        <div className="absolute -left-[20px] top-[5px] w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
 
                         <div className="flex-1 min-w-0 space-y-1">
                           {act.destination ? (
                             <div className="space-y-0.5">
-                              <span className={`text-[9px] font-black block ${act.isMainDestination ? 'text-blue-700' : 'text-teal-700'}`}>
-                                {act.isMainDestination ? 'Tujuan Utama' : 'Tujuan Tambahan'}
+                              <span className="text-[9px] font-black block text-blue-700">
+                                Tujuan {stopNumber}
                               </span>
                               <div className="text-xs font-black text-black truncate" title={act.destination}>
                                 📍 {act.destination.split(',')[0]}
@@ -2018,6 +1939,26 @@ function JourneyReportContent() {
                           <Button
                             type="button"
                             variant="ghost"
+                            disabled={isFirstStop || isCalculatingExtraRoute}
+                            onClick={() => handleMoveExtraActivity(index, -1)}
+                            title="Naikkan urutan"
+                            className="h-7 w-7 p-0 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ArrowUp className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            disabled={isLastStop || isCalculatingExtraRoute}
+                            onClick={() => handleMoveExtraActivity(index, 1)}
+                            title="Turunkan urutan"
+                            className="h-7 w-7 p-0 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ArrowDown className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
                             onClick={() => {
                               resetMapSearch();
                               setMapTargetIndex(index);
@@ -2035,16 +1976,14 @@ function JourneyReportContent() {
                           >
                             {act.destination ? 'Ubah' : 'Pilih'}
                           </Button>
-                          {!act.isMainDestination && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              onClick={() => handleRemoveExtraActivity(index)}
-                              className="h-7 w-7 p-0 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => handleRemoveExtraActivity(index)}
+                            className="h-7 w-7 p-0 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       </div>
                     );
@@ -2328,7 +2267,17 @@ function JourneyReportContent() {
             {extraRouteError && (
               <div className="p-2 text-[10px] bg-rose-50 border border-rose-200 text-rose-700 rounded-lg font-semibold flex items-center gap-2 mt-2">
                 <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                <span>{extraRouteError}</span>
+                <span className="flex-1">{extraRouteError}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void recalculateRouteChain(extraActivities)}
+                  disabled={isCalculatingExtraRoute}
+                  className="h-7 shrink-0 rounded-lg border-rose-200 bg-white px-2 text-[9px] font-black text-rose-700"
+                >
+                  Coba Lagi
+                </Button>
               </div>
             )}
 
@@ -2890,7 +2839,12 @@ function JourneyReportContent() {
 
               <Button
                 type="submit"
-                disabled={submitting}
+                disabled={
+                  submitting ||
+                  isCalculatingExtraRoute ||
+                  !hasMeasuredRoundTrip ||
+                  Boolean(extraRouteError)
+                }
                 className="flex-1 sm:flex-initial rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm h-10 px-5 cursor-pointer shadow-md shadow-blue-100 border-none"
               >
                 {submitting ? (

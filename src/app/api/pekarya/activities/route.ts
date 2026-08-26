@@ -1159,6 +1159,7 @@ export async function POST(request: NextRequest) {
           submittedVehicleType,
           submittedTripType,
           newTotalDistanceKm: submittedDistanceKm,
+          measuredDistanceKm: submittedDistanceKm,
           newTotalDurationHours: submittedDurationHours,
           ...(submittedStartPoint ? { startPoint: submittedStartPoint } : {}),
           ...(submittedStartPointLocation !== undefined
