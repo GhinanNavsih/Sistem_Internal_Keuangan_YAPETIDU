@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { collection, getDocs } from 'firebase/firestore';
@@ -14,6 +14,8 @@ import {
   sumSlipFields,
 } from '@/lib/payroll/dashboardSlipData';
 import { isPayableVakasiTambahan } from '@/lib/payroll/vakasiTambahan';
+import { authenticatedJson } from '@/lib/payroll/client';
+import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -230,6 +232,45 @@ const EMPTY_PERIOD_DATA: DashboardPeriodData = {
   vakasiTambahanListMap: {},
   vakasiEvents: [],
 };
+
+/**
+ * Every underscore-format period ("YYYY_MM") this dashboard's cumulative
+ * trend covers: the fixed window since payroll went live (2026-06) through
+ * the current month, plus any period a slip or the current selection reaches
+ * outside that window. `periodAggregates` and the Pekarya preview prefetch
+ * both call this so the two can never cover a different set of periods.
+ */
+function computePayrollPeriodRange(
+  slips: readonly { period?: string; id?: string }[],
+  selectedPeriod: string,
+): string[] {
+  const startYear = 2026;
+  const startMonth = 6;
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const endYear = Math.max(startYear, currentYear);
+  const endMonth = currentYear === startYear
+    ? Math.max(startMonth, currentMonth)
+    : currentMonth;
+
+  const periods = new Set<string>();
+  for (let year = startYear; year <= endYear; year++) {
+    const firstMonth = year === startYear ? startMonth : 1;
+    const lastMonth = year === endYear ? endMonth : 12;
+    for (let month = firstMonth; month <= lastMonth; month++) {
+      periods.add(`${year}_${String(month).padStart(2, '0')}`);
+    }
+  }
+
+  slips.forEach((slip) => {
+    const period = slip.period || slip.id?.substring(0, 7);
+    if (period && period >= '2026_06') periods.add(period);
+  });
+  if (selectedPeriod && selectedPeriod >= '2026_06') periods.add(selectedPeriod);
+
+  return Array.from(periods).sort();
+}
 
 const createEmptyPeriodAggregate = (period: string): PeriodAggregate => ({
   period,
@@ -708,6 +749,68 @@ export default function TreasuryDashboard() {
     };
   }, [profile]);
 
+  // The shared Pekarya earnings preview (matrix-sourced Gaji Pokok, approved
+  // activity/event SPJ, published-or-estimated attendance) — the same
+  // calculation the payroll page, Tinjau Slip Gaji, and /employee/payslip
+  // render. Fetched per period so this page's cumulative trend cannot show a
+  // different Pekarya total than the payroll page shows for that period.
+  const [pekaryaPreviewsByPeriod, setPekaryaPreviewsByPeriod] = useState<
+    Record<string, Record<string, PekaryaSlipPreview>>
+  >({});
+  const [pekaryaPreviewsLoading, setPekaryaPreviewsLoading] = useState(true);
+  const fetchedPekaryaPeriodsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!profile || profile.role !== 'super_admin') return;
+
+    const periods = computePayrollPeriodRange(slips, selectedPeriod);
+    const periodsToFetch = periods.filter(
+      (period) => !fetchedPekaryaPeriodsRef.current.has(period),
+    );
+    if (periodsToFetch.length === 0) return;
+
+    let cancelled = false;
+    periodsToFetch.forEach((period) => fetchedPekaryaPeriodsRef.current.add(period));
+
+    const fetchPreviews = async () => {
+      try {
+        const results = await Promise.all(
+          periodsToFetch.map(async (period) => {
+            const periodToken = period.replace('_', '-');
+            try {
+              const result = await authenticatedJson<{
+                previews: Record<string, PekaryaSlipPreview>;
+              }>(`/api/payroll/slip-preview?period=${periodToken}`);
+              return [period, result.previews || {}] as const;
+            } catch (err) {
+              // A period whose preview cannot be loaded keeps falling back to
+              // the profile-driven builder for that period only — it must not
+              // block every other period's cumulative figures.
+              console.error(`Gagal memuat pratinjau slip Pekarya untuk ${period}:`, err);
+              fetchedPekaryaPeriodsRef.current.delete(period);
+              return [period, {}] as const;
+            }
+          }),
+        );
+        if (cancelled) return;
+        setPekaryaPreviewsByPeriod((prev) => {
+          const next = { ...prev };
+          results.forEach(([period, previews]) => {
+            next[period] = previews;
+          });
+          return next;
+        });
+      } finally {
+        if (!cancelled) setPekaryaPreviewsLoading(false);
+      }
+    };
+
+    fetchPreviews();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, slips, selectedPeriod]);
+
   const selectedPeriodData = periodDataByPeriod[selectedPeriod] || EMPTY_PERIOD_DATA;
   const selectedPeriodVakasiEvents = selectedPeriodData.vakasiEvents;
 
@@ -732,34 +835,9 @@ export default function TreasuryDashboard() {
   // Missing slips are rebuilt for every period, not only for selectedPeriod.
   const periodAggregates = useMemo(() => {
     const aggregates: Record<string, PeriodAggregate> = {};
-    const startYear = 2026;
-    const startMonth = 6;
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
-    const endYear = Math.max(startYear, currentYear);
-    const endMonth = currentYear === startYear
-      ? Math.max(startMonth, currentMonth)
-      : currentMonth;
-
-    for (let year = startYear; year <= endYear; year++) {
-      const firstMonth = year === startYear ? startMonth : 1;
-      const lastMonth = year === endYear ? endMonth : 12;
-      for (let month = firstMonth; month <= lastMonth; month++) {
-        const period = `${year}_${String(month).padStart(2, '0')}`;
-        aggregates[period] = createEmptyPeriodAggregate(period);
-      }
-    }
-
-    slips.forEach(slip => {
-      const period = slip.period || slip.id?.substring(0, 7);
-      if (period && period >= '2026_06' && !aggregates[period]) {
-        aggregates[period] = createEmptyPeriodAggregate(period);
-      }
+    computePayrollPeriodRange(slips, selectedPeriod).forEach((period) => {
+      aggregates[period] = createEmptyPeriodAggregate(period);
     });
-    if (selectedPeriod && selectedPeriod >= '2026_06' && !aggregates[selectedPeriod]) {
-      aggregates[selectedPeriod] = createEmptyPeriodAggregate(selectedPeriod);
-    }
 
     const slipsByPeriod: Record<string, Record<string, any>> = {};
     slips.forEach(slip => {
@@ -790,6 +868,7 @@ export default function TreasuryDashboard() {
         koperasiDeductions,
         koperasiSavings,
         loyalisPresenceData: periodData.loyalisPresenceData,
+        pekaryaPreviews: pekaryaPreviewsByPeriod[aggregate.period],
       };
       const data = buildDashboardSlipData(employee, collar, slip, inputs);
       const gross = sumSlipFields(data.earnings);
@@ -870,6 +949,7 @@ export default function TreasuryDashboard() {
     koperasiDeductions,
     koperasiSavings,
     periodDataByPeriod,
+    pekaryaPreviewsByPeriod,
   ]);
 
   // Sorted Periods list
@@ -1007,6 +1087,7 @@ export default function TreasuryDashboard() {
         koperasiDeductions,
         koperasiSavings,
         loyalisPresenceData: periodData.loyalisPresenceData,
+        pekaryaPreviews: pekaryaPreviewsByPeriod[selectedPeriod],
       },
     );
 
@@ -1082,6 +1163,7 @@ export default function TreasuryDashboard() {
     koperasiDeductions,
     koperasiSavings,
     periodDataByPeriod,
+    pekaryaPreviewsByPeriod,
   ]);
 
   // Selected Group Composition (Drilldown details when a share group is selected)
@@ -1133,6 +1215,7 @@ export default function TreasuryDashboard() {
           koperasiDeductions,
           koperasiSavings,
           loyalisPresenceData: periodData.loyalisPresenceData,
+          pekaryaPreviews: pekaryaPreviewsByPeriod[selectedPeriod],
         },
       );
       totalGross += sumSlipFields(data.earnings);
@@ -1167,6 +1250,7 @@ export default function TreasuryDashboard() {
     koperasiDeductions,
     koperasiSavings,
     periodDataByPeriod,
+    pekaryaPreviewsByPeriod,
   ]);
 
   // Selected Period Deduction Breakdown (Sorted)
@@ -1470,7 +1554,7 @@ export default function TreasuryDashboard() {
           </div>
         )}
 
-        {contextLoading || dataLoading ? (
+        {contextLoading || dataLoading || pekaryaPreviewsLoading ? (
           <div className="h-[400px] flex flex-col items-center justify-center bg-white/40 border border-slate-200/50 rounded-3xl">
             <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
             <p className="text-slate-500 text-sm mt-3 font-medium">Sedang memproses data keuangan...</p>
