@@ -22,6 +22,8 @@ import {
   isDriverVehicleName,
   isFuelProcurementMode,
   getMealAllowanceForDuration,
+  getGrossMealAllowanceForDuration,
+  resolveMealAccountingMode,
   normalizeDriverJourneyLocation,
 } from '@/lib/payroll/driverJourney';
 import {
@@ -862,8 +864,20 @@ export async function POST(request: NextRequest) {
           journeyBefore.customDurationPP ||
             (journeyBefore.durationHours ? journeyBefore.durationHours * 2 : 0),
         );
-        const preAuthorizedMeal =
-          vehicleType === 'Ndalem'
+        // Taken from the journey the Kepala Satker authorized, never from the
+        // client, so a sopir cannot choose how their own meal is accounted for.
+        // A report being submitted has not been paid yet, so an unstamped
+        // (pre-policy) journey settles under current policy.
+        const mealAccountingMode = resolveMealAccountingMode(
+          journeyBefore.mealAccountingMode,
+          { alreadyApproved: false },
+        );
+        const mealPaidInWage = mealAccountingMode === 'upah_bersih_gross';
+        // Under the new mode meal was never advanced as cash, so there is no
+        // meal allowance to settle against and nothing to reimburse.
+        const preAuthorizedMeal = mealPaidInWage
+          ? 0
+          : vehicleType === 'Ndalem'
             ? 0
             : typeof journeyBefore.mealAllowance === 'number' &&
                 journeyBefore.mealAllowance > 0
@@ -914,8 +928,9 @@ export async function POST(request: NextRequest) {
           : Number(driverData.fuelFee || 0);
         const tollParkingFee = Number(driverData.tollParkingFee || 0);
         const actualMealAllowance = Number(driverData.actualMealAllowance || 0);
-        const extraMealAllowance =
-          vehicleType === 'Ndalem'
+        const extraMealAllowance = mealPaidInWage
+          ? 0
+          : vehicleType === 'Ndalem'
             ? actualMealAllowance
             : Math.max(0, actualMealAllowance - preAuthorizedMeal);
         const fuelReceiptUrl = fuelProcurementMode === 'hold_accumulate'
@@ -940,7 +955,19 @@ export async function POST(request: NextRequest) {
           fuelProcurementMode,
           procuredAccumulatedAmount: vehicleType === 'Ndalem' ? 0 : procuredAccumulatedAmount,
         });
-        const baseDriverWage = Number(driverData.baseDriverWage || 0);
+        // The first pass computed this before `journeyBefore` was read and so
+        // could not know the mode. Recompute from the same server-derived
+        // inputs now that it is known, rather than trusting the earlier value.
+        const grossMealAllowance = getGrossMealAllowanceForDuration(
+          Number(driverData.actualJourneyDurationHours || 0),
+        );
+        const baseDriverWage = calculateDriverNetWage({
+          distanceKm: Number(driverData.distanceKm || 0),
+          travelTimeHours: Number(driverData.routeDurationHours || 0),
+          elapsedDurationHours: Number(driverData.actualJourneyDurationHours || 0),
+          nightCount: Number(driverData.nightCount || 0),
+          mealAccountingMode,
+        });
         const finalUpahBersih = Math.max(
           0,
           baseDriverWage - settlement.remainingUnspentCash,
@@ -980,6 +1007,9 @@ export async function POST(request: NextRequest) {
           reimburseDelta: settlement.reimburseDelta,
           baseDriverWage,
           upahBersih: finalUpahBersih,
+          mealAccountingMode,
+          grossMealAllowance,
+          mealWageComponent: mealPaidInWage ? grossMealAllowance : 0,
           totalOperationalCost,
           vehicleRate: Number(journeyBefore.vehicleRate || 0),
         });

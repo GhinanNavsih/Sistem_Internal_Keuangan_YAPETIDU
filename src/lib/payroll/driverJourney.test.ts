@@ -17,6 +17,10 @@ import {
   calculateNightPremium,
   countDriverJourneyRouteDestinations,
   getMealAllowanceForDuration,
+  getGrossMealAllowanceForDuration,
+  getMealWageComponent,
+  resolveMealAccountingMode,
+  DRIVER_SHORT_TRIP_MEAL_ALLOWANCE,
   closeDriverJourneyRoundTrip,
   driverJourneyRoutePoints,
   driverJourneyRoutePoint,
@@ -224,11 +228,13 @@ test('authorized journey operational costs use the same baseline for every autho
     vehicleRate: 0,
     baseOperationalCost: 0,
     fuelProcurementMode: 'standard_direct',
+    mealAccountingMode: 'legacy_reimbursement',
     effectiveFuelAllowance: 0,
     heldFuelAmount: 0,
     procuredAccumulatedAmount: 0,
     totalFuelAllocation: 0,
     mealAllowance: 0,
+    grossMealAllowance: 20_000,
     tollParkingFee: 15_000,
     totalOperationalCost: 15_000,
   });
@@ -239,14 +245,44 @@ test('authorized journey operational costs use the same baseline for every autho
     vehicleRate: 1_000,
     baseOperationalCost: 20_000,
     fuelProcurementMode: 'standard_direct',
+    mealAccountingMode: 'legacy_reimbursement',
     effectiveFuelAllowance: 20_000,
     heldFuelAmount: 0,
     procuredAccumulatedAmount: 0,
     totalFuelAllocation: 20_000,
     mealAllowance: 20_000,
+    grossMealAllowance: 20_000,
     tollParkingFee: 15_000,
     totalOperationalCost: 55_000,
   });
+});
+
+test('gross meal accounting keeps meal out of the operational budget entirely', () => {
+  const gross = calculateDriverJourneyOperationalCosts(
+    10,
+    6,
+    'Suzuki XL7',
+    15_000,
+    { mealAccountingMode: 'upah_bersih_gross' },
+  );
+
+  // Meal is paid in Upah Bersih now, so it is no longer a cash advance: the
+  // budget is fuel + toll only, while the entitlement stays visible.
+  assert.equal(gross.mealAllowance, 0);
+  assert.equal(gross.grossMealAllowance, 20_000);
+  assert.equal(gross.totalOperationalCost, 35_000);
+  assert.equal(cashOperationalCostFromJourney(gross), 35_000);
+
+  // Ndalem earns the same entitlement rather than being zeroed out.
+  const ndalemGross = calculateDriverJourneyOperationalCosts(
+    10,
+    6,
+    'Ndalem',
+    0,
+    { mealAccountingMode: 'upah_bersih_gross' },
+  );
+  assert.equal(ndalemGross.grossMealAllowance, 20_000);
+  assert.equal(ndalemGross.totalOperationalCost, 0);
 });
 
 test('fuel modes calculate allocation and settlement independently', () => {
@@ -425,6 +461,81 @@ test('meal allowance supports 24-hour cycles and partial-day strata', () => {
   assert.equal(getMealAllowanceForDuration(24), 60_000);
   assert.equal(getMealAllowanceForDuration(30), 80_000);
   assert.equal(getMealAllowanceForDuration(54), 140_000);
+});
+
+test('gross meal entitlement ignores money already handed over, for every vehicle', () => {
+  // Same tiers as the legacy right...
+  assert.equal(getGrossMealAllowanceForDuration(0), 0);
+  assert.equal(getGrossMealAllowanceForDuration(2), 0);
+  assert.equal(getGrossMealAllowanceForDuration(2.01), 20_000);
+  assert.equal(getGrossMealAllowanceForDuration(6), 20_000);
+  assert.equal(getGrossMealAllowanceForDuration(6.01), 40_000);
+  assert.equal(getGrossMealAllowanceForDuration(12), 40_000);
+  assert.equal(getGrossMealAllowanceForDuration(12.01), 60_000);
+  assert.equal(getGrossMealAllowanceForDuration(24), 60_000);
+  assert.equal(getGrossMealAllowanceForDuration(30), 80_000);
+  assert.equal(getGrossMealAllowanceForDuration(54), 140_000);
+
+  // ...but it is gross: money received during the trip is reporting only and
+  // never nets off the entitlement, and no vehicle is excluded.
+  assert.equal(getMealWageComponent(12, 'upah_bersih_gross'), 40_000);
+  assert.equal(getMealWageComponent(12, 'legacy_reimbursement'), 0);
+});
+
+test('meal accounting mode falls back by whether a record was already paid', () => {
+  // An explicit stamp always wins so an approved record keeps its treatment.
+  assert.equal(resolveMealAccountingMode('legacy_reimbursement'), 'legacy_reimbursement');
+  assert.equal(
+    resolveMealAccountingMode('legacy_reimbursement', { alreadyApproved: false }),
+    'legacy_reimbursement',
+  );
+  assert.equal(resolveMealAccountingMode('upah_bersih_gross', { alreadyApproved: true }), 'upah_bersih_gross');
+
+  // Unstamped: already-approved records are historical, pending ones settle
+  // under current policy when they are approved.
+  assert.equal(resolveMealAccountingMode(undefined, { alreadyApproved: true }), 'legacy_reimbursement');
+  assert.equal(resolveMealAccountingMode(undefined, { alreadyApproved: false }), 'upah_bersih_gross');
+  assert.equal(resolveMealAccountingMode(undefined), 'upah_bersih_gross');
+  assert.equal(resolveMealAccountingMode('nonsense', { alreadyApproved: true }), 'legacy_reimbursement');
+});
+
+test('gross meal is added to Upah Bersih without duplicating the short-trip component', () => {
+  const base = { distanceKm: 10, travelTimeHours: 1, nightCount: 0 } as const;
+
+  // A 6-hour trip: tier pays 20.000, short-trip component pays nothing.
+  const legacySixHours = calculateDriverNetWage({ ...base, elapsedDurationHours: 6 });
+  const grossSixHours = calculateDriverNetWage({
+    ...base,
+    elapsedDurationHours: 6,
+    mealAccountingMode: 'upah_bersih_gross',
+  });
+  assert.equal(grossSixHours - legacySixHours, 20_000);
+
+  // A 2-hour trip sits in the tier that pays nothing, which is exactly the gap
+  // the flat Rp 5.000 short-trip component fills — so gross mode adds nothing
+  // on top and the Rp 5.000 is still paid exactly once.
+  const legacyTwoHours = calculateDriverNetWage({ ...base, elapsedDurationHours: 2 });
+  const grossTwoHours = calculateDriverNetWage({
+    ...base,
+    elapsedDurationHours: 2,
+    mealAccountingMode: 'upah_bersih_gross',
+  });
+  assert.equal(grossTwoHours, legacyTwoHours);
+  assert.equal(grossTwoHours - Math.ceil(10 * 300) - Math.ceil(1 * 5_000), DRIVER_SHORT_TRIP_MEAL_ALLOWANCE);
+
+  // A 26-hour trip earns a full day (60.000) plus the Rp 5.000 for its 2-hour
+  // remainder: different hours, so both legitimately apply.
+  const grossOvernight = calculateDriverNetWage({
+    ...base,
+    elapsedDurationHours: 26,
+    nightCount: 1,
+    mealAccountingMode: 'upah_bersih_gross',
+  });
+  const legacyOvernight = calculateDriverNetWage({ ...base, elapsedDurationHours: 26, nightCount: 1 });
+  assert.equal(grossOvernight - legacyOvernight, 60_000);
+
+  // Omitting the mode reproduces the historical figure exactly.
+  assert.equal(calculateDriverNetWage({ ...base, elapsedDurationHours: 6 }), legacySixHours);
 });
 
 test('Ndalem vehicle calculates meal allowance rights and unpaid meal delta from Rupiah money received', () => {

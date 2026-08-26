@@ -6,6 +6,7 @@ import { assertDateOnly } from '@/lib/payroll/domain';
 import {
   calculateDriverJourneyOperationalCosts,
   calculateEstimatedDriverWage,
+  CURRENT_MEAL_ACCOUNTING_MODE,
   DEFAULT_DRIVER_JOURNEY_POINT,
   DEFAULT_DRIVER_VEHICLE_NAME,
   DEFAULT_FUEL_PROCUREMENT_MODE,
@@ -376,7 +377,14 @@ export async function POST(request: NextRequest) {
           throw new HttpError(409, 'Perjalanan yang sudah dimulai atau diproses tidak dapat diubah.');
         }
 
-        const wageEst = calculateEstimatedDriverWage(distanceKm * 2, customDurationPP);
+        // Meal is earned inside Upah Bersih now, so the authorization estimate
+        // must include it — otherwise the figure shown to the Kepala Satker
+        // understates what the sopir will actually be paid.
+        const wageEst = calculateEstimatedDriverWage(
+          distanceKm * 2,
+          customDurationPP,
+          CURRENT_MEAL_ACCOUNTING_MODE,
+        );
         const assignedTo = typeof body?.assignedTo === 'string' && body.assignedTo.trim().length > 0 ? body.assignedTo.trim() : null;
         let assignedToName: string | null = null;
         if (assignedTo) {
@@ -398,6 +406,7 @@ export async function POST(request: NextRequest) {
           customDurationPP,
           vehicleName,
           tollParkingFee,
+          { mealAccountingMode: CURRENT_MEAL_ACCOUNTING_MODE },
         );
         const previousReservation = existing ? reservationFromJourney(existing) : null;
         if (previousReservation?.fuelReservationState === 'committed') {
@@ -459,6 +468,7 @@ export async function POST(request: NextRequest) {
           {
             fuelProcurementMode: requestedFuelMode,
             procuredAccumulatedAmount: reservation.procuredAccumulatedAmount,
+            mealAccountingMode: CURRENT_MEAL_ACCOUNTING_MODE,
           },
         );
         const status = assignedTo ? 'assigned' : 'unassigned';
@@ -480,6 +490,10 @@ export async function POST(request: NextRequest) {
           customDurationPP,
           baseOperationalCost: operationalCosts.baseOperationalCost,
           mealAllowance: operationalCosts.mealAllowance,
+          // Stamped so a journey keeps the treatment it was authorized under
+          // even if policy changes before it is reported and audited.
+          mealAccountingMode: operationalCosts.mealAccountingMode,
+          grossMealAllowance: operationalCosts.grossMealAllowance,
           tollParkingFee,
           preAuthorizedToll: tollParkingFee,
           totalOperationalCost: operationalCosts.totalOperationalCost,
@@ -597,12 +611,17 @@ export async function POST(request: NextRequest) {
         const journeyId = `${hasSchedule ? 'JRN-PIKET' : 'JRN-MANDIRI'}-${activityDate.replaceAll('-', '')}-${randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase()}`;
         const journeyRef = adminDb.collection('DriverJourneys').doc(journeyId);
 
-        const selfWageEst = calculateEstimatedDriverWage(distanceKm * 2, durationHours * 2);
+        const selfWageEst = calculateEstimatedDriverWage(
+          distanceKm * 2,
+          durationHours * 2,
+          CURRENT_MEAL_ACCOUNTING_MODE,
+        );
         const operationalCosts = calculateDriverJourneyOperationalCosts(
           distanceKm,
           durationHours * 2,
           vehicleName,
           tollParkingFee,
+          { mealAccountingMode: CURRENT_MEAL_ACCOUNTING_MODE },
         );
         const now = admin.firestore.FieldValue.serverTimestamp();
         const selfFuelFields = vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
@@ -642,6 +661,10 @@ export async function POST(request: NextRequest) {
           customDurationPP: durationHours * 2,
           baseOperationalCost: operationalCosts.baseOperationalCost,
           mealAllowance: operationalCosts.mealAllowance,
+          // Stamped so a journey keeps the treatment it was authorized under
+          // even if policy changes before it is reported and audited.
+          mealAccountingMode: operationalCosts.mealAccountingMode,
+          grossMealAllowance: operationalCosts.grossMealAllowance,
           tollParkingFee,
           preAuthorizedToll: tollParkingFee,
           totalOperationalCost: operationalCosts.totalOperationalCost,

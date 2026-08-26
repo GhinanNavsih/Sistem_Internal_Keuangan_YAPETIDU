@@ -53,6 +53,9 @@ import {
   driverJourneyRoutePoint,
   isFuelProcurementMode,
   normalizeDriverJourneyLocation,
+  getGrossMealAllowanceForDuration,
+  getMealWageComponent,
+  resolveMealAccountingMode,
   resolveDriverJourneyPointLocations,
   formatDurationHoursAsJamMenit,
   type DriverJourneyLocation,
@@ -180,6 +183,8 @@ export interface DriverAuditReport {
   fuelAllowanceForSettlement?: number;
   fuelTotalAllocation?: number;
   preAuthorizedMeal?: number;
+  /** Stamped by the server; absent on records predating the policy. */
+  mealAccountingMode?: string;
   preAuthorizedToll?: number;
   fuelFee?: number;
   tollParkingFee?: number;
@@ -1014,12 +1019,22 @@ export function DriverJourneyAuditDialog({
     const authDurForMeal = timelineChanged && actualJourneyDurationHours > 0
       ? actualJourneyDurationHours
       : auditAuthorizedDurationPP || auditDurationHours;
+    // Mirrors the server: an already-approved record keeps the treatment it
+    // was paid under, anything still pending settles under current policy.
+    const mealAccountingMode = resolveMealAccountingMode(report.mealAccountingMode, {
+      alreadyApproved: report.status === 'approved',
+    });
+    const mealPaidInWage = mealAccountingMode === 'upah_bersih_gross';
     const savedPreAuthorizedMeal = report.preAuthorizedMeal;
-    const baselineMeal = auditVehicleType === 'Ndalem'
+    // No meal cash was advanced under the new mode, so there is no baseline to
+    // settle against and meal drops out of the operational total entirely.
+    const baselineMeal = mealPaidInWage
       ? 0
-      : (!timelineChanged && savedPreAuthorizedMeal !== undefined && savedPreAuthorizedMeal !== null && savedPreAuthorizedMeal > 0
-        ? savedPreAuthorizedMeal
-        : getMealAllowanceForDuration(authDurForMeal, auditVehicleType));
+      : auditVehicleType === 'Ndalem'
+        ? 0
+        : (!timelineChanged && savedPreAuthorizedMeal !== undefined && savedPreAuthorizedMeal !== null && savedPreAuthorizedMeal > 0
+          ? savedPreAuthorizedMeal
+          : getMealAllowanceForDuration(authDurForMeal, auditVehicleType));
 
     const baselineToll = report.preAuthorizedToll ?? 0;
     // Held fuel is committed to the vehicle ledger after approval; it is not
@@ -1034,18 +1049,23 @@ export function DriverJourneyAuditDialog({
     // Full meal entitlement for the audited duration, before the money
     // already given to the driver is subtracted — shown next to the input
     // so the auditor has the same "Hak Nx Makan" context the sopir saw.
-    const totalMealEntitlement = getMealAllowanceForDuration(
-      actualJourneyDurationHours,
-      auditVehicleType,
-    );
-    const actualMeal = getMealAllowanceForDuration(
-      actualJourneyDurationHours,
-      auditVehicleType,
-      mealMoneyReceived,
-    );
-    const deltaMeal = auditVehicleType === 'Ndalem'
-      ? actualMeal
-      : Math.max(0, actualMeal - baselineMeal);
+    const totalMealEntitlement = mealPaidInWage
+      ? getGrossMealAllowanceForDuration(actualJourneyDurationHours)
+      : getMealAllowanceForDuration(actualJourneyDurationHours, auditVehicleType);
+    // Under the new mode the entitlement is gross: money handed over during
+    // the trip is recorded but never nets it down.
+    const actualMeal = mealPaidInWage
+      ? totalMealEntitlement
+      : getMealAllowanceForDuration(
+          actualJourneyDurationHours,
+          auditVehicleType,
+          mealMoneyReceived,
+        );
+    const deltaMeal = mealPaidInWage
+      ? 0
+      : auditVehicleType === 'Ndalem'
+        ? actualMeal
+        : Math.max(0, actualMeal - baselineMeal);
     const extraOps = 0; // Mileage distance is compensated via componentJarak in upahBersih, not cash reimbursement
 
     const wageDurationHours = timelineChanged && actualJourneyDurationHours > 0
@@ -1055,11 +1075,15 @@ export function DriverJourneyAuditDialog({
     const componentWaktu = Math.ceil(auditRouteDurationHours * 5000);
     const premiumWeekend = 0;
     const nightPremium = calculateNightPremium(auditNightCount);
+    // Derived from `wageDurationHours`, the same span `calculateDriverNetWage`
+    // charges meal from, so the displayed component always matches the wage.
+    const mealWageComponent = getMealWageComponent(wageDurationHours, mealAccountingMode);
     const baseDriverWage = calculateDriverNetWage({
       distanceKm: auditDistanceKm,
       travelTimeHours: auditRouteDurationHours,
       elapsedDurationHours: wageDurationHours,
       nightCount: auditNightCount,
+      mealAccountingMode,
     });
 
     const actualFuel = fuelProcurementMode === 'hold_accumulate' || auditVehicleType === 'Ndalem'
@@ -1103,6 +1127,9 @@ export function DriverJourneyAuditDialog({
       actualFuel,
       actualMeal,
       totalMealEntitlement,
+      mealAccountingMode,
+      mealPaidInWage,
+      mealWageComponent,
       actualJourneyDurationHours,
       actualToll,
       deltaFuel,
@@ -1623,18 +1650,25 @@ export function DriverJourneyAuditDialog({
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[9px] font-bold text-slate-400 uppercase">Uang Makan (Delta)</Label>
+                      <Label className="text-[9px] font-bold text-slate-400 uppercase">
+                        {auditCalc.mealPaidInWage ? 'Uang Makan (di Upah)' : 'Uang Makan (Delta)'}
+                      </Label>
                       <Input
                         type="number"
-                        placeholder="Sesuai Anggaran"
-                        value={auditCalc.deltaMeal || ''}
+                        placeholder={auditCalc.mealPaidInWage ? 'Dibayar di Upah Bersih' : 'Sesuai Anggaran'}
+                        value={(auditCalc.mealPaidInWage ? auditCalc.mealWageComponent : auditCalc.deltaMeal) || ''}
                         readOnly
                         disabled
-                        className={`rounded-xl text-xs font-bold transition-all ${auditCalc.deltaMeal === 0
+                        className={`rounded-xl text-xs font-bold transition-all ${(auditCalc.mealPaidInWage ? auditCalc.mealWageComponent : auditCalc.deltaMeal) === 0
                             ? 'bg-emerald-50/80 border-emerald-300 text-emerald-700 placeholder:text-emerald-600/70 focus:border-emerald-500 font-semibold'
                             : 'border-slate-200 focus:border-indigo-400 text-slate-800'
                           }`}
                       />
+                      {auditCalc.mealPaidInWage && (
+                        <p className="text-[9px] font-semibold text-emerald-700">
+                          Masuk Upah Bersih, bukan reimburse.
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[9px] font-bold text-slate-400 uppercase">Selisih Tol & Parkir (+/-)</Label>
@@ -1740,6 +1774,20 @@ export function DriverJourneyAuditDialog({
                     </div>
                   </div>
 
+                  {auditCalc.mealWageComponent > 0 && (
+                    <div className="flex pt-1">
+                      <div className="flex-1 flex justify-between bg-white p-2.5 rounded-xl border border-emerald-100">
+                        <span>
+                          Uang Makan ({journeyDayCount(auditCalc.actualJourneyDurationHours)} hari)
+                          <span className="block text-[9px] text-slate-400 font-normal">
+                            Hak penuh; tidak dipotong uang yang sudah diterima
+                          </span>
+                        </span>
+                        <span className="font-extrabold text-emerald-700">+{fmtRp(auditCalc.mealWageComponent)}</span>
+                      </div>
+                    </div>
+                  )}
+
                   {(auditCalc.premiumWeekend > 0 || auditCalc.nightPremium > 0) && (
                     <div className="flex gap-3 pt-1">
                       {auditCalc.premiumWeekend > 0 && (
@@ -1818,11 +1866,20 @@ export function DriverJourneyAuditDialog({
                               aktual {auditCalc.actualJourneyDurationHours.toFixed(1).replace(/\.0$/, '')} jam
                               ({journeyDayCount(auditCalc.actualJourneyDurationHours)} hari)
                             </span>
+                            {auditCalc.mealPaidInWage && (
+                              <span className="block text-[9px] text-emerald-700 font-bold">
+                                Dibayar penuh di Upah Bersih; tidak direimburse.
+                              </span>
+                            )}
                           </td>
-                          <td className="py-2.5 px-3.5 text-right font-bold text-slate-600">{fmtRp(auditCalc.baselineMeal)}</td>
+                          <td className="py-2.5 px-3.5 text-right font-bold text-slate-600">
+                            {auditCalc.mealPaidInWage ? '—' : fmtRp(auditCalc.baselineMeal)}
+                          </td>
                           <td className="py-2.5 px-3.5 text-right font-bold text-slate-800">{fmtRp(auditCalc.actualMeal)}</td>
                           <td className="py-2.5 px-3.5 text-right font-extrabold text-blue-600">
-                            {auditCalc.deltaMeal > 0 ? `+${fmtRp(auditCalc.deltaMeal)}` : '—'}
+                            {auditCalc.mealPaidInWage
+                              ? '—'
+                              : auditCalc.deltaMeal > 0 ? `+${fmtRp(auditCalc.deltaMeal)}` : '—'}
                           </td>
                         </tr>
 

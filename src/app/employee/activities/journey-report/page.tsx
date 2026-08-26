@@ -21,11 +21,14 @@ import { Label } from '@/components/ui/label';
 import {
   Loader2,
   ArrowLeft,
+  ArrowRight,
   ArrowUp,
   ArrowDown,
+  Calendar,
+  Car,
+  ClipboardList,
   Clock,
   Compass,
-  MapPin,
   Send,
   Save,
   XCircle,
@@ -60,6 +63,9 @@ import {
   calculateEditableDriverJourneyTimeline,
   getShortTripMealWageComponent,
   getMealAllowanceForDuration,
+  getGrossMealAllowanceForDuration,
+  getMealWageComponent,
+  resolveMealAccountingMode,
   getMealTierCount,
   DEFAULT_DRIVER_JOURNEY_LOCATION,
   DEFAULT_DRIVER_JOURNEY_POINT,
@@ -201,17 +207,6 @@ function padTime(time: string): string {
   }
   return time;
 }
-
-const DestinationImageBanner = ({ destination }: { destination: string }) => (
-  <div className="relative w-full h-[clamp(240px,38vh,360px)] bg-gradient-to-br from-blue-700 via-indigo-600 to-slate-800 flex items-center justify-center overflow-hidden">
-    <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:18px_18px]" />
-    <div className="relative z-10 flex max-w-[80%] flex-col items-center gap-3 text-center text-white">
-      <MapPin className="h-12 w-12 text-blue-100" />
-      <strong className="line-clamp-2 text-sm font-extrabold drop-shadow">{destination}</strong>
-    </div>
-    <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-slate-50 via-slate-50/60 to-transparent" />
-  </div>
-);
 
 function JourneyReportContent() {
   const { user, profile: rawProfile, activeProfile, loading: authLoading } = useAuth();
@@ -814,6 +809,15 @@ function JourneyReportContent() {
       normalizeDriverJourneyLocation(activity.destinationLocation, activity.destination)
     ))
   ), [currentStops]);
+
+  // Mirrors the server, which re-derives this from the journey document on
+  // submit. A report still being filled in has not been paid, so a journey
+  // authorized before the policy settles under the current one.
+  const mealAccountingMode = resolveMealAccountingMode(
+    activeReportingJourney?.mealAccountingMode,
+    { alreadyApproved: false },
+  );
+  const mealPaidInWage = mealAccountingMode === 'upah_bersih_gross';
 
   const getOriginForLocationIndex = (index: number): string => {
     if (!activeReportingJourney) return '';
@@ -1444,11 +1448,15 @@ function JourneyReportContent() {
       const extraOperationalCost = 0; // Extra mileage is compensated via Upah Bersih Sopir (distance component), not automatic cash reimbursement without receipts
 
       const preAuthorizedDurationPP = activeReportingJourney.customDurationPP || (activeReportingJourney.durationHours ? activeReportingJourney.durationHours * 2 : 0);
-      const preAuthorizedMeal = isNdalem
+      // No meal cash is advanced under the new mode — it is earned in Upah
+      // Bersih — so there is no allowance to settle against.
+      const preAuthorizedMeal = mealPaidInWage
         ? 0
-        : (activeReportingJourney.mealAllowance !== undefined && activeReportingJourney.mealAllowance !== null && activeReportingJourney.mealAllowance > 0
-          ? activeReportingJourney.mealAllowance
-          : getMealAllowanceForDuration(preAuthorizedDurationPP));
+        : isNdalem
+          ? 0
+          : (activeReportingJourney.mealAllowance !== undefined && activeReportingJourney.mealAllowance !== null && activeReportingJourney.mealAllowance > 0
+            ? activeReportingJourney.mealAllowance
+            : getMealAllowanceForDuration(preAuthorizedDurationPP));
 
       const preAuthorizedToll = activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
         ? Number(activeReportingJourney.preAuthorizedToll)
@@ -1473,12 +1481,18 @@ function JourneyReportContent() {
       const submittedDurationHours = elapsedHours > 0 ? elapsedHours : routeDurationHours;
 
       const ndalemMealMoneyVal = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
-      const actualMealAllowance = getMealAllowanceForDuration(
-        elapsedHours,
-        activeReportingJourney.vehicleName,
-        ndalemMealMoneyVal,
-      );
-      const extraMealAllowance = isNdalem ? actualMealAllowance : Math.max(0, actualMealAllowance - preAuthorizedMeal);
+      // Gross under the new mode: money handed over during the trip is
+      // recorded but never nets the entitlement down.
+      const actualMealAllowance = mealPaidInWage
+        ? getGrossMealAllowanceForDuration(elapsedHours)
+        : getMealAllowanceForDuration(
+            elapsedHours,
+            activeReportingJourney.vehicleName,
+            ndalemMealMoneyVal,
+          );
+      const extraMealAllowance = mealPaidInWage
+        ? 0
+        : isNdalem ? actualMealAllowance : Math.max(0, actualMealAllowance - preAuthorizedMeal);
 
       const settlement = calculateDriverReimbursementSettlement({
         fuelAllowance: isNdalem ? 0 : baseCostVal,
@@ -1505,6 +1519,7 @@ function JourneyReportContent() {
         travelTimeHours: routeDurationHours,
         elapsedDurationHours: submittedDurationHours,
         nightCount: effectiveNightCount,
+        mealAccountingMode,
       });
       const finalUpahBersih = Math.max(0, baseDriverWage - settlement.remainingUnspentCash);
 
@@ -1759,32 +1774,45 @@ function JourneyReportContent() {
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-4">
         <form onSubmit={handleCompleteJourneySubmit} className="space-y-5">
 
-          {/* Header Banner & Trip Specifications */}
-          <div className="space-y-0">
-            <div className="relative left-1/2 -mt-5 w-screen -translate-x-1/2 overflow-hidden">
-              <DestinationImageBanner
-                destination={activeReportingJourney.endPoint}
-              />
-              <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between px-4 py-4">
-                <div className="pointer-events-auto flex min-w-0 max-w-full items-center gap-2 self-start rounded-full border border-white/40 bg-white/20 px-3.5 py-2 text-white shadow-[0_8px_30px_rgba(15,23,42,0.2)] ring-1 ring-white/10 backdrop-blur-xl">
-                  <span className="shrink-0 text-[9px] font-black uppercase tracking-wide text-white/75">Keperluan</span>
-                  <strong className="min-w-0 truncate text-[10px] font-extrabold text-white">{activeReportingJourney.activityName}</strong>
-                </div>
-                <div className="pointer-events-auto flex w-full items-center gap-2">
-                  <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-white/35 bg-slate-950/60 px-3 py-2 text-white shadow-[0_8px_30px_rgba(15,23,42,0.35)] ring-1 ring-white/10 backdrop-blur-xl">
-                    <span className="shrink-0 text-[9px] font-black uppercase tracking-wide text-white/75">Kendaraan</span>
-                    <strong className="min-w-0 truncate text-[10px] font-extrabold text-white">{activeReportingJourney.vehicleName}</strong>
-                  </div>
-                  <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-white/35 bg-slate-950/60 px-3 py-2 text-white shadow-[0_8px_30px_rgba(15,23,42,0.35)] ring-1 ring-white/10 backdrop-blur-xl">
-                    <span className="shrink-0 text-[9px] font-black uppercase tracking-wide text-white/75">Tanggal</span>
-                    <strong className="min-w-0 truncate text-[10px] font-extrabold text-white">
-                      {(() => {
-                        const d = formDate || activeReportingJourney.activityDate || getTodayISO();
-                        return new Date(d.includes('T') ? d : `${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-                      })()}
-                    </strong>
-                  </div>
-                </div>
+          {/* Trip Summary Card — a compact info card, not a photo banner:
+              nothing here has ever loaded a real destination image. */}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
+            <div className="flex items-start gap-2.5">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                <ClipboardList className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <span className="block text-[9px] font-black uppercase tracking-wide text-slate-400">Keperluan</span>
+                <strong className="block text-sm font-extrabold text-slate-800 leading-snug">{activeReportingJourney.activityName}</strong>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 min-w-0 border-t border-slate-100 pt-3 text-xs font-bold text-slate-700">
+              <span className="shrink-0">🏫</span>
+              <span className="min-w-0 truncate">{(activeReportingJourney.startPoint || '').split(',')[0]}</span>
+              <ArrowRight className="h-3 w-3 shrink-0 text-slate-300" />
+              <span className="shrink-0">📍</span>
+              <span className="min-w-0 truncate">{(currentMainDestinations[0] || '').split(',')[0]}</span>
+              {currentMainDestinations.length > 1 && (
+                <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-extrabold text-slate-500">
+                  +{currentMainDestinations.length - 1}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 border-t border-slate-100 pt-3">
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
+                <Car className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                <strong className="min-w-0 truncate text-[10px] font-extrabold text-slate-700">{activeReportingJourney.vehicleName}</strong>
+              </div>
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
+                <Calendar className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                <strong className="min-w-0 truncate text-[10px] font-extrabold text-slate-700">
+                  {(() => {
+                    const d = formDate || activeReportingJourney.activityDate || getTodayISO();
+                    return new Date(d.includes('T') ? d : `${d}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                  })()}
+                </strong>
               </div>
             </div>
           </div>
@@ -2303,7 +2331,9 @@ function JourneyReportContent() {
               });
               const effectiveNightCount = formIsMultiDay ? timings.nightCount : 0;
               const elapsedHours = timings.durationHours > 0 ? timings.durationHours : calculateElapsedHours(formTimeStart, formTimeEnd, effectiveNightCount);
-              const totalHakUangMakan = getMealAllowanceForDuration(elapsedHours, activeReportingJourney.vehicleName);
+              const totalHakUangMakan = mealPaidInWage
+                ? getGrossMealAllowanceForDuration(elapsedHours)
+                : getMealAllowanceForDuration(elapsedHours, activeReportingJourney.vehicleName);
               const qtyHakMakan = Math.round(totalHakUangMakan / 20000);
               const mealMoneyProvided = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
               const unpaidDeltaRp = Math.max(0, totalHakUangMakan - mealMoneyProvided);
@@ -2314,7 +2344,11 @@ function JourneyReportContent() {
                     <Label htmlFor="mealMoneyProvided" className="text-xs font-black text-slate-900 flex items-center justify-between">
                       <span>Uang Diberikan Selama Perjalanan</span>
                       <span className="text-slate-900 font-bold normal-case">
-                        (Hak {qtyHakMakan}x Makan: <strong className="text-emerald-700 font-black">{fmtRp(totalHakUangMakan)}</strong>)
+                        {mealPaidInWage ? (
+                          <strong className="text-emerald-700 font-black">(Tidak Mengurangi SPJ)</strong>
+                        ) : (
+                          <>(Hak {qtyHakMakan}x Makan: <strong className="text-emerald-700 font-black">{fmtRp(totalHakUangMakan)}</strong>)</>
+                        )}
                       </span>
                     </Label>
                     <div className="relative">
@@ -2332,7 +2366,18 @@ function JourneyReportContent() {
                     </div>
                   </div>
 
-                  {unpaidDeltaRp > 0 ? (
+                  {mealPaidInWage ? (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-xl text-xs font-bold text-emerald-900 space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span>Uang Makan di Upah Bersih:</span>
+                        <span className="text-sm font-black text-emerald-700">+{fmtRp(totalHakUangMakan)}</span>
+                      </div>
+                      <p className="text-[10px] font-semibold text-emerald-800/80">
+                        Dibayar penuh bersama upah, tidak dipotong uang yang sudah
+                        Anda terima dan tidak lagi direimburse.
+                      </p>
+                    </div>
+                  ) : unpaidDeltaRp > 0 ? (
                     <div className="p-3 bg-blue-50 border border-blue-200/80 rounded-xl text-xs font-bold text-blue-900 flex items-center justify-between">
                       <span>Kekurangan Uang Makan:</span>
                       <span className="text-sm font-black text-blue-700">+{fmtRp(unpaidDeltaRp)}</span>
@@ -2604,13 +2649,19 @@ function JourneyReportContent() {
             const ndalemMealMoneyVal = formNdalemMealMoneyFee ? (parseInt(formNdalemMealMoneyFee.replace(/\D/g, ''), 10) || 0) : 0;
             const actualMealAllowance =
               elapsedHours > 0
-                ? getMealAllowanceForDuration(
-                  elapsedHours,
-                  activeReportingJourney.vehicleName,
-                  ndalemMealMoneyVal,
-                )
+                ? (mealPaidInWage
+                  ? getGrossMealAllowanceForDuration(elapsedHours)
+                  : getMealAllowanceForDuration(
+                    elapsedHours,
+                    activeReportingJourney.vehicleName,
+                    ndalemMealMoneyVal,
+                  ))
                 : originalMealAllowance;
-            const extraMealAllowance = isNdalem ? actualMealAllowance : Math.max(0, actualMealAllowance - originalMealAllowance);
+            // Meal is earned in Upah Bersih under the new mode, so it adds
+            // nothing to the reimbursement side of this table.
+            const extraMealAllowance = mealPaidInWage
+              ? 0
+              : isNdalem ? actualMealAllowance : Math.max(0, actualMealAllowance - originalMealAllowance);
 
             const preAuthorizedTollInCalc = activeReportingJourney.preAuthorizedToll !== undefined && activeReportingJourney.preAuthorizedToll !== null
               ? Number(activeReportingJourney.preAuthorizedToll)
@@ -2706,11 +2757,20 @@ function JourneyReportContent() {
                             </td>
                           </tr>
                           <tr>
-                            <td className="py-2 text-black font-extrabold">Uang Makan</td>
-                            <td className="py-2 text-center font-extrabold text-blue-700">{plotStrata}</td>
+                            <td className="py-2 text-black font-extrabold">
+                              Uang Makan
+                              {mealPaidInWage && (
+                                <span className="block text-[9px] font-bold text-emerald-700">
+                                  Dibayar di Upah Bersih
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 text-center font-extrabold text-blue-700">
+                              {mealPaidInWage ? '—' : plotStrata}
+                            </td>
                             <td className="py-2 text-center font-black text-blue-700">{actualStrata}</td>
                             <td className="py-2 text-right font-black text-blue-700">
-                              {extraMealAllowance > 0 ? (
+                              {!mealPaidInWage && extraMealAllowance > 0 ? (
                                 <span>+{fmtRp(Math.ceil(extraMealAllowance))}</span>
                               ) : (
                                 <span className="text-black font-extrabold">—</span>
@@ -2756,6 +2816,7 @@ function JourneyReportContent() {
                     travelTimeHours: calculatedDurationHours,
                     elapsedDurationHours: submittedDurationHours,
                     nightCount: effectiveTableNights,
+                    mealAccountingMode,
                   });
                   const finalUpahBersih = Math.max(0, baseDriverWage - settlement.remainingUnspentCash);
 
@@ -2774,6 +2835,7 @@ function JourneyReportContent() {
                         const activeHours = submittedDurationHours;
                         const travelHours = calculatedDurationHours;
                         const shortTripMeal = getShortTripMealWageComponent(activeHours);
+                        const mealWage = getMealWageComponent(activeHours, mealAccountingMode);
                         return (
                           <>
                             <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
@@ -2784,6 +2846,12 @@ function JourneyReportContent() {
                               <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
                                 <span>• Uang Makan Perjalanan (≤ 2 Jam)</span>
                                 <span className="text-emerald-700 font-black">+{fmtRp(shortTripMeal)}</span>
+                              </div>
+                            )}
+                            {mealWage > 0 && (
+                              <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">
+                                <span>• Uang Makan ({Math.round(mealWage / 20000)}x Makan)</span>
+                                <span className="text-emerald-700 font-black">+{fmtRp(mealWage)}</span>
                               </div>
                             )}
                             <div className="flex justify-between text-black text-[10px] font-extrabold pl-2">

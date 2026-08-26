@@ -364,11 +364,54 @@ export function getNdalemUnpaidMealAllowance(
   return getMealAllowanceForDuration(hours, 'Ndalem', ndalemMealMoneyProvided);
 }
 
-export function getMealAllowanceForDuration(
-  hours: number,
-  vehicleName?: string,
-  mealMoneyProvided?: number,
-): number {
+/**
+ * How a journey's meal entitlement is accounted for.
+ *
+ * - `legacy_reimbursement`: the historical treatment — meal is pre-authorized
+ *   as operational cash and settled as reimbursement, reduced by any money the
+ *   sopir was already handed during the trip.
+ * - `upah_bersih_gross`: meal is paid inside Upah Bersih at its full
+ *   duration-based entitlement, and takes no part in operational cash or
+ *   reimbursement. Money handed over during the trip is recorded but no longer
+ *   reduces the entitlement.
+ *
+ * The mode is stamped onto a report when it is submitted or approved, so an
+ * already-approved record keeps the treatment it was paid under. Records with
+ * no stamp are historical and therefore legacy.
+ */
+export type MealAccountingMode = 'upah_bersih_gross' | 'legacy_reimbursement';
+
+export const CURRENT_MEAL_ACCOUNTING_MODE: MealAccountingMode = 'upah_bersih_gross';
+export const LEGACY_MEAL_ACCOUNTING_MODE: MealAccountingMode = 'legacy_reimbursement';
+
+export function isMealAccountingMode(value: unknown): value is MealAccountingMode {
+  return value === 'upah_bersih_gross' || value === 'legacy_reimbursement';
+}
+
+/**
+ * Resolves the mode a stored record should be calculated under.
+ *
+ * An explicit stamp always wins, so re-auditing an old approved journey keeps
+ * reproducing the figures it was approved with. Only an unstamped record needs
+ * a default, and that default is deliberately asymmetric: an unstamped record
+ * that is already approved is historical (legacy), while one still pending has
+ * not been paid yet and is settled under the current policy when it is
+ * approved.
+ */
+export function resolveMealAccountingMode(
+  storedMode: unknown,
+  options: { alreadyApproved?: boolean } = {},
+): MealAccountingMode {
+  if (isMealAccountingMode(storedMode)) return storedMode;
+  return options.alreadyApproved ? LEGACY_MEAL_ACCOUNTING_MODE : CURRENT_MEAL_ACCOUNTING_MODE;
+}
+
+/**
+ * The full duration-based meal entitlement, never reduced by money already
+ * handed to the sopir and never zeroed for a particular vehicle. This is the
+ * figure paid inside Upah Bersih under `upah_bersih_gross`.
+ */
+export function getGrossMealAllowanceForDuration(hours: number): number {
   if (!Number.isFinite(hours) || hours <= 0) return 0;
 
   // Round to 3 decimal places to prevent floating point drift (e.g., 2.0000000000000004)
@@ -377,15 +420,26 @@ export function getMealAllowanceForDuration(
   const remainingHours = Math.round((cleanHours % 24) * 1000) / 1000;
   const fullDayAllowance = fullDays * DAILY_MEAL_ALLOWANCE;
 
-  let totalRights = 0;
-  if (remainingHours <= 2) totalRights = fullDayAllowance;
-  else if (remainingHours <= 6) totalRights = fullDayAllowance + 20_000;
-  else if (remainingHours <= 12) totalRights = fullDayAllowance + 40_000;
-  else totalRights = fullDayAllowance + 60_000;
+  if (remainingHours <= 2) return fullDayAllowance;
+  if (remainingHours <= 6) return fullDayAllowance + 20_000;
+  if (remainingHours <= 12) return fullDayAllowance + 40_000;
+  return fullDayAllowance + 60_000;
+}
+
+export function getMealAllowanceForDuration(
+  hours: number,
+  vehicleName?: string,
+  mealMoneyProvided?: number,
+): number {
+  const totalRights = getGrossMealAllowanceForDuration(hours);
+  if (totalRights <= 0) return 0;
 
   // Any money already handed to the driver covers part of the meal right,
   // regardless of the vehicle used. The vehicle name remains an input for
   // call-site compatibility and future vehicle-specific rules.
+  //
+  // Only `legacy_reimbursement` still nets this off; under
+  // `upah_bersih_gross` call sites use `getGrossMealAllowanceForDuration`.
   const moneyReceived = Math.max(0, mealMoneyProvided ?? 0);
   return Math.max(0, totalRights - moneyReceived);
 }
@@ -395,11 +449,15 @@ export interface DriverJourneyOperationalCostResult {
   vehicleRate: number;
   baseOperationalCost: number;
   fuelProcurementMode: FuelProcurementMode;
+  mealAccountingMode: MealAccountingMode;
   effectiveFuelAllowance: number;
   heldFuelAmount: number;
   procuredAccumulatedAmount: number;
   totalFuelAllocation: number;
+  /** Meal paid as operational cash. Always 0 under `upah_bersih_gross`. */
   mealAllowance: number;
+  /** Full entitlement, reported regardless of mode; paid in Upah Bersih under `upah_bersih_gross`. */
+  grossMealAllowance: number;
   tollParkingFee: number;
   totalOperationalCost: number;
 }
@@ -462,6 +520,11 @@ export function cashOperationalCostFromJourney(
 export interface DriverJourneyFuelCalculationOptions {
   fuelProcurementMode?: FuelProcurementMode;
   procuredAccumulatedAmount?: number;
+  /**
+   * Defaults to legacy so re-deriving an already-authorized journey's budget
+   * reproduces the figures it was authorized with.
+   */
+  mealAccountingMode?: MealAccountingMode;
 }
 
 export function calculateEffectiveFuelAllowance(
@@ -521,20 +584,30 @@ export function calculateDriverJourneyOperationalCosts(
   // Held fuel is a ledger movement, not cash handed to the driver. Keep it
   // separate from the cash fuel allocation used by operational-cost totals.
   const totalFuelAllocation = effectiveFuelAllowance;
-  const mealAllowance = vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
+  // Under `upah_bersih_gross` meal is no longer a cash advance — it is paid in
+  // Upah Bersih — so it contributes nothing to the operational budget. The
+  // entitlement is still reported via `grossMealAllowance` so the authorizing
+  // Kepala Satker can see what the sopir will earn for it.
+  const mealAccountingMode = options.mealAccountingMode ?? LEGACY_MEAL_ACCOUNTING_MODE;
+  const grossMealAllowance = getGrossMealAllowanceForDuration(durationHoursPP);
+  const mealAllowance = mealAccountingMode === 'upah_bersih_gross'
     ? 0
-    : getMealAllowanceForDuration(durationHoursPP, vehicleName);
+    : vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
+      ? 0
+      : getMealAllowanceForDuration(durationHoursPP, vehicleName);
 
   return {
     vehicleName,
     vehicleRate,
     baseOperationalCost,
     fuelProcurementMode,
+    mealAccountingMode,
     effectiveFuelAllowance,
     heldFuelAmount,
     procuredAccumulatedAmount,
     totalFuelAllocation,
     mealAllowance,
+    grossMealAllowance,
     tollParkingFee,
     totalOperationalCost: totalFuelAllocation + mealAllowance + tollParkingFee,
   };
@@ -671,17 +744,45 @@ export function getShortTripMealWageComponent(durationHours: number): number {
   return (remainingHours > 0 && remainingHours <= 2) ? DRIVER_SHORT_TRIP_MEAL_ALLOWANCE : 0;
 }
 
+/**
+ * The meal entitlement paid inside Upah Bersih for a journey.
+ *
+ * Under `legacy_reimbursement` this is nothing — meal was pre-authorized as
+ * operational cash and settled as reimbursement instead.
+ *
+ * Under `upah_bersih_gross` it is the full duration-based entitlement. This is
+ * additive to, not a replacement for, `getShortTripMealWageComponent`: the
+ * tiered entitlement pays nothing for a partial day of 2 hours or under, which
+ * is exactly the gap the flat Rp 5.000 short-trip component fills, so the two
+ * never cover the same hours and are not a double payment.
+ */
+export function getMealWageComponent(
+  elapsedDurationHours: number,
+  mealAccountingMode: MealAccountingMode,
+): number {
+  if (mealAccountingMode !== 'upah_bersih_gross') return 0;
+  return getGrossMealAllowanceForDuration(elapsedDurationHours);
+}
+
 export interface DriverNetWageInput {
   distanceKm: number;
   /** Cumulative Google Directions driving time between destinations. Drives Komponen Waktu only. */
   travelTimeHours: number;
-  /** Wall-clock departure-to-arrival span. Drives the short-trip meal component (uang makan), not Komponen Waktu. */
+  /** Wall-clock departure-to-arrival span. Drives the meal components (uang makan), not Komponen Waktu. */
   elapsedDurationHours: number;
   nightCount: number;
+  /**
+   * Defaults to the legacy treatment so that every existing call site — and
+   * any recomputation of an already-approved record — keeps producing exactly
+   * the figure it produced before meal moved into Upah Bersih. Paths that
+   * settle under current policy pass the mode explicitly.
+   */
+  mealAccountingMode?: MealAccountingMode;
 }
 
 export function calculateDriverNetWage(input: DriverNetWageInput): number {
   const { distanceKm, travelTimeHours, elapsedDurationHours, nightCount } = input;
+  const mealAccountingMode = input.mealAccountingMode ?? LEGACY_MEAL_ACCOUNTING_MODE;
   if (!Number.isFinite(distanceKm) || distanceKm < 0) {
     throw new Error('Jarak perjalanan tidak valid.');
   }
@@ -695,6 +796,7 @@ export function calculateDriverNetWage(input: DriverNetWageInput): number {
     Math.ceil(distanceKm * DRIVER_DISTANCE_RATE) +
     Math.ceil(travelTimeHours * DRIVER_DURATION_RATE) +
     getShortTripMealWageComponent(elapsedDurationHours) +
+    getMealWageComponent(elapsedDurationHours, mealAccountingMode) +
     calculateNightPremium(nightCount)
   );
 }
@@ -866,6 +968,8 @@ export interface EstimatedDriverWageResult {
   compJarak: number;
   compWaktu: number;
   shortTripMeal: number;
+  /** Duration-based entitlement folded into the wage under `upah_bersih_gross`. */
+  mealWage: number;
   baseWage: number;
   maxWage: number;
 }
@@ -873,6 +977,7 @@ export interface EstimatedDriverWageResult {
 export function calculateEstimatedDriverWage(
   totalDistanceKmPP: number,
   totalDurationHoursPP: number,
+  mealAccountingMode: MealAccountingMode = LEGACY_MEAL_ACCOUNTING_MODE,
 ): EstimatedDriverWageResult {
   const dist = Number.isFinite(totalDistanceKmPP) && totalDistanceKmPP > 0 ? totalDistanceKmPP : 0;
   const dur = Number.isFinite(totalDurationHoursPP) && totalDurationHoursPP > 0 ? totalDurationHoursPP : 0;
@@ -880,14 +985,16 @@ export function calculateEstimatedDriverWage(
   const compJarak = Math.ceil(dist * DRIVER_DISTANCE_RATE);
   const compWaktu = Math.ceil(dur * DRIVER_DURATION_RATE);
   const shortTripMeal = getShortTripMealWageComponent(dur);
+  const mealWage = getMealWageComponent(dur, mealAccountingMode);
 
-  const baseWage = compJarak + compWaktu + shortTripMeal;
+  const baseWage = compJarak + compWaktu + shortTripMeal + mealWage;
   const maxWage = Math.ceil(baseWage * 1.25);
 
   return {
     compJarak,
     compWaktu,
     shortTripMeal,
+    mealWage,
     baseWage,
     maxWage,
   };

@@ -20,6 +20,8 @@ import {
   isDriverVehicleName,
   isFuelProcurementMode,
   getMealAllowanceForDuration,
+  getGrossMealAllowanceForDuration,
+  resolveMealAccountingMode,
   normalizeDriverJourneyLocation,
   type DriverJourneyLocation,
 } from '@/lib/payroll/driverJourney';
@@ -647,12 +649,23 @@ export async function POST(request: NextRequest) {
           const travelTimeHours = typeof review.routeDurationHours === 'number'
             ? review.routeDurationHours
             : finalDurationHours;
+          // Re-auditing a record that was already approved must reproduce the
+          // treatment it was paid under, so `isDriverReEdit` decides the
+          // fallback for an unstamped record. A pending report is settled
+          // under current policy no matter when it was submitted.
+          const mealAccountingMode = resolveMealAccountingMode(
+            before.mealAccountingMode ?? authorizedJourney?.mealAccountingMode,
+            { alreadyApproved: isDriverReEdit },
+          );
+          const mealPaidInWage = mealAccountingMode === 'upah_bersih_gross';
           const baseDriverWage = calculateDriverNetWage({
             distanceKm: review.distanceKm,
             travelTimeHours,
             elapsedDurationHours: finalDurationHours,
             nightCount: effectiveNightCount,
+            mealAccountingMode,
           });
+          const grossMealAllowance = getGrossMealAllowanceForDuration(finalDurationHours);
           const originalPreAuthorizedMeal =
             typeof authorizedJourney?.mealAllowance === 'number' &&
               authorizedJourney.mealAllowance > 0
@@ -668,8 +681,11 @@ export async function POST(request: NextRequest) {
                     ),
                     review.vehicleType,
                   );
-          const preAuthorizedMeal =
-            review.vehicleType === 'Ndalem'
+          // Meal is paid in Upah Bersih under the new mode, so no meal cash was
+          // advanced and there is no allowance to settle against.
+          const preAuthorizedMeal = mealPaidInWage
+            ? 0
+            : review.vehicleType === 'Ndalem'
               ? 0
               : timelineChanged
                 ? getMealAllowanceForDuration(actualJourneyDurationHours, review.vehicleType)
@@ -680,8 +696,11 @@ export async function POST(request: NextRequest) {
             review.vehicleType,
             ndalemMealMoney,
           );
-          const mealDelta =
-            review.vehicleType === 'Ndalem'
+          // Money handed over during the trip is recorded but no longer nets
+          // off the entitlement, and meal takes no part in reimbursement.
+          const mealDelta = mealPaidInWage
+            ? 0
+            : review.vehicleType === 'Ndalem'
               ? actualMealAllowance
               : Math.max(0, actualMealAllowance - preAuthorizedMeal);
           const preAuthorizedToll =
@@ -735,6 +754,9 @@ export async function POST(request: NextRequest) {
             fee: upahBersih,
             upahBersih,
             baseDriverWage,
+            mealAccountingMode,
+            grossMealAllowance,
+            mealWageComponent: mealPaidInWage ? grossMealAllowance : 0,
             totalOperationalCost,
             distanceKm: review.distanceKm,
             measuredDistanceKm: review.distanceKm,
@@ -908,6 +930,10 @@ export async function POST(request: NextRequest) {
                   extraTollCost: after.extraTollCost || 0,
                   mealAllowance: after.preAuthorizedMeal || 0,
                   preAuthorizedMeal: after.preAuthorizedMeal || 0,
+                  // Reported against the audited duration, which can differ
+                  // from the estimate the journey was authorized with.
+                  mealAccountingMode: after.mealAccountingMode || null,
+                  grossMealAllowance: after.grossMealAllowance || 0,
                   preAuthorizedToll: after.preAuthorizedToll || 0,
                   ndalemMealMoneyReceived: after.ndalemMealMoneyReceived || 0,
                   draftNdalemMealMoneyReceived: after.ndalemMealMoneyReceived || 0,

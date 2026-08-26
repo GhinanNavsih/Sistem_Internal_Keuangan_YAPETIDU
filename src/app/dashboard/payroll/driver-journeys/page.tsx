@@ -78,6 +78,8 @@ import {
   getMealAllowanceForDuration,
   calculateDriverNetWage,
   calculateEstimatedDriverWage,
+  CURRENT_MEAL_ACCOUNTING_MODE,
+  resolveMealAccountingMode,
   cashOperationalCostFromJourney,
   DEFAULT_FUEL_PROCUREMENT_MODE,
   fuelProcurementModeLabel,
@@ -1483,7 +1485,13 @@ function DriverJourneysContent() {
                                 {isReportedDriverJourney(j) ? (
                                   <span>{fmtRp(reportedDriverJourneyWage(j))}</span>
                                 ) : (() => {
-                                  const est = calculateEstimatedDriverWage(j.distanceKm * 2, (j.durationHours || 0) * 2);
+                                  const est = calculateEstimatedDriverWage(
+                                    j.distanceKm * 2,
+                                    (j.durationHours || 0) * 2,
+                                    resolveMealAccountingMode(j.mealAccountingMode, {
+                                      alreadyApproved: j.status === 'completed',
+                                    }),
+                                  );
                                   const baseW = j.estimatedBaseDriverWage || est.baseWage;
                                   const maxW = j.estimatedMaxDriverWage || est.maxWage;
                                   return (
@@ -2488,7 +2496,13 @@ function DriverJourneysContent() {
                   </div>
 
                   {(() => {
-                    const estModal = calculateEstimatedDriverWage(calcDistance * 2, calcDuration ? calcDuration * 2 : 0);
+                    // A journey being authorized now settles under current policy,
+                    // so the preview includes the meal the sopir will earn.
+                    const estModal = calculateEstimatedDriverWage(
+                      calcDistance * 2,
+                      calcDuration ? calcDuration * 2 : 0,
+                      CURRENT_MEAL_ACCOUNTING_MODE,
+                    );
                     return (
                       <div className="space-y-1 text-xs pt-1">
                         <div className="flex justify-between text-slate-500 font-medium">

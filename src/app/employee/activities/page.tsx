@@ -108,6 +108,7 @@ import {
   calculateNightPremium,
   calculateJourneyDateTimeTimings,
   calculateEstimatedDriverWage,
+  resolveMealAccountingMode,
   getMealAllowanceForDuration as calculateMealAllowanceForDuration,
   getShortTripMealWageComponent,
   DEFAULT_FUEL_PROCUREMENT_MODE,
@@ -5130,7 +5131,13 @@ function ActivitiesContent() {
                             <span>Operasional: <strong>{fmtRp(cashOperationalCostFromJourney(j))}</strong></span>
                           </div>
                           {(() => {
-                            const est = calculateEstimatedDriverWage(j.distanceKm * 2, (j.durationHours || 0) * 2);
+                            const est = calculateEstimatedDriverWage(
+                              j.distanceKm * 2,
+                              (j.durationHours || 0) * 2,
+                              resolveMealAccountingMode(j.mealAccountingMode, {
+                                alreadyApproved: j.status === 'completed',
+                              }),
+                            );
                             const baseWage = j.estimatedBaseDriverWage || est.baseWage;
                             const maxWage = j.estimatedMaxDriverWage || est.maxWage;
                             return (
@@ -5164,7 +5171,13 @@ function ActivitiesContent() {
                   Perjalanan Aktif Anda
                 </h3>
                 {myClaimedJourneys.map((j) => {
-                  const est = calculateEstimatedDriverWage(j.distanceKm * 2, (j.durationHours || 0) * 2);
+                  const est = calculateEstimatedDriverWage(
+                              j.distanceKm * 2,
+                              (j.durationHours || 0) * 2,
+                              resolveMealAccountingMode(j.mealAccountingMode, {
+                                alreadyApproved: j.status === 'completed',
+                              }),
+                            );
                   const baseWage = j.estimatedBaseDriverWage || est.baseWage;
                   const maxWage = j.estimatedMaxDriverWage || est.maxWage;
 
@@ -5294,7 +5307,13 @@ function ActivitiesContent() {
                               <span className="text-xs font-black text-indigo-600">{fmtRp(cashOperationalCostFromJourney(j))}</span>
                             </div>
                             {(() => {
-                              const est = calculateEstimatedDriverWage(j.distanceKm * 2, (j.durationHours || 0) * 2);
+                              const est = calculateEstimatedDriverWage(
+                              j.distanceKm * 2,
+                              (j.durationHours || 0) * 2,
+                              resolveMealAccountingMode(j.mealAccountingMode, {
+                                alreadyApproved: j.status === 'completed',
+                              }),
+                            );
                               const baseWage = j.estimatedBaseDriverWage || est.baseWage;
                               const maxWage = j.estimatedMaxDriverWage || est.maxWage;
                               return (
