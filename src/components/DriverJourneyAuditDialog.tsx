@@ -45,6 +45,8 @@ import {
   calculateNightPremium,
   getMealAllowanceForDuration,
   journeyDayCount,
+  MAX_DRIVER_JOURNEY_DESTINATIONS,
+  MAX_DRIVER_JOURNEY_LOCATIONS,
   DEFAULT_DRIVER_JOURNEY_LOCATION,
   DEFAULT_FUEL_PROCUREMENT_MODE,
   closeDriverJourneyRoundTrip,
@@ -645,11 +647,26 @@ export function DriverJourneyAuditDialog({
     );
   };
 
+  const focusMapOnLocation = React.useCallback((location: DriverJourneyLocation | null) => {
+    if (!location || !mapRef.current || !markerRef.current) return false;
+    const position = { lat: location.latitude, lng: location.longitude };
+    mapRef.current.setCenter(position);
+    mapRef.current.setZoom(15);
+    markerRef.current.setPosition(position);
+    return true;
+  }, []);
+
   const initMap = (element: HTMLDivElement) => {
     loadGoogleMapsScript(() => {
       const google = (window as any).google;
       if (!google) return;
-      if (mapRef.current && mapElementRef.current === element) return;
+      if (mapRef.current && mapElementRef.current === element) {
+        const existingLocation = normalizeDriverJourneyLocation(mapLocation, mapAddress);
+        if (existingLocation) {
+          focusMapOnLocation(existingLocation);
+        }
+        return;
+      }
       mapElementRef.current = element;
 
       const unipduCoords = {
@@ -735,14 +752,32 @@ export function DriverJourneyAuditDialog({
     });
   };
 
+  // The dialog content can reuse the same map element between different
+  // "Ubah" clicks. Keep the marker and viewport tied to the newly selected
+  // destination instead of leaving the previous point displayed.
+  useEffect(() => {
+    if (!showMapSelector || !mapLocation) return;
+    focusMapOnLocation(mapLocation);
+  }, [showMapSelector, mapLocation, focusMapOnLocation]);
+
   const handleOpenMapForIndex = (index: number) => {
     resetMapSearch();
     setMapTargetIndex(index);
     const currentVal = auditPoints[index] || '';
+    const currentLocation = normalizeDriverJourneyLocation(
+      auditPointLocations[index],
+      currentVal,
+    );
     setMapAddress(currentVal);
     setMapSearchText(currentVal);
-    setMapLocation(normalizeDriverJourneyLocation(auditPointLocations[index], currentVal));
+    setMapLocation(currentLocation);
     setShowMapSelector(true);
+    if (!currentLocation && currentVal.trim() && mapRef.current) {
+      // Older reports may have an address but no saved coordinates. If the map
+      // already exists, geocode that address now; a fresh map is handled by
+      // initMap's compatibility path above.
+      geocodeMapSearch(currentVal);
+    }
   };
 
   /**
@@ -774,6 +809,11 @@ export function DriverJourneyAuditDialog({
     } = {},
   ): Promise<boolean> {
     const requestId = ++routeCalculationRequestRef.current;
+    if (pointsToCalc.length > MAX_DRIVER_JOURNEY_LOCATIONS) {
+      if (updateTotals) setMeasuredRouteKey('');
+      setRouteCalcError(`Maksimal ${MAX_DRIVER_JOURNEY_DESTINATIONS} titik tujuan dapat dihitung.`);
+      return false;
+    }
     const validIndices = pointsToCalc
       .map((p, i) => (p && p.trim().length > 0 ? i : -1))
       .filter((i) => i !== -1);
@@ -1235,6 +1275,12 @@ export function DriverJourneyAuditDialog({
                               type="button"
                               size="sm"
                               variant="outline"
+                              disabled={auditPoints.length >= MAX_DRIVER_JOURNEY_LOCATIONS}
+                              title={
+                                auditPoints.length >= MAX_DRIVER_JOURNEY_LOCATIONS
+                                  ? `Maksimal ${MAX_DRIVER_JOURNEY_DESTINATIONS} titik tujuan`
+                                  : undefined
+                              }
                               onClick={() => {
                                 const newPts = [...auditPoints, ''];
                                 routeCalculationRequestRef.current += 1;

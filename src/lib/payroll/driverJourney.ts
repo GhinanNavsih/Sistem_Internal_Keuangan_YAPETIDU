@@ -29,6 +29,12 @@ export const DEFAULT_FUEL_PROCUREMENT_MODE: FuelProcurementMode = 'standard_dire
 
 export const DEFAULT_DRIVER_JOURNEY_POINT = 'UNIPDU Jombang, Jawa Timur';
 export const MAX_MAIN_DESTINATIONS = 8;
+/** Google Directions accepts at most 25 intermediate destination waypoints. */
+export const MAX_DRIVER_JOURNEY_DESTINATIONS = 25;
+/** Stored/displayed journey points also contain the departure point. */
+export const MAX_DRIVER_JOURNEY_LOCATIONS = MAX_DRIVER_JOURNEY_DESTINATIONS + 1;
+/** Route measurement may append the departure point once to close the return leg. */
+export const MAX_DRIVER_ROUTE_CALCULATION_POINTS = MAX_DRIVER_JOURNEY_LOCATIONS + 1;
 
 export interface DriverJourneyLocation {
   address: string;
@@ -175,6 +181,16 @@ export function driverJourneyRoutePoint(
   const normalizedLocation = normalizeDriverJourneyLocation(location, normalizedAddress);
   if (!normalizedLocation) return normalizedAddress;
   return `${normalizedLocation.latitude.toFixed(6)},${normalizedLocation.longitude.toFixed(6)}`;
+}
+
+/** Counts user-entered destinations while excluding the origin and generated return. */
+export function countDriverJourneyRouteDestinations(points: readonly string[]): number {
+  const activePoints = points.map((point) => point.trim()).filter(Boolean);
+  if (activePoints.length === 0) return 0;
+  const closesAtOrigin =
+    activePoints.length >= 3 &&
+    activePoints[activePoints.length - 1] === activePoints[0];
+  return Math.max(0, activePoints.length - (closesAtOrigin ? 2 : 1));
 }
 
 /**

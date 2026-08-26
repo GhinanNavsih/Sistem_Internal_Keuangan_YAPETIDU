@@ -4,6 +4,11 @@ import {
   HttpError,
   requireAuthenticatedProfile,
 } from '@/lib/server/auth';
+import {
+  countDriverJourneyRouteDestinations,
+  MAX_DRIVER_JOURNEY_DESTINATIONS,
+  MAX_DRIVER_ROUTE_CALCULATION_POINTS,
+} from '@/lib/payroll/driverJourney';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,18 +18,36 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { points } = body;
 
-    if (!points || !Array.isArray(points) || points.length < 2) {
+    if (!Array.isArray(points) || points.length < 2) {
       return NextResponse.json({ error: 'Minimal 2 lokasi harus diisi.' }, { status: 400 });
     }
 
-    // Filter out any empty entries
-    const activePoints = points.map(p => String(p).trim()).filter(Boolean);
+    if (points.some((point) => typeof point !== 'string')) {
+      return NextResponse.json({ error: 'Format lokasi rute tidak valid.' }, { status: 400 });
+    }
+
+    // A round trip contains one extra route point because the departure point
+    // is appended again as the final destination. Do not count that generated
+    // return point against the 25 destinations the user can enter in the UI.
+    const activePoints = (points as string[]).map((point) => point.trim()).filter(Boolean);
+    if (activePoints.length < 2) {
+      return NextResponse.json({ error: 'Minimal 2 lokasi harus diisi.' }, { status: 400 });
+    }
+    const enteredDestinationCount = countDriverJourneyRouteDestinations(activePoints);
     if (
-      activePoints.length < 2 ||
-      activePoints.length > 10 ||
-      activePoints.some((point) => point.length > 200)
+      enteredDestinationCount > MAX_DRIVER_JOURNEY_DESTINATIONS ||
+      activePoints.length > MAX_DRIVER_ROUTE_CALCULATION_POINTS
     ) {
-      return NextResponse.json({ error: 'Minimal 2 lokasi valid harus diisi.' }, { status: 400 });
+      return NextResponse.json(
+        { error: `Maksimal ${MAX_DRIVER_JOURNEY_DESTINATIONS} titik tujuan dapat dihitung.` },
+        { status: 400 },
+      );
+    }
+    if (activePoints.some((point) => point.length > 200)) {
+      return NextResponse.json(
+        { error: 'Setiap lokasi rute maksimal 200 karakter.' },
+        { status: 400 },
+      );
     }
 
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -87,11 +110,14 @@ export async function POST(req: NextRequest) {
       legs: legsDetail
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof HttpError) {
       return errorResponse(error);
     }
     console.error('Error in calculate-route API:', error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Internal Server Error' },
+      { status: 500 },
+    );
   }
 }

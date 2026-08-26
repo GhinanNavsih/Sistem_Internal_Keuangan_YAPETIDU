@@ -15,6 +15,7 @@ import {
   calculateJourneyElapsedHours,
   calculateJourneyDateTimeTimings,
   calculateNightPremium,
+  countDriverJourneyRouteDestinations,
   getMealAllowanceForDuration,
   closeDriverJourneyRoundTrip,
   driverJourneyRoutePoints,
@@ -22,6 +23,9 @@ import {
   cashOperationalCostFromJourney,
   fuelProcurementModeLabel,
   journeyDayCount,
+  MAX_DRIVER_JOURNEY_DESTINATIONS,
+  MAX_DRIVER_JOURNEY_LOCATIONS,
+  MAX_DRIVER_ROUTE_CALCULATION_POINTS,
   MAX_MAIN_DESTINATIONS,
   normalizeDriverJourneyDestinations,
   normalizeDriverJourneyLocation,
@@ -72,6 +76,21 @@ test('a single-stop payable route measures the real return leg instead of doubli
     closeDriverJourneyRoundTrip(['UNIPDU', 'RSUD Jombang', 'UNIPDU']),
     ['UNIPDU', 'RSUD Jombang', 'UNIPDU'],
   );
+});
+
+test('25 destinations leave room for the departure and generated return points', () => {
+  const locations = Array.from(
+    { length: MAX_DRIVER_JOURNEY_LOCATIONS },
+    (_, index) => `Lokasi ${index + 1}`,
+  );
+  const routePoints = closeDriverJourneyRoundTrip(locations);
+
+  assert.equal(MAX_DRIVER_JOURNEY_DESTINATIONS, 25);
+  assert.equal(MAX_DRIVER_JOURNEY_LOCATIONS, 26);
+  assert.equal(routePoints.length, MAX_DRIVER_ROUTE_CALCULATION_POINTS);
+  assert.equal(countDriverJourneyRouteDestinations(routePoints), 25);
+  assert.equal(countDriverJourneyRouteDestinations([...locations, 'Lokasi 27']), 26);
+  assert.equal(routePoints[routePoints.length - 1], locations[0]);
 });
 
 test('journey locations retain validated addresses and coordinates for route reuse', () => {

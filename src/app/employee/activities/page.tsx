@@ -114,6 +114,8 @@ import {
   DEFAULT_DRIVER_JOURNEY_LOCATION,
   driverJourneyRoutePoint,
   isFuelProcurementMode,
+  MAX_DRIVER_JOURNEY_DESTINATIONS,
+  MAX_DRIVER_JOURNEY_LOCATIONS,
   normalizeDriverJourneyLocation,
   normalizeDriverJourneyDestinations,
   type DriverJourneyLocation,
@@ -2018,6 +2020,10 @@ function ActivitiesContent() {
     const activePoints = formPoints.map(p => p.trim()).filter(Boolean);
     if (activePoints.length < 2) {
       setRouteError('Minimal 2 lokasi rute harus diisi.');
+      return;
+    }
+    if (activePoints.length > MAX_DRIVER_JOURNEY_LOCATIONS) {
+      setRouteError(`Maksimal ${MAX_DRIVER_JOURNEY_DESTINATIONS} titik tujuan dapat dihitung.`);
       return;
     }
 
@@ -6296,6 +6302,12 @@ function ActivitiesContent() {
                       type="button"
                       variant="outline"
                       size="sm"
+                      disabled={formPoints.length >= MAX_DRIVER_JOURNEY_LOCATIONS}
+                      title={
+                        formPoints.length >= MAX_DRIVER_JOURNEY_LOCATIONS
+                          ? `Maksimal ${MAX_DRIVER_JOURNEY_DESTINATIONS} titik tujuan`
+                          : undefined
+                      }
                       onClick={() => {
                         setFormPoints(prev => {
                           const copy = [...prev];

@@ -67,6 +67,7 @@ import {
   closeDriverJourneyRoundTrip,
   driverJourneyRoutePoint,
   isFuelProcurementMode,
+  MAX_DRIVER_JOURNEY_DESTINATIONS,
   normalizeDriverJourneyLocation,
   normalizeDriverJourneyLocations,
   normalizeDriverJourneyDestinations,
@@ -1103,6 +1104,10 @@ function JourneyReportContent() {
   };
 
   const handleAddLocation = () => {
+    if (currentMainDestinations.length >= MAX_DRIVER_JOURNEY_DESTINATIONS) {
+      setExtraRouteError(`Maksimal ${MAX_DRIVER_JOURNEY_DESTINATIONS} titik tujuan dapat ditambahkan.`);
+      return;
+    }
     const newIdx = extraActivities.length;
     routeCalculationRequestRef.current += 1;
     resetMapSearch();
@@ -1853,6 +1858,12 @@ function JourneyReportContent() {
                     type="button"
                     variant="outline"
                     size="sm"
+                    disabled={currentMainDestinations.length >= MAX_DRIVER_JOURNEY_DESTINATIONS}
+                    title={
+                      currentMainDestinations.length >= MAX_DRIVER_JOURNEY_DESTINATIONS
+                        ? `Maksimal ${MAX_DRIVER_JOURNEY_DESTINATIONS} titik tujuan`
+                        : undefined
+                    }
                     onClick={handleAddLocation}
                     className="h-6 px-2 text-[9px] font-bold border-blue-200 text-blue-700 hover:bg-blue-50 rounded-md cursor-pointer whitespace-nowrap shrink-0"
                   >

@@ -16,6 +16,8 @@ import {
   calculateNightPremium,
   canonicalizeDriverJourneyTimeline,
   DEFAULT_FUEL_PROCUREMENT_MODE,
+  MAX_DRIVER_JOURNEY_DESTINATIONS,
+  MAX_DRIVER_JOURNEY_LOCATIONS,
   MAX_MAIN_DESTINATIONS,
   isDriverVehicleName,
   isFuelProcurementMode,
@@ -431,10 +433,13 @@ function sanitizeDriverData(
     if (
       !Array.isArray(result.points) ||
       result.points.length < 2 ||
-      result.points.length > 30 ||
+      result.points.length > MAX_DRIVER_JOURNEY_LOCATIONS ||
       result.points.some((point) => typeof point !== 'string' || point.length > 300)
     ) {
-      throw new HttpError(400, 'Rute perjalanan tidak valid.');
+      throw new HttpError(
+        400,
+        `Rute perjalanan tidak valid (maksimal ${MAX_DRIVER_JOURNEY_DESTINATIONS} titik tujuan).`,
+      );
     }
   }
   if (

@@ -15,6 +15,8 @@ import {
   calculateNightPremium,
   DEFAULT_FUEL_PROCUREMENT_MODE,
   DRIVER_VEHICLE_NAMES,
+  MAX_DRIVER_JOURNEY_DESTINATIONS,
+  MAX_DRIVER_JOURNEY_LOCATIONS,
   isDriverVehicleName,
   isFuelProcurementMode,
   getMealAllowanceForDuration,
@@ -219,10 +221,13 @@ function validateDriverReview(value: ReviewItem['driverReview']) {
     value.vehicleType.length > 80 ||
     !Array.isArray(value.points) ||
     value.points.length < 2 ||
-    value.points.length > 30 ||
+    value.points.length > MAX_DRIVER_JOURNEY_LOCATIONS ||
     value.points.some((point) => typeof point !== 'string' || point.length > 300)
   ) {
-    throw new HttpError(400, 'Kendaraan atau rute audit Sopir tidak valid.');
+    throw new HttpError(
+      400,
+      `Kendaraan atau rute audit Sopir tidak valid (maksimal ${MAX_DRIVER_JOURNEY_DESTINATIONS} titik tujuan).`,
+    );
   }
 
   const startPointLocation = value.startPointLocation === undefined
