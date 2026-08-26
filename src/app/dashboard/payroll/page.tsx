@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
@@ -63,6 +63,7 @@ import { useDashboardData } from '@/lib/DashboardDataContext';
 import { useBulkEmail, ESTIMATED_SECONDS_PER_EMAIL, type QueueItem } from '@/lib/BulkEmailContext';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
 import PaySlipDialog, { SlipState, buildInitialEarnings, buildInitialDeductions } from '@/components/PaySlipDialog';
+import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
 import * as XLSX from 'xlsx';
 import LegalitasPimpinanDialog from '@/components/LegalitasPimpinanDialog';
 import CetakPayrollDialog from '@/components/CetakPayrollDialog';
@@ -378,6 +379,13 @@ export default function PayrollValidationDashboard() {
   const koperasiDeductions = selectedKoperasiAmounts.deductions;
   const koperasiSavings = selectedKoperasiAmounts.savings;
   const [loyalisPresenceData, setLoyalisPresenceData] = useState<any | null>(null);
+
+  // ─── Shared Pekarya earnings preview for the period ─────────────
+  // One server-side calculation feeds the table, the Tinjau Slip Gaji modal,
+  // every export, and every newly prepared draft — and is the same one
+  // /employee/payslip renders, so the two can never disagree.
+  const [pekaryaPreviews, setPekaryaPreviews] = useState<Record<string, PekaryaSlipPreview>>({});
+  const [pekaryaPreviewsLoading, setPekaryaPreviewsLoading] = useState(true);
 
   const allPayrollTargets = useMemo<PayrollTarget[]>(() => [
     ...employeesLoyalis
@@ -701,6 +709,7 @@ export default function PayrollValidationDashboard() {
   const [selectedBulkRefreshFields, setSelectedBulkRefreshFields] = useState<Record<string, Set<string>>>({});
 
   const handleExportExcel = () => {
+    if (!requirePekaryaPreviews()) return;
     const filteredEmployees = getFilteredAndSortedEmployees();
 
     if (filteredEmployees.length === 0) {
@@ -713,7 +722,7 @@ export default function PayrollValidationDashboard() {
 
     const rowsData = filteredEmployees.map((emp, idx) => {
       const years = calculateYearsOfService(emp.joinDate, targetDate);
-      const gapok = calculateGapok(emp, salaryMatrix, targetDate);
+      const gapok = getPekaryaGapok(emp);
 
       const roleKey = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
       const periodKey = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
@@ -858,6 +867,7 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleExportKebutuhanDanaGaji = () => {
+    if (!requirePekaryaPreviews()) return;
     if (payrollCollar !== 'loyalis') {
       alert("Laporan Kebutuhan Dana Gaji hanya tersedia untuk Karyawan Loyalis.");
       return;
@@ -887,6 +897,7 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleExportKebutuhanDanaGajiPdf = () => {
+    if (!requirePekaryaPreviews()) return;
     if (payrollCollar !== 'loyalis') {
       alert("Laporan Kebutuhan Dana Gaji hanya tersedia untuk Karyawan Loyalis.");
       return;
@@ -916,6 +927,7 @@ export default function PayrollValidationDashboard() {
   };
 
   const handlePrintRekap = async (format: 'pdf' | 'xlsx') => {
+    if (!requirePekaryaPreviews()) return;
     const sanitizeDeductionLabel = (label: string): string => {
       const clean = label.trim();
       const lower = clean.toLowerCase();
@@ -1074,6 +1086,7 @@ export default function PayrollValidationDashboard() {
   };
 
   const handlePrintPayrollStatement = () => {
+    if (!requirePekaryaPreviews()) return;
     const isSuperAdmin = profile?.role === 'super_admin';
     const activeEmployees = employees.filter(e =>
       isSuperAdmin ? e.isActive : isTransferEligibleStatus(slipStates[e.id]?.status),
@@ -1144,6 +1157,41 @@ export default function PayrollValidationDashboard() {
     setSortConfig({ key, direction });
   };
 
+  /**
+   * True once every number this page can show is backed by real data.
+   *
+   * While the Pekarya previews are in flight the fallback builder would emit
+   * a Gaji Pokok of 0 and empty attendance rows, which reads as a genuine
+   * figure. Exports and totals wait for this instead.
+   */
+  // Deliberately independent of the selected tab: "Siapkan Semua Draf" and
+  // the bulk lock cover both collars, so a Loyalis tab is no reason to let a
+  // Pekarya draft be built before its preview has arrived.
+  const pekaryaPreviewsReady = !pekaryaPreviewsLoading;
+
+  /**
+   * Refuses to produce a document while the previews are still in flight.
+   * Exporting mid-load would print a Gaji Pokok of 0 that looks authoritative.
+   */
+  const requirePekaryaPreviews = (): boolean => {
+    if (pekaryaPreviewsReady) return true;
+    setNotification({
+      show: true,
+      type: 'error',
+      message:
+        'Pratinjau perhitungan Pekarya masih dimuat. Tunggu sesaat lalu ulangi.',
+    });
+    return false;
+  };
+
+  /** Gaji Pokok as the shared preview calculated it, matrix-sourced. */
+  const getPekaryaGapok = (emp: EmployeeRow): number => {
+    if (payrollCollar === 'loyalis') {
+      return calculateGapok(emp, salaryMatrix, targetDate);
+    }
+    return pekaryaPreviews[emp.id]?.gapok ?? calculateGapok(emp, salaryMatrix, targetDate);
+  };
+
   // Helper: build fresh earnings/deductions from current employee data
   // Used by PDF, WhatsApp, email, and multi-print flows to always
   // reflect the latest profile data, salary matrix, and vakasi tambahan.
@@ -1157,24 +1205,30 @@ export default function PayrollValidationDashboard() {
       };
     }
 
-    const gapok = calculateGapok(emp, salaryMatrix, targetDate);
+    const gapok = getPekaryaGapok(emp);
     const cat = payrollCollar === 'loyalis' ? emp.role : emp.raw.employment?.jobCategory;
     const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
     const uraianEntry = uraianMap[`${period}_${cat}`]?.entries?.[emp.id];
 
-    const earnings = buildInitialEarnings(
-      emp.raw,
-      gapok,
-      payrollCollar,
-      uraianEntry,
-      vakasiTambahanMap[emp.id] ?? 0,
-      vakasiTambahanListMap[emp.id] ?? [],
-      functionalAllowanceMap[emp.id] ?? 0,
-      kepangkatanAllowanceMap[emp.id] ?? 0,
-      [],
-      getLoyalisPresenceBonus(emp.id),
-      getLoyalisPresensiEarning(emp.id)
-    );
+    // Pekarya earnings are owned by the shared preview; the local builder is
+    // the Loyalis path only.
+    const pekaryaPreview =
+      payrollCollar === 'loyalis' ? undefined : pekaryaPreviews[emp.id];
+    const earnings = pekaryaPreview
+      ? pekaryaPreview.earnings
+      : buildInitialEarnings(
+        emp.raw,
+        gapok,
+        payrollCollar,
+        uraianEntry,
+        vakasiTambahanMap[emp.id] ?? 0,
+        vakasiTambahanListMap[emp.id] ?? [],
+        functionalAllowanceMap[emp.id] ?? 0,
+        kepangkatanAllowanceMap[emp.id] ?? 0,
+        [],
+        getLoyalisPresenceBonus(emp.id),
+        getLoyalisPresensiEarning(emp.id)
+      );
 
     const deductions = buildInitialDeductions(
       emp.raw,
@@ -1266,6 +1320,7 @@ export default function PayrollValidationDashboard() {
       koperasiDeductions,
       koperasiSavings,
       loyalisPresenceData,
+      pekaryaPreviews,
     },
   );
 
@@ -1495,6 +1550,43 @@ export default function PayrollValidationDashboard() {
     fetchPeriodData();
   }, [targetDate, profile]);
 
+  // ─── Fetch the shared Pekarya preview for the period ───────────
+  const fetchPekaryaPreviews = useCallback(async (): Promise<
+    Record<string, PekaryaSlipPreview>
+  > => {
+    const periodToken = `${targetDate.getFullYear()}-${String(
+      targetDate.getMonth() + 1,
+    ).padStart(2, '0')}`;
+    const result = await authenticatedJson<{
+      previews: Record<string, PekaryaSlipPreview>;
+    }>(`/api/payroll/slip-preview?period=${periodToken}`);
+    return result.previews || {};
+  }, [targetDate]);
+
+  useEffect(() => {
+    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) return;
+    let cancelled = false;
+    const loadPreviews = async () => {
+      setPekaryaPreviewsLoading(true);
+      try {
+        const previews = await fetchPekaryaPreviews();
+        if (!cancelled) setPekaryaPreviews(previews);
+      } catch (err) {
+        // A failed preview must not silently degrade to zero rows: the empty
+        // map keeps the fallback builders out of the Pekarya path, and every
+        // draft-creating flow refuses a target it has no preview for.
+        console.error('Gagal memuat pratinjau slip Pekarya:', err);
+        if (!cancelled) setPekaryaPreviews({});
+      } finally {
+        if (!cancelled) setPekaryaPreviewsLoading(false);
+      }
+    };
+    loadPreviews();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchPekaryaPreviews, profile]);
+
   // ─── Fetch VakasiTambahan for current period (Loyalis Only) ───
   useEffect(() => {
     if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) return;
@@ -1549,6 +1641,7 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleSendWhatsApp = async (emp: EmployeeRow, slip: any) => {
+    if (!requirePekaryaPreviews()) return;
     const phone = emp.phoneNumber || emp.raw.phoneNumber || '';
     if (!phone) {
       alert(`Karyawan "${emp.name}" tidak memiliki nomor WhatsApp/telepon yang terdaftar.`);
@@ -1640,6 +1733,7 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleSendSingleEmail = async (emp: EmployeeRow) => {
+    if (!requirePekaryaPreviews()) return;
     const email = emp.email || emp.raw.personal_info?.email || emp.raw.email || '';
     if (!email) {
       alert(`Karyawan "${emp.name}" tidak memiliki alamat email yang terdaftar.`);
@@ -1728,6 +1822,7 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleBulkEmail = () => {
+    if (!requirePekaryaPreviews()) return;
     if (isBulkEmailActive) {
       // A job is still running (or paused) — surface it instead of queueing a
       // second run over the same roster.
@@ -1799,6 +1894,7 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleBulkPdf = () => {
+    if (!requirePekaryaPreviews()) return;
     const isLoyalis = payrollCollar === 'loyalis';
 
     // We only compile slips for employees who have locked states
@@ -2001,6 +2097,7 @@ export default function PayrollValidationDashboard() {
   };
 
   const handleBulkRefresh = async () => {
+    if (!requirePekaryaPreviews()) return;
     if (attendancePeriodStatus === 'closed') {
       alert('Periode payroll sudah ditutup. Data draf telah dibekukan.');
       return;
@@ -2109,6 +2206,12 @@ export default function PayrollValidationDashboard() {
           };
         }
       });
+
+      // Pekarya earnings for every employee in the period, calculated once by
+      // the shared endpoint, so Refresh Massal proposes the same rows the
+      // employee's own payslip and the Tinjau modal already show.
+      const refreshedPreviews = isLoyalisTab ? {} : await fetchPekaryaPreviews();
+      if (!isLoyalisTab) setPekaryaPreviews(refreshedPreviews);
 
       const changes: BulkChange[] = [];
 
@@ -2286,19 +2389,25 @@ export default function PayrollValidationDashboard() {
         const cat = isLoyalisTab ? freshEmployee.role : freshEmployee.raw.employment?.jobCategory;
         const freshUraianEntry = freshUraianMap[`${period}_${cat}`]?.entries?.[emp.id] ?? undefined;
 
-        const freshEarnings = buildInitialEarnings(
-          freshRaw,
-          freshGapok,
-          payrollCollar,
-          freshUraianEntry,
-          freshVakasiSum,
-          freshVakasiList,
-          freshFunctionalAllowance,
-          freshKepangkatanAllowance,
-          [],
-          getFreshPresenceBonus(emp.id),
-          getFreshPresensiEarning(emp.id)
-        );
+        const previewForEmployee = isLoyalisTab ? undefined : refreshedPreviews[emp.id];
+        // A Pekarya without a preview has no trustworthy recalculation, so it
+        // is skipped rather than proposed as a change to zeroed rows.
+        if (!isLoyalisTab && !previewForEmployee) continue;
+        const freshEarnings = previewForEmployee
+          ? previewForEmployee.earnings
+          : buildInitialEarnings(
+            freshRaw,
+            freshGapok,
+            payrollCollar,
+            freshUraianEntry,
+            freshVakasiSum,
+            freshVakasiList,
+            freshFunctionalAllowance,
+            freshKepangkatanAllowance,
+            [],
+            getFreshPresenceBonus(emp.id),
+            getFreshPresensiEarning(emp.id)
+          );
 
         const freshDeductions = buildInitialDeductions(
           freshRaw,
@@ -2798,20 +2907,36 @@ export default function PayrollValidationDashboard() {
     const uraianDocSnap = await getDoc(doc(db, 'UraianGaji', uraianDocId));
     const freshUraianEntry = uraianDocSnap.exists() ? (uraianDocSnap.data() as UraianGajiDocument)?.entries?.[employeeId] : undefined;
 
-    // 8. Rebuild earnings and deductions lists
-    const freshEarnings = buildInitialEarnings(
-      freshRaw,
-      freshGapok,
-      payrollCollar,
-      freshUraianEntry,
-      freshVakasiSum,
-      freshVakasiList,
-      freshFunctionalAllowance,
-      freshKepangkatanAllowance,
-      [], // customColumns
-      getFreshPresenceBonus(employeeId),
-      getFreshPresensiEarning(employeeId)
-    );
+    // 8. Rebuild earnings and deductions lists.
+    // Pekarya earnings come back from the shared preview endpoint so a manual
+    // Refresh lands on exactly the rows the employee's own payslip shows;
+    // deductions and the cooperative mapping stay on this client-side path.
+    let freshEarnings: PaySlipField[];
+    if (isLoyalis) {
+      freshEarnings = buildInitialEarnings(
+        freshRaw,
+        freshGapok,
+        payrollCollar,
+        freshUraianEntry,
+        freshVakasiSum,
+        freshVakasiList,
+        freshFunctionalAllowance,
+        freshKepangkatanAllowance,
+        [], // customColumns
+        getFreshPresenceBonus(employeeId),
+        getFreshPresensiEarning(employeeId)
+      );
+    } else {
+      const refreshedPreviews = await fetchPekaryaPreviews();
+      setPekaryaPreviews(refreshedPreviews);
+      const preview = refreshedPreviews[employeeId];
+      if (!preview) {
+        throw new Error(
+          'Pratinjau perhitungan Pekarya tidak tersedia, sehingga slip tidak dapat disegarkan.',
+        );
+      }
+      freshEarnings = preview.earnings;
+    }
 
     const freshDeductions = buildInitialDeductions(
       freshRaw,
@@ -2852,6 +2977,11 @@ export default function PayrollValidationDashboard() {
 
     await runWithConcurrency(missingTargets, 4, async (target) => {
       try {
+        if (target.collar === 'pekarya' && !pekaryaPreviews[target.id]) {
+          throw new Error(
+            'Pratinjau perhitungan Pekarya belum tersedia untuk pegawai ini.',
+          );
+        }
         const draftData = buildPayrollTargetDraftData(target, startingStates);
         const result = await authenticatedJson<{
           koperasiPlan?: {
@@ -2918,6 +3048,7 @@ export default function PayrollValidationDashboard() {
   };
 
   const handlePrepareAllDrafts = async () => {
+    if (!requirePekaryaPreviews()) return;
     if (attendancePeriodStatus === 'closed') {
       alert('Periode sudah ditutup; gunakan Verifikasi & Kunci untuk perbaikan transisi Juli 2026.');
       return;
@@ -3431,7 +3562,7 @@ export default function PayrollValidationDashboard() {
                 <TableBody>
                   {displayEmployees.map((emp) => {
                     const years = calculateYearsOfService(emp.joinDate, targetDate);
-                    const gapok = calculateGapok(emp, salaryMatrix, targetDate);
+                    const gapok = getPekaryaGapok(emp);
                     const slip = slipStates[emp.id];
                     const emailSentInQueue = bulkEmailResults.find(r => r.employeeId === emp.id)?.status === 'success';
                     const isEmailSent = slip?.emailSent || emailSentInQueue;
@@ -3531,7 +3662,7 @@ export default function PayrollValidationDashboard() {
         onOpenChange={setDialogOpen}
         employee={selectedEmployee?.raw ?? null}
         employeeNo={selectedEmployee?.rowIndex ?? 0}
-        gapok={selectedEmployee ? calculateGapok(selectedEmployee, salaryMatrix, targetDate) : 0}
+        gapok={selectedEmployee ? getPekaryaGapok(selectedEmployee) : 0}
         period={payrollPeriod}
         periodClosed={attendancePeriodStatus === 'closed'}
         slipState={selectedEmployee ? slipStates[selectedEmployee.id] ?? null : null}
@@ -3567,6 +3698,12 @@ export default function PayrollValidationDashboard() {
         presenceDeduction={selectedEmployee ? getLoyalisPresenceDeduction(selectedEmployee.id) : 0}
         presensiEarning={selectedEmployee ? getLoyalisPresensiEarning(selectedEmployee.id) : 0}
         presensiDeduction={selectedEmployee ? getLoyalisPresensiDeduction(selectedEmployee.id) : 0}
+        pekaryaPreview={
+          selectedEmployee && payrollCollar !== 'loyalis'
+            ? pekaryaPreviews[selectedEmployee.id] ?? null
+            : null
+        }
+        previewLoading={payrollCollar !== 'loyalis' && pekaryaPreviewsLoading}
       />
 
       <LegalitasPimpinanDialog

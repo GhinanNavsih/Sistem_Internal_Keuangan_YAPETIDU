@@ -57,16 +57,9 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
-import { MONTHS_ID, computeSlipAmount } from '@/utils/rekapConfig';
-import { resolveRekapColumnsForSlip } from '@/lib/payroll/slipBuilders';
-import type { RekapColumn, UraianEntry, UraianGajiDocument } from '@/types';
+import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson } from '@/lib/payroll/client';
-import {
-  activityBelongsToPayrollPeriod,
-  sumApprovedActivitySpj,
-} from '@/lib/payroll/pekaryaSpj';
-import { countDriverPiketInPeriod, classifyDriverPiketDatesInPeriod, type DriverPiketSchedule } from '@/lib/payroll/driverPiket';
-import { periodCalendarFromData } from '@/lib/payroll/calendar';
+import { activityBelongsToPayrollPeriod } from '@/lib/payroll/pekaryaSpj';
 import {
   composeKoperasiLoanHistoryTrail,
   koperasiProjectedPaidInstallments,
@@ -787,7 +780,6 @@ export default function EmployeePayslipPage() {
         }
 
         setEmployeeData(employee);
-        const jobCategory = String(employee.employment?.jobCategory || 'PEKARYA').toUpperCase();
 
         // A final PayrollSlipStates snapshot remains authoritative.  When it
         // does not exist yet (the normal state while Finance is preparing a
@@ -805,33 +797,6 @@ export default function EmployeePayslipPage() {
             console.warn('Unable to load approved activity reports for payslip draft:', error);
             return null;
           });
-
-        // Piket, like SPJ above, is otherwise sourced solely from a locked
-        // Uraian entry — without this, a SOPIR employee sees "-" for Piket
-        // whenever Finance hasn't saved this period's rekap yet, even though
-        // the driver's own duty roster already has the real count.
-        const driverPiketQuery = jobCategory === 'SOPIR'
-          ? query(
-            collection(db, 'DriverPiketSchedules'),
-            where('driverId', '==', empId),
-          )
-          : null;
-        const driverPiketPromise = driverPiketQuery
-          ? getDocsFromServer(driverPiketQuery).catch((error) => {
-            console.warn('Unable to load driver Piket schedules for payslip draft:', error);
-            return null;
-          })
-          : Promise.resolve(null);
-
-        // Same Friday/holiday calendar real attendance publish uses, so the
-        // Piket-derived Harian/Jumat & Libur estimate below classifies dates
-        // the same way the eventual real data will.
-        const periodDocPromise = jobCategory === 'SOPIR'
-          ? getDocFromServer(doc(db, 'PayrollPeriods', periodToken)).catch((error) => {
-            console.warn('Unable to load period calendar for payslip draft:', error);
-            return null;
-          })
-          : Promise.resolve(null);
 
         const loanPromise = employee.koperasiAuthUid
           ? getDocsFromServer(query(
@@ -853,58 +818,19 @@ export default function EmployeePayslipPage() {
           })
           : Promise.resolve(null);
 
-        const [activitySnapshot, loanSnapshot, memberSnapshot, driverPiketSnapshot, periodDocSnapshot] = await Promise.all([
+        const [activitySnapshot, loanSnapshot, memberSnapshot] = await Promise.all([
           activityPromise,
           loanPromise,
           memberPromise,
-          driverPiketPromise,
-          periodDocPromise,
         ]);
         if (cancelled) return;
 
+        // Still read directly: these back the "Rincian Presensi Harian" list,
+        // not the money rows, which now come from the shared preview endpoint.
         const activityReports = activitySnapshot?.docs.map((activityDoc) => ({
           id: activityDoc.id,
           ...activityDoc.data(),
         })) || [];
-        const driverPiketSchedules = (driverPiketSnapshot?.docs.map((scheduleDoc) => ({
-          id: scheduleDoc.id,
-          ...scheduleDoc.data(),
-        })) || []) as DriverPiketSchedule[];
-        const periodPremiumDates = new Set(
-          periodCalendarFromData(
-            periodToken,
-            periodDocSnapshot?.exists() ? periodDocSnapshot.data() : null,
-          ).premiumDates,
-        );
-        const approvedSpj = sumApprovedActivitySpj(
-          activityReports,
-          empId,
-          jobCategory,
-          periodToken,
-        );
-
-        // Attendance/vakasi figures live in the locked Uraian rekap. A missing
-        // or unreadable document simply leaves the rows at zero, exactly as
-        // before, so this can never make the page fail to render.
-        let uraianEntry: UraianEntry | undefined;
-        let uraianCustomColumns: RekapColumn[] = [];
-        if (!isLoyalis) {
-          try {
-            const uraianSnap = await getDocFromServer(
-              doc(db, 'UraianGaji', `${periodKey}_${jobCategory}`),
-            );
-            if (cancelled) return;
-            if (uraianSnap.exists()) {
-              const uraianData = uraianSnap.data() as UraianGajiDocument;
-              uraianEntry = uraianData?.entries?.[empId];
-              if (Array.isArray(uraianData?.customColumns)) {
-                uraianCustomColumns = uraianData.customColumns;
-              }
-            }
-          } catch (uraianErr) {
-            console.warn('Rekap uraian tidak dapat dibaca:', uraianErr);
-          }
-        }
 
         const rawCooperativeLoans = (loanSnapshot?.docs || [])
           .map((loanDoc) => ({ id: loanDoc.id, ...loanDoc.data() as any }));
@@ -947,68 +873,28 @@ export default function EmployeePayslipPage() {
         let loadedVakasiEvents: { eventName: string; payGiven: number }[] = [];
 
         if (!isLoyalis) {
-          fallbackEarnings.push({
-            label: 'Gaji Pokok',
-            amount: money(employee.salaryProfile?.baseSalaryAmount),
-          });
-
-          // The rekap is the source of truth for these rows and is readable by
-          // any signed-in user, so read it directly rather than rendering
-          // zeros. Without this an employee sees "-" for Vakasi Harian and
-          // Bonus Presensi whenever Finance has not saved a slip yet, even
-          // though the Uraian has been locked.
-          const columns = resolveRekapColumnsForSlip(
-            jobCategory,
-            uraianEntry,
-            uraianCustomColumns,
-          );
-          for (const column of columns) {
-            if (!column.slipLabel) continue;
-            let amount = 0;
-            if (uraianEntry) {
-              if (
-                column.type === 'count' &&
-                uraianEntry.counts &&
-                uraianEntry.counts[column.key] !== undefined
-              ) {
-                amount = computeSlipAmount(column, uraianEntry.counts[column.key]);
-              } else if (
-                uraianEntry.values &&
-                uraianEntry.values[column.key] !== undefined
-              ) {
-                amount = uraianEntry.values[column.key] ?? 0;
-              }
-            }
-            if (column.key === 'spj' && amount === 0) amount = approvedSpj;
-            if (column.key === 'piket' && amount === 0) {
-              amount = computeSlipAmount(
-                column,
-                countDriverPiketInPeriod(empId, periodToken, driverPiketSchedules),
-              );
-            }
-            if ((column.key === 'harian' || column.key === 'jumatLibur') && amount === 0) {
-              const sopirAttendanceEstimate = classifyDriverPiketDatesInPeriod(
-                empId,
-                periodToken,
-                driverPiketSchedules,
-                periodPremiumDates,
-              );
-              amount = computeSlipAmount(
-                column,
-                column.key === 'harian' ? sopirAttendanceEstimate.harian : sopirAttendanceEstimate.jumatLibur,
-              );
-            }
-            fallbackEarnings.push({ label: column.slipLabel, amount });
+          // Earnings come from /api/payroll/slip-preview — the very same
+          // calculation the Finance dashboard renders — so this page and
+          // Tinjau Slip Gaji cannot show different rows or totals.
+          //
+          // There is deliberately no `salaryProfile.baseSalaryAmount`
+          // fallback: it is a denormalized snapshot that under-states Gaji
+          // Pokok as soon as an employee crosses a service-year boundary. If
+          // the preview cannot be read the rows stay empty rather than
+          // rendering a stale figure as though it were current.
+          try {
+            const previewParams = new URLSearchParams({ period: periodToken });
+            if (isImpersonatingUi) previewParams.set('employeeId', empId);
+            const previewResult = await authenticatedJson<{
+              previews?: Record<string, { earnings?: unknown }>;
+            }>(`/api/payroll/slip-preview?${previewParams.toString()}`);
+            if (cancelled) return;
+            fallbackEarnings = normalizeSlipFields(
+              previewResult.previews?.[empId]?.earnings,
+            );
+          } catch (previewErr) {
+            console.warn('Unable to load the shared Pekarya slip preview:', previewErr);
           }
-
-          fallbackEarnings.push({
-            label: 'BPJS (Tunjangan)',
-            amount: money(employee.bpjs?.allowanceAmount),
-          });
-          fallbackEarnings.push({
-            label: 'Tunjangan Beras',
-            amount: money(employee.salaryProfile?.tunjanganBeras),
-          });
 
           fallbackDeductions.push(
             { label: 'Koperasi Rochmad', amount: money(employee.deductions?.koperasiRochmad) },
@@ -1159,9 +1045,17 @@ export default function EmployeePayslipPage() {
         // above.  This is what keeps an unfinalized July slip from rendering
         // as an empty Rp 0 document.
         const savedSlip = slipSnap.exists() ? slipSnap.data() : null;
+        const savedEarnings = normalizeSlipFields(savedSlip?.earnings);
         setConfirmedSlip(null);
         setIsConfirmed(false);
-        setCalculatedEarnings(mergeSlipFields(fallbackEarnings, savedSlip?.earnings));
+        // A saved Pekarya draft is shown exactly as Finance stored it — the
+        // same rows the Tinjau Slip Gaji modal opens on. Only when no draft
+        // exists does the shared live preview stand in.
+        setCalculatedEarnings(
+          !isLoyalis && savedEarnings.length > 0
+            ? savedEarnings
+            : mergeSlipFields(fallbackEarnings, savedSlip?.earnings),
+        );
         setCalculatedDeductions(mergeSlipFields(fallbackDeductions, savedSlip?.deductions));
         setPresenceInfo(loadedPresenceInfo);
         setVakasiEvents(loadedVakasiEvents);

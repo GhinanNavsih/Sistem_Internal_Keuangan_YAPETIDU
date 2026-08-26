@@ -1,4 +1,5 @@
 import { calculateGapok } from '@/lib/payroll/salaryMatrix';
+import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
 import {
   buildInitialDeductions,
   buildInitialEarnings,
@@ -25,6 +26,14 @@ export interface DashboardPeriodInputs {
   koperasiDeductions: Record<string, number>;
   koperasiSavings: Record<string, number>;
   loyalisPresenceData: any | null;
+  /**
+   * Pekarya earnings as calculated by /api/payroll/slip-preview, keyed by
+   * employee id. When an entry exists it is authoritative: it is the same
+   * object the employee's own payslip page renders, so the dashboard cannot
+   * show a different Gaji Pokok, SPJ, or attendance figure than the employee
+   * sees. Absent only for Loyalis and while the period previews are loading.
+   */
+  pekaryaPreviews?: Record<string, PekaryaSlipPreview>;
 }
 
 export interface DashboardSavedSlip {
@@ -162,20 +171,28 @@ export function buildDashboardSlipData(
     inputs.loyalisPresenceData,
   );
 
+  // Pekarya earnings come from the shared preview whenever it has been
+  // loaded; the local builder stays only for Loyalis and for a blue-collar
+  // employee the preview does not cover (a non-Pekarya job category).
+  const pekaryaPreview =
+    collar === 'pekarya' ? inputs.pekaryaPreviews?.[employee.id] : undefined;
+
   return {
-    earnings: buildInitialEarnings(
-      employee,
-      gapok,
-      collar,
-      uraianEntry,
-      inputs.vakasiTambahanMap[employee.id] ?? 0,
-      inputs.vakasiTambahanListMap[employee.id] ?? [],
-      inputs.functionalAllowanceMap[employee.id] ?? 0,
-      inputs.kepangkatanAllowanceMap[employee.id] ?? 0,
-      [],
-      presenceBonus,
-      presensiEarning,
-    ),
+    earnings: pekaryaPreview
+      ? pekaryaPreview.earnings
+      : buildInitialEarnings(
+        employee,
+        gapok,
+        collar,
+        uraianEntry,
+        inputs.vakasiTambahanMap[employee.id] ?? 0,
+        inputs.vakasiTambahanListMap[employee.id] ?? [],
+        inputs.functionalAllowanceMap[employee.id] ?? 0,
+        inputs.kepangkatanAllowanceMap[employee.id] ?? 0,
+        [],
+        presenceBonus,
+        presensiEarning,
+      ),
     deductions: buildInitialDeductions(
       employee,
       collar,

@@ -57,3 +57,95 @@ test('a persisted slip remains authoritative over fallback calculations', () => 
     saved,
   );
 });
+
+// ─── Persisted-state precedence for Pekarya ──────────────────────────────
+
+const PEKARYA_EMPLOYEE = {
+  id: 'pekarya-1',
+  employment: { startDate: '2026-01-01', jobCategory: 'SOPIR' },
+  salaryProfile: { salaryGradeCode: 'A', baseSalaryAmount: 777_000 },
+};
+
+const LIVE_PREVIEW = {
+  earnings: [
+    { label: 'Gaji Pokok', amount: 269_000 },
+    { label: 'SPJ', amount: 553_068 },
+  ],
+  gapok: 269_000,
+  meta: {
+    employeeId: 'pekarya-1',
+    jobCategory: 'SOPIR',
+    period: '2026-08',
+    matrixVersion: '2026_v1',
+    gradeLevel: 'A',
+    serviceYears: 28,
+    effectiveMatrixYear: 28,
+    gapokStatus: 'ok' as const,
+    spjSource: 'activity_and_events' as const,
+    attendanceSource: 'piket_estimate' as const,
+    isProvisional: true,
+    canCreateSlip: true,
+    warnings: [],
+  },
+};
+
+const inputsWithPreview: DashboardPeriodInputs = {
+  ...inputs,
+  pekaryaPreviews: { 'pekarya-1': LIVE_PREVIEW },
+};
+
+test('no persisted state falls through to the shared live preview', () => {
+  const data = buildDashboardSlipData(
+    PEKARYA_EMPLOYEE,
+    'pekarya',
+    undefined,
+    inputsWithPreview,
+  );
+
+  assert.deepEqual(data.earnings, LIVE_PREVIEW.earnings);
+  assert.equal(sumSlipFields(data.earnings), 822_068);
+});
+
+test('an editable draft keeps its saved values over the live preview', () => {
+  const saved = {
+    earnings: [{ label: 'Gaji Pokok', amount: 264_750 }],
+    deductions: [{ label: 'BPJS', amount: 1_000 }],
+  };
+
+  assert.deepEqual(
+    buildDashboardSlipData(PEKARYA_EMPLOYEE, 'pekarya', saved, inputsWithPreview),
+    saved,
+  );
+});
+
+test('a Pekarya without a preview never adopts the profile base salary', () => {
+  // The preview map is keyed by employee id; an employee it does not cover
+  // falls back to the matrix-driven builder, which is fed by calculateGapok —
+  // salaryProfile.baseSalaryAmount is not a source anywhere in this path.
+  const data = buildDashboardSlipData(
+    PEKARYA_EMPLOYEE,
+    'pekarya',
+    undefined,
+    { ...inputs, pekaryaPreviews: {} },
+  );
+
+  const gapok = data.earnings.find((field) => field.label === 'Gaji Pokok');
+  assert.equal(gapok?.amount, 1_000_000);
+  assert.notEqual(gapok?.amount, 777_000);
+});
+
+test('Loyalis is unaffected by the Pekarya preview map', () => {
+  const loyalis = buildDashboardSlipData(
+    {
+      id: 'pekarya-1',
+      employment_profile: { date_of_hire: '2026-01-01', department_unit: 'Staf' },
+      academic_and_tier: { level_code: 'A' },
+    },
+    'loyalis',
+    undefined,
+    inputsWithPreview,
+  );
+
+  const gapok = loyalis.earnings.find((field) => field.label === 'Gaji Pokok');
+  assert.equal(gapok?.amount, 1_000_000);
+});

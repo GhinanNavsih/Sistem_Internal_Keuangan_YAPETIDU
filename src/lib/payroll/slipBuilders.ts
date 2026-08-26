@@ -57,6 +57,14 @@ export function resolveRekapColumnsForSlip(
 
 /**
  * Build initial earnings rows from whatever we know about the employee.
+ *
+ * The `loyalis` branch is still the canonical white-collar builder. The blue
+ * branch, however, is no longer what the dashboard, the Tinjau Slip Gaji
+ * modal, or /employee/payslip render for a Pekarya — those all go through
+ * `buildPekaryaSlipPreview`, which is the only place a Pekarya Gaji Pokok,
+ * SPJ, or attendance figure is decided. What remains of the blue branch here
+ * serves Uraian propagation, which overwrites only the rekap-owned labels and
+ * discards every profile-derived row this emits.
  */
 export function buildInitialEarnings(
   emp: any,

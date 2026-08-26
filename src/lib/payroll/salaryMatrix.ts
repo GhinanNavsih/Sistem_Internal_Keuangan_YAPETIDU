@@ -21,29 +21,90 @@ export function calculateYearsOfService(joinDate: Date, targetDate: Date): numbe
 /** Everything calculateGapok actually reads; Employee satisfies it. */
 export type GapokEmployee = Pick<Employee, 'gradeLevel' | 'joinDate' | 'dateRecognized'>;
 
+/**
+ * Why a Gaji Pokok could not be read from the matrix. Anything other than
+ * `ok` means the number is not payable: the preview layer surfaces it and
+ * refuses to fall back to `salaryProfile.baseSalaryAmount`, which is a stale
+ * denormalized copy that drifts as soon as an employee crosses a service-year
+ * boundary.
+ */
+export type GapokResolutionStatus =
+  | 'ok'
+  | 'matrix_unavailable'
+  | 'grade_missing'
+  | 'grade_unknown'
+  | 'matrix_year_unavailable';
+
+export interface GapokResolution {
+  amount: number;
+  /** Grade as looked up in the matrix, with any "Gol. " prefix stripped. */
+  gradeKey: string;
+  serviceYears: number;
+  /** The matrix row the amount was taken from, after lower-bound clamping. */
+  effectiveYear: number | null;
+  status: GapokResolutionStatus;
+}
+
+/**
+ * The full result of a matrix lookup, including why it failed.
+ *
+ * `calculateGapok` keeps returning just the amount for the many call sites
+ * that only need the number; callers that must distinguish "matrix says zero"
+ * from "matrix could not be read" use this instead.
+ */
+export function resolveGapokFromMatrix(
+  employee: GapokEmployee,
+  matrix: SalaryMatrix,
+  targetDate: Date
+): GapokResolution {
+  const baseDate = employee.dateRecognized || employee.joinDate;
+  const years = calculateYearsOfService(baseDate, targetDate);
+  const gradeKey = employee.gradeLevel ? employee.gradeLevel.replace(/^Gol\.\s*/i, '') : '';
+  const base: Omit<GapokResolution, 'status'> = {
+    amount: 0,
+    gradeKey,
+    serviceYears: years,
+    effectiveYear: null,
+  };
+
+  if (!matrix || Object.keys(matrix).length === 0) {
+    return { ...base, status: 'matrix_unavailable' };
+  }
+  if (!gradeKey && !employee.gradeLevel) {
+    return { ...base, status: 'grade_missing' };
+  }
+
+  const gradeMatrix = matrix[gradeKey] || matrix[employee.gradeLevel];
+  if (!gradeMatrix) {
+    return { ...base, status: 'grade_unknown' };
+  }
+
+  const availableYears = Object.keys(gradeMatrix).map(Number).sort((a, b) => b - a);
+  if (availableYears.length === 0) {
+    return { ...base, status: 'matrix_year_unavailable' };
+  }
+  const minYear = Math.min(...availableYears);
+  const effectiveYears = years < minYear ? minYear : years;
+
+  const applicableYear = availableYears.find((y) => effectiveYears >= y);
+  if (applicableYear === undefined) {
+    return { ...base, status: 'matrix_year_unavailable' };
+  }
+
+  return {
+    ...base,
+    amount: gradeMatrix[applicableYear],
+    effectiveYear: applicableYear,
+    status: 'ok',
+  };
+}
+
 export function calculateGapok(
   employee: GapokEmployee,
   matrix: SalaryMatrix,
   targetDate: Date
 ): number {
-  const baseDate = employee.dateRecognized || employee.joinDate;
-  const years = calculateYearsOfService(baseDate, targetDate);
-  const gradeKey = employee.gradeLevel ? employee.gradeLevel.replace(/^Gol\.\s*/i, '') : '';
-  const gradeMatrix = matrix[gradeKey] || matrix[employee.gradeLevel];
-
-  if (!gradeMatrix) return 0;
-
-  const availableYears = Object.keys(gradeMatrix).map(Number).sort((a, b) => b - a);
-  const minYear = Math.min(...availableYears);
-  const effectiveYears = years < minYear ? minYear : years;
-
-  const applicableYear = availableYears.find((y) => effectiveYears >= y);
-
-  if (applicableYear !== undefined) {
-    return gradeMatrix[applicableYear];
-  }
-
-  return 0;
+  return resolveGapokFromMatrix(employee, matrix, targetDate).amount;
 }
 
 export function matchFunctionalAllowance(

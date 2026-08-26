@@ -15,6 +15,15 @@ import {
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
+import {
+  resolveGapokFromMatrix,
+  toSlipEmployeeView,
+} from '@/lib/payroll/salaryMatrix';
+import { validateNewSlipGapok } from '@/lib/payroll/pekaryaSlipPreview';
+import {
+  ActiveSalaryMatrix,
+  loadActiveSalaryMatrix,
+} from '@/lib/server/pekaryaSlipPreview';
 import { isPayrollEmployeeEligible } from '@/lib/payroll/payrollRoster';
 import { DRIFT_NOTICES_COLLECTION } from '@/lib/payroll/slipPropagation';
 import {
@@ -112,6 +121,12 @@ function isDraftWriteAction(action: PayrollAction): boolean {
   return action === 'save_draft' || action === 'repair_missing_draft';
 }
 
+/** First day of the payroll month a "YYYY_MM" period token names. */
+function periodTargetDate(period: string): Date {
+  const [year, month] = period.split('_').map(Number);
+  return new Date(year, month - 1, 1);
+}
+
 function bridgeHttpError(error: KoperasiBridgeError): HttpError {
   return new HttpError(
     error.status >= 500 ? 503 : 409,
@@ -181,6 +196,20 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+
+    // The active matrices are read before the transaction: a new slip's Gaji
+    // Pokok must equal what the matrix says, and nothing else, so a client
+    // cannot persist a stale `salaryProfile.baseSalaryAmount` as though it
+    // were the current figure.
+    const activeMatrices: {
+      blue: ActiveSalaryMatrix;
+      loyalis: ActiveSalaryMatrix;
+    } | null = isDraftWriteAction(command.action)
+      ? {
+          blue: await loadActiveSalaryMatrix('SalaryMatrix'),
+          loyalis: await loadActiveSalaryMatrix('SalaryMatrix_WhiteCollar'),
+        }
+      : null;
 
     const result = await adminDb.runTransaction(async (transaction) => {
       const slipRef = adminDb.collection('PayrollSlipStates').doc(slipId);
@@ -462,6 +491,32 @@ export async function POST(request: NextRequest) {
           }
           const earnings = validateMoneyFields(effectiveCommand.earnings, 'earnings');
           const deductions = validateMoneyFields(effectiveCommand.deductions, 'deductions');
+          // A slip being created for the first time must carry exactly the
+          // matrix's Gaji Pokok. Drafts that already exist keep whatever
+          // manual edit Finance made until the next Refresh recalculates them.
+          if (!before && activeMatrices) {
+            const isBlueCollar = blueEmployeeSnapshot.exists;
+            const employeeData = isBlueCollar
+              ? blueEmployeeSnapshot.data()!
+              : loyalisEmployeeSnapshot.data()!;
+            const active = isBlueCollar
+              ? activeMatrices.blue
+              : activeMatrices.loyalis;
+            const resolution = resolveGapokFromMatrix(
+              toSlipEmployeeView(
+                { id: command.employeeId, ...employeeData },
+                isBlueCollar ? 'blue' : 'loyalis',
+              ),
+              active.matrix,
+              periodTargetDate(command.period),
+            );
+            const gapokError = validateNewSlipGapok(
+              earnings,
+              resolution,
+              active.version,
+            );
+            if (gapokError) throw new HttpError(409, gapokError);
+          }
           const plannedLoanIds = new Set(
             koperasiInstallmentPlan?.loans.map((loan) => loan.loanId) || [],
           );

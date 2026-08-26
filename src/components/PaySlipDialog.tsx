@@ -31,6 +31,7 @@ import {
   buildInitialEarnings,
   buildInitialDeductions,
 } from '@/lib/payroll/slipBuilders';
+import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
 import { PayrollStatus, isImmutablePayrollStatus } from '@/lib/payroll/domain';
 import { UserRole } from '@/lib/payroll/roles';
 import { 
@@ -88,6 +89,16 @@ interface PaySlipDialogProps {
   presensiEarning?: number;
   presensiDeduction?: number;
   koperasiSaving?: number;
+  /**
+   * The shared Pekarya earnings preview for this employee and period, as
+   * returned by /api/payroll/slip-preview. A slip that has never been saved
+   * opens on these rows, so the modal shows exactly what the employee sees on
+   * /employee/payslip instead of zero placeholders. Ignored once a draft
+   * exists — a saved draft keeps its own values until Refresh.
+   */
+  pekaryaPreview?: PekaryaSlipPreview | null;
+  /** True while the period previews are still being fetched. */
+  previewLoading?: boolean;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -156,6 +167,8 @@ export default function PaySlipDialog({
   presensiEarning = 0,
   presensiDeduction = 0,
   koperasiSaving = 0,
+  pekaryaPreview = null,
+  previewLoading = false,
 }: PaySlipDialogProps) {
   const [earnings, setEarnings] = useState<PaySlipField[]>([]);
   const [deductions, setDeductions] = useState<PaySlipField[]>([]);
@@ -166,6 +179,22 @@ export default function PaySlipDialog({
 
   const [localStatus, setLocalStatus] = useState<SlipStatus>('draft');
   const localIsLocked = localStatus !== 'draft' || periodClosed;
+
+  // Preview gating applies to Pekarya only; Loyalis keeps its own flow.
+  const isPekaryaTab = activeTab !== 'loyalis';
+  const previewMeta = isPekaryaTab ? pekaryaPreview?.meta ?? null : null;
+  const blockingWarnings = (previewMeta?.warnings || []).filter(
+    (warning) => warning.blocking,
+  );
+  // A draft that already exists keeps its normal workflow. What must not
+  // happen is materializing a *new* slip out of a preview whose Gaji Pokok
+  // could not be read from the matrix, or whose attendance is not published —
+  // the server would reject the write anyway.
+  const newSlipBlocked =
+    isPekaryaTab && !slipState && (previewLoading || blockingWarnings.length > 0);
+  const newSlipBlockedReason = previewLoading
+    ? 'Pratinjau perhitungan masih dimuat.'
+    : blockingWarnings.map((warning) => warning.message).join(' ');
 
   // Refresh & diff comparison states
   const [compareOpen, setCompareOpen] = useState(false);
@@ -182,6 +211,10 @@ export default function PaySlipDialog({
 
     if (slipState && Array.isArray(slipState.earnings)) {
       initEarnings = JSON.parse(JSON.stringify(slipState.earnings));
+    } else if (activeTab !== 'loyalis' && pekaryaPreview) {
+      // No saved slip: open on the live matrix-based preview rather than the
+      // profile snapshot, so the modal and the employee's own payslip agree.
+      initEarnings = JSON.parse(JSON.stringify(pekaryaPreview.earnings));
     } else {
       initEarnings = buildInitialEarnings(
         employee,
@@ -236,7 +269,8 @@ export default function PaySlipDialog({
     presensiEarning,
     presenceDeduction,
     presensiDeduction,
-    koperasiSaving
+    koperasiSaving,
+    pekaryaPreview
   ]);
 
   // Helper function to calculate diffs
@@ -601,6 +635,32 @@ export default function PaySlipDialog({
               </div>
             </div>
 
+            {/* Blocking preview problems: matrix unreadable, presensi unpublished */}
+            {isPekaryaTab && !slipState && blockingWarnings.length > 0 && (
+              <div className="flex items-start gap-2 text-xs text-rose-700 bg-rose-50 rounded-xl p-3 border border-rose-200">
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <div className="space-y-1">
+                  {blockingWarnings.map((warning) => (
+                    <p key={warning.code}>{warning.message}</p>
+                  ))}
+                  <p className="font-semibold">
+                    Slip baru tidak dapat dibuat atau dikunci sampai hal di atas selesai.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Provisional data: rows still rest on estimates, not publications */}
+            {isPekaryaTab && !slipState && previewMeta?.isProvisional && blockingWarnings.length === 0 && (
+              <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-xl p-3 border border-amber-200">
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <p>
+                  Angka presensi masih bersifat sementara — perhitungan memakai estimasi
+                  jadwal Piket karena presensi resmi periode ini belum dipublikasikan.
+                </p>
+              </div>
+            )}
+
             {/* Warning for incomplete data */}
             {earnings.some(e => e.amount === 0) && (
               <div className="flex items-start gap-2 text-xs text-amber-600 bg-amber-50 rounded-xl p-3 border border-amber-100">
@@ -650,7 +710,9 @@ export default function PaySlipDialog({
                     <Button
                       type="button"
                       onClick={handleSimpan}
-                      className="rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 shadow-sm px-6 cursor-pointer font-bold"
+                      disabled={newSlipBlocked}
+                      title={newSlipBlocked ? newSlipBlockedReason : undefined}
+                      className="rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 shadow-sm px-6 cursor-pointer font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Simpan Perubahan
                     </Button>
@@ -659,7 +721,7 @@ export default function PaySlipDialog({
                     <Button
                       type="button"
                       onClick={handleVerifyAndLock}
-                      disabled={!periodClosed || !slipState}
+                      disabled={!periodClosed || !slipState || newSlipBlocked}
                       className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 font-bold"
                       title={
                         !periodClosed
