@@ -1,6 +1,8 @@
 import type { PhotoAuditMetadata, SatpamPayType } from '@/lib/payroll/domain';
 
 export const SATPAM_SHIFT_DRAFT_STORAGE_VERSION = 3;
+export const SATPAM_SHIFT_DRAFT_SCHEMA_VERSION = 2;
+export const SATPAM_SHIFT_DRAFTS_COLLECTION = 'SatpamShiftDrafts';
 
 export type SatpamDraftShiftName = 'Pagi' | 'Sore' | 'Malam';
 
@@ -15,11 +17,25 @@ export interface SatpamShiftDraftAssignment {
 }
 
 export interface SatpamShiftPendingDraft {
+  id?: string;
+  revision?: number;
   requestId?: string;
   savedAt?: string;
   payload: {
     dutyDate: string;
     shiftName?: SatpamDraftShiftName;
+    /**
+     * A complete snapshot contains all nine post rows, including intentional
+     * blanks. Legacy v3 local drafts omitted blank rows, so the flag is
+     * optional and old drafts continue to restore as overlays.
+     */
+    completeSnapshot?: boolean;
+    /** Distinguishes an intentionally cleared form from an untouched form. */
+    hasUserChanges?: boolean;
+    /** Keeps the Tambah Petugas card open even before its first field is set. */
+    extraVisible?: boolean;
+    baseOccurrenceId?: string;
+    baseOccurrenceRevision?: number;
     dutyPlanId?: string;
     dutyPlanRevision?: number;
     assignments: SatpamShiftDraftAssignment[];
@@ -54,6 +70,66 @@ export function satpamShiftDraftStorageKey(
   return `unipdu:satpam-draft:v${SATPAM_SHIFT_DRAFT_STORAGE_VERSION}:${employeeId}:${dutyDate}`;
 }
 
+/** Server document id for the one in-progress shift form owned per Ketua/date. */
+export function satpamShiftDraftDocumentId(
+  employeeId: string,
+  dutyDate: string,
+): string {
+  if (!employeeId || !/^\d{4}-\d{2}-\d{2}$/.test(dutyDate)) return '';
+  // Firestore document ids cannot contain '/'. linkedEmployeeId itself is a
+  // Firestore document id, but keep this defensive normalization at the API
+  // boundary so a malformed profile can never change the collection path.
+  const safeEmployeeId = employeeId.replace(/\//g, '_').slice(0, 500);
+  return `${safeEmployeeId}__${dutyDate.replaceAll('-', '')}`;
+}
+
+function optionalString(
+  value: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  return typeof value[key] === 'string' ? (value[key] as string) : undefined;
+}
+
+function normalizeDraftAssignment(
+  raw: unknown,
+  keepBlank: boolean,
+): SatpamShiftDraftAssignment | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.postId !== 'string' || !VALID_POST_IDS.has(raw.postId)) {
+    return null;
+  }
+  const employeeId = typeof raw.employeeId === 'string' ? raw.employeeId : '';
+  const assignment: SatpamShiftDraftAssignment = {
+    postId: raw.postId,
+    employeeId,
+    ...(optionalString(raw, 'shiftType') !== undefined
+      ? { shiftType: optionalString(raw, 'shiftType') }
+      : {}),
+    ...(optionalString(raw, 'coveredEmployeeId') !== undefined
+      ? { coveredEmployeeId: optionalString(raw, 'coveredEmployeeId') }
+      : {}),
+    ...(optionalString(raw, 'overtimeReason') !== undefined
+      ? { overtimeReason: optionalString(raw, 'overtimeReason') }
+      : {}),
+    ...(optionalString(raw, 'photoUrl') !== undefined
+      ? { photoUrl: optionalString(raw, 'photoUrl') }
+      : {}),
+    ...(isRecord(raw.photoAuditMetadata)
+      ? {
+          photoAuditMetadata:
+            raw.photoAuditMetadata as unknown as PhotoAuditMetadata,
+        }
+      : {}),
+  };
+  const hasProgress = Boolean(
+    employeeId.trim() ||
+      assignment.coveredEmployeeId?.trim() ||
+      assignment.overtimeReason?.trim() ||
+      assignment.photoUrl?.trim(),
+  );
+  return keepBlank || hasProgress ? assignment : null;
+}
+
 /**
  * Parses only the small portion of a locally queued draft that the form knows
  * how to restore. Invalid, empty, or cross-date payloads are ignored instead
@@ -77,14 +153,18 @@ export function parseSatpamShiftPendingDraft(
       return null;
     }
 
-    const assignments = payload.assignments.filter(
-      (assignment): assignment is SatpamShiftDraftAssignment =>
-        isRecord(assignment) &&
-        typeof assignment.postId === 'string' &&
-        VALID_POST_IDS.has(assignment.postId) &&
-        typeof assignment.employeeId === 'string' &&
-        Boolean(assignment.employeeId.trim()),
-    );
+    const completeSnapshot = payload.completeSnapshot === true;
+    const hasUserChanges = payload.hasUserChanges === true;
+    const seenPosts = new Set<string>();
+    const assignments = payload.assignments.flatMap((assignment) => {
+      const normalized = normalizeDraftAssignment(
+        assignment,
+        completeSnapshot && hasUserChanges,
+      );
+      if (!normalized || seenPosts.has(normalized.postId)) return [];
+      seenPosts.add(normalized.postId);
+      return [normalized];
+    });
     // A guard may fill in the extra-officer card in any order (photo first,
     // post first, officer first) before being backgrounded mid-entry. Restore
     // whatever was captured instead of discarding the whole card just because
@@ -108,9 +188,21 @@ export function parseSatpamShiftPendingDraft(
       isRecord(rawExtra) && typeof rawExtra.overtimeReason === 'string'
         ? rawExtra.overtimeReason
         : '';
+    const extraVisible =
+      payload.extraVisible === true ||
+      Boolean(
+        extraPostId ||
+          extraEmployeeId.trim() ||
+          extraPhotoUrl.trim() ||
+          extraOvertimeReason.trim(),
+      );
     const extraAssignment =
       isRecord(rawExtra) &&
-      (extraPostId || extraEmployeeId.trim() || extraPhotoUrl.trim() || extraOvertimeReason.trim())
+      (extraVisible ||
+        extraPostId ||
+        extraEmployeeId.trim() ||
+        extraPhotoUrl.trim() ||
+        extraOvertimeReason.trim())
         ? ({
             postId: extraPostId,
             employeeId: extraEmployeeId,
@@ -122,7 +214,14 @@ export function parseSatpamShiftPendingDraft(
           } satisfies SatpamShiftDraftAssignment)
         : undefined;
 
-    if (assignments.length === 0 && !extraAssignment) return null;
+    if (
+      assignments.length === 0 &&
+      !extraAssignment &&
+      !extraVisible &&
+      !hasUserChanges
+    ) {
+      return null;
+    }
 
     const shiftName = VALID_SHIFT_NAMES.has(
       payload.shiftName as SatpamDraftShiftName,
@@ -131,6 +230,10 @@ export function parseSatpamShiftPendingDraft(
       : undefined;
 
     return {
+      ...(typeof parsed.id === 'string' ? { id: parsed.id } : {}),
+      ...(Number.isInteger(parsed.revision) && Number(parsed.revision) > 0
+        ? { revision: Number(parsed.revision) }
+        : {}),
       ...(typeof parsed.requestId === 'string'
         ? { requestId: parsed.requestId }
         : {}),
@@ -138,6 +241,20 @@ export function parseSatpamShiftPendingDraft(
       payload: {
         dutyDate: expectedDutyDate,
         ...(shiftName ? { shiftName } : {}),
+        ...(completeSnapshot ? { completeSnapshot: true } : {}),
+        ...(hasUserChanges ? { hasUserChanges: true } : {}),
+        ...(extraVisible ? { extraVisible: true } : {}),
+        ...(typeof payload.baseOccurrenceId === 'string'
+          ? { baseOccurrenceId: payload.baseOccurrenceId }
+          : {}),
+        ...(Number.isInteger(payload.baseOccurrenceRevision) &&
+        Number(payload.baseOccurrenceRevision) > 0
+          ? {
+              baseOccurrenceRevision: Number(
+                payload.baseOccurrenceRevision,
+              ),
+            }
+          : {}),
         ...(typeof payload.dutyPlanId === 'string'
           ? { dutyPlanId: payload.dutyPlanId }
           : {}),

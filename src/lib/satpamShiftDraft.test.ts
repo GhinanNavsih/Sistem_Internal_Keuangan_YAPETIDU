@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   parseSatpamShiftPendingDraft,
   SATPAM_SHIFT_DRAFT_STORAGE_VERSION,
+  satpamShiftDraftDocumentId,
   satpamShiftDraftStorageKey,
 } from './satpamShiftDraft';
 
@@ -11,6 +12,10 @@ test('Satpam drafts use a versioned, employee-and-date-scoped key', () => {
   assert.equal(
     satpamShiftDraftStorageKey('employee-2', '2026-08-20'),
     'unipdu:satpam-draft:v3:employee-2:2026-08-20',
+  );
+  assert.equal(
+    satpamShiftDraftDocumentId('employee-2', '2026-08-20'),
+    'employee-2__20260820',
   );
 });
 
@@ -96,6 +101,77 @@ test('an extra-officer pick with no post yet still survives', () => {
   const parsed = parseSatpamShiftPendingDraft(raw, '2026-08-20');
   assert.equal(parsed?.payload.extraAssignment?.employeeId, 'guard-overtime');
   assert.equal(parsed?.payload.extraAssignment?.postId, '');
+});
+
+test('a primary-post photo taken before the officer is picked survives', () => {
+  const raw = JSON.stringify({
+    payload: {
+      dutyDate: '2026-08-20',
+      assignments: [
+        {
+          postId: 'Pos 1',
+          employeeId: '',
+          photoUrl: 'https://example.test/pos-1.jpg',
+        },
+      ],
+    },
+  });
+
+  const parsed = parseSatpamShiftPendingDraft(raw, '2026-08-20');
+  assert.equal(parsed?.payload.assignments[0].employeeId, '');
+  assert.equal(
+    parsed?.payload.assignments[0].photoUrl,
+    'https://example.test/pos-1.jpg',
+  );
+});
+
+test('a complete snapshot preserves intentional blank post rows', () => {
+  const raw = JSON.stringify({
+    revision: 4,
+    payload: {
+      dutyDate: '2026-08-20',
+      shiftName: 'Pagi',
+      completeSnapshot: true,
+      hasUserChanges: true,
+      baseOccurrenceId: 'team_1__20260820__pagi',
+      baseOccurrenceRevision: 2,
+      assignments: [
+        { postId: 'Pos 1', employeeId: '', shiftType: 'Harian' },
+        { postId: 'Pos 2', employeeId: 'guard-2', shiftType: 'Harian' },
+      ],
+      extraVisible: true,
+      extraAssignment: { postId: '', employeeId: '' },
+    },
+  });
+
+  const parsed = parseSatpamShiftPendingDraft(raw, '2026-08-20');
+  assert.equal(parsed?.revision, 4);
+  assert.equal(parsed?.payload.completeSnapshot, true);
+  assert.equal(parsed?.payload.assignments.length, 2);
+  assert.equal(parsed?.payload.assignments[0].employeeId, '');
+  assert.equal(parsed?.payload.extraVisible, true);
+  assert.equal(
+    parsed?.payload.baseOccurrenceId,
+    'team_1__20260820__pagi',
+  );
+  assert.equal(parsed?.payload.baseOccurrenceRevision, 2);
+});
+
+test('opening Tambah Petugas is itself recoverable progress', () => {
+  const raw = JSON.stringify({
+    payload: {
+      dutyDate: '2026-08-20',
+      completeSnapshot: true,
+      hasUserChanges: true,
+      assignments: [],
+      extraVisible: true,
+      extraAssignment: { postId: '', employeeId: '' },
+    },
+  });
+
+  const parsed = parseSatpamShiftPendingDraft(raw, '2026-08-20');
+  assert.equal(parsed?.payload.extraVisible, true);
+  assert.equal(parsed?.payload.extraAssignment?.employeeId, '');
 });
 
 test('a blank extra-officer card with no other progress is not a draft', () => {

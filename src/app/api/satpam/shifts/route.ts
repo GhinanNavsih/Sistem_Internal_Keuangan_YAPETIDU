@@ -47,6 +47,12 @@ import {
   requireRole,
 } from '@/lib/server/auth';
 import { isPeriodClosed } from '@/lib/server/payrollPeriod';
+import {
+  parseSatpamShiftPendingDraft,
+  SATPAM_SHIFT_DRAFTS_COLLECTION,
+  satpamShiftDraftDocumentId,
+  type SatpamShiftPendingDraft,
+} from '@/lib/satpamShiftDraft';
 
 export const dynamic = 'force-dynamic';
 
@@ -706,6 +712,9 @@ async function mutateShift(
     dutyPlanId: command.dutyPlanId || null,
     dutyPlanRevision: command.dutyPlanRevision || null,
   });
+  const draftRef = adminDb
+    .collection(SATPAM_SHIFT_DRAFTS_COLLECTION)
+    .doc(satpamShiftDraftDocumentId(actor.linkedEmployeeId, command.dutyDate));
 
   return adminDb.runTransaction(async (transaction) => {
     const occurrenceRef = adminDb.collection('ShiftOccurrences').doc(occurrenceId);
@@ -759,6 +768,7 @@ async function mutateShift(
       ) {
         throw new HttpError(409, 'requestId sudah digunakan untuk perubahan berbeda.');
       }
+      transaction.delete(draftRef);
       return {
         occurrenceId,
         revision: Number(previous.revision || 1),
@@ -1119,9 +1129,43 @@ async function mutateShift(
       anomalies,
       createdAt: now,
     });
+    // The submitted occurrence and its in-progress draft must transition as one
+    // atomic unit. A successful report can therefore never be followed by an
+    // older autosaved form reappearing on the next load.
+    transaction.delete(draftRef);
 
     return { occurrenceId, revision, anomalies, idempotent: false };
   });
+}
+
+function serializeSatpamDraft(
+  snapshot: FirebaseFirestore.DocumentSnapshot,
+  dutyDate: string,
+  ketuaShiftId: string,
+): SatpamShiftPendingDraft | null {
+  if (!snapshot.exists) return null;
+  const data = snapshot.data();
+  if (
+    !data ||
+    data.ketuaShiftId !== ketuaShiftId ||
+    data.dutyDate !== dutyDate
+  ) {
+    return null;
+  }
+  const updatedAt = data.updatedAt;
+  const savedAt =
+    updatedAt && typeof updatedAt.toDate === 'function'
+      ? updatedAt.toDate().toISOString()
+      : undefined;
+  return parseSatpamShiftPendingDraft(
+    JSON.stringify({
+      id: snapshot.id,
+      revision: data.revision,
+      ...(savedAt ? { savedAt } : {}),
+      payload: data.payload,
+    }),
+    dutyDate,
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -1137,11 +1181,20 @@ export async function GET(request: NextRequest) {
     } catch {
       throw new HttpError(400, 'Tanggal laporan tidak valid.');
     }
-    const snapshot = await adminDb
-      .collection('ShiftOccurrences')
-      .where('ketuaShiftId', '==', actor.linkedEmployeeId)
-      .get();
     const latestBefore = request.nextUrl.searchParams.get('latestBefore') === 'true';
+    const draftRef = adminDb
+      .collection(SATPAM_SHIFT_DRAFTS_COLLECTION)
+      .doc(satpamShiftDraftDocumentId(actor.linkedEmployeeId, dutyDate));
+    const [snapshot, draftSnapshot] = await Promise.all([
+      adminDb
+        .collection('ShiftOccurrences')
+        .where('ketuaShiftId', '==', actor.linkedEmployeeId)
+        .get(),
+      latestBefore ? Promise.resolve(null) : draftRef.get(),
+    ]);
+    const draft = draftSnapshot
+      ? serializeSatpamDraft(draftSnapshot, dutyDate, actor.linkedEmployeeId)
+      : null;
     const occurrences: Array<
       { id: string } & FirebaseFirestore.DocumentData
     > = snapshot.docs
@@ -1162,6 +1215,7 @@ export async function GET(request: NextRequest) {
           resolvedDutyDate: null,
           occurrence: null,
           assignments: [],
+          draft,
         },
         {
           headers: {
@@ -1199,6 +1253,7 @@ export async function GET(request: NextRequest) {
         resolvedDutyDate,
         occurrence,
         assignments,
+        draft,
       },
       {
         headers: {

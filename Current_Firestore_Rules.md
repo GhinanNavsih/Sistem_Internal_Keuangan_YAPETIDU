@@ -338,6 +338,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // In-progress Ketua Shift forms contain the same sensitive roster/photo
+    // data as submitted occurrences. They are read and written exclusively by
+    // the authenticated /api/satpam/shifts/draft route through the Admin SDK.
+    match /SatpamShiftDrafts/{draftId} {
+      allow read, write: if false;
+    }
+
     match /GuardDutyIndexes/{indexId} {
       allow read: if isFinanceRole();
       allow write: if false;

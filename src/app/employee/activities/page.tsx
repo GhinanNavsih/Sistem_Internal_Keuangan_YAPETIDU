@@ -598,6 +598,50 @@ const POSTS_CONFIG = [
   { id: 'Pos 9', name: 'Pos Hurun-inn' },
 ];
 
+type SatpamDraftSyncStatus =
+  | 'idle'
+  | 'saving'
+  | 'saved'
+  | 'offline'
+  | 'error';
+
+function createSatpamDraftFingerprint(input: {
+  shiftName: string;
+  assignments: Record<string, SatpamPostAssignment>;
+  extraVisible: boolean;
+  extraEmployeeId: string;
+  extraPostName: string;
+  extraOvertimeReason: string;
+  extraPhotoUrl: string;
+  extraPhotoAuditMetadata?: PhotoAuditMetadata;
+}): string {
+  return JSON.stringify({
+    shiftName: input.shiftName,
+    assignments: POSTS_CONFIG.map((post) => {
+      const assignment = input.assignments[post.id];
+      return {
+        postId: post.id,
+        employeeId: assignment?.employeeId || '',
+        shiftType: assignment?.shiftType || '',
+        coveredEmployeeId: assignment?.coveredEmployeeId || '',
+        overtimeReason: assignment?.overtimeReason || '',
+        photoUrl: assignment?.photoUrl || '',
+        photoAuditMetadata: assignment?.photoAuditMetadata || null,
+      };
+    }),
+    extraVisible: input.extraVisible,
+    extraAssignment: input.extraVisible
+      ? {
+          postId: input.extraPostName,
+          employeeId: input.extraEmployeeId,
+          overtimeReason: input.extraOvertimeReason,
+          photoUrl: input.extraPhotoUrl,
+          photoAuditMetadata: input.extraPhotoAuditMetadata || null,
+        }
+      : null,
+  });
+}
+
 
 
 function ActivitiesContent() {
@@ -662,15 +706,21 @@ function ActivitiesContent() {
   const [satpamReviewStatus, setSatpamReviewStatus] = useState<'draft' | 'pending_review' | 'under_review' | 'approved' | 'partially_approved' | 'declined'>('draft');
   const [satpamAnomalies, setSatpamAnomalies] = useState<SatpamShiftAnomaly[]>([]);
   const [satpamDraftHydrated, setSatpamDraftHydrated] = useState(false);
+  const [satpamDraftSyncStatus, setSatpamDraftSyncStatus] =
+    useState<SatpamDraftSyncStatus>('idle');
+  const [satpamHasPendingDraft, setSatpamHasPendingDraft] = useState(false);
+  const [satpamDraftRetryNonce, setSatpamDraftRetryNonce] = useState(0);
   const [copyingPreviousShift, setCopyingPreviousShift] = useState(false);
   const [satpamEmployeeSearch, setSatpamEmployeeSearch] = useState('');
   const satpamRequestIdsRef = useRef<Record<string, string>>({});
-  // The duty-plan prefill writes the system's suggested roster into
-  // postAssignments before the guard has touched anything. Without this flag
-  // the very next autosave tick would persist that untouched suggestion as a
-  // localStorage "pending draft," which then re-triggers the "draft restored"
-  // notice on every future page load even though the guard never edited it.
-  const satpamSkipNextAutosaveRef = useRef(false);
+  const satpamDraftBaselineRef = useRef('');
+  const satpamDraftDirtyRef = useRef(false);
+  const satpamDraftGenerationRef = useRef(0);
+  const satpamDraftSequenceRef = useRef(0);
+  const satpamDraftSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const [satpamDraftSessionId] = useState(() =>
+    createFinancialRequestId('satpam_draft'),
+  );
   // The duty date this form's postAssignments actually belong to. Tracked in a
   // ref because it has to update synchronously: when the date changes, React
   // re-runs the autosave effect in the same pass with the *previous* day's
@@ -2559,9 +2609,14 @@ function ActivitiesContent() {
 
     const requestedDate = satpamReportDate;
     const defaultShiftTypeForDate = satpamRegularPayType;
+    const hydrationGeneration = ++satpamDraftGenerationRef.current;
     let isMounted = true;
     setLoadingSubmittedSatpam(true);
     setSatpamDraftHydrated(false);
+    setSatpamDraftSyncStatus('idle');
+    setSatpamHasPendingDraft(false);
+    satpamDraftBaselineRef.current = '';
+    satpamDraftDirtyRef.current = false;
     satpamHydratedDateRef.current = '';
 
     // Clear every date-scoped value before starting the request. In particular,
@@ -2586,6 +2641,7 @@ function ActivitiesContent() {
 
     const restorePendingDraft = (
       pending: SatpamShiftPendingDraft | null,
+      source: 'server' | 'local' | null,
       showRestoredMessage: boolean,
     ): boolean => {
       const restoredAssignments = createBlankSatpamAssignments(
@@ -2600,12 +2656,24 @@ function ActivitiesContent() {
         setExtraPhotoUrl('');
         setExtraPhotoAuditMetadata(undefined);
         setIsExtraPostVisible(false);
+        satpamDraftBaselineRef.current = createSatpamDraftFingerprint({
+          shiftName: calculatedSuggestedShift,
+          assignments: restoredAssignments,
+          extraVisible: false,
+          extraEmployeeId: '',
+          extraPostName: '',
+          extraOvertimeReason: '',
+          extraPhotoUrl: '',
+        });
+        satpamDraftDirtyRef.current = false;
+        setSatpamHasPendingDraft(false);
+        setSatpamDraftSyncStatus('idle');
         return false;
       }
 
-      if (pending.payload.shiftName) {
-        setSatpamReportedShiftName(pending.payload.shiftName);
-      }
+      const restoredShiftName =
+        pending.payload.shiftName || calculatedSuggestedShift;
+      setSatpamReportedShiftName(restoredShiftName);
       for (const assignment of pending.payload.assignments) {
         if (!restoredAssignments[assignment.postId]) continue;
         restoredAssignments[assignment.postId] = {
@@ -2620,6 +2688,8 @@ function ActivitiesContent() {
         };
       }
       const pendingExtra = pending.payload.extraAssignment;
+      const restoredExtraVisible =
+        pending.payload.extraVisible === true || Boolean(pendingExtra);
       setPostAssignments(restoredAssignments);
       setExtraEmployeeId(pendingExtra?.employeeId || '');
       setExtraPostName(pendingExtra?.postId || '');
@@ -2627,7 +2697,29 @@ function ActivitiesContent() {
       setExtraOvertimeReason(pendingExtra?.overtimeReason || '');
       setExtraPhotoUrl(pendingExtra?.photoUrl || '');
       setExtraPhotoAuditMetadata(pendingExtra?.photoAuditMetadata);
-      setIsExtraPostVisible(Boolean(pendingExtra));
+      setIsExtraPostVisible(restoredExtraVisible);
+      satpamDraftBaselineRef.current = createSatpamDraftFingerprint({
+        shiftName: restoredShiftName,
+        assignments: restoredAssignments,
+        extraVisible: restoredExtraVisible,
+        extraEmployeeId: pendingExtra?.employeeId || '',
+        extraPostName: pendingExtra?.postId || '',
+        extraOvertimeReason: pendingExtra?.overtimeReason || '',
+        extraPhotoUrl: pendingExtra?.photoUrl || '',
+        extraPhotoAuditMetadata: pendingExtra?.photoAuditMetadata,
+      });
+      // A local draft may be newer than the server copy (for example, when the
+      // app was closed before the request completed). Force one sync pass even
+      // though its restored form exactly matches the hydration baseline.
+      satpamDraftDirtyRef.current = source === 'local';
+      setSatpamHasPendingDraft(true);
+      setSatpamDraftSyncStatus(
+        source === 'server'
+          ? 'saved'
+          : window.navigator.onLine === false
+            ? 'offline'
+            : 'saving',
+      );
       if (pending.requestId) {
         satpamRequestIdsRef.current[
           `${requestedDate}_${pending.payload.shiftName || calculatedSuggestedShift}`
@@ -2653,6 +2745,52 @@ function ActivitiesContent() {
         console.warn('Draf antrean Satpam lokal tidak dapat dibaca:', error);
         return null;
       }
+    };
+
+    const choosePendingDraft = (
+      serverDraft: SatpamShiftPendingDraft | null | undefined,
+    ): {
+      draft: SatpamShiftPendingDraft | null;
+      source: 'server' | 'local' | null;
+    } => {
+      const localDraft = readPendingDraft();
+      const normalizedServerDraft = serverDraft
+        ? parseSatpamShiftPendingDraft(
+            JSON.stringify(serverDraft),
+            requestedDate,
+          )
+        : null;
+      if (!localDraft && !normalizedServerDraft) {
+        return { draft: null, source: null };
+      }
+      if (!normalizedServerDraft) {
+        return { draft: localDraft, source: localDraft ? 'local' : null };
+      }
+      if (!localDraft) {
+        return { draft: normalizedServerDraft, source: 'server' };
+      }
+      const localSavedAt = Date.parse(localDraft.savedAt || '');
+      const serverSavedAt = Date.parse(normalizedServerDraft.savedAt || '');
+      if (localDraft.revision && normalizedServerDraft.revision) {
+        if (localDraft.revision !== normalizedServerDraft.revision) {
+          return localDraft.revision > normalizedServerDraft.revision
+            ? { draft: localDraft, source: 'local' }
+            : { draft: normalizedServerDraft, source: 'server' };
+        }
+        if (
+          JSON.stringify(localDraft.payload) !==
+          JSON.stringify(normalizedServerDraft.payload)
+        ) {
+          // Same server revision plus different local content means the local
+          // edit happened after that revision and has not synced yet.
+          return { draft: localDraft, source: 'local' };
+        }
+        return { draft: normalizedServerDraft, source: 'server' };
+      }
+      return Number.isFinite(localSavedAt) &&
+        (!Number.isFinite(serverSavedAt) || localSavedAt > serverSavedAt)
+        ? { draft: localDraft, source: 'local' }
+        : { draft: normalizedServerDraft, source: 'server' };
     };
 
     authenticatedJson<{
@@ -2681,17 +2819,20 @@ function ActivitiesContent() {
         photoAuditMetadata?: PhotoAuditMetadata;
         dutyDate?: string;
       }>;
+      draft?: SatpamShiftPendingDraft | null;
     }>(`/api/satpam/shifts?dutyDate=${encodeURIComponent(requestedDate)}`, {
       method: 'GET',
       cache: 'no-store',
     }).then((response) => {
       if (
         !isMounted ||
+        satpamDraftGenerationRef.current !== hydrationGeneration ||
         satpamSelectedDateRef.current !== requestedDate
       ) {
         return;
       }
       const { occurrence, assignments } = response;
+      const pendingDraft = choosePendingDraft(response.draft);
       if (
         response.requestedDutyDate !== requestedDate ||
         response.resolvedDutyDate !== (occurrence ? requestedDate : null) ||
@@ -2709,7 +2850,7 @@ function ActivitiesContent() {
       }
 
       if (occurrence) {
-        const newAssignments = createBlankSatpamAssignments(
+        let newAssignments = createBlankSatpamAssignments(
           defaultShiftTypeForDate,
         );
         let foundExtra = false;
@@ -2757,23 +2898,88 @@ function ActivitiesContent() {
           }
         });
 
-        setPostAssignments(newAssignments);
-        setSatpamOccurrenceId(occurrence.id);
-        setSatpamOccurrenceRevision(Number(occurrence.revision || 1));
-        setSatpamAuditorActionAt(occurrence.auditorActionAt || null);
-        setSatpamReviewStatus(
+        const occurrenceRevision = Number(occurrence.revision || 1);
+        const normalizedReviewStatus: typeof satpamReviewStatus =
           occurrence.status === 'approved' || occurrence.reviewStatus === 'approved'
             ? 'approved'
             : occurrence.reviewStatus === 'partially_approved'
               ? 'partially_approved'
-            : occurrence.status === 'declined' || occurrence.reviewStatus === 'declined'
-              ? 'declined'
-              : occurrence.status === 'under_review' || occurrence.reviewStatus === 'under_review'
-                ? 'under_review'
-                : 'pending_review',
+              : occurrence.status === 'declined' || occurrence.reviewStatus === 'declined'
+                ? 'declined'
+                : occurrence.status === 'under_review' || occurrence.reviewStatus === 'under_review'
+                  ? 'under_review'
+                  : 'pending_review';
+        const occurrenceLocked =
+          Boolean(occurrence.auditorActionAt) ||
+          !['pending_review', 'draft'].includes(normalizedReviewStatus);
+        const candidateDraft = pendingDraft.draft;
+        const candidateBaseId = candidateDraft?.payload.baseOccurrenceId;
+        const candidateBaseRevision =
+          candidateDraft?.payload.baseOccurrenceRevision;
+        // Legacy local drafts did not record their base occurrence. They are
+        // allowed once as an overlay so users affected by the old bug recover
+        // their Tambah Petugas entry. Every new server draft is revision-bound.
+        const draftMatchesOccurrence = Boolean(
+          candidateDraft &&
+            !occurrenceLocked &&
+            (pendingDraft.source === 'local' && !candidateBaseId
+              ? true
+              : candidateBaseId === occurrence.id &&
+                candidateBaseRevision === occurrenceRevision),
         );
+        const appliedDraft = draftMatchesOccurrence ? candidateDraft : null;
+
+        if (appliedDraft) {
+          if (appliedDraft.payload.completeSnapshot) {
+            newAssignments = createBlankSatpamAssignments(
+              defaultShiftTypeForDate,
+            );
+          }
+          appliedDraft.payload.assignments.forEach((assignment) => {
+            if (!newAssignments[assignment.postId]) return;
+            newAssignments[assignment.postId] = {
+              employeeId: assignment.employeeId || '',
+              shiftType: assignment.coveredEmployeeId
+                ? 'Lembur Cover'
+                : assignment.shiftType || defaultShiftTypeForDate,
+              coveredEmployeeId: assignment.coveredEmployeeId || '',
+              overtimeReason: assignment.overtimeReason || '',
+              photoUrl: assignment.photoUrl || '',
+              photoAuditMetadata: assignment.photoAuditMetadata,
+            };
+          });
+
+          const draftExtra = appliedDraft.payload.extraAssignment;
+          if (appliedDraft.payload.completeSnapshot) {
+            foundExtra = appliedDraft.payload.extraVisible === true;
+            extraEmpId = draftExtra?.employeeId || '';
+            extraPName = draftExtra?.postId || '';
+            extraSType = 'Lembur Sendiri';
+            extraReason = draftExtra?.overtimeReason || '';
+            extraPhoto = draftExtra?.photoUrl || '';
+            extraPhotoMetadata = draftExtra?.photoAuditMetadata;
+          } else if (draftExtra || appliedDraft.payload.extraVisible) {
+            foundExtra = true;
+            extraEmpId = draftExtra?.employeeId || '';
+            extraPName = draftExtra?.postId || '';
+            extraSType = 'Lembur Sendiri';
+            extraReason = draftExtra?.overtimeReason || '';
+            extraPhoto = draftExtra?.photoUrl || '';
+            extraPhotoMetadata = draftExtra?.photoAuditMetadata;
+          }
+        }
+
+        const restoredShiftName =
+          appliedDraft?.payload.shiftName ||
+          occurrence.reportedShiftName ||
+          calculatedSuggestedShift;
+        setPostAssignments(newAssignments);
+        setSatpamOccurrenceId(occurrence.id);
+        setSatpamOccurrenceRevision(occurrenceRevision);
+        setSatpamAuditorActionAt(occurrence.auditorActionAt || null);
+        setSatpamReviewStatus(normalizedReviewStatus);
         setSatpamAnomalies(Array.isArray(occurrence.anomalies) ? occurrence.anomalies : []);
-        if (occurrence.reportedShiftName) setSatpamReportedShiftName(occurrence.reportedShiftName);
+        setSatpamReportedShiftName(restoredShiftName);
         if (occurrence.suggestedShiftName) setSatpamSuggestedShiftName(occurrence.suggestedShiftName);
         if (foundExtra) {
           setExtraEmployeeId(extraEmpId);
@@ -2792,9 +2998,92 @@ function ActivitiesContent() {
           setExtraPhotoAuditMetadata(undefined);
           setIsExtraPostVisible(false);
         }
+        satpamDraftBaselineRef.current = createSatpamDraftFingerprint({
+          shiftName: restoredShiftName,
+          assignments: newAssignments,
+          extraVisible: foundExtra,
+          extraEmployeeId: foundExtra ? extraEmpId : '',
+          extraPostName: foundExtra ? extraPName : '',
+          extraOvertimeReason: foundExtra ? extraReason : '',
+          extraPhotoUrl: foundExtra ? extraPhoto : '',
+          extraPhotoAuditMetadata: foundExtra
+            ? extraPhotoMetadata
+            : undefined,
+        });
+        satpamDraftDirtyRef.current =
+          Boolean(appliedDraft) && pendingDraft.source === 'local';
+        setSatpamHasPendingDraft(Boolean(appliedDraft));
+        setSatpamDraftSyncStatus(
+          !appliedDraft
+            ? 'idle'
+            : pendingDraft.source === 'server'
+              ? 'saved'
+              : window.navigator.onLine === false
+                ? 'offline'
+                : 'saving',
+        );
+        if (appliedDraft && pendingDraft.source === 'server' && satpamPendingStorageKey) {
+          try {
+            window.localStorage.setItem(
+              satpamPendingStorageKey,
+              JSON.stringify(appliedDraft),
+            );
+          } catch (error) {
+            console.warn('Draf Satpam server tidak dapat dicadangkan lokal:', error);
+          }
+        }
+        if (appliedDraft) {
+          setMessage({
+            type: 'success',
+            text: 'Draf perubahan laporan, termasuk Tambah Petugas, berhasil dipulihkan.',
+          });
+        } else if (candidateDraft && occurrenceLocked) {
+          if (satpamPendingStorageKey) {
+            try {
+              window.localStorage.removeItem(satpamPendingStorageKey);
+            } catch (error) {
+              console.warn('Draf laporan terkunci gagal dibersihkan lokal:', error);
+            }
+          }
+          if (response.draft) {
+            void authenticatedJson(
+              `/api/satpam/shifts/draft?dutyDate=${encodeURIComponent(requestedDate)}`,
+              { method: 'DELETE' },
+            ).catch((error) => {
+              console.warn('Draf laporan terkunci gagal dibersihkan:', error);
+            });
+          }
+          setMessage({
+            type: 'error',
+            text: 'Draf perubahan tidak dapat diterapkan karena auditor sudah menangani laporan ini.',
+          });
+        } else if (candidateDraft) {
+          setMessage({
+            type: 'error',
+            text: 'Draf berasal dari revisi laporan yang lebih lama dan tidak diterapkan otomatis. Muat ulang sebelum mengubah laporan.',
+          });
+        }
         setIsSatpamReportSubmitted(true);
       } else {
-        restorePendingDraft(readPendingDraft(), true);
+        restorePendingDraft(
+          pendingDraft.draft,
+          pendingDraft.source,
+          Boolean(pendingDraft.draft),
+        );
+        if (
+          pendingDraft.draft &&
+          pendingDraft.source === 'server' &&
+          satpamPendingStorageKey
+        ) {
+          try {
+            window.localStorage.setItem(
+              satpamPendingStorageKey,
+              JSON.stringify(pendingDraft.draft),
+            );
+          } catch (error) {
+            console.warn('Draf Satpam server tidak dapat dicadangkan lokal:', error);
+          }
+        }
         setIsSatpamReportSubmitted(false);
       }
       satpamHydratedDateRef.current = requestedDate;
@@ -2803,6 +3092,7 @@ function ActivitiesContent() {
     }).catch((err) => {
       if (
         !isMounted ||
+        satpamDraftGenerationRef.current !== hydrationGeneration ||
         satpamSelectedDateRef.current !== requestedDate
       ) {
         return;
@@ -2811,13 +3101,20 @@ function ActivitiesContent() {
       // The old implementation left the previous date's state intact here and
       // then marked it as hydrated for requestedDate. Restore only a v3 draft
       // whose payload independently names requestedDate; otherwise stay blank.
-      restorePendingDraft(readPendingDraft(), false);
+      const restoredLocalDraft = readPendingDraft();
+      restorePendingDraft(
+        restoredLocalDraft,
+        restoredLocalDraft ? 'local' : null,
+        false,
+      );
       satpamHydratedDateRef.current = requestedDate;
       setSatpamDraftHydrated(true);
       setLoadingSubmittedSatpam(false);
       setMessage({
         type: 'error',
-        text: 'Status laporan tanggal ini gagal dimuat. Form dikosongkan agar data tanggal lain tidak ikut tersalin; coba muat ulang sebelum mengirim.',
+        text: restoredLocalDraft
+          ? 'Status server gagal dimuat, tetapi draf dari perangkat ini berhasil dipulihkan dan akan disinkronkan saat koneksi tersedia.'
+          : 'Status laporan tanggal ini gagal dimuat. Form dikosongkan agar data tanggal lain tidak ikut tersalin; coba muat ulang sebelum mengirim.',
       });
     });
 
@@ -2838,6 +3135,7 @@ function ActivitiesContent() {
       !isKetuaShiftSatpam ||
       !satpamDraftHydrated ||
       isSatpamReportSubmitted ||
+      satpamHasPendingDraft ||
       !satpamDutyPlan?.day
     ) {
       return;
@@ -2876,12 +3174,22 @@ function ActivitiesContent() {
         shiftType: satpamRegularPayType,
       };
     });
-    satpamSkipNextAutosaveRef.current = true;
+    satpamDraftBaselineRef.current = createSatpamDraftFingerprint({
+      shiftName: satpamDutyPlan.day.shiftName,
+      assignments: plannedAssignments,
+      extraVisible: false,
+      extraEmployeeId: '',
+      extraPostName: '',
+      extraOvertimeReason: '',
+      extraPhotoUrl: '',
+    });
+    satpamDraftDirtyRef.current = false;
     setPostAssignments(plannedAssignments);
     setSatpamReportedShiftName(satpamDutyPlan.day.shiftName);
   }, [
     isKetuaShiftSatpam,
     isSatpamReportSubmitted,
+    satpamHasPendingDraft,
     satpamDraftHydrated,
     satpamDutyPlan,
     satpamPendingStorageKey,
@@ -2894,6 +3202,7 @@ function ActivitiesContent() {
       !isKetuaShiftSatpam ||
       !satpamDraftHydrated ||
       !satpamPendingStorageKey ||
+      satpamSubmitting ||
       isSatpamReportLocked
     ) {
       return;
@@ -2902,46 +3211,66 @@ function ActivitiesContent() {
     if (satpamHydratedDateRef.current !== satpamReportDate) {
       return;
     }
-    if (satpamSkipNextAutosaveRef.current) {
-      satpamSkipNextAutosaveRef.current = false;
+    const fingerprint = createSatpamDraftFingerprint({
+      shiftName: activeShift,
+      assignments: postAssignments,
+      extraVisible: isExtraPostVisible,
+      extraEmployeeId,
+      extraPostName,
+      extraOvertimeReason,
+      extraPhotoUrl,
+      extraPhotoAuditMetadata,
+    });
+    if (
+      !satpamDraftDirtyRef.current &&
+      fingerprint === satpamDraftBaselineRef.current
+    ) {
       return;
     }
-    const assignments = Object.entries(postAssignments)
-      .filter(([, assignment]) => Boolean(assignment.employeeId))
-      .map(([postId, assignment]) => ({
-        postId,
+    satpamDraftDirtyRef.current = true;
+    const assignments = POSTS_CONFIG.map((post) => {
+      const assignment = postAssignments[post.id] || {
+        employeeId: '',
+        shiftType: satpamRegularPayType,
+      };
+      return {
+        postId: post.id,
         employeeId: assignment.employeeId,
         shiftType: assignment.shiftType,
-        coveredEmployeeId: assignment.coveredEmployeeId,
-        overtimeReason: assignment.overtimeReason,
-        photoUrl: assignment.photoUrl,
-        photoAuditMetadata: assignment.photoAuditMetadata,
-      }));
-    // Gating this on extraEmployeeId alone used to drop a photo or post taken
-    // before the officer dropdown was filled in: the card stayed open on
-    // screen but nothing reached localStorage, so a background/close before
-    // the officer was picked lost that work silently.
-    const extraAssignment =
-      isExtraPostVisible &&
-      (extraEmployeeId || extraPostName || extraPhotoUrl || extraOvertimeReason)
-        ? {
-            postId: extraPostName,
-            employeeId: extraEmployeeId,
-            overtimeReason: extraOvertimeReason,
-            photoUrl: extraPhotoUrl,
-            photoAuditMetadata: extraPhotoAuditMetadata,
-          }
-        : null;
-    // A blank form is not a draft. Storing one would both raise a spurious
-    // "draft restored" notice and permanently block the duty-plan prefill,
-    // which treats any stored draft as work the guard already started.
-    if (assignments.length === 0 && !extraAssignment) {
-      window.localStorage.removeItem(satpamPendingStorageKey);
-      return;
-    }
+        coveredEmployeeId: assignment.coveredEmployeeId || '',
+        overtimeReason: assignment.overtimeReason || '',
+        photoUrl: assignment.photoUrl || '',
+        ...(assignment.photoAuditMetadata
+          ? { photoAuditMetadata: assignment.photoAuditMetadata }
+          : {}),
+      };
+    });
+    // Keep the extra card itself, even while every field is blank. On the
+    // field this is a meaningful first step: the guard may open Tambah
+    // Petugas, lock the phone, then continue at the next post.
+    const extraAssignment = isExtraPostVisible
+      ? {
+          postId: extraPostName,
+          employeeId: extraEmployeeId,
+          overtimeReason: extraOvertimeReason,
+          photoUrl: extraPhotoUrl,
+          ...(extraPhotoAuditMetadata
+            ? { photoAuditMetadata: extraPhotoAuditMetadata }
+            : {}),
+        }
+      : null;
     const payload = {
       dutyDate: satpamReportDate,
       shiftName: activeShift,
+      completeSnapshot: true,
+      hasUserChanges: true,
+      extraVisible: isExtraPostVisible,
+      ...(satpamOccurrenceId && satpamOccurrenceRevision > 0
+        ? {
+            baseOccurrenceId: satpamOccurrenceId,
+            baseOccurrenceRevision: satpamOccurrenceRevision,
+          }
+        : {}),
       ...(satpamDutyPlan?.planId && satpamDutyPlan.revision > 0
         ? {
             dutyPlanId: satpamDutyPlan.planId,
@@ -2951,10 +3280,111 @@ function ActivitiesContent() {
       assignments,
       ...(extraAssignment ? { extraAssignment } : {}),
     };
-    window.localStorage.setItem(
-      satpamPendingStorageKey,
-      JSON.stringify({ payload, savedAt: new Date().toISOString() }),
+    const requestKey = `${satpamReportDate}_${activeShift}`;
+    const savedAt = new Date().toISOString();
+    try {
+      const previousLocalDraft = parseSatpamShiftPendingDraft(
+        window.localStorage.getItem(satpamPendingStorageKey),
+        satpamReportDate,
+      );
+      window.localStorage.setItem(
+        satpamPendingStorageKey,
+        JSON.stringify({
+          ...(previousLocalDraft?.id ? { id: previousLocalDraft.id } : {}),
+          ...(previousLocalDraft?.revision
+            ? { revision: previousLocalDraft.revision }
+            : {}),
+          ...(satpamRequestIdsRef.current[requestKey]
+            ? { requestId: satpamRequestIdsRef.current[requestKey] }
+            : previousLocalDraft?.requestId
+              ? { requestId: previousLocalDraft.requestId }
+            : {}),
+          payload,
+          savedAt,
+        }),
+      );
+    } catch (error) {
+      console.warn('Draf Satpam tidak dapat dicadangkan ke perangkat:', error);
+    }
+    setSatpamHasPendingDraft(true);
+    setSatpamDraftSyncStatus(
+      window.navigator.onLine === false ? 'offline' : 'saving',
     );
+
+    const generation = satpamDraftGenerationRef.current;
+    const clientSequence = ++satpamDraftSequenceRef.current;
+    const timer = window.setTimeout(() => {
+      satpamDraftSaveQueueRef.current = satpamDraftSaveQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (
+            satpamDraftGenerationRef.current !== generation ||
+            satpamSelectedDateRef.current !== satpamReportDate ||
+            satpamHydratedDateRef.current !== satpamReportDate ||
+            clientSequence !== satpamDraftSequenceRef.current
+          ) {
+            return;
+          }
+          const savedDraft = await authenticatedJson<{
+            draftId: string;
+            revision: number;
+            stale: boolean;
+            savedAt: string;
+          }>('/api/satpam/shifts/draft', {
+            method: 'PUT',
+            body: JSON.stringify({
+              clientSessionId: satpamDraftSessionId,
+              clientSequence,
+              payload,
+            }),
+          });
+          if (
+            satpamDraftGenerationRef.current === generation &&
+            satpamSelectedDateRef.current === satpamReportDate &&
+            clientSequence === satpamDraftSequenceRef.current
+          ) {
+            try {
+              const currentLocalDraft = parseSatpamShiftPendingDraft(
+                window.localStorage.getItem(satpamPendingStorageKey),
+                satpamReportDate,
+              );
+              if (currentLocalDraft) {
+                window.localStorage.setItem(
+                  satpamPendingStorageKey,
+                  JSON.stringify({
+                    ...currentLocalDraft,
+                    id: savedDraft.draftId,
+                    revision: savedDraft.revision,
+                  }),
+                );
+              }
+            } catch (error) {
+              console.warn(
+                'Revisi draf Satpam tidak dapat dicatat di perangkat:',
+                error,
+              );
+            }
+            satpamDraftBaselineRef.current = fingerprint;
+            satpamDraftDirtyRef.current = false;
+            setSatpamDraftSyncStatus('saved');
+          }
+        })
+        .catch((error) => {
+          if (
+            satpamDraftGenerationRef.current !== generation ||
+            satpamSelectedDateRef.current !== satpamReportDate ||
+            clientSequence !== satpamDraftSequenceRef.current
+          ) {
+            return;
+          }
+          console.warn('Draf Satpam belum tersinkron ke server:', error);
+          setSatpamDraftSyncStatus(
+            window.navigator.onLine === false ? 'offline' : 'error',
+          );
+        });
+    }, 250);
+
+    return () => window.clearTimeout(timer);
   }, [
     activeShift,
     extraEmployeeId,
@@ -2967,9 +3397,35 @@ function ActivitiesContent() {
     isSatpamReportLocked,
     postAssignments,
     satpamDraftHydrated,
+    satpamDraftRetryNonce,
+    satpamDraftSessionId,
     satpamPendingStorageKey,
     satpamReportDate,
     satpamDutyPlan,
+    satpamOccurrenceId,
+    satpamOccurrenceRevision,
+    satpamRegularPayType,
+    satpamSubmitting,
+  ]);
+
+  useEffect(() => {
+    if (!isKetuaShiftSatpam) return;
+    const retryPendingDraft = () => {
+      if (
+        satpamHasPendingDraft &&
+        (satpamDraftSyncStatus === 'offline' ||
+          satpamDraftSyncStatus === 'error')
+      ) {
+        satpamDraftDirtyRef.current = true;
+        setSatpamDraftRetryNonce((current) => current + 1);
+      }
+    };
+    window.addEventListener('online', retryPendingDraft);
+    return () => window.removeEventListener('online', retryPendingDraft);
+  }, [
+    isKetuaShiftSatpam,
+    satpamDraftSyncStatus,
+    satpamHasPendingDraft,
   ]);
 
   const assignedEmployeeIds = useMemo(() => {
@@ -3006,8 +3462,13 @@ function ActivitiesContent() {
     // are batched, so doing this synchronously closes the small window in which
     // a slow prior-date request/upload could otherwise commit its result.
     satpamSelectedDateRef.current = nextValue;
+    satpamDraftGenerationRef.current += 1;
     satpamHydratedDateRef.current = '';
+    satpamDraftBaselineRef.current = '';
+    satpamDraftDirtyRef.current = false;
     setSatpamDraftHydrated(false);
+    setSatpamDraftSyncStatus('idle');
+    setSatpamHasPendingDraft(false);
     setLoadingSubmittedSatpam(true);
     setSatpamDutyPlan(null);
     setPostAssignments(
@@ -3596,7 +4057,13 @@ function ActivitiesContent() {
       return;
     }
     setSatpamSubmitting(true);
+    // Stop any debounced/in-flight draft write from racing the final
+    // transaction. The submit API deletes the server draft atomically; waiting
+    // here ensures an older autosave cannot recreate it immediately afterward.
+    satpamDraftGenerationRef.current += 1;
     try {
+      await satpamDraftSaveQueueRef.current.catch(() => undefined);
+      if (satpamSelectedDateRef.current !== submissionDate) return;
       const requestKey = `${submissionDate}_${activeShift}`;
       const requestId =
         satpamRequestIdsRef.current[requestKey] ||
@@ -3646,10 +4113,26 @@ function ActivitiesContent() {
         }),
       };
       if (satpamPendingStorageKey) {
-        window.localStorage.setItem(
-          satpamPendingStorageKey,
-          JSON.stringify({ requestId, payload, savedAt: new Date().toISOString() }),
-        );
+        try {
+          const currentDraft = parseSatpamShiftPendingDraft(
+            window.localStorage.getItem(satpamPendingStorageKey),
+            submissionDate,
+          );
+          window.localStorage.setItem(
+            satpamPendingStorageKey,
+            JSON.stringify(
+              currentDraft
+                ? { ...currentDraft, requestId }
+                : {
+                    requestId,
+                    payload,
+                    savedAt: new Date().toISOString(),
+                  },
+            ),
+          );
+        } catch (error) {
+          console.warn('ID pengiriman draf Satpam tidak dapat dicadangkan:', error);
+        }
       }
 
       const result = await authenticatedJson<{
@@ -3662,10 +4145,28 @@ function ActivitiesContent() {
       });
       delete satpamRequestIdsRef.current[requestKey];
       if (satpamPendingStorageKey) {
-        window.localStorage.removeItem(satpamPendingStorageKey);
+        try {
+          window.localStorage.removeItem(satpamPendingStorageKey);
+        } catch (error) {
+          console.warn('Draf Satpam lokal gagal dibersihkan:', error);
+        }
       }
       if (satpamSelectedDateRef.current !== submissionDate) return;
 
+      satpamDraftGenerationRef.current += 1;
+      satpamDraftBaselineRef.current = createSatpamDraftFingerprint({
+        shiftName: activeShift,
+        assignments: postAssignments,
+        extraVisible: isExtraPostVisible,
+        extraEmployeeId,
+        extraPostName,
+        extraOvertimeReason,
+        extraPhotoUrl,
+        extraPhotoAuditMetadata,
+      });
+      satpamDraftDirtyRef.current = false;
+      setSatpamHasPendingDraft(false);
+      setSatpamDraftSyncStatus('idle');
       setMessage({
         type: 'success',
         text: satpamOccurrenceId
@@ -3680,12 +4181,20 @@ function ActivitiesContent() {
       fetchActivities();
     } catch (err) {
       console.error('Error submitting Satpam shift reports:', err);
+      if (satpamSelectedDateRef.current === submissionDate) {
+        satpamDraftDirtyRef.current = true;
+        setSatpamHasPendingDraft(true);
+        setSatpamDraftSyncStatus(
+          window.navigator.onLine === false ? 'offline' : 'error',
+        );
+        setSatpamDraftRetryNonce((current) => current + 1);
+      }
       setMessage({
         type: 'error',
         text:
           err instanceof Error
-            ? `${err.message} Draf tetap tersimpan lokal untuk dicoba ulang.`
-            : 'Gagal mengirim laporan shift. Draf tetap tersimpan lokal untuk dicoba ulang.',
+            ? `${err.message} Draf tetap tersimpan dan akan dicoba sinkron kembali.`
+            : 'Gagal mengirim laporan shift. Draf tetap tersimpan dan akan dicoba sinkron kembali.',
       });
     } finally {
       setSatpamSubmitting(false);
@@ -4951,11 +5460,39 @@ function ActivitiesContent() {
                       </p>
                     </div>
                   )}
-                  {!isSatpamReportSubmitted && satpamDraftHydrated && (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-base text-slate-700">
-                      <strong>Status: Draft.</strong> Perubahan tersimpan otomatis di perangkat ini sampai laporan dikirim.
-                    </div>
-                  )}
+                  {!isSatpamReportLocked &&
+                    satpamDraftHydrated &&
+                    (!isSatpamReportSubmitted || satpamHasPendingDraft) && (
+                      <div className={`rounded-xl border p-3 text-base ${
+                        satpamDraftSyncStatus === 'saved'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                          : satpamDraftSyncStatus === 'offline' ||
+                              satpamDraftSyncStatus === 'error'
+                            ? 'border-amber-300 bg-amber-50 text-amber-950'
+                            : 'border-slate-200 bg-slate-50 text-slate-700'
+                      }`}>
+                        <strong>
+                          {satpamDraftSyncStatus === 'saving'
+                            ? 'Menyimpan draf... '
+                            : satpamDraftSyncStatus === 'saved'
+                              ? 'Draf tersimpan. '
+                              : satpamDraftSyncStatus === 'offline'
+                                ? 'Draf tersimpan di perangkat. '
+                                : satpamDraftSyncStatus === 'error'
+                                  ? 'Sinkronisasi draf perlu diulang. '
+                                  : 'Status: Draf. '}
+                        </strong>
+                        {satpamDraftSyncStatus === 'saved'
+                          ? 'Perubahan sudah tersinkron ke server dan akan kembali saat aplikasi dibuka lagi.'
+                          : satpamDraftSyncStatus === 'offline'
+                            ? 'Koneksi sedang offline; sinkronisasi server akan dicoba otomatis saat online.'
+                            : satpamDraftSyncStatus === 'error'
+                              ? 'Perubahan tetap aman di perangkat ini. Pastikan koneksi tersedia atau muat ulang halaman.'
+                              : satpamDraftSyncStatus === 'saving'
+                                ? 'Perubahan sudah dicadangkan di perangkat sambil disinkronkan ke server.'
+                                : 'Setiap perubahan akan disimpan otomatis di perangkat dan server.'}
+                      </div>
+                    )}
 
                   {/* Action Buttons */}
                   <div className="pt-2">
