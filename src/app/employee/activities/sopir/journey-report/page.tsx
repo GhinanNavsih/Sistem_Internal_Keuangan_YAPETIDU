@@ -54,6 +54,10 @@ import {
 } from 'firebase/firestore';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import {
+  EMPLOYEE_ACTIVITY_PATHS,
+  getEmployeeActivityWorkflow,
+} from '@/lib/employeeActivities';
+import {
   calculateDriverReimbursementSettlement,
   calculateDriverNetWage,
   calculateJourneyElapsedHours,
@@ -223,8 +227,7 @@ function JourneyReportContent() {
   const skipJourneyLoadRef = useRef(false);
   const journeyLoadAttemptRef = useRef<string | null>(null);
 
-  const userJobCategory = profile?.permittedCategories?.[0] || '';
-  const isSopir = userJobCategory === 'SOPIR';
+  const isSopir = getEmployeeActivityWorkflow(profile || {}) === 'sopir';
 
   const [activeReportingJourney, setActiveReportingJourney] = useState<any | null>(null);
   const [selectedFuelMode, setSelectedFuelMode] = useState<FuelProcurementMode>(DEFAULT_FUEL_PROCUREMENT_MODE);
@@ -336,7 +339,7 @@ function JourneyReportContent() {
         if (cancelled || skipJourneyLoadRef.current) return;
 
         if (!targetId) {
-          router.replace('/employee/activities');
+          router.replace(EMPLOYEE_ACTIVITY_PATHS.sopir);
           return;
         }
 
@@ -349,7 +352,7 @@ function JourneyReportContent() {
           }
           skipJourneyLoadRef.current = true;
           setLoading(false);
-          router.replace('/employee/activities');
+          router.replace(EMPLOYEE_ACTIVITY_PATHS.sopir);
           return;
         }
 
@@ -403,7 +406,7 @@ function JourneyReportContent() {
             }
             skipJourneyLoadRef.current = true;
             setLoading(false);
-            router.replace('/employee/activities');
+            router.replace(EMPLOYEE_ACTIVITY_PATHS.sopir);
             return;
           }
           // Check for local storage auto-saved draft
@@ -642,17 +645,17 @@ function JourneyReportContent() {
           try {
             await authenticatedJson(`/api/pekarya/activities?journeyId=${encodeURIComponent(targetId)}`, { method: 'DELETE' });
           } catch (e) { }
-          router.replace('/employee/activities');
+          router.replace(EMPLOYEE_ACTIVITY_PATHS.sopir);
         }
       } catch (e) {
         if (cancelled || skipJourneyLoadRef.current) return;
         if (e instanceof Error && e.message.includes('Perjalanan dinas tidak ditemukan')) {
           skipJourneyLoadRef.current = true;
-          router.replace('/employee/activities');
+          router.replace(EMPLOYEE_ACTIVITY_PATHS.sopir);
           return;
         }
         console.error('Error loading journey:', e);
-        router.replace('/employee/activities');
+        router.replace(EMPLOYEE_ACTIVITY_PATHS.sopir);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -1002,7 +1005,7 @@ function JourneyReportContent() {
     if (activeReportingJourney && !skipSaveDraftRef.current) {
       await handleSaveDraft();
     }
-    router.push('/employee/activities');
+    router.push(EMPLOYEE_ACTIVITY_PATHS.sopir);
   };
 
   const resetMapSearch = () => {
@@ -1301,7 +1304,7 @@ function JourneyReportContent() {
       }
       setShowCancelModal(false);
       setActiveReportingJourney(null);
-      router.replace('/employee/activities');
+      router.replace(EMPLOYEE_ACTIVITY_PATHS.sopir);
     } catch (err: any) {
       console.error('Error cancelling journey claim:', err);
       setMessage({ type: 'error', text: err.message || 'Gagal membatalkan klaim perjalanan.' });

@@ -83,6 +83,11 @@ export async function POST(request: NextRequest) {
         email: targetData?.email || '',
         displayName: targetData?.displayName || '',
         role: targetData?.role || 'user',
+        permittedCategories: Array.isArray(targetData?.permittedCategories)
+          ? targetData.permittedCategories.filter(
+              (category: unknown): category is string => typeof category === 'string',
+            )
+          : [],
       },
     });
   } catch (error) {

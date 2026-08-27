@@ -1,12 +1,57 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
 import { useDashboardData } from '@/lib/DashboardDataContext';
+
+// Session-level in-memory cache for Pekarya previews across page transitions.
+// Entries expire: approving an activity/SPJ elsewhere in the app changes what
+// the preview endpoint returns, and client-side navigation back here does not
+// remount with a clean slate, so an immortal entry would keep showing
+// pre-approval totals until someone hit the manual refresh button.
+const PEKARYA_PREVIEW_CACHE_TTL_MS = 2 * 60 * 1000;
+const PEKARYA_PREVIEW_CACHE_MAX_ENTRIES = 12;
+
+type PekaryaPreviewCacheEntry = {
+  previews: Record<string, PekaryaSlipPreview>;
+  storedAt: number;
+};
+
+const pekaryaSessionCache = new Map<string, PekaryaPreviewCacheEntry>();
+
+function readPekaryaSessionCache(): Record<
+  string,
+  Record<string, PekaryaSlipPreview>
+> {
+  const now = Date.now();
+  const fresh: Record<string, Record<string, PekaryaSlipPreview>> = {};
+  pekaryaSessionCache.forEach((entry, period) => {
+    if (now - entry.storedAt > PEKARYA_PREVIEW_CACHE_TTL_MS) {
+      pekaryaSessionCache.delete(period);
+      return;
+    }
+    fresh[period] = entry.previews;
+  });
+  return fresh;
+}
+
+function writePekaryaSessionCache(
+  period: string,
+  previews: Record<string, PekaryaSlipPreview>,
+) {
+  // Re-insert so Map iteration order stays newest-last for the eviction below.
+  pekaryaSessionCache.delete(period);
+  pekaryaSessionCache.set(period, { previews, storedAt: Date.now() });
+  while (pekaryaSessionCache.size > PEKARYA_PREVIEW_CACHE_MAX_ENTRIES) {
+    const oldest = pekaryaSessionCache.keys().next();
+    if (oldest.done) break;
+    pekaryaSessionCache.delete(oldest.value);
+  }
+}
 import {
   buildDashboardSlipData,
   DashboardPeriodInputs,
@@ -428,7 +473,7 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
 
         {shareOfEarningView === 'treemap' ? (
           <div className="w-full" style={{ height: type === 'semua' ? 450 : 300, minWidth: 0 }}>
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <Treemap
                 width={100}
                 height={100}
@@ -442,7 +487,7 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
           </div>
         ) : shareOfEarningView === 'bar' ? (
           <div className="w-full" style={{ height: type === 'semua' ? 450 : 300, minWidth: 0 }}>
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <BarChart layout="vertical" width={100} height={100} data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                 <XAxis
@@ -485,7 +530,7 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
           </div>
         ) : (
           <div className="w-full h-[300px]" style={{ minWidth: 0 }}>
-            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <PieChart width={100} height={100}>
                 <Legend
                   verticalAlign="top"
@@ -750,36 +795,73 @@ export default function TreasuryDashboard() {
     };
   }, [profile]);
 
+  // Slips index by period -> employeeId
+  const slipsByPeriod = useMemo(() => {
+    const map: Record<string, Record<string, any>> = {};
+    slips.forEach((slip) => {
+      const period = slip.period || slip.id?.substring(0, 7);
+      if (!period) return;
+      const employeeId = slip.employeeId || slip.id?.substring(period.length + 1);
+      if (!employeeId) return;
+      if (!map[period]) map[period] = {};
+      map[period][employeeId] = slip;
+    });
+    return map;
+  }, [slips]);
+
+  // Which periods actually need the server-side Pekarya live calculation?
+  // Historical periods where all active Pekarya staff already have saved slips
+  // in PayrollSlipStates use their saved records directly and do not need
+  // expensive multi-collection server preview queries.
+  const periodsNeedingPreview = useMemo(() => {
+    const range = computePayrollPeriodRange(slips, selectedPeriod);
+    const activePekarya = employeesBlueCollar.filter(
+      (e) => e.flags?.isActive !== false,
+    );
+
+    return range.filter((period) => {
+      if (activePekarya.length === 0) return false;
+      const periodSlips = slipsByPeriod[period] || {};
+      return activePekarya.some((e) => !periodSlips[e.id]?.earnings);
+    });
+  }, [slips, selectedPeriod, employeesBlueCollar, slipsByPeriod]);
+
   // The shared Pekarya earnings preview (matrix-sourced Gaji Pokok, approved
-  // activity/event SPJ, published-or-estimated attendance) — the same
-  // calculation the payroll page, Tinjau Slip Gaji, and /employee/payslip
-  // render. Fetched per period so this page's cumulative trend cannot show a
-  // different Pekarya total than the payroll page shows for that period.
+  // activity/event SPJ, published-or-estimated attendance) — loaded only
+  // when needed and cached in memory across session views.
   const [pekaryaPreviewsByPeriod, setPekaryaPreviewsByPeriod] = useState<
     Record<string, Record<string, PekaryaSlipPreview>>
-  >({});
+  >(() => readPekaryaSessionCache());
   const [pekaryaPreviewErrorsByPeriod, setPekaryaPreviewErrorsByPeriod] =
     useState<Record<string, string>>({});
-  const [pekaryaPreviewsLoading, setPekaryaPreviewsLoading] = useState(true);
-  const requestedPekaryaPreviewPeriods = useMemo(
-    () => computePayrollPeriodRange(slips, selectedPeriod),
-    [slips, selectedPeriod],
-  );
-  const pekaryaPreviewsPending = requestedPekaryaPreviewPeriods.some(
-    (period) =>
-      !(period in pekaryaPreviewsByPeriod) &&
-      !(period in pekaryaPreviewErrorsByPeriod),
-  );
+  const [pekaryaPreviewsLoading, setPekaryaPreviewsLoading] = useState(false);
+
+  // In-flight tracker to strictly prevent duplicate parallel fetches
+  const inFlightFetches = useRef<Set<string>>(new Set());
+
+  // Which periods still need previews loaded?
+  const pendingPeriods = useMemo(() => {
+    return periodsNeedingPreview.filter(
+      (period) =>
+        !(period in pekaryaPreviewsByPeriod) &&
+        !(period in pekaryaPreviewErrorsByPeriod),
+    );
+  }, [periodsNeedingPreview, pekaryaPreviewsByPeriod, pekaryaPreviewErrorsByPeriod]);
+
   const pekaryaPreviewsBusy =
-    pekaryaPreviewsLoading || pekaryaPreviewsPending;
-  const pekaryaPreviewCoverageErrors = requestedPekaryaPreviewPeriods.reduce<
+    pekaryaPreviewsLoading || pendingPeriods.length > 0;
+
+  const pekaryaPreviewCoverageErrors = periodsNeedingPreview.reduce<
     Record<string, string>
   >((errors, period) => {
     const previews = pekaryaPreviewsByPeriod[period];
     if (!previews) return errors;
+    const periodSlips = slipsByPeriod[period] || {};
     const missingCount = employeesBlueCollar.filter(
       (employee) =>
-        employee.flags?.isActive !== false && !previews[employee.id],
+        employee.flags?.isActive !== false &&
+        !periodSlips[employee.id]?.earnings &&
+        !previews[employee.id],
     ).length;
     if (missingCount > 0) {
       errors[period] =
@@ -794,69 +876,66 @@ export default function TreasuryDashboard() {
     },
   ).sort(([left], [right]) => left.localeCompare(right));
 
-  // Which periods still need fetching is read off successful previews and the
-  // explicit error map rather than a ref marked before the fetch starts. A
-  // failure is never represented as an empty successful preview because that
-  // would make the aggregate calculator fail open. `onAuthStateChanged`
-  // can fire more than once in production (token refresh, multi-tab
-  // negotiation — see the comment in AuthContext), each time handing this
-  // effect a new `profile` object and re-running it. A ref claimed up front
-  // survives that re-run even when its own fetch gets cancelled mid-flight,
-  // so every later run sees "already claimed" and skips it — nothing ever
-  // completes and the loading flag never clears. Deriving "already fetched"
-  // from state instead means a re-run always sees the true outcome and either
-  // no-ops (already have it) or retries (never got it), so it always
-  // converges instead of latching permanently open.
   useEffect(() => {
     if (!profile || profile.role !== 'super_admin') return;
 
-    const periodsToFetch = requestedPekaryaPreviewPeriods.filter(
-      (period) =>
-        !(period in pekaryaPreviewsByPeriod) &&
-        !(period in pekaryaPreviewErrorsByPeriod),
+    const periodsToFetch = pendingPeriods.filter(
+      (period) => !inFlightFetches.current.has(period),
     );
 
-    let cancelled = false;
+    if (periodsToFetch.length === 0) return;
 
-    const fetchPreviews = async () => {
-      if (periodsToFetch.length === 0) {
-        if (!cancelled) setPekaryaPreviewsLoading(false);
-        return;
-      }
-      setPekaryaPreviewsLoading(true);
-      const results = await Promise.all(
-        periodsToFetch.map(async (period) => {
-          const periodToken = period.replace('_', '-');
-          try {
-            const result = await authenticatedJson<{
-              previews: Record<string, PekaryaSlipPreview>;
-            }>(`/api/payroll/slip-preview?period=${periodToken}`);
-            return {
-              period,
-              previews: result.previews || {},
-              error: null,
-            };
-          } catch (err) {
-            console.error(`Gagal memuat pratinjau slip Pekarya untuk ${period}:`, err);
-            return {
-              period,
-              previews: null,
-              error:
-                err instanceof Error
-                  ? err.message
-                  : 'Gagal memuat pratinjau perhitungan Pekarya.',
-            };
-          }
-        }),
-      );
-      if (cancelled) return;
+    periodsToFetch.forEach((p) => inFlightFetches.current.add(p));
+    setPekaryaPreviewsLoading(true);
+
+    let isMounted = true;
+
+    Promise.all(
+      periodsToFetch.map(async (period) => {
+        const periodToken = period.replace('_', '-');
+        try {
+          const result = await authenticatedJson<{
+            previews: Record<string, PekaryaSlipPreview>;
+          }>(`/api/payroll/slip-preview?period=${periodToken}`);
+          return {
+            period,
+            previews: result.previews || {},
+            error: null,
+          };
+        } catch (err) {
+          console.error(`Gagal memuat pratinjau slip Pekarya untuk ${period}:`, err);
+          return {
+            period,
+            previews: null,
+            error:
+              err instanceof Error
+                ? err.message
+                : 'Gagal memuat pratinjau perhitungan Pekarya.',
+          };
+        } finally {
+          inFlightFetches.current.delete(period);
+        }
+      }),
+    ).then((results) => {
+      // Store in module session cache
+      results.forEach((result) => {
+        if (result.previews) {
+          writePekaryaSessionCache(result.period, result.previews);
+        }
+      });
+
+      if (!isMounted) return;
+
       setPekaryaPreviewsByPeriod((prev) => {
         const next = { ...prev };
         results.forEach((result) => {
-          if (result.previews) next[result.period] = result.previews;
+          if (result.previews) {
+            next[result.period] = result.previews;
+          }
         });
         return next;
       });
+
       setPekaryaPreviewErrorsByPeriod((prev) => {
         const next = { ...prev };
         results.forEach((result) => {
@@ -865,19 +944,25 @@ export default function TreasuryDashboard() {
         });
         return next;
       });
-      setPekaryaPreviewsLoading(false);
-    };
 
-    fetchPreviews();
+      setPekaryaPreviewsLoading(false);
+    });
+
     return () => {
-      cancelled = true;
+      isMounted = false;
     };
-  }, [
-    pekaryaPreviewErrorsByPeriod,
-    pekaryaPreviewsByPeriod,
-    profile,
-    requestedPekaryaPreviewPeriods,
-  ]);
+  }, [pendingPeriods, profile]);
+
+  // An explicit refresh drops every cached period, not just the selected one:
+  // the cumulative trend reads previews across the whole period range, so a
+  // stale entry behind the current selection would survive an otherwise
+  // deliberate "reload the numbers" action.
+  const handleRefreshPreviews = useCallback(() => {
+    pekaryaSessionCache.clear();
+    inFlightFetches.current.clear();
+    setPekaryaPreviewsByPeriod({});
+    setPekaryaPreviewErrorsByPeriod({});
+  }, []);
 
   const selectedPeriodData = periodDataByPeriod[selectedPeriod] || EMPTY_PERIOD_DATA;
   const selectedPeriodVakasiEvents = selectedPeriodData.vakasiEvents;
@@ -905,16 +990,6 @@ export default function TreasuryDashboard() {
     const aggregates: Record<string, PeriodAggregate> = {};
     computePayrollPeriodRange(slips, selectedPeriod).forEach((period) => {
       aggregates[period] = createEmptyPeriodAggregate(period);
-    });
-
-    const slipsByPeriod: Record<string, Record<string, any>> = {};
-    slips.forEach(slip => {
-      const period = slip.period || slip.id?.substring(0, 7);
-      if (!period) return;
-      const employeeId = slip.employeeId || slip.id?.substring(period.length + 1);
-      if (!employeeId) return;
-      if (!slipsByPeriod[period]) slipsByPeriod[period] = {};
-      slipsByPeriod[period][employeeId] = slip;
     });
 
     const addEmployeeToAggregate = (
@@ -1499,20 +1574,31 @@ export default function TreasuryDashboard() {
               <Calendar className="w-4 h-4 text-indigo-500 shrink-0" />
               <span className="text-sm font-semibold text-slate-700 whitespace-nowrap">Periode Laporan:</span>
               {sortedPeriods.length > 0 ? (
-                <Select value={selectedPeriod} onValueChange={(val) => { if (val) setSelectedPeriod(val); }}>
-                  <SelectTrigger className="border-0 bg-transparent p-0 text-sm font-bold text-indigo-600 hover:text-indigo-700 focus:ring-0 focus:ring-offset-0 h-auto cursor-pointer gap-1">
-                    <SelectValue placeholder="Pilih Periode">
-                      {selectedPeriod ? formatPeriodLabel(selectedPeriod) : undefined}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border-slate-200 shadow-md">
-                    {sortedPeriods.map(p => (
-                      <SelectItem key={p} value={p} className="cursor-pointer font-medium hover:bg-slate-50">
-                        {formatPeriodLabel(p)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-1.5">
+                  <Select value={selectedPeriod} onValueChange={(val) => { if (val) setSelectedPeriod(val); }}>
+                    <SelectTrigger className="border-0 bg-transparent p-0 text-sm font-bold text-indigo-600 hover:text-indigo-700 focus:ring-0 focus:ring-offset-0 h-auto cursor-pointer gap-1">
+                      <SelectValue placeholder="Pilih Periode">
+                        {selectedPeriod ? formatPeriodLabel(selectedPeriod) : undefined}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-slate-200 shadow-md">
+                      {sortedPeriods.map(p => (
+                        <SelectItem key={p} value={p} className="cursor-pointer font-medium hover:bg-slate-50">
+                          {formatPeriodLabel(p)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <button
+                    type="button"
+                    onClick={handleRefreshPreviews}
+                    disabled={pekaryaPreviewsBusy}
+                    title="Segarkan data kalkulasi periode terpilih"
+                    className="p-1 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors disabled:opacity-40 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${pekaryaPreviewsBusy ? 'animate-spin text-indigo-600' : ''}`} />
+                  </button>
+                </div>
               ) : (
                 <span className="text-sm font-bold text-slate-400">Belum ada data</span>
               )}
@@ -1650,10 +1736,7 @@ export default function TreasuryDashboard() {
             <Button
               type="button"
               className="mt-6 rounded-xl bg-rose-600 text-white hover:bg-rose-700"
-              onClick={() => {
-                setPekaryaPreviewsLoading(true);
-                setPekaryaPreviewErrorsByPeriod({});
-              }}
+              onClick={handleRefreshPreviews}
             >
               <RefreshCw className="mr-2 h-4 w-4" />
               Coba Lagi
@@ -2002,8 +2085,8 @@ export default function TreasuryDashboard() {
                     {sortedEarnings.length === 0 ? (
                       <p className="text-center text-slate-400 text-sm py-12">Tidak ada penerimaan pada periode ini</p>
                     ) : earningsView === 'treemap' ? (
-                      <div className="w-full h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="w-full h-[300px]" style={{ minWidth: 0, minHeight: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                           <Treemap
                             width={100}
                             height={100}
@@ -2016,8 +2099,8 @@ export default function TreasuryDashboard() {
                         </ResponsiveContainer>
                       </div>
                     ) : earningsView === 'bar' ? (
-                      <div className="w-full h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="w-full h-[300px]" style={{ minWidth: 0, minHeight: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                           <BarChart data={sortedEarnings} margin={{ top: 10, right: 10, left: 10, bottom: 65 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis dataKey="name" tickFormatter={(val) => val.length > 12 ? `${val.substring(0, 12)}...` : val} tick={{ fill: '#64748b', fontSize: 10 }} angle={-45} textAnchor="end" height={60} tickLine={false} axisLine={false} />
@@ -2032,8 +2115,8 @@ export default function TreasuryDashboard() {
                         </ResponsiveContainer>
                       </div>
                     ) : (
-                      <div className="w-full h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="w-full h-[300px]" style={{ minWidth: 0, minHeight: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                           <PieChart>
                             <Legend
                               verticalAlign="top"
@@ -2138,8 +2221,8 @@ export default function TreasuryDashboard() {
                     {sortedDeductions.length === 0 ? (
                       <p className="text-center text-slate-400 text-sm py-12">Tidak ada potongan terpotong pada periode ini</p>
                     ) : deductionsView === 'treemap' ? (
-                      <div className="w-full h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="w-full h-[300px]" style={{ minWidth: 0, minHeight: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                           <Treemap
                             width={100}
                             height={100}
@@ -2152,8 +2235,8 @@ export default function TreasuryDashboard() {
                         </ResponsiveContainer>
                       </div>
                     ) : deductionsView === 'bar' ? (
-                      <div className="w-full h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="w-full h-[300px]" style={{ minWidth: 0, minHeight: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                           <BarChart data={sortedDeductions} margin={{ top: 10, right: 10, left: 10, bottom: 65 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis dataKey="name" tickFormatter={(val) => val.length > 12 ? `${val.substring(0, 12)}...` : val} tick={{ fill: '#64748b', fontSize: 10 }} angle={-45} textAnchor="end" height={60} tickLine={false} axisLine={false} />
@@ -2168,8 +2251,8 @@ export default function TreasuryDashboard() {
                         </ResponsiveContainer>
                       </div>
                     ) : (
-                      <div className="w-full h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="w-full h-[300px]" style={{ minWidth: 0, minHeight: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                           <PieChart>
                             <Legend
                               verticalAlign="top"

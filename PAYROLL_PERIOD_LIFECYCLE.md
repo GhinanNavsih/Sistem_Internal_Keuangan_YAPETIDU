@@ -326,7 +326,10 @@ Responsibilities:
 File:
 
 ```text
-src/app/employee/activities/page.tsx
+src/app/employee/activities/satpam/page.tsx
+src/app/employee/activities/sopir/page.tsx
+src/app/employee/activities/pekarya/page.tsx
+src/components/employee/activities/
 ```
 
 Responsibilities:
@@ -342,7 +345,7 @@ The page does not directly decide whether a period is open. The server endpoint 
 File:
 
 ```text
-src/app/employee/activities/journey-report/page.tsx
+src/app/employee/activities/sopir/journey-report/page.tsx
 ```
 
 Responsibilities:

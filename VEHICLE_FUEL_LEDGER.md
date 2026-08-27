@@ -245,7 +245,7 @@ Respectively: authorize / create_self / select_fuel_mode / claim / cancel_claim;
 ```text
 src/app/dashboard/payroll/driver-journeys/page.tsx
 src/components/DriverJourneyAuditDialog.tsx
-src/app/employee/activities/journey-report/page.tsx
+src/app/employee/activities/sopir/journey-report/page.tsx
 ```
 
 Respectively: Kepala SatKer's authorization form (mode picker, live cost preview), the fleet balance cards and per-vehicle ledger viewer, and the manual adjustment control; the audit dialog's mode badge ("Mode terkunci setelah klaim"), hold/pool figures, and the fuel-lock notice shown when a confirmed journey can't be re-edited; the driver-side mode-selection prompt shown for a self-created Piket SPJ journey still needing `select_fuel_mode`.

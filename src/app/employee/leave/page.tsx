@@ -11,6 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/lib/AuthContext';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { isPekaryaOfficialLeaveCategory } from '@/lib/payroll/pekaryaOfficialLeave';
+import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 
 type OpenPeriod = {
   period: string;
@@ -96,7 +97,10 @@ export default function EmployeeLeavePage() {
               Akun ini belum terhubung ke pegawai Pekarya yang dapat mengajukan
               presensi atau izin.
             </p>
-            <Button variant="outline" render={<Link href="/employee/activities" />}>
+            <Button
+              variant="outline"
+              render={<Link href={getEmployeeActivitiesPath(profile || {})} />}
+            >
               Kembali ke Laporan Kegiatan
             </Button>
           </CardContent>

@@ -5,6 +5,7 @@ import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import { useAuth } from '@/lib/AuthContext';
 import {
   Card,
@@ -131,7 +132,7 @@ export default function UserManagementPage() {
 
       const roleStr = (previewProfile?.role || targetUser.role) as string;
       if (roleStr === 'honorer' || roleStr === 'ketua_shift_satpam') {
-        router.push('/employee/activities');
+        router.push(getEmployeeActivitiesPath(previewProfile || targetUser));
       } else if (roleStr === 'loyalis') {
         router.push('/employee/payslip');
       } else if (roleStr === 'satker_head') {

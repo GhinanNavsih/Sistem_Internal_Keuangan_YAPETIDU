@@ -4,19 +4,10 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { isUserRole } from '@/lib/payroll/roles';
+import {
+  getEmployeeRouteRedirect,
+} from '@/lib/employeeActivities';
 import { Loader2 } from 'lucide-react';
-
-/**
- * Ketua Shift reports daily work, maintains the once-per-period duty plan, and
- * can view their own payslip (the page already resolves this role against
- * Employees_BlueCollar the same way it does 'honorer').
- */
-const KETUA_SHIFT_SATPAM_ROUTES = [
-  '/employee/activities',
-  '/employee/satpam-duty-plan',
-  '/employee/leave',
-  '/employee/payslip',
-];
 
 /**
  * Loyalis staff see their own payslip, request presence corrections, and
@@ -87,15 +78,12 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
           if (pathname !== '/dashboard/employees') {
             router.replace('/dashboard/employees');
           }
-        } else if (currentProfile.role === 'honorer') {
-          // Honorer employees are ONLY allowed to access /employee/activities
-          if (!pathname.startsWith('/employee/')) {
-            router.replace('/employee/activities');
-          }
-        } else if (currentProfile.role === 'ketua_shift_satpam') {
-          if (!pathname.startsWith('/employee/')) {
-            router.replace('/employee/activities');
-          }
+        } else if (
+          currentProfile.role === 'honorer' ||
+          currentProfile.role === 'ketua_shift_satpam'
+        ) {
+          const redirectPath = getEmployeeRouteRedirect(currentProfile, pathname);
+          if (redirectPath) router.replace(redirectPath);
         } else if (currentProfile.role === 'finance_verifier') {
           if (!pathname.startsWith('/dashboard/payroll')) {
             router.replace('/dashboard/payroll');
@@ -155,12 +143,11 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   if (profile.role === 'employee_admin' && pathname !== '/dashboard/employees') {
     return null;
   }
-  if (profile.role === 'honorer' && !pathname.startsWith('/employee/')) {
-    return null;
-  }
   if (
-    profile.role === 'ketua_shift_satpam' &&
-    !KETUA_SHIFT_SATPAM_ROUTES.includes(pathname)
+    currentProfile &&
+    (currentProfile.role === 'honorer' ||
+      currentProfile.role === 'ketua_shift_satpam') &&
+    getEmployeeRouteRedirect(currentProfile, pathname)
   ) {
     return null;
   }

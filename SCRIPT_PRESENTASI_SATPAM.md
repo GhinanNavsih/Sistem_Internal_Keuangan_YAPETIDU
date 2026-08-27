@@ -36,7 +36,7 @@ Script ini dirancang untuk dipresentasikan kepada seluruh anggota Satpam Pekarya
 * **Script Presenter:**
   > "Bagaimana sistem ini mengonversi kinerja Anda menjadi rupiah secara instan? 
   > 
-  > Begitu Anda menginput laporan di Portal Karyawan ([activities/page.tsx](file:///Users/ghinannavsih/Documents/Internal-BAK/src/app/employee/activities/page.tsx)), sistem cerdas kita langsung mencocokkan laporan tersebut dengan database jadwal rotasi kelompok ([satpamRotation.ts](file:///Users/ghinannavsih/Documents/Internal-BAK/src/utils/satpamRotation.ts)).
+  > Begitu Anda menginput laporan di Portal Karyawan (`/employee/activities/satpam`), sistem cerdas kita langsung mencocokkan laporan tersebut dengan database jadwal rotasi kelompok (`src/utils/satpamRotation.ts`).
   > 
   > Sistem akan tahu secara otomatis: Apakah Anda sedang bertugas di shift biasa, bertugas di hari libur/Jumat, melakukan lembur mandiri di hari libur kelompok Anda, atau sedang mengcover shift rekan lain yang berhalangan hadir. 
   > 

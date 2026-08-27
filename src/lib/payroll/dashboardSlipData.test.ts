@@ -195,3 +195,26 @@ test('the dashboard reads Loyalis presence through the shared propagation maths'
   assert.equal(expected.presensiEarning, Math.round(20 * 7 * 1_650));
   assert.equal(expected.presensiDeduction, Math.round((120 / 60) * 1_650));
 });
+
+test('historical period with saved slips resolves immediately without pekaryaPreviews', () => {
+  const savedSlip = {
+    earnings: [
+      { label: 'Gaji Pokok', amount: 3_500_000 },
+      { label: 'SPJ', amount: 450_000 },
+    ],
+    deductions: [{ label: 'BPJS', amount: 50_000 }],
+  };
+
+  const data = buildDashboardSlipData(
+    PEKARYA_EMPLOYEE,
+    'pekarya',
+    savedSlip,
+    // pekaryaPreviews is explicitly undefined (e.g. historical closed month)
+    { ...inputs, pekaryaPreviews: undefined },
+  );
+
+  assert.deepEqual(data, savedSlip);
+  assert.equal(sumSlipFields(data.earnings), 3_950_000);
+  assert.equal(sumSlipFields(data.deductions), 50_000);
+});
+

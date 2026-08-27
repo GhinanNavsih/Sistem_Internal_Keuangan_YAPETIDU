@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { auth } from '@/lib/firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
+import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -81,7 +82,7 @@ export default function LoginPage() {
     if (!loading && user && profile) {
       const roleStr = profile.role as string;
       if (roleStr === 'honorer' || roleStr === 'ketua_shift_satpam') {
-        router.replace('/employee/activities');
+        router.replace(getEmployeeActivitiesPath(profile));
       } else if (roleStr === 'loyalis') {
         router.replace('/employee/payslip');
       } else if (roleStr === 'satker_head') {

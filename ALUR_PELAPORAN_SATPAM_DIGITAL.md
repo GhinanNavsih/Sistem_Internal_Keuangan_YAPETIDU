@@ -20,7 +20,7 @@ graph TD
 ## 1. Pencatatan Shift Mandiri via Portal Karyawan (Self-Reporting)
 * **Sebelumnya (Manual):** Ketua Shift mencatat kehadiran dan detail shift anggota secara manual pada lembar kertas harian setelah mendatangi setiap pos secara fisik.
 * **Sekarang (Digital):** 
-  * Setiap anggota Satpam atau Ketua Shift menginput laporan aktivitas harian secara mandiri melalui **Portal Karyawan** ([activities/page.tsx](file:///Users/ghinannavsih/Documents/Internal-BAK/src/app/employee/activities/page.tsx)).
+  * Setiap anggota Satpam atau Ketua Shift menginput laporan aktivitas harian secara mandiri melalui **Portal Karyawan** (`/employee/activities/satpam`, diimplementasikan oleh `src/components/employee/activities/SatpamActivitiesView.tsx`).
   * Sistem secara otomatis memverifikasi jenis shift (*Harian*, *Jumat & Libur*, *Lembur Sendiri*, atau *Lembur Cover*) menggunakan logika rota otomatis ([satpamRotation.ts](file:///Users/ghinannavsih/Documents/Internal-BAK/src/utils/satpamRotation.ts)).
   * Logika rota ini mengetahui persis jadwal masing-masing kelompok roster (Bastomi, Mujiono, Suhariono) dan menentukan status shift/lembur secara otomatis berdasarkan aturan rotasi mingguan tanpa perlu pengecekan manual.
 

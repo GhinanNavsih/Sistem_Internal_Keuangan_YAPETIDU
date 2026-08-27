@@ -13,6 +13,7 @@ import {
 import { auth, db } from '@/lib/firebase';
 import { doc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
 import { isUserRole, UserRole } from '@/lib/payroll/roles';
+import { getEmployeeActivitiesPath } from '@/lib/employeeActivities';
 
 export interface UserProfile {
   uid: string;
@@ -276,7 +277,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Redirect target user to their appropriate role home page
       const roleStr = data.targetProfile.role;
       if (roleStr === 'honorer' || roleStr === 'ketua_shift_satpam') {
-        window.location.href = '/employee/activities';
+        window.location.href = getEmployeeActivitiesPath(data.targetProfile);
       } else if (roleStr === 'loyalis') {
         window.location.href = '/employee/payslip';
       } else if (roleStr === 'satker_head') {

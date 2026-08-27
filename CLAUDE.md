@@ -37,9 +37,10 @@ src/
 │   │       └── uraian/            # Blue-collar rekap module + subpages: pelaporan-kegiatan,
 │   │                              #   presence-corrections, presensi-loyalis(-raw), presensi-pekarya,
 │   │                              #   proposal-kegiatan, rekap-pekarya, spj-pekarya, vakasi-loyalis
-│   ├── employee/                  # Employee/honorer portal: activities (+ journey-report), payslip,
-│   │                              #   driver-history, leave, satpam-duty-plan, presensi-correction,
-│   │                              #   facility-reports, simpan-pinjam
+│   ├── employee/                  # Employee/honorer portal: activities/{satpam,sopir,pekarya} (one
+│   │                              #   route per workflow; sopir/journey-report nested under sopir),
+│   │                              #   payslip, driver-history, leave, satpam-duty-plan,
+│   │                              #   presensi-correction, facility-reports, simpan-pinjam
 │   ├── globals.css
 │   ├── layout.tsx
 │   └── page.tsx
@@ -52,6 +53,9 @@ src/
 │   │                              #   Kebutuhan Dana Gaji, Potongan Gaji, Tunjangan Jabatan,
 │   │                              #   Vakasi Lain-lain/Pimpinan-Staf, Kegiatan Loyalis, Gabungan)
 │   ├── pekarya/ , satpam/         # Domain-specific panels (leave, duty/absence, shift-swap)
+│   ├── employee/activities/       # Split-out activity reporting: {Satpam,Sopir,Pekarya}ActivitiesView
+│   │                              #   + shared EmployeeActivitiesWorkspace, ActivityFormDialog,
+│   │                              #   ActivityHistoryPanel, activityModel (state hook), activityShared
 │   └── ui/                        # shadcn primitives (button, dialog, table, select, etc.)
 ├── lib/
 │   ├── firebase.ts                # Primary + secondary (`secondaryApp`/`secondaryDb`) client config
@@ -83,12 +87,18 @@ Roles are defined in `src/lib/payroll/roles.ts` (`USER_ROLES`) and enforced by r
 - `satker_head`: Department head for blue collar (Pekarya) operations. Confined to `/dashboard/payroll/activity-review`, `/dashboard/payroll/uraian*`, `/dashboard/payroll/driver-journeys*`, `/dashboard/payroll/pekarya-dashboard*`, `/dashboard/payroll/facility-reports*`.
 - `satker_head_loyalis`: Department head for Loyalis operations. Confined to `/dashboard/payroll/uraian*`.
 - `employee_admin`: Confined to `/dashboard/employees`. Can edit employee profiles (`EMPLOYEE_PROFILE_EDITOR_ROLES`, alongside `super_admin`).
-- `honorer`: Generic honorer/blue-collar portal role. Confined to `/employee/*`.
+- `honorer`: Generic honorer/blue-collar portal role. Confined to `/employee/*`, and further narrowed to a single activity workflow (see below).
 - `loyalis`: Confined to a fixed Loyalis route set: `/employee/payslip`, `/employee/presensi-correction`, `/employee/facility-reports`, `/employee/simpan-pinjam`.
 - `loyalis_presence_admin`: Confined to `/dashboard/payroll/uraian/presensi-loyalis-raw` and `/dashboard/payroll/uraian/presence-corrections`.
-- `ketua_shift_satpam`: Satpam shift lead. Confined to `/employee/activities`, `/employee/satpam-duty-plan`, `/employee/leave`, `/employee/payslip` — reports daily work, maintains the once-per-period duty plan, views own payslip.
+- `ketua_shift_satpam`: Satpam shift lead. Confined to `/employee/activities/satpam`, `/employee/satpam-duty-plan`, `/employee/leave`, `/employee/payslip` — reports daily work, maintains the once-per-period duty plan, views own payslip.
 
 `URAIAN_EDITOR_ROLES` (who may save an Uraian rekap / Loyalis presence calculator, triggering propagation to draft slips): `super_admin`, `finance_verifier`, `satker_head`, `satker_head_loyalis`.
+
+### Employee activity workflows
+
+`src/lib/employeeActivities.ts` is the **single source of truth** for which activity workflow an employee belongs to and which `/employee/*` routes they may open. `getEmployeeActivityWorkflow(profile)` resolves a profile to exactly one of `satpam` / `sopir` / `pekarya` by *set membership* over case/whitespace-normalized `permittedCategories` (never array position), with a deliberate priority rule for multi-category profiles: **Satpam wins over Sopir**, everything else falls through to Pekarya. `getEmployeeRouteRedirect` gates `/employee/driver-history` on the resolved workflow being `sopir`.
+
+Never re-derive the workflow locally (e.g. `permittedCategories[0] === 'SOPIR'`) — page-level access checks, nav-link visibility, and the route guard must all agree, or an employee gets a link that bounces them back or a page that silently renders empty. The retired `/employee/activities` and `/employee/activities/journey-report` URLs are listed in `RETIRED_EMPLOYEE_ACTIVITY_PATHS` and intentionally 404 rather than redirect.
 
 ---
 

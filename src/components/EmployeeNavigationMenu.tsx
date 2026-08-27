@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { useAuth, type UserProfile } from '@/lib/AuthContext';
 import { auth } from '@/lib/firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
+import {
+  getEmployeeActivitiesPath,
+  getEmployeeActivityWorkflow,
+} from '@/lib/employeeActivities';
 import { Button } from '@/components/ui/button';
 import { FloatingSnackbar, type SnackbarMessage } from '@/components/ui/floating-snackbar';
 import {
@@ -65,15 +69,13 @@ export default function EmployeeNavigationMenu() {
     return null;
   }
 
-  const isSatpam =
-    currentProfile.role === 'ketua_shift_satpam' ||
-    currentProfile.permittedCategories?.some(
-      (category) => category.trim().toUpperCase() === 'SATPAM',
-    );
-  const isSopir = currentProfile.permittedCategories?.some(
-    (category) => category.trim().toUpperCase() === 'SOPIR',
-  );
+  // Resolve through the shared workflow rule so the menu only ever offers links
+  // the route guard will actually honour (Satpam wins over Sopir).
+  const workflow = getEmployeeActivityWorkflow(currentProfile);
+  const isSatpam = workflow === 'satpam';
+  const isSopir = workflow === 'sopir';
   const leaveHref = '/employee/leave';
+  const activitiesHref = getEmployeeActivitiesPath(currentProfile);
 
   return (
     <>
@@ -92,7 +94,7 @@ export default function EmployeeNavigationMenu() {
           <MenuIcon className="w-4.5 h-4.5 text-indigo-500" />
         </DropdownMenuTrigger>
         <DropdownMenuContent>
-          <DropdownMenuItem render={<Link href="/employee/activities" />}>
+          <DropdownMenuItem render={<Link href={activitiesHref} />}>
             <ClipboardList className="text-indigo-500" />
             Laporan Kegiatan
           </DropdownMenuItem>

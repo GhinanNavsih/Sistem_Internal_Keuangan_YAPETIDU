@@ -57,6 +57,12 @@ import {
 } from '@/lib/payroll/driverJourney';
 import { authenticatedJson } from '@/lib/payroll/client';
 import {
+  EMPLOYEE_ACTIVITY_PATHS,
+  SOPIR_JOURNEY_REPORT_PATH,
+  getEmployeeActivitiesPath,
+  getEmployeeActivityWorkflow,
+} from '@/lib/employeeActivities';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -245,8 +251,7 @@ function DriverHistoryContent() {
   };
 
   const periodToken = useMemo(() => `${year}-${String(month).padStart(2, '0')}`, [year, month]);
-  const userJobCategory = profile?.permittedCategories?.[0] || '';
-  const isSopir = userJobCategory === 'SOPIR';
+  const isSopir = getEmployeeActivityWorkflow(profile || {}) === 'sopir';
 
   // Fetch driver reported activities from Firestore
   useEffect(() => {
@@ -340,7 +345,10 @@ function DriverHistoryContent() {
             <p className="text-sm text-slate-500 leading-relaxed">
               Halaman ini dikhususkan bagi Pegawai dengan kategori jabatan **Sopir**.
             </p>
-            <Link href="/employee/activities" className="block w-full">
+            <Link
+              href={getEmployeeActivitiesPath(profile)}
+              className="block w-full"
+            >
               <Button className="rounded-xl w-full bg-indigo-600 hover:bg-indigo-700">
                 Kembali ke Dashboard
               </Button>
@@ -361,7 +369,7 @@ function DriverHistoryContent() {
       <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-100 shadow-sm relative z-20">
         <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/employee/activities">
+            <Link href={EMPLOYEE_ACTIVITY_PATHS.sopir}>
               <Button variant="ghost" size="icon" className="rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-50 h-8.5 w-8.5">
                 <ArrowLeft className="w-5 h-5" />
               </Button>
@@ -595,7 +603,7 @@ function DriverHistoryContent() {
                               <span>Hapus</span>
                             </Button>
 
-                            <Link href={activity.journeyId ? `/employee/activities/journey-report?id=${activity.journeyId}&editReportId=${activity.id}` : `/employee/activities?editReportId=${activity.id}`}>
+                            <Link href={activity.journeyId ? `${SOPIR_JOURNEY_REPORT_PATH}?id=${activity.journeyId}&editReportId=${activity.id}` : `${EMPLOYEE_ACTIVITY_PATHS.sopir}?editReportId=${activity.id}`}>
                               <Button
                                 variant="outline"
                                 size="sm"
