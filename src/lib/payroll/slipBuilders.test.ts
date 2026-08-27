@@ -102,3 +102,24 @@ test('a blue-collar BPJS allowance of zero emits no allowance row at all', () =>
     false,
   );
 });
+
+test('VakasiTambahan never becomes Pekarya SPJ or a Pekarya earning row', () => {
+  const earnings = buildInitialEarnings(
+    { employment: { jobCategory: 'SOPIR' } },
+    1_000_000,
+    'blue',
+    {
+      employeeId: 'BC_001',
+      name: 'Sopir',
+      values: { spj: 0 },
+    },
+    999_999,
+    [{ eventName: 'Vakasi Kegiatan Loyalis', payGiven: 750_000 }],
+  );
+
+  assert.equal(amountOf(earnings, 'SPJ'), 0);
+  assert.equal(
+    earnings.some((field) => field.label === 'Vakasi Kegiatan Loyalis'),
+    false,
+  );
+});

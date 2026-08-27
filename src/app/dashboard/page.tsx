@@ -47,6 +47,7 @@ import {
   SlidersHorizontal,
   PieChart as PieIcon,
   Scissors,
+  RefreshCw,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -757,11 +758,46 @@ export default function TreasuryDashboard() {
   const [pekaryaPreviewsByPeriod, setPekaryaPreviewsByPeriod] = useState<
     Record<string, Record<string, PekaryaSlipPreview>>
   >({});
+  const [pekaryaPreviewErrorsByPeriod, setPekaryaPreviewErrorsByPeriod] =
+    useState<Record<string, string>>({});
   const [pekaryaPreviewsLoading, setPekaryaPreviewsLoading] = useState(true);
+  const requestedPekaryaPreviewPeriods = useMemo(
+    () => computePayrollPeriodRange(slips, selectedPeriod),
+    [slips, selectedPeriod],
+  );
+  const pekaryaPreviewsPending = requestedPekaryaPreviewPeriods.some(
+    (period) =>
+      !(period in pekaryaPreviewsByPeriod) &&
+      !(period in pekaryaPreviewErrorsByPeriod),
+  );
+  const pekaryaPreviewsBusy =
+    pekaryaPreviewsLoading || pekaryaPreviewsPending;
+  const pekaryaPreviewCoverageErrors = requestedPekaryaPreviewPeriods.reduce<
+    Record<string, string>
+  >((errors, period) => {
+    const previews = pekaryaPreviewsByPeriod[period];
+    if (!previews) return errors;
+    const missingCount = employeesBlueCollar.filter(
+      (employee) =>
+        employee.flags?.isActive !== false && !previews[employee.id],
+    ).length;
+    if (missingCount > 0) {
+      errors[period] =
+        `${missingCount} pegawai Pekarya aktif tidak memiliki pratinjau resmi.`;
+    }
+    return errors;
+  }, {});
+  const pekaryaPreviewFailures = Object.entries(
+    {
+      ...pekaryaPreviewCoverageErrors,
+      ...pekaryaPreviewErrorsByPeriod,
+    },
+  ).sort(([left], [right]) => left.localeCompare(right));
 
-  // Which periods still need fetching is read off `pekaryaPreviewsByPeriod`
-  // itself (a period counts as done once it has a key, success or failure)
-  // rather than a ref marked before the fetch starts. `onAuthStateChanged`
+  // Which periods still need fetching is read off successful previews and the
+  // explicit error map rather than a ref marked before the fetch starts. A
+  // failure is never represented as an empty successful preview because that
+  // would make the aggregate calculator fail open. `onAuthStateChanged`
   // can fire more than once in production (token refresh, multi-tab
   // negotiation — see the comment in AuthContext), each time handing this
   // effect a new `profile` object and re-running it. A ref claimed up front
@@ -774,9 +810,10 @@ export default function TreasuryDashboard() {
   useEffect(() => {
     if (!profile || profile.role !== 'super_admin') return;
 
-    const periods = computePayrollPeriodRange(slips, selectedPeriod);
-    const periodsToFetch = periods.filter(
-      (period) => !(period in pekaryaPreviewsByPeriod),
+    const periodsToFetch = requestedPekaryaPreviewPeriods.filter(
+      (period) =>
+        !(period in pekaryaPreviewsByPeriod) &&
+        !(period in pekaryaPreviewErrorsByPeriod),
     );
 
     let cancelled = false;
@@ -786,6 +823,7 @@ export default function TreasuryDashboard() {
         if (!cancelled) setPekaryaPreviewsLoading(false);
         return;
       }
+      setPekaryaPreviewsLoading(true);
       const results = await Promise.all(
         periodsToFetch.map(async (period) => {
           const periodToken = period.replace('_', '-');
@@ -793,23 +831,37 @@ export default function TreasuryDashboard() {
             const result = await authenticatedJson<{
               previews: Record<string, PekaryaSlipPreview>;
             }>(`/api/payroll/slip-preview?period=${periodToken}`);
-            return [period, result.previews || {}] as const;
+            return {
+              period,
+              previews: result.previews || {},
+              error: null,
+            };
           } catch (err) {
-            // A period whose preview cannot be loaded keeps falling back to
-            // the profile-driven builder for that period only — it must not
-            // block every other period's cumulative figures, and it must not
-            // spin forever either, so it's still recorded (as empty) rather
-            // than left pending.
             console.error(`Gagal memuat pratinjau slip Pekarya untuk ${period}:`, err);
-            return [period, {}] as const;
+            return {
+              period,
+              previews: null,
+              error:
+                err instanceof Error
+                  ? err.message
+                  : 'Gagal memuat pratinjau perhitungan Pekarya.',
+            };
           }
         }),
       );
       if (cancelled) return;
       setPekaryaPreviewsByPeriod((prev) => {
         const next = { ...prev };
-        results.forEach(([period, previews]) => {
-          next[period] = previews;
+        results.forEach((result) => {
+          if (result.previews) next[result.period] = result.previews;
+        });
+        return next;
+      });
+      setPekaryaPreviewErrorsByPeriod((prev) => {
+        const next = { ...prev };
+        results.forEach((result) => {
+          if (result.error) next[result.period] = result.error;
+          else delete next[result.period];
         });
         return next;
       });
@@ -820,7 +872,12 @@ export default function TreasuryDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [profile, slips, selectedPeriod, pekaryaPreviewsByPeriod]);
+  }, [
+    pekaryaPreviewErrorsByPeriod,
+    pekaryaPreviewsByPeriod,
+    profile,
+    requestedPekaryaPreviewPeriods,
+  ]);
 
   const selectedPeriodData = periodDataByPeriod[selectedPeriod] || EMPTY_PERIOD_DATA;
   const selectedPeriodVakasiEvents = selectedPeriodData.vakasiEvents;
@@ -1565,10 +1622,42 @@ export default function TreasuryDashboard() {
           </div>
         )}
 
-        {contextLoading || dataLoading || pekaryaPreviewsLoading ? (
+        {contextLoading || dataLoading || pekaryaPreviewsBusy ? (
           <div className="h-[400px] flex flex-col items-center justify-center bg-white/40 border border-slate-200/50 rounded-3xl">
             <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
             <p className="text-slate-500 text-sm mt-3 font-medium">Sedang memproses data keuangan...</p>
+          </div>
+        ) : pekaryaPreviewFailures.length > 0 ? (
+          <div className="flex min-h-[320px] flex-col items-center justify-center rounded-3xl border border-rose-200 bg-rose-50/80 p-10 text-center shadow-sm">
+            <AlertCircle className="mb-4 h-12 w-12 text-rose-500" />
+            <h3 className="text-lg font-bold text-slate-800">
+              Pratinjau Payroll Pekarya Tidak Tersedia
+            </h3>
+            <p className="mt-2 max-w-xl text-sm text-slate-600">
+              Ringkasan keuangan disembunyikan agar perhitungan lokal lama tidak
+              menggantikan nilai resmi dari server.
+            </p>
+            <div className="mt-4 max-w-xl space-y-1 text-xs text-rose-700">
+              {pekaryaPreviewFailures.slice(0, 4).map(([period, message]) => (
+                <p key={period}>
+                  {formatPeriodLabel(period)}: {message}
+                </p>
+              ))}
+              {pekaryaPreviewFailures.length > 4 && (
+                <p>…dan {pekaryaPreviewFailures.length - 4} periode lainnya.</p>
+              )}
+            </div>
+            <Button
+              type="button"
+              className="mt-6 rounded-xl bg-rose-600 text-white hover:bg-rose-700"
+              onClick={() => {
+                setPekaryaPreviewsLoading(true);
+                setPekaryaPreviewErrorsByPeriod({});
+              }}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Coba Lagi
+            </Button>
           </div>
         ) : !currentPeriodData ? (
           <div className="p-12 text-center bg-white/60 backdrop-blur-md border border-slate-200/50 rounded-3xl shadow-sm">

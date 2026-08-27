@@ -386,6 +386,16 @@ export default function PayrollValidationDashboard() {
   // /employee/payslip renders, so the two can never disagree.
   const [pekaryaPreviews, setPekaryaPreviews] = useState<Record<string, PekaryaSlipPreview>>({});
   const [pekaryaPreviewsLoading, setPekaryaPreviewsLoading] = useState(true);
+  const [pekaryaPreviewsError, setPekaryaPreviewsError] = useState<string | null>(null);
+  const [pekaryaPreviewsPeriod, setPekaryaPreviewsPeriod] = useState<string | null>(null);
+  const [pekaryaPreviewReloadToken, setPekaryaPreviewReloadToken] = useState(0);
+  const currentPekaryaPreviewPeriod = `${targetDate.getFullYear()}-${String(
+    targetDate.getMonth() + 1,
+  ).padStart(2, '0')}`;
+  const effectivePekaryaPreviews =
+    pekaryaPreviewsPeriod === currentPekaryaPreviewPeriod
+      ? pekaryaPreviews
+      : {};
 
   const allPayrollTargets = useMemo<PayrollTarget[]>(() => [
     ...employeesLoyalis
@@ -1167,7 +1177,20 @@ export default function PayrollValidationDashboard() {
   // Deliberately independent of the selected tab: "Siapkan Semua Draf" and
   // the bulk lock cover both collars, so a Loyalis tab is no reason to let a
   // Pekarya draft be built before its preview has arrived.
-  const pekaryaPreviewsReady = !pekaryaPreviewsLoading;
+  const missingPekaryaPreviewTargets = allPayrollTargets.filter(
+    (target) =>
+      target.collar === 'pekarya' && !effectivePekaryaPreviews[target.id],
+  );
+  const pekaryaPreviewCoverageError =
+    !pekaryaPreviewsLoading &&
+    !pekaryaPreviewsError &&
+    missingPekaryaPreviewTargets.length > 0
+      ? `${missingPekaryaPreviewTargets.length} pegawai Pekarya tidak memiliki pratinjau perhitungan resmi.`
+      : null;
+  const pekaryaPreviewProblem =
+    pekaryaPreviewsError || pekaryaPreviewCoverageError;
+  const pekaryaPreviewsReady =
+    !pekaryaPreviewsLoading && !pekaryaPreviewProblem;
 
   /**
    * Refuses to produce a document while the previews are still in flight.
@@ -1178,8 +1201,10 @@ export default function PayrollValidationDashboard() {
     setNotification({
       show: true,
       type: 'error',
-      message:
-        'Pratinjau perhitungan Pekarya masih dimuat. Tunggu sesaat lalu ulangi.',
+      message: pekaryaPreviewsLoading
+        ? 'Pratinjau perhitungan Pekarya masih dimuat. Tunggu sesaat lalu ulangi.'
+        : pekaryaPreviewProblem ||
+          'Pratinjau perhitungan Pekarya tidak tersedia. Muat ulang lalu coba lagi.',
     });
     return false;
   };
@@ -1189,7 +1214,7 @@ export default function PayrollValidationDashboard() {
     if (payrollCollar === 'loyalis') {
       return calculateGapok(emp, salaryMatrix, targetDate);
     }
-    return pekaryaPreviews[emp.id]?.gapok ?? calculateGapok(emp, salaryMatrix, targetDate);
+    return effectivePekaryaPreviews[emp.id]?.gapok ?? 0;
   };
 
   // Helper: build fresh earnings/deductions from current employee data
@@ -1198,7 +1223,7 @@ export default function PayrollValidationDashboard() {
   const buildFreshSlipData = (emp: EmployeeRow) => {
     // If there is already a saved slip state, return its saved earnings and deductions
     const savedSlip = slipStates[emp.id];
-    if (savedSlip && savedSlip.earnings && savedSlip.earnings.length > 0) {
+    if (savedSlip && Array.isArray(savedSlip.earnings)) {
       return {
         earnings: savedSlip.earnings,
         deductions: savedSlip.deductions || [],
@@ -1213,9 +1238,11 @@ export default function PayrollValidationDashboard() {
     // Pekarya earnings are owned by the shared preview; the local builder is
     // the Loyalis path only.
     const pekaryaPreview =
-      payrollCollar === 'loyalis' ? undefined : pekaryaPreviews[emp.id];
-    const earnings = pekaryaPreview
-      ? pekaryaPreview.earnings
+      payrollCollar === 'loyalis'
+        ? undefined
+        : effectivePekaryaPreviews[emp.id];
+    const earnings = payrollCollar !== 'loyalis'
+      ? pekaryaPreview?.earnings || []
       : buildInitialEarnings(
         emp.raw,
         gapok,
@@ -1230,14 +1257,16 @@ export default function PayrollValidationDashboard() {
         getLoyalisPresensiEarning(emp.id)
       );
 
-    const deductions = buildInitialDeductions(
-      emp.raw,
-      payrollCollar,
-      koperasiDeductions[emp.id] || 0,
-      getLoyalisPresenceDeduction(emp.id),
-      getLoyalisPresensiDeduction(emp.id),
-      koperasiSavings[emp.id] || 0
-    );
+    const deductions = payrollCollar !== 'loyalis' && !pekaryaPreview
+      ? []
+      : buildInitialDeductions(
+          emp.raw,
+          payrollCollar,
+          koperasiDeductions[emp.id] || 0,
+          getLoyalisPresenceDeduction(emp.id),
+          getLoyalisPresensiDeduction(emp.id),
+          koperasiSavings[emp.id] || 0,
+        );
 
     return { earnings, deductions };
   };
@@ -1320,7 +1349,7 @@ export default function PayrollValidationDashboard() {
       koperasiDeductions,
       koperasiSavings,
       loyalisPresenceData,
-      pekaryaPreviews,
+      pekaryaPreviews: effectivePekaryaPreviews,
     },
   );
 
@@ -1397,6 +1426,13 @@ export default function PayrollValidationDashboard() {
   };
 
   const displayEmployees = getFilteredAndSortedEmployees();
+  const pekaryaTotalsUnavailable =
+    payrollCollar !== 'loyalis' &&
+    displayEmployees.some(
+      (employee) =>
+        !slipStates[employee.id] &&
+        !effectivePekaryaPreviews[employee.id],
+    );
 
 
 
@@ -1430,7 +1466,8 @@ export default function PayrollValidationDashboard() {
     functionalAllowanceMap,
     koperasiDeductions,
     koperasiSavings,
-    loyalisPresenceData
+    loyalisPresenceData,
+    effectivePekaryaPreviews,
   ]);
 
   // Get all unique categories for filter
@@ -1496,12 +1533,22 @@ export default function PayrollValidationDashboard() {
   // ─── Fetch UraianGaji & persisted SlipStates for current period ──
   useEffect(() => {
     if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) return;
+    let cancelled = false;
     const fetchPeriodData = async () => {
+      setLocalLoading(true);
+      setUraianMap({});
+      setSlipStates({});
+      setLoyalisPresenceData(null);
       try {
         const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
 
-        // 1. Fetch UraianGaji
-        const snapshot = await getDocs(collection(db, 'UraianGaji'));
+        const [snapshot, slipStatesSnapshot, presenceSnap] = await Promise.all([
+          getDocs(collection(db, 'UraianGaji')),
+          getDocs(collection(db, 'PayrollSlipStates')),
+          getDoc(doc(db, 'LoyalisPresence', period)),
+        ]);
+        if (cancelled) return;
+
         const map: Record<string, UraianGajiDocument> = {};
         snapshot.docs.forEach(d => {
           if (d.id.startsWith(period)) {
@@ -1510,8 +1557,6 @@ export default function PayrollValidationDashboard() {
         });
         setUraianMap(map);
 
-        // 2. Fetch persisted SlipStates for the current period
-        const slipStatesSnapshot = await getDocs(collection(db, 'PayrollSlipStates'));
         const persistedStates: Record<string, SlipState> = {};
         slipStatesSnapshot.docs.forEach(d => {
           // Document ID format: {period}_{employeeId}
@@ -1534,10 +1579,6 @@ export default function PayrollValidationDashboard() {
           }
         });
         setSlipStates(persistedStates);
-
-        // 3. Fetch LoyalisPresence document
-        const presenceDocRef = doc(db, 'LoyalisPresence', period);
-        const presenceSnap = await getDoc(presenceDocRef);
         if (presenceSnap.exists()) {
           setLoyalisPresenceData(presenceSnap.data());
         } else {
@@ -1545,9 +1586,14 @@ export default function PayrollValidationDashboard() {
         }
       } catch (err) {
         console.error('Error fetching period data:', err);
+      } finally {
+        if (!cancelled) setLocalLoading(false);
       }
     };
     fetchPeriodData();
+    return () => {
+      cancelled = true;
+    };
   }, [targetDate, profile]);
 
   // ─── Fetch the shared Pekarya preview for the period ───────────
@@ -1568,15 +1614,28 @@ export default function PayrollValidationDashboard() {
     let cancelled = false;
     const loadPreviews = async () => {
       setPekaryaPreviewsLoading(true);
+      setPekaryaPreviewsError(null);
+      setPekaryaPreviewsPeriod(null);
+      setPekaryaPreviews({});
       try {
         const previews = await fetchPekaryaPreviews();
-        if (!cancelled) setPekaryaPreviews(previews);
+        if (!cancelled) {
+          setPekaryaPreviews(previews);
+          setPekaryaPreviewsPeriod(currentPekaryaPreviewPeriod);
+        }
       } catch (err) {
         // A failed preview must not silently degrade to zero rows: the empty
         // map keeps the fallback builders out of the Pekarya path, and every
         // draft-creating flow refuses a target it has no preview for.
         console.error('Gagal memuat pratinjau slip Pekarya:', err);
-        if (!cancelled) setPekaryaPreviews({});
+        if (!cancelled) {
+          setPekaryaPreviews({});
+          setPekaryaPreviewsError(
+            err instanceof Error
+              ? err.message
+              : 'Gagal memuat pratinjau perhitungan Pekarya.',
+          );
+        }
       } finally {
         if (!cancelled) setPekaryaPreviewsLoading(false);
       }
@@ -1585,7 +1644,12 @@ export default function PayrollValidationDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [fetchPekaryaPreviews, profile]);
+  }, [
+    currentPekaryaPreviewPeriod,
+    fetchPekaryaPreviews,
+    pekaryaPreviewReloadToken,
+    profile,
+  ]);
 
   // ─── Fetch VakasiTambahan for current period (Loyalis Only) ───
   useEffect(() => {
@@ -1927,6 +1991,24 @@ export default function PayrollValidationDashboard() {
     if (isSavingRef.current) return;
     isSavingRef.current = true;
     try {
+      if (payrollCollar !== 'loyalis' && !slipStates[employeeId]) {
+        const preview = effectivePekaryaPreviews[employeeId];
+        if (!preview) {
+          throw new Error(
+            pekaryaPreviewProblem ||
+              'Pratinjau perhitungan Pekarya belum tersedia. Muat ulang dan coba lagi.',
+          );
+        }
+        const blockingWarning = preview.meta.warnings.find(
+          (warning) => warning.blocking,
+        );
+        if (!preview.meta.canCreateSlip || blockingWarning) {
+          throw new Error(
+            blockingWarning?.message ||
+              'Pratinjau Pekarya belum memenuhi syarat untuk membuat slip baru.',
+          );
+        }
+      }
       const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
       const result = await authenticatedJson<{
         koperasiPlan?: { loanCount: number; expectedDeduction: number; matchType: string };
@@ -1969,6 +2051,7 @@ export default function PayrollValidationDashboard() {
       setTimeout(() => {
         setNotification(prev => ({ ...prev, show: false }));
       }, 5000);
+      throw err;
     } finally {
       isSavingRef.current = false;
     }
@@ -2211,7 +2294,11 @@ export default function PayrollValidationDashboard() {
       // the shared endpoint, so Refresh Massal proposes the same rows the
       // employee's own payslip and the Tinjau modal already show.
       const refreshedPreviews = isLoyalisTab ? {} : await fetchPekaryaPreviews();
-      if (!isLoyalisTab) setPekaryaPreviews(refreshedPreviews);
+      if (!isLoyalisTab) {
+        setPekaryaPreviews(refreshedPreviews);
+        setPekaryaPreviewsPeriod(currentPekaryaPreviewPeriod);
+        setPekaryaPreviewsError(null);
+      }
 
       const changes: BulkChange[] = [];
 
@@ -2929,6 +3016,8 @@ export default function PayrollValidationDashboard() {
     } else {
       const refreshedPreviews = await fetchPekaryaPreviews();
       setPekaryaPreviews(refreshedPreviews);
+      setPekaryaPreviewsPeriod(currentPekaryaPreviewPeriod);
+      setPekaryaPreviewsError(null);
       const preview = refreshedPreviews[employeeId];
       if (!preview) {
         throw new Error(
@@ -2977,9 +3066,22 @@ export default function PayrollValidationDashboard() {
 
     await runWithConcurrency(missingTargets, 4, async (target) => {
       try {
-        if (target.collar === 'pekarya' && !pekaryaPreviews[target.id]) {
+        const targetPreview = effectivePekaryaPreviews[target.id];
+        if (target.collar === 'pekarya' && !targetPreview) {
           throw new Error(
             'Pratinjau perhitungan Pekarya belum tersedia untuk pegawai ini.',
+          );
+        }
+        const blockingWarning = targetPreview?.meta.warnings.find(
+          (warning) => warning.blocking,
+        );
+        if (
+          target.collar === 'pekarya' &&
+          (!targetPreview?.meta.canCreateSlip || blockingWarning)
+        ) {
+          throw new Error(
+            blockingWarning?.message ||
+              'Pratinjau Pekarya belum memenuhi syarat untuk membuat slip baru.',
           );
         }
         const draftData = buildPayrollTargetDraftData(target, startingStates);
@@ -3381,19 +3483,31 @@ export default function PayrollValidationDashboard() {
                   <div>
                     <span className="text-slate-500 block mb-1">Total Pendapatan</span>
                     <span className="font-medium text-emerald-600">
-                      {loading ? '...' : formatIDR(payrollTotals.totalGross)}
+                      {loading
+                        ? '...'
+                        : pekaryaTotalsUnavailable
+                          ? '—'
+                          : formatIDR(payrollTotals.totalGross)}
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-500 block mb-1">Total Potongan</span>
                     <span className="font-medium text-rose-600">
-                      {loading ? '...' : formatIDR(payrollTotals.totalDeductions)}
+                      {loading
+                        ? '...'
+                        : pekaryaTotalsUnavailable
+                          ? '—'
+                          : formatIDR(payrollTotals.totalDeductions)}
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-500 block mb-1">Total Gaji Bersih</span>
                     <span className="font-bold text-indigo-600">
-                      {loading ? '...' : formatIDR(payrollTotals.totalNet)}
+                      {loading
+                        ? '...'
+                        : pekaryaTotalsUnavailable
+                          ? '—'
+                          : formatIDR(payrollTotals.totalNet)}
                     </span>
                   </div>
                 </div>
@@ -3410,8 +3524,8 @@ export default function PayrollValidationDashboard() {
                   <button
                     type="button"
                     onClick={handlePrepareAllDrafts}
-                    disabled={preparingAllDrafts || loading || missingPayrollDraftCount === 0}
-                    className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(preparingAllDrafts || loading || missingPayrollDraftCount === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={preparingAllDrafts || loading || !pekaryaPreviewsReady || missingPayrollDraftCount === 0}
+                    className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:shadow-sm transition-all duration-150 cursor-pointer shadow-sm ${(preparingAllDrafts || loading || !pekaryaPreviewsReady || missingPayrollDraftCount === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     {preparingAllDrafts ? (
                       <>
@@ -3512,6 +3626,44 @@ export default function PayrollValidationDashboard() {
                 </button>
               </div>
             </div>
+            {payrollCollar !== 'loyalis' &&
+              (pekaryaPreviewsLoading || pekaryaPreviewProblem) && (
+                <div className="mx-8 mt-5 flex items-start justify-between gap-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                  <div className="flex items-start gap-2">
+                    {pekaryaPreviewsLoading ? (
+                      <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+                    ) : (
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    )}
+                    <div>
+                      <p className="font-semibold">
+                        {pekaryaPreviewsLoading
+                          ? 'Pratinjau perhitungan Pekarya sedang dimuat.'
+                          : pekaryaPreviewProblem}
+                      </p>
+                      {!pekaryaPreviewsLoading && (
+                        <p className="mt-1 text-xs">
+                          Nilai pegawai tanpa draf disembunyikan agar perhitungan lama tidak dianggap resmi.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {!pekaryaPreviewsLoading && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setPekaryaPreviewReloadToken((token) => token + 1)
+                      }
+                      className="shrink-0 border-rose-300 bg-white text-rose-700 hover:bg-rose-100"
+                    >
+                      <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                      Coba Lagi
+                    </Button>
+                  )}
+                </div>
+              )}
             {loading ? (
               <div className="p-20 flex flex-col items-center justify-center text-slate-400">
                 <Loader2 className="w-8 h-8 animate-spin mb-4 text-indigo-500" />
@@ -3561,9 +3713,11 @@ export default function PayrollValidationDashboard() {
                 </TableHeader>
                 <TableBody>
                   {displayEmployees.map((emp) => {
-                    const years = calculateYearsOfService(emp.joinDate, targetDate);
-                    const gapok = getPekaryaGapok(emp);
                     const slip = slipStates[emp.id];
+                    const previewUnavailable =
+                      payrollCollar !== 'loyalis' &&
+                      !slip &&
+                      !effectivePekaryaPreviews[emp.id];
                     const emailSentInQueue = bulkEmailResults.find(r => r.employeeId === emp.id)?.status === 'success';
                     const isEmailSent = slip?.emailSent || emailSentInQueue;
 
@@ -3590,6 +3744,11 @@ export default function PayrollValidationDashboard() {
                               />
                             )}
                             <span className="block truncate" title={emp.name}>{emp.name}</span>
+                            {previewUnavailable && (
+                              <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-600">
+                                Preview tidak tersedia
+                              </Badge>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell className="py-4 w-[320px] max-w-[320px]">
@@ -3606,13 +3765,13 @@ export default function PayrollValidationDashboard() {
                           </div>
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
-                          {formatIDR(totalEarnings)}
+                          {previewUnavailable ? '—' : formatIDR(totalEarnings)}
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
-                          {formatIDR(totalDeductions)}
+                          {previewUnavailable ? '—' : formatIDR(totalDeductions)}
                         </TableCell>
                         <TableCell className="py-4 font-bold text-indigo-700">
-                          {formatIDR(netSalary)}
+                          {previewUnavailable ? '—' : formatIDR(netSalary)}
                         </TableCell>
                         <TableCell className="text-right pr-8 py-4">
                           <div className="flex justify-end gap-2 items-center">
@@ -3700,10 +3859,13 @@ export default function PayrollValidationDashboard() {
         presensiDeduction={selectedEmployee ? getLoyalisPresensiDeduction(selectedEmployee.id) : 0}
         pekaryaPreview={
           selectedEmployee && payrollCollar !== 'loyalis'
-            ? pekaryaPreviews[selectedEmployee.id] ?? null
+            ? effectivePekaryaPreviews[selectedEmployee.id] ?? null
             : null
         }
         previewLoading={payrollCollar !== 'loyalis' && pekaryaPreviewsLoading}
+        previewError={
+          payrollCollar !== 'loyalis' ? pekaryaPreviewProblem : null
+        }
       />
 
       <LegalitasPimpinanDialog

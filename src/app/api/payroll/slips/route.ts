@@ -19,7 +19,10 @@ import {
   resolveGapokFromMatrix,
   toSlipEmployeeView,
 } from '@/lib/payroll/salaryMatrix';
-import { validateNewSlipGapok } from '@/lib/payroll/pekaryaSlipPreview';
+import {
+  shouldValidateNewSlipSources,
+  validateNewSlipGapok,
+} from '@/lib/payroll/pekaryaSlipPreview';
 import {
   ActiveSalaryMatrix,
   loadActiveSalaryMatrix,
@@ -335,7 +338,17 @@ export async function POST(request: NextRequest) {
       let canonicalSatpamDuty:
         | { harian: number; jumatLibur: number; bonusPresensiBulanan: number }
         | null = null;
-      if (isDraftWriteAction(command.action) && blueEmployeeSnapshot.exists) {
+      const validateNewSlipSources = shouldValidateNewSlipSources(before);
+      // Canonical source validation applies when the slip is materialized for
+      // the first time (including the legacy missing-draft repair). An existing
+      // editable draft is a stored snapshot: ordinary saves preserve Finance's
+      // values, and the explicit Refresh flow is what opts into newer matrix,
+      // SPJ, attendance, or SATPAM reconciliation inputs.
+      if (
+        isDraftWriteAction(command.action) &&
+        blueEmployeeSnapshot.exists &&
+        validateNewSlipSources
+      ) {
         const employee = blueEmployeeSnapshot.data()!;
         const jobCategory = employee.employment?.jobCategory;
         if (!isPekaryaJobCategory(jobCategory)) {
@@ -494,7 +507,7 @@ export async function POST(request: NextRequest) {
           // A slip being created for the first time must carry exactly the
           // matrix's Gaji Pokok. Drafts that already exist keep whatever
           // manual edit Finance made until the next Refresh recalculates them.
-          if (!before && activeMatrices) {
+          if (validateNewSlipSources && activeMatrices) {
             const isBlueCollar = blueEmployeeSnapshot.exists;
             const employeeData = isBlueCollar
               ? blueEmployeeSnapshot.data()!

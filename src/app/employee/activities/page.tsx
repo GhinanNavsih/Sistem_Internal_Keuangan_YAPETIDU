@@ -119,6 +119,7 @@ import {
   MAX_DRIVER_JOURNEY_LOCATIONS,
   normalizeDriverJourneyLocation,
   normalizeDriverJourneyDestinations,
+  formatDurationHoursAsJamMenit,
   type DriverJourneyLocation,
   type DriverVehicleName,
 } from '@/lib/payroll/driverJourney';
@@ -7318,7 +7319,7 @@ function ActivitiesContent() {
                   <div className="bg-white p-2.5 rounded-xl border border-emerald-100 shadow-xs">
                     <span className="block text-[9px] text-slate-400 font-extrabold uppercase">Estimasi Waktu Tempuh PP</span>
                     <span className="text-xs sm:text-sm font-black text-emerald-900">
-                      {((selfPiketCalcDuration || 0) * 2).toFixed(1)} Jam
+                      {formatDurationHoursAsJamMenit((selfPiketCalcDuration || 0) * 2)}
                     </span>
                   </div>
                 </div>

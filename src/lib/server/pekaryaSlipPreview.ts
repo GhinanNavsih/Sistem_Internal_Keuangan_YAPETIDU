@@ -174,8 +174,10 @@ async function loadCategoryAttendanceState(
     return {
       gate: {
         required: true,
-        // Per-employee `satpamDutySource` is checked by the caller through the
-        // Uraian entry itself; here only the period-wide blocker count applies.
+        // buildPekaryaSlipPreview adds the matching employee-level
+        // satpamDutySource warning after this period-wide verdict. It still
+        // exposes the Rekap shift columns provisionally while this gate is
+        // pending, but keeps slip creation blocked.
         satisfied: blockerCount === 0,
         reason:
           blockerCount === 0

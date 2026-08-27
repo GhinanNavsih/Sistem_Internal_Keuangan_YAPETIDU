@@ -93,15 +93,19 @@ export async function POST(req: NextRequest) {
         start: leg.start_address,
         end: leg.end_address,
         distanceText: leg.distance.text,
-        distanceKm: Math.round((leg.distance.value / 1000) * 10) / 10,
+        // Keep enough precision for short routes. The UI formats these values
+        // for display, but rounding here can turn a real sub-kilometre trip or
+        // a few-minute drive into zero before it reaches the authorization API.
+        distanceKm: Math.round((leg.distance.value / 1000) * 1000) / 1000,
         durationText: leg.duration.text,
-        durationHours: Math.round((leg.duration.value / 3600) * 10) / 10
+        durationHours: Math.round((leg.duration.value / 3600) * 1000) / 1000
       });
     }
 
-    // Convert to KM (rounded to 1 decimal place) and Hours (rounded to 1 decimal place)
-    const distanceKm = Math.round((totalDistanceMeters / 1000) * 10) / 10;
-    const durationHours = Math.round((totalDurationSeconds / 3600) * 10) / 10;
+    // Retain precision for validation and wage calculations. Consumers should
+    // format these values when presenting them to users.
+    const distanceKm = Math.round((totalDistanceMeters / 1000) * 1000) / 1000;
+    const durationHours = Math.round((totalDurationSeconds / 3600) * 1000) / 1000;
 
     return NextResponse.json({
       success: true,

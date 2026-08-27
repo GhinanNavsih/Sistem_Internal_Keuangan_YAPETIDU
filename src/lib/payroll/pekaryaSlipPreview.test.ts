@@ -4,6 +4,7 @@ import {
   buildPekaryaSlipPreview,
   PekaryaPreviewInputs,
   resolveSlipPreviewScope,
+  shouldValidateNewSlipSources,
   validateNewSlipGapok,
 } from './pekaryaSlipPreview';
 import { DriverPiketSchedule } from './driverPiket';
@@ -311,6 +312,47 @@ test('an unpublished attendance period blocks creating a new slip', () => {
   );
 });
 
+test('an unpublished Uraian row cannot override the Piket estimate', () => {
+  const preview = buildPekaryaSlipPreview(
+    kholikInputs({
+      attendanceGate: {
+        required: true,
+        satisfied: false,
+        reason: 'Presensi SOPIR sudah kedaluwarsa.',
+      },
+      uraianCustomColumns: [
+        {
+          key: 'tunjanganLembur',
+          label: 'Tunjangan Lembur',
+          type: 'currency',
+          slipLabel: 'Tunjangan Lembur',
+        },
+      ],
+      uraianEntry: {
+        employeeId: 'BC_001',
+        name: 'Abdul Kholik',
+        values: {
+          harian: 999_999,
+          jumatLibur: 999_999,
+          piket: 999_999,
+          tunjanganLembur: 999_999,
+        },
+      },
+    }),
+  );
+
+  assert.equal(amountOf(preview.earnings, 'Vakasi Harian'), 100_000);
+  assert.equal(amountOf(preview.earnings, 'Jumat & Libur'), 50_000);
+  assert.equal(amountOf(preview.earnings, 'Piket'), 150_000);
+  assert.equal(amountOf(preview.earnings, 'Tunjangan Lembur'), 0);
+  assert.equal(preview.meta.attendanceSource, 'piket_estimate');
+  assert.equal(preview.meta.canCreateSlip, false);
+  assert.deepEqual(
+    preview.meta.warnings.map((warning) => warning.code),
+    ['attendance_unpublished'],
+  );
+});
+
 test('a published period without the employee row is still blocked', () => {
   const preview = buildPekaryaSlipPreview(
     kholikInputs({ attendanceGate: { required: true, satisfied: true } }),
@@ -338,6 +380,124 @@ test('a published period with the employee row can create a slip', () => {
   assert.equal(preview.meta.canCreateSlip, true);
   assert.equal(preview.meta.isProvisional, false);
   assert.deepEqual(preview.meta.warnings, []);
+});
+
+test('SATPAM preview keeps Rekap shift values while reconciliation is pending', () => {
+  const preview = buildPekaryaSlipPreview(
+    kholikInputs({
+      employee: {
+        ...KHOLIK,
+        employment: { ...KHOLIK.employment, jobCategory: 'SATPAM' },
+      },
+      attendanceGate: { required: true, satisfied: true },
+      uraianEntry: {
+        employeeId: 'BC_001',
+        name: 'Abdul Kholik',
+        values: {
+          harian: 137_500,
+          jumatLibur: 50_000,
+          lemburSendiri: 30_000,
+          lemburCover: 50_000,
+          bonusPresensiBulanan: 100_000,
+        },
+        counts: {
+          harian: 11,
+          jumatLibur: 2,
+          lemburSendiri: 1,
+          lemburCover: 1,
+        },
+      },
+      piketSchedules: [],
+    }),
+  );
+
+  assert.equal(amountOf(preview.earnings, 'Vakasi Harian'), 137_500);
+  assert.equal(amountOf(preview.earnings, 'Jumat & Libur'), 50_000);
+  assert.equal(amountOf(preview.earnings, 'Lembur Sendiri'), 30_000);
+  assert.equal(amountOf(preview.earnings, 'Lembur Cover'), 50_000);
+  assert.equal(amountOf(preview.earnings, 'Bonus Presensi Bulanan'), 0);
+  assert.equal(preview.meta.attendanceSource, 'uraian');
+  assert.equal(preview.meta.isProvisional, true);
+  assert.equal(preview.meta.canCreateSlip, false);
+  assert.deepEqual(
+    preview.meta.warnings.map((warning) => warning.code),
+    ['satpam_duty_unreconciled'],
+  );
+});
+
+test('SATPAM shift values remain visible when the period reconciliation itself is pending', () => {
+  const preview = buildPekaryaSlipPreview(
+    kholikInputs({
+      employee: {
+        ...KHOLIK,
+        employment: { ...KHOLIK.employment, jobCategory: 'SATPAM' },
+      },
+      attendanceGate: {
+        required: true,
+        satisfied: false,
+        reason: 'Rencana dinas Satpam belum selesai diperiksa.',
+      },
+      uraianEntry: {
+        employeeId: 'BC_001',
+        name: 'Abdul Kholik',
+        values: {
+          harian: 137_500,
+          jumatLibur: 50_000,
+          lemburSendiri: 30_000,
+          lemburCover: 50_000,
+          bonusPresensiBulanan: 100_000,
+        },
+        counts: {
+          harian: 11,
+          jumatLibur: 2,
+          lemburSendiri: 1,
+          lemburCover: 1,
+        },
+      },
+      piketSchedules: [],
+    }),
+  );
+
+  assert.equal(amountOf(preview.earnings, 'Vakasi Harian'), 137_500);
+  assert.equal(amountOf(preview.earnings, 'Jumat & Libur'), 50_000);
+  assert.equal(amountOf(preview.earnings, 'Lembur Sendiri'), 30_000);
+  assert.equal(amountOf(preview.earnings, 'Lembur Cover'), 50_000);
+  assert.equal(amountOf(preview.earnings, 'Bonus Presensi Bulanan'), 0);
+  assert.equal(preview.meta.attendanceSource, 'uraian');
+  assert.equal(preview.meta.canCreateSlip, false);
+  assert.deepEqual(
+    preview.meta.warnings.map((warning) => warning.code),
+    ['attendance_unpublished'],
+  );
+});
+
+test('SATPAM preview accepts a reconciled employee row', () => {
+  const preview = buildPekaryaSlipPreview(
+    kholikInputs({
+      employee: {
+        ...KHOLIK,
+        employment: { ...KHOLIK.employment, jobCategory: 'SATPAM' },
+      },
+      attendanceGate: { required: true, satisfied: true },
+      uraianEntry: {
+        employeeId: 'BC_001',
+        name: 'Abdul Kholik',
+        values: {
+          harian: 250_000,
+          jumatLibur: 100_000,
+          bonusPresensiBulanan: 100_000,
+        },
+        satpamDutySource: { planId: 'SATPAM-2026-08' },
+      },
+      piketSchedules: [],
+    }),
+  );
+
+  assert.equal(amountOf(preview.earnings, 'Vakasi Harian'), 250_000);
+  assert.equal(amountOf(preview.earnings, 'Jumat & Libur'), 100_000);
+  assert.equal(amountOf(preview.earnings, 'Bonus Presensi Bulanan'), 100_000);
+  assert.equal(preview.meta.attendanceSource, 'uraian');
+  assert.equal(preview.meta.canCreateSlip, true);
 });
 
 // ─── Custom columns ──────────────────────────────────────────────────────
@@ -436,6 +596,12 @@ const OK_RESOLUTION = {
   effectiveYear: 28,
   status: 'ok' as const,
 };
+
+test('canonical sources are revalidated only when a slip is first created', () => {
+  assert.equal(shouldValidateNewSlipSources(null), true);
+  assert.equal(shouldValidateNewSlipSources(undefined), true);
+  assert.equal(shouldValidateNewSlipSources({ status: 'draft' }), false);
+});
 
 test('a new slip carrying the matrix Gaji Pokok is accepted', () => {
   assert.equal(

@@ -31,7 +31,8 @@ export interface DashboardPeriodInputs {
    * employee id. When an entry exists it is authoritative: it is the same
    * object the employee's own payslip page renders, so the dashboard cannot
    * show a different Gaji Pokok, SPJ, or attendance figure than the employee
-   * sees. Absent only for Loyalis and while the period previews are loading.
+   * sees. If it is absent for Pekarya, this helper deliberately returns no
+   * money rows so callers can surface an unavailable/retry state.
    */
   pekaryaPreviews?: Record<string, PekaryaSlipPreview>;
 }
@@ -124,7 +125,8 @@ function getPresensiDeduction(
 /**
  * Derive the exact earnings and deductions used by the payroll page for one
  * employee and one period. Persisted earnings are treated as the source of
- * truth; the canonical builders are used only when no saved earnings exist.
+ * truth. Unsaved Pekarya rows require the shared server preview; only Loyalis
+ * may use the local builder.
  */
 export function buildDashboardSlipData(
   employee: any,
@@ -132,7 +134,7 @@ export function buildDashboardSlipData(
   savedSlip: DashboardSavedSlip | undefined,
   inputs: DashboardPeriodInputs,
 ): DashboardSlipData {
-  if (savedSlip?.earnings && savedSlip.earnings.length > 0) {
+  if (Array.isArray(savedSlip?.earnings)) {
     return {
       earnings: savedSlip.earnings,
       deductions: savedSlip.deductions || [],
@@ -171,15 +173,19 @@ export function buildDashboardSlipData(
     inputs.loyalisPresenceData,
   );
 
-  // Pekarya earnings come from the shared preview whenever it has been
-  // loaded; the local builder stays only for Loyalis and for a blue-collar
-  // employee the preview does not cover (a non-Pekarya job category).
+  // Pekarya has no local fallback. A missing preview means the source is
+  // unavailable, not that the employee earned zero (or that an older builder
+  // may reconstruct a close-looking substitute).
   const pekaryaPreview =
     collar === 'pekarya' ? inputs.pekaryaPreviews?.[employee.id] : undefined;
 
+  if (collar === 'pekarya' && !pekaryaPreview) {
+    return { earnings: [], deductions: [] };
+  }
+
   return {
-    earnings: pekaryaPreview
-      ? pekaryaPreview.earnings
+    earnings: collar === 'pekarya'
+      ? pekaryaPreview!.earnings
       : buildInitialEarnings(
         employee,
         gapok,

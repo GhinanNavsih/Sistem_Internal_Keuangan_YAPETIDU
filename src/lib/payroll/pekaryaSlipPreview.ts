@@ -17,6 +17,19 @@ import {
 } from '@/lib/payroll/pekaryaSpj';
 
 /**
+ * Satpam's four shift columns are entered in the Rekap Uraian table before
+ * the duty-plan reconciliation is necessarily complete.  They are safe to
+ * show as provisional draft values, while the reconciliation gate still
+ * controls whether a new slip may actually be written.
+ */
+const SATPAM_SHIFT_COLUMN_KEYS = [
+  'harian',
+  'jumatLibur',
+  'lemburSendiri',
+  'lemburCover',
+] as const;
+
+/**
  * The single Pekarya (blue-collar) earnings calculation.
  *
  * The employee payslip page, the Tinjau Slip Gaji modal, every export, and
@@ -36,6 +49,7 @@ export type PekaryaPreviewWarningCode =
   | 'grade_unknown'
   | 'matrix_year_unavailable'
   | 'attendance_unpublished'
+  | 'satpam_duty_unreconciled'
   | 'uraian_entry_missing';
 
 export interface PekaryaPreviewWarning {
@@ -80,7 +94,6 @@ export interface PekaryaPreviewInputs {
   piketSchedules?: readonly DriverPiketSchedule[];
   premiumDates?: ReadonlySet<string> | readonly string[];
   attendanceGate?: PekaryaAttendanceGate;
-  vakasiTambahanList?: readonly { eventName: string; payGiven: number }[];
 }
 
 export interface PekaryaPreviewMeta {
@@ -123,7 +136,9 @@ const GAPOK_WARNING_MESSAGES: Record<
 };
 
 /**
- * Read one rekap column out of a published Uraian entry.
+ * Read one rekap column out of a Uraian entry. The caller decides whether the
+ * row is authoritative or merely provisional; this helper only preserves the
+ * stored count-versus-currency representation.
  *
  * Returns `null` — not `0` — when the rekap does not carry the column, so a
  * deliberately published zero stays zero instead of being overwritten by an
@@ -165,7 +180,6 @@ export function buildPekaryaSlipPreview(
     uraianEntry,
     uraianCustomColumns,
     piketSchedules = [],
-    vakasiTambahanList = [],
   } = inputs;
 
   const employeeId = employee.id;
@@ -197,10 +211,73 @@ export function buildPekaryaSlipPreview(
   const canonicalSpj =
     (inputs.approvedActivitySpj || 0) + (inputs.approvedEventSpj || 0);
 
+  // ─── Publication state ───────────────────────────────────────────────
+  // A period-wide SATPAM reconciliation is not enough: every employee row
+  // must also be stamped with the duty-plan source that produced it. This is
+  // the same employee-level condition /api/payroll/slips enforces on writes.
+  const configuredAttendanceGate: PekaryaAttendanceGate =
+    inputs.attendanceGate ?? { required: false, satisfied: true };
+  const satpamDutySourceMissing =
+    jobCategory === 'SATPAM' &&
+    configuredAttendanceGate.required &&
+    configuredAttendanceGate.satisfied &&
+    !uraianEntry?.satpamDutySource;
+  const attendanceGate: PekaryaAttendanceGate = satpamDutySourceMissing
+    ? {
+        required: true,
+        satisfied: false,
+        reason:
+          'Rekonsiliasi kewajiban dinas dan bonus Satpam pegawai ini belum final.',
+      }
+    : configuredAttendanceGate;
+
+  // Never consume a non-Satpam Uraian row after its publication has become
+  // stale or failed reconciliation. It may still contain perfectly plausible
+  // money, but that money belongs to an obsolete import/calendar revision.
+  //
+  // Satpam is different: the Rekap Uraian table is where the four shift-type
+  // fields are entered while the duty plan is still being reviewed. Keep just
+  // those four fields visible as provisional values in the draft preview so
+  // Finance sees the same numbers as the table. The warning above remains
+  // blocking, so this does not make an unreconciled Satpam slip writable.
+  const effectiveUraianEntry =
+    attendanceGate.required && !attendanceGate.satisfied
+      ? undefined
+      : uraianEntry;
+  const provisionalSatpamShiftEntry =
+    jobCategory === 'SATPAM' && uraianEntry && !effectiveUraianEntry
+      ? uraianEntry
+      : undefined;
+
+  if (attendanceGate.required && !attendanceGate.satisfied) {
+    warnings.push({
+      code: satpamDutySourceMissing
+        ? 'satpam_duty_unreconciled'
+        : 'attendance_unpublished',
+      message:
+        attendanceGate.reason ||
+        `Presensi ${jobCategory} belum dipublikasikan pada revisi import dan kalender terbaru.`,
+      blocking: true,
+    });
+  }
+  if (
+    attendanceGate.required &&
+    attendanceGate.satisfied &&
+    !effectiveUraianEntry
+  ) {
+    warnings.push({
+      code: 'uraian_entry_missing',
+      message: 'Hasil presensi resmi pegawai belum tersedia di Rekap Uraian.',
+      blocking: true,
+    });
+  }
+
   // ─── Attendance ──────────────────────────────────────────────────────
-  // Published Uraian values win. Until then a Piket assignment is evidence
-  // the driver was present, so it stands in as an estimate, split by the same
-  // premium-date rule the eventual real attendance will use.
+  // Published Uraian values win. For Satpam, the four shift columns may also
+  // be read provisionally before reconciliation finishes (see above). Until a
+  // non-Satpam Uraian row exists, a Piket assignment is evidence the driver
+  // was present, so it stands in as an estimate split by the same premium-date
+  // rule the eventual real attendance will use.
   const premiumDates = toPremiumDateSet(inputs.premiumDates);
   const piketCount = countDriverPiketInPeriod(
     employeeId,
@@ -216,8 +293,9 @@ export function buildPekaryaSlipPreview(
 
   const columns = resolveRekapColumnsForSlip(
     jobCategory,
-    uraianEntry,
+    effectiveUraianEntry,
     uraianCustomColumns ? [...uraianCustomColumns] : undefined,
+    period,
   );
 
   let usedEstimate = false;
@@ -227,7 +305,15 @@ export function buildPekaryaSlipPreview(
 
   for (const column of columns) {
     if (!column.slipLabel) continue;
-    const published = readUraianAmount(column, uraianEntry);
+    const isSatpamShiftColumn =
+      jobCategory === 'SATPAM' &&
+      (SATPAM_SHIFT_COLUMN_KEYS as readonly string[]).includes(column.key);
+    const published = readUraianAmount(
+      column,
+      isSatpamShiftColumn
+        ? provisionalSatpamShiftEntry || effectiveUraianEntry
+        : effectiveUraianEntry,
+    );
     let amount = published ?? 0;
 
     if (column.key === 'spj') {
@@ -259,35 +345,10 @@ export function buildPekaryaSlipPreview(
     label: 'Tunjangan Beras',
     amount: employee.salaryProfile?.tunjanganBeras ?? 0,
   });
-  for (const item of vakasiTambahanList) {
-    earnings.push({ label: item.eventName, amount: item.payGiven });
-  }
-
-  // ─── Publication state ───────────────────────────────────────────────
-  const attendanceGate: PekaryaAttendanceGate = inputs.attendanceGate ?? {
-    required: false,
-    satisfied: true,
-  };
-  if (attendanceGate.required && !attendanceGate.satisfied) {
-    warnings.push({
-      code: 'attendance_unpublished',
-      message:
-        attendanceGate.reason ||
-        `Presensi ${jobCategory} belum dipublikasikan pada revisi import dan kalender terbaru.`,
-      blocking: true,
-    });
-  }
-  if (attendanceGate.required && attendanceGate.satisfied && !uraianEntry) {
-    warnings.push({
-      code: 'uraian_entry_missing',
-      message: 'Hasil presensi resmi pegawai belum tersedia di Rekap Uraian.',
-      blocking: true,
-    });
-  }
-
-  const attendanceSource: PekaryaPreviewMeta['attendanceSource'] = uraianEntry
-    ? 'uraian'
-    : 'piket_estimate';
+  const attendanceSource: PekaryaPreviewMeta['attendanceSource'] =
+    effectiveUraianEntry || provisionalSatpamShiftEntry
+      ? 'uraian'
+      : 'piket_estimate';
 
   return {
     earnings,
@@ -305,7 +366,7 @@ export function buildPekaryaSlipPreview(
       attendanceSource,
       isProvisional:
         usedEstimate ||
-        !uraianEntry ||
+        !effectiveUraianEntry ||
         (attendanceGate.required && !attendanceGate.satisfied),
       canCreateSlip: warnings.every((warning) => !warning.blocking),
       warnings,
@@ -383,6 +444,17 @@ export function resolveSlipPreviewScope(input: {
 // ─── New-slip Gaji Pokok guard ───────────────────────────────────────────
 
 const GAPOK_LABELS = ['GAJI POKOK', 'GAPOK'];
+
+/**
+ * Canonical matrix/SPJ/attendance checks materialize a slip once. Subsequent
+ * draft saves preserve the stored snapshot until Finance explicitly Refreshes
+ * it from the shared preview.
+ */
+export function shouldValidateNewSlipSources(
+  existingSlip: unknown,
+): boolean {
+  return existingSlip === null || existingSlip === undefined;
+}
 
 /**
  * The rule a slip must satisfy the first time it is written: exactly one Gaji

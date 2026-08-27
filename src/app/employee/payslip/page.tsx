@@ -54,6 +54,7 @@ import {
   Wrench,
   Calendar,
   Menu as MenuIcon,
+  RefreshCw,
 } from 'lucide-react';
 import Link from 'next/link';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
@@ -555,6 +556,8 @@ export default function EmployeePayslipPage() {
   const [confirmedSlip, setConfirmedSlip] = useState<any | null>(null);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [pekaryaPreviewError, setPekaryaPreviewError] = useState<string | null>(null);
+  const [pekaryaPreviewReloadToken, setPekaryaPreviewReloadToken] = useState(0);
   const [presenceInfo, setPresenceInfo] = useState<{
     workingDays: number;
     expectedHours: number;
@@ -580,9 +583,10 @@ export default function EmployeePayslipPage() {
     const gapokDoc: PekaryaDocItem = {
       id: 'gapok_pekarya',
       title: 'Gaji Pokok Pekarya',
-      formula: 'Nominal Gaji Pokok Sesuai Profil Pegawai',
+      formula: 'Golongan + Masa Kerja → Matriks Gaji Aktif',
       bullets: [
-        'Ditetapkan berdasarkan gaji pokok dasar pegawai Pekarya pada master data',
+        'Nominal diambil dari matriks gaji aktif berdasarkan golongan dan masa kerja pada periode slip',
+        'Salinan gaji pokok pada profil pegawai tidak digunakan sebagai sumber nilai',
         'Nominal tidak tergantung pada jumlah jam kerja mingguan',
       ],
     };
@@ -738,6 +742,7 @@ export default function EmployeePayslipPage() {
         setIsConfirmed(false);
         setCalculatedEarnings([]);
         setCalculatedDeductions([]);
+        setPekaryaPreviewError(null);
         setDailyPresenceLogs([]);
         setShowDailyLogs(false);
 
@@ -892,8 +897,20 @@ export default function EmployeePayslipPage() {
             fallbackEarnings = normalizeSlipFields(
               previewResult.previews?.[empId]?.earnings,
             );
+            if (fallbackEarnings.length === 0) {
+              throw new Error(
+                'Pratinjau perhitungan Pekarya tidak tersedia untuk periode ini.',
+              );
+            }
           } catch (previewErr) {
             console.warn('Unable to load the shared Pekarya slip preview:', previewErr);
+            if (!cancelled) {
+              setPekaryaPreviewError(
+                previewErr instanceof Error
+                  ? previewErr.message
+                  : 'Gagal memuat pratinjau perhitungan Pekarya.',
+              );
+            }
           }
 
           fallbackDeductions.push(
@@ -1030,6 +1047,7 @@ export default function EmployeePayslipPage() {
           setIsConfirmed(true);
           setCalculatedEarnings(normalizeSlipFields(slipData.earnings));
           setCalculatedDeductions(normalizeSlipFields(slipData.deductions));
+          setPekaryaPreviewError(null);
 
           setPresenceInfo(loadedPresenceInfo);
           setVakasiEvents(loadedVakasiEvents);
@@ -1040,23 +1058,23 @@ export default function EmployeePayslipPage() {
         }
 
         // Draft/verification records are visible to the employee as a
-        // read-only preview.  Saved rows win over calculated rows, while any
-        // missing mandatory profile rows are filled from the scoped fallback
-        // above.  This is what keeps an unfinalized July slip from rendering
-        // as an empty Rp 0 document.
+        // read-only snapshot. Once Finance has saved a draft, neither live
+        // matrix nor attendance/SPJ changes alter what the employee sees until
+        // Finance explicitly applies Refresh in Tinjau Slip Gaji.
         const savedSlip = slipSnap.exists() ? slipSnap.data() : null;
-        const savedEarnings = normalizeSlipFields(savedSlip?.earnings);
+        if (savedSlip) setPekaryaPreviewError(null);
         setConfirmedSlip(null);
         setIsConfirmed(false);
-        // A saved Pekarya draft is shown exactly as Finance stored it — the
-        // same rows the Tinjau Slip Gaji modal opens on. Only when no draft
-        // exists does the shared live preview stand in.
         setCalculatedEarnings(
-          !isLoyalis && savedEarnings.length > 0
-            ? savedEarnings
-            : mergeSlipFields(fallbackEarnings, savedSlip?.earnings),
+          savedSlip
+            ? normalizeSlipFields(savedSlip.earnings)
+            : fallbackEarnings,
         );
-        setCalculatedDeductions(mergeSlipFields(fallbackDeductions, savedSlip?.deductions));
+        setCalculatedDeductions(
+          savedSlip
+            ? normalizeSlipFields(savedSlip.deductions)
+            : fallbackDeductions,
+        );
         setPresenceInfo(loadedPresenceInfo);
         setVakasiEvents(loadedVakasiEvents);
         setKepangkatanDesignations({});
@@ -1101,6 +1119,7 @@ export default function EmployeePayslipPage() {
     profile?.role,
     isImpersonatingUi,
     uiPreviewRevision,
+    pekaryaPreviewReloadToken,
     periodKey,
     periodToken,
     periodEndDate,
@@ -1555,6 +1574,27 @@ export default function EmployeePayslipPage() {
           <div className="py-16 text-center text-black bg-slate-50/50 rounded-2xl border border-slate-100">
             <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
             <p className="text-sm font-semibold">Data karyawan gagal dimuat.</p>
+          </div>
+        ) : pekaryaPreviewError ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 px-6 py-16 text-center">
+            <AlertCircle className="mb-4 h-12 w-12 text-rose-500" />
+            <p className="text-base font-bold text-slate-800">
+              Rincian Pekarya Tidak Tersedia
+            </p>
+            <p className="mt-2 max-w-lg text-sm text-slate-600">
+              {pekaryaPreviewError} Nilai slip disembunyikan agar perhitungan lama
+              tidak ditampilkan sebagai nilai resmi.
+            </p>
+            <Button
+              type="button"
+              className="mt-5 rounded-xl bg-rose-600 text-white hover:bg-rose-700"
+              onClick={() =>
+                setPekaryaPreviewReloadToken((token) => token + 1)
+              }
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Coba Lagi
+            </Button>
           </div>
         ) : (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">

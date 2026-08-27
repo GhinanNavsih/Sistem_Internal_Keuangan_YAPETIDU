@@ -19,12 +19,12 @@ const inputs: DashboardPeriodInputs = {
   loyalisPresenceData: null,
 };
 
-test('dashboard fallback uses the payroll builder for every deduction source', () => {
+test('Loyalis fallback uses the payroll builder for every deduction source', () => {
   const data = buildDashboardSlipData(
     {
       id: 'pekarya-1',
-      employment: { startDate: '2026-01-01', jobCategory: 'SOPIR' },
-      salaryProfile: { salaryGradeCode: 'A' },
+      employment_profile: { date_of_hire: '2026-01-01' },
+      academic_and_tier: { level_code: 'A' },
       deductions: { koperasiRochmad: 50_000 },
       bpjs: { deductionAmount: 10_000 },
       tht: { deductionAmount: 20_000 },
@@ -32,13 +32,12 @@ test('dashboard fallback uses the payroll builder for every deduction source', (
       ziz: { deductionAmount: 40_000 },
       pinlu: { deductionAmount: 50_000 },
     },
-    'pekarya',
+    'loyalis',
     undefined,
     inputs,
   );
 
   assert.equal(sumSlipFields(data.deductions), 825_000);
-  assert.equal(sumSlipFields(data.earnings), 1_000_000);
 });
 
 test('a persisted slip remains authoritative over fallback calculations', () => {
@@ -118,10 +117,7 @@ test('an editable draft keeps its saved values over the live preview', () => {
   );
 });
 
-test('a Pekarya without a preview never adopts the profile base salary', () => {
-  // The preview map is keyed by employee id; an employee it does not cover
-  // falls back to the matrix-driven builder, which is fed by calculateGapok —
-  // salaryProfile.baseSalaryAmount is not a source anywhere in this path.
+test('a Pekarya without a preview fails closed instead of using local values', () => {
   const data = buildDashboardSlipData(
     PEKARYA_EMPLOYEE,
     'pekarya',
@@ -129,9 +125,18 @@ test('a Pekarya without a preview never adopts the profile base salary', () => {
     { ...inputs, pekaryaPreviews: {} },
   );
 
-  const gapok = data.earnings.find((field) => field.label === 'Gaji Pokok');
-  assert.equal(gapok?.amount, 1_000_000);
-  assert.notEqual(gapok?.amount, 777_000);
+  assert.deepEqual(data, { earnings: [], deductions: [] });
+});
+
+test('an explicitly empty saved Pekarya draft remains authoritative', () => {
+  const data = buildDashboardSlipData(
+    PEKARYA_EMPLOYEE,
+    'pekarya',
+    { earnings: [], deductions: [] },
+    inputsWithPreview,
+  );
+
+  assert.deepEqual(data, { earnings: [], deductions: [] });
 });
 
 test('Loyalis is unaffected by the Pekarya preview map', () => {

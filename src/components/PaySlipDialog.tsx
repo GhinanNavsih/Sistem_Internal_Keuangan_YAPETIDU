@@ -99,6 +99,8 @@ interface PaySlipDialogProps {
   pekaryaPreview?: PekaryaSlipPreview | null;
   /** True while the period previews are still being fetched. */
   previewLoading?: boolean;
+  /** Fetch failure shown for an unsaved Pekarya slip. */
+  previewError?: string | null;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -169,6 +171,7 @@ export default function PaySlipDialog({
   koperasiSaving = 0,
   pekaryaPreview = null,
   previewLoading = false,
+  previewError = null,
 }: PaySlipDialogProps) {
   const [earnings, setEarnings] = useState<PaySlipField[]>([]);
   const [deductions, setDeductions] = useState<PaySlipField[]>([]);
@@ -191,10 +194,15 @@ export default function PaySlipDialog({
   // could not be read from the matrix, or whose attendance is not published —
   // the server would reject the write anyway.
   const newSlipBlocked =
-    isPekaryaTab && !slipState && (previewLoading || blockingWarnings.length > 0);
+    isPekaryaTab &&
+    !slipState &&
+    (previewLoading || !pekaryaPreview || blockingWarnings.length > 0);
   const newSlipBlockedReason = previewLoading
     ? 'Pratinjau perhitungan masih dimuat.'
-    : blockingWarnings.map((warning) => warning.message).join(' ');
+    : previewError ||
+      (!pekaryaPreview
+        ? 'Pratinjau perhitungan Pekarya tidak tersedia. Klik Refresh untuk mencoba lagi.'
+        : blockingWarnings.map((warning) => warning.message).join(' '));
 
   // Refresh & diff comparison states
   const [compareOpen, setCompareOpen] = useState(false);
@@ -215,6 +223,10 @@ export default function PaySlipDialog({
       // No saved slip: open on the live matrix-based preview rather than the
       // profile snapshot, so the modal and the employee's own payslip agree.
       initEarnings = JSON.parse(JSON.stringify(pekaryaPreview.earnings));
+    } else if (activeTab !== 'loyalis') {
+      // An absent shared preview is an unavailable source, not permission to
+      // rebuild Pekarya rows locally. Leave the new slip empty and blocked.
+      initEarnings = [];
     } else {
       initEarnings = buildInitialEarnings(
         employee,
@@ -233,6 +245,8 @@ export default function PaySlipDialog({
 
     if (slipState && Array.isArray(slipState.deductions)) {
       initDeductions = JSON.parse(JSON.stringify(slipState.deductions));
+    } else if (activeTab !== 'loyalis' && !pekaryaPreview) {
+      initDeductions = [];
     } else {
       initDeductions = buildInitialDeductions(
         employee,
@@ -263,6 +277,7 @@ export default function PaySlipDialog({
     vakasiTambahanList,
     uraianEntry,
     tunjanganFungsional,
+    tunjanganKepangkatan,
     customColumns,
     koperasiDeduction,
     presenceBonus,
@@ -381,7 +396,7 @@ export default function PaySlipDialog({
   };
 
   const handleSimpan = async () => {
-    if (!employee) return;
+    if (!employee || newSlipBlocked) return;
     try {
       await onSave(employee.employeeId || employee.id, earnings, deductions);
       onOpenChange(false);
@@ -485,6 +500,28 @@ export default function PaySlipDialog({
 
           {/* ─── Content ──────────────────────────────────────────── */}
           <div className="p-6 space-y-6">
+            {isPekaryaTab && !slipState && (previewLoading || !pekaryaPreview) && (
+              <div className="flex items-start gap-2 text-xs text-rose-700 bg-rose-50 rounded-xl p-3 border border-rose-200">
+                {previewLoading ? (
+                  <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                )}
+                <div>
+                  <p className="font-semibold">
+                    {previewLoading
+                      ? 'Pratinjau perhitungan Pekarya sedang dimuat.'
+                      : previewError || 'Pratinjau perhitungan Pekarya tidak tersedia.'}
+                  </p>
+                  {!previewLoading && (
+                    <p className="mt-1">
+                      Slip baru tidak dapat ditampilkan atau disimpan. Klik Refresh untuk mencoba lagi.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Two-column layout */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 

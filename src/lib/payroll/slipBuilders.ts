@@ -41,6 +41,7 @@ export function resolveRekapColumnsForSlip(
   jobCategory: string,
   uraian?: UraianEntry,
   customColumns?: RekapColumn[],
+  period?: string,
 ): RekapColumn[] {
   const attendanceDerived =
     Boolean((uraian as { attendanceSource?: unknown } | undefined)?.attendanceSource) ||
@@ -50,7 +51,10 @@ export function resolveRekapColumnsForSlip(
         !('presensi' in uraian.values),
     );
   return [
-    ...getRekapColumns(jobCategory, attendanceDerived ? '2026-08' : undefined),
+    ...getRekapColumns(
+      jobCategory,
+      period || (attendanceDerived ? '2026-08' : undefined),
+    ),
     ...(customColumns || []),
   ];
 }
@@ -184,11 +188,11 @@ export function buildInitialEarnings(
               amount = uraian.values[col.key] ?? 0;
             }
           }
-          // Auto-fill SPJ from vakasiTambahanSum or emp.spjAmount if amount is 0
+          // VakasiTambahan is a Loyalis earning, never Pekarya SPJ. Keep the
+          // legacy profile SPJ fallback only for the propagation-only builder;
+          // every rendered Pekarya slip uses buildPekaryaSlipPreview instead.
           if (col.key === 'spj' && amount === 0) {
-            if (vakasiTambahanSum && vakasiTambahanSum > 0) {
-              amount = vakasiTambahanSum;
-            } else if (emp.spjAmount) {
+            if (emp.spjAmount) {
               amount = emp.spjAmount;
             }
           }
@@ -207,13 +211,6 @@ export function buildInitialEarnings(
       label: 'Tunjangan Beras',
       amount: emp.salaryProfile?.tunjanganBeras ?? 0
     });
-
-    // Vakasi Tambahan for Pekarya if detailed items exist
-    if (vakasiTambahanList && vakasiTambahanList.length > 0) {
-      vakasiTambahanList.forEach((item) => {
-        earnings.push({ label: item.eventName, amount: item.payGiven });
-      });
-    }
   }
 
   return earnings;
