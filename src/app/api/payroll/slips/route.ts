@@ -61,7 +61,6 @@ type PayrollAction =
   | 'verify_and_lock'
   | 'create_payment'
   | 'mark_paid'
-  | 'record_email_sent'
   | 'request_correction';
 
 interface PayrollCommand {
@@ -87,7 +86,6 @@ function parseCommand(raw: unknown): PayrollCommand {
     'verify_and_lock',
     'create_payment',
     'mark_paid',
-    'record_email_sent',
     'request_correction',
   ];
   if (!command.action || !actions.includes(command.action)) {
@@ -263,10 +261,9 @@ export async function POST(request: NextRequest) {
       if (!blueEmployeeSnapshot.exists && !loyalisEmployeeSnapshot.exists) {
         throw new HttpError(404, 'Pegawai payroll tidak ditemukan.');
       }
-      const canRunOutsideClosedPeriod = [
-        'record_email_sent',
-        'request_correction',
-      ].includes(command.action);
+      const canRunOutsideClosedPeriod = ['request_correction'].includes(
+        command.action,
+      );
       const periodData = periodSnapshot.data();
       const periodClosed = periodData?.attendanceStatus === 'closed';
       if (command.action === 'save_draft' && periodClosed) {
@@ -741,21 +738,10 @@ export async function POST(request: NextRequest) {
           break;
         }
 
-        case 'record_email_sent': {
-          if (!before || !isImmutablePayrollStatus(before.status)) {
-            throw new HttpError(409, 'Email hanya dapat dikirim untuk slip terkunci.');
-          }
-          after = {
-            ...before,
-            emailSent: true,
-            emailSentAt: now,
-            emailSentBy: actor.uid,
-            updatedAt: now,
-          };
-          reason = command.reason?.trim() || 'Slip terkunci dikirim melalui email';
-          transaction.set(slipRef, after);
-          break;
-        }
+        // The email-sent flag is owned solely by POST /api/payroll/send-email,
+        // which actually delivers the message and gates on the same locked
+        // status, plus PayrollDeliveryEvents idempotency. A second, never-called
+        // 'record_email_sent' action used to write the same three fields here.
 
         case 'request_correction': {
           if (!before || !isImmutablePayrollStatus(before.status)) {

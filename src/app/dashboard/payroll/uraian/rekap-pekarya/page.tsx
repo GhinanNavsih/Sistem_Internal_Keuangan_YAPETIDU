@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
-  collection, getDocs, doc, setDoc, getDoc, serverTimestamp, query, where
+  collection, getDocs, doc, setDoc, getDoc, serverTimestamp, query, where, runTransaction
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import {
@@ -800,7 +800,45 @@ export default function RekapPekaryaPage() {
     setSaving(true);
     try {
       const payload = generateSavePayload();
-      await setDoc(doc(db, 'UraianGaji', docId), { ...payload, isLocked: true, status: 'locked', updatedAt: serverTimestamp() }, { merge: true });
+      // Read-modify-write inside a transaction. `entries` is built from the
+      // roster this page loaded, so a plain write would clobber whatever the
+      // server-side syncers (syncSatpamDutyReconciliation, publishPekaryaAttendance,
+      // syncActivityToPayslip) wrote into an employee's entry after this page
+      // loaded. Overlay this screen's columns onto the live entry instead, and
+      // leave server-owned sub-fields (satpamDutySource) and employees outside
+      // this roster untouched.
+      await runTransaction(db, async (transaction) => {
+        const uraianRef = doc(db, 'UraianGaji', docId);
+        const liveSnap = await transaction.get(uraianRef);
+        const liveEntries: Record<string, UraianEntry> =
+          (liveSnap.exists() ? liveSnap.data()?.entries : undefined) || {};
+        const mergedEntries: Record<string, UraianEntry> = { ...liveEntries };
+
+        for (const [employeeId, entry] of Object.entries(payload.entries)) {
+          const live = liveEntries[employeeId];
+          const mergedCounts = { ...(live?.counts || {}), ...(entry.counts || {}) };
+          const satpamDutySource = entry.satpamDutySource || live?.satpamDutySource;
+          mergedEntries[employeeId] = {
+            ...live,
+            ...entry,
+            values: { ...(live?.values || {}), ...entry.values },
+            ...(Object.keys(mergedCounts).length > 0 ? { counts: mergedCounts } : {}),
+            ...(satpamDutySource ? { satpamDutySource } : {}),
+          };
+        }
+
+        transaction.set(
+          uraianRef,
+          {
+            ...payload,
+            entries: mergedEntries,
+            isLocked: true,
+            status: 'locked',
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      });
       const catLabel = category.replace('_', ' ').toUpperCase();
       // Employees cannot read UraianGaji, so the locked figures have to be
       // pushed onto their draft slips or the payslip keeps showing Rp 0.

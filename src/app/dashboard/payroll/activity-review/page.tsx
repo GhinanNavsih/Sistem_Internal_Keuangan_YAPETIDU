@@ -1471,7 +1471,6 @@ export default function ActivityReviewPage() {
           reason,
         }),
       });
-      const employeeId = payTypeTarget.employeeId;
       const dutyDate = payTypeTarget.dutyDate || payTypeTarget.activityDate;
       const period =
         payTypeTarget.payrollPeriod || (dutyDate ? pekaryaPayrollPeriodForDate(dutyDate) : '');
@@ -1483,9 +1482,11 @@ export default function ActivityReviewPage() {
       try {
         if (period) {
           // The server already recomputed the Satpam shift columns in the
-          // Uraian rekap; refresh this guard's entry and push the rekap onto
-          // draft slips so the payslip moves with it.
-          await syncActivityToPayslip(db, employeeId, period);
+          // Uraian rekap via syncSatpamDutyReconciliation, which is the sole
+          // owner of those columns — re-running the client syncActivityToPayslip
+          // here would recount the same shifts with different dedup rules and
+          // overwrite the server's numbers. Only push the rekap onto draft
+          // slips, which the server does not do.
           const propagationNote = await propagateUraianToSlips({
             scope: 'pekarya',
             period,
@@ -1728,10 +1729,7 @@ export default function ActivityReviewPage() {
     setErrorMsg('');
     const wasApprovedEdit = !auditorEditShift.assignments.some((item) => item.status === 'pending');
     try {
-      const result = await authenticatedJson<{
-        affectedEmployeeIds?: string[];
-        affectedPeriods?: string[];
-      }>('/api/satpam/shifts/review', {
+      await authenticatedJson('/api/satpam/shifts/review', {
         method: 'PUT',
         body: JSON.stringify({
           requestId: createFinancialRequestId('satpam_shift_auditor_edit'),
@@ -1743,31 +1741,16 @@ export default function ActivityReviewPage() {
           assignments: auditorEditRows,
         }),
       });
+      // The server reconciles UraianGaji inside the same request
+      // (syncSatpamDutyReconciliation), so there is nothing to sync from here.
       setSuccessMsg(
         wasApprovedEdit
-          ? 'Koreksi auditor tersimpan. Slip gaji dan rekap Uraian Pekarya diperbarui otomatis.'
+          ? 'Koreksi auditor tersimpan. Rekap Uraian Pekarya diperbarui otomatis.'
           : 'Koreksi auditor tersimpan. Ketua Shift tidak dapat mengubah laporan ini lagi.',
       );
       setAuditorEditShift(null);
       setAuditorEditRows([]);
       fetchActivities();
-
-      // Approved-edit only: the server already reconciled UraianGaji via
-      // syncSatpamDutyReconciliation, but push the same recompute through
-      // the client sync too so the affected payslips reflect it immediately
-      // without waiting on a manual refresh, mirroring what a normal
-      // approval already does in handleSubmitShiftReview below.
-      if (wasApprovedEdit && result.affectedEmployeeIds?.length && result.affectedPeriods?.length) {
-        try {
-          for (const employeeId of result.affectedEmployeeIds) {
-            for (const period of result.affectedPeriods) {
-              await syncActivityToPayslip(db, employeeId, period);
-            }
-          }
-        } catch (syncErr) {
-          console.error('Error syncing payslip after auditor edit:', syncErr);
-        }
-      }
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : 'Koreksi auditor gagal disimpan.');
     } finally {
@@ -1827,34 +1810,13 @@ export default function ActivityReviewPage() {
         delete next[group.occurrenceId];
         return next;
       });
+      // The approved fees land in the Uraian rekap server-side: the review
+      // route runs syncSatpamDutyReconciliation, which is the sole owner of
+      // the Satpam shift columns. The client used to re-run
+      // syncActivityToPayslip for each guard here, which recounted the same
+      // shifts with different membership/dedup rules and overwrote the
+      // server's numbers with its own.
       fetchActivities();
-
-      // Refresh each affected guard's payslip so approved fees land immediately.
-      // Satpam periods come straight off the report: they use a calendar-month
-      // boundary, not the pekarya day-25 cutoff, so deriving the period here
-      // would sync the wrong month for duty dates after the 25th.
-      try {
-        const uniqueKeys = new Set<string>();
-        pendingAssignments.forEach(item => {
-          const dutyDate = item.dutyDate || item.activityDate || '';
-          const itemPeriod =
-            item.payrollPeriod || (dutyDate ? pekaryaPayrollPeriodForDate(dutyDate) : '');
-          if (item.employeeId && itemPeriod) {
-            uniqueKeys.add(`${item.employeeId}::${itemPeriod}`);
-          }
-        });
-        // Sequential on purpose: a whole shift's guards share one jobCategory
-        // and period, so they all sync into the same UraianGaji document.
-        // Firing these concurrently (e.g. after "Setujui Semua Pos") causes
-        // Firestore transactions to collide on that one document and some
-        // guards' fees never land.
-        for (const key of uniqueKeys) {
-          const [empId, per] = key.split('::');
-          await syncActivityToPayslip(db, empId, per);
-        }
-      } catch (syncErr) {
-        console.error('Error syncing payslips after Satpam shift review:', syncErr);
-      }
     } catch (err) {
       console.error('Error reviewing Satpam shift:', err);
       setErrorMsg(err instanceof Error ? err.message : 'Gagal mengaudit shift Satpam.');
