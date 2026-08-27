@@ -55,7 +55,8 @@ const PROFILE_OWNED_DEDUCTIONS = new Set([
  */
 const STRUCTURAL_LABEL_PREFIX = 'struktural: ';
 
-function normalizeLabel(label: string): string {
+/** Shared by every owned-label predicate (profile, Uraian, Vakasi) so "the same row" always means the same string comparison. */
+export function normalizeLabel(label: string): string {
   return label.trim().toLocaleLowerCase('id-ID');
 }
 

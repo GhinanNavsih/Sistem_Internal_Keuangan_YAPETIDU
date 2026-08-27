@@ -153,7 +153,7 @@ Legacy/migration-only collections (`MasterData`, unsuffixed `Employees`) exist o
 - **`dashboardSlipData.ts`** — assembles the dashboard's period-level slip view across all the above.
 - **`payrollRoster.ts`** — builds the eligible-employee roster per payroll run.
 - **`nipy.ts`** — generates/validates Pekarya NIPY employee-ID codes (category-prefixed: KEBERSIHAN=13, SOPIR=14, SATPAM=15, TEKNISI=16).
-- **`vakasiTambahan.ts`** — guards against LPJ/proposal sandbox data leaking into real payroll earnings.
+- **`vakasiTambahan.ts`** — guards against LPJ/proposal sandbox data leaking into real payroll earnings; also the counterpart for pushing an approved VakasiTambahan event onto draft slips (`POST /api/payroll/vakasi-propagation`), one earnings row per event name.
 - **`roles.ts`** — `UserRole` union and capability checks (see RBAC above).
 - **`client.ts`** — browser-side authenticated fetch helpers for payroll API routes.
 

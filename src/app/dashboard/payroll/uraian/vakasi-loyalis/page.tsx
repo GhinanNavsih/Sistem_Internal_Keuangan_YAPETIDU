@@ -36,6 +36,7 @@ import CetakKegiatanLoyalisDialog from '@/components/CetakKegiatanLoyalisDialog'
 import { generateKegiatanLoyalisRecapPdf } from '@/utils/generateKegiatanLoyalisRecapPdf';
 import { generateKegiatanLoyalisRecapXlsx } from '@/utils/generateKegiatanLoyalisRecapXlsx';
 import { isProposalLpjSandboxSource } from '@/lib/payroll/vakasiTambahan';
+import { propagateVakasiPay } from '@/lib/payroll/client';
 
 type WorkerRow = {
   employeeId: string;
@@ -269,19 +270,13 @@ export default function VakasiLoyalisPage() {
     return existingEvents.filter(evt => evt.departmentUnit === filterDept);
   }, [existingEvents, filterDept]);
 
-  const syncEmployeeVakasiPay = async (
-    workerId: string,
-    periodVal: string,
-    deletedEventName?: string,
-    updatedEvent?: { id: string; eventName: string; status: string; eventWorkers: Record<string, any> }
-  ) => {
-    // Retain this awaited hook for callers, but never mutate a payslip here.
-    // Finance refreshes affected drafts from VakasiTambahan and saves them via
-    // /api/payroll/slips. Final snapshots are immutable.
-    void workerId;
-    void periodVal;
-    void deletedEventName;
-    void updatedEvent;
+  // A draft slip is fair game to update automatically — only a locked one is
+  // immutable, and the propagation route already leaves those alone (see
+  // POST /api/payroll/vakasi-propagation). Call this after any event mutation
+  // that can change what a worker is owed: approval, un-approval, decline, or
+  // an edit to an already-approved event's workers/amounts.
+  const syncVakasiPay = async (employeeIds: string[], periodVal: string): Promise<string> => {
+    return propagateVakasiPay({ period: periodVal, employeeIds });
   };
 
   const sanitizeEventId = (name: string): string => {
@@ -500,19 +495,15 @@ export default function VakasiLoyalisPage() {
 
       await setDoc(doc(db, 'VakasiTambahan', eventId), updatePayload, { merge: true });
       const actionLabel = action === 'approved' ? 'disetujui' : action === 'revision_needed' ? 'diminta revisi' : 'ditolak';
-      setMessage({ type: 'success', text: `Kegiatan berhasil ${actionLabel}.` });
+      let toastText = `Kegiatan berhasil ${actionLabel}.`;
 
+      // This dialog only ever reviews a pending_review event, so declining or
+      // requesting revision here can never be undoing a previously-approved
+      // (and thus previously-propagated) event — nothing to sync in that case.
       if (action === 'approved') {
-        const updatedEventPayload = {
-          id: eventId,
-          eventName: eventData.eventName,
-          status: 'approved',
-          eventWorkers: workers
-        };
-        await Promise.all(
-          Object.keys(workers).map(empId => syncEmployeeVakasiPay(empId, periodVal, undefined, updatedEventPayload))
-        );
+        toastText += await syncVakasiPay(Object.keys(workers), periodVal);
       }
+      setMessage({ type: 'success', text: toastText });
 
       setShowReviewDialog(false);
       setReviewNote('');
@@ -541,7 +532,14 @@ export default function VakasiLoyalisPage() {
       };
 
       await setDoc(doc(db, 'VakasiTambahan', eventId), updatePayload, { merge: true });
-      setMessage({ type: 'success', text: 'Persetujuan kegiatan berhasil dibatalkan.' });
+      // The event just left 'approved', so any draft it was already pushed
+      // onto needs to drop that row — its workers are exactly the currently
+      // loaded rows, since this button only shows for the open event.
+      const workerIds = workerRowsRef.current
+        .map(row => row.employeeId)
+        .filter(Boolean);
+      const note = await syncVakasiPay(workerIds, periodToken);
+      setMessage({ type: 'success', text: `Persetujuan kegiatan berhasil dibatalkan.${note}` });
       setCurrentEventStatus('pending_review');
     } catch (err) {
       console.error(err);
@@ -660,21 +658,17 @@ export default function VakasiLoyalisPage() {
       }
 
       await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
-      
+
       const newStatus = isSuperAdmin ? 'approved' : (currentEventStatus || 'draft');
+      // allAffectedIds already unions current + previous workers, so a worker
+      // dropped from an already-approved event has their stale row synced
+      // away, not just the ones still listed getting their amount updated.
+      let toastText = `Event "${snapshot.eventName}" berhasil disimpan.`;
       if (newStatus === 'approved') {
-        const updatedEventPayload = {
-          id: documentId,
-          eventName: snapshot.eventName,
-          status: 'approved',
-          eventWorkers: workersMap
-        };
-        await Promise.all(
-          allAffectedIds.map(empId => syncEmployeeVakasiPay(empId, periodToken, undefined, updatedEventPayload))
-        );
+        toastText += await syncVakasiPay(allAffectedIds, periodToken);
       }
 
-      setMessage({ type: 'success', text: `Event "${snapshot.eventName}" berhasil disimpan.` });
+      setMessage({ type: 'success', text: toastText });
       setAutosaveMessage('');
       setSelectedEventId(documentId);
       setCurrentEventStatus(newStatus);

@@ -1,6 +1,6 @@
 import type { RekapColumn, UraianEntry } from '@/types';
 import { resolveRekapColumnsForSlip } from './slipBuilders';
-import type { OwnedLabelPredicate, SlipFieldKind } from './slipPropagation';
+import { normalizeLabel, type OwnedLabelPredicate, type SlipFieldKind } from './slipPropagation';
 
 /**
  * Rules for pushing a saved Uraian rekap — and the Loyalis presence
@@ -14,10 +14,6 @@ import type { OwnedLabelPredicate, SlipFieldKind } from './slipPropagation';
  *
  * Pure module — no Firebase — so the whole rule set is unit tested.
  */
-
-function normalizeLabel(label: string): string {
-  return label.trim().toLocaleLowerCase('id-ID');
-}
 
 /**
  * Earnings labels a blue-collar Uraian rekap owns: every rekap column that

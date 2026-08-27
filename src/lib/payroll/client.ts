@@ -135,6 +135,54 @@ export async function propagateUraianToSlips(command: {
   }
 }
 
+/**
+ * Pushes each employee's current approved VakasiTambahan total for one period
+ * onto their draft payslip, and returns a sentence to append to the calling
+ * toast. Call after any event mutation that can change what a worker is
+ * owed — approval, un-approval, decline, or an edit to an already-approved
+ * event — so a draft slip never depends on someone remembering to re-save it.
+ *
+ * Never throws, for the same reason as propagateUraianToSlips: a propagation
+ * failure must not make a successful event save/review look like a failure.
+ */
+export async function propagateVakasiPay(command: {
+  period: string;
+  employeeIds: string[];
+}): Promise<string> {
+  if (command.employeeIds.length === 0) return '';
+  try {
+    const result = await authenticatedJson<{ summary: UraianPropagationSummary }>(
+      '/api/payroll/vakasi-propagation',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          period: command.period,
+          employeeIds: command.employeeIds,
+          requestId: createFinancialRequestId('vakasi-sync'),
+        }),
+      },
+    );
+    const summary = result.summary || {};
+    const updated = summary.updated || 0;
+    const blocked = (summary.blocked_status || 0) + (summary.immutable || 0);
+
+    const sentences: string[] = [];
+    if (updated > 0) sentences.push(`${updated} slip draf ikut diperbarui.`);
+    if (blocked > 0) {
+      sentences.push(
+        `${blocked} slip sudah diverifikasi/dikunci sehingga tidak diubah — perubahan ditandai untuk ditinjau Badan Keuangan.`,
+      );
+    }
+    if (summary.period_closed) {
+      sentences.push('Periode sudah ditutup, slip tidak diubah.');
+    }
+    return sentences.length > 0 ? ` ${sentences.join(' ')}` : '';
+  } catch (err) {
+    console.error('Gagal menerapkan Vakasi Tambahan ke slip gaji:', err);
+    return ' Namun slip gaji belum diperbarui — buka Payroll › Refresh Massal.';
+  }
+}
+
 export async function authenticatedFormData<T>(
   input: string,
   body: FormData,
