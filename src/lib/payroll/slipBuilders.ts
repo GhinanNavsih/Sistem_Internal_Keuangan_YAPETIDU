@@ -1,4 +1,5 @@
 import { UraianEntry, RekapColumn } from '@/types';
+import type { MoneyField } from '@/lib/payroll/domain';
 import { getRekapColumns, computeSlipAmount } from '@/utils/rekapConfig';
 
 /**
@@ -8,10 +9,11 @@ import { getRekapColumns, computeSlipAmount } from '@/utils/rekapConfig';
  * API route. They are pure and free of Firebase imports so both the dashboard
  * and the server can derive the same numbers from the same employee document.
  */
-export interface SlipField {
-  label: string;
-  amount: number;
-}
+/**
+ * One money row on a slip. Aliases the canonical MoneyField so the shape is
+ * declared once; the local name is kept because callers read better with it.
+ */
+export type SlipField = MoneyField;
 
 /**
  * Use the saved slip's Gaji Pokok when one exists, including an explicit zero.

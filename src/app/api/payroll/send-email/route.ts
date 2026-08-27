@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer, { SendMailOptions } from 'nodemailer';
 import admin, { adminDb } from '@/lib/firebase-admin';
-import { isTransferEligibleStatus } from '@/lib/payroll/domain';
+import {
+  isTransferEligibleStatus,
+  type PayrollSlipStateDocument,
+} from '@/lib/payroll/domain';
 import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
@@ -70,7 +73,7 @@ export async function POST(request: NextRequest) {
     if (!slipSnapshot.exists || !isTransferEligibleStatus(slipSnapshot.data()?.status)) {
       throw new HttpError(409, 'Email hanya dapat dikirim untuk slip terkunci.');
     }
-    const slip = slipSnapshot.data()!;
+    const slip = slipSnapshot.data()! as PayrollSlipStateDocument;
     const employee = await getPayrollEmployee(employeeId);
     if (!employee.email || !employee.name) {
       throw new HttpError(409, 'Nama atau email resmi karyawan belum lengkap.');
@@ -84,11 +87,11 @@ export async function POST(request: NextRequest) {
       throw new HttpError(400, 'Lampiran PDF slip final wajib disertakan.');
     }
     const totalEarnings = Number(slip.totalEarnings) || (slip.earnings || []).reduce(
-      (sum: number, item: { amount?: number }) => sum + Number(item.amount || 0),
+      (sum, item) => sum + Number(item.amount || 0),
       0,
     );
     const totalDeductions = Number(slip.totalDeductions) || (slip.deductions || []).reduce(
-      (sum: number, item: { amount?: number }) => sum + Number(item.amount || 0),
+      (sum, item) => sum + Number(item.amount || 0),
       0,
     );
     const netSalary = totalEarnings - totalDeductions;

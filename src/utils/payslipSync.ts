@@ -3,6 +3,7 @@ import {
   dedupeSatpamActivityReports,
   summarizeApprovedSatpamReports,
   SatpamActivityLike,
+  type MoneyField,
 } from '@/lib/payroll/domain';
 import {
   activityBelongsToPayrollPeriod,
@@ -11,10 +12,8 @@ import {
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
 
-export interface PaySlipField {
-  label: string;
-  amount: number;
-}
+/** Alias of the canonical MoneyField; see slipBuilders.SlipField. */
+export type PaySlipField = MoneyField;
 
 export async function syncActivityToPayslip(db: any, employeeId: string, period: string) {
   try {

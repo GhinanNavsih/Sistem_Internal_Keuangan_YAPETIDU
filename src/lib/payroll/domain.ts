@@ -81,6 +81,59 @@ export interface MoneyField {
   amount: number;
 }
 
+/**
+ * A `PayrollSlipStates/{period}_{employeeId}` document.
+ *
+ * This collection holds the slip's money rows, not just its status, and had no
+ * type at all — every route handled it as an untyped record. The fields here
+ * are the ones the writers actually produce (slips/route.ts save_draft,
+ * create_payment and mark_paid, payrollKoperasiSaga.verifyAndLockWithKoperasi,
+ * the uraian/profile propagation routes, send-email and
+ * historical-spj-correction). It is deliberately open-ended: it describes
+ * documents rather than constraining them, so it can be adopted incrementally
+ * without forcing a data migration.
+ *
+ * On `status`: PayrollStatus covers everything currently writable, but slips
+ * predating it can still carry `'confirmed'`, which is why
+ * isImmutablePayrollStatus and the employee payslip query both still accept it.
+ * Treat that value as read-only legacy, never as a new target state.
+ */
+export interface PayrollSlipStateDocument {
+  employeeId?: string;
+  period?: string;
+  status?: PayrollStatus | 'confirmed';
+  earnings?: MoneyField[];
+  deductions?: MoneyField[];
+  totalEarnings?: number;
+  totalDeductions?: number;
+  netSalary?: number;
+  revision?: number;
+  generatedAt?: unknown;
+  updatedAt?: unknown;
+  updatedBy?: string;
+  verifiedAt?: unknown;
+  verifiedBy?: string;
+  lockedAt?: unknown;
+  lockedBy?: string;
+  lockedSnapshotHash?: string;
+  lockedSnapshot?: unknown;
+  paymentBatchId?: string;
+  paymentCreatedAt?: unknown;
+  paymentCreatedBy?: string;
+  bankReference?: string;
+  paidAt?: unknown;
+  paidBy?: string;
+  /** Owned solely by POST /api/payroll/send-email. */
+  emailSent?: boolean;
+  emailSentAt?: unknown;
+  emailSentBy?: string;
+  koperasiInstallmentPlan?: unknown;
+  koperasiProgressionReceipt?: unknown;
+  closureRepair?: unknown;
+  lastHistoricalCorrection?: unknown;
+  schemaVersion?: number;
+}
+
 /** Immutable audit evidence captured from the original image before upload compression. */
 export interface PhotoAuditMetadata {
   capturedAt: string | null;

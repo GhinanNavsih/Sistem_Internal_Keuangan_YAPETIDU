@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
-import { calculatePayrollTotals, validateMoneyFields } from '@/lib/payroll/domain';
+import {
+  calculatePayrollTotals,
+  validateMoneyFields,
+  type MoneyField,
+} from '@/lib/payroll/domain';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
@@ -103,9 +107,9 @@ function spjAmount(value: unknown): number {
 }
 
 function replaceSpjEarning(
-  earnings: readonly { label: string; amount: number }[],
+  earnings: readonly MoneyField[],
   amount: number,
-): { label: string; amount: number }[] {
+): MoneyField[] {
   const indexes = earnings
     .map((field, index) => ({ field, index }))
     .filter(({ field }) => field.label.trim().toUpperCase() === 'SPJ')

@@ -106,7 +106,7 @@ Roles are defined in `src/lib/payroll/roles.ts` (`USER_ROLES`) and enforced by r
 
 **Satpam duty/shift**: `SatpamDutyPlans` (8-day rotation plans), `SatpamShiftTeams`, `ShiftOccurrences` (materialized per-date/post/team shifts), `GuardDutyIndexes` (dedup index), `SatpamAbsenceRequestRevisions`.
 
-**Payroll core**: `PayrollPeriods`, `PayrollSlipStates` (per-employee-per-period status: draft/pending/confirmed/locked/payment_created/paid, doc id `{period}_{employeeId}`), `PayrollPayments`, `PayrollLedgerEntries`, `PayrollDeliveryEvents` (email delivery idempotency), `PayrollHolidayCalendars`, `PayrollCorrectionRequests`, `PayrollHistoricalCorrections`, `PayrollKoperasiProgressions` (payroll↔Koperasi bridge saga state), `FinancialIdempotencyKeys`, `FinancialAuditLogs`.
+**Payroll core**: `PayrollPeriods`, `PayrollSlipStates` (per-employee-per-period slip — holds the earnings/deductions money rows, not just a status; doc id `{period}_{employeeId}`, shape in `PayrollSlipStateDocument`. Writable statuses are draft/locked/payment_created/paid (`PayrollStatus`); `confirmed` is read-only legacy that `isImmutablePayrollStatus` and the employee payslip query still honour; `pending` is not a slip status — it belongs to `PayrollCorrectionRequests`), `PayrollPayments`, `PayrollLedgerEntries`, `PayrollDeliveryEvents` (email delivery idempotency), `PayrollHolidayCalendars`, `PayrollCorrectionRequests`, `PayrollHistoricalCorrections`, `PayrollKoperasiProgressions` (payroll↔Koperasi bridge saga state), `FinancialIdempotencyKeys`, `FinancialAuditLogs`.
 
 **Admin / auth / misc**: `users`, `EmpEditLog`, `admin_impersonation_sessions`, `audit_logs`, `reactivation_tokens`.
 

@@ -1,10 +1,9 @@
 import { jsPDF } from 'jspdf';
+import type { MoneyField } from '@/lib/payroll/domain';
 import { LOGO_YAPETIDU_BASE64, LOGO_UNIPDU_BASE64 } from './logoConstants';
 
-export interface PaySlipField {
-  label: string;
-  amount: number;
-}
+/** Alias of the canonical MoneyField; see slipBuilders.SlipField. */
+export type PaySlipField = MoneyField;
 
 export interface PaySlipData {
   employeeName: string;
