@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
 import { collection, getDocs } from 'firebase/firestore';
@@ -758,58 +758,69 @@ export default function TreasuryDashboard() {
     Record<string, Record<string, PekaryaSlipPreview>>
   >({});
   const [pekaryaPreviewsLoading, setPekaryaPreviewsLoading] = useState(true);
-  const fetchedPekaryaPeriodsRef = useRef<Set<string>>(new Set());
 
+  // Which periods still need fetching is read off `pekaryaPreviewsByPeriod`
+  // itself (a period counts as done once it has a key, success or failure)
+  // rather than a ref marked before the fetch starts. `onAuthStateChanged`
+  // can fire more than once in production (token refresh, multi-tab
+  // negotiation — see the comment in AuthContext), each time handing this
+  // effect a new `profile` object and re-running it. A ref claimed up front
+  // survives that re-run even when its own fetch gets cancelled mid-flight,
+  // so every later run sees "already claimed" and skips it — nothing ever
+  // completes and the loading flag never clears. Deriving "already fetched"
+  // from state instead means a re-run always sees the true outcome and either
+  // no-ops (already have it) or retries (never got it), so it always
+  // converges instead of latching permanently open.
   useEffect(() => {
     if (!profile || profile.role !== 'super_admin') return;
 
     const periods = computePayrollPeriodRange(slips, selectedPeriod);
     const periodsToFetch = periods.filter(
-      (period) => !fetchedPekaryaPeriodsRef.current.has(period),
+      (period) => !(period in pekaryaPreviewsByPeriod),
     );
-    if (periodsToFetch.length === 0) return;
 
     let cancelled = false;
-    periodsToFetch.forEach((period) => fetchedPekaryaPeriodsRef.current.add(period));
 
     const fetchPreviews = async () => {
-      try {
-        const results = await Promise.all(
-          periodsToFetch.map(async (period) => {
-            const periodToken = period.replace('_', '-');
-            try {
-              const result = await authenticatedJson<{
-                previews: Record<string, PekaryaSlipPreview>;
-              }>(`/api/payroll/slip-preview?period=${periodToken}`);
-              return [period, result.previews || {}] as const;
-            } catch (err) {
-              // A period whose preview cannot be loaded keeps falling back to
-              // the profile-driven builder for that period only — it must not
-              // block every other period's cumulative figures.
-              console.error(`Gagal memuat pratinjau slip Pekarya untuk ${period}:`, err);
-              fetchedPekaryaPeriodsRef.current.delete(period);
-              return [period, {}] as const;
-            }
-          }),
-        );
-        if (cancelled) return;
-        setPekaryaPreviewsByPeriod((prev) => {
-          const next = { ...prev };
-          results.forEach(([period, previews]) => {
-            next[period] = previews;
-          });
-          return next;
-        });
-      } finally {
+      if (periodsToFetch.length === 0) {
         if (!cancelled) setPekaryaPreviewsLoading(false);
+        return;
       }
+      const results = await Promise.all(
+        periodsToFetch.map(async (period) => {
+          const periodToken = period.replace('_', '-');
+          try {
+            const result = await authenticatedJson<{
+              previews: Record<string, PekaryaSlipPreview>;
+            }>(`/api/payroll/slip-preview?period=${periodToken}`);
+            return [period, result.previews || {}] as const;
+          } catch (err) {
+            // A period whose preview cannot be loaded keeps falling back to
+            // the profile-driven builder for that period only — it must not
+            // block every other period's cumulative figures, and it must not
+            // spin forever either, so it's still recorded (as empty) rather
+            // than left pending.
+            console.error(`Gagal memuat pratinjau slip Pekarya untuk ${period}:`, err);
+            return [period, {}] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setPekaryaPreviewsByPeriod((prev) => {
+        const next = { ...prev };
+        results.forEach(([period, previews]) => {
+          next[period] = previews;
+        });
+        return next;
+      });
+      setPekaryaPreviewsLoading(false);
     };
 
     fetchPreviews();
     return () => {
       cancelled = true;
     };
-  }, [profile, slips, selectedPeriod]);
+  }, [profile, slips, selectedPeriod, pekaryaPreviewsByPeriod]);
 
   const selectedPeriodData = periodDataByPeriod[selectedPeriod] || EMPTY_PERIOD_DATA;
   const selectedPeriodVakasiEvents = selectedPeriodData.vakasiEvents;
