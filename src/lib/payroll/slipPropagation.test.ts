@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  assertOnlyOwnedChanged,
   assertOnlyProfileOwnedChanged,
   classifySlipForPropagation,
   isPayRelevantChange,
   isProfileOwnedLabel,
+  mergeOwnedFields,
   mergeProfileOwnedFields,
   resolvePropagationPeriods,
 } from './slipPropagation';
@@ -187,4 +189,66 @@ test('pay relevance is decided by profile path prefix', () => {
   assert.equal(isPayRelevantChange(['personal_info.phone']), false);
   assert.equal(isPayRelevantChange(['personal_info.phone', 'ziz.deductionAmount']), true);
   assert.equal(isPayRelevantChange([]), false);
+});
+
+// ── Single-label ownership, as used by the historical SPJ correction ────────
+// That route replaces exactly one row ('SPJ') on an already-saved draft. It
+// used to rewrite the earnings array by hand with no check that nothing else
+// moved; it now composes mergeOwnedFields + assertOnlyOwnedChanged like every
+// other slip writer, so the composition is pinned here.
+
+const isSpjLabel = (label: string) => label.trim().toUpperCase() === 'SPJ';
+
+const storedSpjEarnings = [
+  { label: 'Gaji Pokok', amount: 1_000_000 },
+  { label: 'SPJ', amount: 50_000 },
+  { label: 'Tunjangan Jabatan', amount: 100_000 },
+];
+
+test('an SPJ correction rewrites only the SPJ row and keeps the order', () => {
+  const { merged } = mergeOwnedFields(
+    storedSpjEarnings,
+    [{ label: 'SPJ', amount: 75_000 }],
+    isSpjLabel,
+    'earnings',
+  );
+
+  assert.deepEqual(merged, [
+    { label: 'Gaji Pokok', amount: 1_000_000 },
+    { label: 'SPJ', amount: 75_000 },
+    { label: 'Tunjangan Jabatan', amount: 100_000 },
+  ]);
+  assert.doesNotThrow(() =>
+    assertOnlyOwnedChanged(storedSpjEarnings, merged, isSpjLabel),
+  );
+});
+
+test('an SPJ correction appends the row when the slip has none', () => {
+  const stored = [{ label: 'Gaji Pokok', amount: 1_000_000 }];
+  const { merged } = mergeOwnedFields(
+    stored,
+    [{ label: 'SPJ', amount: 75_000 }],
+    isSpjLabel,
+    'earnings',
+  );
+
+  assert.deepEqual(merged, [
+    { label: 'Gaji Pokok', amount: 1_000_000 },
+    { label: 'SPJ', amount: 75_000 },
+  ]);
+  assert.doesNotThrow(() => assertOnlyOwnedChanged(stored, merged, isSpjLabel));
+});
+
+test('an SPJ correction that moved a row it does not own is rejected', () => {
+  // Simulates a gathering bug: the merge output has Gaji Pokok altered and
+  // Tunjangan Jabatan dropped, neither of which this correction owns.
+  const corrupted = [
+    { label: 'Gaji Pokok', amount: 999 },
+    { label: 'SPJ', amount: 75_000 },
+  ];
+
+  assert.throws(
+    () => assertOnlyOwnedChanged(storedSpjEarnings, corrupted, isSpjLabel),
+    /di luar sumbernya/,
+  );
 });

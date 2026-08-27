@@ -6,6 +6,11 @@ import {
   validateMoneyFields,
   type MoneyField,
 } from '@/lib/payroll/domain';
+import {
+  assertOnlyOwnedChanged,
+  mergeOwnedFields,
+  type OwnedLabelPredicate,
+} from '@/lib/payroll/slipPropagation';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
@@ -106,22 +111,34 @@ function spjAmount(value: unknown): number {
   return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0;
 }
 
+/** This correction is authoritative for the SPJ row and nothing else. */
+const isSpjEarningLabel: OwnedLabelPredicate = (label) =>
+  label.trim().toUpperCase() === 'SPJ';
+
+/**
+ * Replaces the slip's SPJ row, going through the same merge engine and
+ * post-merge assertion every other slip writer uses (the uraian and
+ * employee-profile propagation routes), instead of rewriting the array by
+ * hand with no check that only SPJ moved.
+ */
 function replaceSpjEarning(
   earnings: readonly MoneyField[],
   amount: number,
 ): MoneyField[] {
-  const indexes = earnings
-    .map((field, index) => ({ field, index }))
-    .filter(({ field }) => field.label.trim().toUpperCase() === 'SPJ')
-    .map(({ index }) => index);
-  if (indexes.length > 1) {
+  // mergeOwnedFields keys owned rows by normalized label, so two SPJ rows
+  // would both take the replacement and double the total. The old hand-rolled
+  // version rejected that case and so must this one.
+  if (earnings.filter((field) => isSpjEarningLabel(field.label)).length > 1) {
     throw new HttpError(409, 'Slip memiliki lebih dari satu baris SPJ. Koreksi dibatalkan.');
   }
-  if (indexes.length === 0) return [...earnings, { label: 'SPJ', amount }];
-  const [index] = indexes;
-  return earnings.map((field, fieldIndex) =>
-    fieldIndex === index ? { ...field, amount } : { ...field },
+  const { merged } = mergeOwnedFields(
+    earnings,
+    [{ label: 'SPJ', amount }],
+    isSpjEarningLabel,
+    'earnings',
   );
+  assertOnlyOwnedChanged(earnings, merged, isSpjEarningLabel);
+  return merged;
 }
 
 function correctionId(command: HistoricalSpjCorrectionCommand): string {
