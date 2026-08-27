@@ -5,6 +5,7 @@ import {
   DashboardPeriodInputs,
   sumSlipFields,
 } from './dashboardSlipData';
+import { loyalisPresenceAmounts } from './uraianPropagation';
 
 const inputs: DashboardPeriodInputs = {
   targetDate: new Date(2026, 7, 1),
@@ -153,4 +154,44 @@ test('Loyalis is unaffected by the Pekarya preview map', () => {
 
   const gapok = loyalis.earnings.find((field) => field.label === 'Gaji Pokok');
   assert.equal(gapok?.amount, 1_000_000);
+});
+
+test('the dashboard reads Loyalis presence through the shared propagation maths', () => {
+  // Guards the consolidation: the dashboard used to reimplement these four
+  // amounts with its own hardcoded 250000/1650/25/6.5 literals, so a slip built
+  // here could disagree with one propagated onto a saved draft. Both sides now
+  // go through loyalisPresenceAmounts, so this asserts the dashboard's rendered
+  // rows match that function's output exactly.
+  const presence = {
+    workingDays: 20,
+    expectedHours: 7,
+    entries: { 'pekarya-1': { deduction: 15_000, absenceMinutes: 120 } },
+  };
+  const expected = loyalisPresenceAmounts(presence, 'pekarya-1');
+
+  const data = buildDashboardSlipData(
+    {
+      id: 'pekarya-1',
+      employment_profile: { date_of_hire: '2026-01-01', department_unit: 'Staf' },
+      academic_and_tier: { level_code: 'A' },
+    },
+    'loyalis',
+    undefined,
+    { ...inputs, loyalisPresenceData: presence },
+  );
+
+  const amountOf = (fields: { label: string; amount: number }[], label: string) =>
+    fields.find((field) => field.label === label)?.amount;
+
+  assert.equal(amountOf(data.earnings, 'Presensi'), expected.presensiEarning);
+  assert.equal(amountOf(data.earnings, 'Bonus Presensi'), expected.presenceBonus);
+  assert.equal(amountOf(data.deductions, 'Potongan Presensi'), expected.presensiDeduction);
+  assert.equal(
+    amountOf(data.deductions, 'Potongan Bonus Presensi'),
+    expected.presenceDeduction,
+  );
+
+  // And the shared function is actually doing the arithmetic, not a constant.
+  assert.equal(expected.presensiEarning, Math.round(20 * 7 * 1_650));
+  assert.equal(expected.presensiDeduction, Math.round((120 / 60) * 1_650));
 });

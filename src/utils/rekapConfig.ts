@@ -1,5 +1,6 @@
 import { RekapColumn } from '@/types';
 import { SATPAM_RATES } from '@/lib/payroll/domain';
+import { SATPAM_MONTHLY_ATTENDANCE_BONUS } from '@/lib/payroll/satpamDutyPlan';
 
 // ─── Hardcoded multiplier rates ─────────────────────────────────────────────
 export const RATE_HARIAN = SATPAM_RATES.Harian;
@@ -8,7 +9,7 @@ export const RATE_LEMBUR_SENDIRI = SATPAM_RATES['Lembur Sendiri'];
 export const RATE_LEMBUR_COVER = SATPAM_RATES['Lembur Cover'];
 export const RATE_BONUS_MUTLAK = 50_000;
 export const RATE_BONUS_BULANAN = 17_500;
-export const RATE_BONUS_PRESENSI_BULANAN = 100_000;
+export const RATE_BONUS_PRESENSI_BULANAN = SATPAM_MONTHLY_ATTENDANCE_BONUS;
 export const RATE_BONUS_PRESENSI_TRIWULANAN = 300_000;
 export const RATE_PIKET = 15_000;
 

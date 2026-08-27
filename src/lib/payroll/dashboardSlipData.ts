@@ -5,6 +5,7 @@ import {
   buildInitialEarnings,
   SlipField,
 } from '@/lib/payroll/slipBuilders';
+import { loyalisPresenceAmounts } from '@/lib/payroll/uraianPropagation';
 import { SalaryMatrix } from '@/types';
 
 export type DashboardPayrollCollar = 'loyalis' | 'pekarya';
@@ -74,54 +75,6 @@ function getEmployeeForGapok(
   };
 }
 
-function hasPresenceEntries(presenceData: any | null): boolean {
-  return Boolean(
-    presenceData?.entries && Object.keys(presenceData.entries).length > 0,
-  );
-}
-
-function getPresenceBonus(
-  employeeId: string,
-  presenceData: any | null,
-): number {
-  if (hasPresenceEntries(presenceData) && !presenceData.entries[employeeId]) {
-    return 0;
-  }
-  return 250000;
-}
-
-function getPresenceDeduction(
-  employeeId: string,
-  presenceData: any | null,
-): number {
-  const entry = hasPresenceEntries(presenceData)
-    ? presenceData.entries[employeeId]
-    : undefined;
-  return entry?.deduction || 0;
-}
-
-function getPresensiEarning(
-  employeeId: string,
-  presenceData: any | null,
-): number {
-  const workingDays = presenceData?.workingDays || 25;
-  const expectedHours = presenceData?.expectedHours || 6.5;
-  if (hasPresenceEntries(presenceData) && !presenceData.entries[employeeId]) {
-    return 0;
-  }
-  return Math.round(workingDays * expectedHours * 1650);
-}
-
-function getPresensiDeduction(
-  employeeId: string,
-  presenceData: any | null,
-): number {
-  const entry = hasPresenceEntries(presenceData)
-    ? presenceData.entries[employeeId]
-    : undefined;
-  return Math.round(((entry?.absenceMinutes || 0) / 60) * 1650);
-}
-
 /**
  * Derive the exact earnings and deductions used by the payroll page for one
  * employee and one period. Persisted earnings are treated as the source of
@@ -156,22 +109,14 @@ export function buildDashboardSlipData(
   const uraianEntry = inputs.uraianMap[`${period}_${category}`]?.entries?.[
     employee.id
   ];
-  const presenceBonus = getPresenceBonus(
-    employee.id,
-    inputs.loyalisPresenceData,
-  );
-  const presenceDeduction = getPresenceDeduction(
-    employee.id,
-    inputs.loyalisPresenceData,
-  );
-  const presensiEarning = getPresensiEarning(
-    employee.id,
-    inputs.loyalisPresenceData,
-  );
-  const presensiDeduction = getPresensiDeduction(
-    employee.id,
-    inputs.loyalisPresenceData,
-  );
+  // Shared with the Uraian/Loyalis propagation route, so a slip built here
+  // and one propagated onto a saved draft always agree.
+  const {
+    presenceBonus,
+    presenceDeduction,
+    presensiEarning,
+    presensiDeduction,
+  } = loyalisPresenceAmounts(inputs.loyalisPresenceData, employee.id);
 
   // Pekarya has no local fallback. A missing preview means the source is
   // unavailable, not that the employee earned zero (or that an older builder

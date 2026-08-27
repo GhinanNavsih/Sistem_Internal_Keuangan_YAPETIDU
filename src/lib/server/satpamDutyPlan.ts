@@ -8,6 +8,7 @@ import {
   reconcileSatpamDuties,
   satpamDutyKey,
   satpamDutyPlanId,
+  SATPAM_MONTHLY_ATTENDANCE_BONUS,
   SATPAM_PAID_ABSENCE_RATE,
   type SatpamDutyPlanDay,
   type SatpamDutyPlanStatus,
@@ -553,11 +554,13 @@ export async function syncSatpamDutyReconciliation(
             0,
             Number(
               counts.bonusPresensiBulanan ??
-                Number(values.bonusPresensiBulanan || 0) / 100_000,
+                Number(values.bonusPresensiBulanan || 0) /
+                  SATPAM_MONTHLY_ATTENDANCE_BONUS,
             ),
           );
           counts.bonusPresensiBulanan = preservedBonusCount;
-          values.bonusPresensiBulanan = preservedBonusCount * 100_000;
+          values.bonusPresensiBulanan =
+            preservedBonusCount * SATPAM_MONTHLY_ATTENDANCE_BONUS;
         }
         entries[employee.employeeId] = {
           ...existing,
@@ -615,12 +618,14 @@ export async function syncSatpamDutyReconciliation(
             0,
             Number(
               counts.bonusPresensiBulanan ??
-                Number(values.bonusPresensiBulanan || 0) / 100_000,
+                Number(values.bonusPresensiBulanan || 0) /
+                  SATPAM_MONTHLY_ATTENDANCE_BONUS,
             ),
           )
         : 0;
       counts.bonusPresensiBulanan = preservedBonusCount;
-      values.bonusPresensiBulanan = preservedBonusCount * 100_000;
+      values.bonusPresensiBulanan =
+        preservedBonusCount * SATPAM_MONTHLY_ATTENDANCE_BONUS;
       entries[external.employeeId] = {
         ...existing,
         employeeId: external.employeeId,

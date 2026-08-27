@@ -1,14 +1,13 @@
 import { doc, getDoc, getDocs, collection, query, where, runTransaction } from 'firebase/firestore';
 import {
   dedupeSatpamActivityReports,
-  SATPAM_RATES,
   summarizeApprovedSatpamReports,
   SatpamActivityLike,
 } from '@/lib/payroll/domain';
 import {
   activityBelongsToPayrollPeriod,
   allowsManualSpjEntry,
-  approvedActivitySpjAmount,
+  sumApprovedActivitySpj,
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
 
@@ -68,26 +67,28 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
     const uraianDocId = `${periodKey}_${jobCategory}`;
     const uraianRef = doc(db, 'UraianGaji', uraianDocId);
     const periodRef = doc(db, 'PayrollPeriods', period);
-    let harianCount = 0;
-    let jumatCount = 0;
-    let lemburSendiriCount = 0;
-    let lemburCoverCount = 0;
     let activityTotal = 0;
     let totalSpj = 0;
 
     if (jobCategory === 'SATPAM') {
-      const contribution = summarizeApprovedSatpamReports(reports);
-      activityTotal = contribution.personalSpj;
-      harianCount = contribution.harianCount;
-      jumatCount = contribution.jumatLiburCount;
-      lemburSendiriCount = contribution.lemburSendiriCount;
-      lemburCoverCount = contribution.lemburCoverCount;
+      // Only the personal SPJ half is taken here. The shift columns
+      // (harian/jumatLibur/lemburSendiri/lemburCover/bonusPresensiBulanan) are
+      // owned end to end by syncSatpamDutyReconciliation, which is plan-aware,
+      // counts paid absences, and runs server-side on every shift-affecting
+      // action. This function used to recount them from a different query with
+      // different dedup rules and overwrite that result.
+      activityTotal = summarizeApprovedSatpamReports(reports).personalSpj;
     } else {
       // Only reviewed employee earnings enter SPJ. For SOPIR, operational
       // reimbursements are excluded and upahBersih is counted exactly once.
-      activityTotal = reports.reduce((sum, report) => {
-        return sum + approvedActivitySpjAmount(report);
-      }, 0);
+      // Shared with the rekap/spj screens and the slip preview so every
+      // surface totals SPJ identically, including its duplicate-report dedup.
+      activityTotal = sumApprovedActivitySpj(
+        reports,
+        employeeId,
+        jobCategory,
+        period,
+      );
     }
 
     // Kegiatan SPJ is additional to personal activity SPJ for every Pekarya
@@ -125,53 +126,15 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
       const uraianData = uraianSnap.data();
       const entries = { ...(uraianData.entries || {}) };
       const currentEntry = entries[employeeId] || { employeeId, name: employeeName };
-      const manualSatpamBonusOverride =
-        jobCategory === 'SATPAM' &&
-        period === '2026-07' &&
-        uraianData.satpamMonthlyBonusManualOverride === true;
 
       let updatedValues = { ...(currentEntry.values || {}) };
       let updatedCounts = { ...(currentEntry.counts || {}) };
 
-      if (jobCategory === 'SATPAM') {
-        const satpamDutySource =
-          currentEntry.satpamDutySource &&
-          typeof currentEntry.satpamDutySource === 'object'
-            ? currentEntry.satpamDutySource
-            : {};
-        const approvedAbsenceCount = Math.max(
-          0,
-          Number(satpamDutySource.approvedAbsenceCount || 0),
-        );
-        const canonicalBonusCount =
-          satpamDutySource.eligibleForBonus === true ? 1 : 0;
-        const totalHarianCount = harianCount + approvedAbsenceCount;
-        updatedValues = {
-          ...updatedValues,
-          harian: totalHarianCount * SATPAM_RATES.Harian,
-          jumatLibur: jumatCount * SATPAM_RATES['Jumat & Libur'],
-          lemburSendiri: lemburSendiriCount * SATPAM_RATES['Lembur Sendiri'],
-          lemburCover: lemburCoverCount * SATPAM_RATES['Lembur Cover'],
-          ...(currentEntry.satpamDutySource && !manualSatpamBonusOverride
-            ? {
-                bonusPresensiBulanan:
-                  canonicalBonusCount * 100_000,
-              }
-            : {}),
-          ...(spjIsManual ? {} : { spj: totalSpj }),
-        };
-        updatedCounts = {
-          ...updatedCounts,
-          harian: totalHarianCount,
-          jumatLibur: jumatCount,
-          lemburSendiri: lemburSendiriCount,
-          lemburCover: lemburCoverCount,
-          ...(currentEntry.satpamDutySource && !manualSatpamBonusOverride
-            ? { bonusPresensiBulanan: canonicalBonusCount }
-            : {}),
-          ...(spjIsManual ? {} : { spj: 0 }),
-        };
-      } else if (!spjIsManual) {
+      // SPJ is the only column this function owns, for every job category.
+      // Everything else in an entry belongs to whoever computed it: the Satpam
+      // shift columns to syncSatpamDutyReconciliation, the attendance columns
+      // to publishPekaryaAttendance, the rest to the Uraian rekap screen.
+      if (!spjIsManual) {
         updatedValues = {
           ...updatedValues,
           spj: totalSpj,
