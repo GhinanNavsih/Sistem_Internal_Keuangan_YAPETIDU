@@ -248,11 +248,9 @@ function validateDriverReview(value: ReviewItem['driverReview']) {
     ) {
       throw new HttpError(400, 'Koordinat tujuan audit tidak sesuai dengan rute.');
     }
-    // Paired positionally rather than through `normalizeDriverJourneyLocations`,
-    // which caps its addresses at MAX_MAIN_DESTINATIONS. `points` accepts up to
-    // 30 stops, so normalizing through it returned a short array: coordinates
-    // past the cap were dropped on write, and the length check above could
-    // never be satisfied by a client that capped its payload the same way.
+    // Pair positionally rather than through `normalizeDriverJourneyLocations`,
+    // so the coordinate array stays aligned with every route point up to the
+    // shared 25-destination limit.
     mainDestinationLocations = value.points.slice(1).map((address, index) => (
       normalizeDriverJourneyLocation(rawLocations[index], address)
     ));

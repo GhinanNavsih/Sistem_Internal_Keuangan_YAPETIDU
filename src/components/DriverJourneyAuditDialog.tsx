@@ -1190,9 +1190,8 @@ export function DriverJourneyAuditDialog({
       points: auditPoints,
       startPointLocation: normalizeDriverJourneyLocation(auditPointLocations[0], auditPoints[0]),
       // Positional, so the array always stays exactly `points.length - 1` long.
-      // `normalizeDriverJourneyLocations` caps at MAX_MAIN_DESTINATIONS, which
-      // made the server's matching length check unsatisfiable — and therefore
-      // any route past that cap unapprovable.
+      // The audit route supports the same full destination limit as the
+      // submitted journey, so coordinates remain aligned for every stop.
       mainDestinationLocations: auditPoints.slice(1).map((address, index) => (
         normalizeDriverJourneyLocation(auditPointLocations[index + 1], address)
       )),

@@ -28,9 +28,10 @@ export type FuelProcurementMode =
 export const DEFAULT_FUEL_PROCUREMENT_MODE: FuelProcurementMode = 'standard_direct';
 
 export const DEFAULT_DRIVER_JOURNEY_POINT = 'UNIPDU Jombang, Jawa Timur';
-export const MAX_MAIN_DESTINATIONS = 8;
 /** Google Directions accepts at most 25 intermediate destination waypoints. */
 export const MAX_DRIVER_JOURNEY_DESTINATIONS = 25;
+/** Main-destination arrays use the same full limit as the editable route. */
+export const MAX_MAIN_DESTINATIONS = MAX_DRIVER_JOURNEY_DESTINATIONS;
 /** Stored/displayed journey points also contain the departure point. */
 export const MAX_DRIVER_JOURNEY_LOCATIONS = MAX_DRIVER_JOURNEY_DESTINATIONS + 1;
 /** Route measurement may append the departure point once to close the return leg. */
@@ -122,9 +123,9 @@ export interface DriverJourneyPointLocationSources {
  * validation.
  *
  * Both sources are paired positionally rather than through
- * `normalizeDriverJourneyLocations`, which routes addresses through
- * `normalizeDriverJourneyDestinations` and so truncates at
- * `MAX_MAIN_DESTINATIONS`; `points` accepts far more stops than that.
+ * `normalizeDriverJourneyLocations`, so every route point stays aligned with
+ * its coordinate. The main-destination array and `points` now share the same
+ * full configured destination limit.
  */
 export function resolveDriverJourneyPointLocations(
   input: DriverJourneyPointLocationSources,

@@ -97,6 +97,24 @@ test('25 destinations leave room for the departure and generated return points',
   assert.equal(routePoints[routePoints.length - 1], locations[0]);
 });
 
+test('main destinations accept the full 25-stop route limit', () => {
+  const destinations = Array.from(
+    { length: MAX_DRIVER_JOURNEY_DESTINATIONS },
+    (_, index) => `Tujuan ${index + 1}`,
+  );
+
+  assert.equal(MAX_MAIN_DESTINATIONS, MAX_DRIVER_JOURNEY_DESTINATIONS);
+  assert.equal(normalizeDriverJourneyDestinations(destinations).length, 25);
+  assert.equal(
+    normalizeDriverJourneyDestinations([...destinations, 'Tujuan 26']).length,
+    25,
+  );
+  assert.equal(normalizeDriverJourneyLocations(
+    destinations.map((address) => ({ address, latitude: -7.5, longitude: 112.2 })),
+    destinations,
+  ).length, 25);
+});
+
 test('journey locations retain validated addresses and coordinates for route reuse', () => {
   assert.deepEqual(
     normalizeDriverJourneyLocation(
