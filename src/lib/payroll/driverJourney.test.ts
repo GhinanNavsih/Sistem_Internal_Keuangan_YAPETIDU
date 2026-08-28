@@ -37,12 +37,102 @@ import {
   normalizeDriverJourneyLocations,
   formatDurationHoursAsJamMenit,
 } from './driverJourney';
+import {
+  driverJourneyDraftStorageKey,
+  parseDriverJourneyAuthorizationDraft,
+  serializeDriverJourneyAuthorizationDraft,
+  type DriverJourneyAuthorizationDraftState,
+} from './driverJourneyDraft';
 
 test('fuel procurement modes have human-readable UI labels', () => {
   assert.equal(fuelProcurementModeLabel('standard_direct'), 'Standard langsung');
   assert.equal(fuelProcurementModeLabel('hold_accumulate'), 'Tahan & akumulasi');
   assert.equal(fuelProcurementModeLabel('procure_release'), 'Cairkan saldo');
   assert.equal(fuelProcurementModeLabel('unknown_mode'), 'Mode pengadaan BBM');
+});
+
+test('authorization drafts preserve the ordered destination timeline and coordinates', () => {
+  const draftState: DriverJourneyAuthorizationDraftState = {
+    hasUserChanges: true,
+    editingJourneyId: null,
+    activityName: 'Rapat dinas',
+    activityDate: '2026-08-28',
+    startPoint: DEFAULT_DRIVER_JOURNEY_POINT,
+    startPointLocation: { ...DEFAULT_DRIVER_JOURNEY_LOCATION },
+    endPoint: 'Tujuan A',
+    endPointLocation: { address: 'Tujuan A', latitude: -7.51, longitude: 112.21 },
+    additionalDestinations: ['Tujuan B', '', 'Tujuan D'],
+    additionalDestinationLocations: [
+      { address: 'Tujuan B', latitude: -7.52, longitude: 112.22 },
+      null,
+      { address: 'Tujuan D', latitude: -7.54, longitude: 112.24 },
+    ],
+    selectedVehicle: 'Suzuki XL7',
+    fuelProcurementMode: 'hold_accumulate',
+    tollFee: '50.000',
+    assignedDriverId: 'driver-1',
+    calcDistance: 12.5,
+    calcDuration: 1.75,
+    inputDuration: 3.5,
+    showMapSelector: true,
+    mapTarget: 1,
+    mapSearchText: 'Tujuan C',
+    mapAddress: 'Tujuan C',
+    mapLocation: { address: 'Tujuan C', latitude: -7.53, longitude: 112.23 },
+  };
+
+  const parsed = parseDriverJourneyAuthorizationDraft(
+    serializeDriverJourneyAuthorizationDraft(draftState, '2026-08', '2026-08-28T10:00:00.000Z'),
+    '2026-08',
+  );
+
+  assert.ok(parsed);
+  assert.deepEqual(parsed.additionalDestinations, ['Tujuan B', '', 'Tujuan D']);
+  assert.deepEqual(parsed.additionalDestinationLocations, draftState.additionalDestinationLocations);
+  assert.deepEqual(parsed.endPointLocation, draftState.endPointLocation);
+  assert.equal(parsed.mapTarget, 1);
+  assert.deepEqual(parsed.mapLocation, draftState.mapLocation);
+  assert.equal(parsed.tollFee, '50.000');
+});
+
+test('authorization drafts are scoped to the account and period', () => {
+  assert.equal(
+    driverJourneyDraftStorageKey('admin/user 1', '2026-08'),
+    'unipdu:driver-journey-draft:v1:admin%2Fuser%201:2026-08',
+  );
+  assert.equal(driverJourneyDraftStorageKey('', '2026-08'), '');
+  assert.equal(driverJourneyDraftStorageKey('admin-1', '2026-13'), '');
+
+  const raw = serializeDriverJourneyAuthorizationDraft(
+    {
+      hasUserChanges: true,
+      editingJourneyId: null,
+      activityName: '',
+      activityDate: '2026-08-28',
+      startPoint: DEFAULT_DRIVER_JOURNEY_POINT,
+      startPointLocation: { ...DEFAULT_DRIVER_JOURNEY_LOCATION },
+      endPoint: 'Tujuan A',
+      endPointLocation: null,
+      additionalDestinations: [],
+      additionalDestinationLocations: [],
+      selectedVehicle: 'Suzuki XL7',
+      fuelProcurementMode: 'standard_direct',
+      tollFee: '',
+      assignedDriverId: '',
+      calcDistance: null,
+      calcDuration: null,
+      inputDuration: null,
+      showMapSelector: false,
+      mapTarget: 'end',
+      mapSearchText: '',
+      mapAddress: '',
+      mapLocation: null,
+    },
+    '2026-08',
+  );
+
+  assert.equal(parseDriverJourneyAuthorizationDraft(raw, '2026-09'), null);
+  assert.equal(parseDriverJourneyAuthorizationDraft('{broken', '2026-08'), null);
 });
 
 test('journey destinations preserve order and support legacy endPoint documents', () => {

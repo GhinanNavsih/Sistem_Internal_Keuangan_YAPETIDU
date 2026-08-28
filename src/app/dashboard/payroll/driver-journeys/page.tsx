@@ -92,6 +92,13 @@ import {
   type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
 import {
+  driverJourneyDraftStorageKey,
+  parseDriverJourneyAuthorizationDraft,
+  serializeDriverJourneyAuthorizationDraft,
+  type DriverJourneyAuthorizationDraft,
+  type DriverJourneyAuthorizationDraftState,
+} from '@/lib/payroll/driverJourneyDraft';
+import {
   PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH,
   type CostSafePlaceSuggestion,
   useCostSafePlaceAutocomplete,
@@ -319,6 +326,7 @@ function DriverJourneysContent() {
   const month = parseInt(searchParams.get('month') || String(new Date().getMonth() + 1), 10);
   const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()), 10);
   const periodToken = `${year}-${String(month).padStart(2, '0')}`;
+  const draftStorageKey = driverJourneyDraftStorageKey(user?.uid || '', periodToken);
 
   const [journeys, setJourneys] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -329,6 +337,8 @@ function DriverJourneysContent() {
   const [editingJourneyId, setEditingJourneyId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [journeyDraftDirty, setJourneyDraftDirty] = useState(false);
+  const [journeyDraftHydratedKey, setJourneyDraftHydratedKey] = useState<string | null>(null);
 
   const [activityName, setActivityName] = useState('');
   const [activityDate, setActivityDate] = useState(new Date().toISOString().slice(0, 10));
@@ -537,6 +547,10 @@ function DriverJourneysContent() {
   const markerRef = React.useRef<any>(null);
   const mapElementRef = React.useRef<HTMLDivElement | null>(null);
   const lastCalculatedRef = React.useRef('');
+  const latestJourneyDraftRef = React.useRef<DriverJourneyAuthorizationDraftState | null>(null);
+  const draftStorageKeyRef = React.useRef(draftStorageKey);
+  const draftHydratedKeyRef = React.useRef<string | null>(journeyDraftHydratedKey);
+  const draftPeriodTokenRef = React.useRef(periodToken);
 
   const {
     suggestions: placeSuggestions,
@@ -545,6 +559,254 @@ function DriverJourneysContent() {
     search: searchPlaces,
     cancelSearch: cancelPlaceSearch,
   } = useCostSafePlaceAutocomplete({ loadGoogleMapsScript });
+
+  const journeyDraft = useMemo<DriverJourneyAuthorizationDraftState>(() => ({
+    hasUserChanges: journeyDraftDirty,
+    editingJourneyId,
+    activityName,
+    activityDate,
+    startPoint,
+    startPointLocation,
+    endPoint,
+    endPointLocation,
+    additionalDestinations,
+    additionalDestinationLocations,
+    selectedVehicle,
+    fuelProcurementMode,
+    tollFee,
+    assignedDriverId,
+    calcDistance,
+    calcDuration,
+    inputDuration,
+    showMapSelector,
+    mapTarget,
+    mapSearchText,
+    mapAddress,
+    mapLocation,
+  }), [
+    journeyDraftDirty,
+    editingJourneyId,
+    activityName,
+    activityDate,
+    startPoint,
+    startPointLocation,
+    endPoint,
+    endPointLocation,
+    additionalDestinations,
+    additionalDestinationLocations,
+    selectedVehicle,
+    fuelProcurementMode,
+    tollFee,
+    assignedDriverId,
+    calcDistance,
+    calcDuration,
+    inputDuration,
+    showMapSelector,
+    mapTarget,
+    mapSearchText,
+    mapAddress,
+    mapLocation,
+  ]);
+
+  // Keep the latest committed React state available to pagehide/beforeunload.
+  // localStorage is synchronous, so the last successful input can be flushed
+  // even when the browser is about to discard the page.
+  useEffect(() => {
+    latestJourneyDraftRef.current = journeyDraft;
+    draftStorageKeyRef.current = draftStorageKey;
+    draftHydratedKeyRef.current = journeyDraftHydratedKey;
+    draftPeriodTokenRef.current = periodToken;
+  }, [draftStorageKey, journeyDraft, journeyDraftHydratedKey, periodToken]);
+
+  const markJourneyDraftChanged = useCallback(() => {
+    setJourneyDraftDirty(true);
+  }, []);
+
+  const resetJourneyForm = useCallback(() => {
+    setActivityName('');
+    setActivityDate(new Date().toISOString().slice(0, 10));
+    setStartPoint(DEFAULT_DRIVER_JOURNEY_POINT);
+    setStartPointLocation({ ...DEFAULT_DRIVER_JOURNEY_LOCATION });
+    setEndPoint('');
+    setEndPointLocation(null);
+    setAdditionalDestinations([]);
+    setAdditionalDestinationLocations([]);
+    setSelectedVehicle('Suzuki XL7');
+    setFuelProcurementMode(DEFAULT_FUEL_PROCUREMENT_MODE);
+    setTollFee('');
+    setCalcDistance(null);
+    setCalcDuration(null);
+    setInputDuration(null);
+    setCalcError('');
+    setEditingJourneyId(null);
+    setAssignedDriverId('');
+    setShowMapSelector(false);
+    setMapSearchText('');
+    setMapAddress('');
+    setMapLocation(null);
+    setMapSearchError('');
+    setMapTarget('end');
+    setJourneyDraftDirty(false);
+    lastCalculatedRef.current = '';
+  }, []);
+
+  const restoreJourneyDraft = useCallback((draft: DriverJourneyAuthorizationDraft) => {
+    setActivityName(draft.activityName);
+    setActivityDate(draft.activityDate);
+    setStartPoint(draft.startPoint);
+    setStartPointLocation(draft.startPointLocation);
+    setEndPoint(draft.endPoint);
+    setEndPointLocation(draft.endPointLocation);
+    // Restore the timeline arrays without filtering blank rows. Each location
+    // is positional with its destination, including an intentional blank row.
+    setAdditionalDestinations([...draft.additionalDestinations]);
+    setAdditionalDestinationLocations(draft.additionalDestinationLocations.map((location) => (
+      location ? { ...location } : null
+    )));
+    setSelectedVehicle(draft.selectedVehicle);
+    setFuelProcurementMode(draft.fuelProcurementMode);
+    setTollFee(draft.tollFee);
+    setCalcDistance(draft.calcDistance);
+    setCalcDuration(draft.calcDuration);
+    setInputDuration(draft.inputDuration);
+    setEditingJourneyId(draft.editingJourneyId);
+    setAssignedDriverId(draft.assignedDriverId);
+    setShowMapSelector(draft.showMapSelector);
+    setMapTarget(draft.mapTarget);
+    setMapSearchText(draft.mapSearchText);
+    setMapAddress(draft.mapAddress);
+    setMapLocation(draft.mapLocation ? { ...draft.mapLocation } : null);
+    setMapSearchError('');
+    setCalcError('');
+    const destinationEntries = [draft.endPoint, ...draft.additionalDestinations]
+      .map((point, index) => ({
+        address: point.trim(),
+        location: [draft.endPointLocation, ...draft.additionalDestinationLocations][index] || null,
+      }))
+      .filter((entry) => Boolean(entry.address));
+    const restoredRoutePoints = [
+      driverJourneyRoutePoint(draft.startPoint, draft.startPointLocation),
+      ...destinationEntries.map((entry) => driverJourneyRoutePoint(entry.address, entry.location)),
+    ].filter(Boolean);
+    lastCalculatedRef.current = draft.calcDistance !== null && restoredRoutePoints.length >= 2
+      ? restoredRoutePoints.join('\u0000')
+      : '';
+  }, []);
+
+  const persistJourneyDraft = useCallback((draft?: DriverJourneyAuthorizationDraftState | null) => {
+    const candidate = draft || latestJourneyDraftRef.current;
+    const storageKey = draftStorageKeyRef.current;
+    if (
+      typeof window === 'undefined' ||
+      !storageKey ||
+      draftHydratedKeyRef.current !== storageKey ||
+      !candidate?.hasUserChanges
+    ) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        storageKey,
+        serializeDriverJourneyAuthorizationDraft(candidate, draftPeriodTokenRef.current),
+      );
+    } catch (error) {
+      // A private-browsing quota/security failure must never interrupt form
+      // input or prevent the final server submission.
+      console.error('Unable to persist driver journey draft:', error);
+    }
+  }, []);
+
+  const clearJourneyDraft = useCallback(() => {
+    const storageKey = draftStorageKeyRef.current;
+    if (typeof window === 'undefined' || !storageKey) return;
+    try {
+      window.localStorage.removeItem(storageKey);
+    } catch (error) {
+      console.error('Unable to clear driver journey draft:', error);
+    }
+  }, []);
+
+  // Hydrate once per authenticated user/period. The key and payload are both
+  // scoped so changing the payroll period cannot display another period's
+  // destination timeline.
+  useEffect(() => {
+    if (journeyDraftHydratedKey === draftStorageKey) return;
+
+    let draft: DriverJourneyAuthorizationDraft | null = null;
+    if (draftStorageKey && typeof window !== 'undefined') {
+      try {
+        draft = parseDriverJourneyAuthorizationDraft(
+          window.localStorage.getItem(draftStorageKey),
+          periodToken,
+        );
+      } catch (error) {
+        console.error('Unable to read driver journey draft:', error);
+      }
+    }
+
+    // This effect intentionally hydrates React state from localStorage. The
+    // set-state-in-effect rule is not applicable to this external-store sync.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (draft) {
+      restoreJourneyDraft(draft);
+      setJourneyDraftDirty(true);
+      setShowAddForm(true);
+      setMessage({ type: 'success', text: 'Draft perjalanan dipulihkan.' });
+    } else {
+      resetJourneyForm();
+      setShowAddForm(false);
+    }
+    setJourneyDraftHydratedKey(draftStorageKey);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [
+    draftStorageKey,
+    journeyDraftHydratedKey,
+    periodToken,
+    resetJourneyForm,
+    restoreJourneyDraft,
+  ]);
+
+  // Persist each committed form state change. This includes the full ordered
+  // destination timeline and its coordinate arrays, not just the last field
+  // that happened to receive focus.
+  useEffect(() => {
+    if (
+      showAddForm &&
+      journeyDraftDirty &&
+      journeyDraftHydratedKey === draftStorageKey
+    ) {
+      persistJourneyDraft(journeyDraft);
+    }
+  }, [
+    draftStorageKey,
+    journeyDraft,
+    journeyDraftDirty,
+    journeyDraftHydratedKey,
+    persistJourneyDraft,
+    showAddForm,
+  ]);
+
+  // React effects normally run before the next user interaction, but these
+  // lifecycle hooks cover app close, tab discard, reload, and mobile
+  // backgrounding as well.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const flushDraft = () => persistJourneyDraft();
+    const flushWhenHidden = () => {
+      if (document.visibilityState === 'hidden') flushDraft();
+    };
+
+    window.addEventListener('pagehide', flushDraft);
+    window.addEventListener('beforeunload', flushDraft);
+    document.addEventListener('visibilitychange', flushWhenHidden);
+    return () => {
+      window.removeEventListener('pagehide', flushDraft);
+      window.removeEventListener('beforeunload', flushDraft);
+      document.removeEventListener('visibilitychange', flushWhenHidden);
+    };
+  }, [persistJourneyDraft]);
 
   const mainDestinationEntries = useMemo(() => (
     [endPoint, ...additionalDestinations]
@@ -677,6 +939,7 @@ function DriverJourneysContent() {
       const geocoder = new google.maps.Geocoder();
 
       const updateAddress = (latLng: any, syncSearchText = true) => {
+        markJourneyDraftChanged();
         cancelPlaceSearch();
         setMapSearchError('');
         geocoder.geocode({ location: latLng }, (results: any, status: any) => {
@@ -778,6 +1041,7 @@ function DriverJourneysContent() {
           mapRef.current?.setCenter(location);
           mapRef.current?.setZoom(16);
           markerRef.current?.setPosition(location);
+          markJourneyDraftChanged();
           setMapAddress(address);
           setMapSearchText(address);
           setMapLocation(locationFromGoogle(address, location));
@@ -787,6 +1051,7 @@ function DriverJourneysContent() {
   };
 
   const handleMapSearchChange = (value: string) => {
+    markJourneyDraftChanged();
     setMapSearchText(value);
     setMapAddress('');
     setMapLocation(null);
@@ -795,6 +1060,7 @@ function DriverJourneysContent() {
   };
 
   const handlePlaceSuggestionSelect = (suggestion: CostSafePlaceSuggestion) => {
+    markJourneyDraftChanged();
     cancelPlaceSearch();
     setMapSearchText(suggestion.queryText);
     performGeocodeSearch(suggestion.queryText);
@@ -1040,6 +1306,7 @@ function DriverJourneysContent() {
       });
       return;
     }
+    markJourneyDraftChanged();
     const newIndex = additionalDestinations.length;
     setAdditionalDestinations((previous) => [...previous, '']);
     setAdditionalDestinationLocations((previous) => [...previous, null]);
@@ -1053,11 +1320,26 @@ function DriverJourneysContent() {
   };
 
   const removeMainDestination = (index: number) => {
+    markJourneyDraftChanged();
     setAdditionalDestinations((previous) => previous.filter((_, itemIndex) => itemIndex !== index));
     setAdditionalDestinationLocations((previous) => previous.filter((_, itemIndex) => itemIndex !== index));
     lastCalculatedRef.current = '';
     setCalcDistance(null);
     setCalcDuration(null);
+  };
+
+  const openJourneyForm = () => {
+    setShowAddForm(true);
+  };
+
+  const closeJourneyForm = () => {
+    // Flush before closing because the dialog's close event can be the last
+    // event delivered before a mobile browser backgrounds this page.
+    const currentDraft = latestJourneyDraftRef.current;
+    persistJourneyDraft(currentDraft ? { ...currentDraft, showMapSelector: false } : null);
+    cancelPlaceSearch();
+    setShowMapSelector(false);
+    setShowAddForm(false);
   };
 
   // ── Submit Journey Creation ──
@@ -1111,6 +1393,7 @@ function DriverJourneysContent() {
         }),
       });
       await loadFuelBalances();
+      clearJourneyDraft();
 
       setMessage({
         type: 'success',
@@ -1132,6 +1415,13 @@ function DriverJourneysContent() {
       setAssignedDriverId('');
       setTollFee('');
       setFuelProcurementMode(DEFAULT_FUEL_PROCUREMENT_MODE);
+      setJourneyDraftDirty(false);
+      setShowMapSelector(false);
+      setMapSearchText('');
+      setMapAddress('');
+      setMapLocation(null);
+      setMapSearchError('');
+      setMapTarget('end');
       lastCalculatedRef.current = '';
       setShowAddForm(false);
     } catch (err: any) {
@@ -1305,7 +1595,7 @@ function DriverJourneysContent() {
             </SelectContent>
           </Select>
           <Button
-            onClick={() => setShowAddForm(true)}
+            onClick={openJourneyForm}
             className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-200 text-xs px-4 h-10 gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -1576,6 +1866,7 @@ function DriverJourneysContent() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => {
+                                      markJourneyDraftChanged();
                                       setEditingJourneyId(j.id);
                                       setActivityName(j.activityName);
                                       setActivityDate(getJourneyDate(j));
@@ -1610,6 +1901,13 @@ function DriverJourneysContent() {
                                       setInputDuration(j.customDurationPP || (j.durationHours ? j.durationHours * 2 : 0));
                                       setTollFee(j.tollParkingFee ? String(j.tollParkingFee) : '');
                                       setAssignedDriverId(j.assignedTo || '');
+                                      setShowMapSelector(false);
+                                      setMapSearchText('');
+                                      setMapAddress('');
+                                      setMapLocation(null);
+                                      setMapSearchError('');
+                                      setMapTarget('end');
+                                      setCalcError('');
                                       lastCalculatedRef.current = '';
                                       setShowAddForm(true);
                                     }}
@@ -1964,25 +2262,11 @@ function DriverJourneysContent() {
 
       {/* Creation Modal */}
       <Dialog open={showAddForm} onOpenChange={(open) => {
-        if (!open) {
-          setActivityName('');
-          setActivityDate(new Date().toISOString().slice(0, 10));
-          setStartPoint(DEFAULT_DRIVER_JOURNEY_POINT);
-          setStartPointLocation({ ...DEFAULT_DRIVER_JOURNEY_LOCATION });
-          setEndPoint('');
-          setEndPointLocation(null);
-          setAdditionalDestinations([]);
-          setAdditionalDestinationLocations([]);
-          setCalcDistance(null);
-          setCalcDuration(null);
-          setInputDuration(null);
-          setCalcError('');
-          setEditingJourneyId(null);
-          setAssignedDriverId('');
-          setTollFee('');
-          lastCalculatedRef.current = '';
+        if (open) {
+          setShowAddForm(true);
+        } else {
+          closeJourneyForm();
         }
-        setShowAddForm(open);
       }}>
         <DialogContent className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-none h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl bg-white border-slate-100 shadow-2xl p-6 lg:p-8">
           <DialogHeader>
@@ -2008,7 +2292,10 @@ function DriverJourneysContent() {
                   id="journeyName"
                   placeholder="Contoh: Mengantar Dekan FIK Rapat di UINSA"
                   value={activityName}
-                  onChange={(e) => setActivityName(e.target.value)}
+                  onChange={(e) => {
+                    markJourneyDraftChanged();
+                    setActivityName(e.target.value);
+                  }}
                   className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
                   required
                   autoComplete="off"
@@ -2022,7 +2309,10 @@ function DriverJourneysContent() {
                   id="journeyDate"
                   type="date"
                   value={activityDate}
-                  onChange={(e) => setActivityDate(e.target.value)}
+                  onChange={(e) => {
+                    markJourneyDraftChanged();
+                    setActivityDate(e.target.value);
+                  }}
                   className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm h-10 px-3"
                   required
                 />
@@ -2034,7 +2324,13 @@ function DriverJourneysContent() {
               <Label htmlFor="driverAssignment" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                 Penugasan Sopir (Opsional)
               </Label>
-              <Select value={assignedDriverId || 'unassigned'} onValueChange={(v: string | null) => setAssignedDriverId(!v || v === 'unassigned' ? '' : v)}>
+              <Select
+                value={assignedDriverId || 'unassigned'}
+                onValueChange={(v: string | null) => {
+                  markJourneyDraftChanged();
+                  setAssignedDriverId(!v || v === 'unassigned' ? '' : v);
+                }}
+              >
                 <SelectTrigger id="driverAssignment" className="w-full text-sm font-bold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
                   <SelectValue>
                     {(() => {
@@ -2090,6 +2386,7 @@ function DriverJourneysContent() {
                 <Select
                   value={selectedVehicle}
                   onValueChange={(val: any) => {
+                    markJourneyDraftChanged();
                     setSelectedVehicle(val);
                     if (val === 'Ndalem') setFuelProcurementMode(DEFAULT_FUEL_PROCUREMENT_MODE);
                   }}
@@ -2125,6 +2422,7 @@ function DriverJourneysContent() {
                   placeholder="Contoh: 3.0"
                   value={inputDuration !== null ? inputDuration : ''}
                   onChange={(e) => {
+                    markJourneyDraftChanged();
                     const val = e.target.value;
                     setInputDuration(val === '' ? null : parseFloat(val));
                   }}
@@ -2142,6 +2440,7 @@ function DriverJourneysContent() {
                   placeholder="Contoh: 50.000"
                   value={tollFee}
                   onChange={(e) => {
+                    markJourneyDraftChanged();
                     const val = e.target.value.replace(/\D/g, '');
                     setTollFee(val ? Number(val).toLocaleString('id-ID') : '');
                   }}
@@ -2167,6 +2466,7 @@ function DriverJourneysContent() {
                 value={selectedVehicle === 'Ndalem' ? DEFAULT_FUEL_PROCUREMENT_MODE : fuelProcurementMode}
                 onValueChange={(value) => {
                   if (isFuelProcurementMode(value) && selectedVehicle !== 'Ndalem') {
+                    markJourneyDraftChanged();
                     setFuelProcurementMode(value);
                   }
                 }}
@@ -2541,7 +2841,7 @@ function DriverJourneysContent() {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => setShowAddForm(false)}
+                onClick={closeJourneyForm}
                 className="rounded-xl font-bold text-slate-500 hover:bg-slate-50 text-xs px-4"
               >
                 Batal
@@ -2606,6 +2906,7 @@ function DriverJourneysContent() {
                 <button
                   type="button"
                   onClick={() => {
+                    markJourneyDraftChanged();
                     setMapSearchText('');
                     setMapAddress('');
                     setMapLocation(null);
@@ -2719,6 +3020,7 @@ function DriverJourneysContent() {
                 type="button"
                 disabled={!mapAddress || !mapLocation}
                 onClick={() => {
+                  markJourneyDraftChanged();
                   if (mapTarget === 'start') {
                     setStartPoint(mapAddress);
                     setStartPointLocation(mapLocation);
