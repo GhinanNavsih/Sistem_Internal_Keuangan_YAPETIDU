@@ -305,13 +305,13 @@ export async function POST(request: NextRequest) {
       if (!['pending_review', 'under_review'].includes(String(occurrence.status))) {
         throw new HttpError(409, 'Shift ini sudah pernah diaudit atau memakai alur lama.');
       }
-      if (
-        occurrence.reviewOwnerUid &&
-        occurrence.reviewOwnerUid !== actor.uid &&
-        actor.role !== 'super_admin'
-      ) {
-        throw new HttpError(409, 'Shift ini sedang ditangani oleh auditor lain.');
-      }
+      // reviewOwnerUid is still stamped below for its historical "who last
+      // touched this" value, but it no longer gates who may act: any
+      // super_admin/satker_head auditor eligible to reach this route (per
+      // requireRole above) may approve/decline a shift regardless of who
+      // opened or previously edited it. A single-owner claim meant to avoid
+      // concurrent edits instead let one auditor touching a shift lock every
+      // other eligible auditor out of it, including for a plain approval.
       const expectedReportIds = Array.isArray(occurrence.pendingReportIds)
         ? occurrence.pendingReportIds.filter(
             (reportId: unknown): reportId is string =>
@@ -888,13 +888,8 @@ export async function PUT(request: NextRequest) {
       ) {
         throw new HttpError(409, 'Shift ini sudah selesai diaudit.');
       }
-      if (
-        before.reviewOwnerUid &&
-        before.reviewOwnerUid !== actor.uid &&
-        actor.role !== 'super_admin'
-      ) {
-        throw new HttpError(409, 'Shift ini sedang ditangani oleh auditor lain.');
-      }
+      // See the matching note in the POST handler above: reviewOwnerUid no
+      // longer blocks a different eligible auditor from editing this shift.
       if (Number(before.revision || 1) !== command.expectedRevision) {
         throw new HttpError(
           409,
