@@ -59,6 +59,7 @@ import {
   sumSlipFields,
 } from '@/lib/payroll/dashboardSlipData';
 import { isPayableVakasiTambahan } from '@/lib/payroll/vakasiTambahan';
+import { isPekaryaJobCategory } from '@/lib/payroll/pekaryaSpj';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
 
@@ -473,7 +474,7 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
 
         {shareOfEarningView === 'treemap' ? (
           <div className="w-full" style={{ height: type === 'semua' ? 450 : 300, minWidth: 0 }}>
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 100, height: 100 }}>
               <Treemap
                 width={100}
                 height={100}
@@ -487,7 +488,7 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
           </div>
         ) : shareOfEarningView === 'bar' ? (
           <div className="w-full" style={{ height: type === 'semua' ? 450 : 300, minWidth: 0 }}>
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 100, height: 100 }}>
               <BarChart layout="vertical" width={100} height={100} data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                 <XAxis
@@ -530,7 +531,7 @@ const EarningShareSection: React.FC<EarningShareSectionProps> = ({
           </div>
         ) : (
           <div className="w-full h-[300px]" style={{ minWidth: 0 }}>
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 100, height: 100 }}>
               <PieChart width={100} height={100}>
                 <Legend
                   verticalAlign="top"
@@ -814,9 +815,10 @@ export default function TreasuryDashboard() {
   // in PayrollSlipStates use their saved records directly and do not need
   // expensive multi-collection server preview queries.
   const periodsNeedingPreview = useMemo(() => {
+    if (dataLoading || contextLoading) return [];
     const range = computePayrollPeriodRange(slips, selectedPeriod);
     const activePekarya = employeesBlueCollar.filter(
-      (e) => e.flags?.isActive !== false,
+      (e) => e.flags?.isActive !== false && isPekaryaJobCategory(e.employment?.jobCategory),
     );
 
     return range.filter((period) => {
@@ -824,7 +826,7 @@ export default function TreasuryDashboard() {
       const periodSlips = slipsByPeriod[period] || {};
       return activePekarya.some((e) => !periodSlips[e.id]?.earnings);
     });
-  }, [slips, selectedPeriod, employeesBlueCollar, slipsByPeriod]);
+  }, [dataLoading, contextLoading, slips, selectedPeriod, employeesBlueCollar, slipsByPeriod]);
 
   // The shared Pekarya earnings preview (matrix-sourced Gaji Pokok, approved
   // activity/event SPJ, published-or-estimated attendance) — loaded only
@@ -838,6 +840,14 @@ export default function TreasuryDashboard() {
 
   // In-flight tracker to strictly prevent duplicate parallel fetches
   const inFlightFetches = useRef<Set<string>>(new Set());
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Which periods still need previews loaded?
   const pendingPeriods = useMemo(() => {
@@ -860,6 +870,7 @@ export default function TreasuryDashboard() {
     const missingCount = employeesBlueCollar.filter(
       (employee) =>
         employee.flags?.isActive !== false &&
+        isPekaryaJobCategory(employee.employment?.jobCategory) &&
         !periodSlips[employee.id]?.earnings &&
         !previews[employee.id],
     ).length;
@@ -883,75 +894,68 @@ export default function TreasuryDashboard() {
       (period) => !inFlightFetches.current.has(period),
     );
 
-    if (periodsToFetch.length === 0) return;
+    if (periodsToFetch.length === 0) {
+      if (inFlightFetches.current.size === 0 && pekaryaPreviewsLoading) {
+        setPekaryaPreviewsLoading(false);
+      }
+      return;
+    }
 
     periodsToFetch.forEach((p) => inFlightFetches.current.add(p));
     setPekaryaPreviewsLoading(true);
 
-    let isMounted = true;
+    periodsToFetch.forEach(async (period) => {
+      const periodToken = period.replace('_', '-');
+      let previews: Record<string, PekaryaSlipPreview> | null = null;
+      let error: string | null = null;
 
-    Promise.all(
-      periodsToFetch.map(async (period) => {
-        const periodToken = period.replace('_', '-');
-        try {
-          const result = await authenticatedJson<{
-            previews: Record<string, PekaryaSlipPreview>;
-          }>(`/api/payroll/slip-preview?period=${periodToken}`);
-          return {
-            period,
-            previews: result.previews || {},
-            error: null,
-          };
-        } catch (err) {
-          console.error(`Gagal memuat pratinjau slip Pekarya untuk ${period}:`, err);
-          return {
-            period,
-            previews: null,
-            error:
-              err instanceof Error
-                ? err.message
-                : 'Gagal memuat pratinjau perhitungan Pekarya.',
-          };
-        } finally {
-          inFlightFetches.current.delete(period);
+      try {
+        const result = await authenticatedJson<{
+          previews: Record<string, PekaryaSlipPreview>;
+        }>(`/api/payroll/slip-preview?period=${periodToken}`);
+        previews = result.previews || {};
+      } catch (err) {
+        console.error(`Gagal memuat pratinjau slip Pekarya untuk ${period}:`, err);
+        error =
+          err instanceof Error
+            ? err.message
+            : 'Gagal memuat pratinjau perhitungan Pekarya.';
+      } finally {
+        inFlightFetches.current.delete(period);
+
+        if (previews) {
+          writePekaryaSessionCache(period, previews);
         }
-      }),
-    ).then((results) => {
-      // Store in module session cache
-      results.forEach((result) => {
-        if (result.previews) {
-          writePekaryaSessionCache(result.period, result.previews);
-        }
-      });
 
-      if (!isMounted) return;
-
-      setPekaryaPreviewsByPeriod((prev) => {
-        const next = { ...prev };
-        results.forEach((result) => {
-          if (result.previews) {
-            next[result.period] = result.previews;
+        if (isMountedRef.current) {
+          if (previews) {
+            setPekaryaPreviewsByPeriod((prev) => ({
+              ...prev,
+              [period]: previews!,
+            }));
           }
-        });
-        return next;
-      });
 
-      setPekaryaPreviewErrorsByPeriod((prev) => {
-        const next = { ...prev };
-        results.forEach((result) => {
-          if (result.error) next[result.period] = result.error;
-          else delete next[result.period];
-        });
-        return next;
-      });
+          if (error) {
+            setPekaryaPreviewErrorsByPeriod((prev) => ({
+              ...prev,
+              [period]: error!,
+            }));
+          } else {
+            setPekaryaPreviewErrorsByPeriod((prev) => {
+              if (!(period in prev)) return prev;
+              const next = { ...prev };
+              delete next[period];
+              return next;
+            });
+          }
 
-      setPekaryaPreviewsLoading(false);
+          if (inFlightFetches.current.size === 0) {
+            setPekaryaPreviewsLoading(false);
+          }
+        }
+      }
     });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [pendingPeriods, profile]);
+  }, [pendingPeriods, profile, pekaryaPreviewsLoading]);
 
   // An explicit refresh drops every cached period, not just the selected one:
   // the cumulative trend reads previews across the whole period range, so a
@@ -2086,7 +2090,7 @@ export default function TreasuryDashboard() {
                       <p className="text-center text-slate-400 text-sm py-12">Tidak ada penerimaan pada periode ini</p>
                     ) : earningsView === 'treemap' ? (
                       <div className="w-full h-[300px]" style={{ minWidth: 0, minHeight: 0 }}>
-                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 100, height: 100 }}>
                           <Treemap
                             width={100}
                             height={100}
@@ -2100,7 +2104,7 @@ export default function TreasuryDashboard() {
                       </div>
                     ) : earningsView === 'bar' ? (
                       <div className="w-full h-[300px]" style={{ minWidth: 0, minHeight: 0 }}>
-                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 100, height: 100 }}>
                           <BarChart data={sortedEarnings} margin={{ top: 10, right: 10, left: 10, bottom: 65 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis dataKey="name" tickFormatter={(val) => val.length > 12 ? `${val.substring(0, 12)}...` : val} tick={{ fill: '#64748b', fontSize: 10 }} angle={-45} textAnchor="end" height={60} tickLine={false} axisLine={false} />
@@ -2116,7 +2120,7 @@ export default function TreasuryDashboard() {
                       </div>
                     ) : (
                       <div className="w-full h-[300px]" style={{ minWidth: 0, minHeight: 0 }}>
-                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 100, height: 100 }}>
                           <PieChart>
                             <Legend
                               verticalAlign="top"
@@ -2222,7 +2226,7 @@ export default function TreasuryDashboard() {
                       <p className="text-center text-slate-400 text-sm py-12">Tidak ada potongan terpotong pada periode ini</p>
                     ) : deductionsView === 'treemap' ? (
                       <div className="w-full h-[300px]" style={{ minWidth: 0, minHeight: 0 }}>
-                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 100, height: 100 }}>
                           <Treemap
                             width={100}
                             height={100}
@@ -2236,7 +2240,7 @@ export default function TreasuryDashboard() {
                       </div>
                     ) : deductionsView === 'bar' ? (
                       <div className="w-full h-[300px]" style={{ minWidth: 0, minHeight: 0 }}>
-                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 100, height: 100 }}>
                           <BarChart data={sortedDeductions} margin={{ top: 10, right: 10, left: 10, bottom: 65 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                             <XAxis dataKey="name" tickFormatter={(val) => val.length > 12 ? `${val.substring(0, 12)}...` : val} tick={{ fill: '#64748b', fontSize: 10 }} angle={-45} textAnchor="end" height={60} tickLine={false} axisLine={false} />
@@ -2252,7 +2256,7 @@ export default function TreasuryDashboard() {
                       </div>
                     ) : (
                       <div className="w-full h-[300px]" style={{ minWidth: 0, minHeight: 0 }}>
-                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 100, height: 100 }}>
                           <PieChart>
                             <Legend
                               verticalAlign="top"

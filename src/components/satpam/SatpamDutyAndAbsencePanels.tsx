@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  Camera,
   CalendarDays,
   ClipboardList,
   Clock3,
@@ -1311,7 +1312,7 @@ export function SatpamAbsencePanel(props: {
   }, [load]);
 
   const submit = async () => {
-    if (!dutyDate || reason.trim().length < 8) return;
+    if (!dutyDate) return;
     if (!selectedDuty) {
       setError('Pilih tanggal kewajiban dinas terlebih dahulu.');
       return;
@@ -1513,10 +1514,11 @@ export function SatpamAbsencePanel(props: {
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="absence-reason">Alasan lengkap</Label>
+              <Label htmlFor="absence-reason">Alasan lengkap (opsional)</Label>
               <textarea
                 id="absence-reason"
                 className="min-h-28 w-full rounded-xl border border-slate-300 p-3 text-base"
+                maxLength={500}
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 placeholder={
@@ -1528,22 +1530,42 @@ export function SatpamAbsencePanel(props: {
             </div>
             <div className="space-y-2">
               <Label htmlFor="absence-evidence">Foto bukti (opsional)</Label>
-              <Input
-                id="absence-evidence"
-                type="file"
-                accept="image/*"
-                className="min-h-12"
-                onChange={(event) =>
-                  setEvidenceFile(event.target.files?.[0] || null)
-                }
-              />
+              <label
+                htmlFor="absence-evidence"
+                className="flex min-h-12 w-full cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white transition-colors hover:bg-slate-50 focus-within:border-amber-500 focus-within:ring-3 focus-within:ring-amber-500/20"
+              >
+                <Camera
+                  className="h-6 w-6 text-slate-500"
+                  aria-hidden="true"
+                />
+                <span className="sr-only">
+                  {evidenceFile
+                    ? `Ganti foto bukti: ${evidenceFile.name}`
+                    : 'Pilih foto bukti'}
+                </span>
+                <Input
+                  id="absence-evidence"
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="sr-only"
+                  onChange={(event) =>
+                    setEvidenceFile(event.target.files?.[0] || null)
+                  }
+                />
+              </label>
+              {evidenceFile && (
+                <p className="truncate text-xs text-slate-500">
+                  {evidenceFile.name}
+                </p>
+              )}
             </div>
             <Button
               type="button"
               className="min-h-12 w-full gap-2 bg-amber-600 hover:bg-amber-700"
               disabled={
                 working ||
-                reason.trim().length < 8 ||
+                reason.trim().length > 500 ||
                 (reportType === 'scan' && scanRangeInvalid)
               }
               onClick={() => void submit()}

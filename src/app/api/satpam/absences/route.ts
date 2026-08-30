@@ -236,10 +236,10 @@ export async function POST(request: NextRequest) {
       }
       reportType = body.reportType;
       reason = String(body.reason || '').trim();
-      if (reason.length < 8 || reason.length > 500) {
+      if (reason.length > 500) {
         throw new HttpError(
           400,
-          'Alasan pengajuan wajib diisi antara 8 dan 500 karakter.',
+          'Alasan pengajuan maksimal 500 karakter.',
         );
       }
       if (reportType === 'scan') {
@@ -444,7 +444,9 @@ export async function POST(request: NextRequest) {
           requestId,
           reason:
             reason ||
-            `Pengajuan ${effectiveReportType === 'scan' ? 'presensi' : 'izin'} ditarik oleh Satpam.`,
+            (action === 'withdraw'
+              ? `Pengajuan ${effectiveReportType === 'scan' ? 'presensi' : 'izin'} ditarik oleh Satpam.`
+              : `Pengajuan ${effectiveReportType === 'scan' ? 'presensi' : 'izin'} dikirim tanpa keterangan tambahan oleh Satpam.`),
           before,
           after,
           metadata: { late, planRevision: plan.revision },

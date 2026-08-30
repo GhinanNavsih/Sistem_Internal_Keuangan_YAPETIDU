@@ -17,6 +17,8 @@ import {
   resolveExternalSatpamPayType,
   resolveDesignatedPos9PayType,
   resolveKetuaSatpamPayType,
+  resolveCrossTeamPos9PayType,
+  defaultSatpamAssignmentPayType,
   resolveSatpamAssignmentPayType,
   SATPAM_RATES,
   shiftOccurrenceId,
@@ -174,6 +176,40 @@ test('a Ketua Shift cannot pick an arbitrary pay rate for a regular post', () =>
   assert.equal(resolveDesignatedPos9PayType('Lembur Sendiri', 'Jumat & Libur'), 'Lembur Sendiri');
   assert.equal(resolveDesignatedPos9PayType('Harian', 'Jumat & Libur'), 'Harian');
   assert.equal(resolveDesignatedPos9PayType(undefined, 'Jumat & Libur'), 'Jumat & Libur');
+});
+
+test('the reporting form seeds a pay type the resolvers will honour unchanged', () => {
+  // A seeded default is submitted verbatim, and every resolver reads an
+  // explicit 'Harian' as a deliberate override of the work calendar. So the
+  // seed must survive its own resolver untouched on a premium date, or the
+  // guard is silently paid the ordinary rate for a Friday/holiday shift.
+  for (const regularPayType of ['Harian', 'Jumat & Libur'] as const) {
+    const ketuaSeed = defaultSatpamAssignmentPayType(false, regularPayType);
+    assert.equal(
+      resolveKetuaSatpamPayType(ketuaSeed, regularPayType),
+      regularPayType,
+      `Ketua Shift seed must resolve back to ${regularPayType}`,
+    );
+
+    const pos9Seed = defaultSatpamAssignmentPayType(false, regularPayType);
+    assert.equal(
+      resolveDesignatedPos9PayType(pos9Seed, regularPayType),
+      regularPayType,
+      `in-roster designated Pos 9 seed must resolve back to ${regularPayType}`,
+    );
+
+    // A guard from outside the regu is paid on the substitution ladder, which
+    // has no 'Jumat & Libur' rung. Seeding the calendar rate there would show a
+    // premium in the form that the resolver then silently downgrades.
+    const externalSeed = defaultSatpamAssignmentPayType(true, regularPayType);
+    assert.equal(externalSeed, 'Harian');
+    assert.equal(resolveExternalSatpamPayType(externalSeed), 'Harian');
+    assert.equal(resolveCrossTeamPos9PayType(externalSeed), 'Harian');
+  }
+
+  // The specific regression: a Friday/holiday must not seed 'Harian' for the
+  // Ketua Shift's own post or an in-roster designated Pos 9.
+  assert.equal(defaultSatpamAssignmentPayType(false, 'Jumat & Libur'), 'Jumat & Libur');
 });
 
 test('guard post photo URLs must live in the submitting Ketua Shift folder', () => {

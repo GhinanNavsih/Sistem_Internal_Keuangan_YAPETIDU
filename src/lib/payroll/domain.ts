@@ -517,6 +517,31 @@ export function resolveCrossTeamPos9PayType(
   return resolveExternalSatpamPayType(requestedShiftType);
 }
 
+/**
+ * The pay type a reporting form must seed for a post assignment before the
+ * Ketua Shift makes any explicit choice.
+ *
+ * Reporting forms have to send *some* shiftType, and every resolver above
+ * treats an explicit 'Harian' as a deliberate override that beats the work
+ * calendar. A form that seeds 'Harian' on a Friday or national holiday
+ * therefore does not merely show the wrong default — it silently pays the
+ * ordinary rate to a guard who earned the premium one. Seeding must go through
+ * here so the form and the resolvers cannot drift apart.
+ *
+ * A guard from outside the regu, including a cross-team Pos 9 guard, is paid on
+ * the substitution ladder, which has no 'Jumat & Libur' rung, so Harian is
+ * genuinely their default. Everyone on ordinary duty follows the calendar —
+ * the Ketua Shift's own post and an in-roster designated Pos 9 included,
+ * because `resolveKetuaSatpamPayType` and `resolveDesignatedPos9PayType` both
+ * fall back to `regularPayType`.
+ */
+export function defaultSatpamAssignmentPayType(
+  isExternalGuard: boolean,
+  regularPayType: 'Harian' | 'Jumat & Libur',
+): 'Harian' | 'Jumat & Libur' {
+  return isExternalGuard ? 'Harian' : regularPayType;
+}
+
 export function getShiftIsoBounds(
   dutyDate: string,
   shiftName: SatpamShiftName,

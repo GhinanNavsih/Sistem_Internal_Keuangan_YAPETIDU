@@ -8,6 +8,7 @@
  *   npm run audit:satpam-payroll -- --period 2026-07
  */
 import { adminDb } from '../src/lib/firebase-admin';
+import { periodCalendarFromData } from '../src/lib/payroll/calendar';
 import {
   getRegularSatpamPayType,
   inferLegacySatpamReportKind,
@@ -34,23 +35,30 @@ function requiredPeriod(): string {
 async function main() {
   const period = requiredPeriod();
   const year = period.slice(0, 4);
-  const [activitySnapshot, slipSnapshot, paymentSnapshot, calendarSnapshot, employeeSnapshot] =
-    await Promise.all([
-      adminDb.collection('ActivityReports').where('period', '==', period).get(),
-      adminDb
-        .collection('PayrollSlipStates')
-        .where('period', '==', period.replace('-', '_'))
-        .get(),
-      adminDb
-        .collection('PayrollPayments')
-        .where('period', '==', period.replace('-', '_'))
-        .get(),
-      adminDb.collection('PayrollHolidayCalendars').doc(year).get(),
-      adminDb
-        .collection('Employees_BlueCollar')
-        .where('employment.jobCategory', '==', 'SATPAM')
-        .get(),
-    ]);
+  const [
+    activitySnapshot,
+    slipSnapshot,
+    paymentSnapshot,
+    calendarSnapshot,
+    periodSnapshot,
+    employeeSnapshot,
+  ] = await Promise.all([
+    adminDb.collection('ActivityReports').where('period', '==', period).get(),
+    adminDb
+      .collection('PayrollSlipStates')
+      .where('period', '==', period.replace('-', '_'))
+      .get(),
+    adminDb
+      .collection('PayrollPayments')
+      .where('period', '==', period.replace('-', '_'))
+      .get(),
+    adminDb.collection('PayrollHolidayCalendars').doc(year).get(),
+    adminDb.collection('PayrollPeriods').doc(period).get(),
+    adminDb
+      .collection('Employees_BlueCollar')
+      .where('employment.jobCategory', '==', 'SATPAM')
+      .get(),
+  ]);
   const satpamEmployeeIds = new Set(
     employeeSnapshot.docs.map((document) => document.id),
   );
@@ -61,13 +69,22 @@ async function main() {
     satpamEmployeeIds.has(String(document.data().employeeId || '')),
   );
 
-  const holidayDates = new Set<string>(
-    Array.isArray(calendarSnapshot.data()?.dates)
-      ? calendarSnapshot
-          .data()!
-          .dates.filter((date: unknown): date is string => typeof date === 'string')
-      : [],
+  // Rate against the same calendar the payment path uses. Once a period is
+  // materialized it owns a frozen `workCalendar.premiumDates` that overrides the
+  // annual accumulator entirely (see periodCalendarFromData); auditing against
+  // the raw annual document instead reports every premium date the period froze
+  // but the annual doc never recorded as a mismatch, which is a false positive.
+  const annualDates = Array.isArray(calendarSnapshot.data()?.dates)
+    ? calendarSnapshot
+        .data()!
+        .dates.filter((date: unknown): date is string => typeof date === 'string')
+    : [];
+  const periodCalendar = periodCalendarFromData(
+    period,
+    periodSnapshot.exists ? periodSnapshot.data()! : null,
+    annualDates,
   );
+  const holidayDates = new Set<string>(periodCalendar.premiumDates);
   const findings: AuditFinding[] = [];
   const financialKeys = new Map<string, string>();
   const allPeriodReports: Array<SatpamActivityLike & Record<string, unknown>> =

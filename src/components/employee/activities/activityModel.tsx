@@ -45,6 +45,7 @@ import {
   type SatpamShiftPendingDraft,
 } from '@/lib/satpamShiftDraft';
 import {
+  defaultSatpamAssignmentPayType,
   payrollPeriodForDutyDate,
   SatpamPostId,
   SatpamPayType,
@@ -2497,16 +2498,12 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
   ) => {
     setPostAssignments(prev => {
       const isExternal = !groupEmployeeIds.includes(employeeId) && employeeId !== '';
-      const isDesignatedPos9 =
-        postId === 'Pos 9' && Boolean(employeeId) && pos9GuardIds.has(employeeId);
-      const isKetua = employeeId !== '' && employeeId === myShiftTeam?.ketuaShiftId;
       const defaultType =
         forced?.shiftType ||
-        (isKetua || isDesignatedPos9
-          ? 'Harian'
-          : isExternal
-            ? 'Harian'
-            : getDefaultShiftTypeForDate(satpamReportDate));
+        defaultSatpamAssignmentPayType(
+          isExternal,
+          getDefaultShiftTypeForDate(satpamReportDate),
+        );
 
       return {
         ...prev,

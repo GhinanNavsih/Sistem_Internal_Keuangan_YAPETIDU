@@ -1014,7 +1014,7 @@ function JourneyReportContent() {
     setMapSearchError('');
   };
 
-  const geocodeMapSearch = (queryText: string) => {
+  const geocodeMapSearch = (queryText: string, displayLabel?: string) => {
     const normalizedQuery = queryText.trim();
     if (!normalizedQuery) return;
 
@@ -1054,8 +1054,11 @@ function JourneyReportContent() {
             mapRef.current?.setZoom(16);
             markerRef.current?.setPosition(location);
 
-            const formattedAddress = firstResult.formatted_address || normalizedQuery;
-            const selectedAddress = formattedAddress;
+            // Google may return an Open Location Code (for example,
+            // "F74H+J34") as the formatted address. Keep the place title the
+            // sopir selected for display and persistence while still using the
+            // geocoder result's coordinates for routing.
+            const selectedAddress = displayLabel?.trim() || firstResult.formatted_address || normalizedQuery;
             setMapAddress(selectedAddress);
             setMapSearchText(selectedAddress);
             setMapLocation({
@@ -1087,8 +1090,8 @@ function JourneyReportContent() {
 
   const handlePlaceSuggestionSelect = (suggestion: CostSafePlaceSuggestion) => {
     cancelPlaceSearch();
-    setMapSearchText(suggestion.queryText);
-    geocodeMapSearch(suggestion.queryText);
+    setMapSearchText(suggestion.primaryText);
+    geocodeMapSearch(suggestion.queryText, suggestion.primaryText);
   };
 
   const handleMapSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {

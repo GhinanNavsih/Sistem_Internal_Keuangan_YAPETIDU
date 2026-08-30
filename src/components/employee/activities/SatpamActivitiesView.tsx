@@ -323,7 +323,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                           : isCrossTeamPos9
                           ? (['Harian', 'Lembur Sendiri', 'Lembur Cover'].includes(val.shiftType)
                             ? val.shiftType
-                            : defaultShiftTypeForRender)
+                            : 'Harian')
                           : isDesignatedPos9
                             ? (['Harian', 'Jumat & Libur', 'Lembur Sendiri'].includes(val.shiftType)
                               ? val.shiftType
@@ -435,10 +435,11 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                               </Select>
                             </div>
 
-                            {/* Shift / pay type is normally derived from the work
-                                calendar. Ketua Shift defaults to Harian and can
-                                choose Lembur Sendiri. Any Satpam from another
-                                regu defaults to Harian, with an explicit
+                            {/* Shift / pay type is derived from the work calendar
+                                for everyone on ordinary duty, including the Ketua
+                                Shift's own post and an in-roster designated Pos 9;
+                                both may override to Lembur Sendiri. Any Satpam from
+                                another regu defaults to Harian, with an explicit
                                 Lembur Cover option.
                                 The designated cross-team Pos 9 guards additionally
                                 retain the Lembur Sendiri option. */}
