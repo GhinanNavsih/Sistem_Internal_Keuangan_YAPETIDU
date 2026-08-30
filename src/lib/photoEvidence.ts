@@ -55,6 +55,11 @@ function compressedFileName(fileName: string): string {
   return `${base}.jpg`;
 }
 
+function isPdfFile(file: Pick<File, 'name' | 'type'>): boolean {
+  return file.type === 'application/pdf' ||
+    (!file.type && /\.pdf$/i.test(file.name));
+}
+
 async function loadImage(file: File): Promise<{ source: CanvasImageSource; width: number; height: number; dispose: () => void }> {
   if ('createImageBitmap' in window) {
     try {
@@ -124,8 +129,14 @@ async function drawScaledCanvas(file: File): Promise<HTMLCanvasElement> {
 }
 
 export async function compressProofImage(file: File): Promise<File> {
+  if (isPdfFile(file)) {
+    if (file.size > MAX_PROOF_IMAGE_BYTES) {
+      throw new Error('Bukti PDF masih lebih dari 5 MB. Pilih berkas yang lebih kecil.');
+    }
+    return file;
+  }
   if (!file.type.startsWith('image/')) {
-    throw new Error('Bukti harus berupa gambar JPG, PNG, atau WebP.');
+    throw new Error('Bukti harus berupa gambar atau PDF.');
   }
   const canvas = await drawScaledCanvas(file);
   const blob = await canvasToJpeg(canvas, PROOF_IMAGE_JPEG_QUALITY);
@@ -144,7 +155,7 @@ export async function compressProofImage(file: File): Promise<File> {
  */
 export async function compressProofImageToLimit(file: File, maxBytes: number): Promise<File> {
   if (!file.type.startsWith('image/')) {
-    throw new Error('Bukti harus berupa gambar JPG, PNG, atau WebP.');
+    throw new Error('Bukti harus berupa gambar.');
   }
   let canvas = await drawScaledCanvas(file);
 

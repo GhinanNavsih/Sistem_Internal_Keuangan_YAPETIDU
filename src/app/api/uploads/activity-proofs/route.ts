@@ -13,14 +13,15 @@ export async function POST(request: NextRequest) {
     if (!employeeId) {
       throw new HttpError(400, 'ID pegawai wajib diisi.');
     }
-    assertValidProofFile(file, 5 * 1024 * 1024);
+    assertValidProofFile(file, 5 * 1024 * 1024, { allowPdf: true });
 
     if (!actor.linkedEmployeeId || actor.linkedEmployeeId !== employeeId) {
       throw new HttpError(403, 'Anda tidak memiliki kewenangan untuk mengunggah berkas ini.');
     }
 
     const hint = filenameHint ? `${sanitizePathSegment(filenameHint)}_` : '';
-    const storagePath = `activity_proofs/${employeeId}/${hint}${Date.now()}.jpg`;
+    const extension = file.type === 'application/pdf' ? 'pdf' : 'jpg';
+    const storagePath = `activity_proofs/${employeeId}/${hint}${Date.now()}.${extension}`;
     const url = await saveUploadedFile(storagePath, file, actor.uid);
     return NextResponse.json({ url });
   } catch (error) {

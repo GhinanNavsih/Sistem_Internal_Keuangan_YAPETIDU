@@ -1529,7 +1529,7 @@ export function SatpamAbsencePanel(props: {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="absence-evidence">Foto bukti (opsional)</Label>
+              <Label htmlFor="absence-evidence">Bukti foto/PDF (opsional)</Label>
               <label
                 htmlFor="absence-evidence"
                 className="flex min-h-12 w-full cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white transition-colors hover:bg-slate-50 focus-within:border-amber-500 focus-within:ring-3 focus-within:ring-amber-500/20"
@@ -1540,13 +1540,13 @@ export function SatpamAbsencePanel(props: {
                 />
                 <span className="sr-only">
                   {evidenceFile
-                    ? `Ganti foto bukti: ${evidenceFile.name}`
-                    : 'Pilih foto bukti'}
+                    ? `Ganti bukti foto atau PDF: ${evidenceFile.name}`
+                    : 'Pilih bukti foto atau PDF'}
                 </span>
                 <Input
                   id="absence-evidence"
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   capture="environment"
                   className="sr-only"
                   onChange={(event) =>
