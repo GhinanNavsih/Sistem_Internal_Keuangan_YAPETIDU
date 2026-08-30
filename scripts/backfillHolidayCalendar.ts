@@ -1,6 +1,17 @@
 /**
- * Backfills the annual `PayrollHolidayCalendars/{year}` accumulator with the
- * officially declared Indonesian national holidays (SKB 3 Menteri).
+ * Backfills the annual `PayrollHolidayCalendars/{year}` accumulator with
+ * Indonesian national holidays, as a starting default only.
+ *
+ * The authoritative place to declare tanggal merah for a given payroll period
+ * — including whether a cuti bersama date counts, or any other ad hoc call —
+ * is the Tanggal Merah calendar editor on the payroll dashboard
+ * (src/app/dashboard/payroll/page.tsx, handleOpenCalendarEditor /
+ * handleConfirmCalendarEdit, backed by PUT /api/payroll/periods/{period}/calendar).
+ * A human picks dates there with a reason, and once a period has that explicit
+ * edit, `periodCalendarFromData` uses it verbatim and this annual document
+ * stops mattering for that period entirely. This script only fills in the
+ * default a period starts with before anyone has touched its calendar — it
+ * does not, and should not, try to encode holiday-category policy.
  *
  * Dry-run by default; pass `--apply` to write.
  *
@@ -12,11 +23,8 @@
  * already-frozen period could re-rate work that was approved against the
  * previous calendar.
  *
- * Scope note: only the 17 *national holidays* are written. `getRegularSatpamPayType`
- * takes `nationalHolidayDates`, and cuti bersama (collective leave) is a
- * separate category that carries its own pay policy — it is deliberately NOT
- * added here. Fridays are likewise omitted: `normalizePeriodPremiumDates`
- * unions them in by rule, so listing them in the annual document is redundant.
+ * Fridays are omitted: `normalizePeriodPremiumDates` unions them in by rule,
+ * so listing them in the annual document is redundant.
  *
  * Usage:
  *   tsx scripts/backfillHolidayCalendar.ts --year 2026
@@ -29,8 +37,10 @@ import type { AuthenticatedProfile } from '../src/lib/server/auth';
 import { isPeriodClosed, isPeriodMaterialized } from '../src/lib/server/payrollPeriod';
 
 /**
- * Indonesian national holidays per SKB 3 Menteri. Cuti bersama is excluded on
- * purpose — see the scope note above.
+ * Indonesian national holidays per SKB 3 Menteri, used only as the default a
+ * period starts with. Add cuti bersama or any other date through the Tanggal
+ * Merah calendar editor per period instead of extending this list — see the
+ * file header.
  */
 const NATIONAL_HOLIDAYS: Record<string, Array<{ date: string; name: string }>> = {
   '2026': [

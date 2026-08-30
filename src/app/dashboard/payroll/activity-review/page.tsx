@@ -642,6 +642,7 @@ export default function ActivityReviewPage() {
   // ── Satpam Pay-Type Correction Modal (super_admin/satker_head, approved rows) ──
   const [payTypeTarget, setPayTypeTarget] = useState<ActivityReport | null>(null);
   const [payTypeValue, setPayTypeValue] = useState<string>('Harian');
+  const [payTypeEmployeeId, setPayTypeEmployeeId] = useState('');
   const [payTypeCovered, setPayTypeCovered] = useState('');
   const [payTypeReason, setPayTypeReason] = useState('');
   const [savingPayType, setSavingPayType] = useState(false);
@@ -1034,9 +1035,14 @@ export default function ActivityReviewPage() {
     const missingIds = new Set<string>();
     satpamShiftGroups.forEach((group) => {
       group.assignments.forEach((item) => {
+        // A stored plannedEmployeeName equal to the raw id is an unresolved
+        // legacy write (see the render fallback above), not a real name.
+        const hasStoredName = Boolean(
+          item.plannedEmployeeName && item.plannedEmployeeName !== item.plannedEmployeeId,
+        );
         if (
           item.plannedEmployeeId &&
-          !item.plannedEmployeeName &&
+          !hasStoredName &&
           !satpamEmployeeDirectory.some((employee) => employee.id === item.plannedEmployeeId) &&
           !(item.plannedEmployeeId in resolvedPlannedNames)
         ) {
@@ -1424,10 +1430,12 @@ export default function ActivityReviewPage() {
         ? (item.shiftType as string)
         : 'Harian',
     );
+    setPayTypeEmployeeId(item.employeeId);
     setPayTypeCovered(item.coveredEmployeeId || '');
     setPayTypeReason('');
-    // The Lembur Cover picker needs the guard directory, which is otherwise
-    // only fetched when the auditor-edit dialog opens.
+    // The guard picker and the Lembur Cover picker both need the guard
+    // directory, which is otherwise only fetched when the auditor-edit dialog
+    // opens.
     if (satpamEmployeeDirectory.length === 0) {
       try {
         const directory = await authenticatedJson<{
@@ -1447,12 +1455,18 @@ export default function ActivityReviewPage() {
       setErrorMsg('Isi alasan koreksi sekurang-kurangnya 8 karakter.');
       return;
     }
-    if (payTypeValue === payTypeTarget.shiftType) {
-      setErrorMsg('Kategori upah belum diubah.');
+    const employeeChanged = payTypeEmployeeId !== payTypeTarget.employeeId;
+    const payTypeChangedNow = payTypeValue !== payTypeTarget.shiftType;
+    if (!employeeChanged && !payTypeChangedNow) {
+      setErrorMsg('Belum ada perubahan petugas atau kategori upah.');
       return;
     }
     if (payTypeValue === 'Lembur Cover' && !payTypeCovered.trim()) {
       setErrorMsg('Pilih petugas yang digantikan untuk Lembur Cover.');
+      return;
+    }
+    if (payTypeValue === 'Lembur Cover' && payTypeCovered.trim() === payTypeEmployeeId) {
+      setErrorMsg('Petugas yang digantikan tidak boleh sama dengan petugas yang ditugaskan.');
       return;
     }
 
@@ -1465,6 +1479,7 @@ export default function ActivityReviewPage() {
           requestId: createFinancialRequestId('satpam_pay_type_fix'),
           reportId: payTypeTarget.id,
           payType: payTypeValue,
+          employeeId: payTypeEmployeeId,
           ...(payTypeValue === 'Lembur Cover'
             ? { coveredEmployeeId: payTypeCovered.trim() }
             : {}),
@@ -1474,7 +1489,16 @@ export default function ActivityReviewPage() {
       const dutyDate = payTypeTarget.dutyDate || payTypeTarget.activityDate;
       const period =
         payTypeTarget.payrollPeriod || (dutyDate ? pekaryaPayrollPeriodForDate(dutyDate) : '');
-      const savedLabel = `Kategori upah ${payTypeTarget.employeeName} diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`;
+      const newEmployeeName =
+        satpamEmployeeDirectory.find((employee) => employee.id === payTypeEmployeeId)?.name ||
+        payTypeEmployeeId;
+      const postLabel = payTypeTarget.postId || payTypeTarget.postName;
+      const savedLabel =
+        employeeChanged && payTypeChangedNow
+          ? `Petugas ${postLabel} diubah dari ${payTypeTarget.employeeName} menjadi ${newEmployeeName}; kategori upah diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`
+          : employeeChanged
+            ? `Petugas ${postLabel} diubah dari ${payTypeTarget.employeeName} menjadi ${newEmployeeName}.`
+            : `Kategori upah ${payTypeTarget.employeeName} diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`;
       setSuccessMsg(savedLabel);
       setPayTypeTarget(null);
       setPayTypeReason('');
@@ -2345,18 +2369,11 @@ export default function ActivityReviewPage() {
                                         </button>
                                       </div>
                                     ) : (
-                                      // Nothing pending left to bulk-decide, but a past-approved
-                                      // report can still be corrected as a direct financial edit.
-                                      group.approvedCount > 0 &&
-                                      (profile?.role === 'super_admin' || profile?.role === 'satker_head') && (
-                                        <button
-                                          type="button"
-                                          onClick={() => openAuditorShiftEdit(group)}
-                                          className="px-3 py-1.5 rounded-xl text-[10px] font-extrabold bg-indigo-100 hover:bg-indigo-200 text-indigo-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
-                                        >
-                                          <Edit2 className="w-3.5 h-3.5" /> Edit Auditor
-                                        </button>
-                                      )
+                                      // Nothing pending left to bulk-decide. A past-approved
+                                      // report is now corrected per-post via the pencil on its
+                                      // own card ("Ubah Petugas & Kategori Upah" below), not a
+                                      // shift-wide editor.
+                                      null
                                     )}
                                   </div>
 
@@ -2422,10 +2439,19 @@ export default function ActivityReviewPage() {
                                                 {item.plannedEmployeeId &&
                                                   item.plannedEmployeeId !== item.employeeId && (
                                                   <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold text-amber-900">
-                                                    Rencana: {item.plannedEmployeeName
+                                                    Rencana: {
+                                                      // A stored plannedEmployeeName equal to the raw id means an
+                                                      // older auditor edit couldn't resolve it at write time (see
+                                                      // employeeIds in shifts/review/route.ts) and persisted the id
+                                                      // as if it were the name. Treat that as unresolved so the
+                                                      // live directory/lookup below gets a chance instead.
+                                                      (item.plannedEmployeeName && item.plannedEmployeeName !== item.plannedEmployeeId
+                                                        ? item.plannedEmployeeName
+                                                        : undefined)
                                                       || satpamEmployeeDirectory.find((employee) => employee.id === item.plannedEmployeeId)?.name
                                                       || (item.plannedEmployeeId ? resolvedPlannedNames[item.plannedEmployeeId] : undefined)
-                                                      || item.plannedEmployeeId}
+                                                      || item.plannedEmployeeId
+                                                    }
                                                     <span className="block font-bold">
                                                       Aktual: {item.employeeName}
                                                     </span>
@@ -2461,7 +2487,7 @@ export default function ActivityReviewPage() {
                                                   {(profile?.role === 'super_admin' || profile?.role === 'satker_head') && item.status === 'approved' && (
                                                     <button
                                                       type="button"
-                                                      title="Ubah kategori upah"
+                                                      title="Ubah petugas / kategori upah"
                                                       disabled={savingPayType}
                                                       onClick={() => openPayTypeEditor(item)}
                                                       className="flex h-5 w-5 items-center justify-center rounded-md text-indigo-600 transition-colors hover:bg-indigo-50 cursor-pointer"
@@ -3231,16 +3257,16 @@ export default function ActivityReviewPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Satpam Pay-Type Correction Modal (super_admin/satker_head) ── */}
+      {/* ── Satpam Guard & Pay-Type Correction Modal (super_admin/satker_head) ── */}
       <Dialog open={payTypeTarget !== null} onOpenChange={(open) => { if (!open && !savingPayType) setPayTypeTarget(null); }}>
         <DialogContent className="sm:max-w-md rounded-3xl border-none shadow-2xl bg-white p-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
               <Edit2 className="w-5 h-5 text-indigo-600" />
-              Ubah Kategori Upah
+              Ubah Petugas &amp; Kategori Upah
             </DialogTitle>
             <DialogDescription className="text-slate-500">
-              Koreksi kategori upah <strong>{payTypeTarget?.employeeName}</strong> pada{' '}
+              Koreksi petugas dan/atau kategori upah pada{' '}
               <strong>{payTypeTarget?.postId || payTypeTarget?.postName}</strong>. Rekap Uraian dan slip gaji
               periode ini dihitung ulang otomatis setelah disimpan.
             </DialogDescription>
@@ -3252,6 +3278,10 @@ export default function ActivityReviewPage() {
                 <span className="font-bold text-slate-700">{payTypeTarget?.dutyDate || payTypeTarget?.activityDate}</span>
               </div>
               <div className="flex justify-between">
+                <span className="text-slate-400 font-semibold">Petugas Saat Ini</span>
+                <span className="font-bold text-slate-700">{payTypeTarget?.employeeName}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-slate-400 font-semibold">Kategori Saat Ini</span>
                 <span className="font-bold text-slate-700">
                   {payTypeTarget?.shiftType} · {fmtRp(payTypeTarget?.fee || 0)}
@@ -3259,7 +3289,35 @@ export default function ActivityReviewPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-500 uppercase">Kategori Upah Baru</Label>
+              <Label className="text-xs font-bold text-slate-500 uppercase">Petugas</Label>
+              <Select value={payTypeEmployeeId || 'none'} onValueChange={(v) => v && v !== 'none' && setPayTypeEmployeeId(v)}>
+                <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
+                  <SelectValue>
+                    {satpamEmployeeDirectory.find((e) => e.id === payTypeEmployeeId)?.name || payTypeEmployeeId || '-- Pilih Petugas --'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="rounded-xl bg-white max-h-[280px] overflow-y-auto">
+                  {satpamEmployeeDirectory.map((employee) => (
+                    <SelectItem key={employee.id} value={employee.id} className="min-h-10 text-sm">
+                      {employee.name}{employee.isActive ? '' : ' · tidak aktif'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {payTypeTarget && payTypeEmployeeId && payTypeEmployeeId !== payTypeTarget.employeeId && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-semibold text-amber-900 space-y-1">
+                  <p>Diubah dari: {payTypeTarget.employeeName}</p>
+                  {payTypeTarget.photoUrl && (
+                    <p className="font-normal">
+                      Foto bukti yang tersimpan tetap disimpan, tetapi ditandai belum terverifikasi
+                      untuk petugas baru — bukan bukti kehadiran mereka.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-500 uppercase">Kategori Upah</Label>
               <Select value={payTypeValue} onValueChange={(v) => v && setPayTypeValue(v)}>
                 <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
                   <SelectValue>
@@ -3289,7 +3347,7 @@ export default function ActivityReviewPage() {
                       -- Pilih Petugas --
                     </SelectItem>
                     {satpamEmployeeDirectory
-                      .filter((employee) => employee.id !== payTypeTarget?.employeeId)
+                      .filter((employee) => employee.id !== payTypeEmployeeId)
                       .map((employee) => (
                         <SelectItem key={employee.id} value={employee.id} className="min-h-10 text-sm">
                           {employee.name}
@@ -3320,8 +3378,9 @@ export default function ActivityReviewPage() {
               disabled={
                 savingPayType ||
                 payTypeReason.trim().length < 8 ||
-                payTypeValue === payTypeTarget?.shiftType ||
-                (payTypeValue === 'Lembur Cover' && !payTypeCovered.trim())
+                (payTypeValue === payTypeTarget?.shiftType && payTypeEmployeeId === payTypeTarget?.employeeId) ||
+                (payTypeValue === 'Lembur Cover' &&
+                  (!payTypeCovered.trim() || payTypeCovered.trim() === payTypeEmployeeId))
               }
               className="rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-md shadow-indigo-100"
             >

@@ -616,15 +616,11 @@ export async function POST(request: NextRequest) {
           before.assignmentKind !== 'extra' &&
           (payType === 'Harian' || payType === 'Jumat & Libur')
         ) {
-          const holidayDates = new Set<string>(
-            Array.isArray(holidaySnapshot.data()?.dates)
-              ? holidaySnapshot
-                  .data()!
-                  .dates.filter(
-                    (date: unknown): date is string => typeof date === 'string',
-                  )
-              : [],
-          );
+          // The payroll dashboard's calendar editor writes the frozen period
+          // calendar. Once a period has one, it is authoritative over the
+          // annual holiday accumulator; using holidaySnapshot here can rate a
+          // manually marked holiday as Harian during approval.
+          const holidayDates = new Set<string>(periodCalendar.premiumDates);
           const expectedPayType = getRegularSatpamPayType(
             String(occurrence.dutyDate || ''),
             holidayDates,
@@ -927,8 +923,22 @@ export async function PUT(request: NextRequest) {
       const oldReportRefs = oldReportIds.map((reportId: string) =>
         adminDb.collection('ActivityReports').doc(reportId),
       );
+      // Also fetch every originally-planned guard, not just whoever ends up in
+      // this edit's assignment list. A post's planned occupant can be swapped
+      // out entirely (e.g. a Lembur Cover) without appearing anywhere else in
+      // the edit, and plannedEmployeeName below is written once, permanently,
+      // from whatever this map resolves — missing it here means the report
+      // stores the raw employee id as its "name" forever.
+      const plannedGuardIds = Array.isArray(before.plannedAssignmentSnapshot?.assignments)
+        ? before.plannedAssignmentSnapshot.assignments
+            .map((assignment: Record<string, unknown>) => String(assignment?.employeeId || ''))
+            .filter(Boolean)
+        : [];
       const employeeIds = Array.from(
-        new Set(command.assignments.map((assignment) => assignment.employeeId)),
+        new Set([
+          ...command.assignments.map((assignment) => assignment.employeeId),
+          ...plannedGuardIds,
+        ]),
       );
       const employeeRefs = employeeIds.map((employeeId) =>
         adminDb.collection('Employees_BlueCollar').doc(employeeId),

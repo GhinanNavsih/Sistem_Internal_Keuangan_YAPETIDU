@@ -419,7 +419,18 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                                       <span className="text-sm font-bold text-amber-700">
                                         {activity.reportKind === 'satpam_found_item' || activity.reportKind === 'satpam_reprimand'
                                           ? `Rekomendasi SPJ: ${fmtRp(activity.submittedFeeRecommendation || (activity.reportKind === 'satpam_reprimand' ? 15_000 : 5_000))}`
-                                          : `Estimasi Upah: ${fmtRp(activity.fee)}`}
+                                          : `Estimasi Upah: ${fmtRp(
+                                              activity.reportKind === 'satpam_spj'
+                                                ? (activity.submittedFeeEstimate && activity.submittedFeeEstimate > 0
+                                                  ? activity.submittedFeeEstimate
+                                                  : calculateDefaultFee(
+                                                    activity.timeStart,
+                                                    activity.timeEnd,
+                                                    activity.activityType,
+                                                    activity.activityName,
+                                                  ))
+                                                : activity.fee,
+                                            )}`}
                                       </span>
                                     </div>
                                     {activity.shiftType ? (

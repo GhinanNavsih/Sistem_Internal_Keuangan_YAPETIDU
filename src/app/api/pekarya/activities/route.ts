@@ -43,6 +43,7 @@ import {
   assertPekaryaActivityType,
   isPekaryaJobCategory,
   buildPekaryaActivityIdentity,
+  calculateActivitySpjEstimate,
   pekaryaPayrollPeriodForDate,
   SATPAM_FOUND_ITEM_RECOMMENDED_FEE,
   SATPAM_REPRIMAND_RECOMMENDED_FEE,
@@ -1021,6 +1022,17 @@ export async function POST(request: NextRequest) {
       if (fuelContext) flushFuelLedger(fuelContext);
 
       const now = admin.firestore.FieldValue.serverTimestamp();
+      const submittedFeeEstimate =
+        jobCategory === 'SATPAM' && !isPhotoOnlyReport
+          ? calculateActivitySpjEstimate(
+              command.timeStart,
+              command.timeEnd || '',
+              command.activityType,
+              command.activityName,
+            )
+          : typeof driverData.upahBersih === 'number'
+            ? driverData.upahBersih
+            : 0;
       const after = {
         employeeId,
         employeeName: String(employee.name || actor.displayName || ''),
@@ -1085,8 +1097,7 @@ export async function POST(request: NextRequest) {
           : {}),
         // Employee-submitted calculations are evidence only. The approved
         // financial amount remains zero until Kepala SatKer reviews it.
-        submittedFeeEstimate:
-          typeof driverData.upahBersih === 'number' ? driverData.upahBersih : 0,
+        submittedFeeEstimate,
         upahBersih: 0,
         // Derived from the linked journey doc itself (never trusted from the
         // request body) so the activity review table can flag it distinctly.

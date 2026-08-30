@@ -15,6 +15,7 @@ import {
   calculateDriverNetWage,
   normalizeDriverJourneyDestinations,
 } from '@/lib/payroll/driverJourney';
+import { calculateActivitySpjEstimate } from '@/lib/payroll/pekaryaSpj';
 import {
   type SwapLiburPrompt,
 } from '@/components/satpam/SwapLiburConfirmModal';
@@ -113,6 +114,7 @@ export interface ActivityReport {
   timeEnd: string;
   status: 'pending' | 'approved' | 'declined';
   fee: number;
+  submittedFeeEstimate?: number;
   hasUangMakan?: boolean;
   declineReason?: string;
   submittedAt?: FirestoreTimestampLike;
@@ -310,46 +312,17 @@ export function padTime(time: string): string {
 }
 
 export function calculateDefaultFee(timeStart: string, timeEnd: string, activityType?: string, activityName?: string): number {
-  if (activityType === 'Buang Sampah' || activityName === 'Buang Sampah') {
-    return 5000;
+  if (!timeStart || !timeEnd) {
+    return activityType === 'Buang Sampah' || activityName === 'Buang Sampah'
+      ? 5_000
+      : 0;
   }
 
-  if (!timeStart || !timeEnd) return 0;
-
-  // Parse HH:MM format
-  const [sh, sm] = timeStart.split(':').map(Number);
-  const [eh, em] = timeEnd.split(':').map(Number);
-
-  if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return 0;
-
-  let minutes = (eh * 60 + em) - (sh * 60 + sm);
-  if (minutes < 0) minutes += 24 * 60;
-
-  const halfHours = Math.round(minutes / 30);
-
-  // Determine activity type
-  let type = activityType;
-  if (!type && activityName) {
-    const nameLower = activityName.toLowerCase();
-    if (nameLower === 'piket' || nameLower.startsWith('piket ')) {
-      type = 'Piket';
-    } else if (nameLower === 'standby' || nameLower.startsWith('standby ')) {
-      type = 'Standby';
-    } else if (nameLower === 'ro\'an' || nameLower === 'roan' || nameLower.startsWith('ro\'an ') || nameLower.startsWith('roan ')) {
-      type = 'Ro\'an';
-    } else {
-      type = 'Lainnya';
-    }
+  try {
+    return calculateActivitySpjEstimate(timeStart, timeEnd, activityType, activityName);
+  } catch {
+    return 0;
   }
-
-  if (!type) {
-    type = 'Lainnya';
-  }
-
-  const isPiketOrStandby = type === 'Piket' || type === 'Standby';
-  const rate = isPiketOrStandby ? 2000 : 2500;
-
-  return halfHours * rate;
 }
 
 export function getActivityFeeBreakdown(timeStart: string, timeEnd: string, activityType?: string, activityName?: string): string {
@@ -532,5 +505,4 @@ export function createSatpamDraftFingerprint(input: {
       : null,
   });
 }
-
 

@@ -6,6 +6,7 @@ import {
   allowsManualSpjEntry,
   assertSatpamFoundItemPhotoCount,
   buildPekaryaActivityIdentity,
+  calculateActivitySpjEstimate,
   pekaryaPayrollPeriodForDate,
   pekaryaPayrollWindow,
   satpamFoundItemFeeNeedsAdjustmentReason,
@@ -70,6 +71,22 @@ test('validates normal and cross-midnight activity duration', () => {
   assert.equal(activityDurationMinutes('22:00', '02:00'), 240);
   assert.throws(() => activityDurationMinutes('08:00', '08:00'));
   assert.throws(() => activityDurationMinutes('08:99', '10:00'));
+});
+
+test('calculates the shared non-driver activity SPJ estimate', () => {
+  assert.equal(
+    calculateActivitySpjEstimate('08:00', '13:00', 'Lainnya'),
+    25_000,
+  );
+  assert.equal(
+    calculateActivitySpjEstimate('08:00', '10:00', 'Piket'),
+    8_000,
+  );
+  assert.equal(
+    calculateActivitySpjEstimate('22:00', '02:00', undefined, 'Piket malam'),
+    16_000,
+  );
+  assert.equal(calculateActivitySpjEstimate('', '', 'Buang Sampah'), 5_000);
 });
 
 test('counts approved non-Satpam activity once and does not double driver wage', () => {

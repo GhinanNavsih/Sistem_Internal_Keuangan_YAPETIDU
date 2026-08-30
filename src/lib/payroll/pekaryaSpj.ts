@@ -112,6 +112,49 @@ export function activityDurationMinutes(
 }
 
 /**
+ * Calculates the employee-submitted estimate for a non-driver activity.
+ *
+ * This is only an estimate; the approved amount is still entered by the
+ * Kepala SatKer during review. Keeping the calculation here makes the API
+ * and employee activity card use the same rate policy.
+ */
+export function calculateActivitySpjEstimate(
+  timeStart: string,
+  timeEnd: string,
+  activityType?: string,
+  activityName?: string,
+): number {
+  if (activityType === 'Buang Sampah' || activityName === 'Buang Sampah') {
+    return 5_000;
+  }
+
+  const durationMinutes = activityDurationMinutes(timeStart, timeEnd);
+  const halfHours = Math.round(durationMinutes / 30);
+
+  let type = activityType;
+  if (!type && activityName) {
+    const nameLower = activityName.toLowerCase();
+    if (nameLower === 'piket' || nameLower.startsWith('piket ')) {
+      type = 'Piket';
+    } else if (nameLower === 'standby' || nameLower.startsWith('standby ')) {
+      type = 'Standby';
+    } else if (
+      nameLower === "ro'an" ||
+      nameLower === 'roan' ||
+      nameLower.startsWith("ro'an ") ||
+      nameLower.startsWith('roan ')
+    ) {
+      type = "Ro'an";
+    } else {
+      type = 'Lainnya';
+    }
+  }
+
+  const rate = type === 'Piket' || type === 'Standby' ? 2_000 : 2_500;
+  return halfHours * rate;
+}
+
+/**
  * Historical compatibility policy:
  * - through June 2026: 26th through 25th,
  * - July 2026 transition: 26 June through 31 July,
