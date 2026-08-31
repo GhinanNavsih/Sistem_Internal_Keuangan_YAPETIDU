@@ -158,9 +158,13 @@ export async function POST(request: NextRequest) {
       const employeeId = String(before.employeeId || '');
       const targetEmployeeId = command.employeeId;
       const employeeChanged = targetEmployeeId !== employeeId;
+      const previousCoveredEmployeeId = String(before.coveredEmployeeId || '').trim();
 
       const coveredEmployeeId =
-        command.coveredEmployeeId || String(before.coveredEmployeeId || '').trim();
+        command.payType === 'Lembur Cover'
+          ? command.coveredEmployeeId || previousCoveredEmployeeId
+          : '';
+      const coveredEmployeeChanged = coveredEmployeeId !== previousCoveredEmployeeId;
       if (command.payType === 'Lembur Cover' && !coveredEmployeeId) {
         throw new HttpError(
           409,
@@ -173,7 +177,7 @@ export async function POST(request: NextRequest) {
           'Petugas yang digantikan tidak boleh sama dengan petugas yang ditugaskan.',
         );
       }
-      if (!payTypeChanged && !employeeChanged) {
+      if (!payTypeChanged && !employeeChanged && !coveredEmployeeChanged) {
         throw new HttpError(409, 'Tidak ada perubahan yang disimpan.');
       }
 
@@ -343,6 +347,14 @@ export async function POST(request: NextRequest) {
               photoStaleAfterCorrection: true,
             }
           : {}),
+        ...(coveredEmployeeChanged
+          ? {
+              coveredEmployeeCorrectedAt: now,
+              coveredEmployeeCorrectedBy: actor.uid,
+              coveredEmployeeCorrectedFrom: previousCoveredEmployeeId || null,
+              coveredEmployeeCorrectedTo: coveredEmployeeId || null,
+            }
+          : {}),
       };
       transaction.set(reportRef, after);
 
@@ -388,7 +400,9 @@ export async function POST(request: NextRequest) {
         buildFinancialAuditRecord(actor, {
           action: employeeChanged
             ? 'SATPAM_SHIFT_ASSIGNMENT_EMPLOYEE_CORRECTED'
-            : 'SATPAM_SHIFT_ASSIGNMENT_PAY_TYPE_CORRECTED',
+            : payTypeChanged
+              ? 'SATPAM_SHIFT_ASSIGNMENT_PAY_TYPE_CORRECTED'
+              : 'SATPAM_SHIFT_ASSIGNMENT_COVERED_EMPLOYEE_CORRECTED',
           entityType: 'ActivityReport',
           entityId: command.reportId,
           reason: command.reason,
@@ -406,6 +420,9 @@ export async function POST(request: NextRequest) {
             employeeChanged,
             previousEmployeeId: employeeId,
             newEmployeeId: targetEmployeeId,
+            coveredEmployeeChanged,
+            previousCoveredEmployeeId: previousCoveredEmployeeId || null,
+            newCoveredEmployeeId: coveredEmployeeId || null,
           },
         }),
       );

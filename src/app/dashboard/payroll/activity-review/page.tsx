@@ -91,6 +91,7 @@ import {
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { syncActivityToPayslip } from '@/utils/payslipSync';
 import {
+  ApiError,
   authenticatedJson,
   createFinancialRequestId,
   propagateUraianToSlips,
@@ -246,6 +247,16 @@ interface SatpamShiftGroup {
   submittedShiftName: string;
   anomalyCodes: string[];
   hasAuditorEdit: boolean;
+}
+
+interface SatpamPayClassificationWarning {
+  kind?: 'calendar' | 'assignment';
+  reportId: string;
+  employeeName: string;
+  postId: string;
+  dutyDate: string;
+  actualPayType: string;
+  expectedPayType: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -635,6 +646,10 @@ export default function ActivityReviewPage() {
   const [shiftDeclineReasons, setShiftDeclineReasons] = useState<Record<string, string>>({});
   const [shiftReviewNotes, setShiftReviewNotes] = useState<Record<string, string>>({});
   const [submittingShiftId, setSubmittingShiftId] = useState<string | null>(null);
+  const [payClassificationConfirmation, setPayClassificationConfirmation] = useState<{
+    group: SatpamShiftGroup;
+    warnings: SatpamPayClassificationWarning[];
+  } | null>(null);
   const [satpamEmployeeDirectory, setSatpamEmployeeDirectory] = useState<Array<{ id: string; name: string; isActive: boolean }>>([]);
   // A "planned" guard (the "Rencana:" line on an audit card) can be someone
   // no longer classified as SATPAM by the time this renders, so they may be
@@ -1420,7 +1435,9 @@ export default function ActivityReviewPage() {
     if (isActionLoadingRef.current || !payTypeTarget || !user) return;
     const employeeChanged = payTypeEmployeeId !== payTypeTarget.employeeId;
     const payTypeChangedNow = payTypeValue !== payTypeTarget.shiftType;
-    if (!employeeChanged && !payTypeChangedNow) {
+    const coveredEmployeeChanged =
+      payTypeCovered.trim() !== String(payTypeTarget.coveredEmployeeId || '').trim();
+    if (!employeeChanged && !payTypeChangedNow && !coveredEmployeeChanged) {
       setErrorMsg('Belum ada perubahan petugas atau kategori upah.');
       return;
     }
@@ -1437,16 +1454,32 @@ export default function ActivityReviewPage() {
     const newEmployeeName =
       satpamEmployeeDirectory.find((employee) => employee.id === payTypeEmployeeId)?.name ||
       payTypeEmployeeId;
+    const previousCoveredEmployeeId = String(payTypeTarget.coveredEmployeeId || '').trim();
+    const previousCoveredEmployeeName =
+      satpamEmployeeDirectory.find((employee) => employee.id === previousCoveredEmployeeId)?.name ||
+      previousCoveredEmployeeId ||
+      '-- Tidak ada --';
+    const newCoveredEmployeeName =
+      satpamEmployeeDirectory.find((employee) => employee.id === payTypeCovered.trim())?.name ||
+      payTypeCovered.trim() ||
+      '-- Tidak ada --';
     const postLabel = payTypeTarget.postId || payTypeTarget.postName;
     // There is no free-text reason field in this modal — the change itself,
     // precisely described, is the audit-log reason. This is what the server's
     // required `reason` field (min 8 chars) receives instead of operator input.
-    const changeSummary =
-      employeeChanged && payTypeChangedNow
-        ? `Petugas ${postLabel} diubah dari ${payTypeTarget.employeeName} menjadi ${newEmployeeName}; kategori upah diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`
-        : employeeChanged
-          ? `Petugas ${postLabel} diubah dari ${payTypeTarget.employeeName} menjadi ${newEmployeeName}.`
-          : `Kategori upah ${payTypeTarget.employeeName} diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`;
+    const changeSummary = [
+      employeeChanged
+        ? `Petugas ${postLabel} diubah dari ${payTypeTarget.employeeName} menjadi ${newEmployeeName}.`
+        : '',
+      payTypeChangedNow
+        ? `Kategori upah diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`
+        : '',
+      coveredEmployeeChanged
+        ? `Petugas yang digantikan diubah dari ${previousCoveredEmployeeName} menjadi ${newCoveredEmployeeName}.`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
 
     isActionLoadingRef.current = true;
     setSavingPayType(true);
@@ -1669,7 +1702,10 @@ export default function ActivityReviewPage() {
     });
   };
 
-  const handleSubmitShiftReview = async (group: SatpamShiftGroup) => {
+  const handleSubmitShiftReview = async (
+    group: SatpamShiftGroup,
+    confirmPayClassificationWarnings = false,
+  ) => {
     if (submittingShiftId || !user) return;
 
     const pendingAssignments = group.assignments.filter(item => item.status === 'pending');
@@ -1706,6 +1742,9 @@ export default function ActivityReviewPage() {
           occurrenceId: group.occurrenceId,
           reason: note,
           decisions,
+          ...(confirmPayClassificationWarnings
+            ? { confirmPayClassificationWarnings: true }
+            : {}),
         }),
       });
 
@@ -1729,6 +1768,32 @@ export default function ActivityReviewPage() {
       // server's numbers with its own.
       fetchActivities();
     } catch (err) {
+      if (
+        err instanceof ApiError &&
+        (err.code === 'SATPAM_PAY_CLASSIFICATION_WARNING' ||
+          err.code === 'SATPAM_CALENDAR_MISMATCH')
+      ) {
+        const warnings = Array.isArray(err.details)
+          ? err.details.filter(
+              (warning): warning is SatpamPayClassificationWarning =>
+                Boolean(
+                  warning &&
+                  typeof warning === 'object' &&
+                  typeof (warning as Record<string, unknown>).reportId === 'string' &&
+                  typeof (warning as Record<string, unknown>).employeeName === 'string' &&
+                  typeof (warning as Record<string, unknown>).postId === 'string' &&
+                  typeof (warning as Record<string, unknown>).dutyDate === 'string' &&
+                  typeof (warning as Record<string, unknown>).actualPayType === 'string' &&
+                  typeof (warning as Record<string, unknown>).expectedPayType === 'string',
+                ),
+            )
+          : [];
+        setPayClassificationConfirmation({
+          group,
+          warnings,
+        });
+        return;
+      }
       console.error('Error reviewing Satpam shift:', err);
       setErrorMsg(err instanceof Error ? err.message : 'Gagal mengaudit shift Satpam.');
     } finally {
@@ -3015,6 +3080,84 @@ export default function ActivityReviewPage() {
         )}
       </div>
 
+      {/* ── Pay-classification warning confirmation ───────────────────── */}
+      <Dialog
+        open={payClassificationConfirmation !== null}
+        onOpenChange={(open) => {
+          if (!open && !submittingShiftId) setPayClassificationConfirmation(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg rounded-3xl border-none bg-white p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Peringatan Kategori Upah
+            </DialogTitle>
+            <DialogDescription className="text-slate-500">
+              Kategori upah berikut belum sesuai dengan kalender payroll atau jenis penugasannya. Anda
+              tetap dapat menyetujui setelah memeriksa perbedaannya.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-4">
+            {payClassificationConfirmation?.warnings.map((warning) => (
+              <div
+                key={`${warning.kind || 'calendar'}-${warning.reportId}`}
+                className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-bold text-amber-900">{warning.employeeName}</p>
+                    <p className="mt-0.5 text-[11px] font-medium text-amber-800/80">
+                      {warning.postId} · {warning.dutyDate}
+                    </p>
+                  </div>
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                </div>
+                <p className="mt-2 font-semibold text-amber-900">
+                  Dipilih: <span className="font-black">{warning.actualPayType}</span>
+                  {' · '}
+                  {warning.kind === 'assignment' ? 'Jenis penugasan' : 'Kalender'}:{' '}
+                  <span className="font-black">{warning.expectedPayType}</span>
+                </p>
+              </div>
+            ))}
+            {payClassificationConfirmation?.warnings.length === 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-semibold text-amber-900">
+                Ada kategori upah yang perlu dikonfirmasi sebelum persetujuan.
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-slate-600">
+            Jika dilanjutkan, penugasan akan disetujui menggunakan kategori upah yang dipilih saat ini dan
+            dicatat sebagai keputusan auditor.
+          </div>
+
+          <DialogFooter className="gap-3 pt-4">
+            <Button
+              variant="ghost"
+              onClick={() => setPayClassificationConfirmation(null)}
+              disabled={Boolean(submittingShiftId)}
+              className="rounded-xl font-bold text-slate-500"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={() => {
+                const pendingConfirmation = payClassificationConfirmation;
+                if (!pendingConfirmation) return;
+                setPayClassificationConfirmation(null);
+                void handleSubmitShiftReview(pendingConfirmation.group, true);
+              }}
+              disabled={Boolean(submittingShiftId)}
+              className="rounded-xl bg-amber-500 font-bold text-white shadow-md shadow-amber-100 hover:bg-amber-600"
+            >
+              Tetap Setujui
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Decline Modal ──────────────────────────────────────────────── */}
       <Dialog open={declineTarget !== null} onOpenChange={(open) => { if (!open) setDeclineTarget(null); }}>
@@ -3266,7 +3409,9 @@ export default function ActivityReviewPage() {
               onClick={handleSavePayType}
               disabled={
                 savingPayType ||
-                (payTypeValue === payTypeTarget?.shiftType && payTypeEmployeeId === payTypeTarget?.employeeId) ||
+                (payTypeValue === payTypeTarget?.shiftType &&
+                  payTypeEmployeeId === payTypeTarget?.employeeId &&
+                  payTypeCovered.trim() === String(payTypeTarget?.coveredEmployeeId || '').trim()) ||
                 (payTypeValue === 'Lembur Cover' &&
                   (!payTypeCovered.trim() || payTypeCovered.trim() === payTypeEmployeeId))
               }

@@ -8,11 +8,19 @@ import { auth } from '@/lib/firebase';
  */
 export class ApiError extends Error {
   readonly status: number;
+  readonly code?: string;
+  readonly details?: unknown;
 
-  constructor(message: string, status: number) {
+  constructor(
+    message: string,
+    status: number,
+    options: { code?: string; details?: unknown } = {},
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = options.code;
+    this.details = options.details;
   }
 }
 
@@ -72,9 +80,17 @@ export async function authenticatedJson<T>(
       throw new ApiError(
         payload.error || 'Sesi tidak valid atau sudah kadaluarsa. Silakan masuk kembali.',
         401,
+        { code: typeof payload.code === 'string' ? payload.code : undefined },
       );
     }
-    throw new ApiError(payload.error || `Permintaan gagal (${response.status}).`, response.status);
+    throw new ApiError(
+      payload.error || `Permintaan gagal (${response.status}).`,
+      response.status,
+      {
+        code: typeof payload.code === 'string' ? payload.code : undefined,
+        details: payload.details ?? payload.warnings,
+      },
+    );
   }
   return payload as T;
 }
@@ -218,4 +234,3 @@ export async function authenticatedFormData<T>(
   }
   return payload as T;
 }
-

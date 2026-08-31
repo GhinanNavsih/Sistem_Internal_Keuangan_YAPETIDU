@@ -60,6 +60,33 @@ interface ShiftReviewCommand {
   occurrenceId: string;
   reason: string;
   decisions: ShiftDecision[];
+  confirmPayClassificationWarnings: boolean;
+  confirmCalendarMismatch?: boolean;
+}
+
+type PayClassificationWarningKind = 'calendar' | 'assignment';
+
+interface PayClassificationWarningDetail {
+  kind: PayClassificationWarningKind;
+  reportId: string;
+  employeeName: string;
+  postId: string;
+  dutyDate: string;
+  actualPayType: string;
+  expectedPayType: string;
+}
+
+class PayClassificationWarningError extends HttpError {
+  readonly code = 'SATPAM_PAY_CLASSIFICATION_WARNING';
+
+  constructor(readonly warnings: PayClassificationWarningDetail[]) {
+    const first = warnings[0];
+    super(
+      409,
+      `Kategori upah ${first?.employeeName || 'petugas'} belum sesuai kalender atau jenis penugasannya. Konfirmasi diperlukan.`,
+    );
+    this.name = 'PayClassificationWarningError';
+  }
 }
 
 interface AuditorEditAssignment {
@@ -144,6 +171,10 @@ function parseCommand(raw: unknown): ShiftReviewCommand {
     occurrenceId: value.occurrenceId,
     reason,
     decisions,
+    // Accept the old field during rollout so an older review page can still
+    // confirm a warning returned by this version of the API.
+    confirmPayClassificationWarnings:
+      value.confirmPayClassificationWarnings === true || value.confirmCalendarMismatch === true,
   };
 }
 
@@ -529,6 +560,7 @@ export async function POST(request: NextRequest) {
       const now = admin.firestore.FieldValue.serverTimestamp();
       let approvedCount = 0;
       let declinedCount = 0;
+      const payClassificationWarnings: PayClassificationWarningDetail[] = [];
       const existingApprovedCount = Number(occurrence.approvedAssignmentCount || 0);
       const existingDeclinedCount = Number(occurrence.declinedAssignmentCount || 0);
 
@@ -596,10 +628,18 @@ export async function POST(request: NextRequest) {
               (payType === 'Off-Duty' ||
                 (payType === 'Lembur Sendiri' && !isSelfPayAllowed)))
           ) {
-            throw new HttpError(
-              409,
-              `Klasifikasi upah ${String(before.employeeName || '')} belum sesuai jenis penugasannya.`,
-            );
+            payClassificationWarnings.push({
+              kind: 'assignment',
+              reportId: decision.reportId,
+              employeeName: String(before.employeeName || before.employeeId || 'Petugas'),
+              postId: String(before.postId || before.postName || 'Pos'),
+              dutyDate: String(occurrence.dutyDate || ''),
+              actualPayType: payType,
+              expectedPayType:
+                before.assignmentKind === 'extra'
+                  ? 'Lembur Sendiri'
+                  : 'Harian atau Jumat & Libur',
+            });
           }
           if (
             payType === 'Lembur Cover' &&
@@ -626,10 +666,15 @@ export async function POST(request: NextRequest) {
             holidayDates,
           );
           if (payType !== expectedPayType && !isSelfPayAllowed) {
-            throw new HttpError(
-              409,
-              `Kategori upah ${String(before.employeeName || '')} tidak sesuai kalender. Gunakan Edit Auditor.`,
-            );
+            payClassificationWarnings.push({
+              kind: 'calendar',
+              reportId: decision.reportId,
+              employeeName: String(before.employeeName || before.employeeId || 'Petugas'),
+              postId: String(before.postId || before.postName || 'Pos'),
+              dutyDate: String(occurrence.dutyDate || ''),
+              actualPayType: payType,
+              expectedPayType,
+            });
           }
         }
         if (
@@ -737,6 +782,13 @@ export async function POST(request: NextRequest) {
         );
       });
 
+      if (
+        payClassificationWarnings.length > 0 &&
+        !command.confirmPayClassificationWarnings
+      ) {
+        throw new PayClassificationWarningError(payClassificationWarnings);
+      }
+
       const totalApprovedCount = existingApprovedCount + approvedCount;
       const totalDeclinedCount = existingDeclinedCount + declinedCount;
       transaction.update(occurrenceRef, {
@@ -773,6 +825,19 @@ export async function POST(request: NextRequest) {
             dutyDate: occurrence.dutyDate,
             shiftName: occurrence.shiftName,
           },
+          metadata: {
+            period,
+            payClassificationWarnings,
+            calendarMismatchWarnings: payClassificationWarnings.filter(
+              (warning) => warning.kind === 'calendar',
+            ),
+            calendarMismatchConfirmed:
+              payClassificationWarnings.some((warning) => warning.kind === 'calendar') &&
+              command.confirmPayClassificationWarnings,
+            payClassificationWarningsConfirmed:
+              payClassificationWarnings.length > 0 &&
+              command.confirmPayClassificationWarnings,
+          },
         }),
       );
 
@@ -801,6 +866,16 @@ export async function POST(request: NextRequest) {
     }
     return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
+    if (error instanceof PayClassificationWarningError) {
+      return Response.json(
+        {
+          error: error.message,
+          code: error.code,
+          warnings: error.warnings,
+        },
+        { status: error.status },
+      );
+    }
     return errorResponse(error);
   }
 }
