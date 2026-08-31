@@ -650,6 +650,10 @@ export default function ActivityReviewPage() {
     group: SatpamShiftGroup;
     warnings: SatpamPayClassificationWarning[];
   } | null>(null);
+  const [shiftReviewProgress, setShiftReviewProgress] = useState<{
+    status: 'processing' | 'success';
+    message: string;
+  } | null>(null);
   const [satpamEmployeeDirectory, setSatpamEmployeeDirectory] = useState<Array<{ id: string; name: string; isActive: boolean }>>([]);
   // A "planned" guard (the "Rencana:" line on an audit card) can be someone
   // no longer classified as SATPAM by the time this renders, so they may be
@@ -1734,6 +1738,10 @@ export default function ActivityReviewPage() {
 
     setSubmittingShiftId(group.occurrenceId);
     setErrorMsg('');
+    setShiftReviewProgress({
+      status: 'processing',
+      message: `Memproses audit Shift ${group.shiftName} tanggal ${group.dutyDate}.`,
+    });
     try {
       await authenticatedJson('/api/satpam/shifts/review', {
         method: 'POST',
@@ -1749,11 +1757,11 @@ export default function ActivityReviewPage() {
       });
 
       const declinedTotal = decisions.filter(d => d.action === 'decline').length;
-      setSuccessMsg(
+      const successMessage =
         declinedTotal === 0
           ? `Shift ${group.shiftName} ${group.dutyDate} disetujui sepenuhnya (${decisions.length} penugasan).`
-          : `Shift ${group.shiftName} ${group.dutyDate} diaudit: ${decisions.length - declinedTotal} disetujui, ${declinedTotal} ditolak.`,
-      );
+          : `Shift ${group.shiftName} ${group.dutyDate} diaudit: ${decisions.length - declinedTotal} disetujui, ${declinedTotal} ditolak.`;
+      setShiftReviewProgress({ status: 'success', message: successMessage });
 
       setShiftReviewNotes(prev => {
         const next = { ...prev };
@@ -1788,6 +1796,7 @@ export default function ActivityReviewPage() {
                 ),
             )
           : [];
+        setShiftReviewProgress(null);
         setPayClassificationConfirmation({
           group,
           warnings,
@@ -1796,6 +1805,7 @@ export default function ActivityReviewPage() {
       }
       console.error('Error reviewing Satpam shift:', err);
       setErrorMsg(err instanceof Error ? err.message : 'Gagal mengaudit shift Satpam.');
+      setShiftReviewProgress(null);
     } finally {
       setSubmittingShiftId(null);
     }
@@ -3079,6 +3089,57 @@ export default function ActivityReviewPage() {
           </Card>
         )}
       </div>
+
+      {/* ── Shift review progress dialog ──────────────────────────────── */}
+      <Dialog
+        open={shiftReviewProgress !== null}
+        onOpenChange={(open) => {
+          if (!open && shiftReviewProgress?.status === 'success') {
+            setShiftReviewProgress(null);
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="sm:max-w-md rounded-3xl border-none bg-white p-6 text-center shadow-2xl"
+        >
+          <DialogHeader className="items-center">
+            {shiftReviewProgress?.status === 'processing' ? (
+              <Loader2 className="h-10 w-10 animate-spin text-indigo-600" aria-hidden="true" />
+            ) : (
+              <CheckCircle2 className="h-10 w-10 text-emerald-500" aria-hidden="true" />
+            )}
+            <DialogTitle className="text-lg font-bold text-slate-900">
+              {shiftReviewProgress?.status === 'processing'
+                ? 'Memproses Audit Shift'
+                : 'Audit Shift Berhasil'}
+            </DialogTitle>
+            <DialogDescription className="text-center text-slate-500">
+              {shiftReviewProgress?.message}
+            </DialogDescription>
+          </DialogHeader>
+
+          {shiftReviewProgress?.status === 'processing' ? (
+            <p
+              className="text-xs font-semibold text-slate-400"
+              role="status"
+              aria-live="polite"
+            >
+              Mohon tunggu, data rekap sedang diperbarui.
+            </p>
+          ) : (
+            <DialogFooter className="pt-2 sm:justify-center">
+              <Button
+                type="button"
+                onClick={() => setShiftReviewProgress(null)}
+                className="rounded-xl bg-emerald-600 px-6 font-bold text-white hover:bg-emerald-700"
+              >
+                Selesai
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Pay-classification warning confirmation ───────────────────── */}
       <Dialog

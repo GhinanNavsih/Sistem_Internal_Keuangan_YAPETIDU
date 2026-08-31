@@ -1207,7 +1207,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
       </Dialog>
 <ActivityFormDialog model={model} />
 <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
-        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] rounded-3xl border-none shadow-2xl bg-white p-0 overflow-hidden">
+        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 rounded-3xl border-none shadow-2xl bg-white p-0 overflow-hidden">
           <div className="bg-gradient-to-r from-amber-500 to-orange-600 p-5 pb-4">
             <DialogHeader>
               <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
@@ -1219,7 +1219,7 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
             </DialogHeader>
           </div>
 
-          <div className="p-5 space-y-4 text-base text-slate-600">
+          <div className="min-h-0 overflow-y-auto overscroll-contain p-5 space-y-4 text-base text-slate-600">
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
               <div className="flex items-start gap-2.5">
                 <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
