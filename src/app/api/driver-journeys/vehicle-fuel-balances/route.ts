@@ -76,18 +76,31 @@ export async function GET(request: NextRequest) {
     if (actor.role !== 'honorer' || !actor.linkedEmployeeId || !actor.permittedCategories.includes('SOPIR')) {
       throw new HttpError(403, 'Hanya akun Sopir yang dapat melihat saldo kendaraannya.');
     }
-    if (!requestedJourneyId || !/^[A-Za-z0-9_-]{1,180}$/.test(requestedJourneyId)) {
-      throw new HttpError(400, 'ID perjalanan tidak valid.');
+    if (requestedVehicle) {
+      if (requestedVehicle === DEFAULT_DRIVER_VEHICLE_NAME) {
+        return Response.json({ balance: null });
+      }
+      const vehicleName = requireVehicle(requestedVehicle);
+      return Response.json({
+        balance: await getVehicleFuelBalance(vehicleName as Parameters<typeof getVehicleFuelBalance>[0]),
+      });
     }
-    const journeySnapshot = await adminDb.collection('DriverJourneys').doc(requestedJourneyId).get();
-    if (!journeySnapshot.exists || !canDriverAccessJourney(journeySnapshot.data()!, actor)) {
-      throw new HttpError(403, 'Perjalanan dinas ini bukan milik Anda.');
+    if (requestedJourneyId) {
+      if (!/^[A-Za-z0-9_-]{1,180}$/.test(requestedJourneyId)) {
+        throw new HttpError(400, 'ID perjalanan tidak valid.');
+      }
+      const journeySnapshot = await adminDb.collection('DriverJourneys').doc(requestedJourneyId).get();
+      if (!journeySnapshot.exists || !canDriverAccessJourney(journeySnapshot.data()!, actor)) {
+        throw new HttpError(403, 'Perjalanan dinas ini bukan milik Anda.');
+      }
+      const vehicleName = String(journeySnapshot.data()?.vehicleName || '');
+      if (!isDriverVehicleName(vehicleName) || vehicleName === DEFAULT_DRIVER_VEHICLE_NAME) {
+        return Response.json({ balance: null });
+      }
+      return Response.json({ balance: await getVehicleFuelBalance(vehicleName) });
     }
-    const vehicleName = String(journeySnapshot.data()?.vehicleName || '');
-    if (!isDriverVehicleName(vehicleName) || vehicleName === DEFAULT_DRIVER_VEHICLE_NAME) {
-      return Response.json({ balance: null });
-    }
-    return Response.json({ balance: await getVehicleFuelBalance(vehicleName) });
+    const balances = await getVehicleFuelBalances();
+    return Response.json({ balances });
   } catch (error) {
     return errorResponse(error);
   }

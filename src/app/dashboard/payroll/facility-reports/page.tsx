@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
-  Hammer,
   Image as ImageIcon,
   Loader2,
   MapPin,
@@ -243,7 +242,7 @@ function FacilityReportReviewContent() {
         <UraianNavToggles />
 
         {/* ── Stats Cards (clickable filters) ──────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <button
             type="button"
             onClick={() => setStatusFilter(statusFilter === 'pending' ? 'all' : 'pending')}
@@ -256,21 +255,6 @@ function FacilityReportReviewContent() {
             <div className="text-2xl font-extrabold text-amber-500">{counts.pending ?? 0}</div>
             <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'pending' ? 'text-amber-600' : 'text-slate-400'}`}>
               {FACILITY_REPORT_STATUS_LABELS.pending}
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter(statusFilter === 'in_progress' ? 'all' : 'in_progress')}
-            className={`rounded-2xl shadow-sm text-center p-4 transition-all cursor-pointer ${
-              statusFilter === 'in_progress'
-                ? 'bg-blue-50 ring-2 ring-blue-400 shadow-blue-100'
-                : 'bg-white hover:bg-blue-50/40 hover:ring-1 hover:ring-blue-200'
-            }`}
-          >
-            <div className="text-2xl font-extrabold text-blue-500">{counts.in_progress ?? 0}</div>
-            <div className={`text-[11px] font-semibold mt-0.5 ${statusFilter === 'in_progress' ? 'text-blue-600' : 'text-slate-400'}`}>
-              {FACILITY_REPORT_STATUS_LABELS.in_progress}
             </div>
           </button>
 
@@ -417,18 +401,7 @@ function FacilityReportReviewContent() {
                             onClick={(e) => e.stopPropagation()}
                           >
                             <div className="flex justify-end gap-1.5">
-                              {report.status !== 'in_progress' && report.status !== 'resolved' && (
-                                <Button
-                                  size="sm"
-                                  disabled={actionLoading}
-                                  onClick={() => openReviewDialog(report, 'in_progress')}
-                                  className="h-7 px-2.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[11px] border border-blue-200 cursor-pointer"
-                                >
-                                  <Hammer className="w-3 h-3 mr-1" />
-                                  Tindak Lanjut
-                                </Button>
-                              )}
-                              {report.status !== 'resolved' && (
+                              {report.status === 'pending' && (
                                 <Button
                                   size="sm"
                                   disabled={actionLoading}
@@ -439,7 +412,7 @@ function FacilityReportReviewContent() {
                                   Selesai
                                 </Button>
                               )}
-                              {report.status !== 'declined' && (
+                              {report.status === 'pending' && (
                                 <Button
                                   size="sm"
                                   variant="ghost"
@@ -557,7 +530,7 @@ function FacilityReportReviewContent() {
                 placeholder={
                   reviewTarget?.nextStatus === 'declined'
                     ? 'Contoh: Fasilitas ini sudah dilaporkan sebelumnya.'
-                    : 'Contoh: Sudah diteruskan ke teknisi, dijadwalkan Senin.'
+                    : 'Contoh: Perbaikan selesai pada Senin, 17 Agustus.'
                 }
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 resize-y"
               />

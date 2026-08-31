@@ -29,6 +29,10 @@ export const PEKARYA_JOB_CATEGORIES = [
   'PONTI',
 ] as const;
 
+// UI/API sentinel for the combined attendance view. It is deliberately not a
+// job category and must never be written to an employee or payroll record.
+export const ALL_BLUE_COLLAR_CATEGORY = 'ALL';
+
 export type PekaryaJobCategory = (typeof PEKARYA_JOB_CATEGORIES)[number];
 
 export const PEKARYA_ACTIVITY_TYPES = [

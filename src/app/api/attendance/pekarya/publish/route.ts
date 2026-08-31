@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { ATTENDANCE_PAYROLL_START_PERIOD } from '@/lib/payroll/attendance';
 import { assertRequestId } from '@/lib/payroll/domain';
-import { publishPekaryaAttendance } from '@/lib/server/pekaryaAttendance';
+import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
+import {
+  listActivePekaryaAttendanceCategories,
+  publishPekaryaAttendance,
+  publishPekaryaAttendanceForCategories,
+} from '@/lib/server/pekaryaAttendance';
 import {
   errorResponse,
   HttpError,
@@ -31,11 +36,25 @@ export async function POST(request: NextRequest) {
     if (!/^\d{4}-\d{2}$/.test(period) || period < ATTENDANCE_PAYROLL_START_PERIOD) {
       throw new HttpError(400, 'Presensi Pekarya berlaku mulai periode 2026-08.');
     }
-    if (
-      !category ||
-      category === 'SATPAM' ||
-      !actor.permittedCategories.includes(category)
+    let publishCategories: string[] = [];
+    if (category === ALL_BLUE_COLLAR_CATEGORY) {
+      const activeCategories = await listActivePekaryaAttendanceCategories();
+      const permittedCategories = new Set(
+        actor.permittedCategories.map((item) => item.trim().toUpperCase()),
+      );
+      publishCategories = activeCategories.filter((item) =>
+        permittedCategories.has(item),
+      );
+    } else if (
+      category &&
+      category !== 'SATPAM' &&
+      actor.permittedCategories
+        .map((item) => item.trim().toUpperCase())
+        .includes(category)
     ) {
+      publishCategories = [category];
+    }
+    if (!category || publishCategories.length === 0) {
       throw new HttpError(403, 'Kategori publikasi tidak diizinkan.');
     }
     const acknowledgedWarnings = Array.isArray(body.acknowledgedWarnings)
@@ -49,14 +68,24 @@ export async function POST(request: NextRequest) {
       .digest('hex');
     let result;
     try {
-      result = await publishPekaryaAttendance(
-        period,
-        category,
-        actor.uid,
-        requestId,
-        acknowledgedWarnings,
-        requestHash,
-      );
+      result =
+        category === ALL_BLUE_COLLAR_CATEGORY
+          ? await publishPekaryaAttendanceForCategories(
+              period,
+              publishCategories,
+              actor.uid,
+              requestId,
+              acknowledgedWarnings,
+              requestHash,
+            )
+          : await publishPekaryaAttendance(
+              period,
+              category,
+              actor.uid,
+              requestId,
+              acknowledgedWarnings,
+              requestHash,
+            );
     } catch (error) {
       throw new HttpError(
         409,

@@ -77,7 +77,7 @@ export async function loadAttendanceEmployeeIdentities(): Promise<{
         data.flags?.isPayrollEligible !== false,
       jobCategory:
         typeof data.employment?.jobCategory === 'string'
-          ? data.employment.jobCategory
+          ? data.employment.jobCategory.trim().toUpperCase()
           : null,
     });
   }

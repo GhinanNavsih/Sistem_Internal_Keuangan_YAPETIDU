@@ -3,8 +3,8 @@
 import { BadgeCheck, Banknote, CalendarDays, Loader2, Lock } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { VAKASI_PEKARYA_PROJECTION_SOURCE_KIND } from '@/lib/payroll/vakasiTambahan';
-import type { EmployeeActivitiesModel } from './activityModel';
-import { fmtRp } from './activityModel';
+import type { AssignedSpjEvent } from '@/lib/payroll/assignedSpjEvents';
+import { fmtRp } from './activityShared';
 
 function periodLabel(period: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(period);
@@ -28,12 +28,12 @@ function approvedAtLabel(value: string | null): string {
 }
 
 export default function AssignedSpjHistoryPanel({
-  model,
+  assignedSpjEvents,
+  loadingAssignedSpjEvents,
 }: {
-  model: EmployeeActivitiesModel;
+  assignedSpjEvents: AssignedSpjEvent[];
+  loadingAssignedSpjEvents: boolean;
 }) {
-  const { assignedSpjEvents, loadingAssignedSpjEvents } = model;
-
   return (
     <section className="space-y-3" aria-labelledby="assigned-spj-history-title">
       <div className="flex items-center justify-between px-1">

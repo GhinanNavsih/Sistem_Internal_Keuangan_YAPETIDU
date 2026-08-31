@@ -111,6 +111,14 @@ export async function POST(request: NextRequest) {
     ) {
       throw new HttpError(409, 'Data periode, kategori, atau jenis pengajuan tidak valid.');
     }
+    if (
+      actor.role === 'satker_head' &&
+      !actor.permittedCategories
+        .map((item) => item.trim().toUpperCase())
+        .includes(category)
+    ) {
+      throw new HttpError(403, 'Anda tidak memiliki akses ke kategori pengajuan ini.');
+    }
     let scanIn: string | null = null;
     let scanOut: string | null = null;
     if (reportType === 'scan') {

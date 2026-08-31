@@ -42,6 +42,7 @@ import {
 } from '@/lib/payroll/driverPiket';
 import {
   DEFAULT_DRIVER_VEHICLE_NAME,
+  DEFAULT_FUEL_PROCUREMENT_MODE,
   DRIVER_VEHICLE_NAMES,
   DRIVER_VEHICLE_RATES,
   cashOperationalCostFromJourney,
@@ -49,7 +50,10 @@ import {
   resolveMealAccountingMode,
   CURRENT_MEAL_ACCOUNTING_MODE,
   formatDurationHoursAsJamMenit,
+  fuelProcurementModeLabel,
+  isFuelProcurementMode,
   type DriverVehicleName,
+  type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
 import {
   PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH,
@@ -110,6 +114,9 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
     selfPiketEndPointLocation,
     selfPiketVehicleName,
     setSelfPiketVehicleName,
+    selfPiketFuelProcurementMode,
+    setSelfPiketFuelProcurementMode,
+    selectedSelfPiketFuelBalance,
     creatingPiketSpj,
     setSelfPiketCalcDistance,
     selfPiketCalcDistance,
@@ -755,40 +762,86 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
               </div>
             </div>
 
-            {/* Kendaraan: Ndalem remains the default, but other vehicles use the same
-                operational allowance rules as a Kepala Satker authorization. */}
-            <div className="space-y-1.5">
-              <Label htmlFor="selfPiketVehicle" className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                Jenis Kendaraan
-              </Label>
-              <Select
-                value={selfPiketVehicleName}
-                onValueChange={(value) => {
-                  if (value && DRIVER_VEHICLE_NAMES.includes(value as DriverVehicleName)) {
-                    setSelfPiketVehicleName(value as DriverVehicleName);
-                  }
-                }}
-              >
-                <SelectTrigger id="selfPiketVehicle" className="w-full text-xs font-extrabold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
-                  <SelectValue>
-                    {selfPiketVehicleName === DEFAULT_DRIVER_VEHICLE_NAME
-                      ? 'Ndalem — Default, tanpa BBM'
-                      : `${selfPiketVehicleName} — Rp${DRIVER_VEHICLE_RATES[selfPiketVehicleName].toLocaleString('id-ID')}/km`}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
-                  {DRIVER_VEHICLE_NAMES.map((vehicleName) => (
-                    <SelectItem key={vehicleName} value={vehicleName}>
-                      {vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
+            {/* Kendaraan & Mode Pengadaan BBM */}
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="selfPiketVehicle" className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                  Jenis Kendaraan
+                </Label>
+                <Select
+                  value={selfPiketVehicleName}
+                  onValueChange={(value) => {
+                    if (value && DRIVER_VEHICLE_NAMES.includes(value as DriverVehicleName)) {
+                      setSelfPiketVehicleName(value as DriverVehicleName);
+                      if (value === DEFAULT_DRIVER_VEHICLE_NAME) {
+                        setSelfPiketFuelProcurementMode('standard_direct');
+                      } else if (selfPiketFuelProcurementMode === 'standard_direct') {
+                        setSelfPiketFuelProcurementMode('hold_accumulate');
+                      }
+                    }
+                  }}
+                >
+                  <SelectTrigger id="selfPiketVehicle" className="w-full text-xs font-extrabold text-slate-700 bg-white rounded-xl border border-slate-200 h-10 px-3">
+                    <SelectValue>
+                      {selfPiketVehicleName === DEFAULT_DRIVER_VEHICLE_NAME
                         ? 'Ndalem — Default, tanpa BBM'
-                        : `${vehicleName} — Rp${DRIVER_VEHICLE_RATES[vehicleName].toLocaleString('id-ID')}/km`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[10px] text-slate-500 font-semibold">
-                Ndalem dipilih otomatis. Kendaraan lain mendapat anggaran BBM dan uang makan sesuai otorisasi Kepala SatKer.
-              </p>
+                        : `${selfPiketVehicleName} — Rp${DRIVER_VEHICLE_RATES[selfPiketVehicleName].toLocaleString('id-ID')}/km`}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+                    {DRIVER_VEHICLE_NAMES.map((vehicleName) => (
+                      <SelectItem key={vehicleName} value={vehicleName}>
+                        {vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
+                          ? 'Ndalem — Default, tanpa BBM'
+                          : `${vehicleName} — Rp${DRIVER_VEHICLE_RATES[vehicleName].toLocaleString('id-ID')}/km`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Mode Pengadaan BBM (Hanya jika non-Ndalem) */}
+              {selfPiketVehicleName !== DEFAULT_DRIVER_VEHICLE_NAME && (
+                <div className="rounded-xl border border-blue-200/80 bg-blue-50/60 p-3 space-y-2 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label htmlFor="selfPiketFuelMode" className="text-xs font-bold text-blue-900 uppercase tracking-wider">
+                      Mode Pengadaan BBM
+                    </Label>
+                    {selectedSelfPiketFuelBalance && (
+                      <span className="text-right text-[10px] font-bold text-slate-600">
+                        Tersedia <strong className="text-emerald-700">{fmtRp(Number(selectedSelfPiketFuelBalance.availableBalance || 0))}</strong>
+                        {' · '}Akumulasi <strong className="text-blue-700">{fmtRp(Number(selectedSelfPiketFuelBalance.accumulatedHoldAmount || 0))}</strong>
+                      </span>
+                    )}
+                  </div>
+                  <Select
+                    value={selfPiketFuelProcurementMode}
+                    onValueChange={(value) => {
+                      if (isFuelProcurementMode(value)) {
+                        setSelfPiketFuelProcurementMode(value);
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="selfPiketFuelMode" className="w-full text-xs font-bold text-slate-700 bg-white rounded-xl border border-blue-200 h-10 px-3">
+                      <SelectValue>
+                        {fuelProcurementModeLabel(selfPiketFuelProcurementMode)}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+                      <SelectItem value="hold_accumulate">Tahan & akumulasi</SelectItem>
+                      <SelectItem value="procure_release">Cairkan saldo</SelectItem>
+                      <SelectItem value="standard_direct">Standard langsung</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] leading-relaxed text-blue-800 font-semibold">
+                    {selfPiketFuelProcurementMode === 'hold_accumulate'
+                      ? 'Jatah perjalanan mengurangi Tersedia saat otorisasi, lalu menjadi Akumulasi setelah audit disetujui. Kuitansi BBM tidak diperlukan.'
+                      : selfPiketFuelProcurementMode === 'procure_release'
+                        ? `Akumulasi ${fmtRp(Number(selectedSelfPiketFuelBalance?.accumulatedHoldAmount || 0))} dikunci dan digabung dengan jatah perjalanan. Nominal pembelian aktual dan kuitansi wajib.`
+                        : 'Settlement BBM mengikuti alur langsung standard (unggah struk BBM).'}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Calculation Loader */}
@@ -884,7 +937,10 @@ export default function SopirActivitiesView({ model }: SopirActivitiesViewProps)
                       </span>
                     </div>
                     <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100 font-semibold">
-                      BBM {fmtRp(selfPiketOperationalCosts.baseOperationalCost)} + Uang makan {fmtRp(selfPiketOperationalCosts.mealAllowance)} + Tol/parkir {fmtRp(selfPiketOperationalCosts.tollParkingFee)}
+                      BBM {fmtRp(selfPiketOperationalCosts.totalFuelAllocation)}
+                      {selfPiketOperationalCosts.heldFuelAmount > 0 ? ` (Ditahan ${fmtRp(selfPiketOperationalCosts.heldFuelAmount)})` : ''}
+                      {selfPiketOperationalCosts.procuredAccumulatedAmount > 0 ? ` (Pencairan akumulasi ${fmtRp(selfPiketOperationalCosts.procuredAccumulatedAmount)})` : ''}
+                      {' + '}Uang makan {fmtRp(selfPiketOperationalCosts.mealAllowance)} + Tol/parkir {fmtRp(selfPiketOperationalCosts.tollParkingFee)}
                     </div>
                   </div>
                 )}

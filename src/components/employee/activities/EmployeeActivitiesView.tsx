@@ -120,11 +120,15 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 relative z-10">
         <ActivityPeriodSelector model={model} />
-        {workflow === 'sopir' && <AssignedSpjHistoryPanel model={model} />}
         {workflow === 'satpam' && <SatpamActivitiesView model={model} />}
         {workflow === 'sopir' && <SopirActivitiesView model={model} />}
         {workflow === 'pekarya' && <PekaryaActivitiesView model={model} />}
-        {workflow !== 'sopir' && <AssignedSpjHistoryPanel model={model} />}
+        {workflow !== 'sopir' && (
+          <AssignedSpjHistoryPanel
+            assignedSpjEvents={model.assignedSpjEvents}
+            loadingAssignedSpjEvents={model.loadingAssignedSpjEvents}
+          />
+        )}
         <div className="h-20" />
       </div>
     </div>

@@ -572,6 +572,15 @@ export async function POST(request: NextRequest) {
         throw new HttpError(400, 'Jenis kendaraan tidak dikenal.');
       }
       const vehicleName = requestedVehicleName;
+      const requestedFuelMode = vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
+        ? DEFAULT_FUEL_PROCUREMENT_MODE
+        : (body?.fuelProcurementMode === undefined ? 'hold_accumulate' : body.fuelProcurementMode);
+      if (!isFuelProcurementMode(requestedFuelMode)) {
+        throw new HttpError(400, 'Mode pengadaan BBM tidak valid.');
+      }
+      if (vehicleName === DEFAULT_DRIVER_VEHICLE_NAME && requestedFuelMode !== DEFAULT_FUEL_PROCUREMENT_MODE) {
+        throw new HttpError(400, 'Kendaraan Ndalem hanya menggunakan Pengisian Standard.');
+      }
       const distanceKm = numberField(body?.distanceKm, 'Jarak satu arah', { min: 0.001, max: 10_000 });
       const durationHours = numberField(body?.durationHours, 'Durasi satu arah', { min: 0.001, max: 10_000 });
       const tollParkingFee = numberField(body?.tollParkingFee ?? 0, 'Tol & parkir', { min: 0, max: MAX_MONEY });
@@ -610,37 +619,67 @@ export async function POST(request: NextRequest) {
 
         const journeyId = `${hasSchedule ? 'JRN-PIKET' : 'JRN-MANDIRI'}-${activityDate.replaceAll('-', '')}-${randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase()}`;
         const journeyRef = adminDb.collection('DriverJourneys').doc(journeyId);
+        const reservationId = `FUEL-${journeyId}-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`;
 
         const selfWageEst = calculateEstimatedDriverWage(
           distanceKm * 2,
           durationHours * 2,
           CURRENT_MEAL_ACCOUNTING_MODE,
         );
-        const operationalCosts = calculateDriverJourneyOperationalCosts(
+        const baseOperationalCosts = calculateDriverJourneyOperationalCosts(
           distanceKm,
           durationHours * 2,
           vehicleName,
           tollParkingFee,
           { mealAccountingMode: CURRENT_MEAL_ACCOUNTING_MODE },
         );
+        const balanceVehicles = vehicleName === DEFAULT_DRIVER_VEHICLE_NAME ? [] : [vehicleName];
+        const fuelContext = balanceVehicles.length > 0
+          ? await createFuelLedgerContext(transaction, balanceVehicles, {
+              uid: actor.uid,
+              displayName: actor.displayName,
+              role: actor.role,
+            })
+          : null;
+        let reservation: FuelReservationRecord;
+        if (requestedFuelMode === DEFAULT_FUEL_PROCUREMENT_MODE) {
+          reservation = {
+            fuelReservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
+            fuelReservationId: reservationId,
+            fuelReservationState: 'none',
+            fuelReservationVehicleName: vehicleName,
+            fuelProcurementMode: requestedFuelMode,
+            baseFuelAllowance: Math.ceil(baseOperationalCosts.baseOperationalCost),
+            heldFuelAmount: 0,
+            procuredAccumulatedAmount: 0,
+          };
+        } else if (fuelContext) {
+          reservation = reserveFuel(fuelContext, {
+            journeyId,
+            reservationId,
+            vehicleName,
+            mode: requestedFuelMode,
+            baseFuelAllowance: baseOperationalCosts.baseOperationalCost,
+            reason: 'Reservasi BBM saat otorisasi SPJ Mandiri',
+          });
+        } else {
+          throw new HttpError(409, 'Saldo BBM kendaraan tidak dapat diproses.');
+        }
+
+        const operationalCosts = calculateDriverJourneyOperationalCosts(
+          distanceKm,
+          durationHours * 2,
+          vehicleName,
+          tollParkingFee,
+          {
+            fuelProcurementMode: requestedFuelMode,
+            procuredAccumulatedAmount: reservation.procuredAccumulatedAmount,
+            mealAccountingMode: CURRENT_MEAL_ACCOUNTING_MODE,
+          },
+        );
+        if (fuelContext) flushFuelLedger(fuelContext);
+
         const now = admin.firestore.FieldValue.serverTimestamp();
-        const selfFuelFields = vehicleName === DEFAULT_DRIVER_VEHICLE_NAME
-          ? {
-              fuelProcurementMode: DEFAULT_FUEL_PROCUREMENT_MODE,
-              fuelReservationVersion: CURRENT_FUEL_RESERVATION_VERSION,
-              fuelReservationId: `FUEL-${journeyId}`,
-              fuelReservationState: 'none',
-              fuelReservationVehicleName: vehicleName,
-              heldFuelAmount: 0,
-              procuredAccumulatedAmount: 0,
-              fuelAllowanceForSettlement: 0,
-              fuelTotalAllocation: 0,
-              fuelModeSelectionRequired: false,
-            }
-          : {
-              fuelProcurementMode: null,
-              fuelModeSelectionRequired: true,
-            };
         transaction.create(journeyRef, {
           id: journeyId,
           activityName,
@@ -668,7 +707,8 @@ export async function POST(request: NextRequest) {
           tollParkingFee,
           preAuthorizedToll: tollParkingFee,
           totalOperationalCost: operationalCosts.totalOperationalCost,
-          ...selfFuelFields,
+          ...reservationFields(reservation),
+          fuelModeSelectionRequired: false,
           estimatedComponentJarak: selfWageEst.compJarak,
           estimatedComponentWaktu: selfWageEst.compWaktu,
           estimatedBaseDriverWage: selfWageEst.baseWage,

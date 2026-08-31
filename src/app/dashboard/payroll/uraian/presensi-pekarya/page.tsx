@@ -37,6 +37,7 @@ import {
   satpamAttendanceReportType,
   type SatpamAttendanceReportType,
 } from '@/lib/payroll/satpamAttendance';
+import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 
 type AttendanceDay = {
   date: string;
@@ -246,6 +247,12 @@ function money(value: number) {
 }
 
 function statusText(view: AttendanceView) {
+  if (
+    view.category === ALL_BLUE_COLLAR_CATEGORY &&
+    view.publication?.state === 'partial'
+  ) {
+    return 'Sebagian kategori sudah dipublikasikan';
+  }
   if (!view.publication) return 'Belum dipublikasikan';
   if (view.publication.stale) return 'Perlu dipublikasikan ulang';
   return view.publication.state === 'published'
@@ -288,6 +295,7 @@ function satpamPlanStatusLabel(status: string): string {
 function categoryLabel(category: string): string {
   return (
     {
+      [ALL_BLUE_COLLAR_CATEGORY]: 'Semua Pekarya',
       SATPAM: 'Satpam',
       SOPIR: 'Sopir',
       PEKARYA: 'Pekarya',
@@ -304,6 +312,9 @@ export default function PekaryaAttendancePage() {
   const { profile } = useAuth();
   const month = Number(searchParams.get('month') || new Date().getMonth() + 1);
   const year = Number(searchParams.get('year') || new Date().getFullYear());
+  const permittedAttendanceCategory = profile?.permittedCategories?.find(
+    (item) => item.trim().toUpperCase() !== 'SATPAM',
+  );
   const category = (
     searchParams.get('category') ||
     (year === 2026 &&
@@ -315,8 +326,12 @@ export default function PekaryaAttendancePage() {
       ? 'SATPAM'
       : '') ||
     (profile?.role === 'satker_head'
-      ? profile.permittedCategories?.[0]
-      : '') ||
+      ? permittedAttendanceCategory
+        ? ALL_BLUE_COLLAR_CATEGORY
+        : profile.permittedCategories?.[0]
+      : ['super_admin', 'finance_verifier'].includes(profile?.role || '')
+        ? ALL_BLUE_COLLAR_CATEGORY
+        : '') ||
     ''
   ).toUpperCase();
   const period = `${year}-${String(month).padStart(2, '0')}`;
@@ -565,7 +580,7 @@ export default function PekaryaAttendancePage() {
         body: JSON.stringify({
           requestId: createFinancialRequestId('attendance-correction'),
           period,
-          category,
+          category: correction.employee.category,
           employeeId: correction.employee.employeeId,
           date: correction.date,
           present: correction.present,
@@ -686,6 +701,19 @@ export default function PekaryaAttendancePage() {
           </p>
         </div>
       )}
+
+      {data &&
+        !isSatpamView(data) &&
+        category === ALL_BLUE_COLLAR_CATEGORY && (
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 text-blue-900">
+            <p className="font-bold">Semua pegawai blue collar</p>
+            <p className="mt-1 text-sm">
+              Daftar ini menggabungkan seluruh kategori yang memakai upah
+              presensi. Satpam tetap diperiksa melalui kategori Satpam karena
+              pembayarannya bersumber dari laporan Ketua Shift.
+            </p>
+          </div>
+        )}
 
       {loading && (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">
@@ -1112,7 +1140,13 @@ export default function PekaryaAttendancePage() {
                   }
                 >
                   <Save className="h-4 w-4" />
-                  {data.publication ? 'Publikasikan Ulang' : 'Publikasikan ke Rekap'}
+                  {data.publication
+                    ? category === ALL_BLUE_COLLAR_CATEGORY
+                      ? 'Publikasikan Ulang Semua'
+                      : 'Publikasikan Ulang'
+                    : category === ALL_BLUE_COLLAR_CATEGORY
+                      ? 'Publikasikan Semua ke Rekap'
+                      : 'Publikasikan ke Rekap'}
                 </Button>
               )}
             </div>
@@ -1148,6 +1182,9 @@ export default function PekaryaAttendancePage() {
                           {leave.employeeName || leave.employeeId} · {leave.date}
                         </p>
                         <p className="text-sm font-semibold text-indigo-700">
+                          {category === ALL_BLUE_COLLAR_CATEGORY
+                            ? `${categoryLabel(leave.category)} · `
+                            : ''}
                           {reportType === 'scan'
                             ? `Scan Masuk & Scan Keluar · ${leave.scanIn?.slice(0, 5) || '--:--'}–${leave.scanOut?.slice(0, 5) || '--:--'}`
                             : 'Izin Resmi · 07:30–14:00'}
@@ -1226,6 +1263,11 @@ export default function PekaryaAttendancePage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-bold text-slate-900">{employee.name}</p>
+                        {category === ALL_BLUE_COLLAR_CATEGORY && (
+                          <span className="rounded-full bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">
+                            {categoryLabel(employee.category)}
+                          </span>
+                        )}
                         {employee.publishBlocked && (
                           <UserRoundX className="h-5 w-5 text-rose-600" />
                         )}

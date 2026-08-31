@@ -56,6 +56,11 @@ import {
   formatDurationHoursAsJamMenit,
 } from '@/lib/payroll/driverJourney';
 import { authenticatedJson } from '@/lib/payroll/client';
+import AssignedSpjHistoryPanel from '@/components/employee/activities/AssignedSpjHistoryPanel';
+import {
+  fetchAssignedSpjEvents,
+  type AssignedSpjEvent,
+} from '@/lib/payroll/assignedSpjEvents';
 import {
   EMPLOYEE_ACTIVITY_PATHS,
   SOPIR_JOURNEY_REPORT_PATH,
@@ -220,6 +225,8 @@ function DriverHistoryContent() {
 
   const [activities, setActivities] = useState<ActivityReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const [assignedSpjEvents, setAssignedSpjEvents] = useState<AssignedSpjEvent[]>([]);
+  const [loadingAssignedSpjEvents, setLoadingAssignedSpjEvents] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'declined'>('all');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [targetDeleteActivity, setTargetDeleteActivity] = useState<ActivityReport | null>(null);
@@ -291,6 +298,34 @@ function DriverHistoryContent() {
     });
 
     return () => unsubscribe();
+  }, [profile?.linkedEmployeeId, periodToken, isSopir]);
+
+  useEffect(() => {
+    if (!profile?.linkedEmployeeId || !isSopir) {
+      setAssignedSpjEvents([]);
+      setLoadingAssignedSpjEvents(false);
+      return;
+    }
+
+    let active = true;
+    setLoadingAssignedSpjEvents(true);
+    fetchAssignedSpjEvents(periodToken)
+      .then((events) => {
+        if (!active) return;
+        setAssignedSpjEvents(events);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.error('Error loading assigned SPJ history:', error);
+        setAssignedSpjEvents([]);
+      })
+      .finally(() => {
+        if (active) setLoadingAssignedSpjEvents(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [profile?.linkedEmployeeId, periodToken, isSopir]);
 
   const filteredActivities = useMemo(() => {
@@ -441,6 +476,11 @@ function DriverHistoryContent() {
             </div>
           </CardContent>
         </Card>
+
+        <AssignedSpjHistoryPanel
+          assignedSpjEvents={assignedSpjEvents}
+          loadingAssignedSpjEvents={loadingAssignedSpjEvents}
+        />
 
         {/* ── Stats Summary ────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3">

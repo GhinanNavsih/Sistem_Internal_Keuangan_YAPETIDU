@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
         if (actor.role !== 'super_admin' && current.status !== 'pending') {
           throw new HttpError(
             409,
-            'Laporan yang sudah ditindaklanjuti tidak dapat ditarik kembali.',
+            'Laporan yang sudah diproses tidak dapat ditarik kembali.',
           );
         }
         transaction.delete(reportRef);

@@ -5,8 +5,11 @@ import {
 } from '@/lib/payroll/attendance';
 import {
   buildPekaryaAttendanceView,
+  buildPekaryaAttendanceViewForCategories,
   buildSatpamAttendanceMismatches,
+  listActivePekaryaAttendanceCategories,
 } from '@/lib/server/pekaryaAttendance';
+import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import {
   errorResponse,
   HttpError,
@@ -37,23 +40,56 @@ export async function GET(request: NextRequest) {
         'Presensi Pekarya berlaku mulai periode 2026-08.',
       );
     }
-    if (!category || !/^[A-Z0-9_ -]{2,80}$/.test(category)) {
+    if (
+      !category ||
+      (!/^[A-Z0-9_ -]{2,80}$/.test(category) &&
+        category !== ALL_BLUE_COLLAR_CATEGORY)
+    ) {
       throw new HttpError(400, 'Kategori Pekarya tidak valid.');
     }
-    if (
-      actor.role === 'satker_head' &&
-      !actor.permittedCategories.includes(category)
-    ) {
-      throw new HttpError(403, `Anda tidak memiliki akses kategori ${category}.`);
+    let visibleCategories: string[] | null = null;
+    if (category === ALL_BLUE_COLLAR_CATEGORY) {
+      const activeCategories = await listActivePekaryaAttendanceCategories();
+      const permittedCategories = new Set(
+        actor.permittedCategories.map((item) => item.trim().toUpperCase()),
+      );
+      visibleCategories =
+        actor.role === 'satker_head'
+          ? activeCategories.filter((item) =>
+              permittedCategories.has(item),
+            )
+          : activeCategories;
+      if (visibleCategories.length === 0) {
+        throw new HttpError(
+          403,
+          'Anda tidak memiliki akses ke kategori Pekarya aktif.',
+        );
+      }
+    } else {
+      if (
+        actor.role === 'satker_head' &&
+        !actor.permittedCategories
+          .map((item) => item.trim().toUpperCase())
+          .includes(category)
+      ) {
+        throw new HttpError(403, `Anda tidak memiliki akses kategori ${category}.`);
+      }
+      visibleCategories = category === 'SATPAM' ? null : [category];
     }
     const result =
       category === 'SATPAM'
         ? await buildSatpamAttendanceMismatches(period, {
             allowMissingActiveImport: true,
           })
-        : await buildPekaryaAttendanceView(period, category, {
-            allowMissingActiveImport: true,
-          });
+        : category === ALL_BLUE_COLLAR_CATEGORY
+          ? await buildPekaryaAttendanceViewForCategories(
+              period,
+              visibleCategories || [],
+              { allowMissingActiveImport: true },
+            )
+          : await buildPekaryaAttendanceView(period, category, {
+              allowMissingActiveImport: true,
+            });
     const officialLeaveSnapshot =
       category === 'SATPAM'
         ? null
@@ -69,7 +105,11 @@ export async function GET(request: NextRequest) {
             id: document.id,
             ...(document.data() as Record<string, unknown>),
           }))
-          .filter((item) => String(item.category || '') === category)
+          .filter((item) =>
+            (visibleCategories || []).includes(
+              String(item.category || '').trim().toUpperCase(),
+            ),
+          )
           .sort((left, right) =>
             String(right.date || '').localeCompare(String(left.date || '')),
           ) || [],

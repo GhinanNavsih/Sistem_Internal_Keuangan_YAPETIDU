@@ -29,13 +29,12 @@ export function isFacilityArea(value: unknown): value is FacilityArea {
 }
 
 /**
- * A report starts `pending`, and the Kepala SatKer moves it along as the
- * repair progresses. `declined` closes a report that is not a real fault (or
+ * A report starts `pending` and stays there until the Kepala SatKer records
+ * the final outcome. `declined` closes a report that is not a real fault (or
  * is already covered by another report) and always carries a reason.
  */
 export const FACILITY_REPORT_STATUSES = [
   'pending',
-  'in_progress',
   'resolved',
   'declined',
 ] as const;
@@ -44,7 +43,6 @@ export type FacilityReportStatus = (typeof FACILITY_REPORT_STATUSES)[number];
 
 export const FACILITY_REPORT_STATUS_LABELS: Record<FacilityReportStatus, string> = {
   pending: 'Menunggu',
-  in_progress: 'Ditindaklanjuti',
   resolved: 'Selesai',
   declined: 'Ditolak',
 };
@@ -52,7 +50,6 @@ export const FACILITY_REPORT_STATUS_LABELS: Record<FacilityReportStatus, string>
 /** Terminal states can no longer be edited or withdrawn by the reporter. */
 export const FACILITY_REPORT_OPEN_STATUSES: readonly FacilityReportStatus[] = [
   'pending',
-  'in_progress',
 ];
 
 export const MAX_FACILITY_PLACE_LENGTH = 160;
@@ -100,25 +97,20 @@ export function isFacilityReportOpen(status: unknown): boolean {
 }
 
 /**
- * Which transitions a reviewer may apply. A report can be re-opened from
- * `resolved`/`declined` back to `in_progress` when a fault turns out not to be
- * fixed, but it never returns to `pending` — that state means "not yet seen".
+ * Which transitions a reviewer may apply. The workflow has one open state:
+ * a pending report is closed directly as either resolved or declined.
  */
 export function canTransitionFacilityReport(
   from: FacilityReportStatus,
   to: FacilityReportStatus,
 ): boolean {
-  if (from === to) return false;
-  if (to === 'pending') return false;
-  return true;
+  return from === 'pending' && (to === 'resolved' || to === 'declined');
 }
 
 export function facilityReportStatusTone(status: FacilityReportStatus): string {
   switch (status) {
     case 'resolved':
       return 'bg-emerald-100 text-emerald-800';
-    case 'in_progress':
-      return 'bg-blue-100 text-blue-800';
     case 'declined':
       return 'bg-rose-100 text-rose-800';
     default:

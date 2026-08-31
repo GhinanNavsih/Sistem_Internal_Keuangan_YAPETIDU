@@ -50,7 +50,6 @@ test('fuel procurement modes have human-readable UI labels', () => {
   assert.equal(fuelProcurementModeLabel('procure_release'), 'Cairkan saldo');
   assert.equal(fuelProcurementModeLabel('unknown_mode'), 'Mode pengadaan BBM');
 });
-
 test('authorization drafts preserve the ordered destination timeline and coordinates', () => {
   const draftState: DriverJourneyAuthorizationDraftState = {
     hasUserChanges: true,
@@ -888,4 +887,29 @@ test('formatDurationHoursAsJamMenit spells out hours and minutes instead of deci
   // 59.6 minutes rounds up into the next hour, not "1j 60m".
   assert.equal(formatDurationHoursAsJamMenit(1.993), '2j 00m');
   assert.equal(formatDurationHoursAsJamMenit(-1), '0j 00m');
+});
+
+test('calculateDriverJourneyOperationalCosts respects hold_accumulate and procure_release modes', () => {
+  // 50 km one way, 3 hours PP, Innova Matic (Rp 1.450/km) -> base BBM = 50 * 2 * 1450 = 145.000
+  const holdMode = calculateDriverJourneyOperationalCosts(50, 3, 'Innova Matic', 20_000, {
+    fuelProcurementMode: 'hold_accumulate',
+    mealAccountingMode: 'upah_bersih_gross',
+  });
+  assert.equal(holdMode.baseOperationalCost, 145_000);
+  assert.equal(holdMode.heldFuelAmount, 145_000);
+  assert.equal(holdMode.effectiveFuelAllowance, 0);
+  assert.equal(holdMode.totalFuelAllocation, 0);
+  assert.equal(holdMode.totalOperationalCost, 20_000); // Only toll/parking because fuel is held and meal is in upah bersih
+
+  const releaseMode = calculateDriverJourneyOperationalCosts(50, 3, 'Innova Matic', 20_000, {
+    fuelProcurementMode: 'procure_release',
+    procuredAccumulatedAmount: 50_000,
+    mealAccountingMode: 'upah_bersih_gross',
+  });
+  assert.equal(releaseMode.baseOperationalCost, 145_000);
+  assert.equal(releaseMode.heldFuelAmount, 0);
+  assert.equal(releaseMode.procuredAccumulatedAmount, 50_000);
+  assert.equal(releaseMode.effectiveFuelAllowance, 195_000); // 145.000 + 50.000
+  assert.equal(releaseMode.totalFuelAllocation, 195_000);
+  assert.equal(releaseMode.totalOperationalCost, 215_000); // 195.000 + 20.000
 });

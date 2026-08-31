@@ -3,6 +3,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import {
   ScanLine,
   Banknote,
@@ -60,6 +61,12 @@ export default function UraianNavToggles() {
       tab === 'presence_corrections' ||
       tab === 'driver-journeys' ||
       tab === 'activity-review'
+    ) {
+      params.delete('category');
+    }
+    if (
+      tab !== 'presensi_pekarya' &&
+      params.get('category')?.trim().toUpperCase() === ALL_BLUE_COLLAR_CATEGORY
     ) {
       params.delete('category');
     }

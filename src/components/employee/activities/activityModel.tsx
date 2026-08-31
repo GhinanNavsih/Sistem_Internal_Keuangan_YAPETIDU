@@ -63,15 +63,28 @@ import {
 } from '@/lib/photoEvidence';
 import {
   DEFAULT_DRIVER_VEHICLE_NAME,
+  DEFAULT_FUEL_PROCUREMENT_MODE,
+  CURRENT_MEAL_ACCOUNTING_MODE,
   calculateDriverJourneyOperationalCosts,
   DEFAULT_DRIVER_JOURNEY_LOCATION,
   driverJourneyRoutePoint,
+  fuelProcurementModeLabel,
+  isFuelProcurementMode,
   MAX_DRIVER_JOURNEY_DESTINATIONS,
   MAX_DRIVER_JOURNEY_LOCATIONS,
   normalizeDriverJourneyLocation,
   type DriverJourneyLocation,
   type DriverVehicleName,
+  type FuelProcurementMode,
 } from '@/lib/payroll/driverJourney';
+
+export interface VehicleFuelBalanceItem {
+  vehicleName: string;
+  availableBalance: number;
+  pendingHoldAmount: number;
+  accumulatedHoldAmount: number;
+  pendingReleaseAmount: number;
+}
 import {
   PLACE_AUTOCOMPLETE_MIN_QUERY_LENGTH,
   useCostSafePlaceAutocomplete,
@@ -81,6 +94,10 @@ import {
   SOPIR_JOURNEY_REPORT_PATH,
   type EmployeeActivityWorkflow,
 } from '@/lib/employeeActivities';
+import {
+  fetchAssignedSpjEvents,
+  type AssignedSpjEvent,
+} from '@/lib/payroll/assignedSpjEvents';
 import {
   filterEmployeeActivityHistory,
   summarizeEmployeeActivityHistory,
@@ -114,17 +131,6 @@ export {
 
 export interface ActivitiesContentProps {
   workflow: EmployeeActivityWorkflow;
-}
-
-export interface AssignedSpjEvent {
-  id: string;
-  eventName: string;
-  period: string;
-  jobCategory: string;
-  payGiven: number;
-  sourceKind: string;
-  sourceVakasiEventId: string | null;
-  approvedAt: string | null;
 }
 
 export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps) {
@@ -385,6 +391,8 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
   const [selfPiketEndPoint, setSelfPiketEndPoint] = useState('');
   const [selfPiketEndPointLocation, setSelfPiketEndPointLocation] = useState<DriverJourneyLocation | null>(null);
   const [selfPiketVehicleName, setSelfPiketVehicleName] = useState<DriverVehicleName>(DEFAULT_DRIVER_VEHICLE_NAME);
+  const [selfPiketFuelProcurementMode, setSelfPiketFuelProcurementMode] = useState<FuelProcurementMode>('hold_accumulate');
+  const [selfPiketFuelBalances, setSelfPiketFuelBalances] = useState<VehicleFuelBalanceItem[]>([]);
   const [creatingPiketSpj, setCreatingPiketSpj] = useState(false);
 
   // Self Piket SPJ calculation states
@@ -396,21 +404,60 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
   const [mapTargetMode, setMapTargetMode] = useState<'piketStart' | 'piketEnd' | 'extra' | null>(null);
   const lastSelfPiketCalculatedRef = useRef<{ start: string; end: string }>({ start: '', end: '' });
 
+  const loadSelfPiketFuelBalances = useCallback(async () => {
+    if (!user || !isSopir) return;
+    try {
+      const result = await authenticatedJson<{ balances?: VehicleFuelBalanceItem[] }>(
+        '/api/driver-journeys/vehicle-fuel-balances',
+      );
+      if (result?.balances) {
+        setSelfPiketFuelBalances(result.balances);
+      }
+    } catch (err) {
+      console.error('Error loading vehicle fuel balances:', err);
+    }
+  }, [user, isSopir]);
+
+  useEffect(() => {
+    if (showSelfPiketSpjModal) {
+      void loadSelfPiketFuelBalances();
+    }
+  }, [showSelfPiketSpjModal, loadSelfPiketFuelBalances]);
+
+  const selectedSelfPiketFuelBalance = useMemo(
+    () => selfPiketFuelBalances.find((b) => b.vehicleName === selfPiketVehicleName) || null,
+    [selfPiketFuelBalances, selfPiketVehicleName],
+  );
+
   const selfPiketTollFeeValue = selfPiketTollFee
     ? parseInt(selfPiketTollFee.replace(/\D/g, ''), 10) || 0
     : 0;
+
   const selfPiketOperationalCosts = useMemo(() => {
     if (selfPiketCalcDistance === null || selfPiketCalcDuration === null) return null;
+    const mode = selfPiketVehicleName === DEFAULT_DRIVER_VEHICLE_NAME
+      ? DEFAULT_FUEL_PROCUREMENT_MODE
+      : selfPiketFuelProcurementMode;
+    const procuredAccumulatedAmount = mode === 'procure_release'
+      ? Number(selectedSelfPiketFuelBalance?.accumulatedHoldAmount || 0)
+      : 0;
     return calculateDriverJourneyOperationalCosts(
       selfPiketCalcDistance,
       selfPiketCalcDuration * 2,
       selfPiketVehicleName,
       selfPiketTollFeeValue,
+      {
+        fuelProcurementMode: mode,
+        procuredAccumulatedAmount,
+        mealAccountingMode: CURRENT_MEAL_ACCOUNTING_MODE,
+      },
     );
   }, [
     selfPiketCalcDistance,
     selfPiketCalcDuration,
     selfPiketVehicleName,
+    selfPiketFuelProcurementMode,
+    selectedSelfPiketFuelBalance,
     selfPiketTollFeeValue,
   ]);
 
@@ -430,6 +477,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     setSelfPiketEndPoint('');
     setSelfPiketEndPointLocation(null);
     setSelfPiketVehicleName(DEFAULT_DRIVER_VEHICLE_NAME);
+    setSelfPiketFuelProcurementMode('hold_accumulate');
     setSelfPiketCalcDistance(null);
     setSelfPiketCalcDuration(null);
     setSelfPiketCalculating(false);
@@ -570,6 +618,9 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
 
     setCreatingPiketSpj(true);
     try {
+      const mode = selfPiketVehicleName === DEFAULT_DRIVER_VEHICLE_NAME
+        ? DEFAULT_FUEL_PROCUREMENT_MODE
+        : selfPiketFuelProcurementMode;
       const createdJourney = await authenticatedJson<{ journeyId: string }>('/api/driver-journeys', {
         method: 'POST',
         body: JSON.stringify({
@@ -580,6 +631,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
           endPoint: selfPiketEndPoint.trim(),
           endPointLocation: selfPiketEndPointLocation,
           vehicleName: selfPiketVehicleName,
+          fuelProcurementMode: mode,
           distanceKm: selfPiketCalcDistance,
           durationHours: selfPiketCalcDuration,
           tollParkingFee: selfPiketTollFeeValue,
@@ -590,7 +642,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
       router.push(`${SOPIR_JOURNEY_REPORT_PATH}?id=${createdJourney.journeyId}`);
     } catch (err: any) {
       console.error('Error creating self piket SPJ:', err);
-      alert('Gagal membuat SPJ piket. Coba lagi.');
+      alert(err?.message || 'Gagal membuat SPJ piket. Coba lagi.');
     } finally {
       setCreatingPiketSpj(false);
     }
@@ -997,17 +1049,16 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
   // Server-scoped history for administrator-assigned SPJ events. Employees
   // never receive the full KegiatanSpj documents or another worker's amount.
   useEffect(() => {
-    if (!profile?.linkedEmployeeId) {
+    if (!profile?.linkedEmployeeId || isSopir) {
+      setAssignedSpjEvents([]);
+      setLoadedAssignedSpjKey(assignedSpjRequestKey);
       return;
     }
     let active = true;
-    authenticatedJson<{ events: AssignedSpjEvent[] }>(
-      `/api/pekarya/spj-events?period=${encodeURIComponent(periodToken)}&mine=true`,
-      { method: 'GET' },
-    )
-      .then((response) => {
+    fetchAssignedSpjEvents(periodToken)
+      .then((events) => {
         if (!active) return;
-        setAssignedSpjEvents(response.events || []);
+        setAssignedSpjEvents(events);
         setLoadedAssignedSpjKey(assignedSpjRequestKey);
       })
       .catch((error) => {
@@ -1019,7 +1070,7 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     return () => {
       active = false;
     };
-  }, [profile?.linkedEmployeeId, periodToken, refreshTrigger, assignedSpjRequestKey]);
+  }, [profile?.linkedEmployeeId, periodToken, refreshTrigger, assignedSpjRequestKey, isSopir]);
 
   // ── Real-time listener for Driver Journeys (Sopir only) ──
   useEffect(() => {
@@ -3452,6 +3503,10 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     selfPiketEndPointLocation,
     selfPiketVehicleName,
     setSelfPiketVehicleName,
+    selfPiketFuelProcurementMode,
+    setSelfPiketFuelProcurementMode,
+    selfPiketFuelBalances,
+    selectedSelfPiketFuelBalance,
     creatingPiketSpj,
     setSelfPiketCalcDistance,
     selfPiketCalcDistance,

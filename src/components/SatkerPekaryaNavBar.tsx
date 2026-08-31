@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { ClipboardCheck, ScanLine, LogOut, Compass, BarChart3, Banknote, FileText, UsersRound, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 
 export default function SatkerPekaryaNavBar() {
   const { profile, logout } = useAuth();
@@ -17,10 +18,16 @@ export default function SatkerPekaryaNavBar() {
 
   const month = searchParams.get('month') || String(new Date().getMonth() + 1);
   const year = searchParams.get('year') || String(new Date().getFullYear());
+  const permittedCategories = (profile?.permittedCategories || []).map((item) =>
+    item.trim().toUpperCase(),
+  );
+  const defaultAttendanceCategory =
+    permittedCategories.some((item) => item !== 'SATPAM')
+      ? ALL_BLUE_COLLAR_CATEGORY
+      : permittedCategories[0] || '';
   const attendanceCategory =
-    searchParams.get('category') ||
-    profile?.permittedCategories?.[0] ||
-    '';
+    searchParams.get('category')?.trim().toUpperCase() ||
+    defaultAttendanceCategory;
   // Uraian pages resolve their own default period (previous month before the
   // 6th, unless closed) when the URL carries none at all. Forcing "now" in
   // here — like the non-uraian links below still do — would pre-empt that,
@@ -61,7 +68,6 @@ export default function SatkerPekaryaNavBar() {
   const isProposal = pathname.startsWith('/dashboard/payroll/uraian/proposal-kegiatan');
   const isPelaporan = pathname.startsWith('/dashboard/payroll/uraian/pelaporan-kegiatan');
 
-  const permittedCategories = profile?.permittedCategories ?? [];
   const canSeeFacility =
     permittedCategories.includes('KEBERSIHAN') || permittedCategories.includes('TEKNISI');
   const canSeeJourneys = permittedCategories.includes('SOPIR');

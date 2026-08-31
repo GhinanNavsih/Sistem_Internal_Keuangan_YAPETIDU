@@ -19,6 +19,7 @@ import { MONTHS_ID } from '@/utils/rekapConfig';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import UraianNavToggles from '@/components/UraianNavToggles';
 import { defaultPayrollPeriodToken, previousPayrollPeriodToken } from '@/lib/payroll/domain';
+import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 
 const YEARS = Array.from({ length: 9 }, (_, i) => new Date().getFullYear() + 3 - i);
 
@@ -31,7 +32,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
   // Read params or set defaults
   const month = parseInt(searchParams.get('month') || String(new Date().getMonth() + 1), 10);
   const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()), 10);
-  const category = searchParams.get('category') || "";
+  const category = (searchParams.get('category') || '').trim().toUpperCase();
 
   // Land on the month being compiled: before the 6th that is still the
   // previous period, unless it has already been closed. Only kicks in when
@@ -96,9 +97,16 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
         const activeEmpSnap = await getDocs(activeEmployeesQuery);
         const cats = new Set<string>();
         activeEmpSnap.docs.forEach((employeeDoc) => {
-          const rawCategory = employeeDoc.data()?.employment?.jobCategory;
+          const employee = employeeDoc.data();
+          if (
+            employee?.flags?.isActive === false ||
+            employee?.flags?.isPayrollEligible === false
+          ) {
+            return;
+          }
+          const rawCategory = employee?.employment?.jobCategory;
           if (typeof rawCategory === 'string' && rawCategory.trim()) {
-            cats.add(rawCategory.trim());
+            cats.add(rawCategory.trim().toUpperCase());
           }
         });
 
@@ -125,7 +133,10 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     ) {
       return activeCategories;
     }
-    return activeCategories.filter(cat => profile.permittedCategories?.includes(cat));
+    const permitted = new Set(
+      (profile.permittedCategories || []).map((item) => item.trim().toUpperCase()),
+    );
+    return activeCategories.filter(cat => permitted.has(cat));
   }, [profile, activeCategories]);
 
   // Handle setting/changing query params
@@ -160,6 +171,16 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     return '';
   }, [pathname]);
 
+  const attendanceCategoryOptions = useMemo(() => {
+    if (activeTab !== 'presensi_pekarya') return allowedCategories;
+    const hasAttendanceCategory = allowedCategories.some(
+      (item) => item !== 'SATPAM',
+    );
+    return hasAttendanceCategory
+      ? [ALL_BLUE_COLLAR_CATEGORY, ...allowedCategories]
+      : allowedCategories;
+  }, [activeTab, allowedCategories]);
+
   const getCleanParamsString = useCallback((tab: string) => {
     const params = new URLSearchParams(searchParams.toString());
     if (
@@ -169,6 +190,12 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       tab === 'presensi_loyalis_raw' ||
       tab === 'presence_corrections' ||
       tab === 'driver-journeys'
+    ) {
+      params.delete('category');
+    }
+    if (
+      tab !== 'presensi_pekarya' &&
+      params.get('category')?.trim().toUpperCase() === ALL_BLUE_COLLAR_CATEGORY
     ) {
       params.delete('category');
     }
@@ -226,9 +253,26 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     }
 
     const params = new URLSearchParams(searchParams.toString());
-    if (allowedCategories.length > 0) {
-      if (category && allowedCategories.includes(category)) return;
-      params.set('category', allowedCategories[0]);
+    const categoryOptions =
+      activeTab === 'presensi_pekarya'
+        ? attendanceCategoryOptions
+        : allowedCategories;
+    if (categoryOptions.length > 0) {
+      if (category && categoryOptions.includes(category)) return;
+      const julySatpamDefault =
+        activeTab === 'presensi_pekarya' &&
+        year === 2026 &&
+        month === 7 &&
+        categoryOptions.includes('SATPAM') &&
+        (profile.role === 'super_admin' ||
+          profile.role === 'finance_verifier' ||
+          profile.permittedCategories?.some(
+            (item) => item.trim().toUpperCase() === 'SATPAM',
+          ));
+      params.set(
+        'category',
+        julySatpamDefault ? 'SATPAM' : categoryOptions[0],
+      );
     } else {
       if (!category) return;
       params.delete('category');
@@ -238,6 +282,7 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     router.replace(queryString ? `${pathname}?${queryString}` : pathname);
   }, [
     allowedCategories,
+    attendanceCategoryOptions,
     category,
     activeTab,
     categoriesLoaded,
@@ -245,6 +290,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
     profile,
     router,
     searchParams,
+    month,
+    year,
   ]);
 
   const pageTitle = useMemo(() => {
@@ -417,16 +464,25 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
               </SelectContent>
             </Select>
 
-            {showCategorySelector && categoriesLoaded && category && allowedCategories.length > 0 && (
+            {showCategorySelector && categoriesLoaded && category && (activeTab === 'presensi_pekarya' ? attendanceCategoryOptions : allowedCategories).length > 0 && (
               <Select value={category} onValueChange={(v) => v && setCategory(v)}>
                 <SelectTrigger className="w-48 bg-white shadow-sm border-slate-200 rounded-xl font-semibold hover:border-indigo-300 transition-all">
                   <SelectValue>
-                    {category.replace('_', ' ').toUpperCase()}
+                    {category === ALL_BLUE_COLLAR_CATEGORY
+                      ? 'SEMUA PEKARYA'
+                      : category.replace('_', ' ').toUpperCase()}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {allowedCategories.map(c => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  {(activeTab === 'presensi_pekarya'
+                    ? attendanceCategoryOptions
+                    : allowedCategories
+                  ).map(c => (
+                    <SelectItem key={c} value={c}>
+                      {c === ALL_BLUE_COLLAR_CATEGORY
+                        ? 'SEMUA PEKARYA'
+                        : c.replace('_', ' ')}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

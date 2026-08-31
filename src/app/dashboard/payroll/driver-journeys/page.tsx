@@ -2481,10 +2481,10 @@ function DriverJourneysContent() {
                     )}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white">
-                  <SelectItem value="standard_direct">Standard langsung — aturan legacy</SelectItem>
-                  <SelectItem value="hold_accumulate">Tahan & akumulasi — kurangi saldo dan simpan jatah</SelectItem>
-                  <SelectItem value="procure_release">Cairkan saldo — akumulasi + jatah trip</SelectItem>
+                <SelectContent className="rounded-xl border-slate-100 shadow-xl bg-white text-xs">
+                  <SelectItem value="standard_direct">Standard langsung</SelectItem>
+                  <SelectItem value="hold_accumulate">Tahan & akumulasi</SelectItem>
+                  <SelectItem value="procure_release">Cairkan saldo</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-[10px] leading-relaxed text-indigo-800">

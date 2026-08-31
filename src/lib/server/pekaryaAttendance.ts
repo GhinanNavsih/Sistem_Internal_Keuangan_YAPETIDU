@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   attendanceDayKey,
@@ -6,6 +7,7 @@ import {
   satpamAttendanceEvidenceDates,
   summarizePekaryaAttendance,
 } from '@/lib/payroll/attendance';
+import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import {
   loadAttendanceEmployeeIdentities,
   loadEffectiveAttendanceDays,
@@ -60,6 +62,23 @@ function activeBlueCollar(identity: {
   jobCategory: string | null;
 }) {
   return identity.employeeCollection === 'Employees_BlueCollar' && identity.active;
+}
+
+export async function listActivePekaryaAttendanceCategories(): Promise<string[]> {
+  const { identities } = await loadAttendanceEmployeeIdentities();
+  return Array.from(
+    new Set(
+      identities
+        .filter(activeBlueCollar)
+        .map((identity) => identity.jobCategory)
+        .filter(
+          (category): category is string =>
+            Boolean(category) &&
+            category !== 'SATPAM' &&
+            category !== ALL_BLUE_COLLAR_CATEGORY,
+        ),
+    ),
+  ).sort((left, right) => left.localeCompare(right, 'id'));
 }
 
 export async function buildPekaryaAttendanceView(
@@ -168,7 +187,13 @@ export async function buildPekaryaAttendanceView(
     calendarRevision: calendar.revision,
     premiumDates: calendar.premiumDates,
     publication: publicationSnapshot.exists
-      ? { id: publicationSnapshot.id, ...publicationSnapshot.data() }
+      ? ({ id: publicationSnapshot.id, ...publicationSnapshot.data() } as {
+          id: string;
+          state?: string;
+          stale?: boolean;
+          publicationRevision?: number;
+          [key: string]: unknown;
+        })
       : null,
     employees,
     exceptions: {
@@ -196,7 +221,12 @@ export async function buildPekaryaAttendanceView(
     },
     correctionHistory: correctionHistorySnapshot.docs
       .filter((snapshot) => snapshot.data().category === category)
-      .map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }))
+      .map((snapshot) => ({ id: snapshot.id, ...snapshot.data() } as {
+        id: string;
+        date?: string;
+        revision?: number;
+        [key: string]: unknown;
+      }))
       .sort(
         (left, right) =>
           String((right as Record<string, unknown>).date || '').localeCompare(
@@ -204,6 +234,82 @@ export async function buildPekaryaAttendanceView(
           ) ||
           Number((right as Record<string, unknown>).revision || 0) -
             Number((left as Record<string, unknown>).revision || 0),
+      ),
+  };
+}
+
+export async function buildPekaryaAttendanceViewForCategories(
+  period: string,
+  categories: readonly string[],
+  options: PekaryaAttendanceViewOptions = {},
+) {
+  const views = await Promise.all(
+    categories.map((category) =>
+      buildPekaryaAttendanceView(period, category, options),
+    ),
+  );
+  const [first] = views;
+  if (!first) {
+    throw new Error('Tidak ada kategori Pekarya aktif yang dapat ditampilkan.');
+  }
+
+  const allPublished = views.every(
+    (view) => view.publication?.state === 'published' && !view.publication.stale,
+  );
+  const hasPublication = views.some((view) => view.publication);
+  const publication = allPublished
+    ? {
+        state: 'published',
+        publicationRevision: Math.min(
+          ...views.map((view) => Number(view.publication?.publicationRevision || 1)),
+        ),
+      }
+    : hasPublication
+      ? {
+          state: 'partial',
+          stale: views.some((view) => Boolean(view.publication?.stale)),
+        }
+      : null;
+
+  return {
+    ...first,
+    category: ALL_BLUE_COLLAR_CATEGORY,
+    publication,
+    employees: views
+      .flatMap((view) => view.employees)
+      .sort((left, right) =>
+        left.name.localeCompare(right.name, 'id') ||
+        left.category.localeCompare(right.category, 'id'),
+      ),
+    exceptions: {
+      unmatchedNipys: Array.from(
+        new Set(views.flatMap((view) => view.exceptions.unmatchedNipys)),
+      ).sort(),
+      duplicateNipys: Array.from(
+        new Set(views.flatMap((view) => view.exceptions.duplicateNipys)),
+      ).sort(),
+      missingNipyEmployeeIds: views.flatMap(
+        (view) => view.exceptions.missingNipyEmployeeIds,
+      ),
+      incompletePunches: views.reduce(
+        (sum, view) => sum + view.exceptions.incompletePunches,
+        0,
+      ),
+      correctedDays: views.reduce(
+        (sum, view) => sum + view.exceptions.correctedDays,
+        0,
+      ),
+      // These two values describe the imported file as a whole and are
+      // repeated by each category-specific builder.
+      duplicateEmployeeDays: first.exceptions.duplicateEmployeeDays,
+      attendanceForOtherIdentities: first.exceptions.attendanceForOtherIdentities,
+    },
+    correctionHistory: views
+      .flatMap((view) => view.correctionHistory)
+      .sort(
+        (left, right) =>
+          String(right.date || '').localeCompare(String(left.date || '')) ||
+          Number(right.revision || 0) - Number(left.revision || 0),
       ),
   };
 }
@@ -585,4 +691,49 @@ export async function publishPekaryaAttendance(
     });
     return response;
   });
+}
+
+export async function publishPekaryaAttendanceForCategories(
+  period: string,
+  categories: readonly string[],
+  actorUid: string,
+  requestId: string,
+  acknowledgedWarnings: string[],
+  requestHash?: string,
+) {
+  if (categories.length === 0) {
+    throw new Error('Tidak ada kategori Pekarya aktif yang dapat dipublikasikan.');
+  }
+
+  const results = [];
+  for (const category of categories) {
+    const categoryRequestId = `${requestId.slice(0, 70)}__${category
+      .replace(/[^A-Za-z0-9_-]/g, '_')
+      .slice(0, 50)}`;
+    const categoryRequestHash = requestHash
+      ? createHash('sha256')
+          .update(`${requestHash}|${category}`)
+          .digest('hex')
+      : undefined;
+    results.push(
+      await publishPekaryaAttendance(
+        period,
+        category,
+        actorUid,
+        categoryRequestId,
+        acknowledgedWarnings,
+        categoryRequestHash,
+      ),
+    );
+  }
+
+  return {
+    category: ALL_BLUE_COLLAR_CATEGORY,
+    categories: results,
+    employeeCount: results.reduce(
+      (sum, result) => sum + Number(result.employeeCount || 0),
+      0,
+    ),
+    idempotent: results.every((result) => result.idempotent),
+  };
 }

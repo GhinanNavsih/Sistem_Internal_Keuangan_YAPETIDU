@@ -507,7 +507,7 @@ export default function FacilityReportsPage() {
         <div className="flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-100 p-3">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <p className="text-[11px] font-semibold text-amber-800">
-            Laporan yang sudah ditindaklanjuti Kepala SatKer tidak dapat ditarik kembali. Hubungi
+            Laporan yang sudah diproses Kepala SatKer tidak dapat ditarik kembali. Hubungi
             Kepala SatKer bila ada perubahan informasi.
           </p>
         </div>
