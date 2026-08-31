@@ -203,7 +203,8 @@ function UraianLayoutContent({ children }: { children: React.ReactNode }) {
       if (
         activeTab !== 'presensi' &&
         activeTab !== 'presensi_pekarya' &&
-        activeTab !== 'kegiatan_spj'
+        activeTab !== 'kegiatan_spj' &&
+        activeTab !== 'presence_corrections'
       ) {
         router.replace(`/dashboard/payroll/uraian/rekap-pekarya${getCleanParamsString('presensi')}`);
       }

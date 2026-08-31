@@ -54,23 +54,19 @@ function stableHash(value: unknown) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['satker_head']);
-    if (
-      actor.role === 'satker_head' &&
-      !actor.permittedCategories.includes('SATPAM')
-    ) {
-      throw new HttpError(403, 'Anda tidak memiliki akses kategori SATPAM.');
-    }
+    requireRole(actor, ['super_admin', 'satker_head']);
     const body = await request.json();
     const absenceRequestId = String(body.absenceRequestId || '');
     const action = String(body.action || '');
     const requestId = String(body.requestId || '');
-    const reason = String(body.reason || '').trim();
+    const reason =
+      String(body.reason || '').trim() ||
+      'Keputusan diproses dari Review Koreksi Presensi.';
     const expectedRevision = Number(body.expectedRevision);
     if (
       !/^[A-Za-z0-9_-]{1,180}$/.test(absenceRequestId) ||
       !ACTIONS.has(action) ||
-      reason.length < 8 ||
+      reason.length > 500 ||
       !Number.isInteger(expectedRevision) ||
       expectedRevision < 1
     ) {

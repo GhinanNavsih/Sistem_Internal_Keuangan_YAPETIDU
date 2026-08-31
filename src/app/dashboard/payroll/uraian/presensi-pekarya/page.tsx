@@ -343,11 +343,6 @@ export default function PekaryaAttendancePage() {
     useState<PlanCorrectionState | null>(null);
   const [satpamOperations, setSatpamOperations] =
     useState<SatpamOperations | null>(null);
-  const [absenceDecisionReasons, setAbsenceDecisionReasons] = useState<
-    Record<string, string>
-  >({});
-  const [officialLeaveDecisionReasons, setOfficialLeaveDecisionReasons] =
-    useState<Record<string, string>>({});
   const [satpamTab, setSatpamTab] = useState<
     'plans' | 'absences' | 'reconciliation' | 'mismatches'
   >('plans');
@@ -420,11 +415,6 @@ export default function PekaryaAttendancePage() {
     action: 'approve' | 'decline' | 'supersede_approve' | 'supersede_decline',
   ) => {
     const reportType = satpamAttendanceReportType(absence);
-    const reason = (absenceDecisionReasons[absence.id] || '').trim();
-    if (reason.length < 8) {
-      setError('Alasan keputusan minimal delapan karakter.');
-      return;
-    }
     setWorking(true);
     setError('');
     try {
@@ -434,7 +424,6 @@ export default function PekaryaAttendancePage() {
           requestId: createFinancialRequestId('satpam-absence-review'),
           absenceRequestId: absence.id,
           action,
-          reason,
           expectedRevision: absence.revision,
         }),
       });
@@ -447,10 +436,6 @@ export default function PekaryaAttendancePage() {
             ? 'Izin disetujui. Hak Rp12.500 dan rekonsiliasi telah diperbarui.'
             : 'Izin ditolak dan rekonsiliasi telah diperbarui.',
       );
-      setAbsenceDecisionReasons((current) => ({
-        ...current,
-        [absence.id]: '',
-      }));
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Gagal memutuskan izin.');
@@ -463,11 +448,6 @@ export default function PekaryaAttendancePage() {
     leave: PekaryaOfficialLeaveRequest,
     action: 'approve' | 'decline',
   ) => {
-    const reason = (officialLeaveDecisionReasons[leave.id] || '').trim();
-    if (reason.length < 8) {
-      setError('Alasan keputusan minimal delapan karakter.');
-      return;
-    }
     setWorking(true);
     setError('');
     try {
@@ -477,7 +457,6 @@ export default function PekaryaAttendancePage() {
           requestId: createFinancialRequestId('pekarya-official-leave-review'),
           officialLeaveRequestId: leave.id,
           action,
-          reason,
           expectedRevision: leave.revision,
         }),
       });
@@ -490,10 +469,6 @@ export default function PekaryaAttendancePage() {
             ? 'Laporan scan ditolak.'
             : 'Izin resmi ditolak.',
       );
-      setOfficialLeaveDecisionReasons((current) => ({
-        ...current,
-        [leave.id]: '',
-      }));
       await load();
     } catch (cause) {
       setError(
@@ -916,37 +891,17 @@ export default function PekaryaAttendancePage() {
                               ? ` · ${money(absence.approvedAmount || 12_500)}`
                               : ''}
                           </p>
-                          {absence.decisionReason && (
-                            <p className="mt-2 rounded-lg bg-slate-50 p-2 text-sm text-slate-600">
-                              Keputusan terakhir: {absence.decisionReason}
-                            </p>
-                          )}
                         </div>
                         {canEdit &&
                           (requestType === 'izin_resmi' ||
                             absence.status === 'pending') && (
-                          <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
-                            <textarea
-                              className="min-h-20 rounded-xl border border-slate-300 p-3 text-sm"
-                              value={absenceDecisionReasons[absence.id] || ''}
-                              onChange={(event) =>
-                                setAbsenceDecisionReasons((current) => ({
-                                  ...current,
-                                  [absence.id]: event.target.value,
-                                }))
-                              }
-                              placeholder="Alasan keputusan Kepala SatKer (wajib)"
-                            />
+                          <div className="flex flex-wrap justify-end gap-2">
                             {absence.status !== 'approved' &&
                               (requestType === 'izin_resmi' ||
                                 absence.status === 'pending') && (
                               <Button
                                 className="min-h-12 bg-emerald-600 hover:bg-emerald-700"
-                                disabled={
-                                  working ||
-                                  (absenceDecisionReasons[absence.id] || '')
-                                    .trim().length < 8
-                                }
+                                disabled={working}
                                 onClick={() =>
                                   void reviewAbsence(absence, approveAction)
                                 }
@@ -960,11 +915,7 @@ export default function PekaryaAttendancePage() {
                               <Button
                                 variant="outline"
                                 className="min-h-12 border-rose-200 text-rose-700"
-                                disabled={
-                                  working ||
-                                  (absenceDecisionReasons[absence.id] || '')
-                                    .trim().length < 8
-                                }
+                                disabled={working}
                                 onClick={() =>
                                   void reviewAbsence(absence, declineAction)
                                 }
@@ -1208,11 +1159,6 @@ export default function PekaryaAttendancePage() {
                             ? ` · ${money(leave.approvedAmount)}`
                             : ''}
                         </p>
-                        {leave.decisionReason && (
-                          <p className="mt-2 rounded-lg bg-slate-50 p-2 text-sm text-slate-600">
-                            Keputusan terakhir: {leave.decisionReason}
-                          </p>
-                        )}
                         {leave.evidenceUrl && (
                           <button
                             type="button"
@@ -1232,25 +1178,10 @@ export default function PekaryaAttendancePage() {
                         )}
                       </div>
                       {canEdit && leave.status === 'pending' && (
-                        <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
-                          <textarea
-                            className="min-h-20 rounded-xl border border-slate-300 p-3 text-sm"
-                            value={officialLeaveDecisionReasons[leave.id] || ''}
-                            onChange={(event) =>
-                              setOfficialLeaveDecisionReasons((current) => ({
-                                ...current,
-                                [leave.id]: event.target.value,
-                              }))
-                            }
-                            placeholder="Alasan keputusan Kepala SatKer (wajib)"
-                          />
+                        <div className="flex flex-wrap justify-end gap-2">
                           <Button
                             className="min-h-12 bg-emerald-600 hover:bg-emerald-700"
-                            disabled={
-                              working ||
-                              (officialLeaveDecisionReasons[leave.id] || '')
-                                .trim().length < 8
-                            }
+                            disabled={working}
                             onClick={() => void reviewOfficialLeave(leave, 'approve')}
                           >
                             Setujui
@@ -1258,11 +1189,7 @@ export default function PekaryaAttendancePage() {
                           <Button
                             variant="outline"
                             className="min-h-12 border-rose-200 text-rose-700"
-                            disabled={
-                              working ||
-                              (officialLeaveDecisionReasons[leave.id] || '')
-                                .trim().length < 8
-                            }
+                            disabled={working}
                             onClick={() => void reviewOfficialLeave(leave, 'decline')}
                           >
                             Tolak

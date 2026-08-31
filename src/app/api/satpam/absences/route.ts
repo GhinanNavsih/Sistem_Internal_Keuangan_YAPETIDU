@@ -73,12 +73,6 @@ export async function GET(request: NextRequest) {
         'finance_verifier',
         'satker_head',
       ]);
-      if (
-        actor.role === 'satker_head' &&
-        !actor.permittedCategories.includes('SATPAM')
-      ) {
-        throw new HttpError(403, 'Anda tidak memiliki akses kategori SATPAM.');
-      }
     }
     const snapshot = await query.get();
     let scheduledDuties: Array<{

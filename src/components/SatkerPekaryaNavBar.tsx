@@ -41,6 +41,7 @@ export default function SatkerPekaryaNavBar() {
   const vakasiUrl = `/dashboard/payroll/uraian/vakasi-loyalis${withPeriod('')}`;
   const proposalUrl = `/dashboard/payroll/uraian/proposal-kegiatan${withPeriod('')}`;
   const pelaporanUrl = `/dashboard/payroll/uraian/pelaporan-kegiatan${withPeriod('')}`;
+  const correctionsUrl = `/dashboard/payroll/uraian/presence-corrections${withPeriod('')}`;
 
   const isActivity = pathname.startsWith('/dashboard/payroll/activity-review');
   const isJourneys = pathname.startsWith('/dashboard/payroll/driver-journeys');
@@ -52,8 +53,10 @@ export default function SatkerPekaryaNavBar() {
       !pathname.includes('presensi-pekarya') &&
       !pathname.includes('vakasi-loyalis') &&
       !pathname.includes('pelaporan-kegiatan') &&
-      !pathname.includes('proposal-kegiatan'));
+      !pathname.includes('proposal-kegiatan') &&
+      !pathname.includes('presence-corrections'));
   const isAttendance = pathname.startsWith('/dashboard/payroll/uraian/presensi-pekarya');
+  const isCorrections = pathname.startsWith('/dashboard/payroll/uraian/presence-corrections');
   const isVakasi = pathname.startsWith('/dashboard/payroll/uraian/vakasi-loyalis');
   const isProposal = pathname.startsWith('/dashboard/payroll/uraian/proposal-kegiatan');
   const isPelaporan = pathname.startsWith('/dashboard/payroll/uraian/pelaporan-kegiatan');
@@ -161,6 +164,13 @@ export default function SatkerPekaryaNavBar() {
               >
                 <UsersRound className="w-4 h-4" />
                 <span>Presensi Pekarya</span>
+              </button>
+              <button
+                onClick={() => router.push(correctionsUrl)}
+                className={navBtnClass(isCorrections)}
+              >
+                <ClipboardCheck className="w-4 h-4" />
+                <span>Review Koreksi Presensi</span>
               </button>
               <button
                 onClick={() => router.push(uraianUrl)}

@@ -176,14 +176,6 @@ export async function GET(request: NextRequest) {
       if (category && !isPekaryaOfficialLeaveCategory(category)) {
         throw new HttpError(400, 'Kategori Pekarya tidak valid untuk pengajuan presensi.');
       }
-      if (
-        actor.role === 'satker_head' &&
-        (category
-          ? !actor.permittedCategories.includes(category)
-          : actor.permittedCategories.filter(isPekaryaOfficialLeaveCategory).length === 0)
-      ) {
-        throw new HttpError(403, 'Anda tidak memiliki akses ke kategori Pekarya ini.');
-      }
     }
 
     const snapshot = await adminDb
@@ -198,8 +190,8 @@ export async function GET(request: NextRequest) {
       .filter((item) =>
         (!employeeId || String(item.employeeId || '') === employeeId) &&
         (!category || String(item.category || '') === category) &&
-        (actor.role !== 'satker_head' ||
-          actor.permittedCategories.includes(String(item.category || ''))),
+        (isEmployee ||
+          isPekaryaOfficialLeaveCategory(String(item.category || ''))),
       )
       .sort((left, right) =>
         String(right.date || '').localeCompare(String(left.date || '')),

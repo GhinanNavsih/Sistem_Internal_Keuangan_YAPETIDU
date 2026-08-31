@@ -1225,9 +1225,6 @@ export default function SatpamActivitiesView({ model }: SatpamActivitiesViewProp
                 <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                 <div>
                   <h4 className="font-extrabold text-amber-900 text-base">Roster Shift Malam (22:00 - 08:00 WIB)</h4>
-                  <p className="text-base text-amber-800 leading-relaxed mt-1">
-                    Shift Malam dimulai pada tanggal yang dipilih dan berakhir keesokan paginya. Gunakan tanggal saat shift malam mulai.
-                  </p>
                 </div>
               </div>
             </div>

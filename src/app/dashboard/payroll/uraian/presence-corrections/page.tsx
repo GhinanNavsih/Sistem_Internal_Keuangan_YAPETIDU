@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import { useAuth } from '@/lib/AuthContext';
 import { db } from '@/lib/firebase';
@@ -19,6 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import {
   Table,
   TableBody,
@@ -32,7 +34,6 @@ import {
   Calendar,
   Clock,
   AlertCircle,
-  CheckCircle2,
   FileText,
   Check,
   X,
@@ -56,6 +57,14 @@ import {
   type PresenceCorrectionRequest,
   type PresenceCorrectionStatus,
 } from '@/lib/payroll/presenceCorrections';
+import {
+  pekaryaAttendanceReportType,
+  type PekaryaOfficialLeaveRequest,
+} from '@/lib/payroll/pekaryaOfficialLeave';
+import {
+  satpamAttendanceReportType,
+  type SatpamAttendanceReportType,
+} from '@/lib/payroll/satpamAttendance';
 
 interface LoyalisPresenceEntry {
   employeeId?: string;
@@ -88,6 +97,32 @@ interface PresenceSummary {
   dailyLogs: LoyalisRawLog[];
 }
 
+interface SatpamReviewRequest {
+  id: string;
+  employeeId: string;
+  employeeName?: string;
+  dutyDate: string;
+  shiftName?: string;
+  postId?: string;
+  reportType?: SatpamAttendanceReportType;
+  scanIn?: string | null;
+  scanOut?: string | null;
+  absenceType?: string;
+  reason?: string;
+  evidenceUrl?: string | null;
+  status: 'pending' | 'approved' | 'declined' | 'withdrawn';
+  revision: number;
+  decisionReason?: string;
+  approvedAmount?: number;
+  decidedAt?: unknown;
+}
+
+type BlueCollarReviewItem =
+  | { source: 'pekarya'; request: PekaryaOfficialLeaveRequest }
+  | { source: 'satpam'; request: SatpamReviewRequest };
+
+type ReviewSource = 'all' | 'loyalis' | 'blue_collar';
+
 const STATUS_LABELS: Record<PresenceCorrectionStatus, string> = {
   pending: 'Tertunda',
   approved: 'Disetujui',
@@ -105,6 +140,36 @@ function isCorrectionStatus(value: unknown): value is PresenceCorrectionStatus |
   return value === 'pending' || value === 'approved' || value === 'rejected' || value === 'all';
 }
 
+function statusMatches(value: string, selected: PresenceCorrectionStatus | 'all'): boolean {
+  if (selected === 'all') return true;
+  if (selected === 'rejected') return value === 'rejected' || value === 'declined';
+  return value === selected;
+}
+
+function statusLabel(value: string): string {
+  if (value === 'withdrawn') return 'Ditarik';
+  return value === 'rejected' || value === 'declined'
+    ? 'Ditolak'
+    : STATUS_LABELS[value as PresenceCorrectionStatus] || value;
+}
+
+function blueCollarRequestDate(item: BlueCollarReviewItem): string {
+  return item.source === 'pekarya' ? item.request.date : item.request.dutyDate;
+}
+
+function blueCollarRequestStatus(item: BlueCollarReviewItem): string {
+  return item.request.status;
+}
+
+function satpamAbsenceTypeLabel(value: string | undefined): string {
+  return {
+    sakit: 'Sakit',
+    izin_resmi: 'Izin resmi',
+    darurat: 'Keperluan darurat',
+    lainnya: 'Lainnya',
+  }[value || ''] || 'Izin';
+}
+
 function isImageProofUrl(value: string): boolean {
   const normalized = value.toLowerCase();
   return /\.(?:jpe?g|png|gif|webp)(?:[?#]|$)/.test(normalized)
@@ -118,14 +183,25 @@ function requestMatchesPeriod(request: PresenceCorrectionRequest, period: string
 
 export default function PresenceCorrectionsAdminPage() {
   const { profile } = useAuth();
+  const searchParams = useSearchParams();
+  const canAuditLoyalis = profile?.role === 'super_admin' || profile?.role === 'loyalis_presence_admin';
+  const canAuditBlueCollar = profile?.role === 'super_admin' || profile?.role === 'satker_head';
+  const monthParam = searchParams.get('month');
+  const yearParam = searchParams.get('year');
+  const periodFromUrl =
+    monthParam && yearParam && /^\d{1,2}$/.test(monthParam) && /^\d{4}$/.test(yearParam)
+      ? `${yearParam}-${monthParam.padStart(2, '0')}`
+      : '';
   const [loading, setLoading] = useState(false);
   const [allRequests, setAllRequests] = useState<PresenceCorrectionRequest[]>([]);
+  const [blueCollarRequests, setBlueCollarRequests] = useState<BlueCollarReviewItem[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
-  const [selectedPeriod, setSelectedPeriod] = useState(() => {
+  const [selectedPeriod, setSelectedPeriod] = useState(() => periodFromUrl || (() => {
     const now = new Date();
     const m = String(now.getMonth() + 1).padStart(2, '0');
     return `${now.getFullYear()}-${m}`;
-  });
+  })());
+  const [selectedSource, setSelectedSource] = useState<ReviewSource>('all');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Rejection dialog states
@@ -136,50 +212,137 @@ export default function PresenceCorrectionsAdminPage() {
   const [expandedReqIds, setExpandedReqIds] = useState<Record<string, boolean>>({});
   const [rawLogsMap, setRawLogsMap] = useState<Record<string, LoyalisRawLog | null>>({});
   const [loadingRawMap, setLoadingRawMap] = useState<Record<string, boolean>>({});
+  const fetchSequence = useRef(0);
+
+  useEffect(() => {
+    if (!periodFromUrl || periodFromUrl === selectedPeriod) return;
+    // The period selector in the uraian layout is URL-backed. Keep this page's
+    // local filters aligned when the shared selector changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedPeriod(periodFromUrl);
+  }, [periodFromUrl, selectedPeriod]);
 
   const fetchRequests = useCallback(async (showError = true) => {
+    const sequence = ++fetchSequence.current;
+    if (!canAuditLoyalis && !canAuditBlueCollar) {
+      setAllRequests([]);
+      setBlueCollarRequests([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    try {
-      const snap = await getDocs(collection(db, 'LoyalisPresenceCorrections'));
-      const list = snap.docs
-        .map((snapshot) => asPresenceCorrectionRequest(snapshot.id, snapshot.data()))
-        .sort((a, b) => timestampToMillis(b.createdAt) - timestampToMillis(a.createdAt));
+    const errors: string[] = [];
 
-      setAllRequests(list);
-    } catch (err) {
-      console.error('Error fetching requests:', err);
-      if (showError) {
-        setMessage({ type: 'error', text: 'Gagal memuat daftar pengajuan koreksi.' });
-      }
-    } finally {
+    const loyalisTask = canAuditLoyalis
+      ? getDocs(collection(db, 'LoyalisPresenceCorrections'))
+          .then((snap) => snap.docs
+            .map((snapshot) => asPresenceCorrectionRequest(snapshot.id, snapshot.data()))
+            .sort((a, b) => timestampToMillis(b.createdAt) - timestampToMillis(a.createdAt)))
+          .catch((err) => {
+            console.error('Error fetching Loyalis correction requests:', err);
+            errors.push('koreksi Loyalis');
+            return null;
+          })
+      : Promise.resolve(null);
+
+    const blueCollarTask = canAuditBlueCollar
+      ? Promise.allSettled([
+          authenticatedJson<{ requests: PekaryaOfficialLeaveRequest[] }>(
+            `/api/attendance/pekarya/official-leave?period=${encodeURIComponent(selectedPeriod)}`,
+          ),
+          authenticatedJson<{ requests: SatpamReviewRequest[] }>(
+            `/api/satpam/absences?period=${encodeURIComponent(selectedPeriod)}`,
+          ),
+        ]).then(([pekaryaResult, satpamResult]) => {
+          const items: BlueCollarReviewItem[] = [];
+          if (pekaryaResult.status === 'fulfilled') {
+            items.push(...pekaryaResult.value.requests.map((request) => ({
+              source: 'pekarya' as const,
+              request,
+            })));
+          } else {
+            console.error('Error fetching Pekarya correction requests:', pekaryaResult.reason);
+            errors.push('koreksi Pekarya');
+          }
+          if (satpamResult.status === 'fulfilled') {
+            items.push(...satpamResult.value.requests.map((request) => ({
+              source: 'satpam' as const,
+              request,
+            })));
+          } else {
+            console.error('Error fetching Satpam correction requests:', satpamResult.reason);
+            errors.push('koreksi Satpam');
+          }
+          return items.sort((a, b) =>
+            blueCollarRequestDate(b).localeCompare(blueCollarRequestDate(a)),
+          );
+        })
+      : Promise.resolve([] as BlueCollarReviewItem[]);
+
+    const [loyalisResult, blueCollarResult] = await Promise.all([loyalisTask, blueCollarTask]);
+    if (sequence !== fetchSequence.current) return;
+    if (loyalisResult) setAllRequests(loyalisResult);
+    if (canAuditLoyalis && !loyalisResult) setAllRequests([]);
+    setBlueCollarRequests(blueCollarResult);
+    if (showError && errors.length > 0) {
+      setMessage({
+        type: 'error',
+        text: `Gagal memuat ${errors.join(' dan ')}. Coba segarkan kembali.`,
+      });
+    }
+    if (sequence === fetchSequence.current) {
       setLoading(false);
     }
-  }, []);
+  }, [canAuditBlueCollar, canAuditLoyalis, selectedPeriod]);
 
   useEffect(() => {
     // This effect intentionally starts an async data load; the loader updates
     // state when the Firestore request resolves.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void fetchRequests();
-  }, [fetchRequests]);
+    if (profile) void fetchRequests();
+  }, [fetchRequests, profile]);
 
   const requests = useMemo(
     () => allRequests.filter((request) => {
-      if (selectedStatus !== 'all' && request.status !== selectedStatus) return false;
+      if (!canAuditLoyalis || (selectedSource !== 'all' && selectedSource !== 'loyalis')) return false;
+      if (!statusMatches(request.status, selectedStatus)) return false;
       return requestMatchesPeriod(request, selectedPeriod);
     }),
-    [allRequests, selectedPeriod, selectedStatus],
+    [allRequests, canAuditLoyalis, selectedPeriod, selectedSource, selectedStatus],
+  );
+
+  const blueCollarPeriodRequests = useMemo(
+    () => blueCollarRequests.filter((item) =>
+      blueCollarRequestDate(item).slice(0, 7) === selectedPeriod,
+    ),
+    [blueCollarRequests, selectedPeriod],
+  );
+
+  const visibleBlueCollarRequests = useMemo(
+    () => blueCollarPeriodRequests.filter((item) =>
+      canAuditBlueCollar &&
+      (selectedSource === 'all' || selectedSource === 'blue_collar') &&
+      statusMatches(blueCollarRequestStatus(item), selectedStatus),
+    ),
+    [blueCollarPeriodRequests, canAuditBlueCollar, selectedSource, selectedStatus],
   );
 
   const periodRequests = useMemo(
-    () => allRequests.filter((request) => requestMatchesPeriod(request, selectedPeriod)),
-    [allRequests, selectedPeriod],
+    () => [
+      ...(canAuditLoyalis && (selectedSource === 'all' || selectedSource === 'loyalis')
+        ? allRequests.filter((request) => requestMatchesPeriod(request, selectedPeriod))
+        : []),
+      ...(canAuditBlueCollar && (selectedSource === 'all' || selectedSource === 'blue_collar')
+        ? blueCollarPeriodRequests.map((item) => ({ status: blueCollarRequestStatus(item) }))
+        : []),
+    ],
+    [allRequests, blueCollarPeriodRequests, canAuditBlueCollar, canAuditLoyalis, selectedPeriod, selectedSource],
   );
 
   const stats = useMemo(() => ({
     pending: periodRequests.filter((request) => request.status === 'pending').length,
     approved: periodRequests.filter((request) => request.status === 'approved').length,
-    rejected: periodRequests.filter((request) => request.status === 'rejected').length,
+    rejected: periodRequests.filter((request) => request.status === 'rejected' || request.status === 'declined').length,
     total: periodRequests.length,
   }), [periodRequests]);
 
@@ -480,6 +643,58 @@ export default function PresenceCorrectionsAdminPage() {
     }
   };
 
+  const handleReviewBlueCollar = async (
+    item: BlueCollarReviewItem,
+    action: 'approve' | 'decline' | 'supersede_approve' | 'supersede_decline',
+  ) => {
+    const reasonKey = `${item.source}:${item.request.id}`;
+
+    setActionLoading(reasonKey);
+    setMessage(null);
+    try {
+      const isSatpam = item.source === 'satpam';
+      await authenticatedJson(
+        isSatpam
+          ? '/api/satpam/absences/review'
+          : '/api/attendance/pekarya/official-leave/review',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            requestId: createFinancialRequestId(
+              isSatpam ? 'satpam-absence-review' : 'pekarya-official-leave-review',
+            ),
+            ...(isSatpam
+              ? { absenceRequestId: item.request.id }
+              : { officialLeaveRequestId: item.request.id }),
+            action,
+            expectedRevision: item.request.revision,
+          }),
+        },
+      );
+
+      const approved = action.endsWith('approve');
+      const requestType = isSatpam
+        ? satpamAttendanceReportType(item.request)
+        : pekaryaAttendanceReportType(item.request);
+      const sourceLabel = isSatpam ? 'Satpam' : 'Pekarya';
+      setMessage({
+        type: 'success',
+        text: approved
+          ? `${requestType === 'scan' ? 'Laporan scan' : 'Izin'} ${sourceLabel} berhasil disetujui dan presensi diperbarui.`
+          : `${requestType === 'scan' ? 'Laporan scan' : 'Izin'} ${sourceLabel} berhasil ditolak.`,
+      });
+      await fetchRequests(false);
+    } catch (err: unknown) {
+      console.error('Error reviewing Blue Collar request:', err);
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Gagal memutuskan pengajuan Blue Collar.',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <FloatingSnackbar message={message} />
@@ -488,6 +703,38 @@ export default function PresenceCorrectionsAdminPage() {
       <Card className="bg-white rounded-2xl shadow-sm border-none">
         <CardContent className="p-4">
           <div className="flex flex-col md:flex-row md:items-center gap-3">
+            {profile?.role === 'super_admin' ? (
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="text-sm font-semibold text-slate-500 whitespace-nowrap">Sumber</span>
+                <Select
+                  value={selectedSource}
+                  onValueChange={(value) => {
+                    if (value === 'all' || value === 'loyalis' || value === 'blue_collar') {
+                      setSelectedSource(value);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-12 w-full min-w-48 rounded-xl border-slate-200 bg-white text-base font-bold md:w-52">
+                    <SelectValue>
+                      {selectedSource === 'all'
+                        ? 'Semua Pegawai'
+                        : selectedSource === 'loyalis'
+                          ? 'Loyalis'
+                          : 'Blue Collar'}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl bg-white">
+                    <SelectItem value="all" className="min-h-11 text-base">Semua Pegawai</SelectItem>
+                    <SelectItem value="loyalis" className="min-h-11 text-base">Loyalis</SelectItem>
+                    <SelectItem value="blue_collar" className="min-h-11 text-base">Blue Collar</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="inline-flex h-12 items-center rounded-xl border border-indigo-100 bg-indigo-50 px-4 text-sm font-bold text-indigo-700">
+                Sumber: {canAuditLoyalis ? 'Loyalis' : 'Blue Collar'}
+              </div>
+            )}
             <div className="flex min-w-0 items-center gap-2">
               <Filter className="h-4 w-4 shrink-0 text-slate-400" />
               <Select
@@ -581,7 +828,8 @@ export default function PresenceCorrectionsAdminPage() {
         </button>
       </div>
 
-      {/* ── Correction Table ───────────────────────────────────────── */}
+      {/* ── Loyalis Correction Table ───────────────────────────────── */}
+      {canAuditLoyalis && (selectedSource === 'all' || selectedSource === 'loyalis') && (
       <Card className="bg-white rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.02)] border-none overflow-hidden">
         <CardContent className="p-0">
           {loading ? (
@@ -825,6 +1073,238 @@ export default function PresenceCorrectionsAdminPage() {
           )}
         </CardContent>
       </Card>
+      )}
+
+      {/* ── Blue Collar Correction & Leave Requests ───────────────── */}
+      {canAuditBlueCollar && (selectedSource === 'all' || selectedSource === 'blue_collar') && (
+        <Card className="bg-white rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.02)] border-none overflow-hidden">
+          <div className="border-b border-slate-100 px-5 py-4 lg:px-6">
+            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="font-bold text-slate-800">Pengajuan Koreksi &amp; Izin Blue Collar</h2>
+                <p className="text-xs text-slate-500">
+                  Semua kategori Blue Collar aktif ditampilkan di sini, termasuk Pekarya dan Satpam.
+                </p>
+              </div>
+              <span className="inline-flex w-fit items-center rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                Review oleh Kepala SatKer
+              </span>
+            </div>
+          </div>
+          <CardContent className="p-0">
+            {loading ? (
+              <div className="p-24 flex flex-col items-center text-slate-400">
+                <Loader2 className="w-8 h-8 animate-spin text-emerald-500 mb-4" />
+                <p className="font-semibold text-sm animate-pulse">Memuat pengajuan Blue Collar...</p>
+              </div>
+            ) : visibleBlueCollarRequests.length === 0 ? (
+              <div className="p-16 flex flex-col items-center text-center text-slate-400">
+                <Clock className="w-12 h-12 mb-4 opacity-20" />
+                <h4 className="text-slate-700 font-bold text-base">Tidak Ada Data</h4>
+                <p className="text-xs text-slate-400 max-w-xs mt-1">
+                  Belum ada pengajuan Blue Collar untuk periode dan status yang dipilih.
+                </p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader className="bg-slate-50/60 sticky top-0 z-20">
+                  <TableRow className="border-slate-100">
+                    <TableHead className="font-bold text-slate-500">Nama Pegawai</TableHead>
+                    <TableHead className="font-bold text-slate-500">Tanggal</TableHead>
+                    <TableHead className="font-bold text-slate-500">Koreksi</TableHead>
+                    <TableHead className="font-bold text-slate-500">Status</TableHead>
+                    <TableHead className="font-bold text-slate-500 text-right pr-6">Detail</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                {visibleBlueCollarRequests.map((item) => {
+                  const request = item.request;
+                  const isSatpam = item.source === 'satpam';
+                  const reportType = isSatpam
+                    ? satpamAttendanceReportType(request)
+                    : pekaryaAttendanceReportType(request);
+                  const status = String(request.status);
+                  const reasonKey = `${item.source}:${request.id}`;
+                  const isSupersede = isSatpam && status !== 'pending' && status !== 'withdrawn';
+                  const canReview = status === 'pending' || isSupersede;
+                  const approveAction = isSupersede ? 'supersede_approve' : 'approve';
+                  const declineAction = isSupersede ? 'supersede_decline' : 'decline';
+                  const date = blueCollarRequestDate(item);
+                  const requestTitle = reportType === 'scan'
+                    ? `Koreksi scan · ${request.scanIn?.slice(0, 5) || '--:--'}–${request.scanOut?.slice(0, 5) || '--:--'}`
+                    : isSatpam
+                      ? satpamAbsenceTypeLabel(item.source === 'satpam' ? item.request.absenceType : undefined)
+                      : 'Izin resmi';
+
+                  const isExpanded = !!expandedReqIds[reasonKey];
+
+                  return (
+                    <React.Fragment key={reasonKey}>
+                      <TableRow
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={isExpanded}
+                        onClick={() => setExpandedReqIds((current) => ({
+                          ...current,
+                          [reasonKey]: !current[reasonKey],
+                        }))}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setExpandedReqIds((current) => ({
+                              ...current,
+                              [reasonKey]: !current[reasonKey],
+                            }));
+                          }
+                        }}
+                        className={`border-slate-100 cursor-pointer transition-colors ${isExpanded ? 'bg-indigo-50/50' : 'hover:bg-slate-50/60'}`}
+                      >
+                        <TableCell className="min-w-48">
+                          <div className="font-bold text-slate-800">{request.employeeName || request.employeeId || '—'}</div>
+                          <div className="mt-1 inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase text-indigo-700">
+                            {isSatpam
+                              ? 'Satpam'
+                              : `Pekarya · ${item.source === 'pekarya' ? item.request.category : ''}`}
+                          </div>
+                        </TableCell>
+                        <TableCell className="min-w-36">
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 font-mono">
+                            <Calendar className="w-4 h-4 text-slate-400" />
+                            {formatPresenceDate(date, { year: 'numeric', month: 'short', day: 'numeric' })}
+                          </div>
+                        </TableCell>
+                        <TableCell className="min-w-52">
+                          <div className="text-xs font-bold text-indigo-700">{requestTitle}</div>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] font-semibold text-slate-500">
+                            {isSatpam && item.source === 'satpam' && item.request.shiftName && <span>Shift {item.request.shiftName}</span>}
+                            {isSatpam && item.source === 'satpam' && item.request.postId && <span>{item.request.postId}</span>}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${status === 'approved'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                            : status === 'declined' || status === 'rejected'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                              : status === 'withdrawn'
+                                ? 'bg-slate-100 text-slate-500 border border-slate-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-100'}`}
+                          >
+                            {statusLabel(status)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right pr-6">
+                          {isExpanded
+                            ? <ChevronUp className="w-5 h-5 text-slate-400 ml-auto" />
+                            : <ChevronDown className="w-5 h-5 text-slate-400 ml-auto" />}
+                        </TableCell>
+                      </TableRow>
+
+                      {isExpanded && (
+                        <TableRow className="border-slate-100 bg-white">
+                          <TableCell colSpan={5} className="p-0 whitespace-normal">
+                            <div className="p-5 lg:p-6 space-y-5 animate-in fade-in slide-in-from-top-1 duration-200">
+                              <div className="space-y-2">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Detail Pengajuan</span>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                                  <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-2">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Data Presensi</span>
+                                    <div className="space-y-1.5 text-xs font-semibold text-slate-700">
+                                      <div className="flex items-center justify-between gap-3 border-b border-slate-100/50 pb-1">
+                                        <span>Jenis:</span>
+                                        <span className="text-indigo-600 text-[10px] font-bold text-right">{requestTitle}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span>Kategori:</span>
+                                        <span className="text-slate-900">{isSatpam ? 'SATPAM' : item.source === 'pekarya' ? item.request.category : '—'}</span>
+                                      </div>
+                                      {isSatpam && item.source === 'satpam' && item.request.shiftName && (
+                                        <div className="flex items-center justify-between gap-3">
+                                          <span>Shift / Pos:</span>
+                                          <span className="text-slate-900">{item.request.shiftName}{item.request.postId ? ` · ${item.request.postId}` : ''}</span>
+                                        </div>
+                                      )}
+                                      <div className="mt-3 border-t border-slate-100/50 pt-3">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Alasan Pengajuan</span>
+                                        <p className="mt-1.5 text-xs text-slate-700 font-semibold leading-relaxed">{request.reason || '—'}</p>
+                                      </div>
+                                      {request.approvedAmount && status === 'approved' && (
+                                        <p className="pt-2 text-xs font-bold text-emerald-700">
+                                          Nilai disetujui: {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(request.approvedAmount)}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {request.evidenceUrl && (
+                                    <div className="space-y-2 text-left">
+                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Dokumen Pendukung</span>
+                                      {isImageProofUrl(request.evidenceUrl) ? (
+                                        <div className="border border-slate-100 rounded-2xl overflow-hidden bg-slate-50 p-2">
+                                          <a href={request.evidenceUrl} target="_blank" rel="noreferrer" className="group block relative cursor-zoom-in">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img src={request.evidenceUrl} alt="Bukti Pendukung" className="max-h-[240px] object-contain rounded-xl w-full hover:opacity-90 transition-opacity" />
+                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold gap-1 rounded-xl">
+                                              <FileText className="w-3.5 h-3.5" /> Buka Ukuran Penuh
+                                            </div>
+                                          </a>
+                                        </div>
+                                      ) : (
+                                        <a href={request.evidenceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs text-indigo-500 font-bold hover:underline cursor-pointer">
+                                          <FileText className="w-4 h-4" /> Buka Lampiran Bukti (PDF/Dokumen)
+                                        </a>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {canReview && (
+                                <div className="flex justify-end gap-3 pt-4 border-t border-slate-50">
+                                  <Button
+                                    type="button"
+                                    onClick={() => void handleReviewBlueCollar(item, declineAction)}
+                                    disabled={actionLoading !== null}
+                                    variant="outline"
+                                    className="text-rose-600 border-rose-200 hover:bg-rose-50 rounded-xl text-xs h-9 px-4 font-bold flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
+                                  >
+                                    <X className="w-3.5 h-3.5" /> {isSupersede ? 'Tolak Ulang' : 'Tolak'}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    onClick={() => void handleReviewBlueCollar(item, approveAction)}
+                                    disabled={actionLoading !== null}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs h-9 px-5 font-bold flex items-center gap-1.5 cursor-pointer shadow-md active:scale-95 transition-all"
+                                  >
+                                    {actionLoading === reasonKey ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                    {isSupersede ? 'Setujui Ulang' : 'Setujui'}
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {profile && !canAuditLoyalis && !canAuditBlueCollar && (
+        <Card className="rounded-2xl border-none bg-white shadow-sm">
+          <CardContent className="flex flex-col items-center p-16 text-center">
+            <AlertCircle className="mb-3 h-10 w-10 text-amber-500" />
+            <h2 className="font-bold text-slate-800">Akses audit tidak tersedia</h2>
+            <p className="mt-1 max-w-md text-sm text-slate-500">
+              Halaman ini hanya dapat digunakan oleh Super Admin, Kepala SatKer, atau PJ Presensi Loyalis.
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
