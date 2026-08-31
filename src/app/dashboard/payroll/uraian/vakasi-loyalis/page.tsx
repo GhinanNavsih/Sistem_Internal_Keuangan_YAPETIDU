@@ -36,12 +36,30 @@ import CetakKegiatanLoyalisDialog from '@/components/CetakKegiatanLoyalisDialog'
 import { generateKegiatanLoyalisRecapPdf } from '@/utils/generateKegiatanLoyalisRecapPdf';
 import { generateKegiatanLoyalisRecapXlsx } from '@/utils/generateKegiatanLoyalisRecapXlsx';
 import { isProposalLpjSandboxSource } from '@/lib/payroll/vakasiTambahan';
-import { propagateVakasiPay } from '@/lib/payroll/client';
+import {
+  authenticatedJson,
+  createFinancialRequestId,
+} from '@/lib/payroll/client';
+
+type EmployeeCollection = 'Employees_Loyalis' | 'Employees_BlueCollar';
+
+type VakasiDirectoryEmployee = {
+  id: string;
+  name: string;
+  role: string;
+  department: string;
+  employeeCollection: EmployeeCollection;
+  jobCategory?: string;
+};
 
 type WorkerRow = {
   employeeId: string;
   employeeName: string;
   payGiven: number;
+  employeeCollection?: EmployeeCollection;
+  jobCategory?: string;
+  department?: string;
+  role?: string;
   showDropdown?: boolean;
   searchText?: string;
 };
@@ -75,8 +93,8 @@ export default function VakasiLoyalisPage() {
   const periodToken = `${year}-${String(month).padStart(2, '0')}`;
 
   // ── States ──
-  const [loyalisEmployees, setLoyalisEmployees] = useState<any[]>([]);
-  const [loadingLoyalis, setLoadingLoyalis] = useState(false);
+  const [employees, setEmployees] = useState<VakasiDirectoryEmployee[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [existingEvents, setExistingEvents] = useState<any[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [filterDept, setFilterDept] = useState<string>('');
@@ -149,6 +167,7 @@ export default function VakasiLoyalisPage() {
   const [currentEventSubmittedBy, setCurrentEventSubmittedBy] = useState<string | null>(null);
   const [currentEventSubmittedByName, setCurrentEventSubmittedByName] = useState<string | null>(null);
   const [currentEventSubmittedByEmail, setCurrentEventSubmittedByEmail] = useState<string | null>(null);
+  const [currentEventRevision, setCurrentEventRevision] = useState(0);
 
   const [saving, setSaving] = useState(false);
   const isSavingRef = useRef(false);
@@ -157,6 +176,7 @@ export default function VakasiLoyalisPage() {
   const pendingAutosaveRef = useRef<AutosaveSnapshot | null>(null);
   const autosaveInFlightRef = useRef(false);
   const autosaveWritePromiseRef = useRef<Promise<void> | null>(null);
+  const mutationRequestRef = useRef<{ key: string; id: string } | null>(null);
 
   // ── Fetch Signature Configurations ──
   const [signatureConfig, setSignatureConfig] = useState<Record<string, { name: string, title: string }>>({});
@@ -175,33 +195,54 @@ export default function VakasiLoyalisPage() {
     fetchSignatures();
   }, []);
 
-  // ── Fetch Loyalis Employees ──
+  // ── Fetch the mixed Loyalis + Pekarya recipient directory ──
   useEffect(() => {
-    const fetchLoyalis = async () => {
-      setLoadingLoyalis(true);
+    const fetchEmployees = async () => {
+      setLoadingEmployees(true);
       try {
-        const q = query(
-          collection(db, 'Employees_Loyalis'),
-          where('personal_info.status', '==', 'AKTIF')
-        );
-        const snap = await getDocs(q);
-        const list = snap.docs.map(d => {
+        const [loyalisSnap, pekaryaSnap] = await Promise.all([
+          getDocs(query(
+            collection(db, 'Employees_Loyalis'),
+            where('personal_info.status', '==', 'AKTIF'),
+          )),
+          getDocs(query(
+            collection(db, 'Employees_BlueCollar'),
+            where('employment.status', '==', 'active'),
+          )),
+        ]);
+        const loyalis = loyalisSnap.docs.map(d => {
           const data = d.data();
           return {
             id: d.id,
             name: data.personal_info?.name || '',
             role: data.employment_profile?.job_role || '',
             department: data.employment_profile?.department_unit || '',
+            employeeCollection: 'Employees_Loyalis' as const,
           };
-        }).sort((a, b) => a.name.localeCompare(b.name));
-        setLoyalisEmployees(list);
+        });
+        const pekarya = pekaryaSnap.docs.map(d => {
+          const data = d.data();
+          const jobCategory = String(data.employment?.jobCategory || '').trim();
+          return {
+            id: d.id,
+            name: data.name || '',
+            role: jobCategory,
+            department: 'UPT & LEMBAGA',
+            employeeCollection: 'Employees_BlueCollar' as const,
+            jobCategory,
+          };
+        }).filter(employee => employee.jobCategory);
+        setEmployees([...loyalis, ...pekarya].sort((a, b) =>
+          a.name.localeCompare(b.name, 'id'),
+        ));
       } catch (err) {
-        console.error('Error fetching Loyalis employees:', err);
+        console.error('Error fetching Vakasi recipient directory:', err);
+        setMessage({ type: 'error', text: 'Gagal memuat daftar penerima Loyalis dan Pekarya.' });
       } finally {
-        setLoadingLoyalis(false);
+        setLoadingEmployees(false);
       }
     };
-    fetchLoyalis();
+    fetchEmployees();
   }, []);
 
   // ── Fetch Departments ──
@@ -270,15 +311,6 @@ export default function VakasiLoyalisPage() {
     return existingEvents.filter(evt => evt.departmentUnit === filterDept);
   }, [existingEvents, filterDept]);
 
-  // A draft slip is fair game to update automatically — only a locked one is
-  // immutable, and the propagation route already leaves those alone (see
-  // POST /api/payroll/vakasi-propagation). Call this after any event mutation
-  // that can change what a worker is owed: approval, un-approval, decline, or
-  // an edit to an already-approved event's workers/amounts.
-  const syncVakasiPay = async (employeeIds: string[], periodVal: string): Promise<string> => {
-    return propagateVakasiPay({ period: periodVal, employeeIds });
-  };
-
   const sanitizeEventId = (name: string): string => {
     return name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10);
   };
@@ -318,6 +350,78 @@ export default function VakasiLoyalisPage() {
     }
   };
 
+  type VakasiMutationResult = {
+    eventId: string;
+    revision: number;
+    status: 'draft' | 'pending_review' | 'approved' | 'revision_needed' | 'declined';
+    affectedEmployeeIds: string[];
+    propagationSummary?: Record<string, number>;
+  };
+
+  const propagationNote = (result: VakasiMutationResult): string => {
+    const summary = result.propagationSummary || {};
+    const updated = summary.updated || 0;
+    const blocked = (summary.blocked_status || 0) + (summary.immutable || 0);
+    const notes: string[] = [];
+    if (updated > 0) notes.push(`${updated} rekap/slip draf ikut diperbarui.`);
+    if (blocked > 0) notes.push(`${blocked} slip terkunci tidak diubah dan ditandai untuk ditinjau.`);
+    return notes.length > 0 ? ` ${notes.join(' ')}` : '';
+  };
+
+  const mutationRequestId = (key: string): string => {
+    if (mutationRequestRef.current?.key === key) return mutationRequestRef.current.id;
+    const id = createFinancialRequestId(key);
+    mutationRequestRef.current = { key, id };
+    return id;
+  };
+
+  const validateExplicitSnapshot = (snapshot: AutosaveSnapshot, requireReport: boolean) => {
+    if (!snapshot.eventName.trim()) {
+      setMessage({ type: 'error', text: 'Nama Kegiatan harus diisi.' });
+      return null;
+    }
+    const invalidWorker = snapshot.rows.find(w => w.searchText?.trim() && !w.employeeId);
+    if (invalidWorker) {
+      setMessage({
+        type: 'error',
+        text: `Pegawai "${invalidWorker.searchText}" belum dipilih secara valid. Pilih nama yang tepat dari daftar pegawai.`,
+      });
+      return null;
+    }
+    const activeWorkers = snapshot.rows.filter(w => w.employeeId);
+    if (activeWorkers.length === 0) {
+      setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai.' });
+      return null;
+    }
+    if (activeWorkers.some(worker => !Number.isSafeInteger(worker.payGiven) || worker.payGiven <= 0)) {
+      setMessage({ type: 'error', text: 'Nominal setiap penerima harus lebih dari Rp0.' });
+      return null;
+    }
+    const ids = activeWorkers.map(worker => worker.employeeId);
+    if (new Set(ids).size !== ids.length) {
+      setMessage({ type: 'error', text: 'Ada duplikasi pegawai dalam kegiatan ini.' });
+      return null;
+    }
+    if (requireReport && !snapshot.reportFileUrl) {
+      setMessage({ type: 'error', text: 'Laporan yang ditandatangani harus diunggah sebelum submit.' });
+      return null;
+    }
+    return activeWorkers;
+  };
+
+  const mutationSnapshot = (snapshot: AutosaveSnapshot, workers: WorkerRow[]) => ({
+    eventName: snapshot.eventName,
+    period: periodToken,
+    isEndOfMonth: snapshot.isEndOfMonth,
+    departmentUnit: snapshot.department || null,
+    reportFileUrl: snapshot.reportFileUrl,
+    reportFileName: snapshot.reportFileName,
+    workers: workers.map(worker => ({
+      employeeId: worker.employeeId,
+      payGiven: worker.payGiven,
+    })),
+  });
+
   const handleSubmitForReview = async () => {
     if (isSavingRef.current) return;
     isSavingRef.current = true;
@@ -325,120 +429,35 @@ export default function VakasiLoyalisPage() {
     try {
       await cancelPendingAutosaveAndWait();
       const snapshot = buildAutosaveSnapshot();
-      if (!snapshot.eventName.trim()) {
-        setMessage({ type: 'error', text: 'Nama Kegiatan harus diisi.' });
-        return;
-      }
-      const invalidWorker = snapshot.rows.find(w => w.searchText?.trim() && !w.employeeId);
-      if (invalidWorker) {
-        setMessage({
-          type: 'error',
-          text: `Pegawai "${invalidWorker.searchText}" belum dipilih secara valid. Pilih nama yang tepat dari daftar pegawai atau ketik nama lengkapnya.`
-        });
-        return;
-      }
-
-      const activeWorkers = snapshot.rows.filter(w => w.employeeId);
-      if (activeWorkers.length === 0) {
-        setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai.' });
-        return;
-      }
-      if (!snapshot.reportFileUrl) {
-        setMessage({ type: 'error', text: 'Laporan yang ditandatangani harus diunggah sebelum submit.' });
-        return;
-      }
-      const ids = activeWorkers.map(w => w.employeeId);
-      if (new Set(ids).size !== ids.length) {
-        setMessage({ type: 'error', text: 'Ada duplikasi pegawai dalam kegiatan ini.' });
-        return;
-      }
-
-      const eventSeg = sanitizeEventId(snapshot.eventName);
-      const documentId = snapshot.eventId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
-
-      let totalPayout = 0;
-      const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
-
-      activeWorkers.forEach(w => {
-        workersMap[w.employeeId] = {
-          employeeName: w.employeeName,
-          payGiven: w.payGiven,
-        };
-        totalPayout += w.payGiven;
-      });
-
-      let previousWorkerIds: string[] = [];
-      if (snapshot.eventId) {
-        const prevSnap = await getDoc(doc(db, 'VakasiTambahan', snapshot.eventId));
-        if (prevSnap.exists()) {
-          const prevData = prevSnap.data() as any;
-          previousWorkerIds = Object.keys(prevData.eventWorkers || {});
-        }
-      }
-
-      const allAffectedIds = Array.from(new Set([
-        ...activeWorkers.map(w => w.employeeId),
-        ...previousWorkerIds
-      ]));
-
-      const dbPeriod = `${year}_${String(month).padStart(2, '0')}`;
-      const lockedNames: string[] = [];
-
-      await Promise.all(
-        allAffectedIds.map(async (empId) => {
-          const slipDocId = `${dbPeriod}_${empId}`;
-          const snap = await getDoc(doc(db, 'PayrollSlipStates', slipDocId));
-          if (snap.exists() && snap.data()?.status === 'locked') {
-            const wName = activeWorkers.find(w => w.employeeId === empId)?.employeeName || empId;
-            lockedNames.push(wName);
-          }
-        })
+      const workers = validateExplicitSnapshot(snapshot, true);
+      if (!workers) return;
+      const result = await authenticatedJson<VakasiMutationResult>(
+        '/api/payroll/vakasi-events',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            requestId: mutationRequestId(`vakasi_submit_${snapshot.eventId || 'new'}`),
+            action: 'submit',
+            eventId: snapshot.eventId || undefined,
+            expectedRevision: snapshot.eventId ? currentEventRevision : undefined,
+            snapshot: mutationSnapshot(snapshot, workers),
+          }),
+        },
       );
-
-      if (lockedNames.length > 0) {
-        isSavingRef.current = false;
-        setSaving(false);
-        setMessage({
-          type: 'error',
-          text: `Gagal mensubmit: Slip gaji untuk karyawan berikut telah terkunci. Harap hubungi admin BAK untuk membuka kunci slip mereka terlebih dahulu sebelum mengajukan kegiatan ini:\n- ${lockedNames.join('\n- ')}`
-        });
-        return;
-      }
-
-      const payload = {
-        eventName: snapshot.eventName,
-        period: periodToken,
-        totalPayout,
-        isEndOfMonth: false,
-        departmentUnit: snapshot.department || null,
-        eventWorkers: workersMap,
-        updatedAt: serverTimestamp(),
-        status: 'pending_review',
-        submittedBy: profile?.uid || null,
-        submittedByName: profile?.displayName || null,
-        submittedByEmail: profile?.email || null,
-        reportFileUrl: snapshot.reportFileUrl,
-        reportFileName: snapshot.reportFileName,
-        submittedAt: serverTimestamp(),
-        reviewNote: null,
-        reviewedBy: null,
-        reviewedAt: null,
-      };
-
-      await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
-      setMessage({ type: 'success', text: `Kegiatan "${snapshot.eventName}" berhasil disubmit untuk review.` });
-      setAutosaveMessage('');
-
-      setSelectedEventId(documentId);
-      setCurrentEventStatus('pending_review');
+      mutationRequestRef.current = null;
+      setSelectedEventId(result.eventId);
+      setCurrentEventRevision(result.revision);
+      setCurrentEventStatus(result.status);
       setCurrentEventReviewNote(null);
       setCurrentEventSubmittedBy(profile?.uid || null);
       setCurrentEventSubmittedByName(profile?.displayName || null);
       setCurrentEventSubmittedByEmail(profile?.email || null);
       setReportFile(null);
+      setAutosaveMessage('');
+      setMessage({ type: 'success', text: `Kegiatan "${snapshot.eventName}" berhasil disubmit untuk review.` });
     } catch (err) {
       console.error(err);
-      setMessage({ type: 'error', text: 'Gagal mensubmit kegiatan untuk review.' });
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Gagal mensubmit kegiatan untuk review.' });
     } finally {
       isSavingRef.current = false;
       setSaving(false);
@@ -451,68 +470,33 @@ export default function VakasiLoyalisPage() {
     setSaving(true);
     try {
       await cancelPendingAutosaveAndWait();
-      const eventSnap = await getDoc(doc(db, 'VakasiTambahan', eventId));
-      if (!eventSnap.exists()) {
-        throw new Error("Event tidak ditemukan.");
-      }
-      const eventData = eventSnap.data() as any;
-      const periodVal = eventData.period;
-      const workers = eventData.eventWorkers || {};
-
-      if (action === 'approved') {
-        const [yearStr, monthStr] = periodVal.split('-');
-        const dbPeriod = `${yearStr}_${monthStr}`;
-        const lockedNames: string[] = [];
-
-        await Promise.all(
-          Object.entries(workers).map(async ([empId, w]: [string, any]) => {
-            const slipDocId = `${dbPeriod}_${empId}`;
-            const snap = await getDoc(doc(db, 'PayrollSlipStates', slipDocId));
-            if (snap.exists() && snap.data()?.status === 'locked') {
-              lockedNames.push(w.employeeName || empId);
-            }
-          })
-        );
-
-        if (lockedNames.length > 0) {
-          isSavingRef.current = false;
-          setSaving(false);
-          setMessage({
-            type: 'error',
-            text: `Gagal memproses review: Slip gaji untuk karyawan berikut telah terkunci. Harap buka kunci slip mereka di dashboard terlebih dahulu:\n- ${lockedNames.join('\n- ')}`
-          });
-          return;
-        }
-      }
-
-      const updatePayload: Record<string, any> = {
-        status: action,
-        reviewedBy: profile?.uid || null,
-        reviewedAt: serverTimestamp(),
-        reviewNote: note || null,
-        updatedAt: serverTimestamp(),
-      };
-
-      await setDoc(doc(db, 'VakasiTambahan', eventId), updatePayload, { merge: true });
+      const result = await authenticatedJson<VakasiMutationResult>(
+        '/api/payroll/vakasi-events',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            requestId: mutationRequestId(`vakasi_review_${eventId}_${action}`),
+            action: 'review',
+            eventId,
+            expectedRevision: currentEventRevision,
+            reviewAction: action,
+            reviewNote: note || undefined,
+          }),
+        },
+      );
+      mutationRequestRef.current = null;
       const actionLabel = action === 'approved' ? 'disetujui' : action === 'revision_needed' ? 'diminta revisi' : 'ditolak';
-      let toastText = `Kegiatan berhasil ${actionLabel}.`;
-
-      // This dialog only ever reviews a pending_review event, so declining or
-      // requesting revision here can never be undoing a previously-approved
-      // (and thus previously-propagated) event — nothing to sync in that case.
-      if (action === 'approved') {
-        toastText += await syncVakasiPay(Object.keys(workers), periodVal);
-      }
-      setMessage({ type: 'success', text: toastText });
-
+      const syncNote = propagationNote(result);
+      setMessage({ type: 'success', text: `Kegiatan berhasil ${actionLabel}.${syncNote}` });
       setShowReviewDialog(false);
       setReviewNote('');
       setReviewingEventId(null);
-      setCurrentEventStatus(action);
+      setCurrentEventRevision(result.revision);
+      setCurrentEventStatus(result.status);
       setCurrentEventReviewNote(note || null);
     } catch (err) {
       console.error(err);
-      setMessage({ type: 'error', text: 'Gagal memproses review.' });
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Gagal memproses review.' });
     } finally {
       isSavingRef.current = false;
       setSaving(false);
@@ -526,24 +510,26 @@ export default function VakasiLoyalisPage() {
     setSaving(true);
     try {
       await cancelPendingAutosaveAndWait();
-      const updatePayload: Record<string, any> = {
-        status: 'pending_review',
-        updatedAt: serverTimestamp(),
-      };
-
-      await setDoc(doc(db, 'VakasiTambahan', eventId), updatePayload, { merge: true });
-      // The event just left 'approved', so any draft it was already pushed
-      // onto needs to drop that row — its workers are exactly the currently
-      // loaded rows, since this button only shows for the open event.
-      const workerIds = workerRowsRef.current
-        .map(row => row.employeeId)
-        .filter(Boolean);
-      const note = await syncVakasiPay(workerIds, periodToken);
-      setMessage({ type: 'success', text: `Persetujuan kegiatan berhasil dibatalkan.${note}` });
-      setCurrentEventStatus('pending_review');
+      const result = await authenticatedJson<VakasiMutationResult>(
+        '/api/payroll/vakasi-events',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            requestId: mutationRequestId(`vakasi_unapprove_${eventId}`),
+            action: 'unapprove',
+            eventId,
+            expectedRevision: currentEventRevision,
+          }),
+        },
+      );
+      mutationRequestRef.current = null;
+      const syncNote = propagationNote(result);
+      setCurrentEventRevision(result.revision);
+      setCurrentEventStatus(result.status);
+      setMessage({ type: 'success', text: `Persetujuan kegiatan berhasil dibatalkan.${syncNote}` });
     } catch (err) {
       console.error(err);
-      setMessage({ type: 'error', text: 'Gagal membatalkan persetujuan.' });
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Gagal membatalkan persetujuan.' });
     } finally {
       isSavingRef.current = false;
       setSaving(false);
@@ -557,128 +543,39 @@ export default function VakasiLoyalisPage() {
     try {
       await cancelPendingAutosaveAndWait();
       const snapshot = buildAutosaveSnapshot();
-      if (!snapshot.eventName.trim()) {
-        setMessage({ type: 'error', text: 'Nama Kegiatan harus diisi.' });
-        return;
-      }
-      const invalidWorker = snapshot.rows.find(w => w.searchText?.trim() && !w.employeeId);
-      if (invalidWorker) {
-        setMessage({
-          type: 'error',
-          text: `Pegawai "${invalidWorker.searchText}" belum dipilih secara valid. Pilih nama yang tepat dari daftar pegawai atau ketik nama lengkapnya.`
-        });
-        return;
-      }
-
-      const activeWorkers = snapshot.rows.filter(w => w.employeeId);
-      if (activeWorkers.length === 0) {
-        setMessage({ type: 'error', text: 'Minimal harus ada 1 pegawai.' });
-        return;
-      }
-      const ids = activeWorkers.map(w => w.employeeId);
-      if (new Set(ids).size !== ids.length) {
-        setMessage({ type: 'error', text: 'Ada duplikasi pegawai dalam kegiatan ini.' });
-        return;
-      }
-
-      const eventSeg = sanitizeEventId(snapshot.eventName);
-      const activeId = snapshot.eventId;
-      const documentId = activeId || `${periodToken}_${eventSeg}_${Math.random().toString(36).substring(2, 8)}`;
-
-      let totalPayout = 0;
-      const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
-
-      activeWorkers.forEach(w => {
-        workersMap[w.employeeId] = {
-          employeeName: w.employeeName,
-          payGiven: w.payGiven,
-        };
-        totalPayout += w.payGiven;
-      });
-
-      let previousWorkerIds: string[] = [];
-      if (activeId) {
-        const prevSnap = await getDoc(doc(db, 'VakasiTambahan', activeId));
-        if (prevSnap.exists()) {
-          const prevData = prevSnap.data() as any;
-          previousWorkerIds = Object.keys(prevData.eventWorkers || {});
-        }
-      }
-
-      const allAffectedIds = Array.from(new Set([
-        ...activeWorkers.map(w => w.employeeId),
-        ...previousWorkerIds
-      ]));
-
-      const dbPeriod = `${year}_${String(month).padStart(2, '0')}`;
-      const lockedNames: string[] = [];
-
-      await Promise.all(
-        allAffectedIds.map(async (empId) => {
-          const slipDocId = `${dbPeriod}_${empId}`;
-          const snap = await getDoc(doc(db, 'PayrollSlipStates', slipDocId));
-          if (snap.exists() && snap.data()?.status === 'locked') {
-            const wName = activeWorkers.find(w => w.employeeId === empId)?.employeeName || empId;
-            lockedNames.push(wName);
-          }
-        })
+      const workers = validateExplicitSnapshot(snapshot, false);
+      if (!workers) return;
+      const financeSave = profile?.role === 'super_admin' || profile?.role === 'finance_verifier';
+      const result = await authenticatedJson<VakasiMutationResult>(
+        '/api/payroll/vakasi-events',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            requestId: mutationRequestId(`vakasi_save_${snapshot.eventId || 'new'}`),
+            action: 'save',
+            eventId: snapshot.eventId || undefined,
+            expectedRevision: snapshot.eventId ? currentEventRevision : undefined,
+            desiredStatus: financeSave
+              ? 'approved'
+              : currentEventStatus === 'revision_needed' ? 'revision_needed' : 'draft',
+            snapshot: mutationSnapshot(snapshot, workers),
+          }),
+        },
       );
-
-      if (lockedNames.length > 0) {
-        isSavingRef.current = false;
-        setSaving(false);
-        setMessage({
-          type: 'error',
-          text: `Gagal menyimpan: Slip gaji untuk karyawan berikut telah terkunci. Harap buka kunci slip mereka di dashboard terlebih dahulu sebelum menyimpan event ini:\n- ${lockedNames.join('\n- ')}`
-        });
-        return;
-      }
-
-      const isSuperAdmin = profile?.role === 'super_admin';
-      const finalSubmittedBy = activeId ? currentEventSubmittedBy : (profile?.uid || null);
-      const finalSubmittedByName = activeId ? currentEventSubmittedByName : (profile?.displayName || null);
-      const finalSubmittedByEmail = activeId ? currentEventSubmittedByEmail : (profile?.email || null);
-
-      const payload: Record<string, any> = {
-        eventName: snapshot.eventName,
-        period: periodToken,
-        totalPayout,
-        isEndOfMonth: snapshot.isEndOfMonth,
-        departmentUnit: !snapshot.isEndOfMonth ? snapshot.department : null,
-        eventWorkers: workersMap,
-        updatedAt: serverTimestamp(),
-        status: isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'),
-        submittedBy: finalSubmittedBy,
-        submittedByName: finalSubmittedByName,
-        submittedByEmail: finalSubmittedByEmail,
-      };
-      if (snapshot.reportFileUrl) {
-        payload.reportFileUrl = snapshot.reportFileUrl;
-        payload.reportFileName = snapshot.reportFileName;
-      }
-
-      await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
-
-      const newStatus = isSuperAdmin ? 'approved' : (currentEventStatus || 'draft');
-      // allAffectedIds already unions current + previous workers, so a worker
-      // dropped from an already-approved event has their stale row synced
-      // away, not just the ones still listed getting their amount updated.
-      let toastText = `Event "${snapshot.eventName}" berhasil disimpan.`;
-      if (newStatus === 'approved') {
-        toastText += await syncVakasiPay(allAffectedIds, periodToken);
-      }
-
-      setMessage({ type: 'success', text: toastText });
-      setAutosaveMessage('');
-      setSelectedEventId(documentId);
-      setCurrentEventStatus(newStatus);
-      setCurrentEventSubmittedBy(finalSubmittedBy);
-      setCurrentEventSubmittedByName(finalSubmittedByName);
-      setCurrentEventSubmittedByEmail(finalSubmittedByEmail);
+      mutationRequestRef.current = null;
+      const syncNote = propagationNote(result);
+      setSelectedEventId(result.eventId);
+      setCurrentEventRevision(result.revision);
+      setCurrentEventStatus(result.status);
+      setCurrentEventSubmittedBy(currentEventSubmittedBy || profile?.uid || null);
+      setCurrentEventSubmittedByName(currentEventSubmittedByName || profile?.displayName || null);
+      setCurrentEventSubmittedByEmail(currentEventSubmittedByEmail || profile?.email || null);
       setReportFile(null);
+      setAutosaveMessage('');
+      setMessage({ type: 'success', text: `Event "${snapshot.eventName}" berhasil disimpan.${syncNote}` });
     } catch (err) {
       console.error(err);
-      setMessage({ type: 'error', text: 'Gagal menyimpan Event Vakasi Tambahan.' });
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Gagal menyimpan Event Vakasi Tambahan.' });
     } finally {
       isSavingRef.current = false;
       setSaving(false);
@@ -714,6 +611,11 @@ export default function VakasiLoyalisPage() {
   };
 
   const triggerAutosave = () => {
+    // Approved financial records are changed only through the protected API;
+    // a background Firestore write must never silently alter or re-approve one.
+    if (currentEventStatus === 'approved' || currentEventStatus === 'pending_review' || currentEventStatus === 'declined') {
+      return;
+    }
     // Always retain the newest complete form snapshot. If a write is active, the
     // queue flushes this snapshot immediately after that write completes.
     pendingAutosaveRef.current = buildAutosaveSnapshot();
@@ -734,6 +636,7 @@ export default function VakasiLoyalisPage() {
   const handleAutosave = async (snapshot: AutosaveSnapshot) => {
     const { rows, eventName: currentEventName, eventId: activeId, isEndOfMonth: currentIsEndOfMonth, department: currentDept, reportFileUrl: currentReportFileUrl, reportFileName: currentReportFileName } = snapshot;
     if (!currentEventName.trim()) return;
+    if (currentEventStatus === 'approved' || currentEventStatus === 'pending_review' || currentEventStatus === 'declined') return;
     const invalidWorker = rows.find(w => w.searchText?.trim() && !w.employeeId);
     if (invalidWorker) {
       setAutosaveMessage(`Belum tersimpan otomatis: pilih "${invalidWorker.searchText}" dari daftar pegawai.`);
@@ -760,17 +663,27 @@ export default function VakasiLoyalisPage() {
       }
 
       let totalPayout = 0;
-      const workersMap: Record<string, { employeeName: string, payGiven: number }> = {};
+      const workersMap: Record<string, {
+        employeeName: string;
+        payGiven: number;
+        employeeCollection: EmployeeCollection;
+        jobCategory?: string;
+        department?: string;
+        role?: string;
+      }> = {};
 
       activeWorkers.forEach(w => {
         workersMap[w.employeeId] = {
           employeeName: w.employeeName,
           payGiven: w.payGiven,
+          employeeCollection: w.employeeCollection || 'Employees_Loyalis',
+          ...(w.jobCategory ? { jobCategory: w.jobCategory } : {}),
+          ...(w.department ? { department: w.department } : {}),
+          ...(w.role ? { role: w.role } : {}),
         };
         totalPayout += w.payGiven;
       });
 
-      const isSuperAdmin = profile?.role === 'super_admin';
       const finalSubmittedBy = activeId ? currentEventSubmittedBy : (profile?.uid || null);
       const finalSubmittedByName = activeId ? currentEventSubmittedByName : (profile?.displayName || null);
       const finalSubmittedByEmail = activeId ? currentEventSubmittedByEmail : (profile?.email || null);
@@ -783,7 +696,7 @@ export default function VakasiLoyalisPage() {
         departmentUnit: !currentIsEndOfMonth ? currentDept : null,
         eventWorkers: workersMap,
         updatedAt: serverTimestamp(),
-        status: isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'),
+        status: currentEventStatus === 'revision_needed' ? 'revision_needed' : 'draft',
         submittedBy: finalSubmittedBy,
         submittedByName: finalSubmittedByName,
         submittedByEmail: finalSubmittedByEmail,
@@ -793,9 +706,10 @@ export default function VakasiLoyalisPage() {
         payload.reportFileName = currentReportFileName;
       }
 
-      await setDoc(doc(db, 'VakasiTambahan', documentId), payload);
+      await setDoc(doc(db, 'VakasiTambahan', documentId), payload, { merge: true });
       if (isNewDocument) {
-        setCurrentEventStatus(isSuperAdmin ? 'approved' : (currentEventStatus || 'draft'));
+        setCurrentEventStatus('draft');
+        setCurrentEventRevision(0);
         setCurrentEventSubmittedBy(finalSubmittedBy);
         setCurrentEventSubmittedByName(finalSubmittedByName);
         setCurrentEventSubmittedByEmail(finalSubmittedByEmail);
@@ -854,6 +768,10 @@ export default function VakasiLoyalisPage() {
         searchText,
         employeeId: identityChanged ? '' : row.employeeId,
         employeeName: identityChanged ? '' : row.employeeName,
+        employeeCollection: identityChanged ? undefined : row.employeeCollection,
+        jobCategory: identityChanged ? undefined : row.jobCategory,
+        department: identityChanged ? undefined : row.department,
+        role: identityChanged ? undefined : row.role,
         showDropdown: true,
       };
     }));
@@ -862,7 +780,7 @@ export default function VakasiLoyalisPage() {
     }
   };
 
-  const selectWorker = (index: number, employee: { id: string; name: string }) => {
+  const selectWorker = (index: number, employee: VakasiDirectoryEmployee) => {
     const alreadySelected = workerRowsRef.current.some((row, rowIndex) =>
       rowIndex !== index && row.employeeId === employee.id
     );
@@ -873,7 +791,17 @@ export default function VakasiLoyalisPage() {
 
     updateWorkerRows(rows => rows.map((row, rowIndex) =>
       rowIndex === index
-        ? { ...row, employeeId: employee.id, employeeName: employee.name, searchText: employee.name, showDropdown: false }
+        ? {
+            ...row,
+            employeeId: employee.id,
+            employeeName: employee.name,
+            employeeCollection: employee.employeeCollection,
+            jobCategory: employee.jobCategory,
+            department: employee.department,
+            role: employee.role,
+            searchText: employee.name,
+            showDropdown: false,
+          }
         : row
     ));
     triggerAutosave();
@@ -886,10 +814,10 @@ export default function VakasiLoyalisPage() {
 
     const normalizeName = (value: string) => value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('id-ID');
     const typedName = normalizeName(row.searchText);
-    const exactMatches = loyalisEmployees.filter(employee => normalizeName(employee.name) === typedName);
+    const exactMatches = employees.filter(employee => normalizeName(employee.name) === typedName);
     const uniqueMatches = exactMatches.length > 0
       ? exactMatches
-      : loyalisEmployees.filter(employee => normalizeName(employee.name).includes(typedName));
+      : employees.filter(employee => normalizeName(employee.name).includes(typedName));
 
     if (uniqueMatches.length === 1) {
       return selectWorker(index, uniqueMatches[0]);
@@ -918,7 +846,7 @@ export default function VakasiLoyalisPage() {
     generateKegiatanLoyalisRecapPdf({
       period: MONTHS_ID[month - 1] + ' ' + year,
       existingEvents: approvedEvents,
-      loyalisEmployees,
+      employees,
     });
   };
 
@@ -931,7 +859,7 @@ export default function VakasiLoyalisPage() {
     generateKegiatanLoyalisRecapXlsx({
       period: MONTHS_ID[month - 1] + ' ' + year,
       existingEvents: approvedEvents,
-      loyalisEmployees,
+      employees,
     });
   };
 
@@ -1012,7 +940,7 @@ export default function VakasiLoyalisPage() {
             className="rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300 transition-all font-semibold flex items-center gap-2 shadow-sm cursor-pointer text-xs h-9"
           >
             <FileText className="w-4 h-4 text-indigo-600" />
-            Laporan Kegiatan Loyalis
+            Laporan Kegiatan Pegawai
           </Button>
           <Button
             onClick={handlePrintLoyalisRecap}
@@ -1040,7 +968,7 @@ export default function VakasiLoyalisPage() {
         <div className="xl:col-span-4 space-y-6">
           <Card className="bg-white rounded-[20px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-none p-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-slate-800 text-sm">Daftar Kegiatan Loyalis</h3>
+              <h3 className="font-bold text-slate-800 text-sm">Daftar Kegiatan Vakasi Pegawai</h3>
               {(!isReadOnly || profile?.role === 'super_admin') && (
                 <Button
                   onClick={() => {
@@ -1057,6 +985,7 @@ export default function VakasiLoyalisPage() {
                     setCurrentEventSubmittedBy(null);
                     setCurrentEventSubmittedByName(null);
                     setCurrentEventSubmittedByEmail(null);
+                    setCurrentEventRevision(0);
                     setAutosaveMessage('');
                   }}
                   size="sm"
@@ -1086,22 +1015,32 @@ export default function VakasiLoyalisPage() {
                         setEventName(evt.eventName);
                         setIsEndOfMonth(!!evt.isEndOfMonth);
                         setSelectedDept(evt.departmentUnit || '');
-                        setCurrentEventStatus(evt.status || null);
+                        // Legacy records had no status but were historically
+                        // payable, so they must behave as approved/read-only.
+                        setCurrentEventStatus(evt.status || 'approved');
                         setCurrentEventReviewNote(evt.reviewNote || null);
                         setCurrentEventSubmittedBy(evt.submittedBy || null);
                         setCurrentEventSubmittedByName(evt.submittedByName || null);
                         setCurrentEventSubmittedByEmail(evt.submittedByEmail || null);
+                        setCurrentEventRevision(Number(evt.revision || 0));
                         setReportFileUrl(evt.reportFileUrl || null);
                         setReportFileName(evt.reportFileName || null);
                         setAutosaveMessage('');
 
-                        const rows = Object.entries(evt.eventWorkers || {}).map(([id, w]: [string, any]) => ({
-                          employeeId: id,
-                          employeeName: w.employeeName || '',
-                          payGiven: w.payGiven || 0,
-                          searchText: w.employeeName || '',
-                          showDropdown: false,
-                        }));
+                        const rows = Object.entries(evt.eventWorkers || {}).map(([id, w]: [string, any]) => {
+                          const directoryEmployee = employees.find(employee => employee.id === id);
+                          return {
+                            employeeId: id,
+                            employeeName: w.employeeName || directoryEmployee?.name || '',
+                            payGiven: w.payGiven || 0,
+                            employeeCollection: w.employeeCollection || directoryEmployee?.employeeCollection || 'Employees_Loyalis',
+                            jobCategory: w.jobCategory || directoryEmployee?.jobCategory,
+                            department: w.department || directoryEmployee?.department,
+                            role: w.role || directoryEmployee?.role,
+                            searchText: w.employeeName || directoryEmployee?.name || '',
+                            showDropdown: false,
+                          };
+                        });
                         setWorkerRows(rows.length > 0 ? rows : [createEmptyWorkerRow()]);
                       }}
                       className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer ${getCardBgClass(evt.status, isActive)}`}
@@ -1287,23 +1226,45 @@ export default function VakasiLoyalisPage() {
                                 .filter((r, rIdx) => rIdx !== idx && r.employeeId)
                                 .map(r => r.employeeId)
                             );
-                            const filtered = loyalisEmployees.filter(emp =>
+                            const filtered = employees.filter(emp =>
                               emp.name.toLowerCase().includes(search) && !takenIds.has(emp.id)
                             );
                             if (filtered.length === 0) return <div className="p-3 text-[10px] text-slate-400">Pegawai tidak ditemukan atau sudah ditambahkan pada baris lain</div>;
-                            return filtered.map(emp => (
-                              <button
-                                key={emp.id}
-                                type="button"
-                                onClick={() => {
-                                  selectWorker(idx, emp);
-                                }}
-                                className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[11px] font-semibold text-slate-700 flex justify-between"
-                              >
-                                <span>{emp.name}</span>
-                                <span className="text-[9px] text-slate-400 font-normal uppercase">{emp.role} · {emp.department}</span>
-                              </button>
-                            ));
+                            const groups = new Map<string, VakasiDirectoryEmployee[]>();
+                            filtered.forEach((employee) => {
+                              const label = employee.employeeCollection === 'Employees_BlueCollar'
+                                ? `Pekarya · ${employee.jobCategory}`
+                                : 'Loyalis';
+                              groups.set(label, [...(groups.get(label) || []), employee]);
+                            });
+                            return [...groups.entries()]
+                              .sort(([left], [right]) => {
+                                if (left === 'Loyalis') return -1;
+                                if (right === 'Loyalis') return 1;
+                                return left.localeCompare(right, 'id');
+                              })
+                              .map(([label, groupEmployees]) => (
+                                <div key={label}>
+                                  <div className="sticky top-0 bg-slate-50 px-4 py-1.5 text-[9px] font-black uppercase tracking-wider text-slate-400">
+                                    {label}
+                                  </div>
+                                  {groupEmployees.map(emp => (
+                                    <button
+                                      key={emp.id}
+                                      type="button"
+                                      onClick={() => selectWorker(idx, emp)}
+                                      className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[11px] font-semibold text-slate-700 flex justify-between gap-3"
+                                    >
+                                      <span>{emp.name}</span>
+                                      <span className="text-[9px] text-slate-400 font-normal uppercase text-right">
+                                        {emp.employeeCollection === 'Employees_BlueCollar'
+                                          ? emp.jobCategory
+                                          : emp.role || emp.department}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              ));
                           })()}
                         </div>
                       )}
@@ -1526,7 +1487,7 @@ export default function VakasiLoyalisPage() {
           periodName={`${MONTHS_ID[month - 1]} ${year}`}
           existingEvents={existingEvents}
           departments={departments}
-          loyalisEmployees={loyalisEmployees}
+          employees={employees}
         />
       )}
 

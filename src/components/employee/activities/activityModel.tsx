@@ -116,6 +116,17 @@ export interface ActivitiesContentProps {
   workflow: EmployeeActivityWorkflow;
 }
 
+export interface AssignedSpjEvent {
+  id: string;
+  eventName: string;
+  period: string;
+  jobCategory: string;
+  payGiven: number;
+  sourceKind: string;
+  sourceVakasiEventId: string | null;
+  approvedAt: string | null;
+}
+
 export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps) {
   const { profile: rawProfile, activeProfile, logout, user } = useAuth();
   const profile = activeProfile || rawProfile;
@@ -243,6 +254,11 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
   // ── Activities ──
   const [activities, setActivities] = useState<ActivityReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const [assignedSpjEvents, setAssignedSpjEvents] = useState<AssignedSpjEvent[]>([]);
+  const [loadedAssignedSpjKey, setLoadedAssignedSpjKey] = useState<string | null>(null);
+  const assignedSpjRequestKey = `${profile?.linkedEmployeeId || ''}|${periodToken}`;
+  const loadingAssignedSpjEvents = Boolean(profile?.linkedEmployeeId) &&
+    loadedAssignedSpjKey !== assignedSpjRequestKey;
 
   // ── Form state ──
   const [showForm, setShowForm] = useState(false);
@@ -977,6 +993,33 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
 
     return () => unsubscribe();
   }, [profile?.linkedEmployeeId, periodToken, refreshTrigger]);
+
+  // Server-scoped history for administrator-assigned SPJ events. Employees
+  // never receive the full KegiatanSpj documents or another worker's amount.
+  useEffect(() => {
+    if (!profile?.linkedEmployeeId) {
+      return;
+    }
+    let active = true;
+    authenticatedJson<{ events: AssignedSpjEvent[] }>(
+      `/api/pekarya/spj-events?period=${encodeURIComponent(periodToken)}&mine=true`,
+      { method: 'GET' },
+    )
+      .then((response) => {
+        if (!active) return;
+        setAssignedSpjEvents(response.events || []);
+        setLoadedAssignedSpjKey(assignedSpjRequestKey);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.error('Error loading assigned SPJ history:', error);
+        setAssignedSpjEvents([]);
+        setLoadedAssignedSpjKey(assignedSpjRequestKey);
+      });
+    return () => {
+      active = false;
+    };
+  }, [profile?.linkedEmployeeId, periodToken, refreshTrigger, assignedSpjRequestKey]);
 
   // ── Real-time listener for Driver Journeys (Sopir only) ──
   useEffect(() => {
@@ -3320,6 +3363,8 @@ export function useEmployeeActivitiesModel({ workflow }: ActivitiesContentProps)
     setYear,
     activities,
     loading,
+    assignedSpjEvents,
+    loadingAssignedSpjEvents,
     setShowForm,
     showForm,
     setShowSatpamSpjChoice,

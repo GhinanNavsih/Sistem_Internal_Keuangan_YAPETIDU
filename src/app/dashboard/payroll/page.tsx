@@ -94,7 +94,10 @@ import {
 } from '@/lib/payroll/dashboardSlipData';
 import { buildKoperasiPayrollAmountMaps } from '@/lib/payroll/koperasiAmounts';
 import { isPayrollEmployeeEligible } from '@/lib/payroll/payrollRoster';
-import { isPayableVakasiTambahan } from '@/lib/payroll/vakasiTambahan';
+import {
+  isPayableVakasiTambahan,
+  vakasiWorkerCollection,
+} from '@/lib/payroll/vakasiTambahan';
 
 import {
   calculateTotalEarnings,
@@ -1671,6 +1674,7 @@ export default function PayrollValidationDashboard() {
               const eventNameVal = data.eventName || '';
               const workers = data.eventWorkers || {};
               Object.entries(workers).forEach(([empId, w]: [string, any]) => {
+                if (vakasiWorkerCollection(w) !== 'Employees_Loyalis') return;
                 sumMap[empId] = (sumMap[empId] || 0) + (w.payGiven || 0);
 
                 if (!listMap[empId]) {
@@ -2381,7 +2385,11 @@ export default function PayrollValidationDashboard() {
           if (data.period === periodToken && isPayableVakasiTambahan(data)) {
             const eventName = data.eventName || '';
             const worker = data.eventWorkers?.[emp.id];
-            if (worker && worker.payGiven) {
+            if (
+              worker &&
+              vakasiWorkerCollection(worker) === 'Employees_Loyalis' &&
+              worker.payGiven
+            ) {
               freshVakasiSum += worker.payGiven;
               freshVakasiList.push({ eventName, payGiven: worker.payGiven });
             }
@@ -2889,7 +2897,11 @@ export default function PayrollValidationDashboard() {
       if (data.period === periodToken && isPayableVakasiTambahan(data)) {
         const eventName = data.eventName || '';
         const worker = data.eventWorkers?.[employeeId];
-        if (worker && worker.payGiven) {
+        if (
+          worker &&
+          vakasiWorkerCollection(worker) === 'Employees_Loyalis' &&
+          worker.payGiven
+        ) {
           freshVakasiSum += worker.payGiven;
           freshVakasiList.push({ eventName, payGiven: worker.payGiven });
         }

@@ -2,7 +2,6 @@ import { adminDb } from '@/lib/firebase-admin';
 import { periodCalendarFromData } from '@/lib/payroll/calendar';
 import { DriverPiketSchedule } from '@/lib/payroll/driverPiket';
 import {
-  isPekaryaJobCategory,
   KegiatanSpjFinancialLike,
   PekaryaActivityFinancialLike,
   pekaryaPayrollWindow,
@@ -225,11 +224,13 @@ export async function loadPekaryaSlipPreviews(
       id: snapshot.id,
       ...(snapshot.data() as Record<string, unknown>),
     }) as PekaryaPreviewEmployee)
-    .filter((employee) =>
-      isPekaryaJobCategory(employee.employment?.jobCategory),
-    );
+    .filter((employee) => {
+      const category = employee.employment?.jobCategory;
+      return typeof category === 'string' && category.trim().length > 0;
+    });
 
-  // `isPekaryaJobCategory` above already established the category is present.
+  // Active BlueCollar master data is authoritative; newly introduced job
+  // categories participate without requiring a code-list deployment first.
   const categoryOf = (employee: PekaryaPreviewEmployee): string =>
     employee.employment?.jobCategory as string;
 

@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 
-export interface LoyalisEmployee {
+export interface VakasiEmployee {
   id: string;
   name: string;
   role: string;
@@ -10,13 +10,13 @@ export interface LoyalisEmployee {
 export interface GenerateKegiatanLoyalisRecapXlsxParams {
   period: string;
   existingEvents: any[];
-  loyalisEmployees: LoyalisEmployee[];
+  employees: VakasiEmployee[];
 }
 
 export function generateKegiatanLoyalisRecapXlsx({
   period,
   existingEvents,
-  loyalisEmployees,
+  employees,
 }: GenerateKegiatanLoyalisRecapXlsxParams): void {
   const getDeptIndex = (deptStr: string): number => {
     if (!deptStr) return -1;
@@ -52,7 +52,7 @@ export function generateKegiatanLoyalisRecapXlsx({
 
   // Title rows
   worksheetData.push(['UNIVERSITAS PESANTREN TINGGI DARUL ULUM JOMBANG']);
-  worksheetData.push(['REKAPITULASI LAPORAN RINCIAN KEGIATAN PEGAWAI LOYALIS']);
+  worksheetData.push(['REKAPITULASI LAPORAN RINCIAN KEGIATAN PEGAWAI']);
   worksheetData.push([`PERIODE: ${period.toUpperCase()}`]);
   worksheetData.push([]); // Empty spacer row
 
@@ -91,8 +91,8 @@ export function generateKegiatanLoyalisRecapXlsx({
       if (payout <= 0) return;
 
       // Robust matching: ID-based (case-insensitive) OR Name-based (case-insensitive, trimmed) as fallback
-      const emp = loyalisEmployees.find(e => e.id.toLowerCase() === empId.toLowerCase()) ||
-                  loyalisEmployees.find(e => e.name.trim().toLowerCase() === (w.employeeName || '').trim().toLowerCase());
+      const emp = employees.find(e => e.id.toLowerCase() === empId.toLowerCase()) ||
+                  employees.find(e => e.name.trim().toLowerCase() === (w.employeeName || '').trim().toLowerCase());
 
       const empDept = emp ? emp.department : '';
       let idx = getDeptIndex(empDept);
@@ -167,6 +167,6 @@ export function generateKegiatanLoyalisRecapXlsx({
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Rekap Kegiatan');
 
   // Save to file
-  const filename = `Rekapitulasi_Kegiatan_Loyalis_${period.replace(/\s+/g, '_')}.xlsx`;
+  const filename = `Rekapitulasi_Kegiatan_Pegawai_${period.replace(/\s+/g, '_')}.xlsx`;
   XLSX.writeFile(workbook, filename);
 }

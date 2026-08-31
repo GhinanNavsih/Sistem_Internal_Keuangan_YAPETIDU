@@ -257,6 +257,26 @@ test('event totals are period/category scoped and legacy compatible', () => {
   assert.equal(sumApprovedEventSpj(events, 'E1', 'TEKNISI', '2026-08'), 50_000);
 });
 
+test('Vakasi Pekarya projections count once and voided projections stop paying', () => {
+  const projection = {
+    id: 'VAKASI_PEKARYA__EVENT_A__TEKNISI',
+    sourceKind: 'vakasi_tambahan_pekarya',
+    sourceVakasiEventId: 'EVENT_A',
+    period: '2026-08',
+    jobCategory: 'TEKNISI',
+    status: 'approved',
+    eventWorkers: { E1: { payGiven: 85_000 } },
+  };
+  assert.equal(
+    sumApprovedEventSpj([projection, { ...projection }], 'E1', 'TEKNISI', '2026-08'),
+    85_000,
+  );
+  assert.equal(
+    sumApprovedEventSpj([{ ...projection, status: 'voided' }], 'E1', 'TEKNISI', '2026-08'),
+    0,
+  );
+});
+
 test('manual SPJ entry is limited to the July 2026 paper-based categories', () => {
   // Paper-based reporting: the Kepala Satker types the accumulated SPJ in.
   assert.equal(allowsManualSpjEntry('SOPIR', '2026-07'), true);

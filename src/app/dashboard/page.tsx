@@ -58,7 +58,10 @@ import {
   DashboardVakasiItem,
   sumSlipFields,
 } from '@/lib/payroll/dashboardSlipData';
-import { isPayableVakasiTambahan } from '@/lib/payroll/vakasiTambahan';
+import {
+  isPayableVakasiTambahan,
+  vakasiWorkerCollection,
+} from '@/lib/payroll/vakasiTambahan';
 import { isPekaryaJobCategory } from '@/lib/payroll/pekaryaSpj';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
@@ -767,10 +770,11 @@ export default function TreasuryDashboard() {
           if (!/^\d{4}_\d{2}$/.test(period)) return;
 
           const periodData = getPeriodData(period);
-          if (data.eventName) periodData.vakasiEvents.push(data.eventName);
-
           const workers = data.eventWorkers || {};
+          let hasLoyalisRecipient = false;
           Object.entries(workers).forEach(([employeeId, worker]: [string, any]) => {
+            if (vakasiWorkerCollection(worker) !== 'Employees_Loyalis') return;
+            hasLoyalisRecipient = true;
             periodData.vakasiTambahanMap[employeeId] =
               (periodData.vakasiTambahanMap[employeeId] || 0) + (worker.payGiven || 0);
             if (!periodData.vakasiTambahanListMap[employeeId]) {
@@ -782,6 +786,9 @@ export default function TreasuryDashboard() {
               isEndOfMonth: !!data.isEndOfMonth,
             });
           });
+          if (hasLoyalisRecipient && data.eventName) {
+            periodData.vakasiEvents.push(data.eventName);
+          }
         });
 
         if (!cancelled) setPeriodDataByPeriod(nextPeriodData);

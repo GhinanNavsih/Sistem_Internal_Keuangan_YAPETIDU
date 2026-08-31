@@ -33,6 +33,23 @@ interface ActivityHistoryPanelProps {
   model: EmployeeActivitiesModel;
 }
 
+// The stored activityName for a shift-assignment report is "Pengamanan di
+// {postId}: {post.name}" (post.name itself already starts with "Pos", e.g.
+// "Pos IC") — written once at submission time, so it can't be fixed by
+// changing that template alone without a data migration. Recomputed here at
+// display time instead, from postName ("{postId}: {post.name}", e.g.
+// "Pos 1: Pos IC") every such report already carries, so it applies
+// uniformly to past and future reports alike. Falls back to the original
+// name for anything that isn't in that exact "id: name" shape — an extra
+// (Lembur Sendiri) assignment's postName is a free-text description, not one
+// of the nine fixed posts.
+function satpamShiftDisplayTitle(postName: string | undefined, fallback: string): string {
+  if (!postName) return fallback;
+  const [postId, label] = postName.split(': ');
+  if (!postId || !label) return fallback;
+  return `Shift ${postId} ${label.replace(/^Pos\s+/, '')}`;
+}
+
 export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProps) {
   const {
     userJobCategory,
@@ -139,6 +156,10 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                   const sc = getStatusConfig(activity.status);
                   const isExpanded = expandedId === activity.id;
                   const canEdit = activity.status === 'declined' || activity.status === 'pending';
+                  const displayName =
+                    activity.reportKind === 'satpam_shift_assignment'
+                      ? satpamShiftDisplayTitle(activity.postName, activity.activityName)
+                      : activity.activityName;
 
                   return (
                     <Card
@@ -158,7 +179,7 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                           {/* Activity info */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <div className="truncate text-sm font-bold text-slate-800">{activity.activityName}</div>
+                              <div className="truncate text-sm font-bold text-slate-800">{displayName}</div>
                               {activity.reportKind === 'satpam_found_item' && (
                                 <Badge className="shrink-0 border-none bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
                                   Penemuan Barang
@@ -183,10 +204,19 @@ export default function ActivityHistoryPanel({ model }: ActivityHistoryPanelProp
                             </div>
                           </div>
 
-                          {/* Status badge */}
-                          <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[10px] font-bold rounded-lg px-2 py-0.5 shrink-0`}>
-                            {sc.label}
-                          </Badge>
+                          {/* Status badge, with the shift's pay category stacked above it
+                              for a worked post guard shift (Harian / Jumat & Libur /
+                              Lembur Sendiri / Lembur Cover). */}
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            {activity.reportKind === 'satpam_shift_assignment' && activity.shiftType && (
+                              <Badge className="border-none bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800">
+                                {activity.shiftType === 'Off-Duty' ? 'Hari Libur' : activity.shiftType}
+                              </Badge>
+                            )}
+                            <Badge className={`${sc.bgClass} ${sc.textClass} border ${sc.borderClass} text-[10px] font-bold rounded-lg px-2 py-0.5`}>
+                              {sc.label}
+                            </Badge>
+                          </div>
 
                           {/* Chevron */}
                           {isExpanded

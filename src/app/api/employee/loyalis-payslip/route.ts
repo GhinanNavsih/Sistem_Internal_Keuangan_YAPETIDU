@@ -13,7 +13,10 @@ import {
   loyalisPresenceAmounts,
   type LoyalisPresenceDocument,
 } from '@/lib/payroll/uraianPropagation';
-import { isPayableVakasiTambahan } from '@/lib/payroll/vakasiTambahan';
+import {
+  isPayableVakasiTambahan,
+  vakasiWorkerCollection,
+} from '@/lib/payroll/vakasiTambahan';
 import {
   errorResponse,
   HttpError,
@@ -23,6 +26,16 @@ import {
 export const dynamic = 'force-dynamic';
 
 const PERIOD_RE = /^(\d{4})-(\d{2})$/;
+
+type LoyalisEmployeeData = Parameters<typeof toSlipEmployeeView>[0] & {
+  academic_and_tier?: {
+    level_code?: string;
+    education_level?: string;
+    functional_tier?: string;
+  };
+  kepangkatan?: { cummulativeCredit?: unknown };
+  [key: string]: unknown;
+};
 
 function asNumber(value: unknown): number {
   const number = Number(value);
@@ -79,7 +92,10 @@ export async function GET(request: NextRequest) {
       throw new HttpError(404, 'Data karyawan Loyalis tidak ditemukan.');
     }
 
-    const employee = { id: employeeSnapshot.id, ...employeeSnapshot.data() } as any;
+    const employee: LoyalisEmployeeData = {
+      id: employeeSnapshot.id,
+      ...employeeSnapshot.data(),
+    };
 
     const [
       matrixRows,
@@ -145,6 +161,7 @@ export async function GET(request: NextRequest) {
       const data = eventSnapshot.data();
       if (data.period !== period || !isPayableVakasiTambahan(data)) return;
       const worker = data.eventWorkers?.[employeeId];
+      if (vakasiWorkerCollection(worker) !== 'Employees_Loyalis') return;
       const payGiven = asNumber(worker?.payGiven);
       if (!payGiven) return;
       vakasiTambahanSum += payGiven;

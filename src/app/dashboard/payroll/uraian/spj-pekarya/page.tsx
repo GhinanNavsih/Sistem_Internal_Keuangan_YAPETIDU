@@ -16,7 +16,7 @@ import {
 import {
   Loader2, CheckCircle2, FileText, AlertCircle, Trash2, Plus, Save,
   Calendar, Check, ShieldCheck, FileSpreadsheet, Users, Info, Settings, Clock,
-  Upload, Trash, UserCircle2, Sparkles, Building2, Code2
+  Upload, Trash, UserCircle2, Sparkles, Building2, Code2, Lock
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -31,6 +31,7 @@ import {
   sumApprovedActivitySpj,
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
+import { VAKASI_PEKARYA_PROJECTION_SOURCE_KIND } from '@/lib/payroll/vakasiTambahan';
 
 export default function SpjPekaryaPage() {
   const { profile } = useAuth();
@@ -70,6 +71,11 @@ export default function SpjPekaryaPage() {
   const isSavingRef = useRef(false);
   const spjSaveRequestIdRef = useRef<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const selectedSpjEvent = selectedSpjEventId
+    ? spjEvents.find((event) => event.id === selectedSpjEventId)
+    : null;
+  const isVakasiProjection =
+    selectedSpjEvent?.sourceKind === VAKASI_PEKARYA_PROJECTION_SOURCE_KIND;
 
   // ── Fetch Blue Collar Employees for SPJ ──
   useEffect(() => {
@@ -186,6 +192,13 @@ export default function SpjPekaryaPage() {
 
   const handleSaveSpjEvent = async () => {
     if (isSavingRef.current) return;
+    if (isVakasiProjection) {
+      setMessage({
+        type: 'error',
+        text: 'SPJ proyeksi Vakasi hanya dapat diubah dari halaman Vakasi Tambahan.',
+      });
+      return;
+    }
     if (!spjEventName.trim()) {
       setMessage({ type: 'error', text: 'Nama Kegiatan SPJ harus diisi.' });
       return;
@@ -212,9 +225,7 @@ export default function SpjPekaryaPage() {
       const requestId =
         spjSaveRequestIdRef.current || createFinancialRequestId('spj_event_save');
       spjSaveRequestIdRef.current = requestId;
-      const existing = selectedSpjEventId
-        ? spjEvents.find((event) => event.id === selectedSpjEventId)
-        : null;
+      const existing = selectedSpjEvent;
       await authenticatedJson('/api/pekarya/spj-events', {
         method: 'POST',
         body: JSON.stringify({
@@ -343,9 +354,18 @@ export default function SpjPekaryaPage() {
                             : 'bg-white border-slate-100 hover:border-indigo-100'
                         }`}
                       >
-                        <div className="font-bold text-slate-800 text-xs line-clamp-1">{evt.eventName}</div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-bold text-slate-800 text-xs line-clamp-1">{evt.eventName}</div>
+                          {evt.sourceKind === VAKASI_PEKARYA_PROJECTION_SOURCE_KIND && (
+                            <span className="shrink-0 rounded-md bg-violet-100 px-2 py-0.5 text-[8px] font-black uppercase tracking-wide text-violet-700">
+                              Vakasi Tambahan
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center justify-between mt-3 text-[10px] text-slate-400 font-medium">
-                          <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 font-bold uppercase tracking-wider">{fmtRp(evt.eventFee || 0)} / org</span>
+                          <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 font-bold uppercase tracking-wider">
+                            {evt.variablePay ? 'Nominal per penerima' : `${fmtRp(evt.eventFee || 0)} / org`}
+                          </span>
                           <span>{wCount} Pegawai · {fmtRp(evt.totalPayout || 0)}</span>
                         </div>
                       </div>
@@ -370,6 +390,18 @@ export default function SpjPekaryaPage() {
                 )}
               </div>
 
+              {isVakasiProjection && (
+                <div className="flex items-start gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-xs text-violet-900">
+                  <Lock className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
+                  <div>
+                    <p className="font-black">Proyeksi otomatis Vakasi Tambahan</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-violet-700">
+                      Data ini hanya-baca. Nama penerima dan nominal mengikuti event Vakasi sumber agar SPJ tidak terhitung ganda.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Nama Kegiatan SPJ</label>
@@ -377,6 +409,7 @@ export default function SpjPekaryaPage() {
                     type="text"
                     placeholder="Contoh: Kerja Bakti Massal"
                     value={spjEventName}
+                    disabled={isVakasiProjection}
                     onChange={(e) => setSpjEventName(e.target.value)}
                     className="rounded-xl border-slate-200 font-semibold text-slate-800 text-sm focus:border-indigo-500 h-10"
                   />
@@ -390,6 +423,7 @@ export default function SpjPekaryaPage() {
                     pattern="[0-9]*"
                     placeholder="Contoh: 50000"
                     value={spjEventFee === 0 ? '' : String(spjEventFee)}
+                    disabled={isVakasiProjection}
                     onChange={(e) => {
                       const val = parseInt(e.target.value.replace(/\D/g, ''), 10) || 0;
                       setSpjEventFee(val);
@@ -412,6 +446,7 @@ export default function SpjPekaryaPage() {
                           type="text"
                           placeholder="Cari Nama Pegawai Pekarya..."
                           value={row.searchText}
+                          disabled={isVakasiProjection}
                           onChange={(e) => {
                             const val = e.target.value;
                             setSpjWorkerRows(prev => {
@@ -472,7 +507,7 @@ export default function SpjPekaryaPage() {
                           </div>
                         )}
                       </div>
-                      <Button
+                      {!isVakasiProjection && <Button
                         type="button"
                         variant="ghost"
                         onClick={() => {
@@ -482,23 +517,23 @@ export default function SpjPekaryaPage() {
                         className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl h-9 w-9 p-0 flex items-center justify-center"
                       >
                         <Trash className="w-4 h-4" />
-                      </Button>
+                      </Button>}
                     </div>
                   ))}
-                  <Button
+                  {!isVakasiProjection && <Button
                     type="button"
                     onClick={handleSpjAddRow}
                     variant="outline"
                     className="w-full rounded-xl border-slate-200 text-slate-500 hover:bg-slate-100 text-xs font-semibold h-9 flex items-center justify-center gap-1.5"
                   >
                     <Plus className="w-4.5 h-4.5 text-indigo-500" /> Tambah Pegawai
-                  </Button>
+                  </Button>}
                 </div>
               </div>
 
               {/* Form actions */}
               <div className="flex justify-end items-center gap-3 pt-4 border-t border-slate-100">
-                {selectedSpjEventId && (
+                {selectedSpjEventId && !isVakasiProjection && (
                   <Button
                     onClick={() => handleDeleteSpjEvent(selectedSpjEventId)}
                     variant="ghost"
@@ -509,11 +544,11 @@ export default function SpjPekaryaPage() {
                 )}
                 <Button
                   onClick={handleSaveSpjEvent}
-                  disabled={saving}
+                  disabled={saving || isVakasiProjection}
                   className="rounded-xl px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-lg shadow-indigo-100 transition-all flex items-center gap-2 h-10 text-xs cursor-pointer"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                  Simpan SPJ
+                  {isVakasiProjection ? 'Dikelola dari Vakasi' : 'Simpan SPJ'}
                 </Button>
               </div>
             </Card>

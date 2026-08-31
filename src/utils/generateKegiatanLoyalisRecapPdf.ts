@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { LOGO_YAPETIDU_BASE64, LOGO_UNIPDU_BASE64 } from './logoConstants';
 
-export interface LoyalisEmployee {
+export interface VakasiEmployee {
   id: string;
   name: string;
   role: string;
@@ -12,13 +12,13 @@ export interface LoyalisEmployee {
 export interface GenerateKegiatanLoyalisRecapPdfParams {
   period: string;
   existingEvents: any[];
-  loyalisEmployees: LoyalisEmployee[];
+  employees: VakasiEmployee[];
 }
 
 export function generateKegiatanLoyalisRecapPdf({
   period,
   existingEvents,
-  loyalisEmployees,
+  employees,
 }: GenerateKegiatanLoyalisRecapPdfParams, saveToFile = true): jsPDF {
   const doc = new jsPDF({
     orientation: 'landscape',
@@ -45,7 +45,7 @@ export function generateKegiatanLoyalisRecapPdf({
   doc.setFontSize(11);
   doc.text('UNIVERSITAS PESANTREN TINGGI DARUL ULUM JOMBANG', 67, 14);
   doc.setFontSize(12);
-  doc.text('REKAPITULASI LAPORAN RINCIAN KEGIATAN PEGAWAI LOYALIS', 67, 20);
+  doc.text('REKAPITULASI LAPORAN RINCIAN KEGIATAN PEGAWAI', 67, 20);
   doc.setFontSize(11);
   doc.text(`PERIODE: ${period.toUpperCase()}`, 67, 26);
 
@@ -97,8 +97,8 @@ export function generateKegiatanLoyalisRecapPdf({
       if (payout <= 0) return;
 
       // Robust matching: ID-based (case-insensitive) OR Name-based (case-insensitive, trimmed) as fallback
-      const emp = loyalisEmployees.find(e => e.id.toLowerCase() === empId.toLowerCase()) ||
-                  loyalisEmployees.find(e => e.name.trim().toLowerCase() === (w.employeeName || '').trim().toLowerCase());
+      const emp = employees.find(e => e.id.toLowerCase() === empId.toLowerCase()) ||
+                  employees.find(e => e.name.trim().toLowerCase() === (w.employeeName || '').trim().toLowerCase());
 
       const empDept = emp ? emp.department : '';
       let idx = getDeptIndex(empDept);
@@ -221,11 +221,11 @@ export function generateKegiatanLoyalisRecapPdf({
   if (grandTotal === 0 && typeof window !== 'undefined') {
     const sampleEvt = approvedEvents.find(e => e.eventWorkers && Object.keys(e.eventWorkers).length > 0);
     const sampleKeys = sampleEvt ? Object.keys(sampleEvt.eventWorkers).slice(0, 5).join(', ') : 'None';
-    alert(`Debug Info:\n- Total Approved Events: ${approvedEvents.length}\n- Total Employees: ${loyalisEmployees.length}\n- Sample Event Workers Keys: ${sampleKeys}\n- Sample Employee ID: ${loyalisEmployees.length > 0 ? loyalisEmployees[0].id : 'None'}`);
+    alert(`Debug Info:\n- Total Approved Events: ${approvedEvents.length}\n- Total Employees: ${employees.length}\n- Sample Event Workers Keys: ${sampleKeys}\n- Sample Employee ID: ${employees.length > 0 ? employees[0].id : 'None'}`);
   }
 
   if (saveToFile) {
-    const filename = `Rekapitulasi_Kegiatan_Loyalis_${period.replace(/\s+/g, '_')}.pdf`;
+    const filename = `Rekapitulasi_Kegiatan_Pegawai_${period.replace(/\s+/g, '_')}.pdf`;
     doc.save(filename);
   }
 

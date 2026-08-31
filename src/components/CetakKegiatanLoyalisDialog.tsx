@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { FileText, Printer } from 'lucide-react';
 import { generateKegiatanLoyalisPdf, KegiatanLoyalisGroup, KegiatanLoyalisWorker } from '@/utils/generateKegiatanLoyalisPdf';
 
-interface LoyalisEmployee {
+interface VakasiEmployee {
   id: string;
   name: string;
   role: string;
@@ -26,7 +26,7 @@ interface CetakKegiatanLoyalisDialogProps {
   periodName: string; // e.g. "Mei 2026"
   existingEvents: any[];
   departments: string[];
-  loyalisEmployees: LoyalisEmployee[];
+  employees: VakasiEmployee[];
 }
 
 export default function CetakKegiatanLoyalisDialog({
@@ -35,15 +35,15 @@ export default function CetakKegiatanLoyalisDialog({
   periodName,
   existingEvents,
   departments,
-  loyalisEmployees,
+  employees,
 }: CetakKegiatanLoyalisDialogProps) {
   const [selectedDept, setSelectedDept] = useState<string>('');
 
-  // Dynamically compute unique departments with active Loyalis employees as options
+  // Dynamically compute unique departments across the mixed recipient directory.
   const activeDepartments = React.useMemo(() => {
-    const list = Array.from(new Set(loyalisEmployees.map(emp => emp.department).filter(Boolean))).sort();
+    const list = Array.from(new Set(employees.map(emp => emp.department).filter(Boolean))).sort();
     return list.length > 0 ? list : departments;
-  }, [loyalisEmployees, departments]);
+  }, [employees, departments]);
 
   React.useEffect(() => {
     if (open) {
@@ -54,16 +54,16 @@ export default function CetakKegiatanLoyalisDialog({
   const handlePrint = () => {
     if (!selectedDept) return;
 
-    // 1. Get all active Loyalis employee IDs in the selected department unit (or all units)
+    // 1. Get all active recipient IDs in the selected department unit (or all units)
     const deptEmployees = selectedDept === 'Semua Departemen'
-      ? loyalisEmployees
-      : loyalisEmployees.filter(emp => emp.department === selectedDept);
+      ? employees
+      : employees.filter(emp => emp.department === selectedDept);
     const deptEmployeeIds = new Set(deptEmployees.map(emp => emp.id));
 
     if (deptEmployees.length === 0) {
       alert(selectedDept === 'Semua Departemen'
-        ? 'Tidak ada karyawan Loyalis ditemukan.'
-        : `Tidak ada karyawan Loyalis ditemukan di unit "${selectedDept}".`
+        ? 'Tidak ada pegawai ditemukan.'
+        : `Tidak ada pegawai ditemukan di unit "${selectedDept}".`
       );
       return;
     }
@@ -129,7 +129,7 @@ export default function CetakKegiatanLoyalisDialog({
             </div>
             <div>
               <DialogTitle className="text-xl font-bold tracking-tight text-slate-800">
-                Laporan Kegiatan Loyalis
+                Laporan Kegiatan Pegawai
               </DialogTitle>
               <DialogDescription className="text-sm text-slate-500 mt-0.5">
                 Cetak laporan rincian kegiatan terverifikasi per unit departemen
@@ -156,7 +156,7 @@ export default function CetakKegiatanLoyalisDialog({
               </select>
             </div>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Laporan ini merinci seluruh kegiatan/acara (Tengah Bulan & Akhir Bulan) yang telah disetujui, mengelompokkannya per kegiatan beserta daftar nama pegawai loyalis penerima dan total subtotalnya.
+              Laporan ini merinci seluruh kegiatan/acara yang telah disetujui, termasuk penerima Loyalis dan Pekarya beserta subtotalnya.
             </p>
           </div>
         </div>

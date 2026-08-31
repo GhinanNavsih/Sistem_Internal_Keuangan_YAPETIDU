@@ -47,7 +47,7 @@ export function generateKegiatanLoyalisPdf(data: KegiatanLoyalisData, saveToFile
   doc.setFontSize(10);
   doc.text('UNIVERSITAS PESANTREN TINGGI DARUL ULUM JOMBANG', 67, 14);
   doc.setFontSize(11);
-  doc.text('LAPORAN RINCIAN KEGIATAN PEGAWAI LOYALIS', 67, 20);
+  doc.text('LAPORAN RINCIAN KEGIATAN PEGAWAI', 67, 20);
   doc.setFontSize(10);
   doc.text(`UNIT KERJA: ${data.department.toUpperCase()}`, 67, 26);
   doc.text(`PERIODE: ${data.period.toUpperCase()}`, 67, 32);
@@ -105,7 +105,7 @@ export function generateKegiatanLoyalisPdf(data: KegiatanLoyalisData, saveToFile
       [
         { content: 'NO.', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'NAMA KEGIATAN', styles: { halign: 'center' as const, valign: 'middle' as const } },
-        { content: 'NAMA LOYALIS', styles: { halign: 'center' as const, valign: 'middle' as const } },
+        { content: 'NAMA PEGAWAI', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'PENDAPATAN', styles: { halign: 'center' as const, valign: 'middle' as const } },
         { content: 'SUBTOTAL', styles: { halign: 'center' as const, valign: 'middle' as const } },
       ],

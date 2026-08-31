@@ -68,8 +68,6 @@ import {
   ChevronRight,
   Compass,
   Trash2,
-  Plus,
-  Lock,
   Edit2,
   MapPin,
   Maximize2,
@@ -250,16 +248,6 @@ interface SatpamShiftGroup {
   hasAuditorEdit: boolean;
 }
 
-interface SatpamAuditorEditRow {
-  reportId?: string;
-  assignmentKind: 'primary' | 'extra';
-  postId: string;
-  employeeId: string;
-  shiftType: string;
-  coveredEmployeeId?: string;
-  overtimeReason?: string;
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function isWeekend(dateStr: string): boolean {
@@ -402,18 +390,6 @@ const JOB_CATEGORY_LABELS: Record<string, string> = {
   PEKARYA: 'Pekarya (Umum)',
   PONTI: 'Ponti',
 };
-const SATPAM_POST_OPTIONS = [
-  'Pos 1',
-  'Pos 2',
-  'Pos 3',
-  'Pos 4',
-  'Pos 5',
-  'Pos 6',
-  'Pos 7',
-  'Pos 8',
-  'Pos 9',
-];
-
 // Payable Satpam classifications a super_admin may correct an approved
 // assignment to. Off-Duty is a planning marker, never a payable rate.
 const SATPAM_EDITABLE_PAY_TYPES: string[] = [
@@ -644,7 +620,6 @@ export default function ActivityReviewPage() {
   const [payTypeValue, setPayTypeValue] = useState<string>('Harian');
   const [payTypeEmployeeId, setPayTypeEmployeeId] = useState('');
   const [payTypeCovered, setPayTypeCovered] = useState('');
-  const [payTypeReason, setPayTypeReason] = useState('');
   const [savingPayType, setSavingPayType] = useState(false);
 
   // ── Driver (Sopir) Audit Modal State ──
@@ -660,18 +635,12 @@ export default function ActivityReviewPage() {
   const [shiftDeclineReasons, setShiftDeclineReasons] = useState<Record<string, string>>({});
   const [shiftReviewNotes, setShiftReviewNotes] = useState<Record<string, string>>({});
   const [submittingShiftId, setSubmittingShiftId] = useState<string | null>(null);
-  const [auditorEditShift, setAuditorEditShift] = useState<SatpamShiftGroup | null>(null);
-  const [auditorEditDate, setAuditorEditDate] = useState('');
-  const [auditorEditShiftName, setAuditorEditShiftName] = useState('Pagi');
-  const [auditorEditReason, setAuditorEditReason] = useState('');
-  const [auditorEditRows, setAuditorEditRows] = useState<SatpamAuditorEditRow[]>([]);
   const [satpamEmployeeDirectory, setSatpamEmployeeDirectory] = useState<Array<{ id: string; name: string; isActive: boolean }>>([]);
   // A "planned" guard (the "Rencana:" line on an audit card) can be someone
   // no longer classified as SATPAM by the time this renders, so they may be
   // missing from the SATPAM-only directory above. This resolves those ids
   // straight off Employees_BlueCollar instead of falling back to the raw id.
   const [resolvedPlannedNames, setResolvedPlannedNames] = useState<Record<string, string>>({});
-  const [savingAuditorEdit, setSavingAuditorEdit] = useState(false);
 
   const handleOpenAuditSopir = (activity: ActivityReport) => {
     setAuditActivity(activity);
@@ -1432,7 +1401,6 @@ export default function ActivityReviewPage() {
     );
     setPayTypeEmployeeId(item.employeeId);
     setPayTypeCovered(item.coveredEmployeeId || '');
-    setPayTypeReason('');
     // The guard picker and the Lembur Cover picker both need the guard
     // directory, which is otherwise only fetched when the auditor-edit dialog
     // opens.
@@ -1450,11 +1418,6 @@ export default function ActivityReviewPage() {
 
   const handleSavePayType = async () => {
     if (isActionLoadingRef.current || !payTypeTarget || !user) return;
-    const reason = payTypeReason.trim();
-    if (reason.length < 8) {
-      setErrorMsg('Isi alasan koreksi sekurang-kurangnya 8 karakter.');
-      return;
-    }
     const employeeChanged = payTypeEmployeeId !== payTypeTarget.employeeId;
     const payTypeChangedNow = payTypeValue !== payTypeTarget.shiftType;
     if (!employeeChanged && !payTypeChangedNow) {
@@ -1470,41 +1433,55 @@ export default function ActivityReviewPage() {
       return;
     }
 
+    const isPendingTarget = payTypeTarget.status === 'pending';
+    const newEmployeeName =
+      satpamEmployeeDirectory.find((employee) => employee.id === payTypeEmployeeId)?.name ||
+      payTypeEmployeeId;
+    const postLabel = payTypeTarget.postId || payTypeTarget.postName;
+    // There is no free-text reason field in this modal — the change itself,
+    // precisely described, is the audit-log reason. This is what the server's
+    // required `reason` field (min 8 chars) receives instead of operator input.
+    const changeSummary =
+      employeeChanged && payTypeChangedNow
+        ? `Petugas ${postLabel} diubah dari ${payTypeTarget.employeeName} menjadi ${newEmployeeName}; kategori upah diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`
+        : employeeChanged
+          ? `Petugas ${postLabel} diubah dari ${payTypeTarget.employeeName} menjadi ${newEmployeeName}.`
+          : `Kategori upah ${payTypeTarget.employeeName} diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`;
+
     isActionLoadingRef.current = true;
     setSavingPayType(true);
     try {
-      await authenticatedJson('/api/satpam/shifts/admin-pay-type', {
-        method: 'POST',
-        body: JSON.stringify({
-          requestId: createFinancialRequestId('satpam_pay_type_fix'),
-          reportId: payTypeTarget.id,
-          payType: payTypeValue,
-          employeeId: payTypeEmployeeId,
-          ...(payTypeValue === 'Lembur Cover'
-            ? { coveredEmployeeId: payTypeCovered.trim() }
-            : {}),
-          reason,
-        }),
-      });
+      await authenticatedJson(
+        isPendingTarget
+          ? '/api/satpam/shifts/admin-pending-edit'
+          : '/api/satpam/shifts/admin-pay-type',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            requestId: createFinancialRequestId(
+              isPendingTarget ? 'satpam_pending_edit' : 'satpam_pay_type_fix',
+            ),
+            reportId: payTypeTarget.id,
+            payType: payTypeValue,
+            employeeId: payTypeEmployeeId,
+            ...(payTypeValue === 'Lembur Cover'
+              ? { coveredEmployeeId: payTypeCovered.trim() }
+              : {}),
+            reason: changeSummary,
+          }),
+        },
+      );
       const dutyDate = payTypeTarget.dutyDate || payTypeTarget.activityDate;
       const period =
         payTypeTarget.payrollPeriod || (dutyDate ? pekaryaPayrollPeriodForDate(dutyDate) : '');
-      const newEmployeeName =
-        satpamEmployeeDirectory.find((employee) => employee.id === payTypeEmployeeId)?.name ||
-        payTypeEmployeeId;
-      const postLabel = payTypeTarget.postId || payTypeTarget.postName;
-      const savedLabel =
-        employeeChanged && payTypeChangedNow
-          ? `Petugas ${postLabel} diubah dari ${payTypeTarget.employeeName} menjadi ${newEmployeeName}; kategori upah diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`
-          : employeeChanged
-            ? `Petugas ${postLabel} diubah dari ${payTypeTarget.employeeName} menjadi ${newEmployeeName}.`
-            : `Kategori upah ${payTypeTarget.employeeName} diubah dari ${payTypeTarget.shiftType} menjadi ${payTypeValue}.`;
-      setSuccessMsg(savedLabel);
+      setSuccessMsg(changeSummary);
       setPayTypeTarget(null);
-      setPayTypeReason('');
       fetchActivities();
       try {
-        if (period) {
+        // A pending report isn't counted anywhere yet (syncSatpamDutyReconciliation
+        // only scans status==='approved' reports), so there is no fresher Uraian
+        // rekap to push onto draft slips until this report is actually approved.
+        if (period && !isPendingTarget) {
           // The server already recomputed the Satpam shift columns in the
           // Uraian rekap via syncSatpamDutyReconciliation, which is the sole
           // owner of those columns — re-running the client syncActivityToPayslip
@@ -1516,7 +1493,7 @@ export default function ActivityReviewPage() {
             period,
             jobCategory: 'SATPAM',
           });
-          if (propagationNote) setSuccessMsg(`${savedLabel}${propagationNote}`);
+          if (propagationNote) setSuccessMsg(`${changeSummary}${propagationNote}`);
         }
       } catch (syncErr) {
         console.error('Error syncing payslip after pay-type correction:', syncErr);
@@ -1690,96 +1667,6 @@ export default function ActivityReviewPage() {
       });
       return updated;
     });
-  };
-
-  const openAuditorShiftEdit = async (group: SatpamShiftGroup) => {
-    setErrorMsg('');
-    try {
-      if (satpamEmployeeDirectory.length === 0) {
-        const directory = await authenticatedJson<{
-          employees: Array<{ id: string; name: string; isActive: boolean }>;
-        }>('/api/satpam/shifts/review', { method: 'GET' });
-        setSatpamEmployeeDirectory(directory.employees);
-      }
-      setAuditorEditShift(group);
-      setAuditorEditDate(group.dutyDate);
-      setAuditorEditShiftName(group.shiftName || 'Pagi');
-      setAuditorEditReason('');
-      // A group with a pending assignment is still pre-approval (edit rows
-      // come from the pending set, per the existing flow below). Once
-      // nothing is pending, this is a correction to an already-approved
-      // report, so the editable rows are the approved ones instead.
-      const hasPending = group.assignments.some((assignment) => assignment.status === 'pending');
-      setAuditorEditRows(
-        group.assignments
-          .filter((assignment) => assignment.status === (hasPending ? 'pending' : 'approved'))
-          .map((assignment) => ({
-            reportId: assignment.id,
-            assignmentKind: assignment.assignmentKind || 'primary',
-            postId: assignment.postId || 'Pos 1',
-            employeeId: assignment.employeeId,
-            shiftType: assignment.shiftType || 'Harian',
-            coveredEmployeeId: assignment.coveredEmployeeId || undefined,
-            overtimeReason: assignment.overtimeReason || undefined,
-          })),
-      );
-    } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : 'Data Satpam gagal dimuat.');
-    }
-  };
-
-  const updateAuditorEditRow = (
-    index: number,
-    patch: Partial<SatpamAuditorEditRow>,
-  ) => {
-    setAuditorEditRows((rows) =>
-      rows.map((row, rowIndex) =>
-        rowIndex === index ? { ...row, ...patch } : row,
-      ),
-    );
-  };
-
-  const handleSaveAuditorShiftEdit = async () => {
-    if (!auditorEditShift || savingAuditorEdit) return;
-    if (auditorEditRows.length < 1) {
-      setErrorMsg('Sisakan sekurang-kurangnya satu penugasan untuk disimpan.');
-      return;
-    }
-    if (auditorEditReason.trim().length < 8) {
-      setErrorMsg('Alasan edit auditor wajib diisi sekurang-kurangnya 8 karakter.');
-      return;
-    }
-    setSavingAuditorEdit(true);
-    setErrorMsg('');
-    const wasApprovedEdit = !auditorEditShift.assignments.some((item) => item.status === 'pending');
-    try {
-      await authenticatedJson('/api/satpam/shifts/review', {
-        method: 'PUT',
-        body: JSON.stringify({
-          requestId: createFinancialRequestId('satpam_shift_auditor_edit'),
-          occurrenceId: auditorEditShift.occurrenceId,
-          expectedRevision: auditorEditShift.revision,
-          dutyDate: auditorEditDate,
-          shiftName: auditorEditShiftName,
-          reason: auditorEditReason.trim(),
-          assignments: auditorEditRows,
-        }),
-      });
-      // The server reconciles UraianGaji inside the same request
-      // (syncSatpamDutyReconciliation), so there is nothing to sync from here.
-      setSuccessMsg(
-        wasApprovedEdit
-          ? 'Koreksi auditor tersimpan. Rekap Uraian Pekarya diperbarui otomatis.'
-          : 'Koreksi auditor tersimpan. Ketua Shift tidak dapat mengubah laporan ini lagi.',
-      );
-      setAuditorEditShift(null);
-      setAuditorEditRows([]);
-      fetchActivities();
-    } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : 'Koreksi auditor gagal disimpan.');
-    } finally {
-      setSavingAuditorEdit(false);
-    }
   };
 
   const handleSubmitShiftReview = async (group: SatpamShiftGroup) => {
@@ -2348,13 +2235,6 @@ export default function ActivityReviewPage() {
                                       <div className="flex items-center gap-2">
                                         <button
                                           type="button"
-                                          onClick={() => openAuditorShiftEdit(group)}
-                                          className="px-3 py-1.5 rounded-xl text-[10px] font-extrabold bg-indigo-100 hover:bg-indigo-200 text-indigo-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
-                                        >
-                                          <Edit2 className="w-3.5 h-3.5" /> Edit Auditor
-                                        </button>
-                                        <button
-                                          type="button"
                                           onClick={() => handleBulkSetShiftVerdict(group, 'approve')}
                                           className="px-3 py-1.5 rounded-xl text-[10px] font-extrabold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
                                         >
@@ -2423,8 +2303,8 @@ export default function ActivityReviewPage() {
                                                 : 'border-slate-200'
                                           }`}
                                         >
-                                          <div className="space-y-2">
-                                            <div className="flex items-start justify-between gap-2">
+                                          <div className="space-y-2 flex flex-col flex-1 min-h-0">
+                                            <div className="flex items-start justify-between gap-2 shrink-0">
                                               <div className="min-w-0">
                                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block truncate">
                                                   {item.postId || item.postName || 'Pos'}
@@ -2508,16 +2388,34 @@ export default function ActivityReviewPage() {
                                                   )}
                                                 </div>
                                               )}
+                                              {rowPending &&
+                                                (profile?.role === 'super_admin' || profile?.role === 'satker_head') && (
+                                                <div className="flex shrink-0 items-center gap-1">
+                                                  <button
+                                                    type="button"
+                                                    title="Ubah petugas / kategori upah sebelum diputuskan"
+                                                    disabled={savingPayType}
+                                                    onClick={() => openPayTypeEditor(item)}
+                                                    className="flex h-5 w-5 items-center justify-center rounded-md text-indigo-600 transition-colors hover:bg-indigo-50 cursor-pointer"
+                                                  >
+                                                    <Edit2 className="h-3 w-3" />
+                                                  </button>
+                                                </div>
+                                              )}
                                             </div>
 
 
-                                            {/* Direct Inline Photo Preview with EXIF Pills */}
+                                            {/* Direct Inline Photo Preview with EXIF Pills — grows to fill
+                                                whatever height this card has left, instead of a fixed
+                                                aspect ratio, so a shorter card's photo isn't left smaller
+                                                than a taller neighbor in the same grid row. */}
                                             {item.photoUrl ? (
                                               <InlinePhotoWithExif
                                                 photoUrl={item.photoUrl}
                                                 title={`${item.postId || item.postName} — ${item.employeeName}`}
                                                 activityDate={item.dutyDate || item.activityDate}
                                                 auditMetadata={item.photoAuditMetadata}
+                                                className="w-full flex-1 min-h-[160px]"
                                                 onZoom={() =>
                                                   setSelectedExifImage({
                                                     url: item.photoUrl!,
@@ -2528,7 +2426,7 @@ export default function ActivityReviewPage() {
                                                 }
                                               />
                                             ) : (
-                                              <div className="w-full aspect-[4/3] bg-amber-50 border border-amber-200 text-amber-800 rounded-xl font-bold text-[11px] flex flex-col items-center justify-center gap-1 p-3 text-center">
+                                              <div className="w-full flex-1 min-h-[160px] bg-amber-50 border border-amber-200 text-amber-800 rounded-xl font-bold text-[11px] flex flex-col items-center justify-center gap-1 p-3 text-center">
                                                 <AlertTriangle className="w-5 h-5 text-amber-600" />
                                                 <span>Tanpa Bukti Foto</span>
                                               </div>
@@ -3267,8 +3165,10 @@ export default function ActivityReviewPage() {
             </DialogTitle>
             <DialogDescription className="text-slate-500">
               Koreksi petugas dan/atau kategori upah pada{' '}
-              <strong>{payTypeTarget?.postId || payTypeTarget?.postName}</strong>. Rekap Uraian dan slip gaji
-              periode ini dihitung ulang otomatis setelah disimpan.
+              <strong>{payTypeTarget?.postId || payTypeTarget?.postName}</strong>.{' '}
+              {payTypeTarget?.status === 'pending'
+                ? 'Laporan ini masih menunggu keputusan — perubahan tersimpan sebagai draf dan baru dihitung ke rekap Uraian saat disetujui.'
+                : 'Rekap Uraian dan slip gaji periode ini dihitung ulang otomatis setelah disimpan.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -3357,17 +3257,6 @@ export default function ActivityReviewPage() {
                 </Select>
               </div>
             )}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-500 uppercase">Alasan Koreksi (Wajib)</Label>
-              <Input
-                type="text"
-                placeholder="Contoh: Salah klasifikasi saat audit, seharusnya lembur sendiri"
-                value={payTypeReason}
-                onChange={(e) => setPayTypeReason(e.target.value)}
-                className="rounded-xl border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 text-sm"
-              />
-              <p className="text-[10px] font-semibold text-slate-400">Minimal 8 karakter. Dicatat pada log audit finansial.</p>
-            </div>
           </div>
           <DialogFooter className="gap-3">
             <Button variant="ghost" onClick={() => setPayTypeTarget(null)} disabled={savingPayType} className="rounded-xl font-bold text-slate-500">
@@ -3377,7 +3266,6 @@ export default function ActivityReviewPage() {
               onClick={handleSavePayType}
               disabled={
                 savingPayType ||
-                payTypeReason.trim().length < 8 ||
                 (payTypeValue === payTypeTarget?.shiftType && payTypeEmployeeId === payTypeTarget?.employeeId) ||
                 (payTypeValue === 'Lembur Cover' &&
                   (!payTypeCovered.trim() || payTypeCovered.trim() === payTypeEmployeeId))
@@ -3404,211 +3292,6 @@ export default function ActivityReviewPage() {
         }}
         onOpenPhoto={(image) => setSelectedExifImage(image)}
       />
-
-      {/* ── Satpam Auditor Correction Dialog ───────────────────────────── */}
-      <Dialog
-        open={Boolean(auditorEditShift)}
-        onOpenChange={(open) => {
-          if (!open && !savingAuditorEdit) setAuditorEditShift(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900">
-              <Edit2 className="w-5 h-5 text-indigo-600" />
-              Edit Auditor Laporan Shift
-            </DialogTitle>
-            <DialogDescription>
-              Perubahan pertama langsung mengunci laporan dari Ketua Shift. Foto asli tetap disimpan.
-            </DialogDescription>
-          </DialogHeader>
-
-          {auditorEditShift && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <div>
-                  <p className="text-[10px] font-black uppercase text-slate-400">Dikirim Ketua</p>
-                  <p className="mt-1 text-sm font-bold">{auditorEditShift.submittedDutyDate} · {auditorEditShift.submittedShiftName}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase text-blue-500">Saran Sistem</p>
-                  <p className="mt-1 text-sm font-bold text-blue-900">{auditorEditShift.dutyDate} · {auditorEditShift.suggestedShiftName}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase text-indigo-500">Nilai Auditor</p>
-                  <p className="mt-1 text-sm font-bold text-indigo-900">{auditorEditDate} · {auditorEditShiftName}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="auditorShiftDate">Tanggal dinas</Label>
-                  <Input
-                    id="auditorShiftDate"
-                    type="date"
-                    value={auditorEditDate}
-                    onChange={(event) => setAuditorEditDate(event.target.value)}
-                    className="h-11 rounded-xl"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Shift yang benar</Label>
-                  <Select value={auditorEditShiftName} onValueChange={(value) => value && setAuditorEditShiftName(value)}>
-                    <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Pagi">Pagi</SelectItem>
-                      <SelectItem value="Sore">Sore</SelectItem>
-                      <SelectItem value="Malam">Malam</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                {auditorEditRows.map((row, index) => (
-                  <div key={`${row.reportId || 'new'}-${index}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 rounded-xl border border-slate-200 p-3">
-                    <div className="md:col-span-2">
-                      <Select value={row.postId} onValueChange={(value) => value && updateAuditorEditRow(index, { postId: value })}>
-                        <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {SATPAM_POST_OPTIONS.map((post) => <SelectItem key={post} value={post}>{post}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="md:col-span-4">
-                      <Select value={row.employeeId} onValueChange={(value) => value && updateAuditorEditRow(index, { employeeId: value })}>
-                        <SelectTrigger className="h-10 rounded-lg">
-                          <span className="truncate">
-                            {satpamEmployeeDirectory.find((employee) => employee.id === row.employeeId)?.name || row.employeeId}
-                          </span>
-                        </SelectTrigger>
-                        <SelectContent className="max-h-72">
-                          {satpamEmployeeDirectory.map((employee) => (
-                            <SelectItem key={employee.id} value={employee.id}>
-                              {employee.name}{employee.isActive ? '' : ' · tidak aktif'}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="md:col-span-3">
-                      <Select value={row.shiftType} onValueChange={(value) => value && updateAuditorEditRow(index, { shiftType: value })}>
-                        <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Harian">Harian</SelectItem>
-                          <SelectItem value="Jumat & Libur">Jumat & Libur</SelectItem>
-                          <SelectItem value="Lembur Sendiri">Lembur Sendiri</SelectItem>
-                          <SelectItem value="Lembur Cover">Lembur Cover</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="md:col-span-2">
-                      <Select
-                        value={row.assignmentKind}
-                        onValueChange={(value) => value && updateAuditorEditRow(index, { assignmentKind: value as 'primary' | 'extra' })}
-                      >
-                        <SelectTrigger className="h-10 rounded-lg">
-                          <SelectValue>
-                            {row.assignmentKind === 'primary' ? 'Pos utama' : 'Tambahan'}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="primary">Pos utama</SelectItem>
-                          <SelectItem value="extra">Tambahan</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="md:col-span-1 flex justify-end">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => setAuditorEditRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}
-                        className="h-10 w-10 p-0 text-rose-600"
-                        aria-label="Hapus penugasan"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    {row.shiftType === 'Lembur Cover' && (
-                      <>
-                        <div className="md:col-span-5">
-                          <Select
-                            value={row.coveredEmployeeId || 'none'}
-                            onValueChange={(value) => updateAuditorEditRow(index, { coveredEmployeeId: value === 'none' ? undefined : value || undefined })}
-                          >
-                            <SelectTrigger className="h-10 rounded-lg">
-                              <span className="truncate">
-                                {row.coveredEmployeeId
-                                  ? satpamEmployeeDirectory.find((employee) => employee.id === row.coveredEmployeeId)?.name || row.coveredEmployeeId
-                                  : 'Petugas yang digantikan'}
-                              </span>
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">Belum ditentukan</SelectItem>
-                              {satpamEmployeeDirectory.map((employee) => <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="md:col-span-7">
-                          <Input
-                            value={row.overtimeReason || ''}
-                            onChange={(event) => updateAuditorEditRow(index, { overtimeReason: event.target.value })}
-                            placeholder="Catatan cover"
-                            className="h-10 rounded-lg"
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() =>
-                    setAuditorEditRows((rows) => [
-                      ...rows,
-                      {
-                        assignmentKind: 'primary',
-                        postId: 'Pos 1',
-                        employeeId: satpamEmployeeDirectory[0]?.id || '',
-                        shiftType: 'Harian',
-                      },
-                    ])
-                  }
-                  className="rounded-xl gap-2"
-                >
-                  <Plus className="w-4 h-4" /> Tambah Penugasan
-                </Button>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="auditorEditReason">Alasan perubahan (wajib)</Label>
-                <Input
-                  id="auditorEditReason"
-                  value={auditorEditReason}
-                  onChange={(event) => setAuditorEditReason(event.target.value)}
-                  placeholder="Contoh: memperbaiki petugas ganda sesuai daftar hadir"
-                  className="h-11 rounded-xl"
-                />
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="ghost" disabled={savingAuditorEdit} onClick={() => setAuditorEditShift(null)}>
-              Batal
-            </Button>
-            <Button
-              disabled={savingAuditorEdit || auditorEditRows.length < 1}
-              onClick={handleSaveAuditorShiftEdit}
-              className="bg-indigo-600 hover:bg-indigo-700 gap-2"
-            >
-              {savingAuditorEdit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-              Simpan dan Ambil Alih
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* EXIF Metadata Audit Modal for Kepala SatKer */}
       {selectedExifImage && (

@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
-import { isPekaryaJobCategory } from '@/lib/payroll/pekaryaSpj';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
@@ -11,6 +10,7 @@ import {
   requireRole,
 } from '@/lib/server/auth';
 import { assertPeriodAcceptsInput } from '@/lib/server/payrollPeriod';
+import { VAKASI_PEKARYA_PROJECTION_SOURCE_KIND } from '@/lib/payroll/vakasiTambahan';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +30,7 @@ function assertCategoryAccess(
   actor: Awaited<ReturnType<typeof requireAuthenticatedProfile>>,
   category: string,
 ) {
-  if (!isPekaryaJobCategory(category)) {
+  if (!/^[\p{L}\p{N}_ .&()\/-]{1,64}$/u.test(category)) {
     throw new HttpError(400, 'Kategori SPJ Pekarya tidak valid.');
   }
   if (actor.role === 'satker_head' && !actor.permittedCategories.includes(category)) {
@@ -97,13 +97,73 @@ function parseCommand(raw: unknown): SaveEventCommand {
   };
 }
 
+function timestampIso(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const timestamp = value as { toDate?: () => Date; seconds?: number; _seconds?: number };
+  if (typeof timestamp.toDate === 'function') return timestamp.toDate().toISOString();
+  const seconds = timestamp.seconds ?? timestamp._seconds;
+  return typeof seconds === 'number'
+    ? new Date(seconds * 1_000).toISOString()
+    : null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['super_admin', 'satker_head', 'finance_verifier']);
     const period = request.nextUrl.searchParams.get('period') || '';
+    const mine = request.nextUrl.searchParams.get('mine') === 'true';
     const category = request.nextUrl.searchParams.get('category') || '';
     if (!/^\d{4}-\d{2}$/.test(period)) throw new HttpError(400, 'Periode tidak valid.');
+
+    if (mine) {
+      requireRole(actor, ['honorer', 'ketua_shift_satpam']);
+      if (!actor.linkedEmployeeId) {
+        throw new HttpError(409, 'Akun ini belum terhubung ke data pegawai.');
+      }
+      const [employeeSnapshot, eventSnapshot] = await Promise.all([
+        adminDb.collection('Employees_BlueCollar').doc(actor.linkedEmployeeId).get(),
+        adminDb.collection('KegiatanSpj').where('period', '==', period).get(),
+      ]);
+      if (!employeeSnapshot.exists) {
+        throw new HttpError(404, 'Data pegawai Pekarya tidak ditemukan.');
+      }
+      const employee = employeeSnapshot.data()!;
+      const jobCategory = String(employee.employment?.jobCategory || '')
+        .normalize('NFKC')
+        .trim();
+      if (!jobCategory) {
+        throw new HttpError(409, 'Kategori pegawai Pekarya belum diisi.');
+      }
+      const events = eventSnapshot.docs.flatMap((snapshot) => {
+        const data = snapshot.data();
+        if (data.status && data.status !== 'approved') return [];
+        if (data.jobCategory && data.jobCategory !== jobCategory) return [];
+        const worker = data.eventWorkers?.[actor.linkedEmployeeId!];
+        const payGiven = Number(worker?.payGiven || 0);
+        if (!Number.isSafeInteger(payGiven) || payGiven <= 0) return [];
+        return [{
+          id: snapshot.id,
+          eventName: String(data.eventName || 'Kegiatan SPJ'),
+          period,
+          jobCategory,
+          payGiven,
+          sourceKind: String(data.sourceKind || 'kegiatan_spj'),
+          sourceVakasiEventId: data.sourceVakasiEventId
+            ? String(data.sourceVakasiEventId)
+            : null,
+          approvedAt: timestampIso(data.approvedAt || data.updatedAt || data.createdAt),
+        }];
+      }).sort((left, right) =>
+        String(right.approvedAt || '').localeCompare(String(left.approvedAt || '')),
+      );
+
+      return Response.json(
+        { events },
+        { headers: { 'Cache-Control': 'private, no-store' } },
+      );
+    }
+
+    requireRole(actor, ['super_admin', 'satker_head', 'finance_verifier']);
     assertCategoryAccess(actor, category);
 
     const [employeeSnapshot, eventSnapshot] = await Promise.all([
@@ -122,11 +182,16 @@ export async function GET(request: NextRequest) {
       const data = snapshot.data();
       if (data.jobCategory && data.jobCategory !== category) return [];
       if (data.status && data.status !== 'approved') return [];
-      const eventWorkers = Object.fromEntries(
-        Object.entries(data.eventWorkers || {}).filter(([employeeId]) =>
-          allowedIds.has(employeeId),
-        ),
-      );
+      // Explicitly categorized records retain their historical recipients even
+      // if someone later becomes inactive. Legacy category-less rows still use
+      // the active directory to infer which category they belong to.
+      const eventWorkers = data.jobCategory
+        ? { ...(data.eventWorkers || {}) }
+        : Object.fromEntries(
+            Object.entries(data.eventWorkers || {}).filter(([employeeId]) =>
+              allowedIds.has(employeeId),
+            ),
+          );
       if (Object.keys(eventWorkers).length === 0) return [];
       return [{
         id: snapshot.id,
@@ -140,6 +205,10 @@ export async function GET(request: NextRequest) {
         ).reduce((sum, worker) => sum + Number(worker.payGiven || 0), 0),
         revision: Number(data.revision || 0),
         legacyCategoryInferred: !data.jobCategory,
+        sourceKind: data.sourceKind || null,
+        sourceVakasiEventId: data.sourceVakasiEventId || null,
+        variablePay: data.variablePay === true,
+        approvedAt: timestampIso(data.approvedAt || data.updatedAt || data.createdAt),
       }];
     });
 
@@ -213,6 +282,12 @@ export async function POST(request: NextRequest) {
       const before = eventSnapshot.exists ? eventSnapshot.data()! : null;
       if (command.eventId && !eventSnapshot.exists) {
         throw new HttpError(404, 'Kegiatan SPJ yang akan diubah tidak ditemukan.');
+      }
+      if (before?.sourceKind === VAKASI_PEKARYA_PROJECTION_SOURCE_KIND) {
+        throw new HttpError(
+          409,
+          'SPJ ini berasal dari Vakasi Tambahan dan hanya dapat diubah dari halaman Vakasi.',
+        );
       }
       if (
         before &&

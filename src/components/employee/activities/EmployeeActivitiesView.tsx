@@ -24,6 +24,7 @@ import ActivityPeriodSelector from './ActivityPeriodSelector';
 import PekaryaActivitiesView from './PekaryaActivitiesView';
 import SatpamActivitiesView from './SatpamActivitiesView';
 import SopirActivitiesView from './SopirActivitiesView';
+import AssignedSpjHistoryPanel from './AssignedSpjHistoryPanel';
 
 interface EmployeeActivitiesViewProps {
   model: EmployeeActivitiesModel;
@@ -119,9 +120,11 @@ export default function EmployeeActivitiesView({ model }: EmployeeActivitiesView
 
       <div className="max-w-2xl mx-auto px-4 py-5 space-y-5 relative z-10">
         <ActivityPeriodSelector model={model} />
+        {workflow === 'sopir' && <AssignedSpjHistoryPanel model={model} />}
         {workflow === 'satpam' && <SatpamActivitiesView model={model} />}
         {workflow === 'sopir' && <SopirActivitiesView model={model} />}
         {workflow === 'pekarya' && <PekaryaActivitiesView model={model} />}
+        {workflow !== 'sopir' && <AssignedSpjHistoryPanel model={model} />}
         <div className="h-20" />
       </div>
     </div>

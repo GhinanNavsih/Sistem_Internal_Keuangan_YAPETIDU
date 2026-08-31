@@ -2,6 +2,44 @@ import type { MoneyField } from './domain';
 import { normalizeLabel, type OwnedLabelPredicate } from './slipPropagation';
 
 export const PROPOSAL_LPJ_SANDBOX_SOURCE_KIND = 'proposal_lpj_report';
+export const VAKASI_PEKARYA_PROJECTION_SOURCE_KIND =
+  'vakasi_tambahan_pekarya';
+
+export type VakasiEmployeeCollection =
+  | 'Employees_Loyalis'
+  | 'Employees_BlueCollar';
+
+export interface VakasiWorkerLike {
+  employeeName?: unknown;
+  payGiven?: unknown;
+  employeeCollection?: unknown;
+  jobCategory?: unknown;
+  department?: unknown;
+  role?: unknown;
+}
+
+export interface ResolvedVakasiWorker {
+  employeeId: string;
+  employeeName: string;
+  payGiven: number;
+  employeeCollection: VakasiEmployeeCollection;
+  jobCategory?: string;
+  department?: string;
+  role?: string;
+}
+
+export interface VakasiPekaryaProjectionInput {
+  id: string;
+  sourceVakasiEventId: string;
+  sourceKind: typeof VAKASI_PEKARYA_PROJECTION_SOURCE_KIND;
+  eventName: string;
+  period: string;
+  jobCategory: string;
+  eventFee: number;
+  variablePay: boolean;
+  eventWorkers: Record<string, { employeeName: string; payGiven: number }>;
+  totalPayout: number;
+}
 
 interface VakasiTambahanFinancialRecord {
   sourceKind?: unknown;
@@ -39,7 +77,8 @@ export function isPayableVakasiTambahan(value: unknown): boolean {
 /** One VakasiTambahan document, narrowed to the fields propagation needs. */
 export interface VakasiTambahanEventLike {
   eventName?: unknown;
-  eventWorkers?: Record<string, { payGiven?: unknown }> | unknown;
+  eventWorkers?: Record<string, VakasiWorkerLike> | unknown;
+  ownedEarningLabelsByEmployee?: Record<string, unknown> | unknown;
   status?: unknown;
   sourceKind?: unknown;
 }
@@ -53,18 +92,91 @@ export interface VakasiTambahanEventLike {
  */
 export const VAKASI_FALLBACK_EARNING_LABEL = 'Vakasi Tambahan';
 
-function workerPayGiven(
+/**
+ * Old Vakasi records predate recipient typing and historically contained only
+ * Loyalis workers. Treat an absent/unknown marker as Loyalis so those records
+ * keep paying exactly as before, while explicitly typed Pekarya recipients can
+ * never leak into itemized Vakasi earnings.
+ */
+export function vakasiWorkerCollection(
+  worker: VakasiWorkerLike | null | undefined,
+): VakasiEmployeeCollection {
+  return worker?.employeeCollection === 'Employees_BlueCollar'
+    ? 'Employees_BlueCollar'
+    : 'Employees_Loyalis';
+}
+
+function loyalisWorkerPayGiven(
   event: VakasiTambahanEventLike,
   employeeId: string,
 ): number | null {
   const workers =
     event.eventWorkers && typeof event.eventWorkers === 'object'
-      ? (event.eventWorkers as Record<string, { payGiven?: unknown }>)
+      ? (event.eventWorkers as Record<string, VakasiWorkerLike>)
       : {};
   const worker = workers[employeeId];
   if (!worker) return null;
+  if (vakasiWorkerCollection(worker) !== 'Employees_Loyalis') return null;
   const amount = Number(worker.payGiven);
   return Number.isFinite(amount) ? amount : 0;
+}
+
+/** Stable Firestore id for the one projection owned by an event/category pair. */
+export function vakasiPekaryaProjectionId(
+  sourceVakasiEventId: string,
+  jobCategory: string,
+): string {
+  const safeEvent = sourceVakasiEventId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 180);
+  const safeCategory = encodeURIComponent(jobCategory.normalize('NFKC').trim())
+    .replaceAll('%', '~');
+  return `VAKASI_PEKARYA__${safeEvent}__${safeCategory}`;
+}
+
+/**
+ * Partitions authoritative mixed Vakasi recipients into one Pekarya SPJ
+ * projection per job category. Loyalis recipients are intentionally omitted.
+ */
+export function buildVakasiPekaryaProjectionInputs(input: {
+  sourceVakasiEventId: string;
+  eventName: string;
+  period: string;
+  workers: readonly ResolvedVakasiWorker[];
+}): VakasiPekaryaProjectionInput[] {
+  const byCategory = new Map<string, ResolvedVakasiWorker[]>();
+  for (const worker of input.workers) {
+    if (worker.employeeCollection !== 'Employees_BlueCollar') continue;
+    const category = worker.jobCategory?.trim();
+    if (!category) continue;
+    const categoryWorkers = byCategory.get(category) || [];
+    categoryWorkers.push(worker);
+    byCategory.set(category, categoryWorkers);
+  }
+
+  return [...byCategory.entries()]
+    .sort(([left], [right]) => left.localeCompare(right, 'id'))
+    .map(([jobCategory, workers]) => {
+      const amounts = new Set(workers.map((worker) => worker.payGiven));
+      const eventWorkers = Object.fromEntries(
+        [...workers]
+          .sort((left, right) => left.employeeId.localeCompare(right.employeeId))
+          .map((worker) => [
+            worker.employeeId,
+            { employeeName: worker.employeeName, payGiven: worker.payGiven },
+          ]),
+      );
+      return {
+        id: vakasiPekaryaProjectionId(input.sourceVakasiEventId, jobCategory),
+        sourceVakasiEventId: input.sourceVakasiEventId,
+        sourceKind: VAKASI_PEKARYA_PROJECTION_SOURCE_KIND,
+        eventName: input.eventName,
+        period: input.period,
+        jobCategory,
+        eventFee: amounts.size === 1 ? workers[0].payGiven : 0,
+        variablePay: amounts.size > 1,
+        eventWorkers,
+        totalPayout: workers.reduce((sum, worker) => sum + worker.payGiven, 0),
+      };
+    });
 }
 
 /**
@@ -82,7 +194,19 @@ export function vakasiEventNamesForEmployee(
   const names = new Set<string>();
   for (const event of events) {
     if (isProposalLpjSandboxSource(event)) continue;
-    if (workerPayGiven(event, employeeId) === null) continue;
+    const historicalLabels =
+      event.ownedEarningLabelsByEmployee &&
+      typeof event.ownedEarningLabelsByEmployee === 'object'
+        ? (event.ownedEarningLabelsByEmployee as Record<string, unknown>)[employeeId]
+        : undefined;
+    if (Array.isArray(historicalLabels)) {
+      historicalLabels.forEach((label) => {
+        if (typeof label === 'string' && label.trim()) {
+          names.add(normalizeLabel(label));
+        }
+      });
+    }
+    if (loyalisWorkerPayGiven(event, employeeId) === null) continue;
     const eventName = typeof event.eventName === 'string' ? event.eventName.trim() : '';
     if (eventName) names.add(normalizeLabel(eventName));
   }
@@ -103,7 +227,7 @@ export function vakasiApprovedEarningsForEmployee(
   const amountsByName = new Map<string, number>();
   for (const event of events) {
     if (!isPayableVakasiTambahan(event)) continue;
-    const amount = workerPayGiven(event, employeeId);
+    const amount = loyalisWorkerPayGiven(event, employeeId);
     if (amount === null) continue;
     const eventName = typeof event.eventName === 'string' ? event.eventName.trim() : '';
     if (!eventName) continue;

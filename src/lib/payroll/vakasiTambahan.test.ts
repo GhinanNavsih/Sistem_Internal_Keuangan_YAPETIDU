@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildVakasiPekaryaProjectionInputs,
   isPayableVakasiTambahan,
   vakasiApprovedEarningsForEmployee,
   vakasiEventNamesForEmployee,
@@ -91,6 +92,25 @@ test('event names exclude a worker not listed on that event, and exclude sandbox
   assert.deepEqual(Array.from(vakasiEventNamesForEmployee(events, 'emp1')), []);
 });
 
+test('owned-label history removes stale Loyalis rows after a rename or recipient removal', () => {
+  const events: VakasiTambahanEventLike[] = [
+    {
+      eventName: 'Nama Kegiatan Baru',
+      status: 'approved',
+      eventWorkers: {},
+      ownedEarningLabelsByEmployee: {
+        emp1: ['Nama Kegiatan Lama', 'Nama Kegiatan Baru'],
+      },
+    },
+  ];
+
+  assert.deepEqual(
+    [...vakasiEventNamesForEmployee(events, 'emp1')].sort(),
+    ['nama kegiatan baru', 'nama kegiatan lama'],
+  );
+  assert.deepEqual(vakasiApprovedEarningsForEmployee(events, 'emp1'), []);
+});
+
 test('the ownership predicate recognizes past event names case/whitespace-insensitively, plus the fallback label', () => {
   const predicate = vakasiOwnedEarningPredicate(new Set(['peringatan hari santri']));
 
@@ -115,4 +135,76 @@ test('a worker dropped from an event, or an event moved off approved, disappears
 
   assert.equal(predicate('Kegiatan Lama'), true);
   assert.deepEqual(fresh, []);
+});
+
+test('typed Pekarya recipients never become itemized Vakasi earnings while legacy rows remain Loyalis', () => {
+  const events: VakasiTambahanEventLike[] = [
+    {
+      eventName: 'Acara Campuran',
+      status: 'approved',
+      eventWorkers: {
+        loyalisLegacy: { payGiven: 75_000 },
+        pekarya: {
+          payGiven: 90_000,
+          employeeCollection: 'Employees_BlueCollar',
+          jobCategory: 'TEKNISI',
+        },
+      },
+    },
+  ];
+
+  assert.deepEqual(vakasiApprovedEarningsForEmployee(events, 'loyalisLegacy'), [
+    { label: 'Acara Campuran', amount: 75_000 },
+  ]);
+  assert.deepEqual(vakasiApprovedEarningsForEmployee(events, 'pekarya'), []);
+  assert.deepEqual(Array.from(vakasiEventNamesForEmployee(events, 'pekarya')), []);
+});
+
+test('mixed Vakasi recipients create one deterministic Pekarya projection per category', () => {
+  const projections = buildVakasiPekaryaProjectionInputs({
+    sourceVakasiEventId: 'VAKASI_202608_A',
+    eventName: 'Wisuda',
+    period: '2026-08',
+    workers: [
+      {
+        employeeId: 'LOY-1',
+        employeeName: 'Loyalis Satu',
+        employeeCollection: 'Employees_Loyalis',
+        payGiven: 100_000,
+      },
+      {
+        employeeId: 'BC-2',
+        employeeName: 'Teknisi Dua',
+        employeeCollection: 'Employees_BlueCollar',
+        jobCategory: 'TEKNISI',
+        payGiven: 80_000,
+      },
+      {
+        employeeId: 'BC-1',
+        employeeName: 'Teknisi Satu',
+        employeeCollection: 'Employees_BlueCollar',
+        jobCategory: 'TEKNISI',
+        payGiven: 70_000,
+      },
+      {
+        employeeId: 'BC-3',
+        employeeName: 'Sopir Satu',
+        employeeCollection: 'Employees_BlueCollar',
+        jobCategory: 'SOPIR',
+        payGiven: 60_000,
+      },
+    ],
+  });
+
+  assert.equal(projections.length, 2);
+  assert.deepEqual(
+    projections.map((projection) => projection.jobCategory),
+    ['SOPIR', 'TEKNISI'],
+  );
+  const teknisi = projections[1];
+  assert.equal(teknisi.variablePay, true);
+  assert.equal(teknisi.eventFee, 0);
+  assert.equal(teknisi.totalPayout, 150_000);
+  assert.deepEqual(Object.keys(teknisi.eventWorkers), ['BC-1', 'BC-2']);
+  assert.match(teknisi.id, /^VAKASI_PEKARYA__/);
 });
