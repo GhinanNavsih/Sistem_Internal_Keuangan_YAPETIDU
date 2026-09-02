@@ -14,6 +14,10 @@ import {
   isValidSatpamAttendanceScanRange,
   satpamAttendanceReportType,
 } from '@/lib/payroll/satpamAttendance';
+import {
+  isActiveSatpamShiftRegistration,
+  shouldExcludeSatpamLeaveFromHarian,
+} from '@/lib/payroll/satpamDutyPlan';
 import { scanAttendanceCorrection } from '@/lib/payroll/pekaryaOfficialLeave';
 import {
   absenceEntitlementData,
@@ -43,8 +47,16 @@ export const dynamic = 'force-dynamic';
 const ACTIONS = new Set([
   'approve',
   'decline',
+  'change_type',
   'supersede_approve',
   'supersede_decline',
+]);
+
+const SATPAM_ABSENCE_TYPES = new Set([
+  'sakit',
+  'izin_resmi',
+  'darurat',
+  'lainnya',
 ]);
 
 function stableHash(value: unknown) {
@@ -61,7 +73,9 @@ export async function POST(request: NextRequest) {
     const requestId = String(body.requestId || '');
     const reason =
       String(body.reason || '').trim() ||
-      'Keputusan diproses dari Review Koreksi Presensi.';
+      (action === 'change_type'
+        ? 'Perubahan jenis ajuan oleh auditor.'
+        : 'Keputusan diproses dari Review Koreksi Presensi.');
     const expectedRevision = Number(body.expectedRevision);
     if (
       !/^[A-Za-z0-9_-]{1,180}$/.test(absenceRequestId) ||
@@ -124,6 +138,241 @@ export async function POST(request: NextRequest) {
       );
     }
     const reportType = satpamAttendanceReportType(absence);
+    const requestedReportType =
+      action === 'change_type' ? String(body.reportType || '') : '';
+    if (action === 'change_type') {
+      if (requestedReportType !== 'scan' && requestedReportType !== 'izin_resmi') {
+        throw new HttpError(400, 'Jenis pengajuan presensi baru tidak valid.');
+      }
+      let nextScanIn: string | null = null;
+      let nextScanOut: string | null = null;
+      let nextAbsenceType = '';
+      if (requestedReportType === 'scan') {
+        nextScanIn = normalizeAttendanceTime(body.scanIn);
+        nextScanOut = normalizeAttendanceTime(body.scanOut);
+        if (
+          !nextScanIn ||
+          !nextScanOut ||
+          !isValidSatpamAttendanceScanRange(
+            nextScanIn,
+            nextScanOut,
+            planDay.shiftName,
+          )
+        ) {
+          throw new HttpError(
+            400,
+            'Scan masuk dan scan keluar tidak membentuk rentang waktu yang valid untuk shift terpilih.',
+          );
+        }
+      } else {
+        nextAbsenceType = String(body.absenceType || 'izin_resmi');
+        if (!SATPAM_ABSENCE_TYPES.has(nextAbsenceType)) {
+          throw new HttpError(400, 'Jenis alasan izin tidak valid.');
+        }
+      }
+
+      const currentScanIn =
+        reportType === 'scan' ? normalizeAttendanceTime(absence.scanIn) : null;
+      const currentScanOut =
+        reportType === 'scan' ? normalizeAttendanceTime(absence.scanOut) : null;
+      const currentAbsenceType = String(absence.absenceType || '');
+      if (
+        reportType === requestedReportType &&
+        (requestedReportType === 'scan'
+          ? currentScanIn === nextScanIn && currentScanOut === nextScanOut
+          : currentAbsenceType === nextAbsenceType)
+      ) {
+        throw new HttpError(409, 'Jenis ajuan dan data pendukungnya sudah sama.');
+      }
+
+      const idempotencyRef = adminDb
+        .collection('FinancialIdempotencyKeys')
+        .doc(`${actor.uid}__${requestId}`);
+      const planRef = adminDb.collection('SatpamDutyPlans').doc(plan.id);
+      const periodRef = adminDb.collection('PayrollPeriods').doc(period);
+      const slipRef = adminDb
+        .collection('PayrollSlipStates')
+        .doc(`${period.replace('-', '_')}_${employeeId}`);
+      const requestHash = stableHash({
+        absenceRequestId,
+        action,
+        currentReportType: reportType,
+        reportType: requestedReportType,
+        scanIn: nextScanIn,
+        scanOut: nextScanOut,
+        absenceType: nextAbsenceType,
+        requestId,
+        reason,
+        expectedRevision,
+        planRevision: plan.revision,
+      });
+      const result = await adminDb.runTransaction(async (transaction) => {
+        const [latestAbsence, latestPlan, periodSnapshot, slipSnapshot, latestEmployee, idempotencySnapshot] =
+          await Promise.all([
+            transaction.get(absenceRef),
+            transaction.get(planRef),
+            transaction.get(periodRef),
+            transaction.get(slipRef),
+            transaction.get(employeeRef),
+            transaction.get(idempotencyRef),
+          ]);
+        if (idempotencySnapshot.exists) {
+          if (idempotencySnapshot.data()?.requestHash !== requestHash) {
+            throw new HttpError(409, 'requestId sudah digunakan untuk perubahan lain.');
+          }
+          return {
+            id: absenceRequestId,
+            revision: Number(
+              idempotencySnapshot.data()?.revision || expectedRevision,
+            ),
+            status: idempotencySnapshot.data()?.status,
+            reportType: idempotencySnapshot.data()?.reportType,
+            absenceType: idempotencySnapshot.data()?.absenceType,
+            idempotent: true,
+          };
+        }
+        assertPeriodAcceptsInput(
+          periodSnapshot.data(),
+          'Periode payroll sudah ditutup; jenis pengajuan tidak dapat diubah.',
+        );
+        if (
+          slipSnapshot.exists &&
+          isImmutablePayrollStatus(slipSnapshot.data()?.status)
+        ) {
+          throw new HttpError(
+            409,
+            'Slip pegawai sudah immutable; jenis pengajuan tidak dapat diubah.',
+          );
+        }
+        const latestEmployeeData = latestEmployee.data();
+        if (
+          !latestEmployee.exists ||
+          latestEmployeeData?.employment?.jobCategory !== 'SATPAM' ||
+          latestEmployeeData?.employment?.status !== 'active' ||
+          latestEmployeeData?.flags?.isActive === false ||
+          latestEmployeeData?.flags?.isPayrollEligible === false
+        ) {
+          throw new HttpError(409, 'Pegawai Satpam aktif tidak ditemukan.');
+        }
+        const current = latestAbsence.data();
+        if (!current) {
+          throw new HttpError(404, 'Pengajuan izin Satpam tidak ditemukan.');
+        }
+        if (Number(current.revision || 0) !== expectedRevision) {
+          throw new HttpError(
+            409,
+            'Pengajuan telah berubah. Muat ulang sebelum mengubah jenis.',
+          );
+        }
+        if (current.status !== 'pending') {
+          throw new HttpError(
+            409,
+            'Jenis ajuan hanya dapat diubah saat pengajuan masih menunggu keputusan.',
+          );
+        }
+        if (Number(latestPlan.data()?.revision || 0) !== plan.revision) {
+          throw new HttpError(
+            409,
+            'Rencana dinas berubah. Muat ulang sebelum mengubah jenis.',
+          );
+        }
+        const currentReportType = satpamAttendanceReportType(current);
+        const currentScanIn =
+          currentReportType === 'scan'
+            ? normalizeAttendanceTime(current.scanIn)
+            : null;
+        const currentScanOut =
+          currentReportType === 'scan'
+            ? normalizeAttendanceTime(current.scanOut)
+            : null;
+        const currentAbsenceType = String(current.absenceType || '');
+        if (
+          currentReportType === requestedReportType &&
+          (requestedReportType === 'scan'
+            ? currentScanIn === nextScanIn && currentScanOut === nextScanOut
+            : currentAbsenceType === nextAbsenceType)
+        ) {
+          throw new HttpError(409, 'Jenis ajuan dan data pendukungnya sudah sama.');
+        }
+
+        const revision = expectedRevision + 1;
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const after = {
+          ...current,
+          status: current.status,
+          reportType: requestedReportType,
+          scanIn: nextScanIn,
+          scanOut: nextScanOut,
+          absenceType: nextAbsenceType,
+          revision,
+          typeChangedAt: now,
+          typeChangedBy: actor.uid,
+          typeChangeReason: reason,
+          updatedAt: now,
+        };
+        transaction.set(absenceRef, after);
+        transaction.create(
+          adminDb
+            .collection('SatpamAbsenceRequestRevisions')
+            .doc(`${absenceRequestId}__r${revision}`),
+          {
+            absenceRequestId,
+            revision,
+            action,
+            before: current,
+            after,
+            actorUid: actor.uid,
+            requestId,
+            reason,
+            createdAt: now,
+          },
+        );
+        transaction.create(
+          newFinancialAuditRef(),
+          buildFinancialAuditRecord(actor, {
+            action: 'SATPAM_ATTENDANCE_REQUEST_TYPE_CHANGED',
+            entityType: 'SatpamAbsenceRequest',
+            entityId: absenceRequestId,
+            requestId,
+            reason,
+            before: current,
+            after,
+            metadata: {
+              employeeId,
+              dutyDate: current.dutyDate,
+              previousReportType: currentReportType,
+              reportType: requestedReportType,
+              absenceType: nextAbsenceType,
+              planRevision: plan.revision,
+              attendanceCorrection: false,
+            },
+          }),
+        );
+        transaction.create(idempotencyRef, {
+          actorUid: actor.uid,
+          requestId,
+          requestHash,
+          entityType: 'SatpamAbsenceRequest',
+          entityId: absenceRequestId,
+          revision,
+          status: after.status,
+          reportType: requestedReportType,
+          absenceType: nextAbsenceType,
+          createdAt: now,
+        });
+        return {
+          id: absenceRequestId,
+          revision,
+          status: after.status,
+          reportType: requestedReportType,
+          absenceType: nextAbsenceType,
+          idempotent: false,
+        };
+      });
+      return Response.json(result, {
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    }
     if (reportType === 'scan') {
       if (action !== 'approve' && action !== 'decline') {
         throw new HttpError(
@@ -448,29 +697,6 @@ export async function POST(request: NextRequest) {
     }
     const approving =
       action === 'approve' || action === 'supersede_approve';
-    if (approving) {
-      const reports = await adminDb
-        .collection('ActivityReports')
-        .where('employeeId', '==', employeeId)
-        .get();
-      const worked = reports.docs.find((snapshot) => {
-        const report = snapshot.data();
-        return (
-          report.status === 'approved' &&
-          (report.reportKind === 'satpam_shift_assignment' ||
-            report.sourceType === 'satpam_shift' ||
-            report.sourceOccurrenceId) &&
-          String(report.dutyDate || report.activityDate || '') ===
-            String(absence.dutyDate || '')
-        );
-      });
-      if (worked) {
-        throw new HttpError(
-          409,
-          'Pegawai sudah tercatat bekerja pada tanggal ini. Selesaikan laporan shift sebelum menyetujui izin.',
-        );
-      }
-    }
     const requestHash = stableHash({
       absenceRequestId,
       action,
@@ -495,6 +721,9 @@ export async function POST(request: NextRequest) {
     const slipRef = adminDb
       .collection('PayrollSlipStates')
       .doc(`${period.replace('-', '_')}_${employeeId}`);
+    const employeeShiftReportsQuery = adminDb
+      .collection('ActivityReports')
+      .where('employeeId', '==', employeeId);
 
     const result = await adminDb.runTransaction(async (transaction) => {
       const [
@@ -504,6 +733,7 @@ export async function POST(request: NextRequest) {
         slipSnapshot,
         latestEmployee,
         idempotencySnapshot,
+        shiftReportsSnapshot,
       ] = await Promise.all([
         transaction.get(absenceRef),
         transaction.get(planRef),
@@ -511,6 +741,7 @@ export async function POST(request: NextRequest) {
         transaction.get(slipRef),
         transaction.get(employeeRef),
         transaction.get(idempotencyRef),
+        transaction.get(employeeShiftReportsQuery),
       ]);
       if (idempotencySnapshot.exists) {
         if (idempotencySnapshot.data()?.requestHash !== requestHash) {
@@ -522,6 +753,11 @@ export async function POST(request: NextRequest) {
             idempotencySnapshot.data()?.revision || expectedRevision,
           ),
           status: idempotencySnapshot.data()?.status,
+          amount: Number(idempotencySnapshot.data()?.amount || 0),
+          harianCountAdded:
+            idempotencySnapshot.data()?.harianCountAdded === true,
+          payrollExcludedFromHarian:
+            idempotencySnapshot.data()?.payrollExcludedFromHarian === true,
           idempotent: true,
         };
       }
@@ -567,6 +803,24 @@ export async function POST(request: NextRequest) {
       const revision = expectedRevision + 1;
       const status = approving ? 'approved' : 'declined';
       const now = admin.firestore.FieldValue.serverTimestamp();
+      const shiftRegistration = shiftReportsSnapshot.docs.find((snapshot) => {
+        const report = snapshot.data();
+        return (
+          isActiveSatpamShiftRegistration(report) &&
+          String(report.dutyDate || report.activityDate || '') ===
+            String(current.dutyDate || '')
+        );
+      });
+      const payrollExcludedFromHarian =
+        approving &&
+        shouldExcludeSatpamLeaveFromHarian({
+          hasShiftRegistration: Boolean(shiftRegistration),
+        });
+      const harianCountAdded = approving && !payrollExcludedFromHarian;
+      const approvedAmount = harianCountAdded ? 12_500 : 0;
+      const payrollExclusionReason = payrollExcludedFromHarian
+        ? 'SHIFT_REGISTERED_SAME_DATE'
+        : null;
       const after = {
         ...current,
         status,
@@ -576,8 +830,11 @@ export async function POST(request: NextRequest) {
         decidedBy: actor.uid,
         decidedByName: actor.displayName,
         decisionAction: action,
-        approvedPayType: approving ? 'Harian' : null,
-        approvedAmount: approving ? 12_500 : 0,
+        approvedPayType: harianCountAdded ? 'Harian' : null,
+        approvedAmount,
+        payrollExcludedFromHarian,
+        payrollExclusionReason,
+        payrollExclusionShiftReportId: shiftRegistration?.id || null,
         planRevision: plan.revision,
         updatedAt: now,
       };
@@ -598,7 +855,7 @@ export async function POST(request: NextRequest) {
           createdAt: now,
         },
       );
-      if (approving) {
+      if (harianCountAdded) {
         const entitlement = {
           ...absenceEntitlementData({
             absenceRequestId,
@@ -641,9 +898,16 @@ export async function POST(request: NextRequest) {
             period,
             status: 'voided',
             amount: 0,
+            count: 0,
+            payType: null,
             revision,
             voidedBy: actor.uid,
             voidedAt: now,
+            voidedReason:
+              payrollExclusionReason || 'ABSENCE_DECLINED',
+            payrollExcludedFromHarian,
+            payrollExclusionReason,
+            payrollExclusionShiftReportId: shiftRegistration?.id || null,
             updatedAt: now,
           },
           { merge: true },
@@ -657,8 +921,14 @@ export async function POST(request: NextRequest) {
             sourceId: absenceRequestId,
             status: 'voided',
             amount: 0,
+            payType: null,
             voidedBy: actor.uid,
             voidedAt: now,
+            voidedReason:
+              payrollExclusionReason || 'ABSENCE_DECLINED',
+            payrollExcludedFromHarian,
+            payrollExclusionReason,
+            payrollExclusionShiftReportId: shiftRegistration?.id || null,
             updatedAt: now,
           },
           { merge: true },
@@ -679,7 +949,11 @@ export async function POST(request: NextRequest) {
           metadata: {
             employeeId,
             dutyDate: current.dutyDate,
-            amount: approving ? 12_500 : 0,
+            amount: approvedAmount,
+            harianCountAdded,
+            payrollExcludedFromHarian,
+            payrollExclusionReason,
+            shiftRegistrationReportId: shiftRegistration?.id || null,
             planRevision: plan.revision,
           },
         }),
@@ -692,13 +966,18 @@ export async function POST(request: NextRequest) {
         entityId: absenceRequestId,
         revision,
         status,
+        amount: approvedAmount,
+        harianCountAdded,
+        payrollExcludedFromHarian,
         createdAt: now,
       });
       return {
         id: absenceRequestId,
         revision,
         status,
-        amount: approving ? 12_500 : 0,
+        amount: approvedAmount,
+        harianCountAdded,
+        payrollExcludedFromHarian,
         idempotent: false,
       };
     });

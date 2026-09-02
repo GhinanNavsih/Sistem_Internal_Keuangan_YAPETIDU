@@ -182,6 +182,84 @@ function safeFilename(filename: string) {
   return normalized || 'attendance.xlsx';
 }
 
+function isoDateToDisplay(dateIso: string) {
+  const [year, month, day] = dateIso.split('-');
+  return `${day}-${month}-${year}`;
+}
+
+interface LoyalisDailyLog {
+  Tanggal: string;
+  'Jam kerja': string;
+  'Scan masuk': string;
+  'Scan pulang': string;
+}
+
+async function buildActiveLoyalisRows(period: string): Promise<
+  Array<{
+    excelName: string;
+    nipy: string;
+    employeeId: string;
+    employeeName: string;
+    dailyLogs: LoyalisDailyLog[];
+  }>
+> {
+  const [{ rows }, { byNipy }] = await Promise.all([
+    loadActiveAttendanceRows(period, { allowMissingActiveImport: true }),
+    loadAttendanceEmployeeIdentities(),
+  ]);
+  const grouped = new Map<
+    string,
+    {
+      excelName: string;
+      nipy: string;
+      employeeId: string;
+      employeeName: string;
+      rows: Array<{ dateIso: string; date: string; workStatus: string; scanIn: string; scanOut: string }>;
+    }
+  >();
+  for (const row of relevantRows(rows)) {
+    const candidates = (byNipy.get(row.nipy) || []).filter(
+      (identity) => identity.employeeCollection === 'Employees_Loyalis' && identity.active,
+    );
+    if (candidates.length !== 1) continue;
+    const identity = candidates[0];
+    const existing = grouped.get(identity.employeeId);
+    const entry = existing || {
+      excelName: row.name || row.nipy,
+      nipy: row.nipy,
+      employeeId: identity.employeeId,
+      employeeName: identity.name,
+      rows: [],
+    };
+    // Only an explicit "TIDAK HADIR" means no attendance event that day. Any
+    // other status label — "MASUK" or a source-specific one like "STAFF" —
+    // means the employee was present, so its real scan times are kept.
+    const isPresent = row.workStatus !== 'TIDAK HADIR';
+    entry.rows.push({
+      dateIso: row.date,
+      date: isoDateToDisplay(row.date),
+      workStatus: row.workStatus,
+      scanIn: isPresent ? row.scanIn || '' : '',
+      scanOut: isPresent ? row.scanOut || '' : '',
+    });
+    grouped.set(identity.employeeId, entry);
+  }
+  return Array.from(grouped.values()).map((entry) => ({
+    excelName: entry.excelName,
+    nipy: entry.nipy,
+    employeeId: entry.employeeId,
+    employeeName: entry.employeeName,
+    dailyLogs: entry.rows
+      .sort((left, right) => left.dateIso.localeCompare(right.dateIso))
+      .map((row) => ({
+        Tanggal: row.date,
+        'Jam kerja': row.workStatus,
+        'Scan masuk': row.scanIn,
+        'Scan pulang': row.scanOut,
+      })),
+  }));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
@@ -193,13 +271,15 @@ export async function GET(request: NextRequest) {
     const period = request.nextUrl.searchParams.get('period') || '';
     const includeDownload =
       request.nextUrl.searchParams.get('includeDownload') === 'true';
+    const scope = request.nextUrl.searchParams.get('scope') || '';
     assertPeriod(period);
-    const [rootSnapshot, revisionsSnapshot] = await Promise.all([
+    const [rootSnapshot, revisionsSnapshot, loyalisRows] = await Promise.all([
       adminDb.collection(ATTENDANCE_IMPORTS_COLLECTION).doc(period).get(),
       adminDb
         .collection(ATTENDANCE_REVISIONS_COLLECTION)
         .where('period', '==', period)
         .get(),
+      scope === 'loyalis' ? buildActiveLoyalisRows(period) : Promise.resolve(null),
     ]);
     const revisions = await Promise.all(
       revisionsSnapshot.docs.map(async (snapshot) => {
@@ -226,6 +306,7 @@ export async function GET(request: NextRequest) {
               Number((right as Record<string, unknown>).revision || 0) -
               Number((left as Record<string, unknown>).revision || 0),
           ),
+        ...(loyalisRows ? { loyalisRows } : {}),
       },
       { headers: { 'Cache-Control': 'no-store' } },
     );
@@ -511,6 +592,70 @@ export async function POST(request: NextRequest) {
       },
       { status: 201 },
     );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const actor = await requireAuthenticatedProfile(request);
+    requireRole(actor, ['super_admin', 'loyalis_presence_admin']);
+    const period = request.nextUrl.searchParams.get('period') || '';
+    const revisionId = request.nextUrl.searchParams.get('revisionId') || '';
+    assertPeriod(period);
+    if (!revisionId) {
+      throw new HttpError(400, 'revisionId wajib diisi.');
+    }
+
+    const periodSnapshot = await adminDb.collection('PayrollPeriods').doc(period).get();
+    assertPeriodAcceptsInput(periodSnapshot.data());
+
+    const revisionRef = adminDb.collection(ATTENDANCE_REVISIONS_COLLECTION).doc(revisionId);
+    const revisionData = await adminDb.runTransaction(async (transaction) => {
+      const revisionSnapshot = await transaction.get(revisionRef);
+      if (!revisionSnapshot.exists) {
+        throw new HttpError(404, 'Revisi import tidak ditemukan.');
+      }
+      const data = revisionSnapshot.data()!;
+      if (data.period !== period) {
+        throw new HttpError(400, 'Revisi import tidak sesuai dengan periode.');
+      }
+      // Only a stuck/incomplete revision may be removed this way — it never
+      // became the active file and holds no audit value. An active or
+      // superseded revision stays, matching the "file lama tetap disimpan
+      // untuk audit" guarantee shown before activation.
+      if (data.status !== 'writing') {
+        throw new HttpError(
+          409,
+          'Hanya revisi yang gagal/tidak selesai diaktifkan (status "writing") yang dapat dihapus.',
+        );
+      }
+      transaction.delete(revisionRef);
+      return data;
+    });
+
+    const rowsSnapshot = await adminDb
+      .collection(ATTENDANCE_ROWS_COLLECTION)
+      .where('revisionId', '==', revisionId)
+      .get();
+    if (!rowsSnapshot.empty) {
+      const writer = adminDb.bulkWriter();
+      rowsSnapshot.docs.forEach((snapshot) => writer.delete(snapshot.ref));
+      await writer.close();
+    }
+
+    const storagePath =
+      typeof revisionData.storagePath === 'string'
+        ? revisionData.storagePath
+        : typeof revisionData.fileName === 'string'
+          ? `attendance-imports/${period}/${revisionId}/${safeFilename(revisionData.fileName)}`
+          : null;
+    if (storagePath) {
+      await adminStorage.bucket().file(storagePath).delete({ ignoreNotFound: true });
+    }
+
+    return Response.json({ deleted: true, revisionId });
   } catch (error) {
     return errorResponse(error);
   }

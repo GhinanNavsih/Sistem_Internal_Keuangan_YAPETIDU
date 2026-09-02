@@ -120,6 +120,8 @@ export interface UraianEntry {
     planRevision?: number;
     approvedAbsenceCount?: number;
     requiredDuties?: number;
+    bonusTargetDuties?: number;
+    workedShiftCount?: number;
     fulfilledDuties?: number;
     missedDuties?: number;
     pendingDuties?: number;

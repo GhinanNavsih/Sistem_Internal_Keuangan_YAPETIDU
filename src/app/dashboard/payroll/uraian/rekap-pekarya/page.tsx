@@ -47,7 +47,11 @@ import type {
 } from '@/types';
 import { generateRekapPresensiKebersihanyPdf } from '@/utils/generateRekapPresensiKebersihan';
 import { dedupeSatpamActivityReports } from '@/lib/payroll/domain';
-import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
+import {
+  isSatpamDutyPlanRequired,
+  satpamHarianCountWithApprovedAbsences,
+  satpamMonthlyScheduledShiftTarget,
+} from '@/lib/payroll/satpamDutyPlan';
 import { authenticatedJson, propagateUraianToSlips } from '@/lib/payroll/client';
 import {
   allowsHistoricalPaperSpjEntry,
@@ -62,9 +66,11 @@ import { periodCalendarFromData } from '@/lib/payroll/calendar';
 type SatpamDutyReconciliationResponse = {
   plans?: Array<{
     ketuaShiftId?: string;
+    fixedPost9EmployeeId?: string;
     employees?: Array<{
       employeeId?: string;
       requiredDuties?: number;
+      approvedAbsenceCount?: number;
     }>;
   }>;
 };
@@ -72,7 +78,9 @@ type SatpamDutyReconciliationResponse = {
 type SatpamScheduledShiftData = {
   period: string;
   counts: Record<string, number>;
+  approvedAbsenceCounts: Record<string, number>;
   ketuaShiftIds: Record<string, true>;
+  fixedPost9Ids: Record<string, true>;
   status: 'loaded' | 'error';
 };
 
@@ -85,10 +93,6 @@ export default function RekapPekaryaPage() {
   const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()), 10);
   const category = searchParams.get('category') || "";
   const period = `${year}-${String(month).padStart(2, '0')}`;
-  const ketuaShiftMonthlyScheduleCap = Math.max(
-    0,
-    new Date(year, month, 0).getDate() - 4,
-  );
 
   const docId = `${year}_${String(month).padStart(2, '0')}_${category}`;
 
@@ -167,22 +171,34 @@ export default function RekapPekaryaPage() {
       .then((view) => {
         if (!active) return;
         const scheduledCounts: Record<string, number> = {};
+        const approvedAbsenceCounts: Record<string, number> = {};
         const scheduledKetuaShiftIds: Record<string, true> = {};
+        const scheduledFixedPost9Ids: Record<string, true> = {};
         for (const plan of view.plans || []) {
           const ketuaShiftId = String(plan.ketuaShiftId || '').trim();
           if (ketuaShiftId) scheduledKetuaShiftIds[ketuaShiftId] = true;
+          const fixedPost9EmployeeId = String(plan.fixedPost9EmployeeId || '').trim();
+          if (fixedPost9EmployeeId) scheduledFixedPost9Ids[fixedPost9EmployeeId] = true;
           for (const employee of plan.employees || []) {
             if (!employee.employeeId) continue;
             const requiredDuties = Number(employee.requiredDuties);
             if (!Number.isFinite(requiredDuties)) continue;
             scheduledCounts[employee.employeeId] =
               (scheduledCounts[employee.employeeId] || 0) + Math.max(0, requiredDuties);
+            const approvedAbsenceCount = Number(employee.approvedAbsenceCount);
+            if (Number.isFinite(approvedAbsenceCount)) {
+              approvedAbsenceCounts[employee.employeeId] =
+                (approvedAbsenceCounts[employee.employeeId] || 0) +
+                Math.max(0, approvedAbsenceCount);
+            }
           }
         }
         setSatpamScheduledShiftData({
           period,
           counts: scheduledCounts,
+          approvedAbsenceCounts,
           ketuaShiftIds: scheduledKetuaShiftIds,
+          fixedPost9Ids: scheduledFixedPost9Ids,
           status: 'loaded',
         });
       })
@@ -192,7 +208,9 @@ export default function RekapPekaryaPage() {
           setSatpamScheduledShiftData({
             period,
             counts: {},
+            approvedAbsenceCounts: {},
             ketuaShiftIds: {},
+            fixedPost9Ids: {},
             status: 'error',
           });
         }
@@ -450,12 +468,21 @@ export default function RekapPekaryaPage() {
     
     if (!targetShiftType) return 0;
     
-    return approvedActivityReports.filter(ar => 
+    const workedHarianCount = approvedActivityReports.filter(ar =>
       ar.employeeId === empId && 
       ar.jobCategory === 'SATPAM' &&
       ar.shiftType === targetShiftType
     ).length;
-  }, [approvedActivityReports]);
+    if (targetShiftType !== 'Harian') return workedHarianCount;
+    const approvedAbsenceCount =
+      satpamScheduledShiftData?.period === period
+        ? satpamScheduledShiftData.approvedAbsenceCounts[empId] || 0
+        : satpamDutySources[empId]?.approvedAbsenceCount || 0;
+    return satpamHarianCountWithApprovedAbsences(
+      workedHarianCount,
+      approvedAbsenceCount,
+    );
+  }, [approvedActivityReports, period, satpamDutySources, satpamScheduledShiftData]);
 
   const getSatpamMonthlyAttendanceComparison = useCallback((empId: string) => {
     const storedValues = tableData[empId] || {};
@@ -464,6 +491,12 @@ export default function RekapPekaryaPage() {
     );
     const jumatLibur = Number(
       storedValues.jumatLibur ?? getComputedSatpamShiftCount(empId, 'jumatLibur'),
+    );
+    const lemburSendiri = Number(
+      storedValues.lemburSendiri ?? getComputedSatpamShiftCount(empId, 'lemburSendiri'),
+    );
+    const lemburCover = Number(
+      storedValues.lemburCover ?? getComputedSatpamShiftCount(empId, 'lemburCover'),
     );
     const currentScheduleData =
       satpamScheduledShiftData?.period === period
@@ -479,24 +512,29 @@ export default function RekapPekaryaPage() {
       scheduledDuties !== undefined && Number.isFinite(Number(scheduledDuties))
         ? Math.max(0, Number(scheduledDuties))
         : undefined;
-    const isKetuaShift =
-      Boolean(currentScheduleData?.ketuaShiftIds[empId]) || ketuaShiftIds.has(empId);
+    const usesCappedMonthlySchedule =
+      Boolean(currentScheduleData?.ketuaShiftIds[empId]) ||
+      Boolean(currentScheduleData?.fixedPost9Ids[empId]) ||
+      ketuaShiftIds.has(empId);
 
     return {
       workedDuties:
         (Number.isFinite(harian) ? Math.max(0, harian) : 0) +
-        (Number.isFinite(jumatLibur) ? Math.max(0, jumatLibur) : 0),
+        (Number.isFinite(jumatLibur) ? Math.max(0, jumatLibur) : 0) +
+        (Number.isFinite(lemburSendiri) ? Math.max(0, lemburSendiri) : 0) +
+        (Number.isFinite(lemburCover) ? Math.max(0, lemburCover) : 0),
       scheduledDuties:
         normalizedScheduledDuties === undefined
           ? undefined
-          : isKetuaShift
-            ? Math.min(normalizedScheduledDuties, ketuaShiftMonthlyScheduleCap)
-            : normalizedScheduledDuties,
+          : satpamMonthlyScheduledShiftTarget(
+              normalizedScheduledDuties,
+              period,
+              usesCappedMonthlySchedule,
+            ),
     };
   }, [
     getComputedSatpamShiftCount,
     ketuaShiftIds,
-    ketuaShiftMonthlyScheduleCap,
     period,
     satpamDutySources,
     satpamScheduledShiftData,
@@ -1598,7 +1636,7 @@ export default function RekapPekaryaPage() {
               <table className={`w-full text-left ${hasScanData ? 'border-separate border-spacing-y-4' : 'border-collapse'}`}>
                 <thead className="sticky top-0 z-20 bg-[#F8FAFC]">
                   <tr>
-                    <th className={`px-6 py-4 text-[10px] font-bold uppercase text-slate-950 tracking-wider sticky top-0 z-20 bg-[#F8FAFC] ${!hasScanData ? 'border-b border-slate-300' : ''}`} style={{ width: '220px', minWidth: '220px' }}>Nama Pegawai</th>
+                    <th className={`px-6 py-4 text-[10px] font-bold uppercase text-slate-950 tracking-wider sticky top-0 left-0 z-30 bg-[#F8FAFC] ${!hasScanData ? 'border-b border-r border-slate-300' : ''}`} style={{ width: '220px', minWidth: '220px' }}>Nama Pegawai</th>
                     {columns.map(col => {
                       const isCustom = col.key.startsWith('custom_');
                       const hasMultiplier = !!col.multiplier;
@@ -1659,9 +1697,9 @@ export default function RekapPekaryaPage() {
                           </td>
                         </tr>
                       )}
-                      <tr className={`${hasScanData ? 'group-hover/row:bg-indigo-50/30' : 'hover:bg-slate-50'} transition-all duration-200`}>
+                      <tr className={`group ${hasScanData ? 'group-hover/row:bg-indigo-50/30' : 'hover:bg-slate-50'} transition-all duration-200`}>
                         <td
-                          className={`px-6 py-5 ${hasScanData ? `mx-2 border-l-2 border-y-2 border-slate-400 ${!bounds ? 'rounded-l-2xl' : ''} bg-white shadow-sm ring-1 ring-black/15` : 'border-b border-slate-300'}`}
+                          className={`px-6 py-5 sticky left-0 z-10 ${hasScanData ? `mx-2 border-l-2 border-y-2 border-slate-400 ${!bounds ? 'rounded-l-2xl' : ''} bg-white shadow-sm ring-1 ring-black/15 group-hover/row:bg-indigo-50/30` : 'border-b border-r border-slate-300 bg-white group-hover:bg-slate-50'}`}
                           style={{ width: '220px', minWidth: '220px' }}
                         >
                           <div className="text-sm font-bold text-slate-800 leading-none">{emp.name}</div>
@@ -1676,9 +1714,9 @@ export default function RekapPekaryaPage() {
                                   ? 'text-emerald-600'
                                   : 'text-slate-400'
                               }`}
-                              title={`Jumlah shift Harian + Jumat & Libur yang sudah bekerja dibandingkan dengan jadwal shift pada periode ${period}.`}
+                              title={`Total shift bekerja (Harian + Jumat & Libur + Lembur Sendiri + Lembur Cover) dibandingkan dengan target jadwal shift pada periode ${period}.`}
                             >
-                              Harian + Jumat & Libur:{' '}
+                              Total shift bekerja:{' '}
                               <span className="font-mono">
                                 {satpamAttendanceComparison?.workedDuties ?? 0} /{' '}
                                 {satpamAttendanceComparison?.scheduledDuties ?? '—'}

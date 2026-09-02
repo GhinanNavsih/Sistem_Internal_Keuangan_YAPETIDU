@@ -6,10 +6,13 @@ import {
 } from '@/lib/payroll/domain';
 import {
   reconcileSatpamDuties,
+  isActiveSatpamShiftRegistration,
+  satpamHarianCountWithApprovedAbsences,
   satpamDutyKey,
   satpamDutyPlanId,
   SATPAM_MONTHLY_ATTENDANCE_BONUS,
   SATPAM_PAID_ABSENCE_RATE,
+  shouldExcludeSatpamLeaveFromHarian,
   type SatpamDutyPlanDay,
   type SatpamDutyPlanStatus,
   type SatpamRotationSlotAssignment,
@@ -74,6 +77,7 @@ export interface SatpamDutyReconciliationView {
     planId: string;
     teamId: string;
     ketuaShiftId: string;
+    fixedPost9EmployeeId: string;
     status: SatpamDutyPlanStatus;
     revision: number;
     lateBackfillDates: string[];
@@ -83,6 +87,8 @@ export interface SatpamDutyReconciliationView {
       employeeId: string;
       employeeName: string;
       requiredDuties: number;
+      bonusTargetDuties: number;
+      workedShiftCount: number;
       fulfilledDuties: number;
       fulfilledByWork: number;
       fulfilledByAbsence: number;
@@ -168,6 +174,72 @@ export async function findSatpamTeamForEmployee(employeeId: string): Promise<{
   };
 }
 
+export interface SatpamShiftRegistration {
+  id: string;
+  employeeId: string;
+  dutyDate: string;
+  shiftName: string | null;
+  postId: string | null;
+  postName: string | null;
+  shiftType: string | null;
+  assignmentKind: string | null;
+  status: string;
+  ketuaShiftId: string | null;
+  ketuaShiftName: string | null;
+  sourceOccurrenceId: string | null;
+}
+
+/**
+ * Loads active shift registrations made through the Ketua Shift workflow.
+ * This is deliberately computed from ActivityReports so a leave reviewer sees
+ * a current warning even when the request itself was created earlier.
+ */
+export async function loadSatpamShiftRegistrations(
+  period: string,
+): Promise<SatpamShiftRegistration[]> {
+  const snapshot = await adminDb
+    .collection('ActivityReports')
+    .where('period', '==', period)
+    .get();
+
+  return snapshot.docs
+    .flatMap((document) => {
+      const report = document.data();
+      if (!isActiveSatpamShiftRegistration(report)) return [];
+      const employeeId = String(report.employeeId || '');
+      const dutyDate = String(report.dutyDate || report.activityDate || '');
+      if (!employeeId || !/^\d{4}-\d{2}-\d{2}$/.test(dutyDate)) return [];
+      const status = String(report.status || 'approved');
+      return [{
+        id: document.id,
+        employeeId,
+        dutyDate,
+        shiftName: report.reportedShiftName || report.shiftName
+          ? String(report.reportedShiftName || report.shiftName)
+          : null,
+        postId: report.postId ? String(report.postId) : null,
+        postName: report.postName ? String(report.postName) : null,
+        shiftType: report.shiftType ? String(report.shiftType) : null,
+        assignmentKind: report.assignmentKind
+          ? String(report.assignmentKind)
+          : null,
+        status,
+        ketuaShiftId: report.ketuaShiftId ? String(report.ketuaShiftId) : null,
+        ketuaShiftName: report.ketuaShiftName
+          ? String(report.ketuaShiftName)
+          : null,
+        sourceOccurrenceId: report.sourceOccurrenceId
+          ? String(report.sourceOccurrenceId)
+          : null,
+      } satisfies SatpamShiftRegistration];
+    })
+    .sort((left, right) =>
+      `${right.dutyDate}__${right.id}`.localeCompare(
+        `${left.dutyDate}__${left.id}`,
+      ),
+    );
+}
+
 export async function buildSatpamDutyReconciliation(
   period: string,
   now: Date = new Date(),
@@ -178,6 +250,7 @@ export async function buildSatpamDutyReconciliation(
     absenceSnapshot,
     employeeSnapshot,
     uraianSnapshot,
+    shiftRegistrations,
   ] = await Promise.all([
     adminDb
       .collection(SATPAM_DUTY_PLANS_COLLECTION)
@@ -199,6 +272,7 @@ export async function buildSatpamDutyReconciliation(
       .collection('UraianGaji')
       .doc(`${period.replace('-', '_')}_SATPAM`)
       .get(),
+    loadSatpamShiftRegistrations(period),
   ]);
   const plans: StoredSatpamDutyPlan[] = planSnapshot.docs.map((snapshot) => ({
     id: snapshot.id,
@@ -233,7 +307,13 @@ export async function buildSatpamDutyReconciliation(
   const extraDutyEmployeeIds = new Set<string>();
   const approvedAbsenceKeys = new Set<string>();
   const approvedAbsenceCounts = new Map<string, number>();
+  const workedShiftCountsByEmployee = new Map<string, number>();
   const conflictKeys = new Set<string>();
+  const registeredShiftKeys = new Set(
+    shiftRegistrations.map((registration) =>
+      satpamDutyKey(registration.employeeId, registration.dutyDate),
+    ),
+  );
 
   for (const reportSnapshot of reportSnapshots) {
     if (!reportSnapshot.exists || reportSnapshot.data()?.status !== 'approved') {
@@ -244,6 +324,17 @@ export async function buildSatpamDutyReconciliation(
     const dutyDate = String(report.dutyDate || report.activityDate || '');
     if (!employeeId || !dutyDate) continue;
     const key = satpamDutyKey(employeeId, dutyDate);
+    const shiftType = String(report.shiftType || '');
+    if (
+      ['Harian', 'Jumat & Libur', 'Lembur Sendiri', 'Lembur Cover'].includes(
+        shiftType,
+      )
+    ) {
+      workedShiftCountsByEmployee.set(
+        employeeId,
+        Number(workedShiftCountsByEmployee.get(employeeId) || 0) + 1,
+      );
+    }
     if (
       report.assignmentKind === 'primary' &&
       ['Harian', 'Jumat & Libur'].includes(String(report.shiftType || ''))
@@ -268,10 +359,24 @@ export async function buildSatpamDutyReconciliation(
     const dutyDate = String(absence.dutyDate || '');
     if (!employeeId || !dutyDate) continue;
     const key = satpamDutyKey(employeeId, dutyDate);
+    if (
+      shouldExcludeSatpamLeaveFromHarian({
+        payrollExcludedFromHarian: absence.payrollExcludedFromHarian,
+        hasShiftRegistration: registeredShiftKeys.has(key),
+      })
+    ) {
+      continue;
+    }
     approvedAbsenceKeys.add(key);
     approvedAbsenceCounts.set(
       employeeId,
       Number(approvedAbsenceCounts.get(employeeId) || 0) + 1,
+    );
+    // Approved leave is represented as paid Harian in the Uraian counts, so
+    // keep the bonus comparison aligned with that persisted count.
+    workedShiftCountsByEmployee.set(
+      employeeId,
+      Number(workedShiftCountsByEmployee.get(employeeId) || 0) + 1,
     );
     if (fulfilledWorkKeys.has(key)) conflictKeys.add(key);
   }
@@ -338,6 +443,12 @@ export async function buildSatpamDutyReconciliation(
       pendingDutyKeys,
       unfinishedDutyKeys,
       extraDutyKeys,
+      period,
+      monthlyTargetCapEmployeeIds: new Set([
+        plan.ketuaShiftId,
+        plan.fixedPost9EmployeeId,
+      ]),
+      workedShiftCountsByEmployee,
       periodComplete:
         plan.generatedDays.every((day) =>
           hasSatpamShiftEnded(day.dutyDate, day.shiftName, now),
@@ -353,6 +464,7 @@ export async function buildSatpamDutyReconciliation(
       planId: plan.id,
       teamId: plan.teamId,
       ketuaShiftId: plan.ketuaShiftId,
+      fixedPost9EmployeeId: plan.fixedPost9EmployeeId,
       status: plan.status,
       revision: plan.revision,
       lateBackfillDates: plan.lateBackfillDates || [],
@@ -551,8 +663,10 @@ export async function syncSatpamDutyReconciliation(
           lemburSendiri: 0,
           lemburCover: 0,
         };
-        const totalHarianCount =
-          shiftCounts.harian + employee.approvedAbsenceCount;
+        const totalHarianCount = satpamHarianCountWithApprovedAbsences(
+          shiftCounts.harian,
+          employee.approvedAbsenceCount,
+        );
         counts.harian = totalHarianCount;
         values.harian = totalHarianCount * SATPAM_RATES.Harian;
         counts.jumatLibur = shiftCounts.jumatLibur;
@@ -591,6 +705,8 @@ export async function syncSatpamDutyReconciliation(
             planRevision: plan.revision,
             approvedAbsenceCount: employee.approvedAbsenceCount,
             requiredDuties: employee.requiredDuties,
+            bonusTargetDuties: employee.bonusTargetDuties,
+            workedShiftCount: employee.workedShiftCount,
             fulfilledDuties: employee.fulfilledDuties,
             missedDuties: employee.missedDuties,
             pendingDuties: employee.pendingDuties,

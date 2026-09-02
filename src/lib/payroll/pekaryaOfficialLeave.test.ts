@@ -8,6 +8,7 @@ import {
 import {
   isPekaryaOfficialLeaveCategory,
   isValidAttendanceScanRange,
+  normalizePekaryaAttendanceReportFields,
   officialLeaveAttendanceCorrection,
   pekaryaAttendanceReportType,
   scanAttendanceCorrection,
@@ -71,4 +72,29 @@ test('attendance scan ranges must move forward within the same day', () => {
   assert.equal(isValidAttendanceScanRange('14:00', '08:00'), false);
   assert.equal(isValidAttendanceScanRange('08:00', '08:00'), false);
   assert.equal(isValidAttendanceScanRange('not-a-time', '14:00'), false);
+});
+
+test('admin report-type changes normalize the stored attendance fields', () => {
+  assert.deepEqual(
+    normalizePekaryaAttendanceReportFields('izin_resmi', '08:00', '14:00'),
+    {
+      reportType: 'izin_resmi',
+      leaveType: 'izin_resmi',
+      scanIn: null,
+      scanOut: null,
+    },
+  );
+  assert.deepEqual(
+    normalizePekaryaAttendanceReportFields('scan', '08:00', '14:00'),
+    {
+      reportType: 'scan',
+      leaveType: null,
+      scanIn: '08:00:00',
+      scanOut: '14:00:00',
+    },
+  );
+  assert.equal(
+    normalizePekaryaAttendanceReportFields('scan', '14:00', '08:00'),
+    null,
+  );
 });

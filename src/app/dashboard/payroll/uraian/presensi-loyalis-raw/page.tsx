@@ -63,7 +63,12 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
     let scanMasukAuto = dayRow.scanMasukAuto || false;
     let scanPulangAuto = dayRow.scanPulangAuto || false;
 
-    if (statusUpper === 'MASUK') {
+    if (statusUpper === 'TIDAK HADIR') {
+      absentDaysCount += 1;
+    } else {
+      // Any non-"Tidak Hadir" status (MASUK, or a source-specific label like
+      // "Staff") means the employee was present that day — the label just
+      // isn't a scan-driven status, so still read the real scan times.
       if (inStr && outStr) {
         const duration = calculateLoyalisDailyDuration(inStr, outStr, expHours);
 
@@ -117,8 +122,6 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
       } else {
         incompleteDaysCount += 1;
       }
-    } else if (statusUpper === 'TIDAK HADIR') {
-      absentDaysCount += 1;
     }
 
     return {
@@ -182,6 +185,7 @@ export default function PresensiLoyalisRawPage() {
       downloadUrl?: string | null;
     }>
   >([]);
+  const [deletingRevisionId, setDeletingRevisionId] = useState<string | null>(null);
 
   // ── Pekarya Presence Utility States ──
   const [presensiTargetType, setPresensiTargetType] = useState<'loyalis' | 'pekarya'>('loyalis');
@@ -285,6 +289,28 @@ export default function PresensiLoyalisRawPage() {
     void fetchActiveImport();
   }, [fetchActiveImport]);
 
+  const handleDeleteRevision = useCallback(async (revisionId: string) => {
+    if (!window.confirm('Hapus file presensi ini? File yang gagal/tidak selesai diaktifkan ini akan dihapus permanen beserta baris datanya.')) {
+      return;
+    }
+    setDeletingRevisionId(revisionId);
+    try {
+      await authenticatedJson(
+        `/api/attendance/imports?period=${encodeURIComponent(canonicalPeriod)}&revisionId=${encodeURIComponent(revisionId)}`,
+        { method: 'DELETE' },
+      );
+      setMessage({ type: 'success', text: 'Revisi file presensi berhasil dihapus.' });
+      await fetchActiveImport();
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Gagal menghapus revisi file presensi.',
+      });
+    } finally {
+      setDeletingRevisionId(null);
+    }
+  }, [canonicalPeriod, fetchActiveImport]);
+
   // ── Fetch Existing Loyalis Presence Data ──
   const fetchExistingPresence = useCallback(async () => {
     setLoadingPresence(true);
@@ -310,6 +336,55 @@ export default function PresensiLoyalisRawPage() {
   useEffect(() => {
     fetchExistingPresence();
   }, [fetchExistingPresence]);
+
+  // ── Hydrate the calculation table from the active shared import ──
+  // Someone else may have uploaded & activated the shared XLSX. The file's
+  // parsed rows live server-side (AttendanceImportRows) regardless of who
+  // activated it, so any viewer should see the same preview table without
+  // having to re-upload the identical file themselves.
+  useEffect(() => {
+    if (!usesSharedImport) return;
+    if (!activeImport?.activeRevisionId) return;
+    if (loadingPresence) return;
+    if (existingPresence && Object.keys(existingPresence.entries || {}).length > 0) return;
+    if (uploadedData) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await authenticatedJson<{
+          loyalisRows: Array<{
+            excelName: string;
+            nipy: string;
+            employeeId: string;
+            employeeName: string;
+            dailyLogs: Array<{ Tanggal: string; 'Jam kerja': string; 'Scan masuk': string; 'Scan pulang': string }>;
+          }>;
+        }>(`/api/attendance/imports?period=${encodeURIComponent(canonicalPeriod)}&scope=loyalis`);
+        if (cancelled || !result.loyalisRows || result.loyalisRows.length === 0) return;
+        const parsedData = result.loyalisRows.map((entry) => ({
+          excelName: entry.excelName,
+          nipy: entry.nipy,
+          employeeId: entry.employeeId,
+          employeeName: entry.employeeName,
+          ...recalculateSummary(entry.dailyLogs, expectedHours),
+        }));
+        setUploadedData(parsedData);
+      } catch (error) {
+        console.error('Gagal memuat data presensi dari file aktif:', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    usesSharedImport,
+    activeImport?.activeRevisionId,
+    loadingPresence,
+    existingPresence,
+    uploadedData,
+    canonicalPeriod,
+    expectedHours,
+  ]);
 
   // ── Fetch Correction Requests for Active Month ──
   const [corrections, setCorrections] = useState<any[]>([]);
@@ -1384,24 +1459,39 @@ export default function PresensiLoyalisRawPage() {
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs font-bold text-slate-700">Riwayat file presensi</p>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {importHistory.map((revision) =>
-                        revision.downloadUrl ? (
-                          <a
-                            key={revision.id}
-                            href={revision.downloadUrl}
-                            className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-indigo-700"
-                          >
-                            Revisi {revision.revision} · {revision.status}
-                          </a>
-                        ) : (
-                          <span
-                            key={revision.id}
-                            className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-500"
-                          >
-                            Revisi {revision.revision} · {revision.status}
-                          </span>
-                        ),
-                      )}
+                      {importHistory.map((revision) => (
+                        <div
+                          key={revision.id}
+                          className={`inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white pl-3 pr-1.5 text-xs font-semibold ${
+                            revision.downloadUrl ? 'text-indigo-700' : 'text-slate-500'
+                          }`}
+                        >
+                          {revision.downloadUrl ? (
+                            <a href={revision.downloadUrl}>
+                              Revisi {revision.revision} · {revision.status}
+                            </a>
+                          ) : (
+                            <span>
+                              Revisi {revision.revision} · {revision.status}
+                            </span>
+                          )}
+                          {revision.status === 'writing' && (
+                            <button
+                              type="button"
+                              title="Hapus revisi yang gagal/tidak selesai diaktifkan ini"
+                              onClick={() => handleDeleteRevision(revision.id)}
+                              disabled={deletingRevisionId === revision.id}
+                              className="flex items-center justify-center rounded-lg p-1.5 text-rose-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 cursor-pointer"
+                            >
+                              {deletingRevisionId === revision.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -2013,7 +2103,7 @@ export default function PresensiLoyalisRawPage() {
                                               )}
                                             </td>
                                             <td className="px-3 py-2 text-center">
-                                              {isEditable && (log['Jam kerja'] === 'MASUK') ? (
+                                              {isEditable && log['Jam kerja'] !== 'Tidak Hadir' ? (
                                                 <div className="flex items-center gap-1.5 justify-center">
                                                   <Input
                                                     type="time"
@@ -2044,7 +2134,7 @@ export default function PresensiLoyalisRawPage() {
                                               )}
                                             </td>
                                             <td className="px-3 py-2 text-center">
-                                              {isEditable && (log['Jam kerja'] === 'MASUK') ? (
+                                              {isEditable && log['Jam kerja'] !== 'Tidak Hadir' ? (
                                                 <div className="flex items-center gap-1.5 justify-center">
                                                   <Input
                                                     type="time"
@@ -2075,10 +2165,10 @@ export default function PresensiLoyalisRawPage() {
                                               )}
                                             </td>
                                             <td className="px-3 py-2 text-center font-mono font-bold text-slate-600">
-                                              {log['Jam kerja'] === 'MASUK' && log.duration !== undefined ? `${log.duration} menit` : '-'}
+                                              {log['Jam kerja'] !== 'Tidak Hadir' && log.duration !== undefined ? `${log.duration} menit` : '-'}
                                             </td>
                                             <td className="px-3 py-2 text-center font-mono font-bold text-indigo-600">
-                                              {log['Jam kerja'] === 'MASUK' && log.duration !== undefined ? fmtRp(log.duration * 27.5) : '-'}
+                                              {log['Jam kerja'] !== 'Tidak Hadir' && log.duration !== undefined ? fmtRp(log.duration * 27.5) : '-'}
                                             </td>
                                           </tr>
                                         );

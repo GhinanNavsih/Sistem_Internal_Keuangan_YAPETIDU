@@ -17,6 +17,7 @@ import { pekaryaPayrollWindow } from '@/lib/payroll/pekaryaSpj';
 import {
   isPekaryaOfficialLeaveCategory,
   isValidAttendanceScanRange,
+  normalizePekaryaAttendanceReportFields,
   officialLeaveAttendanceCorrection,
   scanAttendanceCorrection,
   PEKARYA_OFFICIAL_LEAVE_TYPE,
@@ -45,7 +46,7 @@ import { assertPeriodAcceptsInput } from '@/lib/server/payrollPeriod';
 
 export const dynamic = 'force-dynamic';
 
-const ACTIONS = new Set(['approve', 'decline']);
+const ACTIONS = new Set(['approve', 'decline', 'change_type']);
 
 function stableHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -61,7 +62,9 @@ export async function POST(request: NextRequest) {
     const requestId = String(body.requestId || '');
     const reason =
       String(body.reason || '').trim() ||
-      'Keputusan diproses dari Review Koreksi Presensi.';
+      (action === 'change_type'
+        ? 'Perubahan jenis ajuan oleh auditor.'
+        : 'Keputusan diproses dari Review Koreksi Presensi.');
     const expectedRevision = Number(body.expectedRevision);
     if (
       !/^[A-Za-z0-9_-]{1,180}$/.test(officialLeaveRequestId) ||
@@ -101,8 +104,10 @@ export async function POST(request: NextRequest) {
         ? 'scan'
         : leave.reportType === 'izin_resmi' ||
             leave.leaveType === PEKARYA_OFFICIAL_LEAVE_TYPE
-          ? 'izin_resmi'
-          : '';
+            ? 'izin_resmi'
+            : '';
+    const requestedReportType =
+      action === 'change_type' ? String(body.reportType || '') : '';
     if (
       !/^\d{4}-\d{2}$/.test(period) ||
       period < ATTENDANCE_PAYROLL_START_PERIOD ||
@@ -110,6 +115,13 @@ export async function POST(request: NextRequest) {
       !reportType
     ) {
       throw new HttpError(409, 'Data periode, kategori, atau jenis pengajuan tidak valid.');
+    }
+    if (
+      action === 'change_type' &&
+      requestedReportType !== 'scan' &&
+      requestedReportType !== 'izin_resmi'
+    ) {
+      throw new HttpError(400, 'Jenis pengajuan presensi baru tidak valid.');
     }
     if (
       actor.role === 'satker_head' &&
@@ -121,7 +133,7 @@ export async function POST(request: NextRequest) {
     }
     let scanIn: string | null = null;
     let scanOut: string | null = null;
-    if (reportType === 'scan') {
+    if (action !== 'change_type' && reportType === 'scan') {
       scanIn = normalizeAttendanceTime(leave.scanIn);
       scanOut = normalizeAttendanceTime(leave.scanOut);
       if (!scanIn || !scanOut || !isValidAttendanceScanRange(scanIn, scanOut)) {
@@ -152,6 +164,190 @@ export async function POST(request: NextRequest) {
     ) {
       throw new HttpError(409, 'Pegawai aktif pada kategori pengajuan tidak ditemukan.');
     }
+
+    if (action === 'change_type') {
+      const nextFields = normalizePekaryaAttendanceReportFields(
+        requestedReportType,
+        body.scanIn,
+        body.scanOut,
+      );
+      if (!nextFields) {
+        throw new HttpError(
+          400,
+          'Scan masuk dan scan pulang wajib valid untuk Koreksi Scan.',
+        );
+      }
+
+      const currentScanIn =
+        reportType === 'scan' ? normalizeAttendanceTime(leave.scanIn) : null;
+      const currentScanOut =
+        reportType === 'scan' ? normalizeAttendanceTime(leave.scanOut) : null;
+      if (
+        reportType === nextFields.reportType &&
+        (nextFields.reportType === 'izin_resmi' ||
+          (currentScanIn === nextFields.scanIn && currentScanOut === nextFields.scanOut))
+      ) {
+        throw new HttpError(409, 'Jenis ajuan dan jam scan sudah sama.');
+      }
+
+      const idempotencyRef = adminDb
+        .collection('FinancialIdempotencyKeys')
+        .doc(`${actor.uid}__${requestId}`);
+      const slipRef = adminDb
+        .collection('PayrollSlipStates')
+        .doc(`${period.replace('-', '_')}_${employeeId}`);
+      const requestHash = stableHash({
+        officialLeaveRequestId,
+        action,
+        currentReportType: reportType,
+        reportType: nextFields.reportType,
+        scanIn: nextFields.scanIn,
+        scanOut: nextFields.scanOut,
+        requestId,
+        reason,
+        expectedRevision,
+      });
+      const result = await adminDb.runTransaction(async (transaction) => {
+        const [latestLeave, periodSnapshot, slipSnapshot, idempotencySnapshot] =
+          await Promise.all([
+            transaction.get(leaveRef),
+            transaction.get(adminDb.collection('PayrollPeriods').doc(period)),
+            transaction.get(slipRef),
+            transaction.get(idempotencyRef),
+          ]);
+        if (idempotencySnapshot.exists) {
+          if (idempotencySnapshot.data()?.requestHash !== requestHash) {
+            throw new HttpError(409, 'requestId sudah digunakan untuk perubahan lain.');
+          }
+          return {
+            id: officialLeaveRequestId,
+            revision: Number(
+              idempotencySnapshot.data()?.revision || expectedRevision,
+            ),
+            status: idempotencySnapshot.data()?.status,
+            reportType: idempotencySnapshot.data()?.reportType,
+            idempotent: true,
+          };
+        }
+        assertPeriodAcceptsInput(
+          periodSnapshot.data(),
+          'Periode payroll sudah ditutup; jenis pengajuan tidak dapat diubah.',
+        );
+        if (
+          slipSnapshot.exists &&
+          isImmutablePayrollStatus(slipSnapshot.data()?.status)
+        ) {
+          throw new HttpError(
+            409,
+            'Slip pegawai sudah immutable; jenis pengajuan tidak dapat diubah.',
+          );
+        }
+        const current = latestLeave.data();
+        if (!current) {
+          throw new HttpError(404, 'Pengajuan izin resmi tidak ditemukan.');
+        }
+        if (Number(current.revision || 0) !== expectedRevision) {
+          throw new HttpError(409, 'Pengajuan telah berubah. Muat ulang sebelum mengubah jenis.');
+        }
+        if (current.status !== 'pending') {
+          throw new HttpError(
+            409,
+            'Jenis ajuan hanya dapat diubah saat pengajuan masih menunggu keputusan.',
+          );
+        }
+        const currentReportType =
+          current.reportType === 'scan' ? 'scan' : 'izin_resmi';
+        const currentScanIn =
+          currentReportType === 'scan'
+            ? normalizeAttendanceTime(current.scanIn)
+            : null;
+        const currentScanOut =
+          currentReportType === 'scan'
+            ? normalizeAttendanceTime(current.scanOut)
+            : null;
+        if (
+          currentReportType === nextFields.reportType &&
+          (nextFields.reportType === 'izin_resmi' ||
+            (currentScanIn === nextFields.scanIn &&
+              currentScanOut === nextFields.scanOut))
+        ) {
+          throw new HttpError(409, 'Jenis ajuan dan jam scan sudah sama.');
+        }
+
+        const revision = expectedRevision + 1;
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const after = {
+          ...current,
+          status: current.status,
+          reportType: nextFields.reportType,
+          leaveType: nextFields.leaveType,
+          scanIn: nextFields.scanIn,
+          scanOut: nextFields.scanOut,
+          revision,
+          typeChangedAt: now,
+          typeChangedBy: actor.uid,
+          typeChangeReason: reason,
+          updatedAt: now,
+        };
+        transaction.set(leaveRef, after);
+        transaction.create(
+          adminDb
+            .collection(PEKARYA_OFFICIAL_LEAVE_REVISIONS_COLLECTION)
+            .doc(`${officialLeaveRequestId}__r${revision}`),
+          {
+            officialLeaveRequestId,
+            revision,
+            action,
+            before: current,
+            after,
+            actorUid: actor.uid,
+            requestId,
+            reason,
+            createdAt: now,
+          },
+        );
+        transaction.create(
+          newFinancialAuditRef(),
+          buildFinancialAuditRecord(actor, {
+            action: 'PEKARYA_ATTENDANCE_REQUEST_TYPE_CHANGED',
+            entityType: 'PekaryaOfficialLeaveRequest',
+            entityId: officialLeaveRequestId,
+            requestId,
+            reason,
+            before: current,
+            after,
+            metadata: {
+              category,
+              employeeId,
+              date,
+              previousReportType: currentReportType,
+              reportType: nextFields.reportType,
+              attendanceCorrection: false,
+            },
+          }),
+        );
+        transaction.create(idempotencyRef, {
+          actorUid: actor.uid,
+          requestId,
+          requestHash,
+          entityType: 'PekaryaOfficialLeaveRequest',
+          entityId: officialLeaveRequestId,
+          revision,
+          status: after.status,
+          reportType: nextFields.reportType,
+          createdAt: now,
+        });
+        return {
+          id: officialLeaveRequestId,
+          revision,
+          status: after.status,
+          reportType: nextFields.reportType,
+          idempotent: false,
+        };
+      });
+      return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
     const nipy = resolveEmployeeAttendanceNipy(employee || {});
     if (action === 'approve' && !nipy) {
       throw new HttpError(409, 'NIPY pegawai wajib dilengkapi sebelum izin disetujui.');

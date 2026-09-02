@@ -10,11 +10,15 @@ import {
   applyLiburDateSwap,
   classifySatpamDutyAssignments,
   findFirstUpcomingSwapDate,
+  isActiveSatpamShiftRegistration,
   isSatpamAdvancePlanningPeriod,
   isSatpamDutyPlanRequired,
   nextSatpamRotationAssignments,
   reconcileSatpamDuties,
+  satpamHarianCountWithApprovedAbsences,
   satpamDutyKey,
+  satpamMonthlyScheduledShiftTarget,
+  shouldExcludeSatpamLeaveFromHarian,
   SATPAM_DUTY_PLAN_ROTATION_VERSION,
   SATPAM_FIXED_POST_ID,
   SATPAM_KETUA_POST_ID,
@@ -502,7 +506,7 @@ test('an outside-team guard on any post defaults to Harian and can opt into Cove
   assert.equal(coverAssignment?.coveredEmployeeId, roster[2]);
 });
 
-test('off-day overtime cannot replace a missed scheduled duty for bonus', () => {
+test('off-day overtime counts toward the monthly bonus target', () => {
   const planDays: SatpamDutyPlanDay[] = [
     {
       dutyDate: '2026-08-01',
@@ -540,8 +544,60 @@ test('off-day overtime cannot replace a missed scheduled duty for bonus', () => 
   assert.equal(result.fulfilledDuties, 0);
   assert.equal(result.missedDuties, 1);
   assert.equal(result.extraDuties, 1);
-  assert.equal(result.eligibleForBonus, false);
-  assert.equal(result.bonusAmount, 0);
+  assert.equal(result.workedShiftCount, 1);
+  assert.equal(result.bonusTargetDuties, 1);
+  assert.equal(result.eligibleForBonus, true);
+  assert.equal(result.bonusAmount, SATPAM_MONTHLY_ATTENDANCE_BONUS);
+});
+
+test('all four worked shift types contribute to the monthly bonus count', () => {
+  const planDays: SatpamDutyPlanDay[] = Array.from(
+    { length: 4 },
+    (_, index) => ({
+      dutyDate: `2026-08-0${index + 1}`,
+      shiftName: 'Pagi' as const,
+      assignments: [{ postId: 'Pos 1' as const, employeeId: roster[0] }],
+      offDutyEmployeeId: roster[1],
+      sourceSeedDate: `2026-08-0${index + 1}`,
+      sourceSeedIndex: index,
+      cycleNumber: 1,
+    }),
+  );
+  const keys = planDays.map((day) => satpamDutyKey(roster[0], day.dutyDate));
+  const result = reconcileSatpamDuties({
+    employeeIds: [roster[0]],
+    planDays,
+    fulfilledWorkKeys: new Set(keys.slice(0, 2)),
+    approvedAbsenceKeys: new Set(),
+    pendingDutyKeys: new Set(),
+    unfinishedDutyKeys: new Set(),
+    extraDutyKeys: new Set([
+      `${keys[2]}__LEMBUR_SENDIRI`,
+      `${keys[3]}__LEMBUR_COVER`,
+    ]),
+    workedShiftCountsByEmployee: new Map([[roster[0], 4]]),
+    periodComplete: true,
+  })[0];
+
+  assert.equal(result.requiredDuties, 4);
+  assert.equal(result.workedShiftCount, 4);
+  assert.equal(result.bonusTargetDuties, 4);
+  assert.equal(result.eligibleForBonus, true);
+});
+
+test('Ketua and fixed Pos 9 monthly bonus targets are capped at four days off', () => {
+  assert.equal(
+    satpamMonthlyScheduledShiftTarget(31, '2026-08', true),
+    27,
+  );
+  assert.equal(
+    satpamMonthlyScheduledShiftTarget(30, '2026-09', true),
+    26,
+  );
+  assert.equal(
+    satpamMonthlyScheduledShiftTarget(31, '2026-08', false),
+    31,
+  );
 });
 
 test('approved absence fulfills duty at fixed pay, while a work conflict blocks bonus', () => {
@@ -584,4 +640,58 @@ test('approved absence fulfills duty at fixed pay, while a work conflict blocks 
   })[0];
   assert.equal(conflict.conflictingDuties, 1);
   assert.equal(conflict.eligibleForBonus, false);
+});
+
+test('only payable approved Satpam leave is added to the Harian count used by payroll', () => {
+  assert.equal(satpamHarianCountWithApprovedAbsences(8, 1), 9);
+  assert.equal(satpamHarianCountWithApprovedAbsences(0, 2), 2);
+  assert.equal(satpamHarianCountWithApprovedAbsences(-1, Number.NaN), 0);
+});
+
+test('an approved leave overlapping a Ketua Shift registration is excluded from Harian', () => {
+  assert.equal(
+    shouldExcludeSatpamLeaveFromHarian({ hasShiftRegistration: true }),
+    true,
+  );
+  assert.equal(
+    shouldExcludeSatpamLeaveFromHarian({
+      payrollExcludedFromHarian: true,
+      hasShiftRegistration: false,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldExcludeSatpamLeaveFromHarian({ hasShiftRegistration: false }),
+    false,
+  );
+  assert.equal(satpamHarianCountWithApprovedAbsences(8, 0), 8);
+});
+
+test('same-date Ketua Shift registrations are active conflict sources', () => {
+  const registered = {
+    jobCategory: 'SATPAM',
+    reportKind: 'satpam_shift_assignment',
+    sourceOccurrenceId: 'team-1__2026-08-09__pagi',
+    ketuaShiftId: 'SAT-LEAD',
+    status: 'approved',
+  };
+  assert.equal(isActiveSatpamShiftRegistration(registered), true);
+  assert.equal(
+    isActiveSatpamShiftRegistration({ ...registered, status: 'declined' }),
+    false,
+  );
+  assert.equal(
+    isActiveSatpamShiftRegistration({
+      ...registered,
+      jobCategory: 'SOPIR',
+    }),
+    false,
+  );
+  assert.equal(
+    isActiveSatpamShiftRegistration({
+      reportKind: 'satpam_shift_assignment',
+      status: 'approved',
+    }),
+    false,
+  );
 });

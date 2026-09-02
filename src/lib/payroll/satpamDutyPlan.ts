@@ -35,6 +35,33 @@ export const SATPAM_ROTATION_SLOTS = [
 export const SATPAM_KETUA_POST_ID = 'Pos 2' as const satisfies SatpamPostId;
 export const SATPAM_FIXED_POST_ID = 'Pos 9' as const satisfies SatpamPostId;
 
+/**
+ * Returns the monthly scheduled-shift target used by the Satpam bonus rule.
+ * Ketua Shift and the fixed Pos 9 guard have four monthly non-duty days built
+ * into their target; all other guards use their full scheduled-duty count.
+ */
+export function satpamMonthlyScheduledShiftTarget(
+  requiredDuties: number,
+  period: string,
+  useReducedMonthlyTarget: boolean,
+): number {
+  const normalizedRequiredDuties = Number(requiredDuties);
+  const safeRequiredDuties = Number.isFinite(normalizedRequiredDuties)
+    ? Math.max(0, normalizedRequiredDuties)
+    : 0;
+  if (!useReducedMonthlyTarget) return safeRequiredDuties;
+
+  const match = /^(\d{4})-(\d{2})$/.exec(period);
+  if (!match) return safeRequiredDuties;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || month < 1 || month > 12) {
+    return safeRequiredDuties;
+  }
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return Math.min(safeRequiredDuties, Math.max(0, daysInMonth - 4));
+}
+
 export type SatpamRotationSlot = (typeof SATPAM_ROTATION_SLOTS)[number];
 
 export interface SatpamRotationSlotAssignment {
@@ -157,11 +184,16 @@ export interface SatpamDutyReconciliationInput {
   unfinishedDutyKeys: ReadonlySet<string>;
   extraDutyKeys: ReadonlySet<string>;
   periodComplete: boolean;
+  period?: string;
+  monthlyTargetCapEmployeeIds?: ReadonlySet<string>;
+  workedShiftCountsByEmployee?: ReadonlyMap<string, number>;
 }
 
 export interface SatpamDutyReconciliationEmployee {
   employeeId: string;
   requiredDuties: number;
+  bonusTargetDuties: number;
+  workedShiftCount: number;
   fulfilledDuties: number;
   fulfilledByWork: number;
   fulfilledByAbsence: number;
@@ -188,6 +220,72 @@ export function satpamDutyPlanId(period: string, teamId: string): string {
 export function satpamDutyKey(employeeId: string, dutyDate: string): string {
   assertDateOnly(dutyDate);
   return `${employeeId}__${dutyDate}`;
+}
+
+export interface SatpamShiftRegistrationReportLike {
+  jobCategory?: unknown;
+  reportKind?: unknown;
+  sourceType?: unknown;
+  sourceOccurrenceId?: unknown;
+  ketuaShiftId?: unknown;
+  ketuaShiftName?: unknown;
+  status?: unknown;
+}
+
+const TERMINAL_SATPAM_SHIFT_REGISTRATION_STATUSES = new Set([
+  'declined',
+  'rejected',
+  'withdrawn',
+  'voided',
+  'cancelled',
+  'superseded',
+]);
+
+export function isActiveSatpamShiftRegistration(
+  report: SatpamShiftRegistrationReportLike,
+): boolean {
+  const isShiftReport =
+    report.reportKind === 'satpam_shift_assignment' ||
+    report.sourceType === 'satpam_shift' ||
+    Boolean(report.sourceOccurrenceId);
+  if (!isShiftReport) return false;
+  if (report.jobCategory && report.jobCategory !== 'SATPAM') return false;
+  // A source occurrence or leader field proves that the registration came
+  // through the Ketua Shift workflow, including older records without every
+  // newer field.
+  if (
+    !report.sourceOccurrenceId &&
+    !report.ketuaShiftId &&
+    !report.ketuaShiftName
+  ) {
+    return false;
+  }
+  const status = String(report.status || 'approved');
+  return !TERMINAL_SATPAM_SHIFT_REGISTRATION_STATUSES.has(status);
+}
+
+/**
+ * A leave request is not payable as Harian when the guard is already
+ * registered for a Ketua Shift duty on the same date. Persisted exclusions
+ * keep that approval non-payable even if the shift record changes later.
+ */
+export function shouldExcludeSatpamLeaveFromHarian(input: {
+  payrollExcludedFromHarian?: unknown;
+  hasShiftRegistration?: boolean;
+}): boolean {
+  return (
+    input.payrollExcludedFromHarian === true ||
+    input.hasShiftRegistration === true
+  );
+}
+
+export function satpamHarianCountWithApprovedAbsences(
+  workedHarianCount: number,
+  approvedAbsenceCount: number,
+): number {
+  const normalizeCount = (value: number) =>
+    Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
+  return normalizeCount(workedHarianCount) + normalizeCount(approvedAbsenceCount);
 }
 
 export function periodDatesBetween(startsOn: string, endsOn: string): string[] {
@@ -802,15 +900,30 @@ export function reconcileSatpamDuties(
     const extraDuties = Array.from(input.extraDutyKeys).filter((key) =>
       key.startsWith(`${employeeId}__`),
     ).length;
+    const workedShiftCountFromInput = input.workedShiftCountsByEmployee?.get(
+      employeeId,
+    );
+    const workedShiftCount =
+      workedShiftCountFromInput !== undefined &&
+      Number.isFinite(Number(workedShiftCountFromInput))
+        ? Math.max(0, Number(workedShiftCountFromInput))
+        : fulfilledKeys.size + extraDuties;
+    const bonusTargetDuties = satpamMonthlyScheduledShiftTarget(
+      requiredKeys.length,
+      input.period || '',
+      Boolean(input.monthlyTargetCapEmployeeIds?.has(employeeId)),
+    );
     const eligibleForBonus =
       input.periodComplete &&
       requiredKeys.length > 0 &&
-      fulfilledKeys.size >= requiredKeys.length &&
+      workedShiftCount >= bonusTargetDuties &&
       pendingKeys.length === 0 &&
       conflictingKeys.length === 0;
     return {
       employeeId,
       requiredDuties: requiredKeys.length,
+      bonusTargetDuties,
+      workedShiftCount,
       fulfilledDuties: fulfilledKeys.size,
       fulfilledByWork: workKeys.length,
       fulfilledByAbsence: absenceKeys.filter(

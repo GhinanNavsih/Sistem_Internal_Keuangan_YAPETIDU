@@ -150,6 +150,8 @@ type AbsenceRequest = {
   revision: number;
   decisionReason?: string;
   approvedAmount?: number;
+  payrollExcludedFromHarian?: boolean;
+  hasShiftRegistrationConflict?: boolean;
 };
 
 type ScheduledDuty = {
@@ -1609,13 +1611,25 @@ export function SatpamAbsencePanel(props: {
                       <p className="mt-1 text-sm text-slate-600">
                         {request.reason}
                       </p>
+                      {requestType === 'izin_resmi' &&
+                        request.hasShiftRegistrationConflict && (
+                          <p className="mt-2 flex items-start gap-1.5 text-xs font-semibold text-amber-800">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                            {request.status === 'approved' &&
+                            request.payrollExcludedFromHarian
+                              ? 'Izin disetujui tanpa tambahan Harian karena Anda sudah terdaftar pada shift ini.'
+                              : 'Anda sudah terdaftar pada shift ini. Jika izin disetujui, pengajuan tidak menambah hitungan Harian.'}
+                          </p>
+                        )}
                       <p className="mt-1 text-xs text-slate-500">
                         {statusLabel(request.status)} ·{' '}
                         {request.late ? 'Diajukan setelah shift dimulai · ' : ''}
                         Revisi {request.revision}
                         {requestType === 'izin_resmi' &&
                         request.status === 'approved'
-                          ? ' · Dibayar Rp12.500'
+                          ? request.payrollExcludedFromHarian
+                            ? ' · Tanpa tambahan Harian'
+                            : ' · Dibayar Rp12.500'
                           : ''}
                       </p>
                     </div>
@@ -1650,7 +1664,8 @@ export function SatpamAbsencePanel(props: {
         </CardTitle>
         <p className="text-base text-slate-600">
           Laporkan scan masuk &amp; keluar yang terlupa atau ajukan izin untuk
-          kewajiban dinas yang terjadwal.
+          kewajiban dinas yang terjadwal. Izin yang tumpang tindih dengan
+          shift terdaftar tidak menambah Harian.
         </p>
       </CardHeader>
       {body}

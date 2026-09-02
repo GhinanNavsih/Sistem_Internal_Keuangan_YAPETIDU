@@ -17,19 +17,6 @@ import {
 } from '@/lib/payroll/pekaryaSpj';
 
 /**
- * Satpam's four shift columns are entered in the Rekap Uraian table before
- * the duty-plan reconciliation is necessarily complete.  They are safe to
- * show as provisional draft values, while the reconciliation gate still
- * controls whether a new slip may actually be written.
- */
-const SATPAM_SHIFT_COLUMN_KEYS = [
-  'harian',
-  'jumatLibur',
-  'lemburSendiri',
-  'lemburCover',
-] as const;
-
-/**
  * The single Pekarya (blue-collar) earnings calculation.
  *
  * The employee payslip page, the Tinjau Slip Gaji modal, every export, and
@@ -235,9 +222,10 @@ export function buildPekaryaSlipPreview(
   // stale or failed reconciliation. It may still contain perfectly plausible
   // money, but that money belongs to an obsolete import/calendar revision.
   //
-  // Satpam is different: the Rekap Uraian table is where the four shift-type
-  // fields are entered while the duty plan is still being reviewed. Keep just
-  // those four fields visible as provisional values in the draft preview so
+  // Satpam is different: every Rekap Uraian column for this category —
+  // shift counts, Tunjangan Jabatan, the attendance bonuses — is entered and
+  // locked on the same row while the duty plan is still being reviewed. Keep
+  // the whole entry visible as provisional values in the draft preview so
   // Finance sees the same numbers as the table. The warning above remains
   // blocking, so this does not make an unreconciled Satpam slip writable.
   const effectiveUraianEntry =
@@ -305,12 +293,15 @@ export function buildPekaryaSlipPreview(
 
   for (const column of columns) {
     if (!column.slipLabel) continue;
-    const isSatpamShiftColumn =
-      jobCategory === 'SATPAM' &&
-      (SATPAM_SHIFT_COLUMN_KEYS as readonly string[]).includes(column.key);
+    // Every Satpam rekap column — not just the four shift types — is entered
+    // and locked on the same Rekap Uraian row before the period-wide duty-plan
+    // reconciliation is necessarily complete (e.g. Tunjangan Jabatan, the
+    // attendance bonuses). All of them are safe to show provisionally while
+    // that gate is pending, for the same reason the shift columns are.
+    const isSatpamColumn = jobCategory === 'SATPAM';
     const published = readUraianAmount(
       column,
-      isSatpamShiftColumn
+      isSatpamColumn
         ? provisionalSatpamShiftEntry || effectiveUraianEntry
         : effectiveUraianEntry,
     );

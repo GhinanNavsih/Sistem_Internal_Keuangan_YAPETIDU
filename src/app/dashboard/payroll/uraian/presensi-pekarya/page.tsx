@@ -159,6 +159,18 @@ type SatpamAbsenceAdminView = {
     revision: number;
     decisionReason?: string;
     approvedAmount?: number;
+    payrollExcludedFromHarian?: boolean;
+    payrollExclusionReason?: string | null;
+    hasShiftRegistrationConflict?: boolean;
+    shiftRegistrationConflicts?: Array<{
+      id: string;
+      shiftName: string | null;
+      postId: string | null;
+      postName: string | null;
+      shiftType: string | null;
+      status: string;
+      ketuaShiftName: string | null;
+    }>;
   }>;
 };
 
@@ -433,7 +445,9 @@ export default function PekaryaAttendancePage() {
     setWorking(true);
     setError('');
     try {
-      await authenticatedJson('/api/satpam/absences/review', {
+      const reviewResult = await authenticatedJson<{
+        payrollExcludedFromHarian?: boolean;
+      }>('/api/satpam/absences/review', {
         method: 'POST',
         body: JSON.stringify({
           requestId: createFinancialRequestId('satpam-absence-review'),
@@ -448,7 +462,9 @@ export default function PekaryaAttendancePage() {
             ? 'Laporan scan disetujui dan presensi Satpam telah diperbarui.'
             : 'Laporan scan ditolak.'
           : action.endsWith('approve')
-            ? 'Izin disetujui. Hak Rp12.500 dan rekonsiliasi telah diperbarui.'
+            ? reviewResult.payrollExcludedFromHarian === true
+              ? 'Izin disetujui tanpa tambahan Harian karena pegawai telah terdaftar shift pada tanggal tersebut.'
+              : 'Izin disetujui. Hak Rp12.500 dan rekonsiliasi telah diperbarui.'
             : 'Izin ditolak dan rekonsiliasi telah diperbarui.',
       );
       await load();
@@ -874,8 +890,8 @@ export default function PekaryaAttendancePage() {
                 <h2 className="font-bold">Pengajuan Presensi &amp; Izin Satpam</h2>
                 <p className="text-sm text-slate-500">
                   Laporan scan memperbaiki bukti presensi tanpa mengubah upah
-                  shift. Izin disetujui memenuhi kewajiban dinas dan membayar
-                  tetap Rp12.500.
+                  shift. Izin disetujui menambah Harian Rp12.500 hanya jika
+                  tidak ada shift terdaftar pada tanggal yang sama.
                 </p>
               </div>
               <div className="divide-y divide-slate-100">
@@ -894,6 +910,8 @@ export default function PekaryaAttendancePage() {
                       absence.status === 'pending'
                         ? 'decline'
                         : 'supersede_decline';
+                    const payrollExcludedFromHarian =
+                      absence.payrollExcludedFromHarian === true;
                     return (
                       <article key={absence.id} className="space-y-3 p-5">
                         <div>
@@ -908,6 +926,25 @@ export default function PekaryaAttendancePage() {
                             {absence.shiftName ? ` · ${absence.shiftName}` : ''}
                             {absence.postId ? ` · ${absence.postId}` : ''}
                           </p>
+                          {requestType === 'izin_resmi' &&
+                            (absence.hasShiftRegistrationConflict === true ||
+                              (absence.shiftRegistrationConflicts?.length || 0) > 0) && (
+                            <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                              <p className="font-bold">⚠ Shift sudah terdaftar pada tanggal ini</p>
+                              <p className="mt-1 text-xs">
+                                {absence.status === 'approved' && payrollExcludedFromHarian
+                                  ? 'Izin telah disetujui tanpa tambahan Harian karena shift ini sudah terdaftar.'
+                                  : 'Jika izin disetujui, pengajuan tidak akan menambah hitungan Harian.'}
+                              </p>
+                              {absence.shiftRegistrationConflicts?.map((registration) => (
+                                <p key={registration.id} className="mt-1 text-xs">
+                                  {registration.shiftName || 'Shift'}{registration.postId ? ` · ${registration.postId}` : ''}
+                                  {registration.shiftType ? ` · ${registration.shiftType}` : ''}
+                                  {registration.ketuaShiftName ? ` · Ketua: ${registration.ketuaShiftName}` : ''}
+                                </p>
+                              ))}
+                            </div>
+                          )}
                           <p className="text-sm text-slate-600">
                             {absence.reason}
                           </p>
@@ -916,7 +953,9 @@ export default function PekaryaAttendancePage() {
                             {absence.late ? ' · diajukan terlambat' : ''}
                             {requestType === 'izin_resmi' &&
                             absence.status === 'approved'
-                              ? ` · ${money(absence.approvedAmount || 12_500)}`
+                              ? payrollExcludedFromHarian
+                                ? ' · tanpa tambahan Harian'
+                                : ` · ${money(absence.approvedAmount || 12_500)}`
                               : ''}
                           </p>
                         </div>

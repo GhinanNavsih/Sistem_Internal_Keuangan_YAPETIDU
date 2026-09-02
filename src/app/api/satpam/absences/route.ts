@@ -21,6 +21,7 @@ import {
 } from '@/lib/payroll/satpamAttendance';
 import {
   findSatpamTeamForEmployee,
+  loadSatpamShiftRegistrations,
   loadSatpamDutyPlanContext,
   SATPAM_ABSENCE_REQUESTS_COLLECTION,
 } from '@/lib/server/satpamDutyPlan';
@@ -74,7 +75,43 @@ export async function GET(request: NextRequest) {
         'satker_head',
       ]);
     }
-    const snapshot = await query.get();
+    const [snapshot, shiftRegistrations] = await Promise.all([
+      query.get(),
+      loadSatpamShiftRegistrations(period),
+    ]);
+    const registrationsByEmployeeDate = new Map<
+      string,
+      typeof shiftRegistrations
+    >();
+    for (const registration of shiftRegistrations) {
+      const key = `${registration.employeeId}__${registration.dutyDate}`;
+      const existing = registrationsByEmployeeDate.get(key) || [];
+      existing.push(registration);
+      registrationsByEmployeeDate.set(key, existing);
+    }
+    const requests = snapshot.docs.map(
+      (document): { id: string; [key: string]: unknown } => {
+        const data = document.data() as Record<string, unknown>;
+        const employeeId = String(data.employeeId || '');
+        const dutyDate = String(data.dutyDate || '');
+        const shiftRegistrationConflicts =
+          satpamAttendanceReportType(data) === 'izin_resmi'
+            ? registrationsByEmployeeDate.get(`${employeeId}__${dutyDate}`) || []
+            : [];
+        const payrollExcludedFromHarian =
+          data.payrollExcludedFromHarian === true ||
+          (data.status === 'approved' &&
+            shiftRegistrationConflicts.length > 0);
+        return {
+          id: document.id,
+          ...data,
+          hasShiftRegistrationConflict:
+            shiftRegistrationConflicts.length > 0,
+          shiftRegistrationConflicts,
+          payrollExcludedFromHarian,
+        };
+      },
+    );
     let scheduledDuties: Array<{
       dutyDate: string;
       shiftName: string;
@@ -108,13 +145,7 @@ export async function GET(request: NextRequest) {
       {
         period,
         scheduledDuties,
-        requests: snapshot.docs
-          .map(
-            (document): { id: string; [key: string]: unknown } => ({
-              id: document.id,
-              ...(document.data() as Record<string, unknown>),
-            }),
-          )
+        requests: requests
           .sort((left, right) =>
             String(right.dutyDate || '').localeCompare(
               String(left.dutyDate || ''),

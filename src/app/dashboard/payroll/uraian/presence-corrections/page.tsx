@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
+import type { SatpamShiftName } from '@/lib/payroll/domain';
 import {
   Table,
   TableBody,
@@ -58,10 +59,14 @@ import {
   type PresenceCorrectionStatus,
 } from '@/lib/payroll/presenceCorrections';
 import {
+  isValidAttendanceScanRange,
   pekaryaAttendanceReportType,
+  type PekaryaAttendanceReportType,
   type PekaryaOfficialLeaveRequest,
 } from '@/lib/payroll/pekaryaOfficialLeave';
 import {
+  defaultSatpamScanTimes,
+  isValidSatpamAttendanceScanRange,
   satpamAttendanceReportType,
   type SatpamAttendanceReportType,
 } from '@/lib/payroll/satpamAttendance';
@@ -114,7 +119,19 @@ interface SatpamReviewRequest {
   revision: number;
   decisionReason?: string;
   approvedAmount?: number;
+  payrollExcludedFromHarian?: boolean;
+  payrollExclusionReason?: string | null;
   decidedAt?: unknown;
+  hasShiftRegistrationConflict?: boolean;
+  shiftRegistrationConflicts?: Array<{
+    id: string;
+    shiftName: string | null;
+    postId: string | null;
+    postName: string | null;
+    shiftType: string | null;
+    status: string;
+    ketuaShiftName: string | null;
+  }>;
 }
 
 type BlueCollarReviewItem =
@@ -136,8 +153,19 @@ const statusOptions: Array<{ value: PresenceCorrectionStatus | 'all'; label: str
   { value: 'all', label: 'Semua Status' },
 ];
 
+const SATPAM_ABSENCE_TYPE_OPTIONS = [
+  { value: 'sakit', label: 'Sakit' },
+  { value: 'izin_resmi', label: 'Izin Resmi' },
+  { value: 'darurat', label: 'Keperluan Darurat' },
+  { value: 'lainnya', label: 'Lainnya' },
+] as const;
+
 function isCorrectionStatus(value: unknown): value is PresenceCorrectionStatus | 'all' {
   return value === 'pending' || value === 'approved' || value === 'rejected' || value === 'all';
+}
+
+function isSatpamShiftName(value: string | undefined): value is SatpamShiftName {
+  return value === 'Pagi' || value === 'Sore' || value === 'Malam';
 }
 
 function statusMatches(value: string, selected: PresenceCorrectionStatus | 'all'): boolean {
@@ -208,6 +236,11 @@ export default function PresenceCorrectionsAdminPage() {
   const [rejectingReqId, setRejectingReqId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [editingTypeRequestId, setEditingTypeRequestId] = useState<string | null>(null);
+  const [editingReportType, setEditingReportType] = useState<PekaryaAttendanceReportType>('scan');
+  const [editingScanIn, setEditingScanIn] = useState('08:00');
+  const [editingScanOut, setEditingScanOut] = useState('14:00');
+  const [editingAbsenceType, setEditingAbsenceType] = useState('izin_resmi');
 
   const [expandedReqIds, setExpandedReqIds] = useState<Record<string, boolean>>({});
   const [rawLogsMap, setRawLogsMap] = useState<Record<string, LoyalisRawLog | null>>({});
@@ -653,7 +686,9 @@ export default function PresenceCorrectionsAdminPage() {
     setMessage(null);
     try {
       const isSatpam = item.source === 'satpam';
-      await authenticatedJson(
+      const reviewResult = await authenticatedJson<{
+        payrollExcludedFromHarian?: boolean;
+      }>(
         isSatpam
           ? '/api/satpam/absences/review'
           : '/api/attendance/pekarya/official-leave/review',
@@ -680,7 +715,11 @@ export default function PresenceCorrectionsAdminPage() {
       setMessage({
         type: 'success',
         text: approved
-          ? `${requestType === 'scan' ? 'Laporan scan' : 'Izin'} ${sourceLabel} berhasil disetujui dan presensi diperbarui.`
+          ? isSatpam &&
+            requestType === 'izin_resmi' &&
+            reviewResult.payrollExcludedFromHarian === true
+            ? 'Izin Satpam berhasil disetujui tanpa tambahan Harian karena pegawai sudah terdaftar shift pada tanggal tersebut.'
+            : `${requestType === 'scan' ? 'Laporan scan' : 'Izin'} ${sourceLabel} berhasil disetujui dan presensi diperbarui.`
           : `${requestType === 'scan' ? 'Laporan scan' : 'Izin'} ${sourceLabel} berhasil ditolak.`,
       });
       await fetchRequests(false);
@@ -689,6 +728,111 @@ export default function PresenceCorrectionsAdminPage() {
       setMessage({
         type: 'error',
         text: err instanceof Error ? err.message : 'Gagal memutuskan pengajuan Blue Collar.',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const startBlueCollarTypeEdit = (item: BlueCollarReviewItem) => {
+    const request = item.request;
+    const reportType = item.source === 'satpam'
+      ? satpamAttendanceReportType(request)
+      : pekaryaAttendanceReportType(request);
+    const defaultTimes = item.source === 'satpam' && isSatpamShiftName(item.request.shiftName)
+      ? defaultSatpamScanTimes(item.request.shiftName)
+      : { scanIn: '08:00', scanOut: '14:00' };
+    setEditingTypeRequestId(`${item.source}:${request.id}`);
+    setEditingReportType(reportType);
+    setEditingScanIn(request.scanIn?.slice(0, 5) || defaultTimes.scanIn);
+    setEditingScanOut(request.scanOut?.slice(0, 5) || defaultTimes.scanOut);
+    setEditingAbsenceType(
+      item.source === 'satpam' && reportType === 'izin_resmi'
+        ? item.request.absenceType || 'izin_resmi'
+        : 'izin_resmi',
+    );
+    setMessage(null);
+  };
+
+  const cancelBlueCollarTypeEdit = () => {
+    setEditingTypeRequestId(null);
+  };
+
+  const handleChangeBlueCollarType = async (
+    item: BlueCollarReviewItem,
+  ) => {
+    const request = item.request;
+    if (request.status !== 'pending') return;
+    const scanRangeValid = item.source === 'satpam'
+      ? isSatpamShiftName(item.request.shiftName) &&
+        isValidSatpamAttendanceScanRange(
+          editingScanIn,
+          editingScanOut,
+          item.request.shiftName,
+        )
+      : isValidAttendanceScanRange(editingScanIn, editingScanOut);
+    if (editingReportType === 'scan' && !scanRangeValid) {
+      setMessage({
+        type: 'error',
+        text: 'Scan masuk dan scan pulang harus valid, dengan scan pulang lebih lambat.',
+      });
+      return;
+    }
+    if (
+      item.source === 'satpam' &&
+      editingReportType === 'izin_resmi' &&
+      !SATPAM_ABSENCE_TYPE_OPTIONS.some((option) => option.value === editingAbsenceType)
+    ) {
+      setMessage({ type: 'error', text: 'Pilih jenis alasan izin yang valid.' });
+      return;
+    }
+
+    const actionKey = `type:${item.source}:${request.id}`;
+    setActionLoading(actionKey);
+    setMessage(null);
+    try {
+      const isSatpam = item.source === 'satpam';
+      await authenticatedJson(
+        isSatpam
+          ? '/api/satpam/absences/review'
+          : '/api/attendance/pekarya/official-leave/review',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            ...(isSatpam
+              ? { absenceRequestId: request.id }
+              : { officialLeaveRequestId: request.id }),
+            action: 'change_type',
+            reportType: editingReportType,
+            scanIn: editingReportType === 'scan' ? editingScanIn : null,
+            scanOut: editingReportType === 'scan' ? editingScanOut : null,
+            ...(isSatpam
+              ? {
+                  absenceType:
+                    editingReportType === 'izin_resmi'
+                      ? editingAbsenceType
+                      : null,
+                }
+              : {}),
+            reason: 'Perubahan jenis ajuan oleh auditor.',
+            requestId: createFinancialRequestId(
+              isSatpam ? 'satpam-absence-type' : 'pekarya-official-leave-type',
+            ),
+            expectedRevision: request.revision,
+          }),
+        },
+      );
+      setEditingTypeRequestId(null);
+      setMessage({
+        type: 'success',
+        text: `Jenis ajuan ${request.employeeName || request.employeeId} berhasil diubah menjadi ${editingReportType === 'scan' ? 'Koreksi Scan' : 'Izin Resmi'}.`,
+      });
+      await fetchRequests(false);
+    } catch (err: unknown) {
+      console.error('Error changing Blue Collar request type:', err);
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Gagal mengubah jenis ajuan Blue Collar.',
       });
     } finally {
       setActionLoading(null);
@@ -1131,12 +1275,28 @@ export default function PresenceCorrectionsAdminPage() {
                   const declineAction = isSupersede ? 'supersede_decline' : 'decline';
                   const date = blueCollarRequestDate(item);
                   const requestTitle = reportType === 'scan'
-                    ? `Koreksi scan · ${request.scanIn?.slice(0, 5) || '--:--'}–${request.scanOut?.slice(0, 5) || '--:--'}`
+                    ? `Koreksi Scan · ${request.scanIn?.slice(0, 5) || '--:--'}–${request.scanOut?.slice(0, 5) || '--:--'}`
                     : isSatpam
                       ? satpamAbsenceTypeLabel(item.source === 'satpam' ? item.request.absenceType : undefined)
-                      : 'Izin resmi';
+                      : 'Izin Resmi';
+                  const shiftRegistrationConflicts =
+                    isSatpam && reportType === 'izin_resmi' && item.source === 'satpam'
+                      ? item.request.shiftRegistrationConflicts || []
+                      : [];
+                  const hasShiftRegistrationConflict =
+                    isSatpam &&
+                    reportType === 'izin_resmi' &&
+                    item.source === 'satpam' &&
+                    (item.request.hasShiftRegistrationConflict === true ||
+                      shiftRegistrationConflicts.length > 0);
+                  const payrollExcludedFromHarian =
+                    isSatpam &&
+                    item.source === 'satpam' &&
+                    item.request.payrollExcludedFromHarian === true;
 
                   const isExpanded = !!expandedReqIds[reasonKey];
+                  const isEditingType = editingTypeRequestId === reasonKey;
+                  const typeActionKey = `type:${reasonKey}`;
 
                   return (
                     <React.Fragment key={reasonKey}>
@@ -1178,6 +1338,11 @@ export default function PresenceCorrectionsAdminPage() {
                           <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] font-semibold text-slate-500">
                             {isSatpam && item.source === 'satpam' && item.request.shiftName && <span>Shift {item.request.shiftName}</span>}
                             {isSatpam && item.source === 'satpam' && item.request.postId && <span>{item.request.postId}</span>}
+                            {hasShiftRegistrationConflict && (
+                              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-bold text-amber-800">
+                                ⚠ Shift sudah terdaftar
+                              </span>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -1211,7 +1376,27 @@ export default function PresenceCorrectionsAdminPage() {
                                     <div className="space-y-1.5 text-xs font-semibold text-slate-700">
                                       <div className="flex items-center justify-between gap-3 border-b border-slate-100/50 pb-1">
                                         <span>Jenis:</span>
-                                        <span className="text-indigo-600 text-[10px] font-bold text-right">{requestTitle}</span>
+                                        <div className="flex flex-wrap items-center justify-end gap-2">
+                                          <span className="text-indigo-600 text-[10px] font-bold text-right">{requestTitle}</span>
+                                          {status === 'pending' && (
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                if (isEditingType) {
+                                                  cancelBlueCollarTypeEdit();
+                                                } else {
+                                                  startBlueCollarTypeEdit(item);
+                                                }
+                                              }}
+                                              disabled={actionLoading !== null}
+                                              className="h-7 rounded-lg border-indigo-200 px-2.5 text-[10px] font-bold text-indigo-700 hover:bg-indigo-50"
+                                            >
+                                              {isEditingType ? 'Tutup' : 'Ubah'}
+                                            </Button>
+                                          )}
+                                        </div>
                                       </div>
                                       <div className="flex items-center justify-between gap-3">
                                         <span>Kategori:</span>
@@ -1223,6 +1408,23 @@ export default function PresenceCorrectionsAdminPage() {
                                           <span className="text-slate-900">{item.request.shiftName}{item.request.postId ? ` · ${item.request.postId}` : ''}</span>
                                         </div>
                                       )}
+                                      {hasShiftRegistrationConflict && (
+                                        <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                                          <p className="font-bold">⚠ Pegawai sudah terdaftar pada shift tanggal ini</p>
+                                          <p className="text-[11px] font-semibold">
+                                            {status === 'approved' && payrollExcludedFromHarian
+                                              ? 'Izin telah disetujui tanpa tambahan Harian karena shift ini sudah terdaftar.'
+                                              : 'Jika izin disetujui, pengajuan tidak akan menambah hitungan Harian.'}
+                                          </p>
+                                          {shiftRegistrationConflicts.map((registration) => (
+                                            <p key={registration.id} className="text-[11px] font-semibold">
+                                              {registration.shiftName || 'Shift'}{registration.postId ? ` · ${registration.postId}` : ''}
+                                              {registration.shiftType ? ` · ${registration.shiftType}` : ''}
+                                              {registration.ketuaShiftName ? ` · Ketua: ${registration.ketuaShiftName}` : ''}
+                                            </p>
+                                          ))}
+                                        </div>
+                                      )}
                                       <div className="mt-3 border-t border-slate-100/50 pt-3">
                                         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Alasan Pengajuan</span>
                                         <p className="mt-1.5 text-xs text-slate-700 font-semibold leading-relaxed">{request.reason || '—'}</p>
@@ -1232,7 +1434,107 @@ export default function PresenceCorrectionsAdminPage() {
                                           Nilai disetujui: {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(request.approvedAmount)}
                                         </p>
                                       )}
+                                      {payrollExcludedFromHarian && status === 'approved' && (
+                                        <p className="pt-2 text-xs font-bold text-amber-700">
+                                          Disetujui tanpa tambahan Harian karena pegawai telah terdaftar pada shift ini.
+                                        </p>
+                                      )}
                                     </div>
+                                    {isEditingType && (
+                                      <div className="mt-3 space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
+                                        <div>
+                                          <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">
+                                            Ubah Jenis Ajuan
+                                          </span>
+                                          <p className="mt-1 text-[11px] font-semibold text-indigo-900">
+                                            Perubahan berlaku sebelum pengajuan diputuskan.
+                                          </p>
+                                        </div>
+                                        <Select
+                                          value={editingReportType}
+                                          onValueChange={(value) => {
+                                            if (value === 'scan' || value === 'izin_resmi') {
+                                              setEditingReportType(value);
+                                            }
+                                          }}
+                                        >
+                                          <SelectTrigger className="h-10 rounded-lg border-indigo-200 bg-white text-xs font-bold text-slate-800">
+                                            <SelectValue>
+                                              {editingReportType === 'scan' ? 'Koreksi Scan' : 'Izin Resmi'}
+                                            </SelectValue>
+                                          </SelectTrigger>
+                                          <SelectContent className="rounded-lg bg-white">
+                                            <SelectItem value="scan" className="text-xs font-semibold">
+                                              Koreksi Scan
+                                            </SelectItem>
+                                            <SelectItem value="izin_resmi" className="text-xs font-semibold">
+                                              Izin Resmi
+                                            </SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                        {editingReportType === 'scan' && (
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <label className="space-y-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                              Scan masuk
+                                              <Input
+                                                type="time"
+                                                value={editingScanIn}
+                                                onChange={(event) => setEditingScanIn(event.target.value)}
+                                                className="h-9 rounded-lg bg-white text-xs font-mono"
+                                              />
+                                            </label>
+                                            <label className="space-y-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                              Scan pulang
+                                              <Input
+                                                type="time"
+                                                value={editingScanOut}
+                                                onChange={(event) => setEditingScanOut(event.target.value)}
+                                                className="h-9 rounded-lg bg-white text-xs font-mono"
+                                              />
+                                            </label>
+                                          </div>
+                                        )}
+                                        {item.source === 'satpam' && editingReportType === 'izin_resmi' && (
+                                          <Select
+                                            value={editingAbsenceType}
+                                            onValueChange={(value) => {
+                                              if (value) setEditingAbsenceType(value);
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-10 rounded-lg border-indigo-200 bg-white text-xs font-bold text-slate-800">
+                                              <SelectValue>Jenis alasan izin</SelectValue>
+                                            </SelectTrigger>
+                                            <SelectContent className="rounded-lg bg-white">
+                                              {SATPAM_ABSENCE_TYPE_OPTIONS.map((option) => (
+                                                <SelectItem key={option.value} value={option.value} className="text-xs font-semibold">
+                                                  {option.label}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        )}
+                                        <div className="flex justify-end gap-2">
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={cancelBlueCollarTypeEdit}
+                                            disabled={actionLoading !== null}
+                                            className="h-8 rounded-lg bg-white px-3 text-[10px] font-bold"
+                                          >
+                                            Batal
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            onClick={() => void handleChangeBlueCollarType(item)}
+                                            disabled={actionLoading !== null}
+                                            className="h-8 rounded-lg bg-indigo-600 px-3 text-[10px] font-bold text-white hover:bg-indigo-700"
+                                          >
+                                            {actionLoading === typeActionKey && <Loader2 className="h-3 w-3 animate-spin" />}
+                                            Simpan Jenis
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
 
                                   {request.evidenceUrl && (
@@ -1263,7 +1565,7 @@ export default function PresenceCorrectionsAdminPage() {
                                   <Button
                                     type="button"
                                     onClick={() => void handleReviewBlueCollar(item, declineAction)}
-                                    disabled={actionLoading !== null}
+                                    disabled={actionLoading !== null || isEditingType}
                                     variant="outline"
                                     className="text-rose-600 border-rose-200 hover:bg-rose-50 rounded-xl text-xs h-9 px-4 font-bold flex items-center gap-1.5 cursor-pointer shadow-sm bg-white"
                                   >
@@ -1272,7 +1574,7 @@ export default function PresenceCorrectionsAdminPage() {
                                   <Button
                                     type="button"
                                     onClick={() => void handleReviewBlueCollar(item, approveAction)}
-                                    disabled={actionLoading !== null}
+                                    disabled={actionLoading !== null || isEditingType}
                                     className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs h-9 px-5 font-bold flex items-center gap-1.5 cursor-pointer shadow-md active:scale-95 transition-all"
                                   >
                                     {actionLoading === reasonKey ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}

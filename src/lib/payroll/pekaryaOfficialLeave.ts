@@ -46,6 +46,45 @@ export function pekaryaAttendanceReportType(
   return request.reportType === 'scan' ? 'scan' : 'izin_resmi';
 }
 
+export interface PekaryaAttendanceReportFields {
+  reportType: PekaryaAttendanceReportType;
+  leaveType: typeof PEKARYA_OFFICIAL_LEAVE_TYPE | null;
+  scanIn: string | null;
+  scanOut: string | null;
+}
+
+export function normalizePekaryaAttendanceReportFields(
+  reportType: unknown,
+  scanIn: unknown,
+  scanOut: unknown,
+): PekaryaAttendanceReportFields | null {
+  if (reportType === 'izin_resmi') {
+    return {
+      reportType: 'izin_resmi',
+      leaveType: PEKARYA_OFFICIAL_LEAVE_TYPE,
+      scanIn: null,
+      scanOut: null,
+    };
+  }
+  if (reportType !== 'scan') return null;
+
+  const normalizedScanIn = normalizeAttendanceTime(scanIn);
+  const normalizedScanOut = normalizeAttendanceTime(scanOut);
+  if (
+    !normalizedScanIn ||
+    !normalizedScanOut ||
+    !isValidAttendanceScanRange(normalizedScanIn, normalizedScanOut)
+  ) {
+    return null;
+  }
+  return {
+    reportType: 'scan',
+    leaveType: null,
+    scanIn: normalizedScanIn,
+    scanOut: normalizedScanOut,
+  };
+}
+
 export function isPekaryaOfficialLeaveCategory(
   value: unknown,
 ): value is Exclude<PekaryaJobCategory, 'SATPAM'> {

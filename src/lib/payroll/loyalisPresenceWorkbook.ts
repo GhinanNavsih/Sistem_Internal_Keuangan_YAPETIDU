@@ -231,10 +231,12 @@ export function parseLoyalisPresenceWorkbook(
       return;
     }
 
-    // A punch on a non-working status is a source-data artifact, not a payable
-    // attendance event. Keep the row visible while preventing it from leaking
-    // into the preview or saved daily logs.
-    const isPresent = workStatus === 'MASUK';
+    // A punch on an explicit non-attendance status ("Tidak Hadir") is a
+    // source-data artifact, not a payable attendance event, and is dropped.
+    // Every other status label — "MASUK" or a source-specific one like
+    // "Staff" — means the employee was present, so its real scan times are
+    // kept rather than nulled out.
+    const isPresent = workStatus !== 'Tidak Hadir';
     parsedRows.push({
       rowNumber,
       nipy,

@@ -415,7 +415,7 @@ test('SATPAM preview keeps Rekap shift values while reconciliation is pending', 
   assert.equal(amountOf(preview.earnings, 'Jumat & Libur'), 50_000);
   assert.equal(amountOf(preview.earnings, 'Lembur Sendiri'), 30_000);
   assert.equal(amountOf(preview.earnings, 'Lembur Cover'), 50_000);
-  assert.equal(amountOf(preview.earnings, 'Bonus Presensi Bulanan'), 0);
+  assert.equal(amountOf(preview.earnings, 'Bonus Presensi Bulanan'), 100_000);
   assert.equal(preview.meta.attendanceSource, 'uraian');
   assert.equal(preview.meta.isProvisional, true);
   assert.equal(preview.meta.canCreateSlip, false);
@@ -462,7 +462,7 @@ test('SATPAM shift values remain visible when the period reconciliation itself i
   assert.equal(amountOf(preview.earnings, 'Jumat & Libur'), 50_000);
   assert.equal(amountOf(preview.earnings, 'Lembur Sendiri'), 30_000);
   assert.equal(amountOf(preview.earnings, 'Lembur Cover'), 50_000);
-  assert.equal(amountOf(preview.earnings, 'Bonus Presensi Bulanan'), 0);
+  assert.equal(amountOf(preview.earnings, 'Bonus Presensi Bulanan'), 100_000);
   assert.equal(preview.meta.attendanceSource, 'uraian');
   assert.equal(preview.meta.canCreateSlip, false);
   assert.deepEqual(
