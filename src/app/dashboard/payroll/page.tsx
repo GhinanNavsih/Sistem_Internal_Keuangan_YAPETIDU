@@ -63,6 +63,7 @@ import { useDashboardData } from '@/lib/DashboardDataContext';
 import { useBulkEmail, ESTIMATED_SECONDS_PER_EMAIL, type QueueItem } from '@/lib/BulkEmailContext';
 import { Employee, SalaryMatrix, BlueCollarEmployee, UraianGajiDocument, UraianEntry } from '@/types';
 import PaySlipDialog, { SlipState, buildInitialEarnings, buildInitialDeductions } from '@/components/PaySlipDialog';
+import { normalizeTaxFields, recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
 import * as XLSX from 'xlsx';
 import LegalitasPimpinanDialog from '@/components/LegalitasPimpinanDialog';
@@ -98,12 +99,8 @@ import {
   isPayableVakasiTambahan,
   vakasiWorkerCollection,
 } from '@/lib/payroll/vakasiTambahan';
+import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 
-import {
-  calculateTotalEarnings,
-  calculateTotalDeductions,
-  calculateNetSalary
-} from '@/utils/salaryCalculator';
 
 function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | 'desc' | null }) {
   if (!active || !direction) return <ChevronsUpDown className="w-3 h-3 text-slate-300" />;
@@ -345,6 +342,13 @@ export default function PayrollValidationDashboard() {
   // employee data to ensure they stay in sync with profile changes.
   const [slipStates, setSlipStates] = useState<Record<string, SlipState>>({});
 
+  // Ketua Shift Satpam roster, keyed by employeeId. SatpamShiftTeams is a
+  // stable roster (not period-scoped), so this is fetched once rather than
+  // per period. Needed to print the correct Tunjangan Jabatan floor
+  // (Rp150.000 vs Rp50.000) on export dialogs that build a local fallback
+  // for a SATPAM employee with no saved slip yet.
+  const [ketuaShiftIds, setKetuaShiftIds] = useState<Set<string>>(new Set());
+
   // ─── UraianGaji state (keyed by docId e.g. "2026_05_KEBERSIHAN") ──
   const [uraianMap, setUraianMap] = useState<Record<string, UraianGajiDocument>>({});
 
@@ -512,6 +516,30 @@ export default function PayrollValidationDashboard() {
         // Closure state unknown: stay on the current month rather than guess,
         // and leave the ref unset so a later re-run (e.g. the next auth
         // callback) can retry instead of getting stuck.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile]);
+
+  useEffect(() => {
+    if (!profile || !['super_admin', 'finance_verifier'].includes(profile.role)) {
+      return;
+    }
+    let cancelled = false;
+    getDocs(collection(db, 'SatpamShiftTeams'))
+      .then((snapshot) => {
+        if (cancelled) return;
+        setKetuaShiftIds(
+          new Set(
+            snapshot.docs
+              .map((teamDoc) => String(teamDoc.data().ketuaShiftId || '').trim())
+              .filter(Boolean),
+          ),
+        );
+      })
+      .catch((err) => {
+        console.error('Error fetching Satpam shift teams:', err);
       });
     return () => {
       cancelled = true;
@@ -751,7 +779,8 @@ export default function PayrollValidationDashboard() {
 
       const totalEarnings = earningsList.reduce((sum, e) => sum + e.amount, 0);
       const totalDeductions = deductionsList.reduce((sum, d) => sum + d.amount, 0);
-      const netSalary = totalEarnings - totalDeductions;
+      const totalTax = (freshData.taxes || []).reduce((sum, t) => sum + t.amount, 0);
+      const netSalary = totalEarnings - totalDeductions - totalTax;
 
       return {
         no: idx + 1,
@@ -766,6 +795,7 @@ export default function PayrollValidationDashboard() {
         deductionsMap: deductionsList.reduce((acc, curr) => ({ ...acc, [curr.label]: curr.amount }), {} as Record<string, number>),
         totalEarnings,
         totalDeductions,
+        totalTax,
         netSalary
       };
     });
@@ -785,6 +815,7 @@ export default function PayrollValidationDashboard() {
       'TOTAL PENDAPATAN',
       ...deductionLabels,
       'TOTAL POTONGAN',
+      'TOTAL PAJAK',
       'GAJI BERSIH'
     ];
 
@@ -812,6 +843,7 @@ export default function PayrollValidationDashboard() {
       });
 
       dataRow.push(row.totalDeductions);
+      dataRow.push(row.totalTax);
       dataRow.push(row.netSalary);
 
       dataRows.push(dataRow);
@@ -840,6 +872,7 @@ export default function PayrollValidationDashboard() {
     });
 
     totalRow.push(rowsData.reduce((acc, curr) => acc + curr.totalDeductions, 0));
+    totalRow.push(rowsData.reduce((acc, curr) => acc + curr.totalTax, 0));
     totalRow.push(rowsData.reduce((acc, curr) => acc + curr.netSalary, 0));
 
     const periodString = getPayrollPeriod(targetDate);
@@ -1043,6 +1076,7 @@ export default function PayrollValidationDashboard() {
         totalEarnings: 0,
         deductions: deductionsInit,
         totalDeductions: 0,
+        totalTax: 0,
         netSalary: 0,
       };
     });
@@ -1071,11 +1105,15 @@ export default function PayrollValidationDashboard() {
         }
       });
 
-      const netSalary = earnings - totalDeductions;
+      // Tax reduces the transferred figure, so a rekap that ignored it would
+      // overstate every category's Gaji Bersih.
+      const totalTax = (freshData.taxes || []).reduce((sum, t) => sum + t.amount, 0);
+      const netSalary = earnings - totalDeductions - totalTax;
 
       if (categoriesMap[cat]) {
         categoriesMap[cat].totalEarnings += earnings;
         categoriesMap[cat].totalDeductions += totalDeductions;
+        categoriesMap[cat].totalTax += totalTax;
         categoriesMap[cat].netSalary += netSalary;
 
         allDeductionKeys.forEach(key => {
@@ -1133,7 +1171,8 @@ export default function PayrollValidationDashboard() {
       const freshData = buildFreshSlipData(emp);
       const totalEarnings = freshData.earnings.reduce((sum, e) => sum + e.amount, 0);
       const totalDeductions = (freshData.deductions || []).reduce((sum, d) => sum + d.amount, 0);
-      const netSalary = totalEarnings - totalDeductions;
+      const totalTax = (freshData.taxes || []).reduce((sum, t) => sum + t.amount, 0);
+      const netSalary = totalEarnings - totalDeductions - totalTax;
 
       totalNetSalary += netSalary;
 
@@ -1227,9 +1266,16 @@ export default function PayrollValidationDashboard() {
     // If there is already a saved slip state, return its saved earnings and deductions
     const savedSlip = slipStates[emp.id];
     if (savedSlip && Array.isArray(savedSlip.earnings)) {
+      const savedEarnings = emp.raw.employment?.jobCategory === 'SATPAM'
+        ? mergeSatpamLegacyBonusIntoTunjangan(savedSlip.earnings)
+        : savedSlip.earnings;
+      const savedDeductions = savedSlip.deductions || [];
       return {
-        earnings: savedSlip.earnings,
-        deductions: savedSlip.deductions || [],
+        earnings: savedEarnings,
+        deductions: savedDeductions,
+        // The stored amount is never trusted: the 5% is re-derived from the
+        // rows actually being displayed, the same way the server does.
+        taxes: recalculateSlipTaxes(savedSlip, savedEarnings, savedDeductions),
       };
     }
 
@@ -1271,7 +1317,9 @@ export default function PayrollValidationDashboard() {
           koperasiSavings[emp.id] || 0,
         );
 
-    return { earnings, deductions };
+    // An unsaved slip has no tax: the selection is a deliberate super-admin
+    // action recorded on the saved draft, never inferred from a preview.
+    return { earnings, deductions, taxes: [] as PaySlipField[] };
   };
 
   /**
@@ -1286,7 +1334,11 @@ export default function PayrollValidationDashboard() {
    */
   const buildPaySlipDocument = (
     emp: EmployeeRow,
-    fields: { earnings: PaySlipField[]; deductions: PaySlipField[] },
+    fields: {
+      earnings: PaySlipField[];
+      deductions: PaySlipField[];
+      taxes?: PaySlipField[];
+    },
   ): PaySlipData => {
     const isLoyalis = payrollCollar === 'loyalis';
     const creditVal = Number(emp.raw.kepangkatan?.cummulativeCredit) || 0;
@@ -1302,6 +1354,7 @@ export default function PayrollValidationDashboard() {
         : `VAKASI ${emp.raw.employment?.jobCategory || ''}`,
       earnings: fields.earnings,
       deductions: fields.deductions,
+      taxes: fields.taxes || [],
       isLoyalis,
       niy: isLoyalis ? emp.raw.personal_info?.employee_id_niy || '' : '',
       npwp: isLoyalis ? emp.raw.personal_info?.tax_id_npwp || '' : '',
@@ -1411,11 +1464,13 @@ export default function PayrollValidationDashboard() {
           const dataB = buildFreshSlipData(b);
           const earningsA = dataA.earnings.reduce((sum, e) => sum + e.amount, 0);
           const deductionsA = dataA.deductions.reduce((sum, d) => sum + d.amount, 0);
-          aValue = earningsA - deductionsA;
+          const taxA = (dataA.taxes || []).reduce((sum, t) => sum + t.amount, 0);
+          aValue = earningsA - deductionsA - taxA;
 
           const earningsB = dataB.earnings.reduce((sum, e) => sum + e.amount, 0);
           const deductionsB = dataB.deductions.reduce((sum, d) => sum + d.amount, 0);
-          bValue = earningsB - deductionsB;
+          const taxB = (dataB.taxes || []).reduce((sum, t) => sum + t.amount, 0);
+          bValue = earningsB - deductionsB - taxB;
           break;
         }
         default:
@@ -1442,21 +1497,25 @@ export default function PayrollValidationDashboard() {
   const payrollTotals = useMemo(() => {
     let totalGross = 0;
     let totalDeductions = 0;
+    let totalTax = 0;
     let totalNet = 0;
 
     displayEmployees.forEach((emp) => {
       const freshData = buildFreshSlipData(emp);
       const earnings = freshData.earnings.reduce((sum, e) => sum + e.amount, 0);
       const deductions = freshData.deductions.reduce((sum, d) => sum + d.amount, 0);
+      const tax = (freshData.taxes || []).reduce((sum, t) => sum + t.amount, 0);
 
       totalGross += earnings;
       totalDeductions += deductions;
-      totalNet += (earnings - deductions);
+      totalTax += tax;
+      totalNet += (earnings - deductions - tax);
     });
 
     return {
       totalGross,
       totalDeductions,
+      totalTax,
       totalNet
     };
   }, [
@@ -1574,6 +1633,8 @@ export default function PayrollValidationDashboard() {
               status: status,
               earnings: data.earnings || [],
               deductions: data.deductions || [],
+              taxes: normalizeTaxFields(data.taxes),
+              taxApplied: data.taxApplied,
               generatedAt: data.generatedAt,
               lockedAt: data.lockedAt || data.confirmedAt,
               emailSent: data.emailSent || false,
@@ -1726,10 +1787,7 @@ export default function PayrollValidationDashboard() {
     setUploadingWa(prev => ({ ...prev, [emp.id]: true }));
 
     try {
-      const freshData = {
-        earnings: slip.earnings,
-        deductions: slip.deductions || [],
-      };
+      const freshData = buildFreshSlipData(emp);
       const slipData = buildPaySlipDocument(emp, freshData);
 
       let pdfUrl: string | undefined = undefined;
@@ -1774,7 +1832,8 @@ export default function PayrollValidationDashboard() {
       // 2. Generate WhatsApp prefilled message with PDF URL included (or undefined if failed)
       const totalEarnings = freshData.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
       const totalDeductions = freshData.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
-      const netSalary = totalEarnings - totalDeductions;
+      const totalTax = (freshData.taxes || []).reduce((sum: number, t: any) => sum + t.amount, 0);
+      const netSalary = totalEarnings - totalDeductions - totalTax;
 
       const waUrl = generateWhatsAppPaySlipUrl(
         phone,
@@ -1783,7 +1842,8 @@ export default function PayrollValidationDashboard() {
         freshData.earnings,
         freshData.deductions,
         netSalary,
-        pdfUrl
+        pdfUrl,
+        freshData.taxes || [],
       );
 
       if (newTab) {
@@ -1817,10 +1877,7 @@ export default function PayrollValidationDashboard() {
     setSendingSingleEmail(true);
 
     try {
-      const freshData = {
-        earnings: slip.earnings || [],
-        deductions: slip.deductions || [],
-      };
+      const freshData = buildFreshSlipData(emp);
       const slipData = buildPaySlipDocument(emp, freshData);
 
       const pdfDoc = generatePaySlipPdf(slipData, false);
@@ -1829,7 +1886,8 @@ export default function PayrollValidationDashboard() {
       // 2. Format a clean text breakdown
       const totalEarnings = freshData.earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
       const totalDeductions = freshData.deductions.reduce((sum: number, d: any) => sum + d.amount, 0);
-      const netSalary = totalEarnings - totalDeductions;
+      const totalTax = (freshData.taxes || []).reduce((sum: number, t: any) => sum + t.amount, 0);
+      const netSalary = totalEarnings - totalDeductions - totalTax;
 
       const formatIDR = (amount: number): string => {
         return new Intl.NumberFormat('id-ID', {
@@ -1855,6 +1913,15 @@ export default function PayrollValidationDashboard() {
       } else {
         textBreakdown += `• Tidak ada potongan\n\n`;
       }
+
+      if (totalTax > 0) {
+        textBreakdown += `PAJAK:\n`;
+        (freshData.taxes || []).forEach((t: any) => {
+          textBreakdown += `• ${t.label}: ${formatIDR(t.amount)}\n`;
+        });
+        textBreakdown += `Total Pajak: ${formatIDR(totalTax)}\n\n`;
+      }
+
       textBreakdown += `GAJI BERSIH (Diterima): ${formatIDR(netSalary)}`;
 
       // 3. Post to backend API
@@ -1976,10 +2043,9 @@ export default function PayrollValidationDashboard() {
       return;
     }
 
-    const slipsToDraw: PaySlipData[] = lockedEmployees.map(emp => buildPaySlipDocument(emp, {
-      earnings: slipStates[emp.id].earnings,
-      deductions: slipStates[emp.id].deductions || [],
-    }));
+    const slipsToDraw: PaySlipData[] = lockedEmployees.map(emp =>
+      buildPaySlipDocument(emp, buildFreshSlipData(emp)),
+    );
 
     const categoryLabel = isLoyalis ? 'Staf_Loyalis' : `Vakasi_${categoryFilter !== 'all' ? categoryFilter : 'Pekarya'}`;
     const filename = `Multi_Slip_Gaji_${categoryLabel}_${payrollPeriod.replace(/\s+/g, '_')}.pdf`;
@@ -1988,7 +2054,12 @@ export default function PayrollValidationDashboard() {
     generateMultiPaySlipPdf(slipsToDraw, filename, true);
   };
 
-  const handleSlipSave = async (employeeId: string, earnings: PaySlipField[], deductions: PaySlipField[]) => {
+  const handleSlipSave = async (
+    employeeId: string,
+    earnings: PaySlipField[],
+    deductions: PaySlipField[],
+    taxApplied: boolean,
+  ) => {
     if (attendancePeriodStatus === 'closed') {
       throw new Error('Periode payroll sudah ditutup; draf tidak dapat diubah.');
     }
@@ -2016,6 +2087,8 @@ export default function PayrollValidationDashboard() {
       const period = `${targetDate.getFullYear()}_${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
       const result = await authenticatedJson<{
         koperasiPlan?: { loanCount: number; expectedDeduction: number; matchType: string };
+        taxes?: PaySlipField[];
+        taxApplied?: boolean;
       }>('/api/payroll/slips', {
         method: 'POST',
         body: JSON.stringify({
@@ -2025,12 +2098,17 @@ export default function PayrollValidationDashboard() {
           requestId: createFinancialRequestId('save_draft'),
           earnings,
           deductions,
+          taxApplied,
         }),
       });
       const newState: SlipState = {
         status: 'draft',
         earnings: [...earnings],
         deductions: [...deductions],
+        // The server derives the tax amount, so its rows — not the client's
+        // selection — are what the dashboard shows from here on.
+        taxes: normalizeTaxFields(result.taxes),
+        taxApplied: result.taxApplied,
         generatedAt: new Date().toISOString(),
       };
       setSlipStates(prev => ({ ...prev, [employeeId]: newState }));
@@ -2715,21 +2793,32 @@ export default function PayrollValidationDashboard() {
           }
         });
 
-        await authenticatedJson('/api/payroll/slips', {
-          method: 'POST',
-          body: JSON.stringify({
-            action: 'save_draft',
-            employeeId: change.employeeId,
-            period,
-            requestId: createFinancialRequestId('bulk_refresh'),
-            earnings: mergedEarnings,
-            deductions: mergedDeductions,
-          }),
-        });
+        // No taxApplied is sent: a bulk refresh must not change who is
+        // taxed. The server keeps the slip's existing selection and re-derives
+        // the amount against the rows written here.
+        const result = await authenticatedJson<{
+          taxes?: PaySlipField[];
+          taxApplied?: boolean;
+        }>(
+          '/api/payroll/slips',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'save_draft',
+              employeeId: change.employeeId,
+              period,
+              requestId: createFinancialRequestId('bulk_refresh'),
+              earnings: mergedEarnings,
+              deductions: mergedDeductions,
+            }),
+          },
+        );
         newSlipStates[change.employeeId] = {
           status: 'draft',
           earnings: mergedEarnings,
           deductions: mergedDeductions,
+          taxes: normalizeTaxFields(result.taxes),
+          taxApplied: result.taxApplied,
           generatedAt: new Date().toISOString(),
           emailSent: slipStates[change.employeeId]?.emailSent || false,
           emailSentAt: slipStates[change.employeeId]?.emailSentAt || undefined,
@@ -3104,6 +3193,8 @@ export default function PayrollValidationDashboard() {
             matchType: string;
             repairedDeduction?: number | null;
           };
+          taxes?: PaySlipField[];
+          taxApplied?: boolean;
         }>('/api/payroll/slips', {
           method: 'POST',
           body: JSON.stringify({
@@ -3130,6 +3221,8 @@ export default function PayrollValidationDashboard() {
           status: 'draft',
           earnings: draftData.earnings,
           deductions,
+          taxes: normalizeTaxFields(result.taxes),
+          taxApplied: result.taxApplied,
           generatedAt: new Date().toISOString(),
         };
       } catch (error) {
@@ -3513,6 +3606,16 @@ export default function PayrollValidationDashboard() {
                     </span>
                   </div>
                   <div>
+                    <span className="text-slate-500 block mb-1">Total Pajak</span>
+                    <span className="font-medium text-amber-600">
+                      {loading
+                        ? '...'
+                        : pekaryaTotalsUnavailable
+                          ? '—'
+                          : formatIDR(payrollTotals.totalTax)}
+                    </span>
+                  </div>
+                  <div>
                     <span className="text-slate-500 block mb-1">Total Gaji Bersih</span>
                     <span className="font-bold text-indigo-600">
                       {loading
@@ -3714,6 +3817,9 @@ export default function PayrollValidationDashboard() {
                         <SortIcon active={sortConfig.key === 'deductions'} direction={sortConfig.direction} />
                       </div>
                     </TableHead>
+                    <TableHead className="font-medium text-slate-500 whitespace-nowrap">
+                      Pajak
+                    </TableHead>
                     <TableHead className="font-medium text-slate-500 cursor-pointer hover:text-indigo-600 transition-colors whitespace-nowrap" onClick={() => handleSort('net')}>
                       <div className="flex items-center gap-1">
                         Gaji Bersih
@@ -3736,7 +3842,8 @@ export default function PayrollValidationDashboard() {
                     const freshData = buildFreshSlipData(emp);
                     const totalEarnings = freshData.earnings.reduce((sum, e) => sum + e.amount, 0);
                     const totalDeductions = freshData.deductions.reduce((sum, d) => sum + d.amount, 0);
-                    const netSalary = totalEarnings - totalDeductions;
+                    const totalTax = (freshData.taxes || []).reduce((sum, t) => sum + t.amount, 0);
+                    const netSalary = totalEarnings - totalDeductions - totalTax;
 
                     return (
                       <TableRow 
@@ -3781,6 +3888,9 @@ export default function PayrollValidationDashboard() {
                         </TableCell>
                         <TableCell className="py-4 text-slate-600">
                           {previewUnavailable ? '—' : formatIDR(totalDeductions)}
+                        </TableCell>
+                        <TableCell className={`py-4 ${totalTax > 0 ? 'text-amber-600 font-semibold' : 'text-slate-400'}`}>
+                          {previewUnavailable ? '—' : totalTax > 0 ? formatIDR(totalTax) : '—'}
                         </TableCell>
                         <TableCell className="py-4 font-bold text-indigo-700">
                           {previewUnavailable ? '—' : formatIDR(netSalary)}
@@ -3895,6 +4005,7 @@ export default function PayrollValidationDashboard() {
         slipStates={slipStates}
         koperasiDeductions={koperasiDeductions}
         koperasiSavings={koperasiSavings}
+        ketuaShiftIds={ketuaShiftIds}
         getLoyalisPresenceBonus={getLoyalisPresenceBonus}
         getLoyalisPresenceDeduction={getLoyalisPresenceDeduction}
         getLoyalisPresensiEarning={getLoyalisPresensiEarning}

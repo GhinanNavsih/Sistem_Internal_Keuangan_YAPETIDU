@@ -5,6 +5,7 @@ import {
   previousPayrollPeriodToken,
   validateMoneyFields,
 } from '@/lib/payroll/domain';
+import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { EMPLOYEE_PROFILE_EDITOR_ROLES } from '@/lib/payroll/roles';
 import {
   buildInitialDeductions,
@@ -305,9 +306,15 @@ export async function POST(request: NextRequest) {
           'deductions',
         );
 
+        const taxes = recalculateSlipTaxes(
+          before,
+          earningsMerge.merged,
+          deductionsMerge.merged,
+        );
         const totals = calculatePayrollTotals(
           earningsMerge.merged,
           deductionsMerge.merged,
+          taxes,
         );
         const timestamp = admin.firestore.FieldValue.serverTimestamp();
         const after = {
@@ -317,6 +324,7 @@ export async function POST(request: NextRequest) {
           status: 'draft',
           earnings: earningsMerge.merged,
           deductions: deductionsMerge.merged,
+          taxes,
           ...totals,
           revision: Number(before?.revision || 0) + 1,
           generatedAt: before?.generatedAt || timestamp,

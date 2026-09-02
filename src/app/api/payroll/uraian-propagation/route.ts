@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import type { RekapColumn, UraianEntry } from '@/types';
 import { calculatePayrollTotals, validateMoneyFields } from '@/lib/payroll/domain';
+import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { URAIAN_EDITOR_ROLES } from '@/lib/payroll/roles';
 import {
   buildInitialDeductions,
@@ -22,6 +23,10 @@ import {
   uraianOwnedEarningPredicate,
   type LoyalisPresenceDocument,
 } from '@/lib/payroll/uraianPropagation';
+import {
+  isSatpamLegacyBonusColumn,
+  normalizeSatpamUraianEntry,
+} from '@/lib/payroll/satpamCompensation';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
@@ -116,17 +121,30 @@ function assertCategoryAllowed(actor: AuthenticatedProfile, command: Propagation
 
 /** Blue-collar targets, built from the saved Uraian rekap entries. */
 async function collectPekaryaTargets(command: PropagationCommand): Promise<SlipTarget[]> {
-  const uraianSnapshot = await adminDb
-    .collection('UraianGaji')
-    .doc(`${command.periodKey}_${command.jobCategory}`)
-    .get();
+  const [uraianSnapshot, teamSnapshot] = await Promise.all([
+    adminDb
+      .collection('UraianGaji')
+      .doc(`${command.periodKey}_${command.jobCategory}`)
+      .get(),
+    command.jobCategory === 'SATPAM'
+      ? adminDb.collection('SatpamShiftTeams').get()
+      : Promise.resolve(null),
+  ]);
   if (!uraianSnapshot.exists) return [];
 
   const data = uraianSnapshot.data() || {};
   const entries = (data.entries || {}) as Record<string, UraianEntry | undefined>;
-  const customColumns = Array.isArray(data.customColumns)
+  const customColumns = (Array.isArray(data.customColumns)
     ? (data.customColumns as RekapColumn[])
-    : [];
+    : []).filter(
+      (column) =>
+        command.jobCategory !== 'SATPAM' || !isSatpamLegacyBonusColumn(column),
+    );
+  const ketuaShiftIds = new Set(
+    (teamSnapshot?.docs || [])
+      .map((snapshot) => String(snapshot.data()?.ketuaShiftId || '').trim())
+      .filter(Boolean),
+  );
 
   // Only the rekap-owned rows survive the merge, so the builder is fed a
   // minimal employee: the job category is all it needs to resolve columns, and
@@ -137,15 +155,23 @@ async function collectPekaryaTargets(command: PropagationCommand): Promise<SlipT
   const targets: SlipTarget[] = [];
   for (const [employeeId, entry] of Object.entries(entries)) {
     if (!entry || !/^[A-Za-z0-9_-]{1,128}$/.test(employeeId)) continue;
+    const effectiveEntry =
+      command.jobCategory === 'SATPAM'
+        ? normalizeSatpamUraianEntry(entry, ketuaShiftIds.has(employeeId))
+        : entry;
     targets.push({
       employeeId,
-      earningsOwned: uraianOwnedEarningPredicate(command.jobCategory, entry, customColumns),
+      earningsOwned: uraianOwnedEarningPredicate(
+        command.jobCategory,
+        effectiveEntry,
+        customColumns,
+      ),
       deductionsOwned: () => false,
       freshEarnings: buildInitialEarnings(
         minimalEmployee,
         0,
         'blue',
-        entry,
+        effectiveEntry,
         0,
         [],
         0,
@@ -333,7 +359,18 @@ export async function POST(request: NextRequest) {
             target.deductionsOwned,
           );
 
-          const totals = calculatePayrollTotals(earningsMerge.merged, deductionsMerge.merged);
+          // The rekap owns earnings and deductions; the tax rides on both,
+          // so it is re-derived from the merged rows instead of carried over.
+          const taxes = recalculateSlipTaxes(
+            before,
+            earningsMerge.merged,
+            deductionsMerge.merged,
+          );
+          const totals = calculatePayrollTotals(
+            earningsMerge.merged,
+            deductionsMerge.merged,
+            taxes,
+          );
           const timestamp = admin.firestore.FieldValue.serverTimestamp();
           transaction.set(slipRef, {
             ...before,
@@ -342,6 +379,7 @@ export async function POST(request: NextRequest) {
             status: 'draft',
             earnings: earningsMerge.merged,
             deductions: deductionsMerge.merged,
+            taxes,
             ...totals,
             revision: Number(before?.revision || 0) + 1,
             generatedAt: before?.generatedAt || timestamp,

@@ -5,6 +5,7 @@ import {
   isTransferEligibleStatus,
   type PayrollSlipStateDocument,
 } from '@/lib/payroll/domain';
+import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { FINANCE_ROLES } from '@/lib/payroll/roles';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
@@ -33,6 +34,7 @@ async function getPayrollEmployee(employeeId: string) {
       return {
         name: String(data.name || data.personal_info?.name || ''),
         email: String(data.email || data.personal_info?.email || ''),
+        jobCategory: String(data.employment?.jobCategory || ''),
       };
     }
   }
@@ -86,7 +88,10 @@ export async function POST(request: NextRequest) {
     if (!pdfBase64) {
       throw new HttpError(400, 'Lampiran PDF slip final wajib disertakan.');
     }
-    const totalEarnings = Number(slip.totalEarnings) || (slip.earnings || []).reduce(
+    const earnings = employee.jobCategory === 'SATPAM'
+      ? mergeSatpamLegacyBonusIntoTunjangan(slip.earnings || [])
+      : slip.earnings || [];
+    const totalEarnings = Number(slip.totalEarnings) || earnings.reduce(
       (sum, item) => sum + Number(item.amount || 0),
       0,
     );
@@ -94,9 +99,13 @@ export async function POST(request: NextRequest) {
       (sum, item) => sum + Number(item.amount || 0),
       0,
     );
-    const netSalary = totalEarnings - totalDeductions;
+    // Tax is its own category on the slip, so the emailed summary lists it
+    // separately and subtracts it from the transferred figure.
+    const taxes = slip.taxes || [];
+    const totalTax = taxes.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const netSalary = totalEarnings - totalDeductions - totalTax;
     const formatIDR = (amount: number) => `Rp${amount.toLocaleString('id-ID')}`;
-    const earningsText = (slip.earnings || [])
+    const earningsText = earnings
       .map((item: { label?: string; amount?: number }) =>
         `• ${String(item.label || '')}: ${formatIDR(Number(item.amount || 0))}`)
       .join('\n');
@@ -106,9 +115,16 @@ export async function POST(request: NextRequest) {
             `• ${String(item.label || '')}: ${formatIDR(Number(item.amount || 0))}`)
           .join('\n')
       : '• Tidak ada potongan';
+    const taxText = taxes.length
+      ? `PAJAK:\n${taxes
+          .map((item: { label?: string; amount?: number }) =>
+            `• ${String(item.label || '')}: ${formatIDR(Number(item.amount || 0))}`)
+          .join('\n')}\nTotal Pajak: ${formatIDR(totalTax)}\n\n`
+      : '';
     const textBreakdown =
       `PENDAPATAN:\n${earningsText}\nTotal Pendapatan: ${formatIDR(totalEarnings)}\n\n` +
       `POTONGAN:\n${deductionsText}\nTotal Potongan: ${formatIDR(totalDeductions)}\n\n` +
+      taxText +
       `GAJI BERSIH (Diterima): ${formatIDR(netSalary)}`;
 
     deliveryRef = adminDb

@@ -16,6 +16,12 @@ import {
 } from '@/lib/payroll/pekaryaSpj';
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
 import {
+  calculateTaxBase,
+  describeTaxIneligibility,
+  resolveSlipTaxes,
+  resolveTaxSelection,
+} from '@/lib/payroll/payrollTax';
+import {
   resolveGapokFromMatrix,
   toSlipEmployeeView,
 } from '@/lib/payroll/salaryMatrix';
@@ -28,6 +34,7 @@ import {
   loadActiveSalaryMatrix,
 } from '@/lib/server/pekaryaSlipPreview';
 import { isPayrollEmployeeEligible } from '@/lib/payroll/payrollRoster';
+import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { DRIFT_NOTICES_COLLECTION } from '@/lib/payroll/slipPropagation';
 import {
   canOperatePayments,
@@ -71,6 +78,13 @@ interface PayrollCommand {
   reason?: string;
   earnings?: unknown;
   deductions?: unknown;
+  /**
+   * Whether this employee is selected for income tax. Omitted by every caller
+   * that is not changing the selection (bulk refresh, draft repair), in which
+   * case the stored slip's own selection carries forward. The tax *amount* is
+   * never sent — it is derived server-side from the rows being saved.
+   */
+  taxApplied?: boolean;
   paymentBatchId?: string;
   bankReference?: string;
 }
@@ -100,6 +114,9 @@ function parseCommand(raw: unknown): PayrollCommand {
     !/^[A-Za-z0-9_-]{8,128}$/.test(command.requestId)
   ) {
     throw new HttpError(400, 'employeeId, period, atau requestId tidak valid.');
+  }
+  if (command.taxApplied !== undefined && typeof command.taxApplied !== 'boolean') {
+    throw new HttpError(400, 'taxApplied tidak valid.');
   }
   return command as PayrollCommand;
 }
@@ -499,7 +516,16 @@ export async function POST(request: NextRequest) {
               `Slip berstatus ${before.status}; hanya draf yang dapat diubah.`,
             );
           }
-          const earnings = validateMoneyFields(effectiveCommand.earnings, 'earnings');
+          const validatedEarnings = validateMoneyFields(
+            effectiveCommand.earnings,
+            'earnings',
+          );
+          const isSatpam =
+            blueEmployeeSnapshot.exists &&
+            blueEmployeeSnapshot.data()?.employment?.jobCategory === 'SATPAM';
+          const earnings = isSatpam
+            ? mergeSatpamLegacyBonusIntoTunjangan(validatedEarnings)
+            : validatedEarnings;
           const deductions = validateMoneyFields(effectiveCommand.deductions, 'deductions');
           // A slip being created for the first time must carry exactly the
           // matrix's Gaji Pokok. Drafts that already exist keep whatever
@@ -602,13 +628,39 @@ export async function POST(request: NextRequest) {
               );
             }
           }
-          const totals = calculatePayrollTotals(earnings, deductions);
+          // Tax is its own category: the client sends only the selection,
+          // never an amount, so a tax row can only ever be exactly 5% of the
+          // Gaji Bersih implied by the very rows being written here. Omitting
+          // the flag preserves whatever selection the slip already had.
+          const previousTaxApplied = resolveTaxSelection(before);
+          const taxApplied = effectiveCommand.taxApplied ?? previousTaxApplied;
+          if (taxApplied !== previousTaxApplied && actor.role !== 'super_admin') {
+            throw new HttpError(
+              403,
+              'Hanya Super Admin yang dapat menerapkan atau menghapus pajak penghasilan.',
+            );
+          }
+          const taxes = resolveSlipTaxes(earnings, deductions, taxApplied);
+          // Only *newly* selecting an ineligible slip is an error. A selection
+          // that was already there simply produces no row while the base sits
+          // under the threshold, and gets it back when the base recovers —
+          // a bulk refresh or a propagation must never fail over that.
+          if (taxApplied && !previousTaxApplied && taxes.length === 0) {
+            throw new HttpError(
+              409,
+              describeTaxIneligibility(calculateTaxBase(earnings, deductions)) ||
+                'Slip ini tidak memenuhi syarat pajak penghasilan.',
+            );
+          }
+          const totals = calculatePayrollTotals(earnings, deductions, taxes);
           after = {
             employeeId: command.employeeId,
             period: command.period,
             status: 'draft',
             earnings,
             deductions,
+            taxes,
+            taxApplied,
             ...totals,
             revision: Number(before?.revision || 0) + 1,
             generatedAt: before?.generatedAt || now,
@@ -792,6 +844,16 @@ export async function POST(request: NextRequest) {
         slipId,
         status: after.status,
         idempotent: false,
+        // The tax rows the server actually derived, so the dashboard's local
+        // slip state matches Firestore without a re-read.
+        ...(isDraftWriteAction(command.action)
+          ? {
+              taxes: after.taxes,
+              taxApplied: after.taxApplied,
+              totalTax: after.totalTax,
+              netSalary: after.netSalary,
+            }
+          : {}),
         ...(isDraftWriteAction(command.action) && koperasiInstallmentPlan
           ? {
               koperasiPlan: {

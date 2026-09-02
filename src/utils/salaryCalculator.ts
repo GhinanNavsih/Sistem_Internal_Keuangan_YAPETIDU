@@ -1,5 +1,6 @@
 import { BlueCollarEmployee, UraianEntry } from '@/types';
 import { REKAP_COLUMNS, computeSlipAmount } from '@/utils/rekapConfig';
+import { normalizeSatpamUraianEntry } from '@/lib/payroll/satpamCompensation';
 
 /**
  * Calculates the total structural allowance based on the descending-halving rules.
@@ -105,19 +106,27 @@ export function calculateTotalEarnings(
 
   let total = gapok;
   const jobCategory = emp.employment?.jobCategory || '';
+  const effectiveUraian =
+    jobCategory === 'SATPAM' && uraian
+      ? normalizeSatpamUraianEntry(uraian, false)
+      : uraian;
   const columns = REKAP_COLUMNS[jobCategory] || REKAP_COLUMNS.KEBERSIHAN;
 
-  if (columns && uraian) {
+  if (columns && effectiveUraian) {
     const processedKeys = new Set<string>();
     for (const col of columns) {
       if (col.slipLabel) {
         // If it's a count column and we have the raw count, compute it.
         // Otherwise, use the value from the values map (which is already a nominal currency amount).
         let amount = 0;
-        if (col.type === 'count' && uraian.counts && uraian.counts[col.key] !== undefined) {
-          amount = computeSlipAmount(col, uraian.counts[col.key]);
+        if (
+          col.type === 'count' &&
+          effectiveUraian.counts &&
+          effectiveUraian.counts[col.key] !== undefined
+        ) {
+          amount = computeSlipAmount(col, effectiveUraian.counts[col.key]);
         } else {
-          amount = uraian.values[col.key] ?? 0;
+          amount = effectiveUraian.values[col.key] ?? 0;
         }
         total += amount;
         processedKeys.add(col.key);
@@ -125,8 +134,8 @@ export function calculateTotalEarnings(
     }
 
     // Automatically include any custom dynamic columns in the total earnings calculation!
-    if (uraian.values) {
-      Object.entries(uraian.values).forEach(([key, amount]) => {
+    if (effectiveUraian.values) {
+      Object.entries(effectiveUraian.values).forEach(([key, amount]) => {
         if (!processedKeys.has(key) && key !== 'employeeId' && key !== 'name') {
           total += amount;
         }
@@ -188,7 +197,10 @@ export function calculateTotalDeductions(
 }
 
 /**
- * Calculates net salary.
+ * Gaji Bersih *before* income tax — the figure the 5% payroll tax is charged
+ * on, not the take-home amount. A slip that carries tax rows must subtract
+ * `totalTax` on top of this; `calculatePayrollTotals` in
+ * @/lib/payroll/domain does that in one place and should be preferred.
  */
 export function calculateNetSalary(earnings: number, deductions: number): number {
   return earnings - deductions;

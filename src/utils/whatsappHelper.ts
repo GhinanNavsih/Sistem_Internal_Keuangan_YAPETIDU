@@ -78,7 +78,9 @@ export function generateWhatsAppPaySlipUrl(
   earnings: PaySlipField[],
   deductions: PaySlipField[],
   netSalary: number,
-  pdfUrl?: string
+  pdfUrl?: string,
+  /** Income tax rows — listed as their own block, never inside Potongan. */
+  taxes: PaySlipField[] = [],
 ): string {
   const cleanPhone = sanitizePhoneNumber(phone);
   
@@ -92,6 +94,7 @@ export function generateWhatsAppPaySlipUrl(
 
   const totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
   const totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
+  const totalTax = taxes.reduce((sum, t) => sum + t.amount, 0);
 
   // Format the WhatsApp message with markdown styling
   let text = `*SLIP GAJI YAPETIDU - ${period.toUpperCase()}*\n\n`;
@@ -111,6 +114,14 @@ export function generateWhatsAppPaySlipUrl(
     text += `*Total Potongan: ${formatIDR(totalDeductions)}*\n\n`;
   } else {
     text += `• Tidak ada potongan\n\n`;
+  }
+
+  if (totalTax > 0) {
+    text += `*PAJAK:*\n`;
+    taxes.forEach(t => {
+      text += `• ${t.label}: ${formatIDR(t.amount)}\n`;
+    });
+    text += `*Total Pajak: ${formatIDR(totalTax)}*\n\n`;
   }
 
   text += `----------------------------------------\n`;

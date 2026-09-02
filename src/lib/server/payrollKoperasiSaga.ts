@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { calculatePayrollTotals, validateMoneyFields } from '@/lib/payroll/domain';
+import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { canVerifyPayroll } from '@/lib/payroll/roles';
+import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import { AuthenticatedProfile, HttpError } from '@/lib/server/auth';
 import {
@@ -281,12 +283,13 @@ export async function verifyAndLockWithKoperasi(
   }
 
   return adminDb.runTransaction(async (transaction) => {
-    const [slipSnapshot, periodSnapshot, operationSnapshot, idempotencySnapshot] =
+    const [slipSnapshot, periodSnapshot, operationSnapshot, idempotencySnapshot, blueSnapshot] =
       await Promise.all([
         transaction.get(slipRef),
         transaction.get(periodRef),
         transaction.get(operationRef),
         transaction.get(idempotencyRef),
+        transaction.get(blueRef),
       ]);
     if (idempotencySnapshot.exists) {
       const previous = idempotencySnapshot.data()!;
@@ -334,16 +337,28 @@ export async function verifyAndLockWithKoperasi(
     ) {
       throw new HttpError(409, 'Receipt Koperasi tidak cocok dengan draf yang disegel.');
     }
-    const earnings = validateMoneyFields(before.earnings, 'earnings');
+    const validatedEarnings = validateMoneyFields(before.earnings, 'earnings');
+    const isSatpam =
+      blueSnapshot.exists &&
+      blueSnapshot.data()?.employment?.jobCategory === 'SATPAM';
+    const earnings = isSatpam
+      ? mergeSatpamLegacyBonusIntoTunjangan(validatedEarnings)
+      : validatedEarnings;
     const deductions = validateMoneyFields(before.deductions, 'deductions');
-    const totals = calculatePayrollTotals(earnings, deductions);
+    // Sealing re-derives the tax from the rows being sealed, so the locked
+    // snapshot's hash covers a Gaji Bersih that is internally consistent.
+    const taxes = recalculateSlipTaxes(before, earnings, deductions);
+    const totals = calculatePayrollTotals(earnings, deductions, taxes);
     const now = admin.firestore.FieldValue.serverTimestamp();
     const immutableSnapshot = {
-      schemaVersion: 4,
+      // v5 adds the `taxes` category and its `totalTax`; a v4 snapshot has
+      // neither and its netSalary is the pre-tax figure by definition.
+      schemaVersion: 5,
       employeeId: before.employeeId,
       period: before.period,
       earnings,
       deductions,
+      taxes,
       ...totals,
       koperasiInstallmentPlan: plan,
       koperasiProgressionReceipt: receipt,
@@ -357,6 +372,7 @@ export async function verifyAndLockWithKoperasi(
       status: 'locked',
       earnings,
       deductions,
+      taxes,
       ...totals,
       koperasiProgressionReceipt: receipt,
       verifiedAt: now,

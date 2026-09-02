@@ -26,7 +26,6 @@ export const REKAP_COLUMNS: Record<string, RekapColumn[]> = {
     { key: 'lemburCover',            label: 'Lembur Cover',               type: 'count',    multiplier: RATE_LEMBUR_COVER,              slipLabel: 'Lembur Cover' },
     { key: 'bonusPresensiBulanan',   label: 'Bonus Presensi Bulanan',     type: 'count',    multiplier: RATE_BONUS_PRESENSI_BULANAN,    slipLabel: 'Bonus Presensi Bulanan' },
     { key: 'bonusPresensiTriwulanan', label: 'Bonus Presensi Triwulanan',   type: 'count',    multiplier: RATE_BONUS_PRESENSI_TRIWULANAN,  slipLabel: 'Bonus Presensi Triwulanan' },
-    { key: 'bonusMutlak',            label: 'Bonus Presensi Mutlak',      type: 'count',    multiplier: RATE_BONUS_MUTLAK,              slipLabel: 'Bonus Presensi Mutlak' },
     { key: 'spj',                    label: 'SPJ',                        type: 'currency',                                             slipLabel: 'SPJ' },
     { key: 'tunjanganJabatan',       label: 'Tunjangan Jabatan',          type: 'currency',                                             slipLabel: 'Tunjangan Jabatan' },
     { key: 'bonusLainnya',           label: 'Bonus Lainnya',              type: 'count',    multiplier: RATE_BONUS_BULANAN,             slipLabel: 'Bonus Lainnya' },

@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import type { MoneyField } from '@/lib/payroll/domain';
 import { LOGO_YAPETIDU_BASE64, LOGO_UNIPDU_BASE64 } from './logoConstants';
+import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 
 /** Alias of the canonical MoneyField; see slipBuilders.SlipField. */
 export type PaySlipField = MoneyField;
@@ -12,6 +13,12 @@ export interface PaySlipData {
   jobCategory: string;
   earnings: PaySlipField[];
   deductions: PaySlipField[];
+  /**
+   * Income tax rows. Printed as their own block after Potongan — never mixed
+   * into it — and subtracted from Gaji Bersih. Empty on an untaxed slip, in
+   * which case the block is omitted entirely and the document is unchanged.
+   */
+  taxes?: PaySlipField[];
   isLoyalis?: boolean;
   niy?: string;
   npwp?: string;
@@ -547,6 +554,8 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     // ─── Table Footer ───
     const totalEarnings = data.earnings.reduce((sum, e) => sum + e.amount, 0);
     const totalDeductions = data.deductions.reduce((sum, d) => sum + d.amount, 0);
+    const taxRows = data.taxes || [];
+    const totalTax = taxRows.reduce((sum, t) => sum + t.amount, 0);
     
     doc.setFillColor(235, 235, 235);
     doc.rect(15, y, 90, 6, 'F');
@@ -567,8 +576,23 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
 
     y += 6;
 
+    // ─── Pajak Row (own category, below Potongan) ───
+    if (taxRows.length > 0) {
+      doc.setFillColor(250, 250, 250);
+      doc.rect(105, y, 90, 6, 'F');
+      doc.rect(105, y, 90, 6);
+      doc.rect(15, y, 90, 6);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text('PAJAK PENGHASILAN', 107, y + 4.2);
+      doc.text(':', 168, y + 4.2);
+      doc.text(formatIDR(totalTax), 192, y + 4.2, { align: 'right' });
+      y += 6;
+    }
+
     // ─── Net Salary Box ───
-    const netSalary = totalEarnings - totalDeductions;
+    const netSalary = totalEarnings - totalDeductions - totalTax;
     doc.setFillColor(245, 245, 245);
     doc.rect(15, y, 180, 10, 'F');
     doc.rect(15, y, 180, 10);
@@ -594,6 +618,10 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
 
   } else {
     // ─── BLUE COLLAR STANDARD LAYOUT ──────────────────────────────────
+    const isSatpam = data.jobCategory.toUpperCase().includes('SATPAM');
+    const earnings = isSatpam
+      ? mergeSatpamLegacyBonusIntoTunjangan(data.earnings)
+      : data.earnings;
     const marginLeft = 35;
     const marginRight = 35;
     const contentWidth = pageWidth - marginLeft - marginRight;
@@ -698,7 +726,7 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     doc.setFontSize(10);
     let totalEarnings = 0;
 
-    data.earnings.forEach((item, index) => {
+    earnings.forEach((item, index) => {
       drawRow(y, rowH);
       doc.text((index + 1).toString(), startX + colWidths.no / 2, y + 4.5, { align: 'center' as const });
       doc.text(item.label.toUpperCase(), startX + colWidths.no + 2, y + 4.5);
@@ -745,8 +773,41 @@ export function drawPaySlip(doc: jsPDF, data: PaySlipData): void {
     doc.text(formatIDR(totalDeductions), startX + tableWidth - 2, y + 4.5, { align: 'right' as const });
     y += rowH;
 
+    // Section III: Pajak — its own category, printed after Potongan. An
+    // untaxed slip prints exactly as it always did.
+    const taxRows = data.taxes || [];
+    let totalTax = 0;
+
+    if (taxRows.length > 0) {
+      drawRow(y, rowH);
+      y += rowH;
+
+      drawRow(y, rowH, false, true);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.text('III. PAJAK', startX + 5, y + 4.5);
+      y += rowH;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      taxRows.forEach((item, index) => {
+        drawRow(y, rowH);
+        doc.text((index + 1).toString(), startX + colWidths.no / 2, y + 4.5, { align: 'center' as const });
+        doc.text(item.label.toUpperCase(), startX + colWidths.no + 2, y + 4.5);
+        doc.text(formatIDR(item.amount), startX + colWidths.no + colWidths.uraian + colWidths.jumlah - 2, y + 4.5, { align: 'right' as const });
+        totalTax += item.amount;
+        y += rowH;
+      });
+
+      doc.setFont('helvetica', 'bold');
+      drawRow(y, rowH, false, true);
+      doc.text('JUMLAH PAJAK', startX + 5, y + 4.5);
+      doc.text(formatIDR(totalTax), startX + tableWidth - 2, y + 4.5, { align: 'right' as const });
+      y += rowH;
+    }
+
     // Net Salary
-    const netSalary = totalEarnings - totalDeductions;
+    const netSalary = totalEarnings - totalDeductions - totalTax;
     drawRow(y, rowH + 1, false, true);
     doc.setFontSize(11);
     doc.text('GAJI BERSIH', startX + 5, y + 5);
@@ -791,6 +852,10 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
       maximumFractionDigits: 0,
     }).format(amount);
   };
+  const isSatpam = data.jobCategory.toUpperCase().includes('SATPAM');
+  const earnings = isSatpam
+    ? mergeSatpamLegacyBonusIntoTunjangan(data.earnings)
+    : data.earnings;
 
   const startX = 15;
   const tableWidth = 180;
@@ -818,24 +883,24 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
   drawPageHeader();
 
   // Extract all amounts from data.earnings / data.deductions for calculations
-  const gapokVal = data.earnings.find((e) => e.label.toUpperCase() === 'GAJI POKOK')?.amount || 0;
-  const tunjKeluargaVal = data.earnings.find((e) => e.label.toUpperCase() === 'T. KELUARGA' || e.label.toUpperCase() === 'TUNJANGAN KELUARGA')?.amount || 0;
-  const tunjFungsionalVal = data.earnings.find((e) => e.label.toUpperCase() === 'T. FUNGSIONAL' || e.label.toUpperCase() === 'TUNJANGAN FUNGSIONAL')?.amount || 0;
-  const tunjKepangkatanVal = data.earnings.find((e) => e.label.toUpperCase() === 'KEPANGKATAN')?.amount || 0;
-  const presensiEarningVal = data.earnings.find((e) => e.label.toUpperCase() === 'PRESENSI')?.amount || 0;
-  const bonusPresensiVal = data.earnings.find((e) => e.label.toUpperCase() === 'BONUS PRESENSI')?.amount || 0;
-  const tunjInstruksionalVal = data.earnings.find((e) => e.label.toUpperCase() === 'T. INSTRUKSIONAL' || e.label.toUpperCase() === 'INSTRUKSIONAL')?.amount || 0;
-  const tunjHariTuaVal = data.earnings.find((e) => e.label.toUpperCase() === 'T. HARI TUA' || e.label.toUpperCase() === 'TUNJANGAN HARI TUA')?.amount || 0;
-  const bpjsTkVal = data.earnings.find((e) => e.label.toUpperCase() === 'T. BPJS TK' || e.label.toUpperCase() === 'BPJS TK')?.amount || 0;
-  const bpjsKesVal = data.earnings.find((e) => e.label.toUpperCase() === 'T. BPJS KES' || e.label.toUpperCase() === 'BPJS KES')?.amount || 0;
-  const berasVal = data.earnings.find((e) => e.label.toUpperCase() === 'BERAS')?.amount || 0;
-  const totalStrukturalVal = data.earnings
+  const gapokVal = earnings.find((e) => e.label.toUpperCase() === 'GAJI POKOK')?.amount || 0;
+  const tunjKeluargaVal = earnings.find((e) => e.label.toUpperCase() === 'T. KELUARGA' || e.label.toUpperCase() === 'TUNJANGAN KELUARGA')?.amount || 0;
+  const tunjFungsionalVal = earnings.find((e) => e.label.toUpperCase() === 'T. FUNGSIONAL' || e.label.toUpperCase() === 'TUNJANGAN FUNGSIONAL')?.amount || 0;
+  const tunjKepangkatanVal = earnings.find((e) => e.label.toUpperCase() === 'KEPANGKATAN')?.amount || 0;
+  const presensiEarningVal = earnings.find((e) => e.label.toUpperCase() === 'PRESENSI')?.amount || 0;
+  const bonusPresensiVal = earnings.find((e) => e.label.toUpperCase() === 'BONUS PRESENSI')?.amount || 0;
+  const tunjInstruksionalVal = earnings.find((e) => e.label.toUpperCase() === 'T. INSTRUKSIONAL' || e.label.toUpperCase() === 'INSTRUKSIONAL')?.amount || 0;
+  const tunjHariTuaVal = earnings.find((e) => e.label.toUpperCase() === 'T. HARI TUA' || e.label.toUpperCase() === 'TUNJANGAN HARI TUA')?.amount || 0;
+  const bpjsTkVal = earnings.find((e) => e.label.toUpperCase() === 'T. BPJS TK' || e.label.toUpperCase() === 'BPJS TK')?.amount || 0;
+  const bpjsKesVal = earnings.find((e) => e.label.toUpperCase() === 'T. BPJS KES' || e.label.toUpperCase() === 'BPJS KES')?.amount || 0;
+  const berasVal = earnings.find((e) => e.label.toUpperCase() === 'BERAS')?.amount || 0;
+  const totalStrukturalVal = earnings
     .filter((e) => e.label.toUpperCase().startsWith('STRUKTURAL:'))
     .reduce((sum, e) => sum + e.amount, 0);
 
   const potonganPresensiVal = data.deductions.find((d) => d.label.toUpperCase() === 'POTONGAN PRESENSI')?.amount || 0;
   const potonganBonusPresensiVal = data.deductions.find((d) => d.label.toUpperCase() === 'POTONGAN BONUS PRESENSI')?.amount || 0;
-  const totalVakasiVal = data.earnings
+  const totalVakasiVal = earnings
     .filter((e) => !['GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 'PIKET', 'LEMBUR'].includes(e.label.toUpperCase()) && !e.label.toUpperCase().startsWith('STRUKTURAL:'))
     .reduce((sum, e) => sum + e.amount, 0);
 
@@ -851,15 +916,15 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
   const actualMinutes = Math.max(0, targetMinutes - absenceMinutes);
 
   let vakasiEvents = data.vakasiEvents || [];
-  if (vakasiEvents.length === 0 && data.earnings) {
+  if (vakasiEvents.length === 0 && earnings) {
     const standardLabels = [
-      'GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL', 
-      'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA', 
-      'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI', 
-      'PIKET', 'LEMBUR'
+      'GAJI POKOK', 'T. KELUARGA', 'TUNJANGAN KELUARGA', 'T. FUNGSIONAL', 'TUNJANGAN FUNGSIONAL',
+      'KEPANGKATAN', 'T. INSTRUKSIONAL', 'INSTRUKSIONAL', 'T. HARI TUA', 'TUNJANGAN HARI TUA',
+      'T. BPJS TK', 'BPJS TK', 'T. BPJS KES', 'BPJS KES', 'BERAS', 'PRESENSI', 'BONUS PRESENSI',
+      'TUNJANGAN JABATAN', 'PIKET', 'LEMBUR'
     ];
-    const extracted = data.earnings.filter(e => 
-      !standardLabels.includes(e.label.toUpperCase()) && 
+    const extracted = earnings.filter(e =>
+      !standardLabels.includes(e.label.toUpperCase()) &&
       !e.label.toUpperCase().startsWith('STRUKTURAL:') &&
       e.amount > 0
     );
@@ -885,7 +950,7 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
   };
 
   const getEarningAmount = (labels: string[]) => {
-    const match = data.earnings.find((e) => labels.some(l => e.label.toUpperCase() === l.toUpperCase() || e.label.toUpperCase().includes(l.toUpperCase())));
+    const match = earnings.find((e) => labels.some(l => e.label.toUpperCase() === l.toUpperCase() || e.label.toUpperCase().includes(l.toUpperCase())));
     return match ? match.amount : 0;
   };
   const getDeductionAmount = (labels: string[]) => {
@@ -981,6 +1046,33 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
       ]
     };
   };
+
+  /**
+   * The tax appendix. It is grouped with the Potongan pages because both
+   * reduce the take-home figure, but it is labelled as its own category so a
+   * reader is never told the tax is a potongan.
+   */
+  const buildTaxSections = (startIndex: number) =>
+    (data.taxes || [])
+      .filter((tax) => tax.amount > 0)
+      .map((tax, idx) => ({
+        title: `${startIndex + idx}. ${tax.label.toUpperCase()}`,
+        bullets: [
+          'Pajak penghasilan dikenakan saat gaji bersih (penerimaan dikurangi potongan) mencapai Rp 6.000.000.',
+          'Tarif 5% dihitung dari gaji bersih sebelum pajak, bukan dari salah satu komponen penerimaan.',
+          'Pajak dicatat sebagai kategori tersendiri, terpisah dari Potongan.',
+        ],
+        params: [
+          { label: 'Dasar Pengenaan (Gaji Bersih Sebelum Pajak)', val: formatIDR(taxBaseVal) },
+          { label: 'Tarif', val: '5%' },
+          { label: 'Nominal Pajak', val: formatIDR(tax.amount), highlight: true },
+        ],
+        isTaxSection: true,
+      }));
+
+  const totalDeductionsVal = data.deductions.reduce((sum, d) => sum + d.amount, 0);
+  const totalEarningsVal = data.earnings.reduce((sum, e) => sum + e.amount, 0);
+  const taxBaseVal = totalEarningsVal - totalDeductionsVal;
 
   let sections: any[] = [];
 
@@ -1153,7 +1245,8 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
       isFirstDeduction: idx === 0,
       isDeductionSection: true,
     }));
-    sections = [...sections, ...deductionSections];
+    const taxSections = buildTaxSections(1);
+    sections = [...sections, ...deductionSections, ...taxSections];
   } else {
     // Pekarya Documentation
     const harianVal = getEarningAmount(['VAKASI HARIAN', 'HARIAN']);
@@ -1163,7 +1256,10 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
     const lemburVal = getEarningAmount(['LEMBUR']);
     const piketVal = getEarningAmount(['PIKET']);
     const praktekVal = getEarningAmount(['PRAKTEK']);
-    const bonusPekaryaVal = getEarningAmount(['BONUS PRESENSI', 'BONUS PRESENSI BULANAN', 'BONUS PRESENSI TRIWULANAN', 'BONUS MUTLAK']);
+    const tunjanganJabatanVal = getEarningAmount(['TUNJANGAN JABATAN']);
+    const bonusPekaryaVal = isSatpam
+      ? 0
+      : getEarningAmount(['BONUS PRESENSI', 'BONUS PRESENSI BULANAN', 'BONUS PRESENSI TRIWULANAN', 'BONUS MUTLAK']);
     const spjVal = getEarningAmount(['SPJ']);
     const bpjsPekaryaVal = getEarningAmount(['BPJS (TUNJANGAN)', 'BPJS', 'T. BPJS (SUBSIDI)']);
     const berasVal = getEarningAmount(['BERAS']);
@@ -1197,15 +1293,26 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
           { label: 'Total Insentif Shift', val: formatIDR(harianVal + jumatVal + lemburSendiriVal + lemburCoverVal + lemburVal + piketVal + praktekVal), highlight: true }
         ]
       },
-      {
-        title: '3. Bonus Presensi & Ketertiban',
-        bullets: [
-          'Diberikan kepada pegawai Pekarya yang memenuhi kualifikasi kedisiplinan dan ketepatan presensi.'
-        ],
-        params: [
-          { label: 'Bonus Presensi', val: formatIDR(bonusPekaryaVal), highlight: true }
-        ]
-      },
+      isSatpam
+        ? {
+          title: '3. Tunjangan Jabatan',
+          bullets: [
+            'Rp 50.000 untuk seluruh Satpam sudah digabung langsung ke Tunjangan Jabatan.',
+            'Ketua Shift / Ketua Satpam menerima tambahan tunjangan peran Rp 100.000.'
+          ],
+          params: [
+            { label: 'Tunjangan Jabatan', val: formatIDR(tunjanganJabatanVal), highlight: true }
+          ]
+        }
+        : {
+          title: '3. Bonus Presensi & Ketertiban',
+          bullets: [
+            'Diberikan kepada pegawai Pekarya yang memenuhi kualifikasi kedisiplinan dan ketepatan presensi.'
+          ],
+          params: [
+            { label: 'Bonus Presensi', val: formatIDR(bonusPekaryaVal), highlight: true }
+          ]
+        },
       {
         title: '4. SPJ (Surat Perintah Jalan & Pelaporan Kegiatan)',
         bullets: [
@@ -1236,21 +1343,35 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
       isFirstDeduction: idx === 0,
       isDeductionSection: true,
     }));
+    const taxSections = buildTaxSections(1);
 
-    sections = [...pekaryaEarningsSections, ...deductionSections];
+    sections = [...pekaryaEarningsSections, ...deductionSections, ...taxSections];
   }
 
+  const DEDUCTION_PAGE_TITLE = 'LAMPIRAN: PANDUAN & RINCIAN POTONGAN GAJI';
+  const TAX_PAGE_TITLE = 'LAMPIRAN: PANDUAN & RINCIAN PAJAK PENGHASILAN';
+  const EARNINGS_PAGE_TITLE = 'LAMPIRAN: PANDUAN & PERHITUNGAN PENERIMAAN GAJI';
+
+  const pageTitleFor = (sec: any) =>
+    sec.isTaxSection
+      ? TAX_PAGE_TITLE
+      : sec.isDeductionSection
+        ? DEDUCTION_PAGE_TITLE
+        : EARNINGS_PAGE_TITLE;
+
   // Draw sections
-  sections.forEach((sec) => {
-    if (sec.isFirstDeduction) {
+  sections.forEach((sec, secIdx) => {
+    // Tax opens its own page rather than continuing under the Potongan
+    // heading — it is a separate category, and the appendix must say so.
+    const startsTaxPage =
+      sec.isTaxSection && !sections[secIdx - 1]?.isTaxSection;
+    if (sec.isFirstDeduction || startsTaxPage) {
       doc.addPage();
       y = 15;
-      drawPageHeader('LAMPIRAN: PANDUAN & RINCIAN POTONGAN GAJI');
+      drawPageHeader(pageTitleFor(sec));
     }
 
-    const currentHeaderTitle = sec.isDeductionSection 
-      ? 'LAMPIRAN: PANDUAN & RINCIAN POTONGAN GAJI' 
-      : 'LAMPIRAN: PANDUAN & PERHITUNGAN PENERIMAAN GAJI';
+    const currentHeaderTitle = pageTitleFor(sec);
 
     // Estimate height needed
     let estimateH = 6;
@@ -1263,7 +1384,7 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
       estimateH += (vakasiEvents.length || 1) * 4.5 + 18;
     }
 
-    ensureSpace(estimateH);
+    ensureSpace(estimateH, currentHeaderTitle);
 
     // Draw Title
     doc.setFont('helvetica', 'bold');

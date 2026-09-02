@@ -17,6 +17,9 @@ export function generateLegalitasPimpinanXlsx(data: LegalitasPimpinanData): void
 
   const earningLabels = Array.from(earningLabelsSet);
   const deductionLabels = Array.from(deductionLabelsSet);
+  // The tax column is emitted only when someone here is actually taxed, so an
+  // untaxed export keeps the column layout it always had.
+  const showTax = data.employees.some(emp => (emp.totalTax || 0) > 0);
 
   // Headers
   const header1 = [
@@ -29,6 +32,7 @@ export function generateLegalitasPimpinanXlsx(data: LegalitasPimpinanData): void
     'POTONGAN',
     ...Array(deductionLabels.length > 0 ? deductionLabels.length - 1 : 0).fill(''),
     'JUMLAH POTONGAN',
+    ...(showTax ? ['PAJAK'] : []),
     'GAJI BERSIH'
   ];
 
@@ -40,6 +44,7 @@ export function generateLegalitasPimpinanXlsx(data: LegalitasPimpinanData): void
     '',
     ...deductionLabels.map(l => l.toUpperCase()),
     '',
+    ...(showTax ? [''] : []),
     ''
   ];
 
@@ -51,6 +56,7 @@ export function generateLegalitasPimpinanXlsx(data: LegalitasPimpinanData): void
   let grandTotalEarnings = 0;
   const totalDeductionsMap = new Map<string, number>();
   let grandTotalDeductions = 0;
+  let grandTotalTax = 0;
   let grandNetSalary = 0;
 
   earningLabels.forEach(l => totalEarningsMap.set(l, 0));
@@ -60,6 +66,7 @@ export function generateLegalitasPimpinanXlsx(data: LegalitasPimpinanData): void
     totalGapok += emp.gapok;
     grandTotalEarnings += emp.totalEarnings;
     grandTotalDeductions += emp.totalDeductions;
+    grandTotalTax += emp.totalTax || 0;
     grandNetSalary += emp.netSalary;
 
     const row: any[] = [
@@ -87,6 +94,9 @@ export function generateLegalitasPimpinanXlsx(data: LegalitasPimpinanData): void
     });
 
     row.push(emp.totalDeductions);
+    if (showTax) {
+      row.push(emp.totalTax || 0);
+    }
     row.push(emp.netSalary);
 
     rows.push(row);
@@ -108,6 +118,9 @@ export function generateLegalitasPimpinanXlsx(data: LegalitasPimpinanData): void
     grandTotalRow.push(totalDeductionsMap.get(label) || 0);
   });
   grandTotalRow.push(grandTotalDeductions);
+  if (showTax) {
+    grandTotalRow.push(grandTotalTax);
+  }
   grandTotalRow.push(grandNetSalary);
 
   const worksheetData = [
@@ -142,8 +155,15 @@ export function generateLegalitasPimpinanXlsx(data: LegalitasPimpinanData): void
     ...(numDeductions > 0 ? [{ s: { r: 4, c: 3 + numEarnings + 1 }, e: { r: 4, c: 3 + numEarnings + numDeductions } }] : []),
     // JUMLAH POTONGAN
     { s: { r: 4, c: 3 + numEarnings + numDeductions + 1 }, e: { r: 5, c: 3 + numEarnings + numDeductions + 1 } },
+    // PAJAK (only present when someone is taxed)
+    ...(showTax
+      ? [{ s: { r: 4, c: 3 + numEarnings + numDeductions + 2 }, e: { r: 5, c: 3 + numEarnings + numDeductions + 2 } }]
+      : []),
     // GAJI BERSIH
-    { s: { r: 4, c: 3 + numEarnings + numDeductions + 2 }, e: { r: 5, c: 3 + numEarnings + numDeductions + 2 } }
+    {
+      s: { r: 4, c: 3 + numEarnings + numDeductions + 2 + (showTax ? 1 : 0) },
+      e: { r: 5, c: 3 + numEarnings + numDeductions + 2 + (showTax ? 1 : 0) },
+    }
   ];
   worksheet['!merges'] = merges;
 
@@ -156,6 +176,7 @@ export function generateLegalitasPimpinanXlsx(data: LegalitasPimpinanData): void
     { wch: 15 }, // JUMLAH
     ...Array(numDeductions).fill({ wch: 15 }), // Potongan categories
     { wch: 18 }, // JUMLAH POTONGAN
+    ...(showTax ? [{ wch: 18 }] : []), // PAJAK
     { wch: 18 } // GAJI BERSIH
   ];
   worksheet['!cols'] = colWidths;

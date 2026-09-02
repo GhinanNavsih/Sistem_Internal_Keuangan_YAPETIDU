@@ -5,7 +5,9 @@ import {
   buildInitialEarnings,
   SlipField,
 } from '@/lib/payroll/slipBuilders';
+import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { loyalisPresenceAmounts } from '@/lib/payroll/uraianPropagation';
+import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 import { SalaryMatrix } from '@/types';
 
 export type DashboardPayrollCollar = 'loyalis' | 'pekarya';
@@ -41,11 +43,15 @@ export interface DashboardPeriodInputs {
 export interface DashboardSavedSlip {
   earnings?: SlipField[];
   deductions?: SlipField[];
+  taxes?: SlipField[];
+  taxApplied?: boolean;
 }
 
 export interface DashboardSlipData {
   earnings: SlipField[];
   deductions: SlipField[];
+  /** Income tax rows — a category of its own, never part of `deductions`. */
+  taxes: SlipField[];
 }
 
 function toDateOrNow(value: any): Date {
@@ -88,9 +94,17 @@ export function buildDashboardSlipData(
   inputs: DashboardPeriodInputs,
 ): DashboardSlipData {
   if (Array.isArray(savedSlip?.earnings)) {
+    const earnings =
+      collar === 'pekarya' && employee.employment?.jobCategory === 'SATPAM'
+        ? mergeSatpamLegacyBonusIntoTunjangan(savedSlip.earnings)
+        : savedSlip.earnings;
+    const deductions = savedSlip.deductions || [];
     return {
-      earnings: savedSlip.earnings,
-      deductions: savedSlip.deductions || [],
+      earnings,
+      deductions,
+      // The stored amount is never trusted: the 5% is re-derived from the
+      // rows this helper actually returns, the same way the server does.
+      taxes: recalculateSlipTaxes(savedSlip, earnings, deductions),
     };
   }
 
@@ -125,7 +139,7 @@ export function buildDashboardSlipData(
     collar === 'pekarya' ? inputs.pekaryaPreviews?.[employee.id] : undefined;
 
   if (collar === 'pekarya' && !pekaryaPreview) {
-    return { earnings: [], deductions: [] };
+    return { earnings: [], deductions: [], taxes: [] };
   }
 
   return {
@@ -152,6 +166,9 @@ export function buildDashboardSlipData(
       presensiDeduction,
       inputs.koperasiSavings[employee.id] || 0,
     ),
+    // A slip that has never been saved carries no tax: the selection is an
+    // explicit super-admin action, never inferred from calculated rows.
+    taxes: [],
   };
 }
 

@@ -54,7 +54,8 @@ test('a persisted slip remains authoritative over fallback calculations', () => 
       saved,
       inputs,
     ),
-    saved,
+    // An untaxed slip returns the same rows plus an empty tax category.
+    { ...saved, taxes: [] },
   );
 });
 
@@ -114,7 +115,7 @@ test('an editable draft keeps its saved values over the live preview', () => {
 
   assert.deepEqual(
     buildDashboardSlipData(PEKARYA_EMPLOYEE, 'pekarya', saved, inputsWithPreview),
-    saved,
+    { ...saved, taxes: [] },
   );
 });
 
@@ -126,7 +127,7 @@ test('a Pekarya without a preview fails closed instead of using local values', (
     { ...inputs, pekaryaPreviews: {} },
   );
 
-  assert.deepEqual(data, { earnings: [], deductions: [] });
+  assert.deepEqual(data, { earnings: [], deductions: [], taxes: [] });
 });
 
 test('an explicitly empty saved Pekarya draft remains authoritative', () => {
@@ -137,7 +138,7 @@ test('an explicitly empty saved Pekarya draft remains authoritative', () => {
     inputsWithPreview,
   );
 
-  assert.deepEqual(data, { earnings: [], deductions: [] });
+  assert.deepEqual(data, { earnings: [], deductions: [], taxes: [] });
 });
 
 test('Loyalis is unaffected by the Pekarya preview map', () => {
@@ -213,7 +214,7 @@ test('historical period with saved slips resolves immediately without pekaryaPre
     { ...inputs, pekaryaPreviews: undefined },
   );
 
-  assert.deepEqual(data, savedSlip);
+  assert.deepEqual(data, { ...savedSlip, taxes: [] });
   assert.equal(sumSlipFields(data.earnings), 3_950_000);
   assert.equal(sumSlipFields(data.deductions), 50_000);
 });

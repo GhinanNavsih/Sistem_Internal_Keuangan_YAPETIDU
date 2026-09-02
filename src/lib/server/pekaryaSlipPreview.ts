@@ -20,6 +20,10 @@ import {
   pekaryaPublicationId,
 } from '@/lib/server/attendanceStore';
 import { annualCalendarRef, annualDatesFrom } from '@/lib/server/payrollPeriod';
+import {
+  isSatpamLegacyBonusColumn,
+  normalizeSatpamUraianEntry,
+} from '@/lib/payroll/satpamCompensation';
 import { RekapColumn, SalaryMatrix, UraianEntry } from '@/types';
 
 /**
@@ -126,10 +130,38 @@ async function loadCategoryAttendanceState(
     .doc(`${periodKey}_${category}`)
     .get();
   const uraianData = uraianSnapshot.data();
-  const entries = (uraianData?.entries || {}) as Record<string, UraianEntry>;
-  const customColumns = Array.isArray(uraianData?.customColumns)
+  const rawEntries = (uraianData?.entries || {}) as Record<string, UraianEntry>;
+  const rawCustomColumns = Array.isArray(uraianData?.customColumns)
     ? (uraianData!.customColumns as RekapColumn[])
     : [];
+  let entries = rawEntries;
+  let customColumns = rawCustomColumns;
+
+  // The old Satpam bonus was stored in UraianGaji before it was consolidated
+  // into Tunjangan Jabatan. Normalize it at the server boundary so current
+  // and historical previews agree even before a one-time data cleanup runs.
+  if (category === 'SATPAM') {
+    const teamSnapshot = await adminDb.collection('SatpamShiftTeams').get();
+    const ketuaShiftIds = new Set(
+      teamSnapshot.docs
+        .map((snapshot) => String(snapshot.data()?.ketuaShiftId || '').trim())
+        .filter(Boolean),
+    );
+    entries = Object.fromEntries(
+      Object.entries(rawEntries).map(([employeeId, entry]) => [
+        employeeId,
+        entry
+          ? normalizeSatpamUraianEntry(
+              entry,
+              ketuaShiftIds.has(employeeId),
+            )
+          : entry,
+      ]),
+    ) as Record<string, UraianEntry>;
+    customColumns = rawCustomColumns.filter(
+      (column) => !isSatpamLegacyBonusColumn(column),
+    );
+  }
 
   if (period >= '2026-08' && category !== 'SATPAM') {
     const [publicationSnapshot, importSnapshot] = await Promise.all([

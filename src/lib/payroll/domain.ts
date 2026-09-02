@@ -104,8 +104,23 @@ export interface PayrollSlipStateDocument {
   status?: PayrollStatus | 'confirmed';
   earnings?: MoneyField[];
   deductions?: MoneyField[];
+  /**
+   * Income tax rows — a category of its own, never merged into `deductions`.
+   * Absent or empty on every untaxed slip, which is why `totalTax` is
+   * optional too: slips written before the tax rule simply have neither.
+   * See src/lib/payroll/payrollTax.ts for how the amount is derived.
+   */
+  taxes?: MoneyField[];
+  /**
+   * Whether a super admin selected this employee for income tax. Stored
+   * separately from `taxes` because an empty `taxes` array cannot distinguish
+   * "not selected" from "selected but currently under the threshold".
+   */
+  taxApplied?: boolean;
   totalEarnings?: number;
   totalDeductions?: number;
+  totalTax?: number;
+  /** Take-home pay: totalEarnings - totalDeductions - totalTax. */
   netSalary?: number;
   revision?: number;
   generatedAt?: unknown;
@@ -791,20 +806,37 @@ export function validateMoneyFields(fields: unknown, fieldName: string): MoneyFi
   });
 }
 
+/**
+ * The slip subtotals. `taxes` is a third category charged after deductions,
+ * so `netSalary` is the amount actually transferred, not the pre-tax figure
+ * the tax itself was derived from. Callers that pass no taxes get exactly the
+ * numbers they always did.
+ */
 export function calculatePayrollTotals(
   earnings: readonly MoneyField[],
   deductions: readonly MoneyField[],
-): { totalEarnings: number; totalDeductions: number; netSalary: number } {
+  taxes: readonly MoneyField[] = [],
+): {
+  totalEarnings: number;
+  totalDeductions: number;
+  totalTax: number;
+  netSalary: number;
+} {
   const totalEarnings = earnings.reduce((total, item) => total + item.amount, 0);
   const totalDeductions = deductions.reduce((total, item) => total + item.amount, 0);
-  if (!Number.isSafeInteger(totalEarnings) || !Number.isSafeInteger(totalDeductions)) {
+  const totalTax = taxes.reduce((total, item) => total + item.amount, 0);
+  if (
+    !Number.isSafeInteger(totalEarnings) ||
+    !Number.isSafeInteger(totalDeductions) ||
+    !Number.isSafeInteger(totalTax)
+  ) {
     throw new Error('Total payroll melampaui batas bilangan aman.');
   }
-  const netSalary = totalEarnings - totalDeductions;
+  const netSalary = totalEarnings - totalDeductions - totalTax;
   if (netSalary < 0) {
     throw new Error('Gaji bersih tidak boleh negatif.');
   }
-  return { totalEarnings, totalDeductions, netSalary };
+  return { totalEarnings, totalDeductions, totalTax, netSalary };
 }
 
 /**

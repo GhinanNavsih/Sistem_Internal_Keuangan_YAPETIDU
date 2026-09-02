@@ -1,6 +1,10 @@
 import { UraianEntry, RekapColumn } from '@/types';
 import type { MoneyField } from '@/lib/payroll/domain';
 import { getRekapColumns, computeSlipAmount } from '@/utils/rekapConfig';
+import {
+  isSatpamLegacyBonusColumn,
+  normalizeSatpamUraianEntry,
+} from '@/lib/payroll/satpamCompensation';
 
 /**
  * The canonical earnings/deductions builders for a payslip.
@@ -45,6 +49,10 @@ export function resolveRekapColumnsForSlip(
   customColumns?: RekapColumn[],
   period?: string,
 ): RekapColumn[] {
+  const filteredCustomColumns = (customColumns || []).filter(
+    (column) =>
+      jobCategory !== 'SATPAM' || !isSatpamLegacyBonusColumn(column),
+  );
   const attendanceDerived =
     Boolean((uraian as { attendanceSource?: unknown } | undefined)?.attendanceSource) ||
     Boolean(
@@ -57,7 +65,7 @@ export function resolveRekapColumnsForSlip(
       jobCategory,
       period || (attendanceDerived ? '2026-08' : undefined),
     ),
-    ...(customColumns || []),
+    ...filteredCustomColumns,
   ];
 }
 
@@ -174,7 +182,15 @@ export function buildInitialEarnings(
     }
   } else {
     const jobCategory = emp.employment?.jobCategory || '';
-    const allCols = resolveRekapColumnsForSlip(jobCategory, uraian, customColumns);
+    const effectiveUraian =
+      jobCategory === 'SATPAM' && uraian
+        ? normalizeSatpamUraianEntry(uraian, false)
+        : uraian;
+    const allCols = resolveRekapColumnsForSlip(
+      jobCategory,
+      effectiveUraian,
+      customColumns,
+    );
 
     // Gaji Pokok – always known
     earnings.push({ label: 'Gaji Pokok', amount: gapok });
@@ -183,11 +199,21 @@ export function buildInitialEarnings(
       for (const col of allCols) {
         if (col.slipLabel) {
           let amount = 0;
-          if (uraian) {
-            if (col.type === 'count' && uraian.counts && uraian.counts[col.key] !== undefined) {
-              amount = computeSlipAmount(col, uraian.counts[col.key]);
-            } else if (uraian.values && uraian.values[col.key] !== undefined) {
-              amount = uraian.values[col.key] ?? 0;
+          if (effectiveUraian) {
+            if (
+              col.type === 'count' &&
+              effectiveUraian.counts &&
+              effectiveUraian.counts[col.key] !== undefined
+            ) {
+              amount = computeSlipAmount(
+                col,
+                effectiveUraian.counts[col.key],
+              );
+            } else if (
+              effectiveUraian.values &&
+              effectiveUraian.values[col.key] !== undefined
+            ) {
+              amount = effectiveUraian.values[col.key] ?? 0;
             }
           }
           // VakasiTambahan is a Loyalis earning, never Pekarya SPJ. Keep the

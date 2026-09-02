@@ -15,6 +15,10 @@ import {
   type SatpamRotationSlotAssignment,
 } from '@/lib/payroll/satpamDutyPlan';
 import { satpamAttendanceReportType } from '@/lib/payroll/satpamAttendance';
+import {
+  normalizeSatpamUraianEntry,
+} from '@/lib/payroll/satpamCompensation';
+import type { UraianEntry } from '@/types';
 
 export const SATPAM_DUTY_PLANS_COLLECTION = 'SatpamDutyPlans';
 export const SATPAM_DUTY_PLAN_REVISIONS_COLLECTION =
@@ -69,6 +73,7 @@ export interface SatpamDutyReconciliationView {
   plans: Array<{
     planId: string;
     teamId: string;
+    ketuaShiftId: string;
     status: SatpamDutyPlanStatus;
     revision: number;
     lateBackfillDates: string[];
@@ -347,6 +352,7 @@ export async function buildSatpamDutyReconciliation(
     return {
       planId: plan.id,
       teamId: plan.teamId,
+      ketuaShiftId: plan.ketuaShiftId,
       status: plan.status,
       revision: plan.revision,
       lateBackfillDates: plan.lateBackfillDates || [],
@@ -519,14 +525,26 @@ export async function syncSatpamDutyReconciliation(
       for (const employee of plan.employees) {
         reconciledEmployeeIds.add(employee.employeeId);
         const existing = entries[employee.employeeId] || {};
-        const values =
+        const existingValues =
           existing.values && typeof existing.values === 'object'
             ? { ...(existing.values as Record<string, number>) }
             : {};
-        const counts =
+        const existingCounts =
           existing.counts && typeof existing.counts === 'object'
             ? { ...(existing.counts as Record<string, number>) }
             : {};
+        const normalizedExisting = normalizeSatpamUraianEntry(
+          {
+            ...existing,
+            employeeId: employee.employeeId,
+            name: employee.employeeName,
+            values: existingValues,
+            counts: existingCounts,
+          } as UraianEntry,
+          employee.employeeId === plan.ketuaShiftId,
+        );
+        const values = { ...normalizedExisting.values };
+        const counts = { ...(normalizedExisting.counts || {}) };
         const shiftCounts = shiftCountsByEmployee.get(employee.employeeId) || {
           harian: 0,
           jumatLibur: 0,
@@ -594,14 +612,26 @@ export async function syncSatpamDutyReconciliation(
         lemburSendiri: 0,
         lemburCover: 0,
       };
-      const values =
+      const existingValues =
         existing.values && typeof existing.values === 'object'
           ? { ...(existing.values as Record<string, number>) }
           : {};
-      const counts =
+      const existingCounts =
         existing.counts && typeof existing.counts === 'object'
           ? { ...(existing.counts as Record<string, number>) }
           : {};
+      const normalizedExisting = normalizeSatpamUraianEntry(
+        {
+          ...existing,
+          employeeId: external.employeeId,
+          name: external.employeeName,
+          values: existingValues,
+          counts: existingCounts,
+        } as UraianEntry,
+        false,
+      );
+      const values = { ...normalizedExisting.values };
+      const counts = { ...(normalizedExisting.counts || {}) };
       counts.harian = shiftCounts.harian;
       values.harian = shiftCounts.harian * SATPAM_RATES.Harian;
       counts.jumatLibur = shiftCounts.jumatLibur;

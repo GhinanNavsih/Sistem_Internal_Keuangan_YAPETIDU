@@ -116,7 +116,7 @@ Never re-derive the workflow locally (e.g. `permittedCategories[0] === 'SOPIR'`)
 
 **Satpam duty/shift**: `SatpamDutyPlans` (8-day rotation plans), `SatpamShiftTeams`, `ShiftOccurrences` (materialized per-date/post/team shifts), `GuardDutyIndexes` (dedup index), `SatpamAbsenceRequestRevisions`.
 
-**Payroll core**: `PayrollPeriods`, `PayrollSlipStates` (per-employee-per-period slip — holds the earnings/deductions money rows, not just a status; doc id `{period}_{employeeId}`, shape in `PayrollSlipStateDocument`. Writable statuses are draft/locked/payment_created/paid (`PayrollStatus`); `confirmed` is read-only legacy that `isImmutablePayrollStatus` and the employee payslip query still honour; `pending` is not a slip status — it belongs to `PayrollCorrectionRequests`), `PayrollPayments`, `PayrollLedgerEntries`, `PayrollDeliveryEvents` (email delivery idempotency), `PayrollHolidayCalendars`, `PayrollCorrectionRequests`, `PayrollHistoricalCorrections`, `PayrollKoperasiProgressions` (payroll↔Koperasi bridge saga state), `FinancialIdempotencyKeys`, `FinancialAuditLogs`.
+**Payroll core**: `PayrollPeriods`, `PayrollSlipStates` (per-employee-per-period slip — holds the earnings/deductions/taxes money rows, not just a status; doc id `{period}_{employeeId}`, shape in `PayrollSlipStateDocument`. Writable statuses are draft/locked/payment_created/paid (`PayrollStatus`); `confirmed` is read-only legacy that `isImmutablePayrollStatus` and the employee payslip query still honour; `pending` is not a slip status — it belongs to `PayrollCorrectionRequests`), `PayrollPayments`, `PayrollLedgerEntries`, `PayrollDeliveryEvents` (email delivery idempotency), `PayrollHolidayCalendars`, `PayrollCorrectionRequests`, `PayrollHistoricalCorrections`, `PayrollKoperasiProgressions` (payroll↔Koperasi bridge saga state), `FinancialIdempotencyKeys`, `FinancialAuditLogs`.
 
 **Admin / auth / misc**: `users`, `EmpEditLog`, `admin_impersonation_sessions`, `audit_logs`, `reactivation_tokens`.
 
@@ -139,7 +139,7 @@ Legacy/migration-only collections (`MasterData`, unsuffixed `Employees`) exist o
 7. **Beras**: `salaryProfile.tunjanganBeras`.
 8. **Presensi Penalty**: `Working Days * Expected Hours * Rp 1.650` earnings; shortfall deduction `Round(Absence Minutes / 60 * Rp 1.650)`.
 
-### The wider payroll library (`src/lib/payroll/`, ~29 modules, most load-bearing ones have a paired `.test.ts`)
+### The wider payroll library (`src/lib/payroll/`, ~30 modules, most load-bearing ones have a paired `.test.ts`)
 
 - **`domain.ts`** — shared kernel: Satpam post/pay-type constants and resolvers, `SATPAM_RATES`/`SHIFT_TIMES`, payroll-period-token helpers, `calculatePayrollTotals`, and the status guards `isImmutablePayrollStatus`/`isTransferEligibleStatus` that gate whether a slip can still be edited. Most other payroll modules import from here.
 - **`driverJourney.ts`** — SOPIR trip wages: per-vehicle rate table, distance/duration/night-premium (`calculateNightPremium`) constants, meal allowance tiers, fuel procurement modes (hold_accumulate/procure_release/standard_direct), reimbursement settlement (`calculateDriverReimbursementSettlement`), net wage (`calculateDriverNetWage`), and journey timeline normalization (`calculateEditableDriverJourneyTimeline` — the single source of truth for overnight/lintas-hari inference, shared by submission and audit).
@@ -158,6 +158,7 @@ Legacy/migration-only collections (`MasterData`, unsuffixed `Employees`) exist o
 - **`koperasiAmounts.ts`** / **`koperasiNames.ts`** — builds per-employee deduction/savings maps for payslips, matched by normalized name.
 - **`proposalExpenseReports.ts`** / **`proposalExpenseApproval.ts`** — LPJ expense-report CRUD, budget-vs-actual totals, approval validation.
 - **`slipBuilders.ts`** — canonical earnings/deductions row builders for a payslip (Firebase-free, reachable from API routes).
+- **`payrollTax.ts`** — income tax as a slip category of its own (never a deduction row): a slip whose pre-tax Gaji Bersih reaches Rp 6.000.000 is charged a flat 5% of that same figure. Selection is manual (a super admin toggles it in Tinjau Slip Gaji) and is persisted as `taxApplied`; the *amount* is always derived server-side from the rows being written, so every propagation re-derives it.
 - **`slipPropagation.ts`** — rules for pushing an employee-profile edit onto an already-saved slip (which fields are profile-owned vs. owned by koperasi/presence/SPJ systems).
 - **`uraianPropagation.ts`** — counterpart for pushing Uraian rekap / Loyalis presence data onto draft slips; also computes Loyalis presence bonus/hourly rate.
 - **`dashboardSlipData.ts`** — assembles the dashboard's period-level slip view across all the above.

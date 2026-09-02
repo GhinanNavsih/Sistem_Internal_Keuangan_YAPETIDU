@@ -6,6 +6,8 @@ export interface RekapCategoryData {
   totalEarnings: number; // JUMLAH
   deductions: Record<string, number>; // Maps sanitized deduction label to amount
   totalDeductions: number; // JML POTONGAN
+  /** Income tax, its own column between Potongan and Gaji Bersih. */
+  totalTax: number; // PAJAK
   netSalary: number; // GAJI BERSIH
 }
 
@@ -82,6 +84,7 @@ export async function generateRekapGajiPdf(data: RekapGajiData): Promise<void> {
     (acc, cat) => {
       acc.totalEarnings += cat.totalEarnings;
       acc.totalDeductions += cat.totalDeductions;
+      acc.totalTax += cat.totalTax || 0;
       acc.netSalary += cat.netSalary;
       data.deductionKeys.forEach(key => {
         acc.deductions[key] = (acc.deductions[key] || 0) + (cat.deductions[key] || 0);
@@ -92,9 +95,14 @@ export async function generateRekapGajiPdf(data: RekapGajiData): Promise<void> {
       totalEarnings: 0,
       deductions: {} as Record<string, number>,
       totalDeductions: 0,
+      totalTax: 0,
       netSalary: 0,
     }
   );
+
+  // The tax column appears only when a category is actually taxed, so an
+  // untaxed rekap keeps its existing layout.
+  const showTax = data.categories.some(cat => (cat.totalTax || 0) > 0);
 
   const head = [
     [
@@ -102,6 +110,9 @@ export async function generateRekapGajiPdf(data: RekapGajiData): Promise<void> {
       { content: 'URAIAN', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
       { content: 'JUMLAH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
       { content: 'POTONGAN', colSpan: data.deductionKeys.length + 1, styles: { halign: 'center' as const, valign: 'middle' as const } },
+      ...(showTax
+        ? [{ content: 'PAJAK', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } }]
+        : []),
       { content: 'GAJI BERSIH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
     ],
     [
@@ -130,6 +141,9 @@ export async function generateRekapGajiPdf(data: RekapGajiData): Promise<void> {
 
     // Add totalDeductions and netSalary
     row.push({ content: formatIDR(cat.totalDeductions), styles: { halign: 'center' as const } });
+    if (showTax) {
+      row.push({ content: formatIDR(cat.totalTax || 0), styles: { halign: 'center' as const } });
+    }
     row.push({ content: formatIDR(cat.netSalary), styles: { halign: 'center' as const } });
 
     body.push(row);
@@ -153,6 +167,12 @@ export async function generateRekapGajiPdf(data: RekapGajiData): Promise<void> {
     content: formatIDR(grandTotal.totalDeductions),
     styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'center' as const },
   });
+  if (showTax) {
+    grandTotalRow.push({
+      content: formatIDR(grandTotal.totalTax),
+      styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'center' as const },
+    });
+  }
   grandTotalRow.push({
     content: formatIDR(grandTotal.netSalary),
     styles: { fillColor: [168, 85, 126], textColor: [255, 255, 255], halign: 'center' as const },

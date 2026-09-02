@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import { calculatePayrollTotals, validateMoneyFields } from '@/lib/payroll/domain';
+import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { URAIAN_EDITOR_ROLES } from '@/lib/payroll/roles';
 import {
   allowsHistoricalPaperSpjEntry,
@@ -218,7 +219,10 @@ async function propagateLoyalisEmployee(input: {
 
     assertOnlyOwnedChanged(storedEarnings, merged, earningsOwned);
     const storedDeductions = validateMoneyFields(before?.deductions ?? [], 'deductions');
-    const totals = calculatePayrollTotals(merged, storedDeductions);
+    // Moving an earning moves the tax base with it, so a taxed slip is
+    // re-charged 5% of its new Gaji Bersih rather than keeping a stale figure.
+    const taxes = recalculateSlipTaxes(before, merged, storedDeductions);
+    const totals = calculatePayrollTotals(merged, storedDeductions, taxes);
     const after = {
       ...before,
       employeeId,
@@ -226,6 +230,7 @@ async function propagateLoyalisEmployee(input: {
       status: 'draft',
       earnings: merged,
       deductions: storedDeductions,
+      taxes,
       ...totals,
       revision: Number(before?.revision || 0) + 1,
       generatedAt: before?.generatedAt || timestamp,
@@ -375,7 +380,8 @@ async function propagatePekaryaEmployee(input: {
     } else if (changes.length > 0 && classification === 'eligible') {
       assertOnlyOwnedChanged(storedEarnings, merged, spjOwned);
       const storedDeductions = validateMoneyFields(beforeSlip?.deductions ?? [], 'deductions');
-      const totals = calculatePayrollTotals(merged, storedDeductions);
+      const taxes = recalculateSlipTaxes(beforeSlip, merged, storedDeductions);
+      const totals = calculatePayrollTotals(merged, storedDeductions, taxes);
       afterSlip = {
         ...beforeSlip,
         employeeId,
@@ -383,6 +389,7 @@ async function propagatePekaryaEmployee(input: {
         status: 'draft',
         earnings: merged,
         deductions: storedDeductions,
+        taxes,
         ...totals,
         revision: Number(beforeSlip?.revision || 0) + 1,
         generatedAt: beforeSlip?.generatedAt || timestamp,

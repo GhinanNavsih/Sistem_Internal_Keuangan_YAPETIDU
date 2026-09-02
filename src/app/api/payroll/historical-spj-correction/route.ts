@@ -11,6 +11,7 @@ import {
   mergeOwnedFields,
   type OwnedLabelPredicate,
 } from '@/lib/payroll/slipPropagation';
+import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 import { buildFinancialAuditRecord, newFinancialAuditRef } from '@/lib/server/audit';
 import {
   errorResponse,
@@ -237,11 +238,14 @@ export async function POST(request: NextRequest) {
         }
         const earnings = validateMoneyFields(slipData.earnings || [], 'earnings');
         const nextEarnings = replaceSpjEarning(earnings, correction.spj);
-        const totals = calculatePayrollTotals(nextEarnings, validateMoneyFields(slipData.deductions || [], 'deductions'));
+        const deductions = validateMoneyFields(slipData.deductions || [], 'deductions');
+        const taxes = recalculateSlipTaxes(slipData, nextEarnings, deductions);
+        const totals = calculatePayrollTotals(nextEarnings, deductions, taxes);
         const now = admin.firestore.FieldValue.serverTimestamp();
         transaction.set(slipSnapshot.ref, {
           ...slipData,
           earnings: nextEarnings,
+          taxes,
           ...totals,
           revision: Number(slipData.revision || 0) + 1,
           updatedAt: now,

@@ -11,6 +11,10 @@ import {
   sumApprovedActivitySpj,
   sumApprovedEventSpj,
 } from '@/lib/payroll/pekaryaSpj';
+import {
+  normalizeSatpamUraianEntry,
+} from '@/lib/payroll/satpamCompensation';
+import type { UraianEntry } from '@/types';
 
 /** Alias of the canonical MoneyField; see slipBuilders.SlipField. */
 export type PaySlipField = MoneyField;
@@ -40,6 +44,21 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
     if (!jobCategory) {
       console.warn(`[payslipSync] Job category not found for employee: ${employeeId}`);
       return;
+    }
+
+    let isSatpamKetua = false;
+    if (jobCategory === 'SATPAM') {
+      try {
+        const teamSnapshot = await getDocs(
+          query(
+            collection(db, 'SatpamShiftTeams'),
+            where('ketuaShiftId', '==', employeeId),
+          ),
+        );
+        isSatpamKetua = !teamSnapshot.empty;
+      } catch (error) {
+        console.warn('[payslipSync] Unable to resolve Satpam team leader:', error);
+      }
     }
 
     // 2. Query all approved activity reports for this employee and period
@@ -128,6 +147,21 @@ export async function syncActivityToPayslip(db: any, employeeId: string, period:
 
       let updatedValues = { ...(currentEntry.values || {}) };
       let updatedCounts = { ...(currentEntry.counts || {}) };
+
+      if (jobCategory === 'SATPAM') {
+        const normalizedEntry = normalizeSatpamUraianEntry(
+          {
+            ...currentEntry,
+            employeeId,
+            name: currentEntry.name || employeeName,
+            values: updatedValues,
+            counts: updatedCounts,
+          } as UraianEntry,
+          isSatpamKetua,
+        );
+        updatedValues = normalizedEntry.values;
+        updatedCounts = normalizedEntry.counts || {};
+      }
 
       // SPJ is the only column this function owns, for every job category.
       // Everything else in an entry belongs to whoever computed it: the Satpam

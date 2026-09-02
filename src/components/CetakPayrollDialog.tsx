@@ -11,7 +11,6 @@ import {
 import { FileText, Printer, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { calculateGapok } from '@/utils/payrollLogic';
-import { calculateTotalEarnings, calculateTotalDeductions, calculateNetSalary } from '@/utils/salaryCalculator';
 import { BlueCollarEmployee, SalaryMatrix, UraianGajiDocument } from '@/types';
 import { isTransferEligibleStatus } from '@/lib/payroll/domain';
 
@@ -46,7 +45,7 @@ interface CetakPayrollDialogProps {
   getLoyalisPresensiEarning?: (empId: string) => number;
   getLoyalisPresensiDeduction?: (empId: string) => number;
   isSuperAdmin?: boolean;
-  getFreshSlipData?: (emp: EmployeeRow) => { earnings: any[]; deductions: any[] };
+  getFreshSlipData?: (emp: EmployeeRow) => { earnings: any[]; deductions: any[]; taxes?: any[] };
 }
 
 export default function CetakPayrollDialog({
@@ -122,10 +121,13 @@ export default function CetakPayrollDialog({
 
       let netSalary = 0;
       const freshData = getFreshSlipData ? getFreshSlipData(emp) : null;
+      // Gaji Bersih on a transfer list must be what actually leaves the
+      // account, so income tax is subtracted alongside potongan.
       if (freshData) {
         const totalEarnings = freshData.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
         const totalDeductions = (freshData.deductions || []).reduce((sum: number, d: any) => sum + (d.amount || 0), 0);
-        netSalary = totalEarnings - totalDeductions;
+        const totalTax = (freshData.taxes || []).reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+        netSalary = totalEarnings - totalDeductions - totalTax;
       } else {
         const savedSlip = slipStates?.[emp.id];
         if (
@@ -135,7 +137,8 @@ export default function CetakPayrollDialog({
         ) {
           const totalEarnings = savedSlip.earnings.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
           const totalDeductions = (savedSlip.deductions || []).reduce((sum: number, d: any) => sum + (d.amount || 0), 0);
-          netSalary = totalEarnings - totalDeductions;
+          const totalTax = (savedSlip.taxes || []).reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+          netSalary = totalEarnings - totalDeductions - totalTax;
         }
       }
 

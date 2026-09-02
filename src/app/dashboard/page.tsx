@@ -1027,7 +1027,10 @@ export default function TreasuryDashboard() {
       const data = buildDashboardSlipData(employee, collar, slip, inputs);
       const gross = sumSlipFields(data.earnings);
       const deductions = sumSlipFields(data.deductions);
-      const net = gross - deductions;
+      // "Kas ditransfer ke pegawai" has to be net of income tax too, so the
+      // tax category is subtracted here alongside potongan.
+      const tax = sumSlipFields(data.taxes);
+      const net = gross - deductions - tax;
 
       aggregate.totalGross += gross;
       aggregate.totalDeductions += deductions;

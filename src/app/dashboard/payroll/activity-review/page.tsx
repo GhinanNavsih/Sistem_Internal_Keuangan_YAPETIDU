@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import SatkerPekaryaNavBar from '@/components/SatkerPekaryaNavBar';
 import { ImageExifViewer } from '@/components/ImageExifViewer';
-import { SATPAM_RATES } from '@/lib/payroll/domain';
+import { SATPAM_POSTS, SATPAM_RATES } from '@/lib/payroll/domain';
 import type { PhotoAuditMetadata, PhotoEvidence } from '@/lib/payroll/domain';
 import {
   Card,
@@ -69,6 +69,7 @@ import {
   Compass,
   Trash2,
   Edit2,
+  Plus,
   MapPin,
   Maximize2,
   Camera,
@@ -257,6 +258,12 @@ interface SatpamPayClassificationWarning {
   dutyDate: string;
   actualPayType: string;
   expectedPayType: string;
+}
+
+interface SatpamEmployeeOption {
+  id: string;
+  name: string;
+  isActive: boolean;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -633,6 +640,15 @@ export default function ActivityReviewPage() {
   const [payTypeCovered, setPayTypeCovered] = useState('');
   const [savingPayType, setSavingPayType] = useState(false);
 
+  // ── Add Satpam to an accepted shift (super_admin/satker_head) ──
+  const [addSatpamTarget, setAddSatpamTarget] = useState<SatpamShiftGroup | null>(null);
+  const [addSatpamPostId, setAddSatpamPostId] = useState('');
+  const [addSatpamEmployeeId, setAddSatpamEmployeeId] = useState('');
+  const [addSatpamEmployeeOptions, setAddSatpamEmployeeOptions] = useState<SatpamEmployeeOption[]>([]);
+  const [addSatpamReason, setAddSatpamReason] = useState('');
+  const [loadingAddSatpamOptions, setLoadingAddSatpamOptions] = useState(false);
+  const [savingAddSatpam, setSavingAddSatpam] = useState(false);
+
   // ── Driver (Sopir) Audit Modal State ──
   // The audit form itself lives in <DriverJourneyAuditDialog>, shared with the
   // Driver Journeys page so both entry points settle pay identically.
@@ -654,7 +670,7 @@ export default function ActivityReviewPage() {
     status: 'processing' | 'success';
     message: string;
   } | null>(null);
-  const [satpamEmployeeDirectory, setSatpamEmployeeDirectory] = useState<Array<{ id: string; name: string; isActive: boolean }>>([]);
+  const [satpamEmployeeDirectory, setSatpamEmployeeDirectory] = useState<SatpamEmployeeOption[]>([]);
   // A "planned" guard (the "Rencana:" line on an audit card) can be someone
   // no longer classified as SATPAM by the time this renders, so they may be
   // missing from the SATPAM-only directory above. This resolves those ids
@@ -739,6 +755,10 @@ export default function ActivityReviewPage() {
     // satker_head: show exactly the categories they have been granted access to
     return (profile.permittedCategories ?? []).filter(c => CLEANING_CATEGORIES.includes(c));
   }, [profile]);
+
+  const canManageAcceptedSatpam =
+    profile?.role === 'super_admin' ||
+    (profile?.role === 'satker_head' && allowedCategories.includes('SATPAM'));
 
 
 
@@ -1013,6 +1033,36 @@ export default function ActivityReviewPage() {
           a.shiftName.localeCompare(b.shiftName)) * dateDirection,
       );
   }, [filteredActivities, statusFilter]);
+
+  // Keep the complete occurrence assignment list separate from the visible
+  // cards. Status/search filters can hide rows, but an accepted-shift edit
+  // must send every existing assignment back to the auditor PUT endpoint or
+  // the omitted rows would be treated as removals.
+  const satpamAssignmentsByOccurrence = useMemo(() => {
+    const grouped = new Map<string, ActivityReport[]>();
+    activities.forEach((activity) => {
+      if (
+        activity.jobCategory !== 'SATPAM' ||
+        !activity.sourceOccurrenceId ||
+        activity.shiftType === 'Off-Duty'
+      ) {
+        return;
+      }
+      const assignments = grouped.get(activity.sourceOccurrenceId) || [];
+      assignments.push(activity);
+      grouped.set(activity.sourceOccurrenceId, assignments);
+    });
+    grouped.forEach((assignments) => {
+      assignments.sort((left, right) =>
+        (left.postId || left.postName || '').localeCompare(
+          right.postId || right.postName || '',
+          undefined,
+          { numeric: true },
+        ),
+      );
+    });
+    return grouped;
+  }, [activities]);
 
   // Batch-resolve any "Rencana:" planned-employee id that neither the report
   // itself nor the SATPAM directory could name (see resolvedPlannedNames
@@ -1406,6 +1456,155 @@ export default function ActivityReviewPage() {
     } finally {
       isActionLoadingRef.current = false;
       setDeletingActivity(false);
+    }
+  };
+
+  const getAcceptedSatpamAssignments = (group: SatpamShiftGroup) => {
+    const assignments = satpamAssignmentsByOccurrence.get(group.occurrenceId) || [];
+    const validPostIds = new Set<string>(SATPAM_POSTS.map((post) => post.id));
+    if (
+      assignments.length !== SATPAM_POSTS.length ||
+      assignments.some((item) => item.status !== 'approved') ||
+      assignments.some((item) => item.assignmentKind === 'extra') ||
+      assignments.some((item) => !item.postId || !validPostIds.has(item.postId)) ||
+      new Set(assignments.map((item) => item.postId)).size !== SATPAM_POSTS.length
+    ) {
+      return null;
+    }
+    return assignments;
+  };
+
+  const closeAddSatpamDialog = () => {
+    if (savingAddSatpam) return;
+    setAddSatpamTarget(null);
+    setAddSatpamPostId('');
+    setAddSatpamEmployeeId('');
+    setAddSatpamEmployeeOptions([]);
+    setAddSatpamReason('');
+  };
+
+  const openAddSatpamDialog = async (group: SatpamShiftGroup) => {
+    if (!canManageAcceptedSatpam) return;
+    const assignments = getAcceptedSatpamAssignments(group);
+    if (!assignments || group.assignments.length !== assignments.length) {
+      setErrorMsg('Shift ini harus menampilkan sembilan penugasan yang sudah disetujui sebelum petugas tambahan dapat ditambahkan.');
+      return;
+    }
+
+    setErrorMsg('');
+    setAddSatpamTarget(group);
+    setAddSatpamPostId('');
+    setAddSatpamEmployeeId('');
+    setAddSatpamEmployeeOptions([]);
+    setAddSatpamReason(`Menambahkan petugas tambahan pada shift ${group.shiftName} ${group.dutyDate}.`);
+    setLoadingAddSatpamOptions(true);
+    try {
+      const directory = await authenticatedJson<{
+        employees: SatpamEmployeeOption[];
+        eligibleExtraEmployees?: SatpamEmployeeOption[];
+      }>(
+        `/api/satpam/shifts/review?occurrenceId=${encodeURIComponent(group.occurrenceId)}`,
+        { method: 'GET' },
+      );
+      setSatpamEmployeeDirectory(directory.employees);
+      setAddSatpamEmployeeOptions(directory.eligibleExtraEmployees || []);
+    } catch (err) {
+      console.error('Gagal memuat pilihan petugas tambahan:', err);
+      setAddSatpamEmployeeOptions([]);
+      setErrorMsg(err instanceof Error ? err.message : 'Gagal memuat petugas tambahan.');
+    } finally {
+      setLoadingAddSatpamOptions(false);
+    }
+  };
+
+  const handleAddSatpam = async () => {
+    if (isActionLoadingRef.current || !addSatpamTarget || !user) return;
+    const currentAssignments = getAcceptedSatpamAssignments(addSatpamTarget);
+    if (!currentAssignments) {
+      setErrorMsg('Shift sudah berubah atau tidak lagi memenuhi syarat penambahan petugas. Muat ulang halaman.');
+      return;
+    }
+    if (!addSatpamPostId) {
+      setErrorMsg('Pilih pos untuk petugas tambahan.');
+      return;
+    }
+    const selectedEmployee = addSatpamEmployeeOptions.find(
+      (employee) => employee.id === addSatpamEmployeeId,
+    );
+    if (!selectedEmployee) {
+      setErrorMsg('Pilih petugas Satpam yang tersedia.');
+      return;
+    }
+    if (addSatpamReason.trim().length < 8) {
+      setErrorMsg('Catatan audit wajib diisi sekurang-kurangnya 8 karakter.');
+      return;
+    }
+    if (currentAssignments.some((item) => !item.postId || !item.shiftType || !item.employeeId)) {
+      setErrorMsg('Data penugasan lama tidak lengkap. Muat ulang halaman sebelum mencoba lagi.');
+      return;
+    }
+
+    const assignments = [
+      ...currentAssignments.map((item) => ({
+        reportId: item.id,
+        assignmentKind: item.assignmentKind || 'primary',
+        postId: item.postId!,
+        employeeId: item.employeeId,
+        shiftType: item.shiftType!,
+        ...(item.coveredEmployeeId ? { coveredEmployeeId: item.coveredEmployeeId } : {}),
+        ...(item.overtimeReason ? { overtimeReason: item.overtimeReason } : {}),
+      })),
+      {
+        assignmentKind: 'extra',
+        postId: addSatpamPostId,
+        employeeId: selectedEmployee.id,
+        shiftType: 'Lembur Sendiri',
+      },
+    ];
+    const label = `Petugas tambahan ${selectedEmployee.name} berhasil ditambahkan ke ${addSatpamTarget.shiftName} ${addSatpamTarget.dutyDate}.`;
+
+    isActionLoadingRef.current = true;
+    setSavingAddSatpam(true);
+    try {
+      await authenticatedJson('/api/satpam/shifts/review', {
+        method: 'PUT',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('satpam_shift_add'),
+          occurrenceId: addSatpamTarget.occurrenceId,
+          expectedRevision: addSatpamTarget.revision,
+          dutyDate: addSatpamTarget.dutyDate,
+          shiftName: addSatpamTarget.shiftName,
+          reason: addSatpamReason.trim(),
+          assignments,
+        }),
+      });
+
+      const period = pekaryaPayrollPeriodForDate(addSatpamTarget.dutyDate);
+      setSuccessMsg(label);
+      setAddSatpamTarget(null);
+      setAddSatpamPostId('');
+      setAddSatpamEmployeeId('');
+      setAddSatpamEmployeeOptions([]);
+      setAddSatpamReason('');
+      fetchActivities();
+      try {
+        // The server owns Satpam shift reconciliation. This client-side step
+        // only propagates the refreshed Uraian totals onto draft slips.
+        const propagationNote = await propagateUraianToSlips({
+          scope: 'pekarya',
+          period,
+          jobCategory: 'SATPAM',
+        });
+        if (propagationNote) setSuccessMsg(`${label}${propagationNote}`);
+      } catch (syncErr) {
+        console.error('Error propagating payslip after adding Satpam:', syncErr);
+      }
+    } catch (err) {
+      console.error('Error adding Satpam to accepted shift:', err);
+      setErrorMsg(err instanceof Error ? err.message : 'Gagal menambahkan petugas Satpam.');
+    } finally {
+      isActionLoadingRef.current = false;
+      setSavingAddSatpam(false);
     }
   };
 
@@ -2201,6 +2400,15 @@ export default function ActivityReviewPage() {
                         const isSubmitting = submittingShiftId === group.occurrenceId;
                         const noteValue = shiftReviewNotes[group.occurrenceId] || '';
                         const missingPhotos = group.assignments.length - group.photoCount;
+                        const allSatpamAssignments =
+                          satpamAssignmentsByOccurrence.get(group.occurrenceId) || [];
+                        const canAddPetugas =
+                          canManageAcceptedSatpam &&
+                          group.assignments.length === allSatpamAssignments.length &&
+                          allSatpamAssignments.length === SATPAM_POSTS.length &&
+                          allSatpamAssignments.every((assignment) => assignment.status === 'approved') &&
+                          !allSatpamAssignments.some((assignment) => assignment.assignmentKind === 'extra') &&
+                          new Set(allSatpamAssignments.map((assignment) => assignment.postId)).size === SATPAM_POSTS.length;
 
                         const displayShiftFee = group.assignments.reduce((sum, assignItem) => {
                           // Pending rows use the auditor's in-progress local choice
@@ -2558,6 +2766,23 @@ export default function ActivityReviewPage() {
                                         </div>
                                       );
                                     })}
+                                    {canAddPetugas && (
+                                      <button
+                                        type="button"
+                                        onClick={() => void openAddSatpamDialog(group)}
+                                        disabled={savingAddSatpam}
+                                        className="group min-h-[260px] rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/40 p-4 text-indigo-700 transition-all hover:border-indigo-400 hover:bg-indigo-50 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-60 flex flex-col items-center justify-center gap-2 cursor-pointer"
+                                        aria-label={`Tambah petugas pada shift ${group.shiftName} ${group.dutyDate}`}
+                                      >
+                                        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100 transition-transform group-hover:scale-105">
+                                          <Plus className="h-5 w-5" />
+                                        </span>
+                                        <span className="text-sm font-black">+ Tambah Petugas</span>
+                                        <span className="text-center text-[10px] font-semibold leading-relaxed text-indigo-500">
+                                          Tambahkan satu penugasan tambahan
+                                        </span>
+                                      </button>
+                                    )}
                                   </div>
 
                                   {group.offDuty.length > 0 && (
@@ -3480,6 +3705,152 @@ export default function ActivityReviewPage() {
             >
               {savingPayType ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
               Simpan Koreksi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add Satpam to an accepted shift ───────────────────────────── */}
+      <Dialog
+        open={addSatpamTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) closeAddSatpamDialog();
+        }}
+      >
+        <DialogContent className="sm:max-w-lg rounded-3xl border-none bg-white p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
+              <Plus className="h-5 w-5 text-indigo-600" />
+              Tambah Petugas
+            </DialogTitle>
+            <DialogDescription className="text-slate-500">
+              Tambahkan satu petugas ke laporan shift yang sudah disetujui. Penugasan baru akan
+              dicatat sebagai <strong>Lembur Sendiri · {fmtRp(SATPAM_RATES['Lembur Sendiri'])}</strong>.
+              Sembilan penugasan lama tetap dipertahankan.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 px-3 py-2.5 text-xs">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold text-indigo-500">Shift</span>
+                <span className="font-black text-indigo-900">
+                  {addSatpamTarget?.dutyDate} · {addSatpamTarget?.shiftName}
+                </span>
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <span className="font-semibold text-indigo-500">Penugasan saat ini</span>
+                <span className="font-black text-indigo-900">9 pos disetujui</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold uppercase text-slate-500">Pos Tambahan</Label>
+              <Select
+                value={addSatpamPostId || 'none'}
+                onValueChange={(value) => {
+                  if (value) setAddSatpamPostId(value === 'none' ? '' : value);
+                }}
+              >
+                <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
+                  <SelectValue>
+                    {SATPAM_POSTS.find((post) => post.id === addSatpamPostId)?.name || '-- Pilih Pos --'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="max-h-[280px] rounded-xl bg-white">
+                  <SelectItem value="none" className="min-h-10 text-sm italic text-slate-500">
+                    -- Pilih Pos --
+                  </SelectItem>
+                  {SATPAM_POSTS.map((post) => (
+                    <SelectItem key={post.id} value={post.id} className="min-h-10 text-sm">
+                      {post.id} · {post.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold uppercase text-slate-500">Petugas Satpam</Label>
+              {loadingAddSatpamOptions ? (
+                <div className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
+                  <Loader2 className="h-4 w-4 animate-spin text-indigo-600" /> Memuat petugas yang tersedia...
+                </div>
+              ) : (
+                <Select
+                  value={addSatpamEmployeeId || 'none'}
+                  onValueChange={(value) => {
+                    if (value) setAddSatpamEmployeeId(value === 'none' ? '' : value);
+                  }}
+                >
+                  <SelectTrigger className="h-11 w-full rounded-xl border-slate-200 bg-white text-sm font-bold">
+                    <SelectValue>
+                      {addSatpamEmployeeOptions.find((employee) => employee.id === addSatpamEmployeeId)?.name || '-- Pilih Petugas --'}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[280px] rounded-xl bg-white">
+                    <SelectItem value="none" className="min-h-10 text-sm italic text-slate-500">
+                      -- Pilih Petugas --
+                    </SelectItem>
+                    {addSatpamEmployeeOptions.map((employee) => (
+                      <SelectItem key={employee.id} value={employee.id} className="min-h-10 text-sm">
+                        {employee.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {!loadingAddSatpamOptions && addSatpamEmployeeOptions.length === 0 && (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-semibold text-amber-900">
+                  Tidak ada petugas Satpam aktif yang memenuhi roster shift ini untuk ditambahkan.
+                </p>
+              )}
+              <p className="text-[10px] font-semibold leading-relaxed text-slate-400">
+                Petugas yang sudah tercatat pada shift tidak ditampilkan. Jika rencana dinas tersedia,
+                pilihan dibatasi pada petugas off-duty shift ini.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold uppercase text-slate-500">Catatan Audit</Label>
+              <Input
+                value={addSatpamReason}
+                onChange={(event) => setAddSatpamReason(event.target.value)}
+                placeholder="Contoh: Penambahan petugas untuk kebutuhan pengamanan"
+                className="rounded-xl border-slate-200 text-sm focus:border-indigo-400 focus:ring-indigo-400/20"
+              />
+              <p className="text-[10px] font-semibold text-slate-400">
+                Minimal 8 karakter. Dicatat pada log audit finansial.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-3">
+            <Button
+              variant="ghost"
+              onClick={closeAddSatpamDialog}
+              disabled={savingAddSatpam}
+              className="rounded-xl font-bold text-slate-500"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleAddSatpam}
+              disabled={
+                loadingAddSatpamOptions ||
+                savingAddSatpam ||
+                !addSatpamPostId ||
+                !addSatpamEmployeeId ||
+                addSatpamReason.trim().length < 8
+              }
+              className="rounded-xl bg-indigo-600 font-bold text-white shadow-md shadow-indigo-100 hover:bg-indigo-700"
+            >
+              {savingAddSatpam ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="mr-2 h-4 w-4" />
+              )}
+              Simpan Petugas
             </Button>
           </DialogFooter>
         </DialogContent>

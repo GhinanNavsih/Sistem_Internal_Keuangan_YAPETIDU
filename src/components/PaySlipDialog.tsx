@@ -20,6 +20,7 @@ import {
   Trash2,
   ArrowRight,
   AlertCircle,
+  Landmark,
   Eye,
   CheckCircle2,
   RotateCcw,
@@ -33,12 +34,16 @@ import {
 } from '@/lib/payroll/slipBuilders';
 import { PekaryaSlipPreview } from '@/lib/payroll/pekaryaSlipPreview';
 import { PayrollStatus, isImmutablePayrollStatus } from '@/lib/payroll/domain';
+import {
+  PAYROLL_TAX_THRESHOLD,
+  calculateTaxBase,
+  describeTaxIneligibility,
+  isTaxableBase,
+  resolveSlipTaxes,
+  resolveTaxSelection,
+} from '@/lib/payroll/payrollTax';
 import { UserRole } from '@/lib/payroll/roles';
-import { 
-  calculateTotalEarnings, 
-  calculateTotalDeductions, 
-  calculateNetSalary 
-} from '@/utils/salaryCalculator';
+import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -48,6 +53,10 @@ export interface SlipState {
   status: SlipStatus;
   earnings: PaySlipField[];
   deductions: PaySlipField[];
+  /** Income tax rows; empty or absent unless a super admin applied the tax. */
+  taxes?: PaySlipField[];
+  /** The stored selection, which survives a period spent under the threshold. */
+  taxApplied?: boolean;
   generatedAt?: string;
   lockedAt?: string;
   verifiedAt?: string;
@@ -69,7 +78,12 @@ interface PaySlipDialogProps {
   period: string; // e.g. "Mei 2026"
   periodClosed: boolean;
   slipState: SlipState | null;
-  onSave: (employeeId: string, earnings: PaySlipField[], deductions: PaySlipField[]) => Promise<void>;
+  onSave: (
+    employeeId: string,
+    earnings: PaySlipField[],
+    deductions: PaySlipField[],
+    taxApplied: boolean,
+  ) => Promise<void>;
   onVerifyAndLock: (employeeId: string, reason: string) => Promise<void>;
   onCreatePayment: (employeeId: string, paymentBatchId: string, reason: string) => Promise<void>;
   onMarkPaid: (employeeId: string, bankReference: string, reason: string) => Promise<void>;
@@ -175,10 +189,18 @@ export default function PaySlipDialog({
 }: PaySlipDialogProps) {
   const [earnings, setEarnings] = useState<PaySlipField[]>([]);
   const [deductions, setDeductions] = useState<PaySlipField[]>([]);
+  /**
+   * Only the *selection* is state. The tax amount is always re-derived from
+   * the rows currently on screen, so editing an earning or a deduction moves
+   * the 5% with it and the modal can never show a tax that disagrees with its
+   * own Gaji Bersih — the same rule the server applies on save.
+   */
+  const [taxApplied, setTaxApplied] = useState(false);
 
   // Snapshots for Batal functionality
   const [snapshotEarnings, setSnapshotEarnings] = useState<PaySlipField[]>([]);
   const [snapshotDeductions, setSnapshotDeductions] = useState<PaySlipField[]>([]);
+  const [snapshotTaxApplied, setSnapshotTaxApplied] = useState(false);
 
   const [localStatus, setLocalStatus] = useState<SlipStatus>('draft');
   const localIsLocked = localStatus !== 'draft' || periodClosed;
@@ -218,7 +240,11 @@ export default function PaySlipDialog({
     let initDeductions: PaySlipField[] = [];
 
     if (slipState && Array.isArray(slipState.earnings)) {
-      initEarnings = JSON.parse(JSON.stringify(slipState.earnings));
+      const savedEarnings =
+        employee.employment?.jobCategory === 'SATPAM'
+          ? mergeSatpamLegacyBonusIntoTunjangan(slipState.earnings)
+          : slipState.earnings;
+      initEarnings = JSON.parse(JSON.stringify(savedEarnings));
     } else if (activeTab !== 'loyalis' && pekaryaPreview) {
       // No saved slip: open on the live matrix-based preview rather than the
       // profile snapshot, so the modal and the employee's own payslip agree.
@@ -258,10 +284,14 @@ export default function PaySlipDialog({
       );
     }
 
+    const initTaxApplied = resolveTaxSelection(slipState);
+
     setEarnings(initEarnings);
     setDeductions(initDeductions);
+    setTaxApplied(initTaxApplied);
     setSnapshotEarnings(JSON.parse(JSON.stringify(initEarnings)));
     setSnapshotDeductions(JSON.parse(JSON.stringify(initDeductions)));
+    setSnapshotTaxApplied(initTaxApplied);
     
     setLocalStatus(slipState?.status || 'draft');
     setRefreshDiff(null);
@@ -364,13 +394,26 @@ export default function PaySlipDialog({
 
   const totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
   const totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
-  const netSalary = totalEarnings - totalDeductions;
+  // Gaji Bersih before tax — both the figure the tax is charged on and the
+  // figure that decides whether the employee is taxable at all.
+  const taxBase = calculateTaxBase(earnings, deductions);
+  const taxes = resolveSlipTaxes(earnings, deductions, taxApplied);
+  const totalTax = taxes.reduce((sum, t) => sum + t.amount, 0);
+  const netSalary = totalEarnings - totalDeductions - totalTax;
+  const taxEligible = isTaxableBase(taxBase);
+  const taxIneligibilityReason = describeTaxIneligibility(taxBase);
+  const canManageTax = actorRole === 'super_admin';
+  // Locking reads the tax off the *saved* slip, so an un-saved toggle would be
+  // silently discarded at the moment it matters most.
+  const savedTaxApplied = resolveTaxSelection(slipState);
+  const taxSelectionUnsaved = taxApplied !== savedTaxApplied;
 
   // ─── Actions ──────────────────────────────────────────────────
 
   const handleBatal = () => {
     setEarnings(snapshotEarnings);
     setDeductions(snapshotDeductions);
+    setTaxApplied(snapshotTaxApplied);
     onOpenChange(false);
   };
 
@@ -398,7 +441,16 @@ export default function PaySlipDialog({
   const handleSimpan = async () => {
     if (!employee || newSlipBlocked) return;
     try {
-      await onSave(employee.employeeId || employee.id, earnings, deductions);
+      // The raw selection is sent, not `taxApplied && taxEligible`: a slip
+      // that is selected but currently under the threshold must keep its
+      // selection, and a non-super-admin saving such a slip must not appear
+      // to be flipping it off.
+      await onSave(
+        employee.employeeId || employee.id,
+        earnings,
+        deductions,
+        taxApplied,
+      );
       onOpenChange(false);
     } catch (err) {
       console.error("Gagal menyimpan slip:", err);
@@ -649,6 +701,52 @@ export default function PaySlipDialog({
                   <span className="text-xs font-semibold text-red-500 uppercase">Total Potongan</span>
                   <span className="text-sm font-bold text-red-600 tabular-nums">{formatIDR(totalDeductions)}</span>
                 </div>
+
+                {/* ─── Pajak (its own category, charged after Potongan) ─── */}
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                      Pajak
+                    </h3>
+                  </div>
+
+                  {taxes.length > 0 ? (
+                    <div className="space-y-2">
+                      {taxes.map((item, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <div className="flex-1 text-sm h-8 rounded-lg bg-amber-50/60 border border-amber-200 px-3 flex items-center text-slate-700">
+                            {item.label}
+                          </div>
+                          <div className="flex items-center w-32 h-8 rounded-lg bg-amber-50/60 border border-amber-200 px-2 shrink-0">
+                            <span className="text-xs font-semibold text-amber-500 mr-1 select-none">Rp</span>
+                            <span className="w-full text-right text-sm tabular-nums text-slate-700">
+                              {formatNumberWithDots(item.amount) || '0'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                      <p className="text-[11px] text-amber-700/80 leading-relaxed">
+                        5% dari gaji bersih {formatIDR(taxBase)} sebelum pajak. Nominal
+                        mengikuti perubahan uraian dan potongan secara otomatis.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 italic">
+                      {taxApplied
+                        ? `Ditandai kena pajak, tetapi gaji bersih ${formatIDR(taxBase)} masih di bawah ${formatIDR(PAYROLL_TAX_THRESHOLD)}. Penandaan tetap tersimpan dan pajak kembali dihitung bila gaji bersih mencapai batas.`
+                        : taxEligible
+                          ? 'Belum dikenakan pajak penghasilan.'
+                          : `Tidak dikenakan pajak — gaji bersih di bawah ${formatIDR(PAYROLL_TAX_THRESHOLD)}.`}
+                    </p>
+                  )}
+
+                  {/* Tax subtotal */}
+                  <div className="mt-3 pt-3 border-t border-amber-100 flex justify-between items-center">
+                    <span className="text-xs font-semibold text-amber-600 uppercase">Total Pajak</span>
+                    <span className="text-sm font-bold text-amber-700 tabular-nums">{formatIDR(totalTax)}</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -667,6 +765,10 @@ export default function PaySlipDialog({
                   <p className="flex items-center justify-end gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block"></span>
                     Potongan: {formatIDR(totalDeductions)}
+                  </p>
+                  <p className="flex items-center justify-end gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"></span>
+                    Pajak: {formatIDR(totalTax)}
                   </p>
                 </div>
               </div>
@@ -738,6 +840,31 @@ export default function PaySlipDialog({
                   Refresh
                 </Button>
               )}
+
+              {/* Manual, per-employee tax selection. The amount is derived, so
+                  this only ever toggles whether the rule applies. */}
+              {canManageTax && !localIsLocked && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setTaxApplied((previous) => !previous)}
+                  disabled={!taxApplied && !taxEligible}
+                  title={
+                    taxApplied
+                      ? 'Hapus pajak penghasilan dari slip ini.'
+                      : taxIneligibilityReason ||
+                        `Kenakan pajak 5% dari gaji bersih ${formatIDR(taxBase)}.`
+                  }
+                  className={`rounded-xl h-10 font-bold flex items-center transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                    taxApplied
+                      ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                      : 'border-slate-200 text-slate-600 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200'
+                  }`}
+                >
+                  <Landmark className="w-4 h-4 mr-2" />
+                  {taxApplied ? 'Hapus Pajak 5%' : 'Kenakan Pajak 5%'}
+                </Button>
+              )}
             </div>
 
             <div>
@@ -758,14 +885,21 @@ export default function PaySlipDialog({
                     <Button
                       type="button"
                       onClick={handleVerifyAndLock}
-                      disabled={!periodClosed || !slipState || newSlipBlocked}
-                      className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 font-bold"
+                      disabled={
+                        !periodClosed ||
+                        !slipState ||
+                        newSlipBlocked ||
+                        taxSelectionUnsaved
+                      }
+                      className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                       title={
                         !periodClosed
                           ? 'Tutup periode payroll terlebih dahulu.'
                           : !slipState
                             ? 'Draf harus disimpan sebelum periode ditutup.'
-                            : undefined
+                            : taxSelectionUnsaved
+                              ? 'Simpan perubahan pajak terlebih dahulu.'
+                              : undefined
                       }
                     >
                       ✓ Verifikasi &amp; Kunci
@@ -776,6 +910,11 @@ export default function PaySlipDialog({
                   )}
                   {periodClosed && !slipState && (
                     <span className="text-xs text-rose-600">Tidak ada draf tersimpan sebelum periode ditutup.</span>
+                  )}
+                  {taxSelectionUnsaved && (
+                    <span className="text-xs text-amber-600">
+                      Perubahan pajak belum disimpan.
+                    </span>
                   )}
                 </div>
               ) : isImmutablePayrollStatus(localStatus) ? (
@@ -863,7 +1002,7 @@ export default function PaySlipDialog({
               Konfirmasi Pembayaran Gaji
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500 mt-1">
-              Konfirmasi bahwa gaji sebesar <strong className="text-emerald-700">{calculateNetSalary(totalEarnings, totalDeductions).toLocaleString('id-ID')}</strong> telah berhasil ditransfer.
+              Konfirmasi bahwa gaji sebesar <strong className="text-emerald-700">{netSalary.toLocaleString('id-ID')}</strong> telah berhasil ditransfer.
             </DialogDescription>
           </DialogHeader>
 

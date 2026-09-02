@@ -7,6 +7,7 @@ export function generateRekapGajiPekaryaXlsx(data: RekapGajiData): void {
     (acc, cat) => {
       acc.totalEarnings += cat.totalEarnings;
       acc.totalDeductions += cat.totalDeductions;
+      acc.totalTax += cat.totalTax || 0;
       acc.netSalary += cat.netSalary;
       data.deductionKeys.forEach(key => {
         acc.deductions[key] = (acc.deductions[key] || 0) + (cat.deductions[key] || 0);
@@ -17,9 +18,13 @@ export function generateRekapGajiPekaryaXlsx(data: RekapGajiData): void {
       totalEarnings: 0,
       deductions: {} as Record<string, number>,
       totalDeductions: 0,
+      totalTax: 0,
       netSalary: 0,
     }
   );
+
+  // The tax column appears only when a category is actually taxed.
+  const showTax = data.categories.some(cat => (cat.totalTax || 0) > 0);
 
   // Headers
   // Row 1: ['NO', 'URAIAN', 'JUMLAH', 'POTONGAN', ...empty cells..., 'GAJI BERSIH']
@@ -30,6 +35,7 @@ export function generateRekapGajiPekaryaXlsx(data: RekapGajiData): void {
     'JUMLAH',
     'POTONGAN',
     ...Array(data.deductionKeys.length).fill(''), // empty cells for colspan
+    ...(showTax ? ['PAJAK'] : []),
     'GAJI BERSIH'
   ];
 
@@ -39,6 +45,7 @@ export function generateRekapGajiPekaryaXlsx(data: RekapGajiData): void {
     '',
     ...data.deductionKeys.map(key => key.toUpperCase()),
     'JML POTONGAN',
+    ...(showTax ? [''] : []),
     ''
   ];
 
@@ -59,6 +66,9 @@ export function generateRekapGajiPekaryaXlsx(data: RekapGajiData): void {
 
     // Add totalDeductions and netSalary
     row.push(cat.totalDeductions);
+    if (showTax) {
+      row.push(cat.totalTax || 0);
+    }
     row.push(cat.netSalary);
 
     rows.push(row);
@@ -76,6 +86,9 @@ export function generateRekapGajiPekaryaXlsx(data: RekapGajiData): void {
   });
 
   grandTotalRow.push(grandTotal.totalDeductions);
+  if (showTax) {
+    grandTotalRow.push(grandTotal.totalTax);
+  }
   grandTotalRow.push(grandTotal.netSalary);
 
   const worksheetData = [
@@ -101,8 +114,15 @@ export function generateRekapGajiPekaryaXlsx(data: RekapGajiData): void {
     { s: { r: 3, c: 2 }, e: { r: 4, c: 2 } },
     // POTONGAN (col 3 to 3 + numDeductions)
     { s: { r: 3, c: 3 }, e: { r: 3, c: 3 + numDeductions } },
-    // GAJI BERSIH (col 3 + numDeductions + 1)
-    { s: { r: 3, c: 3 + numDeductions + 1 }, e: { r: 4, c: 3 + numDeductions + 1 } }
+    // PAJAK (only present when a category is taxed)
+    ...(showTax
+      ? [{ s: { r: 3, c: 3 + numDeductions + 1 }, e: { r: 4, c: 3 + numDeductions + 1 } }]
+      : []),
+    // GAJI BERSIH
+    {
+      s: { r: 3, c: 3 + numDeductions + 1 + (showTax ? 1 : 0) },
+      e: { r: 4, c: 3 + numDeductions + 1 + (showTax ? 1 : 0) },
+    }
   ];
   worksheet['!merges'] = merges;
 
@@ -112,7 +132,7 @@ export function generateRekapGajiPekaryaXlsx(data: RekapGajiData): void {
     { wch: 6 },
     { wch: 30 },
     { wch: 15 },
-    ...Array(numDeductions + 2).fill({ wch: 15 })
+    ...Array(numDeductions + 2 + (showTax ? 1 : 0)).fill({ wch: 15 })
   ];
   worksheet['!cols'] = colWidths;
 

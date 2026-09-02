@@ -42,6 +42,7 @@ import {
   FileText,
   TrendingUp,
   TrendingDown,
+  Landmark,
   Coins,
   KeyRound,
   Lock,
@@ -58,6 +59,10 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { generatePaySlipPdf, PaySlipField, PaySlipData } from '@/utils/generatePaySlipPdf';
+import {
+  PAYROLL_TAX_THRESHOLD,
+  normalizeTaxFields,
+} from '@/lib/payroll/payrollTax';
 import { MONTHS_ID } from '@/utils/rekapConfig';
 import { authenticatedJson } from '@/lib/payroll/client';
 import { activityBelongsToPayrollPeriod } from '@/lib/payroll/pekaryaSpj';
@@ -73,6 +78,7 @@ import {
   calculateYearsOfService,
 } from '@/utils/payrollLogic';
 import { isTransferEligibleStatus } from '@/lib/payroll/domain';
+import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
 
 interface PekaryaDocItem {
   id: string;
@@ -572,6 +578,12 @@ export default function EmployeePayslipPage() {
   // Dynamic calculations states
   const [calculatedEarnings, setCalculatedEarnings] = useState<PaySlipField[]>([]);
   const [calculatedDeductions, setCalculatedDeductions] = useState<PaySlipField[]>([]);
+  /**
+   * Income tax rows saved on the slip. Tax is its own category, so it is read
+   * straight off the slip rather than merged into the deduction list — the
+   * employee sees Potongan and Pajak as separate blocks, exactly as printed.
+   */
+  const [calculatedTaxes, setCalculatedTaxes] = useState<PaySlipField[]>([]);
 
   const pekaryaPayrollDocumentation = useMemo<PekaryaDocItem[]>(() => {
     const userJobCategory = (employeeData?.employment?.jobCategory || 'PEKARYA').toUpperCase();
@@ -689,19 +701,27 @@ export default function EmployeePayslipPage() {
       };
     }
 
-    const bonusDoc = {
-      id: 'bonus_presensi_pekarya',
-      title: 'Bonus Presensi & Ketertiban',
-      formula: isSatpam
-        ? 'Bulanan: Rp 100.000 | Triwulanan: Rp 300.000 | Mutlak: Rp 50.000'
-        : isKebersihan
+    const bonusDoc: PekaryaDocItem = isSatpam
+      ? {
+        id: 'bonus_presensi_pekarya',
+        title: 'Tunjangan Jabatan',
+        formula: 'Reguler: Rp 50.000 | Ketua Shift / Ketua Satpam: Rp 150.000',
+        bullets: [
+          'Rp 50.000 untuk seluruh Satpam sudah digabung langsung ke Tunjangan Jabatan.',
+          'Ketua Shift / Ketua Satpam menerima tambahan tunjangan peran Rp 100.000.',
+        ],
+      }
+      : {
+        id: 'bonus_presensi_pekarya',
+        title: 'Bonus Presensi & Ketertiban',
+        formula: isKebersihan
           ? 'Insentif Bonus Presensi Bulanan / Mutlak'
           : 'Bonus Presensi Mutlak: Rp 50.000',
-      bullets: [
-        'Diberikan kepada pegawai Pekarya yang memenuhi kualifikasi kedisiplinan dan ketepatan presensi',
-        'Dihitung dan disetujui pada pelaporan rekap bulanan / triwulanan',
-      ],
-    };
+        bullets: [
+          'Diberikan kepada pegawai Pekarya yang memenuhi kualifikasi kedisiplinan dan ketepatan presensi',
+          'Dihitung dan disetujui pada pelaporan rekap bulanan / triwulanan',
+        ],
+      };
 
     const spjDoc = {
       id: 'spj_pekarya_doc',
@@ -742,6 +762,7 @@ export default function EmployeePayslipPage() {
         setIsConfirmed(false);
         setCalculatedEarnings([]);
         setCalculatedDeductions([]);
+        setCalculatedTaxes([]);
         setPekaryaPreviewError(null);
         setDailyPresenceLogs([]);
         setShowDailyLogs(false);
@@ -1047,6 +1068,7 @@ export default function EmployeePayslipPage() {
           setIsConfirmed(true);
           setCalculatedEarnings(normalizeSlipFields(slipData.earnings));
           setCalculatedDeductions(normalizeSlipFields(slipData.deductions));
+          setCalculatedTaxes(normalizeTaxFields(slipData.taxes));
           setPekaryaPreviewError(null);
 
           setPresenceInfo(loadedPresenceInfo);
@@ -1075,6 +1097,9 @@ export default function EmployeePayslipPage() {
             ? normalizeSlipFields(savedSlip.deductions)
             : fallbackDeductions,
         );
+        // No saved slip means no tax has been applied yet: tax is never
+        // predicted locally, only shown once Finance has saved it.
+        setCalculatedTaxes(savedSlip ? normalizeTaxFields(savedSlip.taxes) : []);
         setPresenceInfo(loadedPresenceInfo);
         setVakasiEvents(loadedVakasiEvents);
         setKepangkatanDesignations({});
@@ -1129,17 +1154,33 @@ export default function EmployeePayslipPage() {
 
   // Compiled earnings & deductions based on finalized status
   const earnings = useMemo(() => {
-    return confirmedSlip?.earnings && confirmedSlip.earnings.length > 0 ? confirmedSlip.earnings : calculatedEarnings;
-  }, [confirmedSlip, calculatedEarnings]);
+    const source = confirmedSlip?.earnings && confirmedSlip.earnings.length > 0
+      ? confirmedSlip.earnings
+      : calculatedEarnings;
+    return employeeData?.employment?.jobCategory === 'SATPAM'
+      ? mergeSatpamLegacyBonusIntoTunjangan(source)
+      : source;
+  }, [confirmedSlip, calculatedEarnings, employeeData?.employment?.jobCategory]);
 
   const deductions = useMemo(() => {
     return confirmedSlip?.deductions && confirmedSlip.deductions.length > 0 ? confirmedSlip.deductions : calculatedDeductions;
   }, [confirmedSlip, calculatedDeductions]);
 
+  const taxes = useMemo(
+    () =>
+      confirmedSlip?.taxes && confirmedSlip.taxes.length > 0
+        ? normalizeTaxFields(confirmedSlip.taxes)
+        : calculatedTaxes,
+    [confirmedSlip, calculatedTaxes],
+  );
+
   // Totals calculations
   const totalEarnings = useMemo(() => earnings.reduce((sum: number, e: PaySlipField) => sum + e.amount, 0), [earnings]);
   const totalDeductions = useMemo(() => deductions.reduce((sum: number, d: PaySlipField) => sum + d.amount, 0), [deductions]);
-  const netSalary = useMemo(() => totalEarnings - totalDeductions, [totalEarnings, totalDeductions]);
+  const totalTax = useMemo(() => taxes.reduce((sum: number, t: PaySlipField) => sum + t.amount, 0), [taxes]);
+  // Gaji Bersih before tax — the figure the 5% was charged on.
+  const taxBase = useMemo(() => totalEarnings - totalDeductions, [totalEarnings, totalDeductions]);
+  const netSalary = useMemo(() => taxBase - totalTax, [taxBase, totalTax]);
 
   const allDeductionDocs = useMemo(() => [
     {
@@ -1385,6 +1426,7 @@ export default function EmployeePayslipPage() {
       jobCategory: isLoyalis ? `STAF ${employeeData.employment_profile?.department_unit || 'STAF'}` : (employeeData.employment?.jobCategory || 'PEKARYA'),
       earnings: earnings,
       deductions: deductions,
+      taxes: taxes,
       isLoyalis: isLoyalis,
       niy: employeeData.personal_info?.employee_id_niy || '',
       npwp: employeeData.personal_info?.tax_id_npwp || '',
@@ -1715,20 +1757,53 @@ export default function EmployeePayslipPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Pajak — its own category, listed after Potongan */}
+                  <div className="pt-5 mt-5 border-t border-slate-200 space-y-4">
+                    <h4 className="text-xs font-bold text-amber-700 uppercase tracking-widest flex items-center gap-1.5">
+                      <Landmark className="w-4 h-4 text-amber-500" />
+                      III. PAJAK
+                    </h4>
+                    <div className="space-y-2.5 divide-y divide-slate-100">
+                      {taxes.length > 0 ? (
+                        taxes.map((item: PaySlipField, idx: number) => (
+                          <div key={idx} className="flex justify-between items-center pt-2 text-xs font-medium">
+                            <span className="text-black uppercase max-w-[200px] truncate" title={item.label}>
+                              {item.label}
+                            </span>
+                            <span className="text-black font-semibold tabular-nums">
+                              {formatIDR(item.amount)}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="flex justify-between items-center pt-2 text-xs font-medium text-black italic">
+                          <span>TIDAK ADA PAJAK</span>
+                          <span>-</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
               </div>
 
               {/* Summary Totals Footer */}
-              <div className="grid grid-cols-1 md:grid-cols-2 bg-slate-50/50 border-b border-slate-200 rounded-xl my-4">
+              <div className={`grid grid-cols-1 ${totalTax > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'} bg-slate-50/50 border-b border-slate-200 rounded-xl my-4`}>
                 <div className="px-6 py-4 flex justify-between items-center text-xs font-bold border-b md:border-b-0 divide-x-0 border-slate-200">
                   <span className="text-emerald-700 uppercase">JUMLAH PENERIMAAN</span>
                   <span className="text-emerald-700 tabular-nums">{formatIDR(totalEarnings)}</span>
                 </div>
-                <div className="px-6 py-4 flex justify-between items-center text-xs font-bold">
+                <div className="px-6 py-4 flex justify-between items-center text-xs font-bold border-b md:border-b-0 border-slate-200">
                   <span className="text-rose-700 uppercase">JUMLAH POTONGAN</span>
                   <span className="text-rose-700 tabular-nums">{formatIDR(totalDeductions)}</span>
                 </div>
+                {totalTax > 0 && (
+                  <div className="px-6 py-4 flex justify-between items-center text-xs font-bold">
+                    <span className="text-amber-700 uppercase">JUMLAH PAJAK</span>
+                    <span className="text-amber-700 tabular-nums">{formatIDR(totalTax)}</span>
+                  </div>
+                )}
               </div>
 
               {/* NET SALARY CARD BOX */}
@@ -2059,6 +2134,11 @@ export default function EmployeePayslipPage() {
                                     return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Vakasi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Total Insentif Shift" value={formatIDR(harianVal + jumatVal)} highlight /></div>);
                                   }
                                   if (item.id === 'bonus_presensi_pekarya') {
+                                    const userJobCategory = (employeeData?.employment?.jobCategory || 'PEKARYA').toUpperCase();
+                                    if (userJobCategory === 'SATPAM') {
+                                      const tunjanganJabatanVal = getEarningAmount(['TUNJANGAN JABATAN']);
+                                      return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Tunjangan Jabatan" value={formatIDR(tunjanganJabatanVal)} highlight /></div>);
+                                    }
                                     const bonusVal = getEarningAmount(['BONUS PRESENSI', 'BONUS PRESENSI BULANAN', 'BONUS PRESENSI TRIWULANAN', 'BONUS MUTLAK']);
                                     return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Bonus Presensi" value={formatIDR(bonusVal)} highlight /></div>);
                                   }
@@ -2083,6 +2163,52 @@ export default function EmployeePayslipPage() {
                           </div>
                         ))}
                       </div>
+
+                      {/* ── Pajak ── */}
+                      {taxes.length > 0 && (
+                        <div className="py-6 border-t border-slate-200 space-y-6">
+                          <div className="flex items-center gap-2">
+                            <Landmark className="w-3.5 h-3.5 text-amber-600" />
+                            <span className="text-xs font-bold text-amber-700 uppercase tracking-widest">Pajak</span>
+                          </div>
+                          {taxes.map((item: PaySlipField, idx: number) => (
+                            <div key={`tax-doc-${idx}`}>
+                              <div className="mb-2">
+                                <h4 className="text-sm font-bold text-black tracking-wide">
+                                  {idx + 1}. {item.label.toUpperCase()}
+                                </h4>
+                              </div>
+                              <ul className="space-y-1 ml-4 pl-0">
+                                {[
+                                  `Pajak penghasilan dikenakan ketika gaji bersih (penerimaan dikurangi potongan) mencapai ${formatIDR(PAYROLL_TAX_THRESHOLD)}.`,
+                                  'Tarif 5% dihitung dari gaji bersih sebelum pajak, bukan dari salah satu komponen penerimaan.',
+                                  'Pajak dicatat sebagai kategori tersendiri dan tidak termasuk dalam daftar Potongan.',
+                                ].map((bullet: string, bIdx: number) => (
+                                  <li key={bIdx} className="flex items-start gap-2 text-xs sm:text-sm text-black leading-relaxed">
+                                    <span className="mt-2 w-1.5 h-1.5 rounded-full bg-black shrink-0" />
+                                    <span>{bullet}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                              <div className="mt-3 ml-4 rounded-2xl border border-amber-100 bg-amber-50/50 p-4 space-y-2">
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="text-black font-medium">Dasar Pengenaan (Gaji Bersih Sebelum Pajak)</span>
+                                  <span className="text-black font-semibold tabular-nums">{formatIDR(taxBase)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="text-black font-medium">Tarif</span>
+                                  <span className="text-black font-semibold tabular-nums">5%</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs pt-2 border-t border-amber-100">
+                                  <span className="text-amber-800 font-bold uppercase">Nominal Pajak</span>
+                                  <span className="text-amber-800 font-bold tabular-nums">{formatIDR(item.amount)}</span>
+                                </div>
+                              </div>
+                              {idx < taxes.length - 1 && <div className="h-px bg-slate-100/80 mt-5" />}
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
                       {/* ── Potongan ── */}
                       {activeDeductionDocs.length > 0 && (

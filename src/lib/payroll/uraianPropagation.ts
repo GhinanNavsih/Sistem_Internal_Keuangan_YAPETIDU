@@ -41,7 +41,17 @@ export function uraianOwnedEarningPredicate(
   customColumns?: RekapColumn[],
 ): OwnedLabelPredicate {
   const labels = uraianOwnedEarningLabels(jobCategory, uraian, customColumns);
-  return (label: string) => labels.has(normalizeLabel(label));
+  const legacySatpamBonusLabels =
+    jobCategory === 'SATPAM'
+      ? new Set(['bonus presensi mutlak', 'bonus mutlak'])
+      : null;
+  return (label: string) => {
+    const normalized = normalizeLabel(label);
+    return (
+      labels.has(normalized) ||
+      Boolean(legacySatpamBonusLabels?.has(normalized))
+    );
+  };
 }
 
 /**

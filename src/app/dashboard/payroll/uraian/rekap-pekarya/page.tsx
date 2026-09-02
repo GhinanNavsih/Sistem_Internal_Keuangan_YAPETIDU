@@ -35,6 +35,11 @@ import {
   MONTHS_ID,
 } from '@/utils/rekapConfig';
 import {
+  getSatpamTunjanganJabatan,
+  isSatpamLegacyBonusColumn,
+  normalizeSatpamUraianEntry,
+} from '@/lib/payroll/satpamCompensation';
+import {
   renderFileToCanvas, runOcr, parseRekapRows, matchEmployee, cropCanvas,
 } from '@/utils/ocrParser';
 import type {
@@ -54,6 +59,23 @@ import {
 import { DriverPiketSchedule, countDriverPiketInPeriod, classifyDriverPiketDatesInPeriod } from '@/lib/payroll/driverPiket';
 import { periodCalendarFromData } from '@/lib/payroll/calendar';
 
+type SatpamDutyReconciliationResponse = {
+  plans?: Array<{
+    ketuaShiftId?: string;
+    employees?: Array<{
+      employeeId?: string;
+      requiredDuties?: number;
+    }>;
+  }>;
+};
+
+type SatpamScheduledShiftData = {
+  period: string;
+  counts: Record<string, number>;
+  ketuaShiftIds: Record<string, true>;
+  status: 'loaded' | 'error';
+};
+
 export default function RekapPekaryaPage() {
   const { user, profile } = useAuth();
   const searchParams = useSearchParams();
@@ -63,6 +85,10 @@ export default function RekapPekaryaPage() {
   const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()), 10);
   const category = searchParams.get('category') || "";
   const period = `${year}-${String(month).padStart(2, '0')}`;
+  const ketuaShiftMonthlyScheduleCap = Math.max(
+    0,
+    new Date(year, month, 0).getDate() - 4,
+  );
 
   const docId = `${year}_${String(month).padStart(2, '0')}_${category}`;
 
@@ -93,6 +119,7 @@ export default function RekapPekaryaPage() {
   const [historicalSpjCorrectionMode, setHistoricalSpjCorrectionMode] = useState(false);
   const [historicalSpjCorrectionSaving, setHistoricalSpjCorrectionSaving] = useState(false);
   const [satpamDutyPlanRequired, setSatpamDutyPlanRequired] = useState(false);
+  const [satpamScheduledShiftData, setSatpamScheduledShiftData] = useState<SatpamScheduledShiftData | null>(null);
   const [periodPremiumDates, setPeriodPremiumDates] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -126,6 +153,55 @@ export default function RekapPekaryaPage() {
       active = false;
     };
   }, [period]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (category !== 'SATPAM' || !user) return () => {
+      active = false;
+    };
+
+    authenticatedJson<SatpamDutyReconciliationResponse>(
+      `/api/satpam/duty-reconciliation?period=${encodeURIComponent(period)}`,
+    )
+      .then((view) => {
+        if (!active) return;
+        const scheduledCounts: Record<string, number> = {};
+        const scheduledKetuaShiftIds: Record<string, true> = {};
+        for (const plan of view.plans || []) {
+          const ketuaShiftId = String(plan.ketuaShiftId || '').trim();
+          if (ketuaShiftId) scheduledKetuaShiftIds[ketuaShiftId] = true;
+          for (const employee of plan.employees || []) {
+            if (!employee.employeeId) continue;
+            const requiredDuties = Number(employee.requiredDuties);
+            if (!Number.isFinite(requiredDuties)) continue;
+            scheduledCounts[employee.employeeId] =
+              (scheduledCounts[employee.employeeId] || 0) + Math.max(0, requiredDuties);
+          }
+        }
+        setSatpamScheduledShiftData({
+          period,
+          counts: scheduledCounts,
+          ketuaShiftIds: scheduledKetuaShiftIds,
+          status: 'loaded',
+        });
+      })
+      .catch((error) => {
+        console.error('Error fetching Satpam scheduled shifts:', error);
+        if (active) {
+          setSatpamScheduledShiftData({
+            period,
+            counts: {},
+            ketuaShiftIds: {},
+            status: 'error',
+          });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [category, period, user]);
 
   // ── Custom Column Dialog States ──
   const [customColumns, setCustomColumns] = useState<RekapColumn[]>([]);
@@ -381,6 +457,52 @@ export default function RekapPekaryaPage() {
     ).length;
   }, [approvedActivityReports]);
 
+  const getSatpamMonthlyAttendanceComparison = useCallback((empId: string) => {
+    const storedValues = tableData[empId] || {};
+    const harian = Number(
+      storedValues.harian ?? getComputedSatpamShiftCount(empId, 'harian'),
+    );
+    const jumatLibur = Number(
+      storedValues.jumatLibur ?? getComputedSatpamShiftCount(empId, 'jumatLibur'),
+    );
+    const currentScheduleData =
+      satpamScheduledShiftData?.period === period
+        ? satpamScheduledShiftData
+        : null;
+    const scheduledDuties =
+      currentScheduleData?.status === 'loaded'
+        ? currentScheduleData.counts[empId]
+        : currentScheduleData?.status === 'error'
+          ? satpamDutySources[empId]?.requiredDuties
+          : undefined;
+    const normalizedScheduledDuties =
+      scheduledDuties !== undefined && Number.isFinite(Number(scheduledDuties))
+        ? Math.max(0, Number(scheduledDuties))
+        : undefined;
+    const isKetuaShift =
+      Boolean(currentScheduleData?.ketuaShiftIds[empId]) || ketuaShiftIds.has(empId);
+
+    return {
+      workedDuties:
+        (Number.isFinite(harian) ? Math.max(0, harian) : 0) +
+        (Number.isFinite(jumatLibur) ? Math.max(0, jumatLibur) : 0),
+      scheduledDuties:
+        normalizedScheduledDuties === undefined
+          ? undefined
+          : isKetuaShift
+            ? Math.min(normalizedScheduledDuties, ketuaShiftMonthlyScheduleCap)
+            : normalizedScheduledDuties,
+    };
+  }, [
+    getComputedSatpamShiftCount,
+    ketuaShiftIds,
+    ketuaShiftMonthlyScheduleCap,
+    period,
+    satpamDutySources,
+    satpamScheduledShiftData,
+    tableData,
+  ]);
+
   const [driverPiketSchedules, setDriverPiketSchedules] = useState<DriverPiketSchedule[]>([]);
 
   const getComputedSopirPiketCount = useCallback((empId: string) => {
@@ -424,10 +546,15 @@ export default function RekapPekaryaPage() {
     const fetchData = async () => {
       setLoadingEmps(true);
       try {
+        let loadedKetuaShiftIds = new Set<string>();
         try {
           const teamsSnap = await getDocs(collection(db, 'SatpamShiftTeams'));
-          const ids = new Set(teamsSnap.docs.map(d => d.data().ketuaShiftId).filter(Boolean) as string[]);
-          setKetuaShiftIds(ids);
+          loadedKetuaShiftIds = new Set(
+            teamsSnap.docs
+              .map(d => String(d.data().ketuaShiftId || '').trim())
+              .filter(Boolean),
+          );
+          setKetuaShiftIds(loadedKetuaShiftIds);
         } catch (err) {
           console.error('Error fetching Satpam shift teams:', err);
         }
@@ -463,29 +590,39 @@ export default function RekapPekaryaPage() {
         if (uraianSnap.exists()) {
           setSaved(true);
           const docData = uraianSnap.data() as any;
-          const loadedCustomCols = docData.customColumns || [];
+          const loadedCustomCols = (docData.customColumns || []).filter(
+            (column: RekapColumn) =>
+              category !== 'SATPAM' || !isSatpamLegacyBonusColumn(column),
+          );
           setCustomColumns(loadedCustomCols);
 
           const lockState = docData.isLocked === true || docData.status === 'locked' || (docData.isLocked !== false && docData.status !== 'draft');
           setIsLocked(lockState);
 
-          Object.values(docData.entries).forEach((entry: any) => {
-            const rawValues = { ...entry.values };
+          Object.values(docData.entries || {}).forEach((entry: any) => {
+            const effectiveEntry =
+              category === 'SATPAM'
+                ? normalizeSatpamUraianEntry(
+                    entry as UraianEntry,
+                    loadedKetuaShiftIds.has(String(entry.employeeId || '')),
+                  )
+                : (entry as UraianEntry);
+            const rawValues = { ...effectiveEntry.values };
             const empCols = [...getRekapColumns(category, period), ...loadedCustomCols];
             empCols.forEach(col => {
               const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'].includes(col.key);
               if (isDualMap && col.multiplier) {
-                if (entry.counts?.[col.key] !== undefined) rawValues[col.key] = entry.counts[col.key];
+                if (effectiveEntry.counts?.[col.key] !== undefined) rawValues[col.key] = effectiveEntry.counts[col.key];
                 else if (rawValues[col.key] && rawValues[col.key] > 31) rawValues[col.key] = Math.round(rawValues[col.key] / col.multiplier);
               } else if (col.type === 'count' && col.multiplier) {
-                if (entry.counts?.[col.key] !== undefined) rawValues[col.key] = entry.counts[col.key];
+                if (effectiveEntry.counts?.[col.key] !== undefined) rawValues[col.key] = effectiveEntry.counts[col.key];
                 else if (rawValues[col.key]) rawValues[col.key] = rawValues[col.key] / col.multiplier;
               }
             });
-            initialTable[entry.employeeId] = rawValues;
-            loadedSpjValues[entry.employeeId] = Number(rawValues.spj || 0);
-            if (entry.satpamDutySource) {
-              loadedDutySources[entry.employeeId] = entry.satpamDutySource;
+            initialTable[effectiveEntry.employeeId] = rawValues;
+            loadedSpjValues[effectiveEntry.employeeId] = Number(rawValues.spj || 0);
+            if (effectiveEntry.satpamDutySource) {
+              loadedDutySources[effectiveEntry.employeeId] = effectiveEntry.satpamDutySource;
             }
           });
         } else {
@@ -704,10 +841,20 @@ export default function RekapPekaryaPage() {
     const entries: Record<string, UraianEntry> = {};
     for (const emp of employees) {
       const rawValues = tableData[emp.employeeId] ?? {};
-      const storedValues: Record<string, number> = {
+      let storedValues: Record<string, number> = {
         ...rawValues,
         spj: getSpjValue(emp.employeeId),
       };
+      if (category === 'SATPAM') {
+        storedValues = normalizeSatpamUraianEntry(
+          {
+            employeeId: emp.employeeId,
+            name: emp.name,
+            values: storedValues,
+          },
+          ketuaShiftIds.has(emp.employeeId),
+        ).values;
+      }
       if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7))) {
         const satpamShiftKeys = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'];
         satpamShiftKeys.forEach(k => {
@@ -715,9 +862,6 @@ export default function RekapPekaryaPage() {
             storedValues[k] = getComputedSatpamShiftCount(emp.employeeId, k);
           }
         });
-        if (storedValues.tunjanganJabatan === undefined) {
-          storedValues.tunjanganJabatan = ketuaShiftIds.has(emp.employeeId) ? 100000 : 0;
-        }
       }
       // An empty July pilot cell is an explicit "no bonus" value, rather than
       // an invitation for a later duty-plan reconciliation to fill it in.
@@ -743,7 +887,12 @@ export default function RekapPekaryaPage() {
         }
       }
       const storedCounts: Record<string, number> = {};
-      const empCols = [...getRekapColumns(category, period), ...customColumns];
+      const empCols = [
+        ...getRekapColumns(category, period),
+        ...customColumns.filter(
+          (col) => category !== 'SATPAM' || !isSatpamLegacyBonusColumn(col),
+        ),
+      ];
       empCols.forEach(col => {
         const rawVal = storedValues[col.key]; if (rawVal === undefined || rawVal === null) return;
         const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'].includes(col.key);
@@ -763,12 +912,16 @@ export default function RekapPekaryaPage() {
       };
     }
 
-    const sanitizedCustomCols = customColumns.map(col => {
-      const cleaned = { ...col };
-      if (cleaned.multiplier === undefined) delete cleaned.multiplier;
-      if (cleaned.slipLabel === undefined) delete cleaned.slipLabel;
-      return cleaned;
-    });
+    const sanitizedCustomCols = customColumns
+      .filter(
+        (col) => category !== 'SATPAM' || !isSatpamLegacyBonusColumn(col),
+      )
+      .map(col => {
+        const cleaned = { ...col };
+        if (cleaned.multiplier === undefined) delete cleaned.multiplier;
+        if (cleaned.slipLabel === undefined) delete cleaned.slipLabel;
+        return cleaned;
+      });
 
     return {
       period,
@@ -817,12 +970,32 @@ export default function RekapPekaryaPage() {
         for (const [employeeId, entry] of Object.entries(payload.entries)) {
           const live = liveEntries[employeeId];
           const mergedCounts = { ...(live?.counts || {}), ...(entry.counts || {}) };
+          const mergedValues = {
+            ...(live?.values || {}),
+            ...entry.values,
+          };
+          const normalizedSatpamEntry =
+            category === 'SATPAM'
+              ? normalizeSatpamUraianEntry(
+                  {
+                    ...entry,
+                    values: mergedValues,
+                    counts: mergedCounts,
+                  },
+                  ketuaShiftIds.has(employeeId),
+                )
+              : null;
+          const mergedCountsForEntry =
+            normalizedSatpamEntry?.counts ??
+            (category === 'SATPAM' ? {} : mergedCounts);
           const satpamDutySource = entry.satpamDutySource || live?.satpamDutySource;
           mergedEntries[employeeId] = {
             ...live,
             ...entry,
-            values: { ...(live?.values || {}), ...entry.values },
-            ...(Object.keys(mergedCounts).length > 0 ? { counts: mergedCounts } : {}),
+            values: normalizedSatpamEntry?.values || mergedValues,
+            ...(Object.keys(mergedCountsForEntry).length > 0
+              ? { counts: mergedCountsForEntry }
+              : {}),
             ...(satpamDutySource ? { satpamDutySource } : {}),
           };
         }
@@ -973,9 +1146,29 @@ export default function RekapPekaryaPage() {
   const buildConfirmRows = () => {
     if (!category) return [];
     const baseCols = getRekapColumns(category, period);
-    const empCols = [...baseCols, ...customColumns];
+    const empCols = [
+      ...baseCols,
+      ...customColumns.filter(
+        (col) => category !== 'SATPAM' || !isSatpamLegacyBonusColumn(col),
+      ),
+    ];
     return employees.map(emp => {
-      const rawValues = tableData[emp.employeeId] ?? {};
+      // The real save path (handleConfirmSave) always runs the merged values
+      // through normalizeSatpamUraianEntry, which floors Tunjangan Jabatan to
+      // at least Rp50.000/Rp150.000 even when the cell was manually zeroed.
+      // Normalizing here too keeps this preview from showing Rp0 (or
+      // dropping the row) for a value that will actually be saved at the
+      // floor.
+      const rawValues = category === 'SATPAM'
+        ? normalizeSatpamUraianEntry(
+            {
+              employeeId: emp.employeeId,
+              name: emp.name,
+              values: tableData[emp.employeeId] ?? {},
+            },
+            ketuaShiftIds.has(emp.employeeId),
+          ).values
+        : (tableData[emp.employeeId] ?? {});
       const fields = empCols.map(col => {
         let rawVal = rawValues[col.key] ?? 0;
         if (col.key === 'spj') {
@@ -984,11 +1177,6 @@ export default function RekapPekaryaPage() {
         if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'].includes(col.key)) {
           if (rawValues[col.key] === undefined) {
             rawVal = getComputedSatpamShiftCount(emp.employeeId, col.key);
-          }
-        }
-        if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && col.key === 'tunjanganJabatan') {
-          if (rawValues[col.key] === undefined) {
-            rawVal = ketuaShiftIds.has(emp.employeeId) ? 100000 : 0;
           }
         }
         if (category === 'SOPIR' && col.key === 'piket') {
@@ -1019,10 +1207,20 @@ export default function RekapPekaryaPage() {
 
     const empRows = employees.map((emp, idx) => {
       const rawValues = tableData[emp.employeeId] ?? {};
-      const computedValues: Record<string, number> = {
+      let computedValues: Record<string, number> = {
         ...rawValues,
         spj: getSpjValue(emp.employeeId),
       };
+      if (category === 'SATPAM') {
+        computedValues = normalizeSatpamUraianEntry(
+          {
+            employeeId: emp.employeeId,
+            name: emp.name,
+            values: computedValues,
+          },
+          ketuaShiftIds.has(emp.employeeId),
+        ).values;
+      }
       if (category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7))) {
         const satpamShiftKeys = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'];
         satpamShiftKeys.forEach(k => {
@@ -1031,7 +1229,9 @@ export default function RekapPekaryaPage() {
           }
         });
         if (computedValues.tunjanganJabatan === undefined) {
-          computedValues.tunjanganJabatan = ketuaShiftIds.has(emp.employeeId) ? 100000 : 0;
+          computedValues.tunjanganJabatan = getSatpamTunjanganJabatan(
+            ketuaShiftIds.has(emp.employeeId),
+          );
         }
       }
       if (category === 'SOPIR') {
@@ -1044,7 +1244,12 @@ export default function RekapPekaryaPage() {
       }
       const computedCounts: Record<string, number> = {};
       const baseCols = getRekapColumns(category, period);
-      const empCols = [...baseCols, ...customColumns];
+      const empCols = [
+        ...baseCols,
+        ...customColumns.filter(
+          (col) => category !== 'SATPAM' || !isSatpamLegacyBonusColumn(col),
+        ),
+      ];
       empCols.forEach(col => {
         const rawVal = computedValues[col.key]; if (rawVal === undefined || rawVal === null) return;
         const isDualMap = ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover', 'bonusMutlak', 'bonusBulanan', 'bonusLainnya', 'bonusPresensiBulanan', 'bonusPresensiTriwulanan', 'piket'].includes(col.key);
@@ -1134,7 +1339,12 @@ export default function RekapPekaryaPage() {
   const columns = useMemo(() => {
     if (!category) return [];
     const baseCols = getRekapColumns(category, period);
-    const allCols = [...baseCols, ...customColumns];
+    const allCols = [
+      ...baseCols,
+      ...customColumns.filter(
+        (col) => category !== 'SATPAM' || !isSatpamLegacyBonusColumn(col),
+      ),
+    ];
     if (detectedColumnOrder) {
       return detectedColumnOrder
         .map(key => allCols.find(c => c.key === key))
@@ -1425,6 +1635,10 @@ export default function RekapPekaryaPage() {
                 </thead>
                 {employees.map((emp, empIdx) => {
                   const bounds = rowBounds[emp.employeeId];
+                  const satpamAttendanceComparison =
+                    category === 'SATPAM'
+                      ? getSatpamMonthlyAttendanceComparison(emp.employeeId)
+                      : null;
                   const content = (
                     <>
                       {hasScanData && bounds && (croppedPreviewUrl || previewUrl) && scanImgDims && (
@@ -1451,7 +1665,28 @@ export default function RekapPekaryaPage() {
                           style={{ width: '220px', minWidth: '220px' }}
                         >
                           <div className="text-sm font-bold text-slate-800 leading-none">{emp.name}</div>
-                          <div className="text-[10px] text-slate-400 font-mono mt-1.5 flex items-center gap-1"><Code2 className="w-2.5 h-2.5 opacity-50" /> {emp.employeeId}</div>
+                          {category === 'SATPAM' ? (
+                            <div
+                              className={`text-[10px] font-semibold mt-1.5 ${
+                                satpamAttendanceComparison &&
+                                satpamAttendanceComparison.scheduledDuties !== undefined &&
+                                satpamAttendanceComparison.scheduledDuties > 0 &&
+                                satpamAttendanceComparison.workedDuties >=
+                                  satpamAttendanceComparison.scheduledDuties
+                                  ? 'text-emerald-600'
+                                  : 'text-slate-400'
+                              }`}
+                              title={`Jumlah shift Harian + Jumat & Libur yang sudah bekerja dibandingkan dengan jadwal shift pada periode ${period}.`}
+                            >
+                              Harian + Jumat & Libur:{' '}
+                              <span className="font-mono">
+                                {satpamAttendanceComparison?.workedDuties ?? 0} /{' '}
+                                {satpamAttendanceComparison?.scheduledDuties ?? '—'}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-slate-400 font-mono mt-1.5 flex items-center gap-1"><Code2 className="w-2.5 h-2.5 opacity-50" /> {emp.employeeId}</div>
+                          )}
                         </td>
                         {columns.map((col, colIdx) => {
                           const isSpj = col.key === 'spj';
@@ -1459,7 +1694,7 @@ export default function RekapPekaryaPage() {
                             historicalSpjEditEnabled &&
                             allowsHistoricalPaperSpjEntry(category, period, emp.employeeId);
                           const isSatpamShift = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && ['harian', 'jumatLibur', 'lemburSendiri', 'lemburCover'].includes(col.key);
-                          const isTunjanganJabatan = category === 'SATPAM' && (year > 2026 || (year === 2026 && month >= 7)) && col.key === 'tunjanganJabatan';
+                          const isTunjanganJabatan = category === 'SATPAM' && col.key === 'tunjanganJabatan';
                           const isSopirPiket = category === 'SOPIR' && col.key === 'piket';
                           const isSopirHarianOrJumatLibur =
                             category === 'SOPIR' && (col.key === 'harian' || col.key === 'jumatLibur');
@@ -1482,7 +1717,7 @@ export default function RekapPekaryaPage() {
                             : (isSatpamShift && tableData[emp.employeeId]?.[col.key] === undefined)
                               ? (getComputedSatpamShiftCount(emp.employeeId, col.key) || 0)
                               : (isTunjanganJabatan && tableData[emp.employeeId]?.[col.key] === undefined)
-                                ? (ketuaShiftIds.has(emp.employeeId) ? 100000 : 0)
+                                ? getSatpamTunjanganJabatan(ketuaShiftIds.has(emp.employeeId))
                                 : isSopirPiket
                                   ? (getComputedSopirPiketCount(emp.employeeId) || 0)
                                   : (isSopirHarianOrJumatLibur && tableData[emp.employeeId]?.[col.key] === undefined)

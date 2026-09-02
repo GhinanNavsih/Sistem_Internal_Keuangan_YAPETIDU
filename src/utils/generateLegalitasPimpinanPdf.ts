@@ -11,6 +11,8 @@ export interface LegalitasEmployeeData {
   totalEarnings: number;
   deductions: PaySlipField[];
   totalDeductions: number;
+  /** Income tax — its own column, printed between Potongan and Gaji Bersih. */
+  totalTax: number;
   netSalary: number;
 }
 
@@ -111,6 +113,9 @@ export async function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData):
   });
 
   const showGapok = data.employees.some(emp => typeof emp.gapok === 'number' && !isNaN(emp.gapok) && emp.gapok !== 0);
+  // The tax column appears only when someone in this report is actually
+  // taxed, so an untaxed report keeps its existing layout.
+  const showTax = data.employees.some(emp => (emp.totalTax || 0) > 0);
 
   // Body data
   const body = data.employees.map(emp => {
@@ -136,6 +141,9 @@ export async function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData):
     });
 
     row.push(formatIDR(emp.totalDeductions));
+    if (showTax) {
+      row.push(formatIDR(emp.totalTax));
+    }
     row.push(formatIDR(emp.netSalary));
 
     return row;
@@ -144,6 +152,7 @@ export async function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData):
   // Calculate totals for specific columns
   const totalJumlah = data.employees.reduce((sum, emp) => sum + emp.totalEarnings, 0);
   const totalPotongan = data.employees.reduce((sum, emp) => sum + emp.totalDeductions, 0);
+  const totalPajak = data.employees.reduce((sum, emp) => sum + (emp.totalTax || 0), 0);
   const totalGajiBersih = data.employees.reduce((sum, emp) => sum + emp.netSalary, 0);
 
   // Push total row
@@ -163,6 +172,9 @@ export async function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData):
     totalRow.push('');
   });
   totalRow.push(formatIDR(totalPotongan));
+  if (showTax) {
+    totalRow.push(formatIDR(totalPajak));
+  }
   totalRow.push(formatIDR(totalGajiBersih));
 
   body.push(totalRow);
@@ -181,10 +193,11 @@ export async function generateLegalitasPimpinanPdf(data: LegalitasPimpinanData):
   if (deductionLabels.length > 0) {
     firstHeaderRow.push({ content: 'POTONGAN', colSpan: deductionLabels.length, styles: { halign: 'center' as const, valign: 'middle' as const } });
   }
-  firstHeaderRow.push(
-    { content: 'JUMLAH POTONGAN', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } },
-    { content: 'GAJI BERSIH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } }
-  );
+  firstHeaderRow.push({ content: 'JUMLAH POTONGAN', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } });
+  if (showTax) {
+    firstHeaderRow.push({ content: 'PAJAK', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } });
+  }
+  firstHeaderRow.push({ content: 'GAJI BERSIH', rowSpan: 2, styles: { halign: 'center' as const, valign: 'middle' as const } });
 
   const secondHeaderRow: any[] = [
     ...earningLabels.map(l => ({ content: l.toUpperCase(), styles: { halign: 'center' as const, valign: 'middle' as const } })),

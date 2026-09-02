@@ -12,13 +12,17 @@ import {
 import { Button } from '@/components/ui/button';
 import { FileText, Printer, FileSpreadsheet } from 'lucide-react';
 import { BlueCollarEmployee, SalaryMatrix, UraianGajiDocument } from '@/types';
-import { calculateTotalEarnings, calculateTotalDeductions, calculateNetSalary } from '@/utils/salaryCalculator';
 import { getRekapColumns, computeSlipAmount } from '@/utils/rekapConfig';
+import {
+  mergeSatpamLegacyBonusIntoTunjangan,
+  normalizeSatpamUraianEntry,
+} from '@/lib/payroll/satpamCompensation';
 import { PaySlipField } from '@/utils/generatePaySlipPdf';
 import { generateLegalitasPimpinanPdf, LegalitasEmployeeData, LegalitasPimpinanData } from '@/utils/generateLegalitasPimpinanPdf';
 import { generateLegalitasPimpinanXlsx } from '@/utils/generateLegalitasPimpinanXlsx';
 import { calculateGapok } from '@/utils/payrollLogic';
 import { resolveGapokFromSlip } from '@/lib/payroll/slipBuilders';
+import { recalculateSlipTaxes } from '@/lib/payroll/payrollTax';
 
 interface EmployeeRow {
   id: string;
@@ -46,6 +50,9 @@ interface LegalitasPimpinanDialogProps {
   slipStates?: Record<string, any>;
   koperasiDeductions?: Record<string, number>;
   koperasiSavings?: Record<string, number>;
+  /** Ketua Shift Satpam roster, keyed by employeeId — see the fetch site in
+   * dashboard/payroll/page.tsx for why it isn't fetched here directly. */
+  ketuaShiftIds?: Set<string>;
   getLoyalisPresenceBonus?: (empId: string) => number;
   getLoyalisPresenceDeduction?: (empId: string) => number;
   getLoyalisPresensiEarning?: (empId: string) => number;
@@ -112,12 +119,16 @@ function buildInitialEarnings(
   }
 
   const jobCategory = emp.employment?.jobCategory || '';
+  const effectiveUraian =
+    jobCategory === 'SATPAM' && uraian
+      ? normalizeSatpamUraianEntry(uraian, false)
+      : uraian;
   const attendanceDerived =
-    Boolean(uraian?.attendanceSource) ||
+    Boolean(effectiveUraian?.attendanceSource) ||
     Boolean(
-      uraian?.values &&
-        ('harian' in uraian.values || 'jumatLibur' in uraian.values) &&
-        !('presensi' in uraian.values),
+      effectiveUraian?.values &&
+        ('harian' in effectiveUraian.values || 'jumatLibur' in effectiveUraian.values) &&
+        !('presensi' in effectiveUraian.values),
     );
   const columns = getRekapColumns(
     jobCategory,
@@ -127,14 +138,18 @@ function buildInitialEarnings(
   // Gaji Pokok
   earnings.push({ label: 'Gaji Pokok', amount: gapok });
 
-  if (columns && uraian) {
+  if (columns && effectiveUraian) {
     for (const col of columns) {
       if (col.slipLabel) {
         let amount = 0;
-        if (col.type === 'count' && uraian.counts && uraian.counts[col.key] !== undefined) {
-          amount = computeSlipAmount(col, uraian.counts[col.key]);
+        if (
+          col.type === 'count' &&
+          effectiveUraian.counts &&
+          effectiveUraian.counts[col.key] !== undefined
+        ) {
+          amount = computeSlipAmount(col, effectiveUraian.counts[col.key]);
         } else {
-          amount = uraian.values[col.key] ?? 0;
+          amount = effectiveUraian.values[col.key] ?? 0;
         }
         earnings.push({ label: col.slipLabel, amount });
       }
@@ -208,6 +223,7 @@ export default function LegalitasPimpinanDialog({
   slipStates,
   koperasiDeductions = {},
   koperasiSavings = {},
+  ketuaShiftIds,
   getLoyalisPresenceBonus,
   getLoyalisPresenceDeduction,
   getLoyalisPresensiEarning,
@@ -243,13 +259,20 @@ export default function LegalitasPimpinanDialog({
       const slip = slipStates?.[emp.id];
       let earnings: PaySlipField[] = [];
       let deductions: PaySlipField[] = [];
+      let taxes: PaySlipField[] = [];
       let totalEarnings = 0;
       let totalDeductions = 0;
+      let totalTax = 0;
       let netSalary = 0;
 
       if (slip && slip.earnings && slip.earnings.length > 0) {
-        earnings = slip.earnings;
+        earnings = selectedCategory === 'SATPAM'
+          ? mergeSatpamLegacyBonusIntoTunjangan(slip.earnings)
+          : slip.earnings;
         deductions = slip.deductions || [];
+        // The stored amount is never trusted: the 5% is re-derived from the
+        // rows this report actually prints.
+        taxes = recalculateSlipTaxes(slip, earnings, deductions);
       } else {
         const kopUnipdu = koperasiDeductions?.[emp.id] ?? 0;
         const kopSaving = koperasiSavings?.[emp.id] ?? 0;
@@ -262,7 +285,8 @@ export default function LegalitasPimpinanDialog({
       }
       totalEarnings = earnings.reduce((sum, e) => sum + e.amount, 0);
       totalDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
-      netSalary = totalEarnings - totalDeductions;
+      totalTax = taxes.reduce((sum, t) => sum + t.amount, 0);
+      netSalary = totalEarnings - totalDeductions - totalTax;
       // Keep Legalitas aligned with the payslip modal. A saved slip may
       // intentionally override the matrix value, including setting Gapok to 0.
       const gapokVal = resolveGapokFromSlip(earnings, gapok);
@@ -276,6 +300,7 @@ export default function LegalitasPimpinanDialog({
         totalEarnings,
         deductions,
         totalDeductions,
+        totalTax,
         netSalary
       };
     });

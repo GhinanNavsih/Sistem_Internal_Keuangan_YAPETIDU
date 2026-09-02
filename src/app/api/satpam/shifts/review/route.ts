@@ -273,6 +273,9 @@ function parseAuditorEditCommand(raw: unknown): AuditorEditCommand {
         : {}),
     };
   });
+  if (assignments.filter((assignment) => assignment.assignmentKind === 'extra').length > 1) {
+    throw new HttpError(400, 'Edit auditor hanya dapat memuat satu petugas tambahan.');
+  }
   const providedReportIds = assignments.flatMap((assignment) =>
     assignment.reportId ? [assignment.reportId] : [],
   );
@@ -887,6 +890,10 @@ export async function GET(request: NextRequest) {
     if (actor.role === 'satker_head' && !actor.permittedCategories.includes('SATPAM')) {
       throw new HttpError(403, 'Anda tidak memiliki akses kategori SATPAM.');
     }
+    const occurrenceId = request.nextUrl.searchParams.get('occurrenceId') || '';
+    if (occurrenceId && !/^[A-Za-z0-9_-]{1,180}$/.test(occurrenceId)) {
+      throw new HttpError(400, 'ID shift tidak valid.');
+    }
     const employeeSnapshot = await adminDb
       .collection('Employees_BlueCollar')
       .where('employment.jobCategory', '==', 'SATPAM')
@@ -902,6 +909,80 @@ export async function GET(request: NextRequest) {
         };
       })
       .sort((left, right) => left.name.localeCompare(right.name, 'id'));
+
+    if (occurrenceId) {
+      const occurrenceSnapshot = await adminDb.collection('ShiftOccurrences').doc(occurrenceId).get();
+      if (!occurrenceSnapshot.exists) {
+        throw new HttpError(404, 'Shift tidak ditemukan.');
+      }
+      const occurrence = occurrenceSnapshot.data()!;
+      if (occurrence.status !== 'reviewed' || occurrence.reviewStatus !== 'approved') {
+        throw new HttpError(409, 'Petugas tambahan hanya dapat ditambahkan pada shift yang sudah disetujui.');
+      }
+
+      const reportIds = Array.isArray(occurrence.reportIds)
+        ? occurrence.reportIds.filter((id: unknown): id is string => typeof id === 'string')
+        : [];
+      const reportSnapshots = await Promise.all(
+        reportIds.map((reportId) => adminDb.collection('ActivityReports').doc(reportId).get()),
+      );
+      const assignedEmployeeIds = new Set(
+        reportSnapshots
+          .filter((snapshot) => snapshot.exists)
+          .map((snapshot) => String(snapshot.data()?.employeeId || '').trim())
+          .filter(Boolean),
+      );
+      const hasExtraAssignment = reportSnapshots.some(
+        (snapshot) => snapshot.exists && snapshot.data()?.assignmentKind === 'extra',
+      );
+
+      let plannedOffDutyEmployeeId: string | null = null;
+      if (occurrence.dutyPlanId) {
+        const dutyPlanSnapshot = await adminDb
+          .collection(SATPAM_DUTY_PLANS_COLLECTION)
+          .doc(String(occurrence.dutyPlanId))
+          .get();
+        const generatedDays =
+          dutyPlanSnapshot.exists && Array.isArray(dutyPlanSnapshot.data()?.generatedDays)
+            ? dutyPlanSnapshot.data()!.generatedDays
+            : [];
+        const planDay = dutyPlanSnapshot.exists
+          ? generatedDays.find(
+              (day: Record<string, unknown>) => day?.dutyDate === occurrence.dutyDate &&
+                day?.shiftName === occurrence.shiftName,
+            )
+          : null;
+        plannedOffDutyEmployeeId = planDay?.offDutyEmployeeId
+          ? String(planDay.offDutyEmployeeId)
+          : null;
+      }
+
+      const eligibleExtraEmployees = hasExtraAssignment
+        ? []
+        : employees.filter(
+            (employee) =>
+              employee.isActive &&
+              !assignedEmployeeIds.has(employee.id) &&
+              (!plannedOffDutyEmployeeId || employee.id === plannedOffDutyEmployeeId),
+          );
+
+      return Response.json(
+        {
+          employees,
+          eligibleExtraEmployees,
+          occurrence: {
+            id: occurrenceId,
+            dutyDate: String(occurrence.dutyDate || ''),
+            shiftName: String(occurrence.shiftName || ''),
+            revision: Number(occurrence.revision || 1),
+            assignmentCount: Number(occurrence.assignmentCount || reportIds.length),
+            reviewStatus: String(occurrence.reviewStatus || ''),
+          },
+        },
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+
     return Response.json(
       { employees },
       { headers: { 'Cache-Control': 'no-store' } },
