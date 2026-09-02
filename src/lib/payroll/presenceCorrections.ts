@@ -20,6 +20,10 @@ export interface PresenceCorrectionRequest {
   employeeName?: string;
   rejectionReason?: string | null;
   resolvedBy?: string;
+  hiddenFromEmployee?: boolean;
+  hiddenAt?: unknown;
+  hiddenByUid?: string;
+  hiddenByRole?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -40,6 +44,16 @@ export function asPresenceCorrectionRequest(
   data: Record<string, unknown>,
 ): PresenceCorrectionRequest {
   return { id, ...data } as PresenceCorrectionRequest;
+}
+
+/**
+ * Employee history uses an additive soft-delete marker. Missing and false
+ * values stay visible so existing correction documents remain unchanged.
+ */
+export function isPresenceCorrectionVisibleToEmployee(request: {
+  hiddenFromEmployee?: boolean;
+}): boolean {
+  return request.hiddenFromEmployee !== true;
 }
 
 export function parseDateOnly(value: unknown): Date | null {

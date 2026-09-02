@@ -1,12 +1,21 @@
-import { normalizeAttendanceTime } from './attendance';
+import {
+  ATTENDANCE_SINGLE_SCAN_AUTO_FILL_MINUTES,
+  ATTENDANCE_WORK_WINDOW_END_MINUTES,
+  ATTENDANCE_WORK_WINDOW_START_MINUTES,
+  autoFillAttendanceScan,
+  normalizeAttendanceTime,
+} from './attendance';
 
-export const LOYALIS_WORK_WINDOW_START_MINUTES = 7 * 60 + 30;
-export const LOYALIS_WORK_WINDOW_END_MINUTES = 14 * 60;
-export const LOYALIS_SINGLE_SCAN_AUTO_FILL_MINUTES = 150;
+// The window and the single-scan fill-in are shared with blue-collar
+// attendance, so both are defined once in the attendance kernel and
+// re-exported here under the Loyalis names its callers already use.
+export const LOYALIS_WORK_WINDOW_START_MINUTES =
+  ATTENDANCE_WORK_WINDOW_START_MINUTES;
+export const LOYALIS_WORK_WINDOW_END_MINUTES = ATTENDANCE_WORK_WINDOW_END_MINUTES;
+export const LOYALIS_SINGLE_SCAN_AUTO_FILL_MINUTES =
+  ATTENDANCE_SINGLE_SCAN_AUTO_FILL_MINUTES;
 
 const SECONDS_PER_MINUTE = 60;
-const WORK_WINDOW_START_SECONDS = LOYALIS_WORK_WINDOW_START_MINUTES * SECONDS_PER_MINUTE;
-const WORK_WINDOW_END_SECONDS = LOYALIS_WORK_WINDOW_END_MINUTES * SECONDS_PER_MINUTE;
 
 function parseClockSeconds(value: unknown): number | null {
   const normalized = normalizeAttendanceTime(value);
@@ -14,24 +23,6 @@ function parseClockSeconds(value: unknown): number | null {
 
   const [hours, minutes, seconds] = normalized.split(':').map(Number);
   return hours * 3_600 + minutes * 60 + seconds;
-}
-
-function clampToOfficialWorkWindow(seconds: number): number {
-  return Math.min(
-    WORK_WINDOW_END_SECONDS,
-    Math.max(WORK_WINDOW_START_SECONDS, seconds),
-  );
-}
-
-function formatClockSeconds(seconds: number): string {
-  const clampedSeconds = clampToOfficialWorkWindow(seconds);
-  const hours = Math.floor(clampedSeconds / 3_600);
-  const minutes = Math.floor((clampedSeconds % 3_600) / 60);
-  const remainingSeconds = clampedSeconds % 60;
-
-  return [hours, minutes, remainingSeconds]
-    .map((part) => String(part).padStart(2, '0'))
-    .join(':');
 }
 
 /**
@@ -74,14 +65,5 @@ export function autoFillLoyalisScan(
   scan: unknown,
   missingSide: 'in' | 'out',
 ): string | null {
-  const scanSeconds = parseClockSeconds(scan);
-  if (scanSeconds === null) return null;
-
-  const autoFillOffset = LOYALIS_SINGLE_SCAN_AUTO_FILL_MINUTES * SECONDS_PER_MINUTE;
-  const generatedSeconds =
-    missingSide === 'out'
-      ? scanSeconds + autoFillOffset
-      : scanSeconds - autoFillOffset;
-
-  return formatClockSeconds(generatedSeconds);
+  return autoFillAttendanceScan(normalizeAttendanceTime(scan), missingSide);
 }

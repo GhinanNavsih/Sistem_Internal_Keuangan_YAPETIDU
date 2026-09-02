@@ -5,7 +5,7 @@ import {
   ATTENDANCE_PAYROLL_START_PERIOD,
   isPremiumAttendanceDate,
   normalizeAttendanceTime,
-  PEKARYA_ATTENDANCE_RATES,
+  pekaryaAttendanceAmount,
   resolveEmployeeAttendanceNipy,
 } from '@/lib/payroll/attendance';
 import {
@@ -20,6 +20,8 @@ import {
   normalizePekaryaAttendanceReportFields,
   officialLeaveAttendanceCorrection,
   scanAttendanceCorrection,
+  PEKARYA_OFFICIAL_LEAVE_SCAN_IN,
+  PEKARYA_OFFICIAL_LEAVE_SCAN_OUT,
   PEKARYA_OFFICIAL_LEAVE_TYPE,
 } from '@/lib/payroll/pekaryaOfficialLeave';
 import {
@@ -499,9 +501,17 @@ export async function POST(request: NextRequest) {
       const now = admin.firestore.FieldValue.serverTimestamp();
       const premium = isPremiumAttendanceDate(date, new Set(view.premiumDates));
       const approvedPayType = premium ? 'Jumat & Libur' : 'Harian';
-      const approvedAmount = premium
-        ? PEKARYA_ATTENDANCE_RATES['Jumat & Libur']
-        : PEKARYA_ATTENDANCE_RATES.Harian;
+      // An approved report is paid for the hours it grants: the submitted scan
+      // pair, or the fixed 07:30–14:00 window an official leave stands for.
+      const approvedScanIn =
+        reportType === 'scan' ? scanIn : PEKARYA_OFFICIAL_LEAVE_SCAN_IN;
+      const approvedScanOut =
+        reportType === 'scan' ? scanOut : PEKARYA_OFFICIAL_LEAVE_SCAN_OUT;
+      const approvedAmount = pekaryaAttendanceAmount(
+        approvedScanIn,
+        approvedScanOut,
+        premium,
+      );
       const after = {
         ...current,
         status: approving ? 'approved' : 'declined',
@@ -592,12 +602,24 @@ export async function POST(request: NextRequest) {
           const oldPayType = currentDay?.present ? currentDay.payType : null;
           let nextHarian = employeeView?.harianCount || 0;
           let nextPremium = employeeView?.jumatLiburCount || 0;
-          if (oldPayType === 'Harian') nextHarian = Math.max(0, nextHarian - 1);
+          let nextHarianAmount = employeeView?.harianAmount || 0;
+          let nextPremiumAmount = employeeView?.jumatLiburAmount || 0;
+          const oldDayAmount = currentDay?.amount || 0;
+          if (oldPayType === 'Harian') {
+            nextHarian = Math.max(0, nextHarian - 1);
+            nextHarianAmount = Math.max(0, nextHarianAmount - oldDayAmount);
+          }
           if (oldPayType === 'Jumat & Libur') {
             nextPremium = Math.max(0, nextPremium - 1);
+            nextPremiumAmount = Math.max(0, nextPremiumAmount - oldDayAmount);
           }
-          if (premium) nextPremium += 1;
-          else nextHarian += 1;
+          if (premium) {
+            nextPremium += 1;
+            nextPremiumAmount += approvedAmount;
+          } else {
+            nextHarian += 1;
+            nextHarianAmount += approvedAmount;
+          }
           const entries = {
             ...(uraianSnapshot.data()?.entries as Record<
               string,
@@ -621,9 +643,8 @@ export async function POST(request: NextRequest) {
             name: String(employee.name || ''),
             values: {
               ...existingValues,
-              harian: nextHarian * PEKARYA_ATTENDANCE_RATES.Harian,
-              jumatLibur:
-                nextPremium * PEKARYA_ATTENDANCE_RATES['Jumat & Libur'],
+              harian: nextHarianAmount,
+              jumatLibur: nextPremiumAmount,
             },
             counts: {
               ...existingCounts,
@@ -637,9 +658,7 @@ export async function POST(request: NextRequest) {
             },
           };
           const oldAmount = employeeView?.totalAmount || 0;
-          const nextAmount =
-            nextHarian * PEKARYA_ATTENDANCE_RATES.Harian +
-            nextPremium * PEKARYA_ATTENDANCE_RATES['Jumat & Libur'];
+          const nextAmount = nextHarianAmount + nextPremiumAmount;
           transaction.update(uraianRef, {
             entries,
             attendancePublication: {

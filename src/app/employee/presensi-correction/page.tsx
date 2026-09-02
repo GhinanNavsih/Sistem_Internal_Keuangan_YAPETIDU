@@ -39,11 +39,13 @@ import {
   Trash2
 } from 'lucide-react';
 import Link from 'next/link';
+import { authenticatedJson, createFinancialRequestId } from '@/lib/payroll/client';
 import {
   asPresenceCorrectionRequest,
   correctionTimeLabel,
   formatPresenceDate,
   isPresenceCorrectionType,
+  isPresenceCorrectionVisibleToEmployee,
   parseDateOnly,
   timestampToMillis,
   type PresenceCorrectionRequest,
@@ -85,6 +87,7 @@ export default function PresensiCorrectionPage() {
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
   const [existingProofUrl, setExistingProofUrl] = useState<string | null>(null);
+  const [deletingRequestId, setDeletingRequestId] = useState<string | null>(null);
 
   // Check if existing file is a PDF
   const isExistingProofPdf = useMemo(() => {
@@ -142,6 +145,7 @@ export default function PresensiCorrectionPage() {
       const snap = await getDocs(q);
       const list = snap.docs
         .map((snapshot) => asPresenceCorrectionRequest(snapshot.id, snapshot.data()))
+        .filter(isPresenceCorrectionVisibleToEmployee)
         .sort((a, b) => timestampToMillis(b.createdAt) - timestampToMillis(a.createdAt));
       setRequests(list);
     } catch (err) {
@@ -196,11 +200,35 @@ export default function PresensiCorrectionPage() {
 
   const handleDeleteRequest = async (id: string) => {
     setActiveMenuId(null);
-    void id;
-    setMessage({
-      type: 'error',
-      text: 'Penghapusan pengajuan dinonaktifkan agar riwayat koreksi tetap utuh.',
-    });
+    const confirmed = window.confirm(
+      'Hapus pengajuan ini dari riwayat Anda? Data tetap tersimpan untuk kebutuhan audit.',
+    );
+    if (!confirmed) return;
+
+    setDeletingRequestId(id);
+    setMessage(null);
+    try {
+      await authenticatedJson<{ requestId: string; hiddenFromEmployee: boolean }>(
+        `/api/employee/presensi-correction?requestId=${encodeURIComponent(id)}`,
+        { method: 'DELETE' },
+      );
+      setRequests((current) => current.filter((request) => request.id !== id));
+      if (editingRequestId === id) {
+        handleCancelEdit();
+      }
+      setMessage({
+        type: 'success',
+        text: 'Pengajuan dihapus dari riwayat Anda. Data tetap tersimpan di database.',
+      });
+    } catch (err: unknown) {
+      console.error('Error hiding presence correction:', err);
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Gagal menghapus pengajuan dari riwayat.',
+      });
+    } finally {
+      setDeletingRequestId(null);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -282,6 +310,7 @@ export default function PresensiCorrectionPage() {
       const empId = profile?.linkedEmployeeId || profile?.uid || 'unknown';
       let proofUrl = existingProofUrl || '';
       let overwriteDocId: string | null = null;
+      let createFreshDocument = false;
 
       // Check for duplicate submission for the same date (only if not currently editing)
       if (!editingRequestId) {
@@ -291,8 +320,8 @@ export default function PresensiCorrectionPage() {
           where('date', '==', date)
         );
         const querySnap = await getDocs(q);
-        if (!querySnap.empty) {
-          const existingDoc = querySnap.docs[0];
+        const existingDoc = querySnap.docs.find((candidate) => candidate.data().hiddenFromEmployee !== true);
+        if (existingDoc) {
           const confirmDate = new Date(date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
           const confirmOverwrite = window.confirm(
             `Anda sudah mengajukan koreksi presensi untuk tanggal ${confirmDate}. Apakah Anda yakin ingin menimpa pengajuan tersebut dengan data baru?`
@@ -305,6 +334,11 @@ export default function PresensiCorrectionPage() {
           if (!file) {
             proofUrl = existingDoc.data().proofUrl || '';
           }
+        } else if (!querySnap.empty) {
+          // A hidden record is retained as an archived history item. Use a
+          // new document for a later submission on the same date instead of
+          // replacing that archived record.
+          createFreshDocument = true;
         }
       }
 
@@ -325,7 +359,10 @@ export default function PresensiCorrectionPage() {
       const yy = dateParts[0].slice(-2);
       const mm = dateParts[1];
       const dd = dateParts[2];
-      const customDocId = `${empId}_${yy}${mm}${dd}`;
+      const baseDocId = `${empId}_${yy}${mm}${dd}`;
+      const customDocId = createFreshDocument
+        ? `${baseDocId}_${createFinancialRequestId('retry')}`
+        : baseDocId;
 
       // 2. Save document to Firestore
       const requestData: Record<string, unknown> = {
@@ -622,7 +659,7 @@ export default function PresensiCorrectionPage() {
                   Riwayat Koreksi
                 </CardTitle>
                 <CardDescription className="text-xs text-slate-450 mt-1">
-                  Semua pengajuan koreksi presensi yang pernah diajukan.
+                  Pengajuan koreksi presensi yang ditampilkan untuk akun Anda. Data yang dihapus tetap tersimpan untuk audit.
                 </CardDescription>
               </div>
 
@@ -677,24 +714,24 @@ export default function PresensiCorrectionPage() {
                               <><Clock className="w-3 h-3" /> Pending</>
                             )}
                           </span>
-                          {(req.status === 'pending' || req.status === 'rejected') && (
-                            <div className="relative">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                onClick={() => setActiveMenuId(activeMenuId === req.id ? null : req.id)}
-                                className="h-7 w-7 p-0 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-700 flex items-center justify-center cursor-pointer"
-                              >
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => setActiveMenuId(activeMenuId === req.id ? null : req.id)}
+                              className="h-7 w-7 p-0 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-700 flex items-center justify-center cursor-pointer"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
 
-                              {activeMenuId === req.id && (
-                                <>
-                                  <div
-                                    className="fixed inset-0 z-40"
-                                    onClick={() => setActiveMenuId(null)}
-                                  />
-                                  <div className="absolute right-0 mt-1 w-28 bg-white rounded-xl border border-slate-100 shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+                            {activeMenuId === req.id && (
+                              <>
+                                <div
+                                  className="fixed inset-0 z-40"
+                                  onClick={() => setActiveMenuId(null)}
+                                />
+                                <div className="absolute right-0 mt-1 w-28 bg-white rounded-xl border border-slate-100 shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+                                  {(req.status === 'pending' || req.status === 'rejected') && (
                                     <button
                                       type="button"
                                       onClick={() => handleStartEdit(req)}
@@ -703,19 +740,24 @@ export default function PresensiCorrectionPage() {
                                       <Pencil className="w-3.5 h-3.5 text-indigo-500" />
                                       Ubah
                                     </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteRequest(req.id)}
-                                      className="w-full px-3 py-2 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer border-t border-slate-50"
-                                    >
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteRequest(req.id)}
+                                    disabled={deletingRequestId === req.id}
+                                    className="w-full px-3 py-2 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer border-t border-slate-50 disabled:cursor-wait disabled:opacity-60"
+                                  >
+                                    {deletingRequestId === req.id ? (
+                                      <Loader2 className="w-3.5 h-3.5 text-rose-500 animate-spin" />
+                                    ) : (
                                       <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                                      Hapus
-                                    </button>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          )}
+                                    )}
+                                    Hapus
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
 

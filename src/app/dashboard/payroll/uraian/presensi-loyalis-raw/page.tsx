@@ -337,11 +337,31 @@ export default function PresensiLoyalisRawPage() {
     fetchExistingPresence();
   }, [fetchExistingPresence]);
 
-  // ── Hydrate the calculation table from the active shared import ──
-  // Someone else may have uploaded & activated the shared XLSX. The file's
-  // parsed rows live server-side (AttendanceImportRows) regardless of who
-  // activated it, so any viewer should see the same preview table without
-  // having to re-upload the identical file themselves.
+  // ── Read the calculation table from the active shared import ──
+  // The active file's parsed rows live server-side (AttendanceImportRows)
+  // regardless of who uploaded it, and the server is the only place that
+  // knows the Loyalis/Pekarya department routing. Both the initial page load
+  // and a fresh upload read the table from here so there is exactly one
+  // matching implementation.
+  const fetchActiveImportLoyalisRows = useCallback(async () => {
+    const result = await authenticatedJson<{
+      loyalisRows: Array<{
+        excelName: string;
+        nipy: string;
+        employeeId: string | null;
+        employeeName: string | null;
+        dailyLogs: Array<{ Tanggal: string; 'Jam kerja': string; 'Scan masuk': string; 'Scan pulang': string }>;
+      }>;
+    }>(`/api/attendance/imports?period=${encodeURIComponent(canonicalPeriod)}&scope=loyalis`);
+    return (result.loyalisRows || []).map((entry) => ({
+      excelName: entry.excelName,
+      nipy: entry.nipy,
+      employeeId: entry.employeeId,
+      employeeName: entry.employeeName,
+      ...recalculateSummary(entry.dailyLogs, expectedHours),
+    }));
+  }, [canonicalPeriod, expectedHours]);
+
   useEffect(() => {
     if (!usesSharedImport) return;
     if (!activeImport?.activeRevisionId) return;
@@ -351,23 +371,8 @@ export default function PresensiLoyalisRawPage() {
     let cancelled = false;
     (async () => {
       try {
-        const result = await authenticatedJson<{
-          loyalisRows: Array<{
-            excelName: string;
-            nipy: string;
-            employeeId: string;
-            employeeName: string;
-            dailyLogs: Array<{ Tanggal: string; 'Jam kerja': string; 'Scan masuk': string; 'Scan pulang': string }>;
-          }>;
-        }>(`/api/attendance/imports?period=${encodeURIComponent(canonicalPeriod)}&scope=loyalis`);
-        if (cancelled || !result.loyalisRows || result.loyalisRows.length === 0) return;
-        const parsedData = result.loyalisRows.map((entry) => ({
-          excelName: entry.excelName,
-          nipy: entry.nipy,
-          employeeId: entry.employeeId,
-          employeeName: entry.employeeName,
-          ...recalculateSummary(entry.dailyLogs, expectedHours),
-        }));
+        const parsedData = await fetchActiveImportLoyalisRows();
+        if (cancelled || parsedData.length === 0) return;
         setUploadedData(parsedData);
       } catch (error) {
         console.error('Gagal memuat data presensi dari file aktif:', error);
@@ -382,8 +387,7 @@ export default function PresensiLoyalisRawPage() {
     loadingPresence,
     existingPresence,
     uploadedData,
-    canonicalPeriod,
-    expectedHours,
+    fetchActiveImportLoyalisRows,
   ]);
 
   // ── Fetch Correction Requests for Active Month ──
@@ -439,35 +443,11 @@ export default function PresensiLoyalisRawPage() {
     return found || null;
   }, []);
 
-  const getUnmatchedReason = useCallback((
-    excelName: string,
-    sourceNipy: string,
-    employees: any[],
-    isSharedImport: boolean
-  ): { reason: string; detail: string; suggestedEmp: any | null } => {
-    if (isSharedImport) {
-      if (!sourceNipy) {
-        return {
-          reason: 'NIPY Kosong di Excel',
-          detail: 'Kolom NIPY/PIN pada baris Excel ini tidak terisi. Sistem memerlukan NIPY untuk menghubungkan data secara otomatis.',
-          suggestedEmp: null,
-        };
-      }
-      return {
-        reason: 'NIPY Tidak Ditemukan',
-        detail: `NIPY "${sourceNipy}" dari file Excel tidak cocok dengan data NIPY pegawai Loyalis aktif mana pun di sistem.`,
-        suggestedEmp: null,
-      };
-    }
-
-    if (!excelName || excelName === '-') {
-      return {
-        reason: 'Baris Kosong',
-        detail: 'Tidak ada nama pegawai pada baris data ini.',
-        suggestedEmp: null,
-      };
-    }
-
+  // Best-effort name match used to propose a link. The scanner routinely
+  // exports its own short PIN in the NIPY column, so the employee name is
+  // often the only usable signal for reconnecting a row by hand.
+  const suggestEmployeeByName = useCallback((excelName: string, employees: any[]) => {
+    if (!excelName || excelName === '-') return null;
     const cleanExcel = normalizeName(excelName).toLowerCase();
     const excelBase = excelName.split(',')[0].trim().toLowerCase();
     const excelWords = excelBase.split(/\s+/).filter((w: string) => w.length >= 3);
@@ -499,6 +479,44 @@ export default function PresensiLoyalisRawPage() {
       }
     });
 
+    return bestCandidate;
+  }, []);
+
+  const getUnmatchedReason = useCallback((
+    excelName: string,
+    sourceNipy: string,
+    employees: any[],
+    isSharedImport: boolean
+  ): { reason: string; detail: string; suggestedEmp: any | null } => {
+    if (isSharedImport) {
+      const suggestedEmp = suggestEmployeeByName(excelName, employees);
+      const suggestionNote = suggestedEmp
+        ? ` Berdasarkan nama, kemungkinan pegawai ini adalah "${suggestedEmp.name}".`
+        : '';
+      if (!sourceNipy) {
+        return {
+          reason: 'NIPY Kosong di Excel',
+          detail: `Kolom NIPY/PIN pada baris Excel ini tidak terisi, sehingga tidak dapat dihubungkan otomatis.${suggestionNote}`,
+          suggestedEmp,
+        };
+      }
+      return {
+        reason: 'NIPY Tidak Ditemukan',
+        detail: `NIPY "${sourceNipy}" dari file Excel tidak cocok dengan data NIPY pegawai Loyalis aktif mana pun di sistem. Nilai ini biasanya merupakan PIN mesin presensi, bukan NIPY.${suggestionNote}`,
+        suggestedEmp,
+      };
+    }
+
+    if (!excelName || excelName === '-') {
+      return {
+        reason: 'Baris Kosong',
+        detail: 'Tidak ada nama pegawai pada baris data ini.',
+        suggestedEmp: null,
+      };
+    }
+
+    const bestCandidate = suggestEmployeeByName(excelName, employees);
+
     if (bestCandidate) {
       const hasDegreeInExcel = excelName.includes(',');
       const hasDegreeInDb = (bestCandidate.name || '').includes(',');
@@ -522,7 +540,7 @@ export default function PresensiLoyalisRawPage() {
       detail: `Nama "${excelName}" di file Excel tidak cocok dengan data pegawai Loyalis aktif mana pun di sistem. Kemungkinan pegawai belum diinput ke database master.`,
       suggestedEmp: null,
     };
-  }, []);
+  }, [suggestEmployeeByName]);
 
   const calculatePresenceStratum = useCallback((
     minutes: number,
@@ -1010,7 +1028,26 @@ export default function PresensiLoyalisRawPage() {
           activeRevision: activated.activeRevision,
           activeRevisionId: activated.activeRevisionId,
         });
-        reader.readAsArrayBuffer(file);
+        // The server has parsed and stored the file; read the table back from
+        // it rather than parsing the same bytes a second time here. Only the
+        // server applies the department routing, so a local re-parse would
+        // disagree with what every other viewer of this period sees.
+        const parsedData = await fetchActiveImportLoyalisRows();
+        if (parsedData.length === 0) {
+          setMessage({
+            type: 'error',
+            text: 'File aktif tidak memuat baris presensi Loyalis untuk periode ini.',
+          });
+          return;
+        }
+        setUploadedData(parsedData);
+        const unmatchedCount = parsedData.filter((row) => !row.employeeId).length;
+        setMessage({
+          type: 'success',
+          text: `Berhasil mengaktifkan file presensi bersama. ${parsedData.length} pegawai Loyalis dimuat.${
+            unmatchedCount > 0 ? ` ${unmatchedCount} baris perlu dihubungkan manual.` : ''
+          }`,
+        });
       } catch (error) {
         setMessage({
           type: 'error',
@@ -1030,6 +1067,7 @@ export default function PresensiLoyalisRawPage() {
     expectedHours,
     matchExcelName,
     usesSharedImport,
+    fetchActiveImportLoyalisRows,
   ]);
 
   const handleUpdateDailyLog = useCallback((excelName: string, dateStr: string, field: string, value: any) => {
@@ -1702,7 +1740,9 @@ export default function PresensiLoyalisRawPage() {
                                 )}
                               </div>
                               <div className="flex items-center gap-1.5 min-w-0" onClick={(e) => e.stopPropagation()}>
-                                {uploadedData && row.excelName !== '-' && !usesSharedImport ? (
+                                {uploadedData &&
+                                row.excelName !== '-' &&
+                                (!usesSharedImport || !row.isMatched) ? (
                                   activeSearchRowIdx === row.idx ? (
                                     <div className="relative w-full max-w-[240px] z-20">
                                       <Input
@@ -1811,7 +1851,7 @@ export default function PresensiLoyalisRawPage() {
                                     <p className="text-[10px] text-slate-600 leading-normal">
                                       {reasonInfo.detail}
                                     </p>
-                                    {reasonInfo.suggestedEmp && uploadedData && !usesSharedImport && (
+                                    {reasonInfo.suggestedEmp && uploadedData && (
                                       <div className="flex items-center gap-1.5 pt-0.5">
                                         <span className="text-[9px] font-semibold text-slate-500">Saran:</span>
                                         <button

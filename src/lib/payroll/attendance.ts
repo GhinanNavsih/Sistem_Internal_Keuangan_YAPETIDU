@@ -1,10 +1,36 @@
 import { pekaryaPayrollWindow } from './pekaryaSpj';
 
 export const ATTENDANCE_PAYROLL_START_PERIOD = '2026-08';
-export const PEKARYA_ATTENDANCE_RATES = Object.freeze({
-  Harian: 12_500,
-  'Jumat & Libur': 25_000,
-});
+
+/**
+ * Blue-collar attendance is paid by measured time on site rather than by a flat
+ * daily figure. The rate reproduces the previous flat amounts exactly at the
+ * durations they stood for — 6.5 hours pays Rp 12.500 and 13 hours pays
+ * Rp 25.000 — so a normal day is unchanged while longer and shorter days are
+ * now paid for what they actually were.
+ *
+ * Satpam is not paid from this rate at all: their wage comes from the Ketua
+ * Shift duty reports, and their scans are only ever used as verification.
+ */
+export const PEKARYA_ATTENDANCE_RATE_PER_SECOND = 0.53418803418;
+
+/** Friday and holiday work is paid at the premium rate for the same seconds. */
+export const PEKARYA_ATTENDANCE_PREMIUM_RATE_PER_SECOND = 1.06837606838;
+
+/**
+ * The official work window. Time scanned before 07:30 or after 14:00 is not
+ * counted, so the most a single day can pay is the 6.5 hours between them.
+ * Loyalis presence measures against this same window.
+ */
+export const ATTENDANCE_WORK_WINDOW_START_MINUTES = 7 * 60 + 30;
+export const ATTENDANCE_WORK_WINDOW_END_MINUTES = 14 * 60;
+
+/**
+ * A forgotten scan is filled in 150 minutes off the one that was recorded,
+ * rather than treated as zero time worked. Loyalis presence has used this
+ * convention from the start; Pekarya attendance now shares it.
+ */
+export const ATTENDANCE_SINGLE_SCAN_AUTO_FILL_MINUTES = 150;
 
 export type AttendanceIdentifierSource = 'NIPY' | 'PIN';
 
@@ -60,6 +86,9 @@ export interface PekaryaAttendanceSummary {
   nipy: string;
   harianCount: number;
   jumatLiburCount: number;
+  harianAmount: number;
+  jumatLiburAmount: number;
+  workedSeconds: number;
   totalAmount: number;
   payableDays: number;
   incompletePunchCount: number;
@@ -68,6 +97,8 @@ export interface PekaryaAttendanceSummary {
     EffectiveAttendanceDay & {
       payType: 'Harian' | 'Jumat & Libur' | null;
       amount: number;
+      scanInAuto: boolean;
+      scanOutAuto: boolean;
     }
   >;
 }
@@ -80,6 +111,38 @@ export function normalizeNipy(value: unknown): string {
     .trim()
     .replace(/\s+/g, '')
     .toUpperCase();
+}
+
+export type AttendanceRoutingSystem = 'pekarya' | 'loyalis';
+
+/**
+ * Departments the source scanner exports for blue-collar workers. Their rows
+ * belong to the Pekarya review page; every other department (faculty codes,
+ * bureaus, and blanks) belongs to the Loyalis page.
+ */
+const PEKARYA_ROUTING_DEPARTMENTS = new Set([
+  'TEKNISI',
+  'CS',
+  'SECURITY',
+  'SOPIR',
+]);
+
+/**
+ * Decides which review page owns an imported attendance row.
+ *
+ * The scanner's NIPY column is unreliable — every TEKNISI/CS/SECURITY worker
+ * carries the machine's own short PIN instead of a payroll NIPY — so routing
+ * must not depend on a successful employee match. The department string is
+ * present on every row and is stable, which lets a row reach the right
+ * reviewer even when nobody can be identified from its NIPY.
+ */
+export function classifyAttendanceDepartment(
+  department: unknown,
+): AttendanceRoutingSystem {
+  const normalized = String(department ?? '')
+    .trim()
+    .toUpperCase();
+  return PEKARYA_ROUTING_DEPARTMENTS.has(normalized) ? 'pekarya' : 'loyalis';
 }
 
 export function resolveEmployeeAttendanceNipy(
@@ -213,10 +276,15 @@ export function normalizeAttendanceWorkbookRow(
   }
 
   const workStatus = String(fields.get('JAM KERJA') ?? '').trim().toUpperCase();
-  const isMasuk = workStatus === 'MASUK';
-  if (isMasuk && !scanIn && !scanOut) issues.push('MASUK_WITHOUT_SCAN');
-  if (!isMasuk && (scanIn || scanOut)) issues.push('SCAN_WITHOUT_MASUK');
-  if (isMasuk && Boolean(scanIn) !== Boolean(scanOut)) issues.push('INCOMPLETE_PUNCH');
+  // The status column carries a role label ("STAFF", "CS", "SATPAM") for a day
+  // worked and "TIDAK HADIR" for an absence, so presence is the absence of an
+  // explicit absence rather than a literal "MASUK".
+  const isPresentStatus = Boolean(workStatus) && workStatus !== 'TIDAK HADIR';
+  if (isPresentStatus && !scanIn && !scanOut) issues.push('MASUK_WITHOUT_SCAN');
+  if (!isPresentStatus && (scanIn || scanOut)) issues.push('SCAN_WITHOUT_MASUK');
+  if (isPresentStatus && Boolean(scanIn) !== Boolean(scanOut)) {
+    issues.push('INCOMPLETE_PUNCH');
+  }
 
   return {
     rowNumber,
@@ -302,10 +370,15 @@ export function consolidateAttendanceDays(
       const scanIn = correction && 'scanIn' in correction ? correction.scanIn || null : baseScanIn;
       const scanOut =
         correction && 'scanOut' in correction ? correction.scanOut || null : baseScanOut;
+      // The scanner writes a role label in the status column — "STAFF", "CS",
+      // "SATPAM" — and reserves "TIDAK HADIR" for a real absence. Anything that
+      // is not an explicit absence, and that carries a scan, is a day on site.
       const present =
         correction && typeof correction.present === 'boolean'
           ? correction.present
-          : workStatus === 'MASUK' && Boolean(scanIn || scanOut);
+          : Boolean(workStatus) &&
+            workStatus !== 'TIDAK HADIR' &&
+            Boolean(scanIn || scanOut);
       const issues = Array.from(
         new Set<AttendanceIssueCode>([
           ...dayRows.flatMap((row) => row.issues),
@@ -353,6 +426,91 @@ export function isPremiumAttendanceDate(
   return isFridayDate(dateOnly) || premiumDates.has(dateOnly);
 }
 
+function attendanceTimeToSeconds(value: string | null): number | null {
+  const normalized = normalizeAttendanceTime(value);
+  if (!normalized) return null;
+  const [hours, minutes, seconds] = normalized.split(':').map(Number);
+  return hours * 3_600 + minutes * 60 + (seconds || 0);
+}
+
+function clampToAttendanceWorkWindowSeconds(seconds: number): number {
+  const windowStart = ATTENDANCE_WORK_WINDOW_START_MINUTES * 60;
+  const windowEnd = ATTENDANCE_WORK_WINDOW_END_MINUTES * 60;
+  return Math.min(windowEnd, Math.max(windowStart, seconds));
+}
+
+function attendanceSecondsToClock(seconds: number): string {
+  const clamped = clampToAttendanceWorkWindowSeconds(seconds);
+  const hours = Math.floor(clamped / 3_600);
+  const minutes = Math.floor((clamped % 3_600) / 60);
+  const remainingSeconds = Math.floor(clamped % 60);
+  return [hours, minutes, remainingSeconds]
+    .map((part) => String(part).padStart(2, '0'))
+    .join(':');
+}
+
+/**
+ * Generates the missing side of a single scan, 150 minutes off the one that
+ * was recorded, and clamped into the 07:30–14:00 work window. Shared by
+ * Loyalis presence (via `autoFillLoyalisScan`) and Pekarya attendance.
+ *
+ * The recorded scan is clamped into the window *before* the offset is added,
+ * not after. An employee who clocks in at 05:54 gets no credit for the time
+ * before 07:30 anyway, so the offset is measured from 07:30 — otherwise the
+ * generated scan-out lands close to the window's own clamp and most of the
+ * 150 minutes is lost to a boundary the employee did nothing wrong to hit.
+ */
+export function autoFillAttendanceScan(
+  scan: string | null,
+  missingSide: 'in' | 'out',
+): string | null {
+  const seconds = attendanceTimeToSeconds(scan);
+  if (seconds === null) return null;
+  const clamped = clampToAttendanceWorkWindowSeconds(seconds);
+  const offset = ATTENDANCE_SINGLE_SCAN_AUTO_FILL_MINUTES * 60;
+  const generated = missingSide === 'out' ? clamped + offset : clamped - offset;
+  return attendanceSecondsToClock(generated);
+}
+
+/**
+ * Counted seconds on site: both scans are pulled into the 07:30–14:00 window
+ * before measuring, so an early arrival or a late departure adds nothing.
+ *
+ * A day with only one scan is not treated as zero time worked — the missing
+ * side is generated by {@link autoFillAttendanceScan} and counted the same as
+ * a real scan, exactly as Loyalis presence already does for a single punch.
+ * The day still carries `INCOMPLETE_PUNCH`/`completePunch: false` upstream,
+ * so it stays visible for review even though it is no longer unpaid.
+ */
+export function attendanceWorkedSeconds(
+  scanIn: string | null,
+  scanOut: string | null,
+): number {
+  const filledScanIn = scanIn ?? autoFillAttendanceScan(scanOut, 'in');
+  const filledScanOut = scanOut ?? autoFillAttendanceScan(scanIn, 'out');
+  const start = attendanceTimeToSeconds(filledScanIn);
+  const end = attendanceTimeToSeconds(filledScanOut);
+  if (start === null || end === null) return 0;
+  const windowStart = ATTENDANCE_WORK_WINDOW_START_MINUTES * 60;
+  const windowEnd = ATTENDANCE_WORK_WINDOW_END_MINUTES * 60;
+  const effectiveIn = Math.max(windowStart, start);
+  const effectiveOut = Math.min(windowEnd, end);
+  const elapsed = effectiveOut - effectiveIn;
+  return elapsed > 0 ? elapsed : 0;
+}
+
+/** Rupiah owed for one day on site, always rounded up to a whole rupiah. */
+export function pekaryaAttendanceAmount(
+  scanIn: string | null,
+  scanOut: string | null,
+  premium = false,
+): number {
+  const rate = premium
+    ? PEKARYA_ATTENDANCE_PREMIUM_RATE_PER_SECOND
+    : PEKARYA_ATTENDANCE_RATE_PER_SECOND;
+  return Math.ceil(attendanceWorkedSeconds(scanIn, scanOut) * rate);
+}
+
 export function summarizePekaryaAttendance(
   nipy: string,
   days: readonly EffectiveAttendanceDay[],
@@ -361,21 +519,42 @@ export function summarizePekaryaAttendance(
   const normalizedNipy = normalizeNipy(nipy);
   let harianCount = 0;
   let jumatLiburCount = 0;
+  let harianAmount = 0;
+  let jumatLiburAmount = 0;
+  let workedSeconds = 0;
   const summarizedDays = days
     .filter((day) => day.nipy === normalizedNipy)
     .map((day) => {
       if (!day.present) {
-        return { ...day, payType: null, amount: 0 };
+        return { ...day, payType: null, amount: 0, scanInAuto: false, scanOutAuto: false };
       }
-      const payType = isPremiumAttendanceDate(day.date, premiumDates)
+      const premium = isPremiumAttendanceDate(day.date, premiumDates);
+      const payType = premium
         ? ('Jumat & Libur' as const)
         : ('Harian' as const);
-      if (payType === 'Jumat & Libur') jumatLiburCount += 1;
-      else harianCount += 1;
+      // A forgotten scan is filled in rather than left blank, so what is shown
+      // is exactly what the amount below was paid for.
+      const scanInAuto = day.scanIn === null;
+      const scanOutAuto = day.scanOut === null;
+      const filledScanIn = day.scanIn ?? autoFillAttendanceScan(day.scanOut, 'in');
+      const filledScanOut = day.scanOut ?? autoFillAttendanceScan(day.scanIn, 'out');
+      const amount = pekaryaAttendanceAmount(filledScanIn, filledScanOut, premium);
+      workedSeconds += attendanceWorkedSeconds(filledScanIn, filledScanOut);
+      if (payType === 'Jumat & Libur') {
+        jumatLiburCount += 1;
+        jumatLiburAmount += amount;
+      } else {
+        harianCount += 1;
+        harianAmount += amount;
+      }
       return {
         ...day,
+        scanIn: filledScanIn,
+        scanOut: filledScanOut,
+        scanInAuto: scanInAuto && filledScanIn !== null,
+        scanOutAuto: scanOutAuto && filledScanOut !== null,
         payType,
-        amount: PEKARYA_ATTENDANCE_RATES[payType],
+        amount,
       };
     });
 
@@ -383,9 +562,10 @@ export function summarizePekaryaAttendance(
     nipy: normalizedNipy,
     harianCount,
     jumatLiburCount,
-    totalAmount:
-      harianCount * PEKARYA_ATTENDANCE_RATES.Harian +
-      jumatLiburCount * PEKARYA_ATTENDANCE_RATES['Jumat & Libur'],
+    harianAmount,
+    jumatLiburAmount,
+    workedSeconds,
+    totalAmount: harianAmount + jumatLiburAmount,
     payableDays: harianCount + jumatLiburCount,
     incompletePunchCount: summarizedDays.filter(
       (day) => day.present && !day.completePunch,

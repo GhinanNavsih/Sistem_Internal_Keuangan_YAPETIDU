@@ -5,6 +5,7 @@ import {
   ATTENDANCE_PAYROLL_START_PERIOD,
   AttendanceNormalizedRow,
   attendanceDayKey,
+  classifyAttendanceDepartment,
 } from '@/lib/payroll/attendance';
 import {
   ATTENDANCE_IMPORTS_COLLECTION,
@@ -194,12 +195,29 @@ interface LoyalisDailyLog {
   'Scan pulang': string;
 }
 
+/**
+ * Rows the Loyalis calculator may consider. Unlike `relevantRows`, a missing or
+ * self-contradicting identifier does not disqualify a row here: the scanner
+ * often exports its own PIN instead of a payroll NIPY, and those rows must
+ * still reach the reviewer as "needs manual link" rather than vanish.
+ */
+function loyalisCandidateRows(rows: readonly AttendanceNormalizedRow[]) {
+  return rows.filter(
+    (row) =>
+      row.date &&
+      !row.issues.includes('DATE_INVALID') &&
+      !row.issues.includes('TIME_INVALID') &&
+      !row.issues.includes('OUTSIDE_PERIOD') &&
+      classifyAttendanceDepartment(row.department) === 'loyalis',
+  );
+}
+
 async function buildActiveLoyalisRows(period: string): Promise<
   Array<{
     excelName: string;
     nipy: string;
-    employeeId: string;
-    employeeName: string;
+    employeeId: string | null;
+    employeeName: string | null;
     dailyLogs: LoyalisDailyLog[];
   }>
 > {
@@ -212,23 +230,27 @@ async function buildActiveLoyalisRows(period: string): Promise<
     {
       excelName: string;
       nipy: string;
-      employeeId: string;
-      employeeName: string;
+      employeeId: string | null;
+      employeeName: string | null;
       rows: Array<{ dateIso: string; date: string; workStatus: string; scanIn: string; scanOut: string }>;
     }
   >();
-  for (const row of relevantRows(rows)) {
+  for (const row of loyalisCandidateRows(rows)) {
     const candidates = (byNipy.get(row.nipy) || []).filter(
       (identity) => identity.employeeCollection === 'Employees_Loyalis' && identity.active,
     );
-    if (candidates.length !== 1) continue;
-    const identity = candidates[0];
-    const existing = grouped.get(identity.employeeId);
+    const identity = candidates.length === 1 ? candidates[0] : null;
+    // An unresolved row keeps its own bucket so the reviewer can link it by
+    // hand; grouping by employee is only possible once an employee is known.
+    const groupKey = identity
+      ? `employee:${identity.employeeId}`
+      : `unmatched:${row.nipy || row.name || `row-${row.rowNumber}`}`;
+    const existing = grouped.get(groupKey);
     const entry = existing || {
-      excelName: row.name || row.nipy,
+      excelName: row.name || row.nipy || '(tanpa nama)',
       nipy: row.nipy,
-      employeeId: identity.employeeId,
-      employeeName: identity.name,
+      employeeId: identity?.employeeId || null,
+      employeeName: identity?.name || null,
       rows: [],
     };
     // Only an explicit "TIDAK HADIR" means no attendance event that day. Any
@@ -242,7 +264,7 @@ async function buildActiveLoyalisRows(period: string): Promise<
       scanIn: isPresent ? row.scanIn || '' : '',
       scanOut: isPresent ? row.scanOut || '' : '',
     });
-    grouped.set(identity.employeeId, entry);
+    grouped.set(groupKey, entry);
   }
   return Array.from(grouped.values()).map((entry) => ({
     excelName: entry.excelName,

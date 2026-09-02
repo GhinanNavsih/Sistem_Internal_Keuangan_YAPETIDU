@@ -630,16 +630,20 @@ export default function EmployeePayslipPage() {
       shiftDoc = {
         id: 'vakasi_jumat_lembur',
         title: 'Vakasi Harian & Jumat',
-        formula: 'Harian: Rp 12.500/Shift | Jumat & Libur: Rp 25.000/Shift',
+        formula: 'Rp 1.923,08 per jam kerja tercatat (Rp 0,53418803418 per detik)',
         bullets: [
-          'Vakasi Harian: Dihitung dari jumlah kehadiran dinas shift Harian (Rp 12.500 per shift)',
-          'Jumat & Libur: Insentif tugas piket / kebersihan pada hari Jumat atau Hari Libur (Rp 25.000 per shift)',
+          'Vakasi dihitung dari selisih scan masuk dan scan pulang pada mesin presensi, bukan dari tarif tetap per shift',
+          'Hasil perhitungan dibulatkan ke atas ke rupiah penuh',
+          'Hari kerja 6,5 jam bernilai Rp 12.500 dan 13 jam bernilai Rp 25.000',
+          'Jumat & Libur: hari Jumat dan hari libur tetap dicatat pada kolom terpisah dan dibayar sesuai jam kerja tercatat',
+          'Hari dengan scan masuk atau scan pulang saja belum dapat dihitung — ajukan koreksi presensi agar jamnya lengkap',
         ],
         table: {
-          headers: ['Jenis Shift / Tugas', 'Tarif Insentif', 'Keterangan'],
+          headers: ['Durasi Kerja Tercatat', 'Nilai Vakasi', 'Keterangan'],
           rows: [
-            ['Vakasi Harian', 'Rp 12.500 / Shift', 'Shift reguler harian Kebersihan'],
-            ['Jumat & Libur', 'Rp 25.000 / Shift', 'Shift khusus hari Jumat atau hari libur'],
+            ['1 jam', 'Rp 1.924', 'Pembulatan ke atas dari Rp 1.923,08'],
+            ['6,5 jam', 'Rp 12.500', 'Setara satu hari kerja penuh'],
+            ['13 jam', 'Rp 25.000', 'Dua kali hari kerja penuh'],
           ],
         },
       };
@@ -647,17 +651,21 @@ export default function EmployeePayslipPage() {
       shiftDoc = {
         id: 'vakasi_jumat_lembur',
         title: 'Vakasi Harian, Jumat & Lembur',
-        formula: 'Harian: Rp 12.500/Shift | Jumat: Rp 25.000/Shift | Lembur Sesuai Rekap',
+        formula: 'Rp 1.923,08 per jam kerja tercatat (Rp 0,53418803418 per detik)',
         bullets: [
-          'Vakasi Harian: Dihitung dari jumlah kehadiran dinas shift Harian (Rp 12.500 per shift)',
-          'Jumat & Libur: Insentif tugas piket teknisi pada hari Jumat atau Hari Libur (Rp 25.000 per shift)',
+          'Vakasi dihitung dari selisih scan masuk dan scan pulang pada mesin presensi, bukan dari tarif tetap per shift',
+          'Hasil perhitungan dibulatkan ke atas ke rupiah penuh',
+          'Hari kerja 6,5 jam bernilai Rp 12.500 dan 13 jam bernilai Rp 25.000',
+          'Jumat & Libur: hari Jumat dan hari libur tetap dicatat pada kolom terpisah dan dibayar sesuai jam kerja tercatat',
+          'Hari dengan scan masuk atau scan pulang saja belum dapat dihitung — ajukan koreksi presensi agar jamnya lengkap',
           'Lembur: Insentif penanganan perbaikan / tugas lembur teknisi',
         ],
         table: {
-          headers: ['Jenis Shift / Tugas', 'Tarif Insentif', 'Keterangan'],
+          headers: ['Durasi Kerja Tercatat', 'Nilai Vakasi', 'Keterangan'],
           rows: [
-            ['Vakasi Harian', 'Rp 12.500 / Shift', 'Shift reguler harian Teknisi'],
-            ['Jumat & Libur', 'Rp 25.000 / Shift', 'Shift khusus hari Jumat atau hari libur'],
+            ['1 jam', 'Rp 1.924', 'Pembulatan ke atas dari Rp 1.923,08'],
+            ['6,5 jam', 'Rp 12.500', 'Setara satu hari kerja penuh'],
+            ['13 jam', 'Rp 25.000', 'Dua kali hari kerja penuh'],
             ['Lembur', 'Sesuai Rekap', 'Lembur perbaikan / tugas khusus teknisi'],
           ],
         },

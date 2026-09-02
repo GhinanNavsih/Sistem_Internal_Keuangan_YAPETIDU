@@ -38,12 +38,15 @@ import {
   type SatpamAttendanceReportType,
 } from '@/lib/payroll/satpamAttendance';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
+import { attendanceWorkedSeconds } from '@/lib/payroll/attendance';
 
 type AttendanceDay = {
   date: string;
   workStatus: string;
   scanIn: string | null;
   scanOut: string | null;
+  scanInAuto: boolean;
+  scanOutAuto: boolean;
   present: boolean;
   completePunch: boolean;
   corrected: boolean;
@@ -63,11 +66,29 @@ type EmployeeAttendance = {
   warnings: string[];
   harianCount: number;
   jumatLiburCount: number;
+  harianAmount: number;
+  jumatLiburAmount: number;
+  workedSeconds: number;
   totalAmount: number;
   payableDays: number;
   incompletePunchCount: number;
   correctedDayCount: number;
   days: AttendanceDay[];
+};
+
+type DepartmentUnmatchedRow = {
+  sourceKey: string;
+  sourceNipy: string;
+  sourceName: string;
+  department: string;
+  dates: string[];
+};
+
+type LinkCandidate = {
+  employeeId: string;
+  name: string;
+  nipy: string;
+  category: string;
 };
 
 type AttendanceView = {
@@ -82,8 +103,10 @@ type AttendanceView = {
     publicationRevision?: number;
   };
   employees: EmployeeAttendance[];
+  linkCandidates: LinkCandidate[];
   exceptions: {
     unmatchedNipys: string[];
+    departmentUnmatched: DepartmentUnmatchedRow[];
     duplicateNipys: string[];
     missingNipyEmployeeIds: string[];
     incompletePunches: number;
@@ -109,6 +132,8 @@ type SatpamView = {
   importRevisionId: string;
   calendarRevision: number;
   paymentSource: string;
+  departmentUnmatched: DepartmentUnmatchedRow[];
+  linkCandidates: LinkCandidate[];
   mismatches: Array<{
     code: string;
     employeeId: string | null;
@@ -250,6 +275,40 @@ const warningLabel: Record<string, string> = {
   NO_IMPORTED_ROWS: 'Tidak ditemukan di file',
 };
 
+function durationLabel(seconds: number) {
+  if (seconds <= 0) return '—';
+  const hours = Math.floor(seconds / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  return `${hours}j ${String(minutes).padStart(2, '0')}m`;
+}
+
+/** Time between the two scans, as the reviewer reads it on the row. */
+function workedDuration(day: AttendanceDay) {
+  return durationLabel(attendanceWorkedSeconds(day.scanIn, day.scanOut));
+}
+
+/**
+ * A scan time, flagged when it was generated rather than recorded — the
+ * employee forgot this side, so it was filled in 150 minutes off the side
+ * that was scanned. Mirrors the "Auto" badge Loyalis presence already uses
+ * for the same situation.
+ */
+function ScanCell({ value, auto }: { value: string | null; auto: boolean }) {
+  if (!value) return <span>—</span>;
+  if (!auto) return <span>{value}</span>;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="font-mono text-amber-700 font-semibold">{value}</span>
+      <span
+        className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-amber-50 text-amber-700 border border-amber-200 select-none shrink-0 cursor-help"
+        title="Diisi otomatis (150 menit dari scan yang tercatat) karena satu sisi lupa discan."
+      >
+        Auto
+      </span>
+    </span>
+  );
+}
+
 function money(value: number) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -374,6 +433,9 @@ export default function PekaryaAttendancePage() {
     'plans' | 'absences' | 'reconciliation' | 'mismatches'
   >('plans');
   const [satpamAttendanceNotice, setSatpamAttendanceNotice] = useState('');
+  const [linkTarget, setLinkTarget] = useState<DepartmentUnmatchedRow | null>(null);
+  const [linkEmployeeId, setLinkEmployeeId] = useState('');
+  const [linkSearch, setLinkSearch] = useState('');
   const canEdit = profile?.role === 'satker_head';
 
   const load = useCallback(async () => {
@@ -404,6 +466,8 @@ export default function PekaryaAttendancePage() {
             importRevisionId: '',
             calendarRevision: 0,
             paymentSource: 'Ketua Shift',
+            departmentUnmatched: [],
+            linkCandidates: [],
             mismatches: [],
           };
         });
@@ -470,6 +534,38 @@ export default function PekaryaAttendancePage() {
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Gagal memutuskan izin.');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const saveManualLink = async () => {
+    if (!linkTarget || !linkEmployeeId) return;
+    setWorking(true);
+    setError('');
+    try {
+      await authenticatedJson('/api/attendance/pekarya/manual-link', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('attendance-manual-link'),
+          period,
+          sourceKey: linkTarget.sourceKey,
+          employeeId: linkEmployeeId,
+        }),
+      });
+      setLinkTarget(null);
+      setLinkEmployeeId('');
+      setLinkSearch('');
+      setMessage(
+        `Baris presensi dihubungkan. ${linkTarget.dates.length} hari kini dihitung untuk pegawai tersebut.`,
+      );
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Gagal menghubungkan baris presensi.',
+      );
     } finally {
       setWorking(false);
     }
@@ -564,11 +660,58 @@ export default function PekaryaAttendancePage() {
         employees: acc.employees + 1,
         harian: acc.harian + employee.harianCount,
         premium: acc.premium + employee.jumatLiburCount,
+        harianAmount: acc.harianAmount + employee.harianAmount,
+        premiumAmount: acc.premiumAmount + employee.jumatLiburAmount,
+        workedSeconds: acc.workedSeconds + employee.workedSeconds,
         amount: acc.amount + employee.totalAmount,
       }),
-      { employees: 0, harian: 0, premium: 0, amount: 0 },
+      {
+        employees: 0,
+        harian: 0,
+        premium: 0,
+        harianAmount: 0,
+        premiumAmount: 0,
+        workedSeconds: 0,
+        amount: 0,
+      },
     );
   }, [data]);
+
+  const departmentUnmatched = useMemo(() => {
+    if (!data) return [];
+    return isSatpamView(data)
+      ? data.departmentUnmatched || []
+      : data.exceptions.departmentUnmatched || [];
+  }, [data]);
+
+  // One list holding both sides of the reconciliation: the employees the import
+  // resolved, and the rows it could not, so a reviewer sees the whole period in
+  // a single place instead of two disconnected lists.
+  const attendanceRows = useMemo(() => {
+    if (!data || isSatpamView(data)) return [];
+    const linked = data.employees.map((employee) => ({
+      key: `employee:${employee.employeeId}`,
+      employee,
+      unlinked: null as DepartmentUnmatchedRow | null,
+    }));
+    const unlinked = departmentUnmatched.map((row) => ({
+      key: `unlinked:${row.sourceKey}`,
+      employee: null as EmployeeAttendance | null,
+      unlinked: row,
+    }));
+    return [...linked, ...unlinked];
+  }, [data, departmentUnmatched]);
+
+  const linkCandidates = useMemo(() => {
+    const candidates = data?.linkCandidates || [];
+    const search = linkSearch.trim().toLowerCase();
+    if (!search) return candidates;
+    return candidates.filter(
+      (candidate) =>
+        candidate.name.toLowerCase().includes(search) ||
+        candidate.nipy.toLowerCase().includes(search),
+    );
+  }, [data, linkSearch]);
 
   const openCorrection = (employee: EmployeeAttendance, day?: AttendanceDay) => {
     setCorrection({
@@ -735,6 +878,57 @@ export default function PekaryaAttendancePage() {
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">
           Memuat hasil presensi…
         </div>
+      )}
+
+      {/* On the payable categories these rows sit inside the employee table
+          itself, next to the people they belong with. Satpam has no such table
+          — it is a verification view — so they are listed on their own there. */}
+      {!loading && data && isSatpamView(data) && departmentUnmatched.length > 0 && (
+        <section className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+          <div className="border-b border-amber-100 bg-amber-50 p-5 text-amber-900">
+            <p className="flex items-center gap-2 font-bold">
+              <UserRoundX className="h-5 w-5" />
+              {departmentUnmatched.length} baris presensi belum dikenali
+            </p>
+            <p className="mt-1 text-sm">
+              Baris ini berasal dari departemen blue collar, tetapi kolom
+              NIPY-nya berisi PIN mesin presensi sehingga tidak cocok dengan
+              pegawai mana pun. Hubungkan setiap baris ke pegawai yang benar
+              agar hari kerjanya ikut dihitung.
+            </p>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {departmentUnmatched.map((row) => (
+              <div
+                key={row.sourceKey}
+                className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="font-bold text-slate-900">
+                    {row.sourceName || 'Tanpa nama'}
+                  </p>
+                  <p className="text-sm text-slate-500">
+                    {row.department} · PIN {row.sourceNipy || 'kosong'} ·{' '}
+                    {row.dates.length} hari presensi
+                  </p>
+                </div>
+                {canEdit && (
+                  <Button
+                    variant="outline"
+                    className="min-h-12 shrink-0"
+                    onClick={() => {
+                      setLinkTarget(row);
+                      setLinkEmployeeId('');
+                      setLinkSearch(row.sourceName || '');
+                    }}
+                  >
+                    Hubungkan Pegawai
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {!loading && data && isSatpamView(data) && (
@@ -1143,8 +1337,14 @@ export default function PekaryaAttendancePage() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
               ['Pegawai', totals.employees],
-              ['Harian', totals.harian],
-              ['Jumat & Libur', totals.premium],
+              [
+                'Harian',
+                `${money(totals.harianAmount)} · ${totals.harian} hari`,
+              ],
+              [
+                'Jumat & Libur',
+                `${money(totals.premiumAmount)} · ${totals.premium} hari`,
+              ],
               ['Total', money(totals.amount)],
             ].map(([label, value]) => (
               <div key={String(label)} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1279,68 +1479,236 @@ export default function PekaryaAttendancePage() {
             </div>
           </section>
 
-          <section className="space-y-3">
-            {data.employees.map((employee) => {
-              const isExpanded = expanded.has(employee.employeeId);
+          <div className="flex justify-between items-center px-1">
+            <span className="text-[11px] text-slate-500 font-bold">
+              Menampilkan{' '}
+              <strong className="text-indigo-600 font-mono">
+                {attendanceRows.length}
+              </strong>{' '}
+              data ({data.employees.length} Terhubung
+              {departmentUnmatched.length > 0
+                ? `, ${departmentUnmatched.length} Belum Terhubung`
+                : ''}
+              )
+            </span>
+          </div>
+
+          <section className="space-y-3.5">
+            {attendanceRows.map((row, idx) => {
+              const employee = row.employee;
+              const unlinked = row.unlinked;
+              const isExpanded = expanded.has(row.key);
               return (
                 <article
-                  key={employee.employeeId}
-                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                  key={row.key}
+                  className={`border-2 rounded-2xl shadow-sm bg-white transition-all hover:border-indigo-300 overflow-hidden ${
+                    isExpanded
+                      ? 'ring-4 ring-indigo-50 border-indigo-400 bg-indigo-50/40'
+                      : unlinked
+                        ? 'border-rose-200/80 bg-rose-50/20'
+                        : 'border-indigo-200/80 bg-indigo-50/20'
+                  }`}
                 >
-                  <button
-                    type="button"
-                    className="flex min-h-16 w-full items-center justify-between gap-3 p-4 text-left hover:bg-slate-50"
+                  <div
                     onClick={() =>
                       setExpanded((current) => {
                         const next = new Set(current);
-                        if (next.has(employee.employeeId)) next.delete(employee.employeeId);
-                        else next.add(employee.employeeId);
+                        if (next.has(row.key)) next.delete(row.key);
+                        else next.add(row.key);
                         return next;
                       })
                     }
+                    className="p-4 flex flex-wrap lg:flex-nowrap items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/20 transition-colors"
                   >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-bold text-slate-900">{employee.name}</p>
-                        {category === ALL_BLUE_COLLAR_CATEGORY && (
-                          <span className="rounded-full bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">
-                            {categoryLabel(employee.category)}
-                          </span>
+                    {/* Left: Index & Identity */}
+                    <div className="flex items-center gap-3 w-full lg:w-[280px] xl:w-[300px] shrink-0 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 font-mono shrink-0">
+                        {idx + 1}
+                      </div>
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4
+                            className="font-bold text-slate-800 text-xs tracking-wide truncate max-w-full"
+                            title={employee ? employee.name : unlinked!.sourceName}
+                          >
+                            {employee
+                              ? employee.name
+                              : unlinked!.sourceName || 'Tanpa nama'}
+                          </h4>
+                          {category === ALL_BLUE_COLLAR_CATEGORY && employee && (
+                            <span className="inline-flex text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full shrink-0">
+                              {categoryLabel(employee.category)}
+                            </span>
+                          )}
+                          {unlinked && (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-200/80 px-2 py-0.5 rounded-full shrink-0">
+                              <AlertTriangle className="w-3 h-3 text-rose-500 shrink-0" />
+                              Belum Terhubung
+                            </span>
+                          )}
+                          {employee?.publishBlocked && (
+                            <UserRoundX className="h-4 w-4 text-rose-600 shrink-0" />
+                          )}
+                        </div>
+                        <div
+                          className="flex items-center gap-1.5 min-w-0"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {employee ? (
+                            <div className="flex items-center gap-1 min-w-0 truncate">
+                              <span className="text-[9px] text-slate-400 font-mono shrink-0">
+                                (ID: {employee.employeeId})
+                              </span>
+                              <span className="text-[9px] text-emerald-600 font-mono shrink-0">
+                                NIPY {employee.nipy || 'belum diisi'}
+                              </span>
+                            </div>
+                          ) : canEdit ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLinkTarget(unlinked!);
+                                setLinkEmployeeId('');
+                                setLinkSearch(unlinked!.sourceName || '');
+                              }}
+                              className="text-left px-2 py-1 rounded-lg border transition-all text-[9px] font-bold flex items-center gap-1 cursor-pointer bg-rose-50 border-rose-200/80 text-rose-700 hover:bg-rose-100/60"
+                            >
+                              <span className="truncate max-w-[190px]">
+                                Hubungkan Pegawai Manual…
+                              </span>
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 text-rose-500 bg-rose-50 border border-rose-100 text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                              PIN {unlinked!.sourceNipy || 'kosong'} tidak cocok
+                            </span>
+                          )}
+                        </div>
+                        {employee && employee.warnings.length > 0 && (
+                          <p className="text-[9px] font-bold text-amber-700 truncate">
+                            {employee.warnings
+                              .map((warning) => warningLabel[warning] || warning)
+                              .join(' · ')}
+                          </p>
                         )}
-                        {employee.publishBlocked && (
-                          <UserRoundX className="h-5 w-5 text-rose-600" />
+                        {unlinked && (
+                          <p className="text-[9px] font-semibold text-slate-500 truncate">
+                            {unlinked.department} · PIN{' '}
+                            {unlinked.sourceNipy || 'kosong'}
+                          </p>
                         )}
                       </div>
-                      <p className="text-sm text-slate-500">
-                        NIPY {employee.nipy || 'belum diisi'} · {employee.payableDays} hari ·{' '}
-                        {money(employee.totalAmount)}
-                      </p>
-                      {employee.warnings.length > 0 && (
-                        <p className="mt-1 text-xs font-semibold text-amber-700">
-                          {employee.warnings
-                            .map((warning) => warningLabel[warning] || warning)
-                            .join(' · ')}
-                        </p>
+                    </div>
+
+                    {/* Middle: Metrics */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-2 gap-y-2 flex-1 items-center justify-items-center min-w-0">
+                      <div className="flex flex-col text-center w-full">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                          Hari Aktif
+                        </span>
+                        <span className="text-xs font-bold text-slate-700 mt-0.5 font-mono">
+                          {employee ? employee.payableDays : unlinked!.dates.length} hari
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col text-center w-full">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                          Hari Tidak Lengkap
+                        </span>
+                        <div className="mt-0.5 font-mono flex justify-center">
+                          {employee && employee.incompletePunchCount > 0 ? (
+                            <span className="inline-flex items-center gap-1 text-[9px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full font-bold">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              {employee.incompletePunchCount} hari
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400 font-semibold">-</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col text-center w-full">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                          Total Jam Kerja
+                        </span>
+                        <span className="text-xs font-bold text-slate-700 mt-0.5 font-mono">
+                          {employee ? durationLabel(employee.workedSeconds) : '-'}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col text-center w-full">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                          Harian
+                        </span>
+                        <span className="text-xs font-bold text-slate-700 mt-0.5 font-mono">
+                          {employee ? money(employee.harianAmount) : '-'}
+                        </span>
+                        {employee && (
+                          <span className="text-[9px] text-slate-400 font-semibold">
+                            {employee.harianCount} hari
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col text-center w-full">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                          Jumat &amp; Libur
+                        </span>
+                        <span className="text-xs font-bold text-slate-700 mt-0.5 font-mono">
+                          {employee ? money(employee.jumatLiburAmount) : '-'}
+                        </span>
+                        {employee && (
+                          <span className="text-[9px] text-slate-400 font-semibold">
+                            {employee.jumatLiburCount} hari
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col text-center w-full">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                          Total Upah Presensi
+                        </span>
+                        <span className="text-xs font-bold text-indigo-700 mt-0.5 font-mono">
+                          {employee ? money(employee.totalAmount) : '-'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Right: Expand Icon */}
+                    <div className="flex items-center justify-end shrink-0 pl-1">
+                      {isExpanded ? (
+                        <ChevronUp className="w-4 h-4 text-slate-400" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-slate-400" />
                       )}
                     </div>
-                    {isExpanded ? (
-                      <ChevronUp className="h-5 w-5 shrink-0" />
-                    ) : (
-                      <ChevronDown className="h-5 w-5 shrink-0" />
-                    )}
-                  </button>
+                  </div>
 
-                  {isExpanded && (
-                    <div className="border-t border-slate-200 p-4">
-                      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                        <div className="rounded-xl bg-slate-50 p-3">
-                          <p className="text-xs text-slate-500">Harian</p>
-                          <p className="font-bold">{employee.harianCount}</p>
-                        </div>
-                        <div className="rounded-xl bg-slate-50 p-3">
-                          <p className="text-xs text-slate-500">Jumat & Libur</p>
-                          <p className="font-bold">{employee.jumatLiburCount}</p>
-                        </div>
+                  {isExpanded && unlinked && (
+                    <div className="border-t border-slate-200 bg-white p-4">
+                      <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Tanggal presensi menunggu penghubungan
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {unlinked.dates.length} hari tercatat atas PIN{' '}
+                        {unlinked.sourceNipy || 'kosong'}. Hubungkan ke pegawai agar
+                        jam kerjanya ikut dihitung.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {unlinked.dates.map((date) => (
+                          <span
+                            key={date}
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-mono text-slate-600"
+                          >
+                            {date}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {isExpanded && employee && (
+                    <div className="border-t border-slate-200 bg-white p-4">
+                      <div className="mb-4 flex justify-end">
                         {canEdit && (
                           <Button
                             variant="outline"
@@ -1358,6 +1726,7 @@ export default function PekaryaAttendancePage() {
                               <th className="p-3">Tanggal</th>
                               <th className="p-3">Scan Masuk</th>
                               <th className="p-3">Scan Pulang</th>
+                              <th className="p-3">Durasi</th>
                               <th className="p-3">Upah</th>
                               <th className="p-3">Status</th>
                               {canEdit && <th className="p-3">Tindakan</th>}
@@ -1367,10 +1736,26 @@ export default function PekaryaAttendancePage() {
                             {employee.days.map((day) => (
                               <tr key={day.date} className="border-b border-slate-100">
                                 <td className="p-3 font-semibold">{day.date}</td>
-                                <td className="p-3">{day.scanIn || '—'}</td>
-                                <td className="p-3">{day.scanOut || '—'}</td>
                                 <td className="p-3">
-                                  {day.payType || 'Tidak dibayar'}
+                                  <ScanCell value={day.scanIn} auto={day.scanInAuto} />
+                                </td>
+                                <td className="p-3">
+                                  <ScanCell value={day.scanOut} auto={day.scanOutAuto} />
+                                </td>
+                                <td className="p-3">{workedDuration(day)}</td>
+                                <td className="p-3">
+                                  {day.payType ? (
+                                    <>
+                                      <span className="font-semibold">
+                                        {money(day.amount)}
+                                      </span>
+                                      <span className="block text-xs text-slate-500">
+                                        {day.payType}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    'Tidak dibayar'
+                                  )}
                                 </td>
                                 <td className="p-3">
                                   <span
@@ -1587,6 +1972,99 @@ export default function PekaryaAttendancePage() {
               onClick={() => void savePlanCorrection()}
             >
               Simpan Koreksi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(linkTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setLinkTarget(null);
+            setLinkEmployeeId('');
+            setLinkSearch('');
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Hubungkan Baris Presensi</DialogTitle>
+            <DialogDescription>
+              Penghubungan berlaku untuk periode ini saja dan tercatat dalam
+              audit. Seluruh hari presensi baris ini akan dihitung untuk pegawai
+              yang dipilih.
+            </DialogDescription>
+          </DialogHeader>
+          {linkTarget && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="font-bold text-slate-900">
+                  {linkTarget.sourceName || 'Tanpa nama'}
+                </p>
+                <p className="text-sm text-slate-500">
+                  {linkTarget.department} · PIN {linkTarget.sourceNipy || 'kosong'} ·{' '}
+                  {linkTarget.dates.length} hari
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="manual-link-search">Cari pegawai</Label>
+                <Input
+                  id="manual-link-search"
+                  value={linkSearch}
+                  onChange={(event) => setLinkSearch(event.target.value)}
+                  placeholder="Nama atau NIPY pegawai"
+                />
+              </div>
+              <div className="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200">
+                {linkCandidates.length === 0 ? (
+                  <p className="p-4 text-center text-sm text-slate-500">
+                    Pegawai tidak ditemukan.
+                  </p>
+                ) : (
+                  linkCandidates.map((candidate) => (
+                    <button
+                      key={candidate.employeeId}
+                      type="button"
+                      onClick={() => setLinkEmployeeId(candidate.employeeId)}
+                      className={`flex min-h-14 w-full flex-col items-start justify-center px-4 py-2 text-left ${
+                        linkEmployeeId === candidate.employeeId
+                          ? 'bg-indigo-50'
+                          : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="font-semibold text-slate-900">
+                        {candidate.name}
+                      </span>
+                      <span className="text-sm text-slate-500">
+                        {categoryLabel(candidate.category)} · NIPY{' '}
+                        {candidate.nipy || 'belum diisi'}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="min-h-12"
+              onClick={() => {
+                setLinkTarget(null);
+                setLinkEmployeeId('');
+                setLinkSearch('');
+              }}
+            >
+              Batal
+            </Button>
+            <Button
+              className="min-h-12 gap-2"
+              disabled={working || !linkEmployeeId}
+              onClick={() => void saveManualLink()}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Hubungkan
             </Button>
           </DialogFooter>
         </DialogContent>

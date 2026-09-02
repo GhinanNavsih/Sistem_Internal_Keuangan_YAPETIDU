@@ -5,7 +5,7 @@ import {
   ATTENDANCE_PAYROLL_START_PERIOD,
   isPremiumAttendanceDate,
   normalizeAttendanceTime,
-  PEKARYA_ATTENDANCE_RATES,
+  pekaryaAttendanceAmount,
   resolveEmployeeAttendanceNipy,
 } from '@/lib/payroll/attendance';
 import { assertRequestId, isImmutablePayrollStatus } from '@/lib/payroll/domain';
@@ -327,21 +327,39 @@ export async function POST(request: NextRequest) {
         const oldPayType = rawDay?.present ? rawDay.payType : null;
         let nextHarian = employeeView?.harianCount || 0;
         let nextPremium = employeeView?.jumatLiburCount || 0;
-        if (oldPayType === 'Harian') nextHarian = Math.max(0, nextHarian - 1);
+        let nextHarianAmount = employeeView?.harianAmount || 0;
+        let nextPremiumAmount = employeeView?.jumatLiburAmount || 0;
+        const oldDayAmount = rawDay?.amount || 0;
+        if (oldPayType === 'Harian') {
+          nextHarian = Math.max(0, nextHarian - 1);
+          nextHarianAmount = Math.max(0, nextHarianAmount - oldDayAmount);
+        }
         if (oldPayType === 'Jumat & Libur') {
           nextPremium = Math.max(0, nextPremium - 1);
+          nextPremiumAmount = Math.max(0, nextPremiumAmount - oldDayAmount);
         }
         const nextPresent =
           typeof effective.present === 'boolean'
             ? effective.present
             : Boolean(rawDay?.present);
         if (nextPresent) {
-          if (
-            isPremiumAttendanceDate(date, new Set(view.premiumDates))
-          ) {
+          // The corrected day is paid for the scans the correction leaves in
+          // place, at the rate its date earns, exactly as an imported day is.
+          const isPremiumDay = isPremiumAttendanceDate(
+            date,
+            new Set(view.premiumDates),
+          );
+          const nextDayAmount = pekaryaAttendanceAmount(
+            normalizedEffectiveScanIn,
+            normalizedEffectiveScanOut,
+            isPremiumDay,
+          );
+          if (isPremiumDay) {
             nextPremium += 1;
+            nextPremiumAmount += nextDayAmount;
           } else {
             nextHarian += 1;
+            nextHarianAmount += nextDayAmount;
           }
         }
         const entries = {
@@ -353,9 +371,8 @@ export async function POST(request: NextRequest) {
         const existingEntry = entries[employeeId] || {};
         const values: Record<string, unknown> = {
           ...((existingEntry.values as Record<string, unknown>) || {}),
-          harian: nextHarian * PEKARYA_ATTENDANCE_RATES.Harian,
-          jumatLibur:
-            nextPremium * PEKARYA_ATTENDANCE_RATES['Jumat & Libur'],
+          harian: nextHarianAmount,
+          jumatLibur: nextPremiumAmount,
         };
         delete values.presensi;
         const counts: Record<string, unknown> = {
@@ -378,9 +395,7 @@ export async function POST(request: NextRequest) {
           },
         };
         const oldAmount = employeeView?.totalAmount || 0;
-        const nextAmount =
-          nextHarian * PEKARYA_ATTENDANCE_RATES.Harian +
-          nextPremium * PEKARYA_ATTENDANCE_RATES['Jumat & Libur'];
+        const nextAmount = nextHarianAmount + nextPremiumAmount;
         transaction.update(uraianRef, {
           entries,
           attendancePublication: {

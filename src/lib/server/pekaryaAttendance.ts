@@ -2,13 +2,15 @@ import { createHash } from 'node:crypto';
 import admin, { adminDb } from '@/lib/firebase-admin';
 import {
   attendanceDayKey,
+  AttendanceNormalizedRow,
+  classifyAttendanceDepartment,
   hasSatpamAttendanceEvidence,
-  PEKARYA_ATTENDANCE_RATES,
   satpamAttendanceEvidenceDates,
   summarizePekaryaAttendance,
 } from '@/lib/payroll/attendance';
 import { ALL_BLUE_COLLAR_CATEGORY } from '@/lib/payroll/pekaryaSpj';
 import {
+  attendanceManualLinkKey,
   loadAttendanceEmployeeIdentities,
   loadEffectiveAttendanceDays,
   loadPeriodPremiumDates,
@@ -29,6 +31,9 @@ export interface PekaryaAttendanceEmployeeView {
   warnings: string[];
   harianCount: number;
   jumatLiburCount: number;
+  harianAmount: number;
+  jumatLiburAmount: number;
+  workedSeconds: number;
   totalAmount: number;
   payableDays: number;
   incompletePunchCount: number;
@@ -56,12 +61,68 @@ export interface PekaryaAttendanceViewOptions {
   allowMissingActiveImport?: boolean;
 }
 
+export interface DepartmentUnmatchedRow {
+  sourceKey: string;
+  sourceNipy: string;
+  sourceName: string;
+  department: string;
+  dates: string[];
+}
+
 function activeBlueCollar(identity: {
   employeeCollection: string;
   active: boolean;
   jobCategory: string | null;
 }) {
   return identity.employeeCollection === 'Employees_BlueCollar' && identity.active;
+}
+
+/**
+ * Imported rows whose department routes them to this page but whose identifier
+ * resolves to no active blue-collar employee — the scanner exports its own PIN
+ * for most of these workers, so they can only be reconnected by hand. Rows
+ * already covered by a manual link never reach here: the link rewrites their
+ * NIPY before this runs. Rows are read instead of consolidated days so that a
+ * blank or self-contradicting identifier stays visible rather than being
+ * filtered away with nowhere to appear.
+ */
+function collectDepartmentUnmatched(
+  rows: readonly AttendanceNormalizedRow[],
+  byNipy: ReadonlyMap<string, Array<Parameters<typeof activeBlueCollar>[0]>>,
+): DepartmentUnmatchedRow[] {
+  const grouped = new Map<string, DepartmentUnmatchedRow>();
+  for (const row of rows) {
+    if (!row.date) continue;
+    if (
+      row.issues.includes('DATE_INVALID') ||
+      row.issues.includes('OUTSIDE_PERIOD')
+    ) {
+      continue;
+    }
+    if (classifyAttendanceDepartment(row.department) !== 'pekarya') continue;
+    const matches = (byNipy.get(row.nipy) || []).filter(activeBlueCollar);
+    if (matches.length === 1) continue;
+    const sourceKey = attendanceManualLinkKey(row.nipy, row.name);
+    const existing = grouped.get(sourceKey);
+    if (existing) {
+      if (!existing.dates.includes(row.date)) existing.dates.push(row.date);
+      continue;
+    }
+    grouped.set(sourceKey, {
+      sourceKey,
+      sourceNipy: row.nipy,
+      sourceName: row.name,
+      department: row.department,
+      dates: [row.date],
+    });
+  }
+  return Array.from(grouped.values())
+    .map((entry) => ({ ...entry, dates: entry.dates.sort() }))
+    .sort(
+      (left, right) =>
+        left.department.localeCompare(right.department, 'id') ||
+        left.sourceName.localeCompare(right.sourceName, 'id'),
+    );
 }
 
 export async function listActivePekaryaAttendanceCategories(): Promise<string[]> {
@@ -81,20 +142,37 @@ export async function listActivePekaryaAttendanceCategories(): Promise<string[]>
   ).sort((left, right) => left.localeCompare(right, 'id'));
 }
 
+/**
+ * The department-routed rows still awaiting a manual link, without building a
+ * full category view. Used to validate that a link request names a row that
+ * really is unresolved in the active import.
+ */
+export async function loadDepartmentUnmatchedRows(
+  period: string,
+  options: PekaryaAttendanceViewOptions = {},
+): Promise<DepartmentUnmatchedRow[]> {
+  const identities = await loadAttendanceEmployeeIdentities();
+  const { rows } = await loadEffectiveAttendanceDays(period, {
+    ...options,
+    identities,
+  });
+  return collectDepartmentUnmatched(rows, identities.byNipy);
+}
+
 export async function buildPekaryaAttendanceView(
   period: string,
   category: string,
   options: PekaryaAttendanceViewOptions = {},
 ) {
+  const identityIndex = await loadAttendanceEmployeeIdentities();
+  const { identities, byNipy } = identityIndex;
   const [
     { days, rows, importData, revisionData, correctionRevisions },
-    { identities, byNipy },
     { calendar, premiumDates },
     publicationSnapshot,
     correctionHistorySnapshot,
   ] = await Promise.all([
-    loadEffectiveAttendanceDays(period, options),
-    loadAttendanceEmployeeIdentities(),
+    loadEffectiveAttendanceDays(period, { ...options, identities: identityIndex }),
     loadPeriodPremiumDates(period),
     adminDb
       .collection(PEKARYA_PUBLICATIONS_COLLECTION)
@@ -177,6 +255,7 @@ export async function buildPekaryaAttendanceView(
         .map((day) => day.nipy),
     ),
   ).sort();
+  const departmentUnmatched = collectDepartmentUnmatched(rows, byNipy);
 
   return {
     period,
@@ -186,6 +265,12 @@ export async function buildPekaryaAttendanceView(
     importHash: String(revisionData.fileHash || revisionData.sha256 || ''),
     calendarRevision: calendar.revision,
     premiumDates: calendar.premiumDates,
+    linkCandidates: activeEmployees.map((employee) => ({
+      employeeId: employee.employeeId,
+      name: employee.name,
+      nipy: employee.nipy,
+      category: employee.jobCategory || category,
+    })),
     publication: publicationSnapshot.exists
       ? ({ id: publicationSnapshot.id, ...publicationSnapshot.data() } as {
           id: string;
@@ -198,6 +283,7 @@ export async function buildPekaryaAttendanceView(
     employees,
     exceptions: {
       unmatchedNipys,
+      departmentUnmatched,
       duplicateNipys: employees
         .filter((employee) => employee.warnings.includes('NIPY_DUPLICATE'))
         .map((employee) => employee.nipy),
@@ -275,6 +361,9 @@ export async function buildPekaryaAttendanceViewForCategories(
     ...first,
     category: ALL_BLUE_COLLAR_CATEGORY,
     publication,
+    linkCandidates: views
+      .flatMap((view) => view.linkCandidates)
+      .sort((left, right) => left.name.localeCompare(right.name, 'id')),
     employees: views
       .flatMap((view) => view.employees)
       .sort((left, right) =>
@@ -299,10 +388,11 @@ export async function buildPekaryaAttendanceViewForCategories(
         (sum, view) => sum + view.exceptions.correctedDays,
         0,
       ),
-      // These two values describe the imported file as a whole and are
-      // repeated by each category-specific builder.
+      // These values describe the imported file as a whole and are repeated
+      // identically by each category-specific builder.
       duplicateEmployeeDays: first.exceptions.duplicateEmployeeDays,
       attendanceForOtherIdentities: first.exceptions.attendanceForOtherIdentities,
+      departmentUnmatched: first.exceptions.departmentUnmatched,
     },
     correctionHistory: views
       .flatMap((view) => view.correctionHistory)
@@ -318,15 +408,15 @@ export async function buildSatpamAttendanceMismatches(
   period: string,
   options: PekaryaAttendanceViewOptions = {},
 ) {
+  const identityIndex = await loadAttendanceEmployeeIdentities();
+  const { identities, byNipy } = identityIndex;
   const [
-    { days, importData },
-    { identities, byNipy },
+    { days, rows, importData },
     { calendar },
     absenceSnapshot,
   ] =
     await Promise.all([
-      loadEffectiveAttendanceDays(period, options),
-      loadAttendanceEmployeeIdentities(),
+      loadEffectiveAttendanceDays(period, { ...options, identities: identityIndex }),
       loadPeriodPremiumDates(period),
       adminDb
         .collection(SATPAM_ABSENCE_REQUESTS_COLLECTION)
@@ -467,6 +557,17 @@ export async function buildSatpamAttendanceMismatches(
     importRevisionId: String(importData.activeRevisionId || ''),
     calendarRevision: calendar.revision,
     paymentSource: 'Ketua Shift',
+    // Linking a SECURITY row changes no pay — Satpam wages come from the Ketua
+    // Shift reports — but it removes the row from the comparison's blind spot,
+    // so the mismatches below describe real discrepancies rather than
+    // unidentified scans.
+    departmentUnmatched: collectDepartmentUnmatched(rows, byNipy),
+    linkCandidates: satpam.map((employee) => ({
+      employeeId: employee.employeeId,
+      name: employee.name,
+      nipy: employee.nipy,
+      category: 'SATPAM',
+    })),
     mismatches: mismatches.sort(
       (left, right) =>
         left.dutyDate.localeCompare(right.dutyDate) ||
@@ -604,10 +705,8 @@ export async function publishPekaryaAttendance(
         existing.counts && typeof existing.counts === 'object'
           ? { ...(existing.counts as Record<string, unknown>) }
           : {};
-      values.harian = employee.harianCount * PEKARYA_ATTENDANCE_RATES.Harian;
-      values.jumatLibur =
-        employee.jumatLiburCount *
-        PEKARYA_ATTENDANCE_RATES['Jumat & Libur'];
+      values.harian = employee.harianAmount;
+      values.jumatLibur = employee.jumatLiburAmount;
       delete values.presensi;
       counts.harian = employee.harianCount;
       counts.jumatLibur = employee.jumatLiburCount;

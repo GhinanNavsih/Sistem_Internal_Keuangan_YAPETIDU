@@ -4,11 +4,13 @@ import {
   AttendanceDayCorrection,
   AttendanceNormalizedRow,
   attendanceDayKey,
+  classifyAttendanceDepartment,
   consolidateAttendanceDays,
   normalizeNipy,
   resolveEmployeeAttendanceNipy,
 } from '@/lib/payroll/attendance';
 import { periodCalendarFromData } from '@/lib/payroll/calendar';
+import { MANUAL_OVERRIDES, normalizeName } from '@/lib/payroll/employeeNames';
 
 export const ATTENDANCE_IMPORTS_COLLECTION = 'AttendanceImports';
 export const ATTENDANCE_REVISIONS_COLLECTION = 'AttendanceImportRevisions';
@@ -18,6 +20,7 @@ export const PEKARYA_NIPY_SEQUENCES_COLLECTION = 'PekaryaNipySequences';
 export const PEKARYA_CORRECTIONS_COLLECTION = 'PekaryaAttendanceCorrections';
 export const PEKARYA_CORRECTION_HEADS_COLLECTION = 'PekaryaAttendanceCorrectionHeads';
 export const PEKARYA_PUBLICATIONS_COLLECTION = 'PekaryaAttendancePublications';
+export const ATTENDANCE_MANUAL_LINKS_COLLECTION = 'AttendanceManualLinks';
 
 export interface AttendanceEmployeeIdentity {
   employeeId: string;
@@ -40,6 +43,25 @@ export function pekaryaPublicationId(period: string, category: string): string {
   return `${period.replace('-', '_')}__${category.replace(/[^A-Za-z0-9_-]/g, '_')}`;
 }
 
+/**
+ * The key a manual link is filed under: the raw identifier the scanner
+ * exported for that worker, falling back to their name when the identifier
+ * column is empty. Both are normalized so the same worker always resolves to
+ * one link regardless of casing or spacing in the source file.
+ */
+export function attendanceManualLinkKey(
+  sourceNipy: string,
+  sourceName: string,
+): string {
+  const nipy = normalizeNipy(sourceNipy);
+  if (nipy) return `nipy:${nipy}`;
+  return `name:${String(sourceName || '').trim().toUpperCase()}`;
+}
+
+export function attendanceManualLinkId(period: string, sourceKey: string): string {
+  return createHash('sha256').update(`${period}|${sourceKey}`).digest('hex');
+}
+
 export function attendanceCorrectionHeadId(
   period: string,
   employeeId: string,
@@ -57,6 +79,7 @@ export function employeeNipy(data: Record<string, unknown>): string {
 export async function loadAttendanceEmployeeIdentities(): Promise<{
   identities: AttendanceEmployeeIdentity[];
   byNipy: Map<string, AttendanceEmployeeIdentity[]>;
+  byName: Map<string, AttendanceEmployeeIdentity[]>;
 }> {
   const [blueSnapshot, loyalisSnapshot, whiteSnapshot] = await Promise.all([
     adminDb.collection('Employees_BlueCollar').get(),
@@ -106,13 +129,67 @@ export async function loadAttendanceEmployeeIdentities(): Promise<{
     });
   }
   const byNipy = new Map<string, AttendanceEmployeeIdentity[]>();
+  const byName = new Map<string, AttendanceEmployeeIdentity[]>();
   for (const identity of identities) {
-    if (!identity.nipy) continue;
-    const existing = byNipy.get(identity.nipy) || [];
-    existing.push(identity);
-    byNipy.set(identity.nipy, existing);
+    if (identity.nipy) {
+      const existing = byNipy.get(identity.nipy) || [];
+      existing.push(identity);
+      byNipy.set(identity.nipy, existing);
+    }
+    const normalized = normalizeName(identity.name || '');
+    if (!normalized) continue;
+    const existingNames = byName.get(normalized) || [];
+    existingNames.push(identity);
+    byName.set(normalized, existingNames);
   }
-  return { identities, byNipy };
+  return { identities, byNipy, byName };
+}
+
+export type AttendanceIdentityIndex = Awaited<
+  ReturnType<typeof loadAttendanceEmployeeIdentities>
+>;
+
+export function isActiveBlueCollar(identity: AttendanceEmployeeIdentity) {
+  return identity.employeeCollection === 'Employees_BlueCollar' && identity.active;
+}
+
+/**
+ * Resolves the person a source row names, for rows whose identifier the file
+ * got wrong. Mirrors the Loyalis matcher — exact name, then the hand-kept
+ * override list, then a containment match — but only accepts a tier when it
+ * names exactly one employee. An ambiguous name is left for a manual link
+ * rather than guessed at, because guessing moves a month of pay to the wrong
+ * person silently.
+ */
+export function resolveIdentityByName(
+  index: AttendanceIdentityIndex,
+  sourceName: string,
+  eligible: (identity: AttendanceEmployeeIdentity) => boolean,
+): AttendanceEmployeeIdentity | null {
+  const cleaned = normalizeName(sourceName || '');
+  if (!cleaned) return null;
+
+  const uniqueMatch = (candidates: AttendanceEmployeeIdentity[] | undefined) => {
+    const eligibleOnes = (candidates || []).filter(eligible);
+    return eligibleOnes.length === 1 ? eligibleOnes[0] : null;
+  };
+
+  const exact = uniqueMatch(index.byName.get(cleaned));
+  if (exact) return exact;
+
+  const overridden = MANUAL_OVERRIDES[sourceName.trim()];
+  if (overridden) {
+    const viaOverride = uniqueMatch(index.byName.get(normalizeName(overridden)));
+    if (viaOverride) return viaOverride;
+  }
+
+  const contained: AttendanceEmployeeIdentity[] = [];
+  for (const [name, candidates] of index.byName) {
+    if (name.includes(cleaned) || cleaned.includes(name)) {
+      contained.push(...candidates);
+    }
+  }
+  return uniqueMatch(contained);
 }
 
 export async function loadActiveAttendanceRows(
@@ -185,17 +262,64 @@ export async function loadPeriodPremiumDates(period: string): Promise<{
   };
 }
 
+export interface AttendanceManualLink {
+  employeeId: string;
+  employeeCollection: string;
+  nipy: string;
+  sourceNipy: string;
+  sourceName: string;
+}
+
+/**
+ * Manual identity links recorded for one period, keyed by
+ * {@link attendanceManualLinkKey}. A link exists because the scanner's
+ * identifier could not be resolved on its own — most blue-collar workers are
+ * exported with the machine's short PIN rather than their payroll NIPY.
+ */
+export async function loadAttendanceManualLinks(
+  period: string,
+): Promise<Map<string, AttendanceManualLink>> {
+  const snapshot = await adminDb
+    .collection(ATTENDANCE_MANUAL_LINKS_COLLECTION)
+    .where('period', '==', period)
+    .get();
+  const bySourceKey = new Map<string, AttendanceManualLink>();
+  for (const doc of snapshot.docs) {
+    const data = doc.data();
+    const sourceKey = String(data.sourceKey || '');
+    const employeeId = String(data.employeeId || '');
+    if (!sourceKey || !employeeId) continue;
+    bySourceKey.set(sourceKey, {
+      employeeId,
+      employeeCollection: String(data.employeeCollection || ''),
+      nipy: normalizeNipy(data.nipy),
+      sourceNipy: String(data.sourceNipy || ''),
+      sourceName: String(data.sourceName || ''),
+    });
+  }
+  return bySourceKey;
+}
+
 export async function loadEffectiveAttendanceDays(
   period: string,
-  options: { allowMissingActiveImport?: boolean } = {},
+  options: {
+    allowMissingActiveImport?: boolean;
+    /**
+     * Supplying the identity index turns on the name fallback for rows the
+     * file mis-identifies. Only the Pekarya pipeline passes it.
+     */
+    identities?: AttendanceIdentityIndex;
+  } = {},
 ) {
-  const [{ rows, importData, revisionData }, correctionsSnapshot] = await Promise.all([
-    loadActiveAttendanceRows(period, options),
-    adminDb
-      .collection(PEKARYA_CORRECTION_HEADS_COLLECTION)
-      .where('period', '==', period)
-      .get(),
-  ]);
+  const [{ rows, importData, revisionData }, correctionsSnapshot, manualLinks] =
+    await Promise.all([
+      loadActiveAttendanceRows(period, options),
+      adminDb
+        .collection(PEKARYA_CORRECTION_HEADS_COLLECTION)
+        .where('period', '==', period)
+        .get(),
+      loadAttendanceManualLinks(period),
+    ]);
   const corrections = new Map<string, AttendanceDayCorrection>();
   const correctionRevisions = new Map<string, number>();
   for (const snapshot of correctionsSnapshot.docs) {
@@ -216,9 +340,42 @@ export async function loadEffectiveAttendanceDays(
     });
     correctionRevisions.set(key, Number(data.revision || 0));
   }
+  // Rows the file mis-identifies are rewritten to the canonical NIPY of the
+  // person they belong to, before consolidation. Everything downstream joins on
+  // `nipy`, so a rewritten row behaves exactly as if the file had carried the
+  // right identifier all along. Precedence runs from most to least deliberate:
+  // a manual link is somebody's decision, a matching NIPY is the file's own
+  // claim, and only then is the name used to recover an unresolved row.
+  const identities = options.identities;
+  const resolveByName = (row: AttendanceNormalizedRow) => {
+    if (!identities) return null;
+    if (classifyAttendanceDepartment(row.department) !== 'pekarya') return null;
+    if ((identities.byNipy.get(row.nipy) || []).some(isActiveBlueCollar)) {
+      return null;
+    }
+    return resolveIdentityByName(identities, row.name, isActiveBlueCollar);
+  };
+  const linkedRows =
+    manualLinks.size === 0 && !identities
+      ? rows
+      : rows.map((row) => {
+          const link = manualLinks.get(
+            attendanceManualLinkKey(row.nipy, row.name),
+          );
+          const resolvedNipy = link?.nipy || resolveByName(row)?.nipy || '';
+          if (!resolvedNipy || resolvedNipy === row.nipy) return row;
+          return {
+            ...row,
+            nipy: resolvedNipy,
+            issues: row.issues.filter(
+              (issue) =>
+                issue !== 'IDENTIFIER_MISSING' && issue !== 'IDENTIFIER_CONFLICT',
+            ),
+          };
+        });
   return {
     days: consolidateAttendanceDays(
-      rows.filter(
+      linkedRows.filter(
         (row) =>
           row.nipy &&
           row.date &&
@@ -234,7 +391,7 @@ export async function loadEffectiveAttendanceDays(
       ),
       corrections,
     ),
-    rows,
+    rows: linkedRows,
     importData,
     revisionData,
     corrections,

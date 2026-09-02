@@ -479,7 +479,13 @@ service cloud.firestore {
           ownsEmployee(resource.data.employeeId) &&
           resource.data.status in ['pending', 'rejected'] &&
           request.resource.data.employeeId == resource.data.employeeId &&
-          request.resource.data.status == 'pending'
+          request.resource.data.status == 'pending' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasNone([
+            'hiddenFromEmployee',
+            'hiddenAt',
+            'hiddenByUid',
+            'hiddenByRole'
+          ])
         );
       allow delete: if false;
     }
