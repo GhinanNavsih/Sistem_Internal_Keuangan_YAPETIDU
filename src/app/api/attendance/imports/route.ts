@@ -308,13 +308,23 @@ export async function GET(request: NextRequest) {
         const data = snapshot.data();
         let downloadUrl: string | null = null;
         if (includeDownload && typeof data.storagePath === 'string') {
-          [downloadUrl] = await adminStorage
-            .bucket()
-            .file(data.storagePath)
-            .getSignedUrl({
-              action: 'read',
-              expires: Date.now() + 15 * 60 * 1000,
-            });
+          try {
+            [downloadUrl] = await adminStorage
+              .bucket()
+              .file(data.storagePath)
+              .getSignedUrl({
+                action: 'read',
+                expires: Date.now() + 15 * 60 * 1000,
+              });
+          } catch (error) {
+            // Download links are optional metadata. A temporary signer/IAM
+            // failure must not hide the active import, its rows, or the rest
+            // of the revision history from payroll reviewers.
+            console.error(
+              `Failed to create attendance import download URL for ${snapshot.id}:`,
+              error,
+            );
+          }
         }
         return { id: snapshot.id, ...data, downloadUrl };
       }),
