@@ -437,6 +437,11 @@ export default function PekaryaAttendancePage() {
   const [linkEmployeeId, setLinkEmployeeId] = useState('');
   const [linkSearch, setLinkSearch] = useState('');
   const canEdit = profile?.role === 'satker_head';
+  // The manual-link endpoint accepts super_admin as well as satker_head (it
+  // follows this app's usual write-permission pattern), so the button that
+  // triggers it must be visible to both, not just to canEdit's satker_head.
+  const canLinkAttendance =
+    profile?.role === 'satker_head' || profile?.role === 'super_admin';
 
   const load = useCallback(async () => {
     if (
@@ -912,7 +917,7 @@ export default function PekaryaAttendancePage() {
                     {row.dates.length} hari presensi
                   </p>
                 </div>
-                {canEdit && (
+                {canLinkAttendance && (
                   <Button
                     variant="outline"
                     className="min-h-12 shrink-0"
@@ -1563,7 +1568,7 @@ export default function PekaryaAttendancePage() {
                                 NIPY {employee.nipy || 'belum diisi'}
                               </span>
                             </div>
-                          ) : canEdit ? (
+                          ) : canLinkAttendance ? (
                             <button
                               type="button"
                               onClick={() => {

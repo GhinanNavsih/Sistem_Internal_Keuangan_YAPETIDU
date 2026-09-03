@@ -124,7 +124,7 @@ const PEKARYA_ROUTING_DEPARTMENTS = new Set([
   'TEKNISI',
   'CS',
   'SECURITY',
-  'SOPIR',
+  'DRIVER',
 ]);
 
 /**

@@ -349,7 +349,7 @@ test('department routing sends the blue collar departments to Pekarya', () => {
   assert.equal(classifyAttendanceDepartment('TEKNISI'), 'pekarya');
   assert.equal(classifyAttendanceDepartment(' cs '), 'pekarya');
   assert.equal(classifyAttendanceDepartment('Security'), 'pekarya');
-  assert.equal(classifyAttendanceDepartment('sopir'), 'pekarya');
+  assert.equal(classifyAttendanceDepartment('driver'), 'pekarya');
 });
 
 test('every other department, including a blank one, stays with Loyalis', () => {
