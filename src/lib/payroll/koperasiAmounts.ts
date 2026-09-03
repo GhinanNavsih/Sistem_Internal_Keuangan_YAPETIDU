@@ -2,6 +2,12 @@ import {
   KOPERASI_NAME_OVERRIDES,
   normalizeKoperasiName,
 } from '@/lib/payroll/koperasiNames';
+import {
+  KOPERASI_ACTIVE_LOAN_STATUS,
+  isKoperasiPayrollPayableStatus,
+  resolveKoperasiLoanStatus,
+  type KoperasiLoanLike,
+} from '@/lib/payroll/koperasiLoan';
 
 interface PayrollEmployeeLike {
   id: string;
@@ -11,17 +17,10 @@ interface PayrollEmployeeLike {
   koperasiUserId?: string | null;
 }
 
-interface KoperasiLoanLike {
+interface KoperasiPayrollLoanLike extends KoperasiLoanLike {
   id: string;
   userId?: string;
   userData?: { namaLengkap?: string };
-  status?: string;
-  jumlahPinjaman?: number;
-  tenor?: number;
-  sisaHutang?: number;
-  jumlahMenyicil?: number;
-  tanggalDisetujui?: unknown;
-  history?: Array<{ status?: string; timestamp?: unknown }>;
 }
 
 interface KoperasiUserLike {
@@ -55,11 +54,11 @@ function timestampMillis(value: unknown): number {
   return typeof candidate.seconds === 'number' ? candidate.seconds * 1000 : 0;
 }
 
-function activationPeriod(loan: KoperasiLoanLike): string | null {
+function activationPeriod(loan: KoperasiPayrollLoanLike): string | null {
   let millis = timestampMillis(loan.tanggalDisetujui);
   if (!millis) {
     const activeHistory = (loan.history || [])
-      .filter((entry) => entry.status === 'Disetujui dan Aktif')
+      .filter((entry) => entry.status === KOPERASI_ACTIVE_LOAN_STATUS)
       .map((entry) => timestampMillis(entry.timestamp))
       .filter((value) => value > 0);
     if (activeHistory.length > 0) millis = Math.min(...activeHistory);
@@ -74,17 +73,8 @@ function activationPeriod(loan: KoperasiLoanLike): string | null {
   return `${values.year}-${values.month}`;
 }
 
-function latestLoanStatus(loan: KoperasiLoanLike): string {
-  const latest = [...(loan.history || [])].sort(
-    (left, right) =>
-      timestampMillis(right.timestamp) - timestampMillis(left.timestamp),
-  )[0]?.status;
-  const status = latest || loan.status || '';
-  return status === 'Pembayaran Cicilan' ? 'Disetujui dan Aktif' : status;
-}
-
 function isPayrollEligibleLoan(
-  loan: KoperasiLoanLike,
+  loan: KoperasiPayrollLoanLike,
   payrollPeriod: string,
 ): boolean {
   const tenor = Math.floor(Number(loan.tenor) || 0);
@@ -95,7 +85,7 @@ function isPayrollEligibleLoan(
     : 0;
   const activated = activationPeriod(loan);
   return (
-    latestLoanStatus(loan) === 'Disetujui dan Aktif' &&
+    isKoperasiPayrollPayableStatus(resolveKoperasiLoanStatus(loan)) &&
     tenor > 0 &&
     paid < tenor &&
     balance > 0 &&
@@ -119,7 +109,7 @@ function nameMatches(sourceName: string, targetName: string): boolean {
 export function buildKoperasiPayrollAmountMaps(
   payrollPeriod: string,
   employees: readonly PayrollEmployeeLike[],
-  loans: readonly KoperasiLoanLike[],
+  loans: readonly KoperasiPayrollLoanLike[],
   users: readonly KoperasiUserLike[],
 ): KoperasiPayrollAmountMaps {
   const deductions: Record<string, number> = {};

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { FloatingSnackbar } from '@/components/ui/floating-snackbar';
 import GlobalHeader from '@/components/GlobalHeader';
 import Link from 'next/link';
-import { calculateYearsOfService, calculateGapok, matchFunctionalAllowance, normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
+import { calculateYearsOfService, calculateGapok, matchFunctionalAllowance } from '@/utils/payrollLogic';
 import {
   Table,
   TableBody,
@@ -2474,82 +2474,14 @@ export default function PayrollValidationDashboard() {
           }
         });
 
-        // Coop matching
-        const empName = isLoyalisTab ? (freshRaw.personal_info?.name || '') : (freshRaw.name || '');
-
-        let freshKoperasiDeduction = 0;
-        const targetYear = targetDate.getFullYear();
-        const targetMonth = targetDate.getMonth() + 1;
-        const activeLoans = loanSnapshot.docs
-          .map(d => d.data() as any)
-          .filter(loan => {
-            if ((loan.sisaHutang || 0) <= 0) return false;
-
-            // 1. Verify that the latest history entry status is 'Disetujui dan Aktif'
-            if (!loan.history || !Array.isArray(loan.history) || loan.history.length === 0) {
-              return false;
-            }
-            const sortedHistory = [...loan.history].sort((a, b) => {
-              const tA = (a.timestamp as any)?.toMillis ? (a.timestamp as any).toMillis() : (a.timestamp?.seconds ? a.timestamp.seconds * 1000 : 0);
-              const tB = (b.timestamp as any)?.toMillis ? (b.timestamp as any).toMillis() : (b.timestamp?.seconds ? b.timestamp.seconds * 1000 : 0);
-              return tB - tA; // Latest first
-            });
-            const latestEntry = sortedHistory[0];
-            const isActiveStatus = loan.status === 'Disetujui dan Aktif' || (latestEntry && (latestEntry.status === 'Disetujui dan Aktif' || latestEntry.status === 'Pembayaran Cicilan'));
-            if (!isActiveStatus) {
-              return false;
-            }
-
-            // 2. Determine activation date from tanggalDisetujui, falling back to history entry timestamp
-            let activationDate: Date | null = null;
-            if (loan.tanggalDisetujui) {
-              activationDate = (loan.tanggalDisetujui as any).toDate ? (loan.tanggalDisetujui as any).toDate() : (loan.tanggalDisetujui.seconds ? new Date(loan.tanggalDisetujui.seconds * 1000) : null);
-            }
-            if (!activationDate && latestEntry.timestamp) {
-              activationDate = (latestEntry.timestamp as any).toDate ? (latestEntry.timestamp as any).toDate() : (latestEntry.timestamp.seconds ? new Date(latestEntry.timestamp.seconds * 1000) : null);
-            }
-
-            if (!activationDate) return false;
-
-            const activationYear = activationDate.getFullYear();
-            const activationMonth = activationDate.getMonth() + 1;
-
-            // Deduction starts on or after the activation month and year
-            if (targetYear < activationYear) return false;
-            if (targetYear === activationYear && targetMonth < activationMonth) return false;
-
-            return true;
-          });
-        activeLoans.forEach(loan => {
-          const spName = loan.userData?.namaLengkap || '';
-          const isUidMatch = freshRaw.koperasiAuthUid && freshRaw.koperasiAuthUid === loan.userId;
-          const isNameMatch = empName && normalizeName(spName) === normalizeName(empName);
-          const isOverrideMatch = empName && MANUAL_OVERRIDES[spName.trim()] === empName;
-
-          if (isUidMatch || isNameMatch || isOverrideMatch) {
-            const cicilan = Math.round(loan.jumlahPinjaman / loan.tenor);
-            freshKoperasiDeduction += cicilan;
-          }
-        });
-
-        let freshKoperasiSaving = 0;
-        userSnapshot.docs.forEach(userDoc => {
-          const uData = userDoc.data();
-          const uName = uData.nama || '';
-          const uUid = uData.uid || userDoc.id;
-
-          const isUidMatch = (freshRaw.koperasiUserId && freshRaw.koperasiUserId === userDoc.id) || (freshRaw.koperasiAuthUid && freshRaw.koperasiAuthUid === uUid);
-          const isNameMatch = empName && normalizeName(uName) === normalizeName(empName);
-          const isOverrideMatch = empName && MANUAL_OVERRIDES[uName.trim()] === empName;
-
-          if (isUidMatch || isNameMatch || isOverrideMatch) {
-            const isApproved = uData.status === 'approved' || uData.membershipStatus === 'approved';
-            if (!isApproved) return;
-
-            const isYayasanSubsidy = uData.paymentStatus === 'Yayasan Subsidy';
-            freshKoperasiSaving = isYayasanSubsidy ? 0 : 25000;
-          }
-        });
+        const freshKoperasiAmounts = buildKoperasiPayrollAmountMaps(
+          periodToken,
+          [freshRaw],
+          loanSnapshot.docs.map(d => ({ id: d.id, ...d.data() })),
+          userSnapshot.docs.map(d => ({ id: d.id, ...d.data() })),
+        );
+        const freshKoperasiDeduction = freshKoperasiAmounts.deductions[emp.id] || 0;
+        const freshKoperasiSaving = freshKoperasiAmounts.savings[emp.id] || 0;
 
         const freshGapok = calculateGapok(freshEmployee, freshMatrix, targetDate);
         const edLevel = freshRaw.academic_and_tier?.education_level;
@@ -2642,7 +2574,7 @@ export default function PayrollValidationDashboard() {
         if (diffs.length > 0) {
           changes.push({
             employeeId: emp.id,
-            employeeName: empName,
+            employeeName: freshEmployee.name,
             isLocked: currentSlip?.status === 'locked',
             diffs,
             currentEarnings,
@@ -3003,81 +2935,14 @@ export default function PayrollValidationDashboard() {
       getDocs(collection(secondaryDb, 'users'))
     ]);
 
-    const empName = isLoyalis ? (freshRaw.personal_info?.name || '') : (freshRaw.name || '');
-
-    let freshKoperasiDeduction = 0;
-    const targetYear = targetDate.getFullYear();
-    const targetMonth = targetDate.getMonth() + 1;
-    const activeLoans = loanSnapshot.docs
-      .map(d => d.data() as any)
-      .filter(loan => {
-        if ((loan.sisaHutang || 0) <= 0) return false;
-
-        // 1. Verify that the latest history entry status is 'Disetujui dan Aktif'
-        if (!loan.history || !Array.isArray(loan.history) || loan.history.length === 0) {
-          return false;
-        }
-        const sortedHistory = [...loan.history].sort((a, b) => {
-          const tA = (a.timestamp as any)?.toMillis ? (a.timestamp as any).toMillis() : (a.timestamp?.seconds ? a.timestamp.seconds * 1000 : 0);
-          const tB = (b.timestamp as any)?.toMillis ? (b.timestamp as any).toMillis() : (b.timestamp?.seconds ? b.timestamp.seconds * 1000 : 0);
-          return tB - tA; // Latest first
-        });
-        const latestEntry = sortedHistory[0];
-        const isActiveStatus = loan.status === 'Disetujui dan Aktif' || (latestEntry && (latestEntry.status === 'Disetujui dan Aktif' || latestEntry.status === 'Pembayaran Cicilan'));
-        if (!isActiveStatus) {
-          return false;
-        }
-
-        // 2. Determine activation date from tanggalDisetujui, falling back to history entry timestamp
-        let activationDate: Date | null = null;
-        if (loan.tanggalDisetujui) {
-          activationDate = (loan.tanggalDisetujui as any).toDate ? (loan.tanggalDisetujui as any).toDate() : (loan.tanggalDisetujui.seconds ? new Date(loan.tanggalDisetujui.seconds * 1000) : null);
-        }
-        if (!activationDate && latestEntry.timestamp) {
-          activationDate = (latestEntry.timestamp as any).toDate ? (latestEntry.timestamp as any).toDate() : (latestEntry.timestamp.seconds ? new Date(latestEntry.timestamp.seconds * 1000) : null);
-        }
-
-        if (!activationDate) return false;
-
-        const activationYear = activationDate.getFullYear();
-        const activationMonth = activationDate.getMonth() + 1;
-
-        // Deduction starts on or after the activation month and year
-        if (targetYear < activationYear) return false;
-        if (targetYear === activationYear && targetMonth < activationMonth) return false;
-
-        return true;
-      });
-    activeLoans.forEach(loan => {
-      const spName = loan.userData?.namaLengkap || '';
-      const isUidMatch = freshRaw.koperasiAuthUid && freshRaw.koperasiAuthUid === loan.userId;
-      const isNameMatch = empName && normalizeName(spName) === normalizeName(empName);
-      const isOverrideMatch = empName && MANUAL_OVERRIDES[spName.trim()] === empName;
-
-      if (isUidMatch || isNameMatch || isOverrideMatch) {
-        const cicilan = Math.round(loan.jumlahPinjaman / loan.tenor);
-        freshKoperasiDeduction += cicilan;
-      }
-    });
-
-    let freshKoperasiSaving = 0;
-    userSnapshot.docs.forEach(userDoc => {
-      const uData = userDoc.data();
-      const uName = uData.nama || '';
-      const uUid = uData.uid || userDoc.id;
-
-      const isUidMatch = (freshRaw.koperasiUserId && freshRaw.koperasiUserId === userDoc.id) || (freshRaw.koperasiAuthUid && freshRaw.koperasiAuthUid === uUid);
-      const isNameMatch = empName && normalizeName(uName) === normalizeName(empName);
-      const isOverrideMatch = empName && MANUAL_OVERRIDES[uName.trim()] === empName;
-
-      if (isUidMatch || isNameMatch || isOverrideMatch) {
-        const isApproved = uData.status === 'approved' || uData.membershipStatus === 'approved';
-        if (!isApproved) return;
-
-        const isYayasanSubsidy = uData.paymentStatus === 'Yayasan Subsidy';
-        freshKoperasiSaving = isYayasanSubsidy ? 0 : 25000;
-      }
-    });
+    const freshKoperasiAmounts = buildKoperasiPayrollAmountMaps(
+      periodToken,
+      [freshRaw],
+      loanSnapshot.docs.map(d => ({ id: d.id, ...d.data() })),
+      userSnapshot.docs.map(d => ({ id: d.id, ...d.data() })),
+    );
+    const freshKoperasiDeduction = freshKoperasiAmounts.deductions[employeeId] || 0;
+    const freshKoperasiSaving = freshKoperasiAmounts.savings[employeeId] || 0;
 
     // 7. Recalculate Gaji Pokok (Gapok), Fungsional, Kepangkatan
     const freshGapok = calculateGapok(freshEmployee, freshMatrix, targetDate);

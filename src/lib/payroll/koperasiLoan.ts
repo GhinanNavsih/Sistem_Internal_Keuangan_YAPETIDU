@@ -39,6 +39,11 @@ export interface KoperasiLoanHistorySegment {
   entries: KoperasiLoanHistoryLike[];
 }
 
+export const KOPERASI_ACTIVE_LOAN_STATUS = 'Disetujui dan Aktif';
+export const KOPERASI_PAYMENT_HISTORY_STATUS = 'Pembayaran Cicilan';
+export const KOPERASI_PAID_LOAN_STATUS = 'Lunas';
+export const KOPERASI_PENDING_RESTRUCTURING_STATUS = 'Menunggu Persetujuan Restrukturisasi';
+
 function timestampMillis(value: unknown): number {
   if (!value) return 0;
   if (value instanceof Date) return value.getTime();
@@ -100,9 +105,9 @@ export function latestKoperasiLoanHistory(
 }
 
 /**
- * Resolve the same display status used by Audit Simpan Pinjam.  A
- * "Pembayaran Cicilan" history entry is an event, not a terminal state, so it
- * is normalized back to the active loan status.
+ * Resolve the same display status used by Audit Simpan Pinjam. A payment
+ * history entry is an event, not a state: it keeps a normal loan active, but
+ * must not erase a pending restructuring or a completed top-level state.
  */
 export function resolveKoperasiLoanStatus(loan: KoperasiLoanLike): string {
   return resolveKoperasiLoanStatusAtPeriod(loan);
@@ -120,14 +125,33 @@ export function resolveKoperasiLoanStatusAtPeriod(
   // that terminal state instead of turning the settled loan back into an
   // active one.  Historical projections intentionally continue to use only
   // history entries at the selected cutoff.
-  if (!asOf && loan.status === 'Lunas' && latestStatus === 'Pembayaran Cicilan') {
-    return 'Lunas';
+  if (latestStatus === KOPERASI_PAYMENT_HISTORY_STATUS) {
+    if (!asOf && loan.status === KOPERASI_PAID_LOAN_STATUS) {
+      return KOPERASI_PAID_LOAN_STATUS;
+    }
+
+    // A restructuring request is not effective until its replacement loan is
+    // approved. Payments made while approval is pending must therefore keep
+    // the original loan in that pending state so the next monthly installment
+    // remains payable and the restructuring workflow can still resolve it.
+    const pendingRestructuringAtCutoff =
+      loan.status === KOPERASI_PENDING_RESTRUCTURING_STATUS &&
+      (!asOf || historyEntriesAt(loan, asOf).some(
+        entry => entry.status === KOPERASI_PENDING_RESTRUCTURING_STATUS,
+      ));
+    if (pendingRestructuringAtCutoff) {
+      return KOPERASI_PENDING_RESTRUCTURING_STATUS;
+    }
+
+    return KOPERASI_ACTIVE_LOAN_STATUS;
   }
 
-  const resolvedStatus = latestStatus || loan.status || '';
-  return resolvedStatus === 'Pembayaran Cicilan'
-    ? 'Disetujui dan Aktif'
-    : resolvedStatus;
+  return latestStatus || loan.status || '';
+}
+
+export function isKoperasiPayrollPayableStatus(status: string): boolean {
+  return status === KOPERASI_ACTIVE_LOAN_STATUS ||
+    status === KOPERASI_PENDING_RESTRUCTURING_STATUS;
 }
 
 export function koperasiMonthlyInstallment(loan: KoperasiLoanLike): number {
@@ -256,14 +280,17 @@ export function selectKoperasiLineageHeads<T extends KoperasiLoanLike>(
 }
 
 /**
- * Loans visible as current employee obligations. Rejected, cancelled, and
- * superseded restructuring applications stay in the audit source but are not
- * employee-facing active-loan cards.
+ * Loans visible as current employee obligations. This legacy-named selector
+ * includes the original loan while restructuring approval is pending because
+ * its installments remain payable. Rejected, cancelled, and replacement
+ * applications stay out of employee-facing obligation cards.
  */
 export function selectKoperasiActiveLoans<T extends KoperasiLoanLike>(
   loans: readonly T[],
 ): T[] {
-  return loans.filter(loan => resolveKoperasiLoanStatus(loan) === 'Disetujui dan Aktif');
+  return loans.filter(loan =>
+    isKoperasiPayrollPayableStatus(resolveKoperasiLoanStatus(loan)),
+  );
 }
 
 /**

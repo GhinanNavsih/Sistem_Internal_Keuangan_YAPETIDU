@@ -14,7 +14,7 @@ import {
 
 const timestamp = (seconds: number) => ({ seconds, nanoseconds: 0 });
 
-test('latest history status is authoritative and installment events remain active', () => {
+test('installment events preserve a pending restructuring obligation', () => {
   const loan = {
     status: 'Menunggu Persetujuan Restrukturisasi',
     history: [
@@ -23,7 +23,8 @@ test('latest history status is authoritative and installment events remain activ
     ],
   };
 
-  assert.equal(resolveKoperasiLoanStatus(loan), 'Disetujui dan Aktif');
+  assert.equal(resolveKoperasiLoanStatus(loan), 'Menunggu Persetujuan Restrukturisasi');
+  assert.deepEqual(selectKoperasiActiveLoans([loan]), [loan]);
 });
 
 test('current Lunas status wins over the final installment event', () => {

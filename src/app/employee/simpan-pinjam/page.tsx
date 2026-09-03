@@ -36,6 +36,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { authenticatedJson } from '@/lib/payroll/client';
 import {
   composeKoperasiLoanHistoryTrail,
+  isKoperasiPayrollPayableStatus,
   koperasiMonthlyInstallment,
   resolveKoperasiLoanStatus,
   type KoperasiLoanLike,
@@ -320,20 +321,22 @@ export default function EmployeeSimpanPinjamPage() {
     const active = withStatus.filter((entry) => isKoperasiActiveStatus(entry.status));
     const past = withStatus.filter((entry) => !isKoperasiActiveStatus(entry.status));
 
-    const running = active.filter((entry) => entry.status === 'Disetujui dan Aktif');
+    const payable = active.filter((entry) =>
+      isKoperasiPayrollPayableStatus(entry.status),
+    );
     return {
       activeLoans: active,
       pastLoans: past,
       totals: {
-        outstanding: running.reduce(
+        outstanding: payable.reduce(
           (sum, entry) => sum + koperasiOutstandingBalance(entry.loan),
           0,
         ),
-        monthly: running.reduce(
+        monthly: payable.reduce(
           (sum, entry) => sum + koperasiMonthlyInstallment(entry.loan),
           0,
         ),
-        runningCount: running.length,
+        runningCount: payable.length,
       },
     };
   }, [loans]);
@@ -687,6 +690,7 @@ export default function EmployeeSimpanPinjamPage() {
           const progress = tenor > 0 ? Math.min(100, (paid / tenor) * 100) : 0;
           const isRunning = status === 'Disetujui dan Aktif';
           const pendingRestructure = status === 'Menunggu Persetujuan Restrukturisasi';
+          const isPayable = isKoperasiPayrollPayableStatus(status);
           const busy = busyLoanId === loan.id;
 
           return (
@@ -766,8 +770,8 @@ export default function EmployeeSimpanPinjamPage() {
                 </div>
               )}
 
-              {/* Installment progress for a live loan */}
-              {isRunning && tenor > 0 && (
+              {/* Installment progress continues while restructuring is pending. */}
+              {isPayable && tenor > 0 && (
                 <div className="space-y-1.5">
                   <div className="flex justify-between text-[11px] font-semibold">
                     <span className="text-slate-500">Progres Pembayaran</span>

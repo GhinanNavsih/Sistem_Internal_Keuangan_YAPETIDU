@@ -5,7 +5,8 @@ import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firesto
 import { db, secondaryDb } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
 import { SalaryMatrix } from '@/types';
-import { matchFunctionalAllowance, normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
+import { matchFunctionalAllowance } from '@/utils/payrollLogic';
+import { buildKoperasiPayrollAmountMaps } from '@/lib/payroll/koperasiAmounts';
 
 interface DashboardDataContextType {
   employeesLoyalis: any[];
@@ -182,8 +183,9 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
 
       // Process cooperative loan deductions & cooperative savings
       const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
+      const currentPayrollPeriod = `${now.getFullYear()}-${String(
+        now.getMonth() + 1,
+      ).padStart(2, '0')}`;
 
       const koperasiLoanRecords = loanSnapshot.docs
         .map(docSnap => ({ id: docSnap.id, ...docSnap.data() as any }));
@@ -192,143 +194,14 @@ export function DashboardDataProvider({ children }: { children: React.ReactNode 
       setKoperasiLoans(koperasiLoanRecords);
       setKoperasiUsers(koperasiUserRecords);
 
-      const activeLoans = koperasiLoanRecords
-        .filter(loan => {
-          if ((loan.sisaHutang || 0) <= 0) return false;
-
-          // 1. Verify that the latest history entry status is 'Disetujui dan Aktif'
-          if (!loan.history || !Array.isArray(loan.history) || loan.history.length === 0) {
-            return false;
-          }
-          const sortedHistory = [...loan.history].sort((a, b) => {
-            const tA = (a.timestamp as any)?.toMillis ? (a.timestamp as any).toMillis() : (a.timestamp?.seconds ? a.timestamp.seconds * 1000 : 0);
-            const tB = (b.timestamp as any)?.toMillis ? (b.timestamp as any).toMillis() : (b.timestamp?.seconds ? b.timestamp.seconds * 1000 : 0);
-            return tB - tA; // Latest first
-          });
-          const latestEntry = sortedHistory[0];
-          const isActiveStatus = loan.status === 'Disetujui dan Aktif' || (latestEntry && (latestEntry.status === 'Disetujui dan Aktif' || latestEntry.status === 'Pembayaran Cicilan'));
-          if (!isActiveStatus) {
-            return false;
-          }
-
-          // 2. Determine activation date from tanggalDisetujui, falling back to history entry timestamp
-          let activationDate: Date | null = null;
-          if (loan.tanggalDisetujui) {
-            activationDate = (loan.tanggalDisetujui as any).toDate ? (loan.tanggalDisetujui as any).toDate() : (loan.tanggalDisetujui.seconds ? new Date(loan.tanggalDisetujui.seconds * 1000) : null);
-          }
-          if (!activationDate && latestEntry.timestamp) {
-            activationDate = (latestEntry.timestamp as any).toDate ? (latestEntry.timestamp as any).toDate() : (latestEntry.timestamp.seconds ? new Date(latestEntry.timestamp.seconds * 1000) : null);
-          }
-
-          if (!activationDate) return false;
-
-          const activationYear = activationDate.getFullYear();
-          const activationMonth = activationDate.getMonth() + 1;
-
-          // Deduction starts on or after the activation month and year
-          if (currentYear < activationYear) return false;
-          if (currentYear === activationYear && currentMonth < activationMonth) return false;
-
-          return true;
-        });
-
-      const allEmployees: {
-        id: string;
-        originalName: string;
-        normalizedName: string;
-        koperasiAuthUid?: string | null;
-        koperasiUserId?: string | null;
-      }[] = [];
-
-      loyList.forEach(data => {
-        const name = data.personal_info?.name || '';
-        if (name) {
-          allEmployees.push({
-            id: data.id,
-            originalName: name,
-            normalizedName: normalizeName(name),
-            koperasiAuthUid: data.koperasiAuthUid || null,
-            koperasiUserId: data.koperasiUserId || null,
-          });
-        }
-      });
-
-      bcList.forEach(data => {
-        const name = data.name || '';
-        if (name) {
-          allEmployees.push({
-            id: data.id,
-            originalName: name,
-            normalizedName: normalizeName(name),
-            koperasiAuthUid: data.koperasiAuthUid || null,
-            koperasiUserId: data.koperasiUserId || null,
-          });
-        }
-      });
-
-      const deductionMap: Record<string, number> = {};
-      activeLoans.forEach(loan => {
-        const spName = loan.userData?.namaLengkap || '';
-        const normalizedSP = normalizeName(spName);
-        const cicilan = Math.round(loan.jumlahPinjaman / loan.tenor);
-
-        let match = allEmployees.find(
-          emp => emp.koperasiAuthUid && emp.koperasiAuthUid === loan.userId
-        );
-
-        if (!match) {
-          match = allEmployees.find(emp => emp.normalizedName === normalizedSP);
-        }
-
-        if (!match) {
-          const overrideName = MANUAL_OVERRIDES[spName.trim()];
-          if (overrideName) {
-            match = allEmployees.find(emp => emp.originalName === overrideName);
-          }
-        }
-
-        if (match) {
-          deductionMap[match.id] = (deductionMap[match.id] || 0) + cicilan;
-        }
-      });
-      setKoperasiDeductions(deductionMap);
-
-      const savingMap: Record<string, number> = {};
-      userSnapshot.docs.forEach(userDoc => {
-        const uData = userDoc.data();
-        const uName = uData.nama || '';
-        if (!uName) return;
-
-        // Skip non-approved membership records
-        const isApproved = uData.status === 'approved' || uData.membershipStatus === 'approved';
-        if (!isApproved) return;
-
-        const normalizedU = normalizeName(uName);
-        const uUid = uData.uid || userDoc.id;
-
-        let match = allEmployees.find(
-          emp =>
-            (emp.koperasiUserId && emp.koperasiUserId === userDoc.id) ||
-            (emp.koperasiAuthUid && emp.koperasiAuthUid === uUid)
-        );
-
-        if (!match) {
-          match = allEmployees.find(emp => emp.normalizedName === normalizedU);
-        }
-
-        if (!match) {
-          const overrideName = MANUAL_OVERRIDES[uName.trim()];
-          if (overrideName) {
-            match = allEmployees.find(emp => emp.originalName === overrideName);
-          }
-        }
-
-        if (match) {
-          const isYayasanSubsidy = uData.paymentStatus === 'Yayasan Subsidy';
-          savingMap[match.id] = isYayasanSubsidy ? 0 : 25000;
-        }
-      });
-      setKoperasiSavings(savingMap);
+      const koperasiAmounts = buildKoperasiPayrollAmountMaps(
+        currentPayrollPeriod,
+        [...loyList, ...bcList],
+        koperasiLoanRecords,
+        koperasiUserRecords,
+      );
+      setKoperasiDeductions(koperasiAmounts.deductions);
+      setKoperasiSavings(koperasiAmounts.savings);
 
     } catch (err) {
       console.error('Error fetching global dashboard data context:', err);

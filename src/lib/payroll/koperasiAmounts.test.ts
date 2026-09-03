@@ -71,3 +71,50 @@ test('Koperasi savings and fallback names map to the payroll employee', () => {
   assert.equal(result.deductions['employee-1'], 100_000);
   assert.equal(result.savings['employee-1'], 25_000);
 });
+
+test('original installment remains payable while restructuring is pending approval', () => {
+  const employee = {
+    id: 'Loyalis_070',
+    personal_info: { name: 'Khamim Mansyur,S.AB' },
+    koperasiAuthUid: '8k7erklRjiaJzXIJ4RJjfn38O9k1',
+  };
+  const originalLoan = {
+    id: 'lxZoVJ1IIDfPJGembkSb',
+    userId: '8k7erklRjiaJzXIJ4RJjfn38O9k1',
+    userData: { namaLengkap: 'Khamim Mansyur' },
+    status: 'Menunggu Persetujuan Restrukturisasi',
+    jumlahPinjaman: 2_000_000,
+    tenor: 10,
+    jumlahMenyicil: 8,
+    sisaHutang: 400_000,
+    tanggalDisetujui: timestamp('2025-11-08T00:00:00+07:00'),
+    history: [
+      { status: 'Disetujui dan Aktif', timestamp: timestamp('2025-11-10T00:00:00+07:00') },
+      { status: 'Pembayaran Cicilan', timestamp: timestamp('2026-07-07T00:00:00+07:00') },
+      { status: 'Menunggu Persetujuan Restrukturisasi', timestamp: timestamp('2026-08-03T00:00:00+07:00') },
+    ],
+  };
+  const pendingReplacement = {
+    id: 'F9Q2sLi7czDl2wfqGfB6',
+    userId: '8k7erklRjiaJzXIJ4RJjfn38O9k1',
+    userData: { namaLengkap: 'Khamim Mansyur' },
+    status: 'Menunggu Persetujuan Wakil Rektor 2',
+    jumlahPinjaman: 4_800_000,
+    tenor: 12,
+    jumlahMenyicil: 0,
+    sisaHutang: 4_800_000,
+    tanggalDisetujui: timestamp('2026-08-03T00:00:00+07:00'),
+    history: [
+      { status: 'Menunggu Persetujuan Wakil Rektor 2', timestamp: timestamp('2026-08-03T00:00:00+07:00') },
+    ],
+  };
+
+  const result = buildKoperasiPayrollAmountMaps(
+    '2026-08',
+    [employee],
+    [originalLoan, pendingReplacement],
+    [],
+  );
+
+  assert.equal(result.deductions['Loyalis_070'], 200_000);
+});
