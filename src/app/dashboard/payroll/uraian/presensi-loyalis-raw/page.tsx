@@ -34,7 +34,7 @@ import {
 import { db } from '@/lib/firebase';
 import { MONTHS_ID, REKAP_COLUMNS, SUPPORTED_CATEGORIES } from '@/utils/rekapConfig';
 import { normalizeName, MANUAL_OVERRIDES } from '@/utils/payrollLogic';
-import { normalizeNipy } from '@/lib/payroll/attendance';
+import { isFridayDate, normalizeNipy } from '@/lib/payroll/attendance';
 import { parseLoyalisPresenceWorkbook } from '@/lib/payroll/loyalisPresenceWorkbook';
 import {
   autoFillLoyalisScan,
@@ -89,11 +89,33 @@ const parseDateToDDMMYYYY = (dateStr: string) => {
   return `${d}-${m}-${y}`;
 };
 
-const recalculateSummary = (dailyLogs: any[], expHours: number) => {
+/** "01-08-2026" (as stored in dailyLogs) → "2026-08-01". */
+const ddmmyyyyToIso = (dateStr: string) => {
+  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(String(dateStr || '').trim());
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : '';
+};
+
+/**
+ * Recomputes one employee's monthly totals from their daily logs.
+ *
+ * `isOffDay` marks the period's non-working dates — Jumat and Tanggal Merah
+ * from the payroll calendar. A Loyalis employee is not expected in on those
+ * days, so scanning in anyway must not earn Upah Presensi nor pad the worked
+ * minutes that decide the presence bonus strata; equally, not showing up is
+ * not an absence. Such a date is simply left out of every total, while its
+ * raw scan times stay visible in the table.
+ */
+const recalculateSummary = (
+  dailyLogs: any[],
+  expHours: number,
+  isOffDay: (tanggal: string) => boolean = () => false,
+) => {
   let totalWorkedMinutes = 0;
   let activeDaysCount = 0;
   let incompleteDaysCount = 0;
   let absentDaysCount = 0;
+  let offDayScannedCount = 0;
+  let offDayExcludedMinutes = 0;
 
   const updatedLogs = dailyLogs.map(dayRow => {
     const status = String(dayRow['Jam kerja'] || '').trim();
@@ -104,6 +126,24 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
     let dailyDuration = 0;
     let scanMasukAuto = dayRow.scanMasukAuto || false;
     let scanPulangAuto = dayRow.scanPulangAuto || false;
+
+    if (isOffDay(dayRow.Tanggal)) {
+      // Reported for the reviewer's benefit only — never added to any total.
+      if (statusUpper !== 'TIDAK HADIR' && inStr && outStr) {
+        offDayScannedCount += 1;
+        const duration = calculateLoyalisDailyDuration(inStr, outStr, expHours);
+        if (duration !== null) offDayExcludedMinutes += duration;
+      }
+      return {
+        ...dayRow,
+        'Scan masuk': inStr,
+        'Scan pulang': outStr,
+        scanMasukAuto,
+        scanPulangAuto,
+        duration: 0,
+        isOffDay: true,
+      };
+    }
 
     if (statusUpper === 'TIDAK HADIR') {
       absentDaysCount += 1;
@@ -172,7 +212,8 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
       'Scan pulang': outStr,
       scanMasukAuto,
       scanPulangAuto,
-      duration: dailyDuration
+      duration: dailyDuration,
+      isOffDay: false,
     };
   });
 
@@ -181,6 +222,8 @@ const recalculateSummary = (dailyLogs: any[], expHours: number) => {
     activeDaysCount,
     incompleteDaysCount,
     absentDaysCount,
+    offDayScannedCount,
+    offDayExcludedMinutes,
     dailyLogs: updatedLogs
   };
 };
@@ -231,6 +274,10 @@ export default function PresensiLoyalisRawPage() {
     activeRevisionId?: string;
   } | null>(null);
   const [activeCalendarRevision, setActiveCalendarRevision] = useState(1);
+  // Non-working dates for this period (ISO), from the payroll calendar. The
+  // API's premiumDates already unions every Jumat with the period's declared
+  // Tanggal Merah, so this one list is the whole off-day set.
+  const [offDayDates, setOffDayDates] = useState<string[]>([]);
   const [importHistory, setImportHistory] = useState<
     Array<{
       id: string;
@@ -305,6 +352,67 @@ export default function PresensiLoyalisRawPage() {
     fetchLoyalis();
   }, []);
 
+  // ── Period work calendar (Jumat + Tanggal Merah) ──────────────────────────
+  // Loyalis are not expected in on these dates, so the table flags them and
+  // every total leaves them out. Fetched for every period — not just shared
+  // import ones — because the rule applies to the Loyalis calculation itself,
+  // not to where the attendance file came from.
+  const fetchPeriodCalendar = useCallback(async () => {
+    try {
+      const result = await authenticatedJson<{
+        calendar: { revision: number; premiumDates?: string[] };
+      }>(`/api/payroll/periods/${encodeURIComponent(canonicalPeriod)}/calendar`);
+      setActiveCalendarRevision(result.calendar.revision);
+      setOffDayDates(
+        (result.calendar.premiumDates || []).filter(
+          (date) => typeof date === 'string',
+        ),
+      );
+    } catch (error) {
+      console.error('Gagal memuat kalender periode:', error);
+      // Fridays are still derived locally below, so the core rule survives a
+      // calendar outage; only the period's declared Tanggal Merah are missed.
+      setMessage({
+        type: 'error',
+        text: error instanceof Error
+          ? `Gagal memuat kalender periode (Jumat & Tanggal Merah): ${error.message}. Hanya hari Jumat yang dikecualikan sampai kalender berhasil dimuat.`
+          : 'Gagal memuat kalender periode. Hanya hari Jumat yang dikecualikan sampai kalender berhasil dimuat.',
+      });
+    }
+  }, [canonicalPeriod]);
+
+  useEffect(() => {
+    void fetchPeriodCalendar();
+  }, [fetchPeriodCalendar]);
+
+  const offDaySet = useMemo(() => new Set(offDayDates), [offDayDates]);
+
+  const isOffDayTanggal = useCallback(
+    (tanggal: string) => {
+      const iso = ddmmyyyyToIso(tanggal);
+      if (!iso) return false;
+      // Jumat is derived locally rather than trusted to the fetch, so the rule
+      // still holds while the calendar is loading or if it failed to load.
+      return offDaySet.has(iso) || isFridayDate(iso);
+    },
+    [offDaySet],
+  );
+
+  // The calendar resolves after the table can already be on screen, and the
+  // Tanggal Merah editor can change it mid-session. Re-derive every row's
+  // totals from its own logs whenever the off-day set (or the daily target)
+  // moves, so what is shown and saved always matches the current calendar.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUploadedData(prev => {
+      if (!prev) return prev;
+      return prev.map(emp => ({
+        ...emp,
+        ...recalculateSummary(emp.dailyLogs || [], expectedHours, isOffDayTanggal),
+      }));
+    });
+  }, [isOffDayTanggal, expectedHours]);
+
   const fetchActiveImport = useCallback(async () => {
     if (!usesSharedImport) {
       setActiveImport(null);
@@ -312,29 +420,23 @@ export default function PresensiLoyalisRawPage() {
     }
     setLoadingActiveImport(true);
     try {
-      const [result, calendarResult] = await Promise.all([
-        authenticatedJson<{
-          import: {
-            activeRevision?: number;
-            activeRevisionId?: string;
-          } | null;
-          revisions: Array<{
-            id: string;
-            revision?: number;
-            status?: string;
-            fileName?: string;
-            downloadUrl?: string | null;
-          }>;
-        }>(
-          `/api/attendance/imports?period=${encodeURIComponent(canonicalPeriod)}&includeDownload=true`,
-        ),
-        authenticatedJson<{ calendar: { revision: number } }>(
-          `/api/payroll/periods/${encodeURIComponent(canonicalPeriod)}/calendar`,
-        ),
-      ]);
+      const result = await authenticatedJson<{
+        import: {
+          activeRevision?: number;
+          activeRevisionId?: string;
+        } | null;
+        revisions: Array<{
+          id: string;
+          revision?: number;
+          status?: string;
+          fileName?: string;
+          downloadUrl?: string | null;
+        }>;
+      }>(
+        `/api/attendance/imports?period=${encodeURIComponent(canonicalPeriod)}&includeDownload=true`,
+      );
       setActiveImport(result.import);
       setImportHistory(result.revisions || []);
-      setActiveCalendarRevision(calendarResult.calendar.revision);
     } catch (error) {
       console.error('Failed to load shared attendance import:', error);
       setActiveImport(null);
@@ -428,9 +530,9 @@ export default function PresensiLoyalisRawPage() {
       nipy: entry.nipy,
       employeeId: entry.employeeId,
       employeeName: entry.employeeName,
-      ...recalculateSummary(entry.dailyLogs, expectedHours),
+      ...recalculateSummary(entry.dailyLogs, expectedHours, isOffDayTanggal),
     }));
-  }, [canonicalPeriod, expectedHours]);
+  }, [canonicalPeriod, expectedHours, isOffDayTanggal]);
 
   useEffect(() => {
     if (!usesSharedImport) return;
@@ -863,7 +965,7 @@ export default function PresensiLoyalisRawPage() {
           return (y1 * 365 + m1 * 31 + d1) - (y2 * 365 + m2 * 31 + d2);
         });
 
-        const summary = recalculateSummary(dailyLogs, expectedHours);
+        const summary = recalculateSummary(dailyLogs, expectedHours, isOffDayTanggal);
 
         return {
           ...emp,
@@ -882,7 +984,7 @@ export default function PresensiLoyalisRawPage() {
       type: 'success',
       text: `Koreksi presensi ${req.employeeName} tanggal ${parseDateToDDMMYYYY(req.date)} berhasil diterapkan ke logs sementara. Silakan simpan untuk memperbarui database.`
     });
-  }, [expectedHours]);
+  }, [expectedHours, isOffDayTanggal]);
 
   const handleDeclineCorrection = useCallback((reqId: string, reason: string) => {
     setPendingResolutionUpdates(prev => ({
@@ -903,16 +1005,15 @@ export default function PresensiLoyalisRawPage() {
       nipy: entry.nipy || '',
       employeeId: entry.isNotFoundInExcel ? null : entry.employeeId,
       employeeName: entry.isNotFoundInExcel ? null : entry.employeeName,
-      minutes: Math.ceil(entry.minutes || 0),
-      activeDaysCount: entry.activeDaysCount || 0,
-      incompleteDaysCount: entry.incompleteDaysCount || 0,
-      absentDaysCount: entry.absentDaysCount || 0,
-      dailyLogs: entry.dailyLogs || [],
+      // Totals are re-derived from the stored logs rather than trusted, so a
+      // record saved under an older calendar picks up the current Jumat /
+      // Tanggal Merah set the moment it is reopened for editing.
+      ...recalculateSummary(entry.dailyLogs || [], expectedHours, isOffDayTanggal),
     }));
     setUploadedData(entriesList);
     setBulkFillSnapshots({});
     setMessage({ type: 'success', text: 'Mode edit diaktifkan. Anda sekarang dapat mengubah data logs presensi dan menghubungkan pegawai.' });
-  }, [existingPresence]);
+  }, [existingPresence, expectedHours, isOffDayTanggal]);
 
   // True while the page still has a reason to expect data but hasn't shown
   // any yet, so the table area can say so instead of just sitting empty.
@@ -942,6 +1043,8 @@ export default function PresensiLoyalisRawPage() {
           activeDaysCount: row.activeDaysCount || 0,
           incompleteDaysCount: row.incompleteDaysCount || 0,
           absentDaysCount: row.absentDaysCount || 0,
+          offDayScannedCount: row.offDayScannedCount || 0,
+          offDayExcludedMinutes: row.offDayExcludedMinutes || 0,
           dailyLogs: row.dailyLogs || [],
           corrections: row.employeeId ? corrections.filter((c: any) => c.employeeId === row.employeeId) : [],
         };
@@ -993,6 +1096,8 @@ export default function PresensiLoyalisRawPage() {
         activeDaysCount: entry.activeDaysCount || 0,
         incompleteDaysCount: entry.incompleteDaysCount || 0,
         absentDaysCount: entry.absentDaysCount || 0,
+        offDayScannedCount: entry.offDayScannedCount || 0,
+        offDayExcludedMinutes: entry.offDayExcludedMinutes || 0,
         dailyLogs: entry.dailyLogs || [],
         corrections: entry.employeeId ? corrections.filter((c: any) => c.employeeId === entry.employeeId) : [],
       }));
@@ -1133,7 +1238,7 @@ export default function PresensiLoyalisRawPage() {
             }));
 
           // Run recalculation to get total worked minutes, active days, etc.
-          const summary = recalculateSummary(dailyLogs, expectedHours);
+          const summary = recalculateSummary(dailyLogs, expectedHours, isOffDayTanggal);
 
           parsedData.push({
             excelName,
@@ -1293,6 +1398,7 @@ export default function PresensiLoyalisRawPage() {
     matchExcelName,
     usesSharedImport,
     fetchActiveImportLoyalisRows,
+    isOffDayTanggal,
   ]);
 
   const handleUpdateDailyLog = useCallback((excelName: string, dateStr: string, field: string, value: any) => {
@@ -1320,14 +1426,14 @@ export default function PresensiLoyalisRawPage() {
           return updatedItem;
         });
 
-        const summary = recalculateSummary(updatedLogs, expectedHours);
+        const summary = recalculateSummary(updatedLogs, expectedHours, isOffDayTanggal);
         return {
           ...emp,
           ...summary
         };
       });
     });
-  }, [expectedHours]);
+  }, [expectedHours, isOffDayTanggal]);
 
   /**
    * Stamps one scan masuk and/or scan pulang value across every date this
@@ -1375,14 +1481,14 @@ export default function PresensiLoyalisRawPage() {
           return updatedItem;
         });
 
-        const summary = recalculateSummary(updatedLogs, expectedHours);
+        const summary = recalculateSummary(updatedLogs, expectedHours, isOffDayTanggal);
         return {
           ...emp,
           ...summary,
         };
       });
     });
-  }, [expectedHours]);
+  }, [expectedHours, isOffDayTanggal]);
 
   const openBulkFill = useCallback((excelName: string, employeeName: string) => {
     setBulkFillTarget({ excelName, employeeName });
@@ -1451,6 +1557,7 @@ export default function PresensiLoyalisRawPage() {
         const summary = recalculateSummary(
           snapshot.map((log) => ({ ...log })),
           expectedHours,
+          isOffDayTanggal,
         );
         return { ...emp, ...summary };
       });
@@ -1465,7 +1572,7 @@ export default function PresensiLoyalisRawPage() {
       type: 'success',
       text: `Perubahan Isi Massal Scan untuk ${employeeName} dibatalkan — data presensi asli pegawai ini dikembalikan.`,
     });
-  }, [bulkFillSnapshots, expectedHours]);
+  }, [bulkFillSnapshots, expectedHours, isOffDayTanggal]);
 
   const handleSaveWorkingDaysConfig = async () => {
     setSavingPresence(true);
@@ -1524,6 +1631,8 @@ export default function PresensiLoyalisRawPage() {
           activeDaysCount: row.activeDaysCount || 0,
           incompleteDaysCount: row.incompleteDaysCount || 0,
           absentDaysCount: row.absentDaysCount || 0,
+          offDayScannedCount: row.offDayScannedCount || 0,
+          offDayExcludedMinutes: row.offDayExcludedMinutes || 0,
           dailyLogs: row.dailyLogs || [],
         };
       });
@@ -2468,6 +2577,15 @@ export default function PresensiLoyalisRawPage() {
                                 <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                                   <Clock className="w-4 h-4 text-slate-400" />
                                   Logs Presensi Harian: {row.employeeName || row.excelName}
+                                  {(row.offDayScannedCount || 0) > 0 && (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold normal-case bg-rose-50 text-rose-700 border border-rose-100 cursor-help"
+                                      title={`Scan pada ${row.offDayScannedCount} hari libur (Jumat / Tanggal Merah) senilai ${row.offDayExcludedMinutes || 0} menit tidak dihitung ke total menit kerja maupun upah presensi.`}
+                                    >
+                                      <AlertCircle className="w-3 h-3" />
+                                      {row.offDayScannedCount} scan hari libur diabaikan
+                                    </span>
+                                  )}
                                 </h4>
                                 {!!uploadedData &&
                                   row.excelName !== '-' &&
@@ -2528,10 +2646,37 @@ export default function PresensiLoyalisRawPage() {
                                         // status comes from the source file.
                                         const scanEditable =
                                           !!uploadedData && row.excelName !== '-';
+                                        // Jumat / Tanggal Merah: the employee was
+                                        // not expected in, so the row is tinted and
+                                        // its minutes are excluded from every total.
+                                        const isOffDayRow = isOffDayTanggal(log.Tanggal);
+                                        const offDayIso = ddmmyyyyToIso(log.Tanggal);
+                                        const offDayLabel = isOffDayRow
+                                          ? (isFridayDate(offDayIso) ? 'JUMAT' : 'TANGGAL MERAH')
+                                          : '';
                                         return (
-                                          <tr key={logIdx} className="border-b border-slate-50 hover:bg-slate-50/40">
-                                            <td className="px-3 py-2 text-slate-400 text-center font-mono">{logIdx + 1}</td>
-                                            <td className="px-3 py-2 font-bold text-slate-600 font-mono">{log.Tanggal}</td>
+                                          <tr
+                                            key={logIdx}
+                                            className={`border-b ${
+                                              isOffDayRow
+                                                ? 'border-rose-100/70 bg-rose-50/60 hover:bg-rose-50'
+                                                : 'border-slate-50 hover:bg-slate-50/40'
+                                            }`}
+                                          >
+                                            <td className={`px-3 py-2 text-center font-mono ${isOffDayRow ? 'text-rose-300' : 'text-slate-400'}`}>{logIdx + 1}</td>
+                                            <td className={`px-3 py-2 font-bold font-mono ${isOffDayRow ? 'text-rose-700' : 'text-slate-600'}`}>
+                                              <div className="flex items-center gap-1.5">
+                                                <span>{log.Tanggal}</span>
+                                                {isOffDayRow && (
+                                                  <span
+                                                    className="inline-flex px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase bg-rose-100 text-rose-700 border border-rose-200 select-none shrink-0 cursor-help"
+                                                    title="Hari libur (Jumat / Tanggal Merah). Pegawai tidak seharusnya masuk, sehingga menit kerja dan upah presensi hari ini tidak dihitung."
+                                                  >
+                                                    {offDayLabel}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </td>
                                             <td className="px-3 py-2">
                                               {isEditable ? (
                                                 <Select
@@ -2620,11 +2765,19 @@ export default function PresensiLoyalisRawPage() {
                                                 </div>
                                               )}
                                             </td>
-                                            <td className="px-3 py-2 text-center font-mono font-bold text-slate-600">
-                                              {log['Jam kerja'] !== 'Tidak Hadir' && log.duration !== undefined ? `${log.duration} menit` : '-'}
+                                            <td className={`px-3 py-2 text-center font-mono font-bold ${isOffDayRow ? 'text-rose-400' : 'text-slate-600'}`}>
+                                              {isOffDayRow
+                                                ? 'Tidak dihitung'
+                                                : log['Jam kerja'] !== 'Tidak Hadir' && log.duration !== undefined
+                                                  ? `${log.duration} menit`
+                                                  : '-'}
                                             </td>
-                                            <td className="px-3 py-2 text-center font-mono font-bold text-indigo-600">
-                                              {log['Jam kerja'] !== 'Tidak Hadir' && log.duration !== undefined ? fmtRp(log.duration * 27.5) : '-'}
+                                            <td className={`px-3 py-2 text-center font-mono font-bold ${isOffDayRow ? 'text-rose-400' : 'text-indigo-600'}`}>
+                                              {isOffDayRow
+                                                ? fmtRp(0)
+                                                : log['Jam kerja'] !== 'Tidak Hadir' && log.duration !== undefined
+                                                  ? fmtRp(log.duration * 27.5)
+                                                  : '-'}
                                             </td>
                                           </tr>
                                         );
