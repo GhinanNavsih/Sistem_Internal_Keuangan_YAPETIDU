@@ -293,7 +293,52 @@ function workedDuration(day: AttendanceDay) {
  * that was scanned. Mirrors the "Auto" badge Loyalis presence already uses
  * for the same situation.
  */
-function ScanCell({ value, auto }: { value: string | null; auto: boolean }) {
+/**
+ * A scan time cell. Editable cells are uncontrolled and keyed on the current
+ * value, so the input resets to the latest server value whenever it changes
+ * (after a save, or after `load()` brings in someone else's edit) without
+ * needing a parallel piece of edit-buffer state.
+ */
+function ScanCell({
+  value,
+  auto,
+  editable,
+  disabled,
+  onCommit,
+}: {
+  value: string | null;
+  auto: boolean;
+  editable?: boolean;
+  disabled?: boolean;
+  onCommit?: (value: string) => void;
+}) {
+  if (editable) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <input
+          key={value || ''}
+          type="time"
+          step="1"
+          defaultValue={value || ''}
+          disabled={disabled}
+          onBlur={(event) => onCommit?.(event.target.value)}
+          className={`h-8 w-28 rounded-lg border px-2 text-xs font-mono disabled:opacity-60 ${
+            auto
+              ? 'border-amber-300 bg-amber-50/10 font-bold text-amber-700 ring-2 ring-amber-100/50'
+              : 'border-slate-200 bg-white text-slate-700'
+          }`}
+        />
+        {auto && (
+          <span
+            className="inline-flex shrink-0 select-none items-center rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-amber-700 border border-amber-200 cursor-help"
+            title="Diisi otomatis (150 menit dari scan yang tercatat) karena satu sisi lupa discan."
+          >
+            Auto
+          </span>
+        )}
+      </span>
+    );
+  }
   if (!value) return <span>—</span>;
   if (!auto) return <span>{value}</span>;
   return (
@@ -442,6 +487,8 @@ export default function PekaryaAttendancePage() {
   // triggers it must be visible to both, not just to canEdit's satker_head.
   const canLinkAttendance =
     profile?.role === 'satker_head' || profile?.role === 'super_admin';
+  // Same authority as manual linking — the corrections endpoint accepts both.
+  const canEditScans = canLinkAttendance;
 
   const load = useCallback(async () => {
     if (
@@ -760,6 +807,60 @@ export default function PekaryaAttendancePage() {
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Gagal menyimpan koreksi.');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  /**
+   * Commits an inline edit of one scan cell as a correction, without asking
+   * for a reason — a fixed, honest one is recorded instead so the audit trail
+   * (Riwayat Koreksi) still says how the change was made.
+   */
+  const saveScanCellEdit = async (
+    employee: EmployeeAttendance,
+    day: AttendanceDay,
+    field: 'scanIn' | 'scanOut',
+    rawValue: string,
+  ) => {
+    const nextValue = rawValue || null;
+    const currentScanIn = day.scanIn || null;
+    const currentScanOut = day.scanOut || null;
+    const nextScanIn = field === 'scanIn' ? nextValue : currentScanIn;
+    const nextScanOut = field === 'scanOut' ? nextValue : currentScanOut;
+    if (nextScanIn === currentScanIn && nextScanOut === currentScanOut) return;
+    if (
+      nextScanIn &&
+      nextScanOut &&
+      !isValidAttendanceScanRange(nextScanIn, nextScanOut)
+    ) {
+      setError('Scan pulang harus lebih lambat dari scan masuk.');
+      return;
+    }
+    setWorking(true);
+    setError('');
+    try {
+      await authenticatedJson('/api/attendance/pekarya/corrections', {
+        method: 'POST',
+        body: JSON.stringify({
+          requestId: createFinancialRequestId('attendance-correction'),
+          period,
+          category: employee.category,
+          employeeId: employee.employeeId,
+          date: day.date,
+          present: Boolean(nextScanIn || nextScanOut),
+          workStatus: nextScanIn || nextScanOut ? 'MASUK' : 'TIDAK MASUK',
+          scanIn: nextScanIn,
+          scanOut: nextScanOut,
+          reason: 'Diedit langsung dari tabel presensi harian.',
+          expectedRevision: day.correctionRevision,
+        }),
+      });
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'Gagal memperbarui waktu scan.',
+      );
     } finally {
       setWorking(false);
     }
@@ -1744,10 +1845,26 @@ export default function PekaryaAttendancePage() {
                               <tr key={day.date} className="border-b border-slate-100">
                                 <td className="p-3 font-semibold">{day.date}</td>
                                 <td className="p-3">
-                                  <ScanCell value={day.scanIn} auto={day.scanInAuto} />
+                                  <ScanCell
+                                    value={day.scanIn}
+                                    auto={day.scanInAuto}
+                                    editable={canEditScans}
+                                    disabled={working}
+                                    onCommit={(value) =>
+                                      void saveScanCellEdit(employee, day, 'scanIn', value)
+                                    }
+                                  />
                                 </td>
                                 <td className="p-3">
-                                  <ScanCell value={day.scanOut} auto={day.scanOutAuto} />
+                                  <ScanCell
+                                    value={day.scanOut}
+                                    auto={day.scanOutAuto}
+                                    editable={canEditScans}
+                                    disabled={working}
+                                    onCommit={(value) =>
+                                      void saveScanCellEdit(employee, day, 'scanOut', value)
+                                    }
+                                  />
                                 </td>
                                 <td className="p-3">{workedDuration(day)}</td>
                                 <td className="p-3">

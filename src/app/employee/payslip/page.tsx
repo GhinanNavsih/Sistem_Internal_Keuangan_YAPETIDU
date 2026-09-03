@@ -70,6 +70,7 @@ import {
   composeKoperasiLoanHistoryTrail,
   koperasiProjectedPaidInstallments,
   koperasiProjectedRemainingBalance,
+  isKoperasiPayrollPayableStatus,
   projectKoperasiLoanForPeriod,
   resolveKoperasiLoanStatus,
   selectKoperasiActiveLoans,
@@ -170,7 +171,7 @@ function timestampMillis(value: unknown): number {
   return dateFromFirestoreValue(value)?.getTime() ?? 0;
 }
 
-function isLoanActiveForPeriod(loan: any, periodDate: Date): boolean {
+function isLoanPayableForPeriod(loan: any, periodDate: Date): boolean {
   if (money(loan?.sisaHutang) <= 0 || !Array.isArray(loan?.history) || loan.history.length === 0) {
     return false;
   }
@@ -178,8 +179,10 @@ function isLoanActiveForPeriod(loan: any, periodDate: Date): boolean {
   const history = [...loan.history].sort(
     (a: any, b: any) => timestampMillis(b?.timestamp) - timestampMillis(a?.timestamp),
   );
-  const activeStatus = resolveKoperasiLoanStatus(loan) === 'Disetujui dan Aktif';
-  if (!activeStatus) return false;
+  const payableStatus = isKoperasiPayrollPayableStatus(
+    resolveKoperasiLoanStatus(loan),
+  );
+  if (!payableStatus) return false;
 
   const activationDate =
     dateFromFirestoreValue(loan.tanggalDisetujui) ||
@@ -879,16 +882,16 @@ export default function EmployeePayslipPage() {
             // Simpan Pinjam, limited to the selected period cutoff.
             composedTrail: composeKoperasiLoanHistoryTrail(loan, periodLoans, periodEndDate),
           }));
-        const activeLoans = selectKoperasiActiveLoans(
-          processedCooperativeLoans.filter((loan) => isLoanActiveForPeriod(loan, targetDate)),
+        const payableLoans = selectKoperasiActiveLoans(
+          processedCooperativeLoans.filter((loan) => isLoanPayableForPeriod(loan, targetDate)),
         );
-        const koperasiDeduction = activeLoans.reduce((total, loan) => total + money(loan.cicilan), 0);
+        const koperasiDeduction = payableLoans.reduce((total, loan) => total + money(loan.cicilan), 0);
         // The payslip answers which loan is being deducted this period, not
         // which restructuring applications were ever submitted. Rejected or
         // cancelled proposals remain available in the Koperasi admin audit,
         // but must not appear as employee-facing loan cards. The active loan's
         // composedTrail still retains its legitimate restructuring ancestry.
-        setKoperasiLoansInfo(activeLoans);
+        setKoperasiLoansInfo(payableLoans);
 
         const memberData = memberSnapshot?.docs[0]?.data() as any;
         const memberApproved = memberData?.status === 'approved' || memberData?.membershipStatus === 'approved';

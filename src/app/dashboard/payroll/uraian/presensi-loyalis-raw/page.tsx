@@ -14,9 +14,18 @@ import {
   SelectValue
 } from '@/components/ui/select';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import {
   Loader2, CheckCircle2, FileText, AlertCircle, Trash2, Plus, Save, Edit,
   Calendar, Check, ShieldCheck, FileSpreadsheet, Users, Info, Settings, Clock, Upload,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, Wand2
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import {
@@ -170,7 +179,16 @@ export default function PresensiLoyalisRawPage() {
   const [savingPresence, setSavingPresence] = useState(false);
   const [existingPresence, setExistingPresence] = useState<any>(null);
   const [loadingPresence, setLoadingPresence] = useState(false);
+  const [loadingActiveImport, setLoadingActiveImport] = useState(false);
+  const [hydratingTable, setHydratingTable] = useState(false);
   const [expandedRowIdx, setExpandedRowIdx] = useState<number | null>(null);
+  const [bulkFillTarget, setBulkFillTarget] = useState<{
+    excelName: string;
+    employeeName: string;
+  } | null>(null);
+  const [bulkScanMasuk, setBulkScanMasuk] = useState('');
+  const [bulkScanPulang, setBulkScanPulang] = useState('');
+  const [bulkIncludeAbsent, setBulkIncludeAbsent] = useState(false);
   const [activeImport, setActiveImport] = useState<{
     activeRevision?: number;
     activeRevisionId?: string;
@@ -255,6 +273,7 @@ export default function PresensiLoyalisRawPage() {
       setActiveImport(null);
       return;
     }
+    setLoadingActiveImport(true);
     try {
       const [result, calendarResult] = await Promise.all([
         authenticatedJson<{
@@ -282,6 +301,8 @@ export default function PresensiLoyalisRawPage() {
     } catch (error) {
       console.error('Failed to load shared attendance import:', error);
       setActiveImport(null);
+    } finally {
+      setLoadingActiveImport(false);
     }
   }, [canonicalPeriod, usesSharedImport]);
 
@@ -369,6 +390,7 @@ export default function PresensiLoyalisRawPage() {
     if (existingPresence && Object.keys(existingPresence.entries || {}).length > 0) return;
     if (uploadedData) return;
     let cancelled = false;
+    setHydratingTable(true);
     (async () => {
       try {
         const parsedData = await fetchActiveImportLoyalisRows();
@@ -376,6 +398,8 @@ export default function PresensiLoyalisRawPage() {
         setUploadedData(parsedData);
       } catch (error) {
         console.error('Gagal memuat data presensi dari file aktif:', error);
+      } finally {
+        if (!cancelled) setHydratingTable(false);
       }
     })();
     return () => {
@@ -695,6 +719,11 @@ export default function PresensiLoyalisRawPage() {
     setUploadedData(entriesList);
     setMessage({ type: 'success', text: 'Mode edit diaktifkan. Anda sekarang dapat mengubah data logs presensi dan menghubungkan pegawai.' });
   }, [existingPresence]);
+
+  // True while the page still has a reason to expect data but hasn't shown
+  // any yet, so the table area can say so instead of just sitting empty.
+  const tableLoading =
+    loadingPresence || (usesSharedImport && (loadingActiveImport || hydratingTable));
 
   const displayRows = useMemo(() => {
     if (uploadedData) {
@@ -1103,6 +1132,88 @@ export default function PresensiLoyalisRawPage() {
       });
     });
   }, [expectedHours]);
+
+  /**
+   * Stamps one scan masuk and/or scan pulang value across every date this
+   * employee has a log for, replacing whatever was there — a shortcut for
+   * when the raw scans for the whole month are wrong or missing and a
+   * fixed schedule should be applied instead of editing each date by hand.
+   * "Tidak Hadir" days are left untouched unless includeAbsentDays is set,
+   * since setting a scan time is otherwise meaningless for a day recorded
+   * as absent — opting in also flips that day to MASUK.
+   */
+  const handleBulkFillScans = useCallback((
+    excelName: string,
+    scanMasukValue: string,
+    scanPulangValue: string,
+    includeAbsentDays: boolean,
+  ) => {
+    setUploadedData(prev => {
+      if (!prev) return null;
+      return prev.map(emp => {
+        if (emp.excelName !== excelName) return emp;
+
+        const updatedLogs = (emp.dailyLogs || []).map((log: any) => {
+          const isAbsent = String(log['Jam kerja'] || '').trim().toUpperCase() === 'TIDAK HADIR';
+          if (isAbsent && !includeAbsentDays) return log;
+          const updatedItem = { ...log };
+          if (scanMasukValue) {
+            updatedItem['Scan masuk'] = scanMasukValue;
+            updatedItem.scanMasukAuto = false;
+          }
+          if (scanPulangValue) {
+            updatedItem['Scan pulang'] = scanPulangValue;
+            updatedItem.scanPulangAuto = false;
+          }
+          if (isAbsent && includeAbsentDays) {
+            updatedItem['Jam kerja'] = 'MASUK';
+          }
+          return updatedItem;
+        });
+
+        const summary = recalculateSummary(updatedLogs, expectedHours);
+        return {
+          ...emp,
+          ...summary,
+        };
+      });
+    });
+  }, [expectedHours]);
+
+  const openBulkFill = useCallback((excelName: string, employeeName: string) => {
+    setBulkFillTarget({ excelName, employeeName });
+    setBulkScanMasuk('');
+    setBulkScanPulang('');
+    setBulkIncludeAbsent(false);
+  }, []);
+
+  const applyBulkFill = useCallback(() => {
+    if (!bulkFillTarget) return;
+    if (!bulkScanMasuk && !bulkScanPulang) {
+      setMessage({
+        type: 'error',
+        text: 'Isi setidaknya salah satu nilai scan masuk atau scan pulang.',
+      });
+      return;
+    }
+    if (bulkScanMasuk && bulkScanPulang && bulkScanPulang <= bulkScanMasuk) {
+      setMessage({ type: 'error', text: 'Scan pulang harus lebih lambat dari scan masuk.' });
+      return;
+    }
+    handleBulkFillScans(
+      bulkFillTarget.excelName,
+      bulkScanMasuk,
+      bulkScanPulang,
+      bulkIncludeAbsent,
+    );
+    setMessage({
+      type: 'success',
+      text: `Scan ${bulkFillTarget.employeeName} berhasil diisi untuk seluruh tanggal${
+        bulkIncludeAbsent ? ' termasuk hari Tidak Hadir' : ''
+      }. Silakan simpan untuk menerapkan perubahan.`,
+    });
+    setBulkFillTarget(null);
+  }, [bulkFillTarget, bulkScanMasuk, bulkScanPulang, bulkIncludeAbsent, handleBulkFillScans]);
 
   const handleSaveWorkingDaysConfig = async () => {
     setSavingPresence(true);
@@ -1633,6 +1744,13 @@ export default function PresensiLoyalisRawPage() {
               </div>
             )}
 
+            {!displayRows && tableLoading && (
+              <div className="flex flex-col items-center justify-center gap-2 py-14 border-t border-slate-100 text-slate-500">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-xs font-bold">Memuat data presensi…</span>
+              </div>
+            )}
+
             {displayRows && (
               <div className="space-y-4 pt-4 border-t border-slate-100 animate-in fade-in">
                 <div className="flex flex-wrap justify-between items-center gap-4 bg-slate-50/70 p-3 rounded-2xl border border-slate-200/70">
@@ -2088,10 +2206,28 @@ export default function PresensiLoyalisRawPage() {
                             )}
 
                             <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm space-y-3">
-                              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                                <Clock className="w-4 h-4 text-slate-400" />
-                                Logs Presensi Harian: {row.employeeName || row.excelName}
-                              </h4>
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Clock className="w-4 h-4 text-slate-400" />
+                                  Logs Presensi Harian: {row.employeeName || row.excelName}
+                                </h4>
+                                {!!uploadedData &&
+                                  row.excelName !== '-' &&
+                                  row.dailyLogs &&
+                                  row.dailyLogs.length > 0 && (
+                                    <Button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openBulkFill(row.excelName, row.employeeName || row.excelName);
+                                      }}
+                                      className="h-8 rounded-lg bg-indigo-50 px-3 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100 flex items-center gap-1.5 shadow-none"
+                                    >
+                                      <Wand2 className="w-3.5 h-3.5" />
+                                      Isi Massal Scan Sebulan
+                                    </Button>
+                                  )}
+                              </div>
                               {row.dailyLogs && row.dailyLogs.length > 0 ? (
                                 <div className="border border-slate-100 rounded-xl">
                                   <table className="w-full text-left border-collapse text-[11px]">
@@ -2112,6 +2248,13 @@ export default function PresensiLoyalisRawPage() {
                                           !!uploadedData &&
                                           row.excelName !== '-' &&
                                           !usesSharedImport;
+                                        // Scan masuk/pulang are editable on every
+                                        // row regardless of period — status
+                                        // (Jam kerja) stays limited to the legacy
+                                        // flow above, since a shared-import row's
+                                        // status comes from the source file.
+                                        const scanEditable =
+                                          !!uploadedData && row.excelName !== '-';
                                         return (
                                           <tr key={logIdx} className="border-b border-slate-50 hover:bg-slate-50/40">
                                             <td className="px-3 py-2 text-slate-400 text-center font-mono">{logIdx + 1}</td>
@@ -2143,7 +2286,7 @@ export default function PresensiLoyalisRawPage() {
                                               )}
                                             </td>
                                             <td className="px-3 py-2 text-center">
-                                              {isEditable && log['Jam kerja'] !== 'Tidak Hadir' ? (
+                                              {scanEditable && log['Jam kerja'] !== 'Tidak Hadir' ? (
                                                 <div className="flex items-center gap-1.5 justify-center">
                                                   <Input
                                                     type="time"
@@ -2174,7 +2317,7 @@ export default function PresensiLoyalisRawPage() {
                                               )}
                                             </td>
                                             <td className="px-3 py-2 text-center">
-                                              {isEditable && log['Jam kerja'] !== 'Tidak Hadir' ? (
+                                              {scanEditable && log['Jam kerja'] !== 'Tidak Hadir' ? (
                                                 <div className="flex items-center gap-1.5 justify-center">
                                                   <Input
                                                     type="time"
@@ -2254,6 +2397,96 @@ export default function PresensiLoyalisRawPage() {
           </Card>
         )
       )}
+
+      <Dialog
+        open={Boolean(bulkFillTarget)}
+        onOpenChange={(open) => !open && setBulkFillTarget(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Isi Massal Scan Sebulan</DialogTitle>
+            <DialogDescription>
+              Nilai yang diisi akan menggantikan scan masuk dan/atau scan
+              pulang pada setiap tanggal untuk pegawai ini. Perubahan hanya
+              berlaku pada data yang sedang diedit — klik Simpan Data Presensi
+              untuk menerapkannya secara permanen.
+            </DialogDescription>
+          </DialogHeader>
+          {bulkFillTarget && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-bold text-slate-900">
+                  {bulkFillTarget.employeeName}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="bulk-scan-masuk" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Scan Masuk
+                  </Label>
+                  <Input
+                    id="bulk-scan-masuk"
+                    type="time"
+                    step="1"
+                    value={bulkScanMasuk}
+                    onChange={(e) => setBulkScanMasuk(e.target.value)}
+                    className="rounded-lg border-slate-200 font-mono text-xs h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bulk-scan-pulang" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Scan Pulang
+                  </Label>
+                  <Input
+                    id="bulk-scan-pulang"
+                    type="time"
+                    step="1"
+                    value={bulkScanPulang}
+                    onChange={(e) => setBulkScanPulang(e.target.value)}
+                    className="rounded-lg border-slate-200 font-mono text-xs h-10"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Kosongkan salah satu kolom untuk hanya mengganti sisi yang
+                diisi — sisi yang kosong pada tiap tanggal tidak akan diubah.
+              </p>
+              <label className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={bulkIncludeAbsent}
+                  onChange={(e) => setBulkIncludeAbsent(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-amber-300"
+                />
+                <span className="text-[11px] font-semibold text-amber-800">
+                  Sertakan tanggal berstatus &quot;Tidak Hadir&quot; — nilai
+                  scan akan diisi dan statusnya diubah menjadi MASUK, sehingga
+                  hari tersebut ikut dihitung sebagai hadir.
+                </span>
+              </label>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-xl border-slate-200 text-slate-600 text-xs font-bold"
+              onClick={() => setBulkFillTarget(null)}
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={applyBulkFill}
+              disabled={!bulkScanMasuk && !bulkScanPulang}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl px-5 text-xs flex items-center gap-2 shadow-md active:scale-95 transition-all cursor-pointer"
+            >
+              <Wand2 className="w-4 h-4" />
+              Terapkan ke Semua Tanggal
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

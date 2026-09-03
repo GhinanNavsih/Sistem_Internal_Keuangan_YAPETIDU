@@ -47,7 +47,7 @@ function optionalTime(body: Record<string, unknown>, key: string) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await requireAuthenticatedProfile(request);
-    requireRole(actor, ['satker_head']);
+    requireRole(actor, ['satker_head', 'super_admin']);
     const body = (await request.json()) as Record<string, unknown>;
     const period = String(body.period || '');
     const category = String(body.category || '').trim().toUpperCase();
@@ -77,7 +77,8 @@ export async function POST(request: NextRequest) {
     }
     if (
       !isPekaryaOfficialLeaveCategory(category) ||
-      !actor.permittedCategories.includes(category)
+      (actor.role !== 'super_admin' &&
+        !actor.permittedCategories.includes(category))
     ) {
       throw new HttpError(403, 'Kategori koreksi tidak diizinkan.');
     }
