@@ -1249,7 +1249,7 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
     sections = [...sections, ...deductionSections, ...taxSections];
   } else {
     // Pekarya Documentation
-    const harianVal = getEarningAmount(['VAKASI HARIAN', 'HARIAN']);
+    const harianVal = getEarningAmount(['PRESENSI HARIAN', 'VAKASI HARIAN', 'HARIAN']);
     const jumatVal = getEarningAmount(['JUMAT & LIBUR', 'BONUS JUM\'AT', 'JUMAT']);
     const lemburSendiriVal = getEarningAmount(['LEMBUR SENDIRI']);
     const lemburCoverVal = getEarningAmount(['LEMBUR COVER']);
@@ -1278,19 +1278,23 @@ function drawDocumentationPage(doc: jsPDF, data: PaySlipData): void {
         ]
       },
       {
-        title: '2. Insentif Shift & Vakasi Harian',
+        title: isSatpam
+          ? '2. Insentif Shift & Vakasi Harian'
+          : '2. Presensi Harian & Insentif Tugas',
         bullets: [
-          'Insentif kehadiran dinas shift dan penugasan khusus harian pegawai Pekarya.'
+          isSatpam
+            ? 'Insentif kehadiran dinas shift dan penugasan khusus harian pegawai Pekarya.'
+            : 'Upah presensi dihitung dari durasi scan pada unggahan presensi aktif; penugasan lain tetap ditampilkan terpisah.'
         ],
         params: [
-          { label: 'Vakasi Harian', val: formatIDR(harianVal) },
+          { label: isSatpam ? 'Vakasi Harian' : 'Presensi Harian', val: formatIDR(harianVal) },
           { label: 'Jumat & Libur', val: formatIDR(jumatVal) },
           ...(lemburSendiriVal > 0 ? [{ label: 'Lembur Sendiri', val: formatIDR(lemburSendiriVal) }] : []),
           ...(lemburCoverVal > 0 ? [{ label: 'Lembur Cover', val: formatIDR(lemburCoverVal) }] : []),
           ...(lemburVal > 0 ? [{ label: 'Lembur', val: formatIDR(lemburVal) }] : []),
           ...(piketVal > 0 ? [{ label: 'Piket', val: formatIDR(piketVal) }] : []),
           ...(praktekVal > 0 ? [{ label: 'Praktek', val: formatIDR(praktekVal) }] : []),
-          { label: 'Total Insentif Shift', val: formatIDR(harianVal + jumatVal + lemburSendiriVal + lemburCoverVal + lemburVal + piketVal + praktekVal), highlight: true }
+          { label: isSatpam ? 'Total Insentif Shift' : 'Total Presensi & Tugas', val: formatIDR(harianVal + jumatVal + lemburSendiriVal + lemburCoverVal + lemburVal + piketVal + praktekVal), highlight: true }
         ]
       },
       isSatpam

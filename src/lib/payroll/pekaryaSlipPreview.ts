@@ -1,5 +1,9 @@
 import { RekapColumn, SalaryMatrix, UraianEntry } from '@/types';
-import { computeSlipAmount } from '@/utils/rekapConfig';
+import {
+  computeSlipAmount,
+  RATE_HARIAN,
+  RATE_JUMAT,
+} from '@/utils/rekapConfig';
 import { resolveRekapColumnsForSlip, SlipField } from '@/lib/payroll/slipBuilders';
 import {
   GapokResolution,
@@ -73,6 +77,12 @@ export interface PekaryaPreviewInputs {
   salaryMatrix: SalaryMatrix;
   matrixVersion?: string | null;
   uraianEntry?: UraianEntry;
+  /**
+   * Exact monetary attendance calculated from the active uploaded scanner
+   * revision. It is safe to display provisionally, but never satisfies the
+   * publication gate on its own.
+   */
+  uploadedAttendanceEntry?: UraianEntry;
   uraianCustomColumns?: readonly RekapColumn[];
   /** Sum of approved ActivityReports SPJ (SOPIR rows already use upahBersih). */
   approvedActivitySpj?: number;
@@ -94,8 +104,8 @@ export interface PekaryaPreviewMeta {
   gapokStatus: GapokResolution['status'];
   /** Where the SPJ figure came from. */
   spjSource: 'activity_and_events' | 'uraian_manual';
-  /** Where Harian / Jumat & Libur / Piket came from. */
-  attendanceSource: 'uraian' | 'piket_estimate';
+  /** Where Presensi Harian / Jumat & Libur / Piket came from. */
+  attendanceSource: 'uraian' | 'uploaded_attendance' | 'piket_estimate';
   /** True while any row still rests on an estimate rather than published data. */
   isProvisional: boolean;
   /** False when a slip must not be created or locked from this preview. */
@@ -107,6 +117,65 @@ export interface PekaryaSlipPreview {
   earnings: SlipField[];
   gapok: number;
   meta: PekaryaPreviewMeta;
+}
+
+const PEKARYA_HARIAN_LABELS = new Set([
+  'presensi harian',
+  'vakasi harian',
+  'harian',
+]);
+
+/**
+ * Overlay only the two attendance rows of an editable saved draft with the
+ * current shared preview. Final slips never call this helper. It preserves all
+ * Finance-owned rows and also migrates the old Vakasi Harian spelling in place.
+ */
+export function overlayPekaryaAttendanceEarnings(
+  stored: readonly SlipField[],
+  current: readonly SlipField[],
+): SlipField[] {
+  const normalizedLabel = (label: string) =>
+    label.trim().toLocaleLowerCase('id-ID');
+  const currentHarian = current.find((field) =>
+    PEKARYA_HARIAN_LABELS.has(normalizedLabel(field.label)),
+  );
+  const currentJumatLibur = current.find(
+    (field) => normalizedLabel(field.label) === 'jumat & libur',
+  );
+  if (!currentHarian && !currentJumatLibur) return [...stored];
+
+  const merged: SlipField[] = [];
+  let wroteHarian = false;
+  let wroteJumatLibur = false;
+  for (const field of stored) {
+    const label = normalizedLabel(field.label);
+    if (PEKARYA_HARIAN_LABELS.has(label)) {
+      if (!currentHarian) {
+        merged.push({ ...field });
+      } else if (!wroteHarian) {
+        merged.push({ label: 'Presensi Harian', amount: currentHarian.amount });
+        wroteHarian = true;
+      }
+      continue;
+    }
+    if (label === 'jumat & libur') {
+      if (!currentJumatLibur) {
+        merged.push({ ...field });
+      } else if (!wroteJumatLibur) {
+        merged.push({ ...currentJumatLibur });
+        wroteJumatLibur = true;
+      }
+      continue;
+    }
+    merged.push({ ...field });
+  }
+  if (!wroteHarian && currentHarian) {
+    merged.push({ label: 'Presensi Harian', amount: currentHarian.amount });
+  }
+  if (!wroteJumatLibur && currentJumatLibur) {
+    merged.push({ ...currentJumatLibur });
+  }
+  return merged;
 }
 
 const GAPOK_WARNING_MESSAGES: Record<
@@ -262,10 +331,11 @@ export function buildPekaryaSlipPreview(
 
   // ─── Attendance ──────────────────────────────────────────────────────
   // Published Uraian values win. For Satpam, the four shift columns may also
-  // be read provisionally before reconciliation finishes (see above). Until a
-  // non-Satpam Uraian row exists, a Piket assignment is evidence the driver
-  // was present, so it stands in as an estimate split by the same premium-date
-  // rule the eventual real attendance will use.
+  // be read provisionally before reconciliation finishes (see above). Once a
+  // non-Satpam scanner file is uploaded, its exact time-derived money may be
+  // shown while publication is still pending; the blocking gate above remains
+  // intact. Before any upload exists, a Piket assignment is evidence the
+  // driver was present, so it stands in as the original flat-rate estimate.
   const premiumDates = toPremiumDateSet(inputs.premiumDates);
   const piketCount = countDriverPiketInPeriod(
     employeeId,
@@ -287,6 +357,7 @@ export function buildPekaryaSlipPreview(
   );
 
   let usedEstimate = false;
+  let usedUploadedAttendance = false;
   const earnings: SlipField[] = [
     { label: 'Gaji Pokok', amount: gapokResolution.amount },
   ];
@@ -305,7 +376,16 @@ export function buildPekaryaSlipPreview(
         ? provisionalSatpamShiftEntry || effectiveUraianEntry
         : effectiveUraianEntry,
     );
-    let amount = published ?? 0;
+    const uploaded =
+      !isSatpamColumn &&
+      (column.key === 'harian' || column.key === 'jumatLibur')
+        ? readUraianAmount(column, inputs.uploadedAttendanceEntry)
+        : null;
+    let amount = published ?? uploaded ?? 0;
+
+    if (published === null && uploaded !== null) {
+      usedUploadedAttendance = true;
+    }
 
     if (column.key === 'spj') {
       amount = usesManualSpj ? (published ?? 0) : canonicalSpj;
@@ -314,12 +394,15 @@ export function buildPekaryaSlipPreview(
       if (amount !== 0) usedEstimate = true;
     } else if (
       (column.key === 'harian' || column.key === 'jumatLibur') &&
-      published === null
+      published === null &&
+      uploaded === null
     ) {
-      amount = computeSlipAmount(
-        column,
-        column.key === 'harian' ? piketSplit.harian : piketSplit.jumatLibur,
-      );
+      // Post-import attendance columns carry direct currency amounts, so the
+      // pre-upload Piket fallback must apply its legacy flat rates explicitly
+      // rather than accidentally treating a day count as rupiah.
+      amount =
+        (column.key === 'harian' ? piketSplit.harian : piketSplit.jumatLibur) *
+        (column.key === 'harian' ? RATE_HARIAN : RATE_JUMAT);
       if (amount !== 0) usedEstimate = true;
     }
 
@@ -339,7 +422,9 @@ export function buildPekaryaSlipPreview(
   const attendanceSource: PekaryaPreviewMeta['attendanceSource'] =
     effectiveUraianEntry || provisionalSatpamShiftEntry
       ? 'uraian'
-      : 'piket_estimate';
+      : usedUploadedAttendance
+        ? 'uploaded_attendance'
+        : 'piket_estimate';
 
   return {
     earnings,

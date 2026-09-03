@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { REKAP_COLUMNS, MONTHS_ID } from '@/utils/rekapConfig';
+import { getRekapColumns, MONTHS_ID } from '@/utils/rekapConfig';
 import type { RekapColumn } from '@/types';
 
 // ─── Public employee interface ────────────────────────────────────────────────
@@ -56,7 +56,7 @@ export async function generateRekapPresensiKebersihanyPdf(
   data: RekapPresensiKebersihanyData
 ): Promise<void> {
   // ── Resolve columns from config — only what's in the preview table ──────────
-  const baseCols = REKAP_COLUMNS[data.category] ?? REKAP_COLUMNS['KEBERSIHAN'];
+  const baseCols = getRekapColumns(data.category, data.period);
   const activeCols: RekapColumn[] = [...baseCols, ...(data.customColumns || [])];
 
   // ── Load logos ──────────────────────────────────────────────────────────────

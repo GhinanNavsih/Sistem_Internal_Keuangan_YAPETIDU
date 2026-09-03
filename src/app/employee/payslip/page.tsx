@@ -80,6 +80,7 @@ import {
 } from '@/utils/payrollLogic';
 import { isTransferEligibleStatus } from '@/lib/payroll/domain';
 import { mergeSatpamLegacyBonusIntoTunjangan } from '@/lib/payroll/satpamCompensation';
+import { overlayPekaryaAttendanceEarnings } from '@/lib/payroll/pekaryaSlipPreview';
 
 interface PekaryaDocItem {
   id: string;
@@ -199,6 +200,23 @@ function normalizeSlipFields(fields: unknown): PaySlipField[] {
   return fields
     .filter((field: any) => field && typeof field.label === 'string')
     .map((field: any) => ({ label: field.label, amount: money(field.amount) }));
+}
+
+function renameBlueCollarAttendanceLabel(
+  fields: PaySlipField[],
+  jobCategory: unknown,
+): PaySlipField[] {
+  const category = String(jobCategory || '').trim().toUpperCase();
+  if (!category || category === 'SATPAM') return fields;
+  const alreadyUsesCurrentLabel = fields.some(
+    (field) => field.label.trim().toUpperCase() === 'PRESENSI HARIAN',
+  );
+  return fields.flatMap((field) => {
+    if (field.label.trim().toUpperCase() !== 'VAKASI HARIAN') return [field];
+    return alreadyUsesCurrentLabel
+      ? []
+      : [{ ...field, label: 'Presensi Harian' }];
+  });
 }
 
 function mergeSlipFields(fallback: PaySlipField[], saved: unknown): PaySlipField[] {
@@ -632,17 +650,17 @@ export default function EmployeePayslipPage() {
     } else if (isKebersihan) {
       shiftDoc = {
         id: 'vakasi_jumat_lembur',
-        title: 'Vakasi Harian & Jumat',
+        title: 'Presensi Harian & Jumat',
         formula: 'Rp 1.923,08 per jam kerja tercatat (Rp 0,53418803418 per detik)',
         bullets: [
-          'Vakasi dihitung dari selisih scan masuk dan scan pulang pada mesin presensi, bukan dari tarif tetap per shift',
+          'Presensi Harian dihitung dari selisih scan masuk dan scan pulang pada mesin presensi, bukan dari tarif tetap per shift',
           'Hasil perhitungan dibulatkan ke atas ke rupiah penuh',
           'Hari kerja 6,5 jam bernilai Rp 12.500 dan 13 jam bernilai Rp 25.000',
           'Jumat & Libur: hari Jumat dan hari libur tetap dicatat pada kolom terpisah dan dibayar sesuai jam kerja tercatat',
           'Hari dengan scan masuk atau scan pulang saja belum dapat dihitung — ajukan koreksi presensi agar jamnya lengkap',
         ],
         table: {
-          headers: ['Durasi Kerja Tercatat', 'Nilai Vakasi', 'Keterangan'],
+          headers: ['Durasi Kerja Tercatat', 'Nilai Presensi', 'Keterangan'],
           rows: [
             ['1 jam', 'Rp 1.924', 'Pembulatan ke atas dari Rp 1.923,08'],
             ['6,5 jam', 'Rp 12.500', 'Setara satu hari kerja penuh'],
@@ -653,10 +671,10 @@ export default function EmployeePayslipPage() {
     } else if (isTeknisi) {
       shiftDoc = {
         id: 'vakasi_jumat_lembur',
-        title: 'Vakasi Harian, Jumat & Lembur',
+        title: 'Presensi Harian, Jumat & Lembur',
         formula: 'Rp 1.923,08 per jam kerja tercatat (Rp 0,53418803418 per detik)',
         bullets: [
-          'Vakasi dihitung dari selisih scan masuk dan scan pulang pada mesin presensi, bukan dari tarif tetap per shift',
+          'Presensi Harian dihitung dari selisih scan masuk dan scan pulang pada mesin presensi, bukan dari tarif tetap per shift',
           'Hasil perhitungan dibulatkan ke atas ke rupiah penuh',
           'Hari kerja 6,5 jam bernilai Rp 12.500 dan 13 jam bernilai Rp 25.000',
           'Jumat & Libur: hari Jumat dan hari libur tetap dicatat pada kolom terpisah dan dibayar sesuai jam kerja tercatat',
@@ -664,7 +682,7 @@ export default function EmployeePayslipPage() {
           'Lembur: Insentif penanganan perbaikan / tugas lembur teknisi',
         ],
         table: {
-          headers: ['Durasi Kerja Tercatat', 'Nilai Vakasi', 'Keterangan'],
+          headers: ['Durasi Kerja Tercatat', 'Nilai Presensi', 'Keterangan'],
           rows: [
             ['1 jam', 'Rp 1.924', 'Pembulatan ke atas dari Rp 1.923,08'],
             ['6,5 jam', 'Rp 12.500', 'Setara satu hari kerja penuh'],
@@ -676,19 +694,20 @@ export default function EmployeePayslipPage() {
     } else if (isSopir) {
       shiftDoc = {
         id: 'vakasi_jumat_lembur',
-        title: 'Vakasi Harian, Jumat & Piket/Praktek',
-        formula: 'Harian: Rp 12.500/Shift | Jumat: Rp 25.000/Shift | Piket: Rp 25.000/Shift',
+        title: 'Presensi Harian, Jumat & Piket/Praktek',
+        formula: 'Presensi: Rp 1.923,08/jam tercatat | Piket: Rp 15.000/penugasan',
         bullets: [
-          'Vakasi Harian: Dihitung dari jumlah kehadiran dinas shift Harian (Rp 12.500 per shift)',
-          'Jumat & Libur: Insentif tugas piket pengemudi pada hari Jumat atau Hari Libur (Rp 25.000 per shift)',
+          'Presensi Harian dihitung dari durasi scan masuk dan scan pulang pada unggahan presensi aktif',
+          'Hasil perhitungan dibulatkan ke atas ke rupiah penuh; hari kerja 6,5 jam bernilai Rp 12.500',
+          'Jumat & Libur dicatat terpisah dan dibayar sesuai durasi kerja tercatat dengan tarif premium',
           'Piket & Praktek: Insentif tugas siaga piket pengemudi dan pendampingan praktek',
         ],
         table: {
-          headers: ['Jenis Shift / Tugas', 'Tarif Insentif', 'Keterangan'],
+          headers: ['Jenis Presensi / Tugas', 'Nilai', 'Keterangan'],
           rows: [
-            ['Vakasi Harian', 'Rp 12.500 / Shift', 'Shift reguler harian Sopir'],
-            ['Jumat & Libur', 'Rp 25.000 / Shift', 'Shift khusus hari Jumat atau hari libur'],
-            ['Piket', 'Rp 25.000 / Shift', 'Tugas siaga piket pengemudi'],
+            ['Presensi Harian', 'Sesuai durasi scan', 'Hari kerja reguler Sopir'],
+            ['Jumat & Libur', 'Sesuai durasi scan', 'Hari Jumat atau hari libur'],
+            ['Piket', 'Rp 15.000 / Penugasan', 'Tugas siaga piket pengemudi'],
             ['Praktek', 'Sesuai Rekap', 'Pendampingan kegiatan praktek'],
           ],
         },
@@ -696,17 +715,17 @@ export default function EmployeePayslipPage() {
     } else {
       shiftDoc = {
         id: 'vakasi_jumat_lembur',
-        title: 'Vakasi Harian & Insentif Tugas',
-        formula: 'Harian: Rp 12.500/Shift | Jumat: Rp 25.000/Shift',
+        title: 'Presensi Harian & Insentif Tugas',
+        formula: 'Rp 1.923,08 per jam kerja tercatat (Rp 0,53418803418 per detik)',
         bullets: [
-          'Vakasi Harian: Dihitung dari jumlah kehadiran dinas shift Harian (Rp 12.500 per shift)',
-          'Jumat & Libur: Insentif tugas piket pada hari Jumat atau Hari Libur (Rp 25.000 per shift)',
+          'Presensi Harian dihitung dari durasi scan masuk dan scan pulang pada unggahan presensi aktif',
+          'Jumat & Libur dicatat terpisah dan dibayar sesuai durasi kerja tercatat dengan tarif premium',
         ],
         table: {
-          headers: ['Jenis Shift / Tugas', 'Tarif Insentif', 'Keterangan'],
+          headers: ['Jenis Presensi', 'Nilai', 'Keterangan'],
           rows: [
-            ['Vakasi Harian', 'Rp 12.500 / Shift', 'Shift reguler harian'],
-            ['Jumat & Libur', 'Rp 25.000 / Shift', 'Shift khusus hari Jumat atau hari libur'],
+            ['Presensi Harian', 'Sesuai durasi scan', 'Hari kerja reguler'],
+            ['Jumat & Libur', 'Sesuai durasi scan', 'Hari Jumat atau hari libur'],
           ],
         },
       };
@@ -908,6 +927,7 @@ export default function EmployeePayslipPage() {
           bonusDeduction: 0,
         };
         let loadedVakasiEvents: { eventName: string; payGiven: number }[] = [];
+        let hasCurrentPekaryaAttendance = false;
 
         if (!isLoyalis) {
           // Earnings come from /api/payroll/slip-preview — the very same
@@ -923,12 +943,22 @@ export default function EmployeePayslipPage() {
             const previewParams = new URLSearchParams({ period: periodToken });
             if (isImpersonatingUi) previewParams.set('employeeId', empId);
             const previewResult = await authenticatedJson<{
-              previews?: Record<string, { earnings?: unknown }>;
+              previews?: Record<
+                string,
+                {
+                  earnings?: unknown;
+                  meta?: { attendanceSource?: unknown };
+                }
+              >;
             }>(`/api/payroll/slip-preview?${previewParams.toString()}`);
             if (cancelled) return;
+            const employeePreview = previewResult.previews?.[empId];
             fallbackEarnings = normalizeSlipFields(
-              previewResult.previews?.[empId]?.earnings,
+              employeePreview?.earnings,
             );
+            hasCurrentPekaryaAttendance =
+              employeePreview?.meta?.attendanceSource === 'uploaded_attendance' ||
+              employeePreview?.meta?.attendanceSource === 'uraian';
             if (fallbackEarnings.length === 0) {
               throw new Error(
                 'Pratinjau perhitungan Pekarya tidak tersedia untuk periode ini.',
@@ -1091,16 +1121,31 @@ export default function EmployeePayslipPage() {
         }
 
         // Draft/verification records are visible to the employee as a
-        // read-only snapshot. Once Finance has saved a draft, neither live
-        // matrix nor attendance/SPJ changes alter what the employee sees until
-        // Finance explicitly applies Refresh in Tinjau Slip Gaji.
+        // read-only snapshot. Finance-owned rows stay frozen until Refresh.
+        // Attendance is the narrow exception requested for the unified import:
+        // once an active upload exists, those two provisional rows mirror the
+        // shared preview even on an older editable draft. Final slips returned
+        // above remain immutable.
         const savedSlip = slipSnap.exists() ? slipSnap.data() : null;
         if (savedSlip) setPekaryaPreviewError(null);
         setConfirmedSlip(null);
         setIsConfirmed(false);
+        const savedEarnings = savedSlip
+          ? normalizeSlipFields(savedSlip.earnings)
+          : [];
+        const shouldOverlayCurrentAttendance =
+          Boolean(savedSlip) &&
+          periodToken >= '2026-08' &&
+          String(employee.employment?.jobCategory || '').toUpperCase() !== 'SATPAM' &&
+          hasCurrentPekaryaAttendance;
         setCalculatedEarnings(
           savedSlip
-            ? normalizeSlipFields(savedSlip.earnings)
+            ? shouldOverlayCurrentAttendance
+              ? overlayPekaryaAttendanceEarnings(
+                  savedEarnings,
+                  fallbackEarnings,
+                )
+              : savedEarnings
             : fallbackEarnings,
         );
         setCalculatedDeductions(
@@ -1168,9 +1213,13 @@ export default function EmployeePayslipPage() {
     const source = confirmedSlip?.earnings && confirmedSlip.earnings.length > 0
       ? confirmedSlip.earnings
       : calculatedEarnings;
-    return employeeData?.employment?.jobCategory === 'SATPAM'
+    const normalized = employeeData?.employment?.jobCategory === 'SATPAM'
       ? mergeSatpamLegacyBonusIntoTunjangan(source)
       : source;
+    return renameBlueCollarAttendanceLabel(
+      normalized,
+      employeeData?.employment?.jobCategory,
+    );
   }, [confirmedSlip, calculatedEarnings, employeeData?.employment?.jobCategory]);
 
   const deductions = useMemo(() => {
@@ -2131,7 +2180,7 @@ export default function EmployeePayslipPage() {
                                     const isKebersihan = userJobCategory.startsWith('KEBERSIHAN');
                                     const isTeknisi = userJobCategory === 'TEKNISI';
                                     const isSopir = userJobCategory === 'SOPIR';
-                                    const harianVal = getEarningAmount(['VAKASI HARIAN', 'HARIAN']);
+                                    const harianVal = getEarningAmount(['PRESENSI HARIAN', 'VAKASI HARIAN', 'HARIAN']);
                                     const jumatVal = getEarningAmount(['JUMAT & LIBUR', 'BONUS JUM\'AT', 'JUMAT']);
                                     const lemburSendiriVal = getEarningAmount(['LEMBUR SENDIRI']);
                                     const lemburCoverVal = getEarningAmount(['LEMBUR COVER']);
@@ -2139,10 +2188,10 @@ export default function EmployeePayslipPage() {
                                     const piketVal = getEarningAmount(['PIKET']);
                                     const praktekVal = getEarningAmount(['PRAKTEK']);
                                     if (isSatpam) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Vakasi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Lembur Sendiri" value={formatIDR(lemburSendiriVal)} /><DocRow label="Lembur Cover" value={formatIDR(lemburCoverVal)} /><DocRow label="Total Insentif Shift" value={formatIDR(harianVal + jumatVal + lemburSendiriVal + lemburCoverVal)} highlight /></div>);
-                                    if (isKebersihan) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Vakasi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Total Insentif Shift" value={formatIDR(harianVal + jumatVal)} highlight /></div>);
-                                    if (isTeknisi) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Vakasi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Lembur" value={formatIDR(lemburVal)} /><DocRow label="Total Insentif Shift" value={formatIDR(harianVal + jumatVal + lemburVal)} highlight /></div>);
-                                    if (isSopir) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Vakasi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Piket" value={formatIDR(piketVal)} /><DocRow label="Praktek" value={formatIDR(praktekVal)} /><DocRow label="Total Insentif Shift" value={formatIDR(harianVal + jumatVal + piketVal + praktekVal)} highlight /></div>);
-                                    return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Vakasi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Total Insentif Shift" value={formatIDR(harianVal + jumatVal)} highlight /></div>);
+                                    if (isKebersihan) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Total Upah Presensi" value={formatIDR(harianVal + jumatVal)} highlight /></div>);
+                                    if (isTeknisi) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Lembur" value={formatIDR(lemburVal)} /><DocRow label="Total Presensi & Lembur" value={formatIDR(harianVal + jumatVal + lemburVal)} highlight /></div>);
+                                    if (isSopir) return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Piket" value={formatIDR(piketVal)} /><DocRow label="Praktek" value={formatIDR(praktekVal)} /><DocRow label="Total Presensi & Tugas" value={formatIDR(harianVal + jumatVal + piketVal + praktekVal)} highlight /></div>);
+                                    return (<div className="grid grid-cols-[auto_24px_1fr] gap-y-1.5 items-baseline"><DocRow label="Presensi Harian" value={formatIDR(harianVal)} /><DocRow label="Jumat & Libur" value={formatIDR(jumatVal)} /><DocRow label="Total Upah Presensi" value={formatIDR(harianVal + jumatVal)} highlight /></div>);
                                   }
                                   if (item.id === 'bonus_presensi_pekarya') {
                                     const userJobCategory = (employeeData?.employment?.jobCategory || 'PEKARYA').toUpperCase();

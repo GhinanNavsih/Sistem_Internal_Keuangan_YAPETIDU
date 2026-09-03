@@ -1,4 +1,5 @@
 import { adminDb } from '@/lib/firebase-admin';
+import { summarizePekaryaAttendance } from '@/lib/payroll/attendance';
 import { periodCalendarFromData } from '@/lib/payroll/calendar';
 import { DriverPiketSchedule } from '@/lib/payroll/driverPiket';
 import {
@@ -16,6 +17,9 @@ import {
 } from '@/lib/payroll/pekaryaSlipPreview';
 import { isSatpamDutyPlanRequired } from '@/lib/payroll/satpamDutyPlan';
 import {
+  attendanceJoinNipy,
+  loadAttendanceEmployeeIdentities,
+  loadEffectiveAttendanceDays,
   PEKARYA_PUBLICATIONS_COLLECTION,
   pekaryaPublicationId,
 } from '@/lib/server/attendanceStore';
@@ -124,6 +128,7 @@ async function loadCategoryAttendanceState(
   periodKey: string,
   category: string,
   periodData: Record<string, unknown> | null,
+  activeImportRevisionId: string,
 ): Promise<CategoryAttendanceState> {
   const uraianSnapshot = await adminDb
     .collection('UraianGaji')
@@ -164,24 +169,21 @@ async function loadCategoryAttendanceState(
   }
 
   if (period >= '2026-08' && category !== 'SATPAM') {
-    const [publicationSnapshot, importSnapshot] = await Promise.all([
-      adminDb
-        .collection(PEKARYA_PUBLICATIONS_COLLECTION)
-        .doc(pekaryaPublicationId(period, category))
-        .get(),
-      adminDb.collection('AttendanceImports').doc(period).get(),
-    ]);
+    const publicationSnapshot = await adminDb
+      .collection(PEKARYA_PUBLICATIONS_COLLECTION)
+      .doc(pekaryaPublicationId(period, category))
+      .get();
     const publication = publicationSnapshot.data();
     const calendarRevision = asNumber(
       (periodData?.workCalendar as { revision?: unknown } | undefined)
         ?.revision || 1,
     );
     const satisfied =
+      Boolean(activeImportRevisionId) &&
       publicationSnapshot.exists &&
       publication?.state === 'published' &&
       publication?.stale !== true &&
-      publication?.importRevisionId ===
-        importSnapshot.data()?.activeRevisionId &&
+      publication?.importRevisionId === activeImportRevisionId &&
       asNumber(publication?.calendarRevision) === calendarRevision;
 
     return {
@@ -282,6 +284,29 @@ export async function loadPekaryaSlipPreviews(
       : base.get();
   });
 
+  // The same normalized rows, manual links, corrections, and time-based
+  // calculator used by Presensi Pekarya also drive provisional payslip money.
+  // Resolve them once per request so a period-wide Finance preview does not
+  // re-read the attendance workbook once for every job category.
+  const needsUploadedAttendance =
+    period >= '2026-08' &&
+    employees.some(
+      (employee) => categoryOf(employee).trim().toUpperCase() !== 'SATPAM',
+    );
+  const attendanceIdentityPromise =
+    needsUploadedAttendance
+      ? loadAttendanceEmployeeIdentities()
+      : Promise.resolve(null);
+  const effectiveAttendancePromise = attendanceIdentityPromise.then(
+    (identities) =>
+      identities
+        ? loadEffectiveAttendanceDays(period, {
+            allowMissingActiveImport: true,
+            identities,
+          })
+        : null,
+  );
+
   const [
     { version: matrixVersion, matrix },
     periodSnapshot,
@@ -289,6 +314,8 @@ export async function loadPekaryaSlipPreviews(
     piketSchedules,
     eventSnapshot,
     activitySnapshots,
+    attendanceIdentities,
+    effectiveAttendance,
   ] = await Promise.all([
     loadActiveBlueCollarMatrix(),
     // PayrollPeriods is keyed by the dashed period token, unlike UraianGaji,
@@ -298,6 +325,8 @@ export async function loadPekaryaSlipPreviews(
     loadPiketSchedules(period),
     adminDb.collection('KegiatanSpj').where('period', '==', period).get(),
     Promise.all(activityQueries),
+    attendanceIdentityPromise,
+    effectiveAttendancePromise,
   ] as const);
 
   const periodData = periodSnapshot.exists
@@ -307,6 +336,47 @@ export async function loadPekaryaSlipPreviews(
     periodCalendarFromData(period, periodData, annualDatesFrom(annualSnapshot))
       .premiumDates,
   );
+  const activeImportRevisionId = String(
+    effectiveAttendance?.importData.activeRevisionId || '',
+  );
+  const attendanceIdentityByEmployeeId = new Map(
+    (attendanceIdentities?.identities || [])
+      .filter(
+        (identity) => identity.employeeCollection === BLUE_COLLAR_COLLECTION,
+      )
+      .map((identity) => [identity.employeeId, identity] as const),
+  );
+  const uploadedAttendanceEntries: Record<string, UraianEntry> = {};
+  if (activeImportRevisionId && effectiveAttendance) {
+    for (const employee of employees) {
+      const identity = attendanceIdentityByEmployeeId.get(employee.id);
+      if (
+        !identity ||
+        !identity.active ||
+        identity.employeeCollection !== BLUE_COLLAR_COLLECTION ||
+        identity.jobCategory === 'SATPAM'
+      ) {
+        continue;
+      }
+      const summary = summarizePekaryaAttendance(
+        attendanceJoinNipy(identity),
+        effectiveAttendance.days,
+        premiumDates,
+      );
+      uploadedAttendanceEntries[employee.id] = {
+        employeeId: employee.id,
+        name: identity.name,
+        values: {
+          harian: summary.harianAmount,
+          jumatLibur: summary.jumatLiburAmount,
+        },
+        counts: {
+          harian: summary.harianCount,
+          jumatLibur: summary.jumatLiburCount,
+        },
+      };
+    }
+  }
 
   const activityReports: PekaryaActivityFinancialLike[] =
     activitySnapshots.flatMap((snapshot) =>
@@ -330,6 +400,7 @@ export async function loadPekaryaSlipPreviews(
           periodKey,
           category,
           periodData,
+          activeImportRevisionId,
         ),
       );
     }),
@@ -346,6 +417,7 @@ export async function loadPekaryaSlipPreviews(
       salaryMatrix: matrix,
       matrixVersion,
       uraianEntry: state.entries[employee.id],
+      uploadedAttendanceEntry: uploadedAttendanceEntries[employee.id],
       uraianCustomColumns: state.customColumns,
       approvedActivitySpj: sumApprovedActivitySpj(
         activityReports,

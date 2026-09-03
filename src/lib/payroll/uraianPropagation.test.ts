@@ -10,6 +10,8 @@ import {
 
 test('the rekap owns its own slip columns and nothing else', () => {
   const owns = uraianOwnedEarningPredicate('SOPIR');
+  assert.equal(owns('Presensi Harian'), true);
+  // Old drafts must be migrated instead of retaining a duplicate row.
   assert.equal(owns('Vakasi Harian'), true);
   assert.equal(owns('Jumat & Libur'), true);
   assert.equal(owns('SPJ'), true);
@@ -34,6 +36,7 @@ test('a published attendance entry swaps Presensi for the Harian pair', () => {
     name: 'x',
     values: { harian: 30, jumatLibur: 1 },
   });
+  assert.equal(published('Presensi Harian'), true);
   assert.equal(published('Vakasi Harian'), true);
   assert.equal(published('Jumat & Libur'), true);
   assert.equal(published('Presensi'), false);
@@ -76,7 +79,8 @@ test('a locked rekap reaches the slip without disturbing other rows', () => {
   );
 
   const amountOf = (label: string) => merged.find((f) => f.label === label)?.amount;
-  assert.equal(amountOf('Vakasi Harian'), 375_000);
+  assert.equal(amountOf('Presensi Harian'), 375_000);
+  assert.equal(amountOf('Vakasi Harian'), undefined);
   assert.equal(amountOf('Jumat & Libur'), 50_000);
   assert.equal(amountOf('SPJ'), 120_000);
   // Untouched, even though the builder emitted Gaji Pokok 0 and no Beras row.
@@ -87,12 +91,11 @@ test('a locked rekap reaches the slip without disturbing other rows', () => {
   assert.equal(amountOf('Bonus Presensi'), 0);
   assert.equal(amountOf('Tunjangan Khusus'), 0);
   assert.equal(merged.length, storedEarnings.length + 2);
-  assert.equal(changes.length, 5);
-  // Original rows keep their position; appends go to the end.
-  assert.deepEqual(
-    merged.slice(0, storedEarnings.length).map((f) => f.label),
-    storedEarnings.map((f) => f.label),
-  );
+  assert.equal(changes.length, 6);
+  // Unowned rows keep their position; the renamed attendance row is appended
+  // under its canonical label after the legacy row is removed.
+  assert.equal(merged[0]?.label, 'Gaji Pokok');
+  assert.equal(merged.findIndex((f) => f.label === 'Tunjangan Beras'), 3);
 });
 
 test('re-running propagation over an already-synced slip is a no-op', () => {
@@ -116,6 +119,8 @@ test('re-running propagation over an already-synced slip is a no-op', () => {
     'earnings',
   );
   const second = mergeOwnedFields(first.merged, fresh, owns, 'earnings');
+  assert.equal(first.merged.some((field) => field.label === 'Vakasi Harian'), false);
+  assert.equal(first.merged.some((field) => field.label === 'Presensi Harian'), true);
   assert.equal(second.changes.length, 0, 'converges, so repeated saves stop writing');
 });
 

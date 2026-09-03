@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildPekaryaSlipPreview,
+  overlayPekaryaAttendanceEarnings,
   PekaryaPreviewInputs,
   resolveSlipPreviewScope,
   shouldValidateNewSlipSources,
@@ -108,7 +109,7 @@ test('Abdul Kholik August 2026: every row and the total', () => {
   assert.equal(meta.gapokStatus, 'ok');
 
   // 8 ordinary Piket days at Rp12.500, 2 premium days at Rp25.000.
-  assert.equal(amountOf(earnings, 'Vakasi Harian'), 100_000);
+  assert.equal(amountOf(earnings, 'Presensi Harian'), 100_000);
   assert.equal(amountOf(earnings, 'Jumat & Libur'), 50_000);
   // All 10 days also earn the flat Rp15.000 Piket rate.
   assert.equal(amountOf(earnings, 'Piket'), 150_000);
@@ -248,10 +249,11 @@ test('published Uraian attendance replaces the Piket estimate', () => {
     employeeId: 'BC_001',
     name: 'Abdul Kholik',
     values: { harian: 262_500, jumatLibur: 75_000, piket: 165_000 },
+    counts: { harian: 23, jumatLibur: 4, piket: 11 },
   };
   const preview = buildPekaryaSlipPreview(kholikInputs({ uraianEntry }));
 
-  assert.equal(amountOf(preview.earnings, 'Vakasi Harian'), 262_500);
+  assert.equal(amountOf(preview.earnings, 'Presensi Harian'), 262_500);
   assert.equal(amountOf(preview.earnings, 'Jumat & Libur'), 75_000);
   assert.equal(amountOf(preview.earnings, 'Piket'), 165_000);
   assert.equal(preview.meta.attendanceSource, 'uraian');
@@ -266,7 +268,7 @@ test('a published zero stays zero rather than reverting to the estimate', () => 
   };
   const preview = buildPekaryaSlipPreview(kholikInputs({ uraianEntry }));
 
-  assert.equal(amountOf(preview.earnings, 'Vakasi Harian'), 0);
+  assert.equal(amountOf(preview.earnings, 'Presensi Harian'), 0);
   assert.equal(amountOf(preview.earnings, 'Jumat & Libur'), 0);
   assert.equal(amountOf(preview.earnings, 'Piket'), 0);
 });
@@ -281,7 +283,7 @@ test('without a materialized calendar only Fridays rate as premium', () => {
     }),
   );
 
-  assert.equal(amountOf(preview.earnings, 'Vakasi Harian'), 112_500);
+  assert.equal(amountOf(preview.earnings, 'Presensi Harian'), 112_500);
   assert.equal(amountOf(preview.earnings, 'Jumat & Libur'), 25_000);
   assert.equal(amountOf(preview.earnings, 'Piket'), 150_000);
 });
@@ -310,6 +312,60 @@ test('an unpublished attendance period blocks creating a new slip', () => {
     preview.meta.warnings.map((warning) => warning.code),
     ['attendance_unpublished'],
   );
+});
+
+test('an active upload supplies exact rupiah provisionally without satisfying publication', () => {
+  const preview = buildPekaryaSlipPreview(
+    kholikInputs({
+      attendanceGate: {
+        required: true,
+        satisfied: false,
+        reason: 'Presensi SOPIR belum dipublikasikan.',
+      },
+      uploadedAttendanceEntry: {
+        employeeId: 'BC_001',
+        name: 'Abdul Kholik',
+        values: { harian: 236_540, jumatLibur: 100_004 },
+        // Counts remain available for audit, but must not be multiplied back
+        // into a different amount on the slip.
+        counts: { harian: 23, jumatLibur: 4 },
+      },
+    }),
+  );
+
+  assert.equal(amountOf(preview.earnings, 'Presensi Harian'), 236_540);
+  assert.equal(amountOf(preview.earnings, 'Jumat & Libur'), 100_004);
+  assert.equal(preview.meta.attendanceSource, 'uploaded_attendance');
+  assert.equal(preview.meta.isProvisional, true);
+  assert.equal(preview.meta.canCreateSlip, false);
+  assert.deepEqual(
+    preview.meta.warnings.map((warning) => warning.code),
+    ['attendance_unpublished'],
+  );
+});
+
+test('an editable draft overlays only current attendance and migrates its old label', () => {
+  const merged = overlayPekaryaAttendanceEarnings(
+    [
+      { label: 'Gaji Pokok', amount: 999_000 },
+      { label: 'Vakasi Harian', amount: 12_500 },
+      { label: 'Jumat & Libur', amount: 25_000 },
+      { label: 'SPJ', amount: 777_000 },
+    ],
+    [
+      { label: 'Gaji Pokok', amount: 269_000 },
+      { label: 'Presensi Harian', amount: 236_540 },
+      { label: 'Jumat & Libur', amount: 100_004 },
+      { label: 'SPJ', amount: 553_068 },
+    ],
+  );
+
+  assert.deepEqual(merged, [
+    { label: 'Gaji Pokok', amount: 999_000 },
+    { label: 'Presensi Harian', amount: 236_540 },
+    { label: 'Jumat & Libur', amount: 100_004 },
+    { label: 'SPJ', amount: 777_000 },
+  ]);
 });
 
 test('an unpublished Uraian row cannot override the Piket estimate', () => {
@@ -341,7 +397,7 @@ test('an unpublished Uraian row cannot override the Piket estimate', () => {
     }),
   );
 
-  assert.equal(amountOf(preview.earnings, 'Vakasi Harian'), 100_000);
+  assert.equal(amountOf(preview.earnings, 'Presensi Harian'), 100_000);
   assert.equal(amountOf(preview.earnings, 'Jumat & Libur'), 50_000);
   assert.equal(amountOf(preview.earnings, 'Piket'), 150_000);
   assert.equal(amountOf(preview.earnings, 'Tunjangan Lembur'), 0);

@@ -33,6 +33,8 @@ import {
   getRekapColumns,
   isAttendanceDerivedRekapColumn,
   MONTHS_ID,
+  RATE_HARIAN,
+  RATE_JUMAT,
 } from '@/utils/rekapConfig';
 import {
   getSatpamTunjanganJabatan,
@@ -91,6 +93,15 @@ type SatpamAbsenceRequestsResponse = {
   }>;
 };
 
+type PekaryaAttendanceMoneyResponse = {
+  importRevisionId?: string;
+  employees?: Array<{
+    employeeId: string;
+    harianAmount: number;
+    jumatLiburAmount: number;
+  }>;
+};
+
 export default function RekapPekaryaPage() {
   const { user, profile } = useAuth();
   const searchParams = useSearchParams();
@@ -133,6 +144,8 @@ export default function RekapPekaryaPage() {
   const [satpamScheduledShiftData, setSatpamScheduledShiftData] = useState<SatpamScheduledShiftData | null>(null);
   const [satpamPendingLeaveCounts, setSatpamPendingLeaveCounts] = useState<Record<string, number>>({});
   const [periodPremiumDates, setPeriodPremiumDates] = useState<Set<string>>(new Set());
+  const [activeAttendanceImportRevisionId, setActiveAttendanceImportRevisionId] = useState<string | null>(null);
+  const [attendanceMoneyLoadFailed, setAttendanceMoneyLoadFailed] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -597,9 +610,23 @@ export default function RekapPekaryaPage() {
     return countDriverPiketInPeriod(empId, periodToken, driverPiketSchedules);
   }, [year, month, driverPiketSchedules]);
 
-  const getComputedSopirHarianJumatLibur = useCallback((empId: string) => {
+  const getComputedSopirHarianJumatLiburValues = useCallback((empId: string) => {
     const periodToken = `${year}-${String(month).padStart(2, '0')}`;
-    return classifyDriverPiketDatesInPeriod(empId, periodToken, driverPiketSchedules, periodPremiumDates);
+    const counts = classifyDriverPiketDatesInPeriod(
+      empId,
+      periodToken,
+      driverPiketSchedules,
+      periodPremiumDates,
+    );
+    // Before the scanner workbook exists, retain the old Piket-based preview.
+    // From 2026-08 onward the cells themselves carry rupiah, so convert the
+    // fallback counts here instead of letting a day count masquerade as money.
+    return periodToken >= '2026-08'
+      ? {
+          harian: counts.harian * RATE_HARIAN,
+          jumatLibur: counts.jumatLibur * RATE_JUMAT,
+        }
+      : counts;
   }, [year, month, driverPiketSchedules, periodPremiumDates]);
 
   // ── File states ──
@@ -630,6 +657,8 @@ export default function RekapPekaryaPage() {
     setSaved(false);
     setHistoricalSpjCorrectionMode(false);
     setInitialSpjValues({});
+    setActiveAttendanceImportRevisionId(null);
+    setAttendanceMoneyLoadFailed(false);
     const fetchData = async () => {
       setLoadingEmps(true);
       try {
@@ -673,6 +702,21 @@ export default function RekapPekaryaPage() {
           string,
           UraianEntry['satpamDutySource']
         > = {};
+        let uploadedAttendance: PekaryaAttendanceMoneyResponse | null = null;
+        if (period >= '2026-08' && category !== 'SATPAM') {
+          try {
+            uploadedAttendance = await authenticatedJson<PekaryaAttendanceMoneyResponse>(
+              `/api/attendance/pekarya?period=${encodeURIComponent(period)}&category=${encodeURIComponent(category)}`,
+            );
+          } catch (err) {
+            console.error('Error fetching uploaded Pekarya attendance money:', err);
+            setAttendanceMoneyLoadFailed(true);
+            setMessage({
+              type: 'error',
+              text: 'Nominal Presensi Pekarya dari unggahan aktif gagal dimuat. Muat ulang halaman sebelum menyimpan rekap.',
+            });
+          }
+        }
         const uraianSnap = await getDoc(doc(db, 'UraianGaji', docId));
         if (uraianSnap.exists()) {
           setSaved(true);
@@ -717,6 +761,21 @@ export default function RekapPekaryaPage() {
           setSaved(false);
           setIsLocked(false);
         }
+        const uploadedRevisionId = String(
+          uploadedAttendance?.importRevisionId || '',
+        );
+        if (uploadedRevisionId) {
+          for (const attendance of uploadedAttendance?.employees || []) {
+            initialTable[attendance.employeeId] = {
+              ...(initialTable[attendance.employeeId] || {}),
+              // These are exact rupiah totals from the same engine rendered
+              // by Presensi Pekarya. Counts remain audit metadata only.
+              harian: Number(attendance.harianAmount) || 0,
+              jumatLibur: Number(attendance.jumatLiburAmount) || 0,
+            };
+          }
+          setActiveAttendanceImportRevisionId(uploadedRevisionId);
+        }
         setSatpamDutySources(loadedDutySources);
         setInitialSpjValues(loadedSpjValues);
         setTableData(initialTable);
@@ -727,7 +786,7 @@ export default function RekapPekaryaPage() {
       }
     };
     fetchData();
-  }, [category, month, year, docId, profile]);
+  }, [category, month, year, period, docId, profile]);
 
   const handleFileUpload = useCallback(async (newFile: File, rot: number = rotation) => {
     setFile(newFile); setDetectedColumnOrder(null);
@@ -869,7 +928,10 @@ export default function RekapPekaryaPage() {
           if (match) {
             matchedCount++;
             const sanitized: Record<string, number> = {};
-            Object.entries(entry.values).forEach(([k, v]) => { sanitized[k] = sanitizeAiValue(v); });
+            Object.entries(entry.values).forEach(([k, v]) => {
+              if (isAttendanceDerivedRekapColumn(category, period, k)) return;
+              sanitized[k] = sanitizeAiValue(v);
+            });
             newTableData[match.employeeId] = { ...newTableData[match.employeeId], ...sanitized };
             if (entry.y_top !== undefined && entry.y_bottom !== undefined) newRowBounds[match.employeeId] = { top: entry.y_top, bottom: entry.y_bottom };
           }
@@ -968,7 +1030,7 @@ export default function RekapPekaryaPage() {
         // derived estimate while nothing has been saved for these yet, so a
         // later attendance publish is never overwritten back to the estimate.
         if (storedValues.harian === undefined || storedValues.jumatLibur === undefined) {
-          const sopirAttendanceEstimate = getComputedSopirHarianJumatLibur(emp.employeeId);
+          const sopirAttendanceEstimate = getComputedSopirHarianJumatLiburValues(emp.employeeId);
           if (storedValues.harian === undefined) storedValues.harian = sopirAttendanceEstimate.harian;
           if (storedValues.jumatLibur === undefined) storedValues.jumatLibur = sopirAttendanceEstimate.jumatLibur;
         }
@@ -1030,6 +1092,7 @@ export default function RekapPekaryaPage() {
   };
 
   const handleSave = () => {
+    if (attendanceMoneyLoadFailed) return;
     setShowSaveConfirm(true);
   };
 
@@ -1270,7 +1333,7 @@ export default function RekapPekaryaPage() {
           rawVal = getComputedSopirPiketCount(emp.employeeId);
         }
         if (category === 'SOPIR' && (col.key === 'harian' || col.key === 'jumatLibur') && rawValues[col.key] === undefined) {
-          const sopirAttendanceEstimate = getComputedSopirHarianJumatLibur(emp.employeeId);
+          const sopirAttendanceEstimate = getComputedSopirHarianJumatLiburValues(emp.employeeId);
           rawVal = col.key === 'harian' ? sopirAttendanceEstimate.harian : sopirAttendanceEstimate.jumatLibur;
         }
         if (rawVal === 0) return { col, count: 0, value: 0, isDual: false };
@@ -1324,7 +1387,7 @@ export default function RekapPekaryaPage() {
       if (category === 'SOPIR') {
         computedValues.piket = getComputedSopirPiketCount(emp.employeeId);
         if (computedValues.harian === undefined || computedValues.jumatLibur === undefined) {
-          const sopirAttendanceEstimate = getComputedSopirHarianJumatLibur(emp.employeeId);
+          const sopirAttendanceEstimate = getComputedSopirHarianJumatLiburValues(emp.employeeId);
           if (computedValues.harian === undefined) computedValues.harian = sopirAttendanceEstimate.harian;
           if (computedValues.jumatLibur === undefined) computedValues.jumatLibur = sopirAttendanceEstimate.jumatLibur;
         }
@@ -1479,7 +1542,7 @@ export default function RekapPekaryaPage() {
         </Button>
         <Button
           onClick={handleSave}
-          disabled={saving || isLocked || !category || employees.length === 0}
+          disabled={saving || isLocked || !category || employees.length === 0 || attendanceMoneyLoadFailed}
           className="rounded-xl px-6 bg-indigo-600 shadow-lg shadow-indigo-200 text-white font-bold transition-all hover:bg-indigo-700 hover:shadow-indigo-300 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
@@ -1817,9 +1880,13 @@ export default function RekapPekaryaPage() {
                                   ? (getComputedSopirPiketCount(emp.employeeId) || 0)
                                   : (isSopirHarianOrJumatLibur && tableData[emp.employeeId]?.[col.key] === undefined)
                                     ? ((col.key === 'harian'
-                                        ? getComputedSopirHarianJumatLibur(emp.employeeId).harian
-                                        : getComputedSopirHarianJumatLibur(emp.employeeId).jumatLibur) || 0)
+                                        ? getComputedSopirHarianJumatLiburValues(emp.employeeId).harian
+                                        : getComputedSopirHarianJumatLiburValues(emp.employeeId).jumatLibur) || 0)
                                     : (tableData[emp.employeeId]?.[col.key] ?? '');
+                          const displayedCellValue =
+                            isAttendanceDerived && String(cellValue).trim() !== ''
+                              ? fmtRp(Number(cellValue) || 0)
+                              : cellValue;
                           return (
                             <td
                               key={col.key}
@@ -1833,7 +1900,7 @@ export default function RekapPekaryaPage() {
                                 max={isManualSatpamBonus ? 1 : undefined}
                                 step={isManualSatpamBonus ? 1 : undefined}
                                 inputMode={isManualSatpamBonus ? 'numeric' : undefined}
-                                value={cellValue}
+                                value={displayedCellValue}
                                 onChange={(e) => updateCell(emp.employeeId, col.key, e.target.value)}
                                 disabled={
                                   (isLocked && !canEditThisHistoricalSpj) ||
@@ -1850,7 +1917,9 @@ export default function RekapPekaryaPage() {
                                   : (isSopirHarianOrJumatLibur && tableData[emp.employeeId]?.[col.key] === undefined)
                                     ? 'Estimasi dari jadwal Piket; akan diganti otomatis oleh publikasi Presensi Pekarya.'
                                   : isAttendanceDerived
-                                    ? 'Nilai ini bersumber dari publikasi Presensi Pekarya.'
+                                    ? activeAttendanceImportRevisionId
+                                      ? 'Nominal rupiah ini dihitung dari unggahan Presensi Pekarya aktif.'
+                                      : 'Belum ada unggahan presensi aktif; nilai sementara memakai logika pratinjau sebelumnya.'
                                     : isSopirPiket
                                       ? 'Piket dihitung otomatis dari jadwal Piket Sopir dan selalu diperbarui setiap kali rekap disimpan.'
                                       : isLocked && !canEditThisHistoricalSpj

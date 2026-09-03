@@ -155,7 +155,10 @@ function buildInitialEarnings(
       }
     }
   } else {
-    earnings.push({ label: 'Vakasi Harian', amount: 0 });
+    earnings.push({
+      label: jobCategory === 'SATPAM' ? 'Vakasi Harian' : 'Presensi Harian',
+      amount: 0,
+    });
     earnings.push({ label: "Bonus Jum'at", amount: 0 });
     earnings.push({ label: 'Lembur', amount: 0 });
     earnings.push({ label: 'Bonus Finger', amount: 0 });

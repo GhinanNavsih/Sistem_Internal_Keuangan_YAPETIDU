@@ -31,7 +31,7 @@ export const REKAP_COLUMNS: Record<string, RekapColumn[]> = {
     { key: 'bonusLainnya',           label: 'Bonus Lainnya',              type: 'count',    multiplier: RATE_BONUS_BULANAN,             slipLabel: 'Bonus Lainnya' },
   ],
   KEBERSIHAN: [
-    { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
+    { key: 'harian',             label: 'Presensi Harian',        type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Presensi Harian' },
     { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
     { key: 'bonusPresensi',      label: 'Bonus Presensi',         type: 'currency',                                  slipLabel: 'Bonus Presensi' },
     // Retain the legacy attendance earning while historical records are
@@ -50,21 +50,21 @@ export const REKAP_COLUMNS: Record<string, RekapColumn[]> = {
     { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
   ],
   PEKARYA: [
-    { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
+    { key: 'harian',             label: 'Presensi Harian',        type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Presensi Harian' },
     { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
     { key: 'bonusPresensi',      label: 'Bonus Presensi',         type: 'currency',                                  slipLabel: 'Bonus Presensi' },
     { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
     { key: 'tunjanganKhusus',    label: 'Tunjangan Khusus',       type: 'currency',                                  slipLabel: 'Tunjangan Khusus' },
   ],
   TEKNISI: [
-    { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
+    { key: 'harian',             label: 'Presensi Harian',        type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Presensi Harian' },
     { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
     { key: 'bonusMutlak',        label: 'Bonus Mutlak',           type: 'count',    multiplier: RATE_BONUS_MUTLAK,   slipLabel: 'Bonus Mutlak' },
     { key: 'lembur',             label: 'Lembur',                 type: 'currency',                                  slipLabel: 'Lembur' },
     { key: 'spj',                label: 'SPJ',                    type: 'currency',                                  slipLabel: 'SPJ' },
   ],
   SOPIR: [
-    { key: 'harian',             label: 'Harian',                 type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Vakasi Harian' },
+    { key: 'harian',             label: 'Presensi Harian',        type: 'count',    multiplier: RATE_HARIAN,         slipLabel: 'Presensi Harian' },
     { key: 'jumatLibur',         label: 'Jumat & Libur',          type: 'count',    multiplier: RATE_JUMAT,          slipLabel: 'Jumat & Libur' },
     { key: 'bonusMutlak',        label: 'Bonus Mutlak',           type: 'count',    multiplier: RATE_BONUS_MUTLAK,   slipLabel: 'Bonus Mutlak' },
     { key: 'piket',              label: 'Piket',                  type: 'count',    multiplier: RATE_PIKET,          slipLabel: 'Piket' },
@@ -101,19 +101,23 @@ export const SUPPORTED_CATEGORIES = Object.keys(REKAP_COLUMNS);
 
 const ATTENDANCE_HARIAN_COLUMN: RekapColumn = {
   key: 'harian',
-  label: 'Harian',
-  type: 'count',
-  multiplier: RATE_HARIAN,
-  slipLabel: 'Vakasi Harian',
+  label: 'Presensi Harian',
+  type: 'currency',
+  slipLabel: 'Presensi Harian',
 };
 const ATTENDANCE_PREMIUM_COLUMN: RekapColumn = {
   key: 'jumatLibur',
   label: 'Jumat & Libur',
-  type: 'count',
-  multiplier: RATE_JUMAT,
+  type: 'currency',
   slipLabel: 'Jumat & Libur',
 };
 
+/**
+ * From the unified scanner import onward, non-Satpam attendance is calculated
+ * from worked seconds. Its rekap cells therefore store/display direct rupiah;
+ * day counts remain separate publication metadata and are never multiplied
+ * back into the slip amount.
+ */
 export function getRekapColumns(
   category: string,
   period?: string,

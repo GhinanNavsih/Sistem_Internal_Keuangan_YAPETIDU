@@ -45,11 +45,17 @@ export function uraianOwnedEarningPredicate(
     jobCategory === 'SATPAM'
       ? new Set(['bonus presensi mutlak', 'bonus mutlak'])
       : null;
+  // Draft slips created before the terminology change carry this old label.
+  // Owning it lets propagation remove the legacy row and append the canonical
+  // Presensi Harian row instead of leaving both amounts on one slip.
+  const legacyBlueCollarAttendanceLabels =
+    jobCategory === 'SATPAM' ? null : new Set(['vakasi harian']);
   return (label: string) => {
     const normalized = normalizeLabel(label);
     return (
       labels.has(normalized) ||
-      Boolean(legacySatpamBonusLabels?.has(normalized))
+      Boolean(legacySatpamBonusLabels?.has(normalized)) ||
+      Boolean(legacyBlueCollarAttendanceLabels?.has(normalized))
     );
   };
 }

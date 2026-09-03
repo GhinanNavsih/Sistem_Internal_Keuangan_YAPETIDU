@@ -5,6 +5,7 @@ import {
   buildInitialDeductions,
   resolveGapokFromSlip,
 } from './slipBuilders';
+import { getRekapColumns } from '@/utils/rekapConfig';
 
 const amountOf = (fields: { label: string; amount: number }[], label: string) =>
   fields.find((field) => field.label === label)?.amount;
@@ -122,4 +123,43 @@ test('VakasiTambahan never becomes Pekarya SPJ or a Pekarya earning row', () => 
     earnings.some((field) => field.label === 'Vakasi Kegiatan Loyalis'),
     false,
   );
+});
+
+test('published Pekarya attendance uses exact rupiah values rather than counts', () => {
+  const earnings = buildInitialEarnings(
+    { employment: { jobCategory: 'KEBERSIHAN' } },
+    0,
+    'blue',
+    {
+      employeeId: 'BC_052',
+      name: 'Abdul Rouf',
+      values: { harian: 236_540, jumatLibur: 100_004 },
+      counts: { harian: 23, jumatLibur: 4 },
+    },
+  );
+
+  assert.equal(amountOf(earnings, 'Presensi Harian'), 236_540);
+  assert.equal(amountOf(earnings, 'Jumat & Libur'), 100_004);
+  assert.equal(amountOf(earnings, 'Vakasi Harian'), undefined);
+});
+
+test('post-upload Pekarya rekap columns are direct monetary fields', () => {
+  const columns = getRekapColumns('KEBERSIHAN', '2026-08');
+  const harian = columns.find((column) => column.key === 'harian');
+  const jumatLibur = columns.find((column) => column.key === 'jumatLibur');
+
+  assert.deepEqual(
+    {
+      label: harian?.label,
+      type: harian?.type,
+      multiplier: harian?.multiplier,
+    },
+    {
+      label: 'Presensi Harian',
+      type: 'currency',
+      multiplier: undefined,
+    },
+  );
+  assert.equal(jumatLibur?.type, 'currency');
+  assert.equal(jumatLibur?.multiplier, undefined);
 });
