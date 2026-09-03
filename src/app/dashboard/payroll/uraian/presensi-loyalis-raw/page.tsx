@@ -301,6 +301,12 @@ export default function PresensiLoyalisRawPage() {
     } catch (error) {
       console.error('Failed to load shared attendance import:', error);
       setActiveImport(null);
+      setMessage({
+        type: 'error',
+        text: error instanceof Error
+          ? `Gagal memuat status file presensi bersama: ${error.message}`
+          : 'Gagal memuat status file presensi bersama. Muat ulang halaman untuk mencoba lagi.',
+      });
     } finally {
       setLoadingActiveImport(false);
     }
@@ -349,6 +355,12 @@ export default function PresensiLoyalisRawPage() {
       }
     } catch (err) {
       console.error('Error fetching existing presence:', err);
+      setMessage({
+        type: 'error',
+        text: err instanceof Error
+          ? `Gagal memuat data presensi tersimpan: ${err.message}`
+          : 'Gagal memuat data presensi tersimpan. Muat ulang halaman untuk mencoba lagi.',
+      });
     } finally {
       setLoadingPresence(false);
     }
@@ -398,6 +410,14 @@ export default function PresensiLoyalisRawPage() {
         setUploadedData(parsedData);
       } catch (error) {
         console.error('Gagal memuat data presensi dari file aktif:', error);
+        if (!cancelled) {
+          setMessage({
+            type: 'error',
+            text: error instanceof Error
+              ? `Gagal memuat data presensi dari file aktif: ${error.message}`
+              : 'Gagal memuat data presensi dari file aktif. Muat ulang halaman untuk mencoba lagi.',
+          });
+        }
       } finally {
         if (!cancelled) setHydratingTable(false);
       }
