@@ -84,6 +84,13 @@ type SatpamScheduledShiftData = {
   status: 'loaded' | 'error';
 };
 
+type SatpamAbsenceRequestsResponse = {
+  requests?: Array<{
+    employeeId?: string;
+    status?: string;
+  }>;
+};
+
 export default function RekapPekaryaPage() {
   const { user, profile } = useAuth();
   const searchParams = useSearchParams();
@@ -124,6 +131,7 @@ export default function RekapPekaryaPage() {
   const [historicalSpjCorrectionSaving, setHistoricalSpjCorrectionSaving] = useState(false);
   const [satpamDutyPlanRequired, setSatpamDutyPlanRequired] = useState(false);
   const [satpamScheduledShiftData, setSatpamScheduledShiftData] = useState<SatpamScheduledShiftData | null>(null);
+  const [satpamPendingLeaveCounts, setSatpamPendingLeaveCounts] = useState<Record<string, number>>({});
   const [periodPremiumDates, setPeriodPremiumDates] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -214,6 +222,36 @@ export default function RekapPekaryaPage() {
             status: 'error',
           });
         }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [category, period, user]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (category !== 'SATPAM' || !user) return () => {
+      active = false;
+    };
+
+    authenticatedJson<SatpamAbsenceRequestsResponse>(
+      `/api/satpam/absences?period=${encodeURIComponent(period)}`,
+    )
+      .then((view) => {
+        if (!active) return;
+        const pendingCounts: Record<string, number> = {};
+        for (const request of view.requests || []) {
+          if (request.status !== 'pending' || !request.employeeId) continue;
+          pendingCounts[request.employeeId] =
+            (pendingCounts[request.employeeId] || 0) + 1;
+        }
+        setSatpamPendingLeaveCounts(pendingCounts);
+      })
+      .catch((error) => {
+        console.error('Error fetching Satpam absence requests:', error);
+        if (active) setSatpamPendingLeaveCounts({});
       });
 
     return () => {
@@ -1724,6 +1762,14 @@ export default function RekapPekaryaPage() {
                             </div>
                           ) : (
                             <div className="text-[10px] text-slate-400 font-mono mt-1.5 flex items-center gap-1"><Code2 className="w-2.5 h-2.5 opacity-50" /> {emp.employeeId}</div>
+                          )}
+                          {category === 'SATPAM' && (satpamPendingLeaveCounts[emp.employeeId] || 0) > 0 && (
+                            <div
+                              className="text-[10px] font-semibold mt-0.5 text-amber-600"
+                              title={`Jumlah pengajuan izin/cuti Satpam berstatus pending pada periode ${period}.`}
+                            >
+                              Cuti pending: <span className="font-mono">{satpamPendingLeaveCounts[emp.employeeId]}</span>
+                            </div>
                           )}
                         </td>
                         {columns.map((col, colIdx) => {

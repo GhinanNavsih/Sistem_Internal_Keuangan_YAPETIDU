@@ -277,6 +277,9 @@ export default function PresenceCorrectionsAdminPage() {
   const [selectedLeaveKeys, setSelectedLeaveKeys] = useState<Set<string>>(
     () => new Set(),
   );
+  const [selectedLoyalisRequestIds, setSelectedLoyalisRequestIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [reviewProgress, setReviewProgress] = useState<ReviewProgressState | null>(null);
   const [editingTypeRequestId, setEditingTypeRequestId] = useState<string | null>(null);
   const [editingReportType, setEditingReportType] = useState<PekaryaAttendanceReportType>('scan');
@@ -302,6 +305,7 @@ export default function PresenceCorrectionsAdminPage() {
     // different list of requests.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedLeaveKeys(new Set());
+    setSelectedLoyalisRequestIds(new Set());
   }, [selectedPeriod, selectedSource, selectedStatus]);
 
   const fetchRequests = useCallback(async (showError = true) => {
@@ -431,6 +435,22 @@ export default function PresenceCorrectionsAdminPage() {
     bulkEligibleLeaveRequests.length > 0 &&
     selectedBulkLeaveItems.length === bulkEligibleLeaveRequests.length;
 
+  const bulkEligibleLoyalisRequests = useMemo(
+    () => requests.filter((request) => request.status === 'pending'),
+    [requests],
+  );
+
+  const selectedBulkLoyalisRequests = useMemo(
+    () => bulkEligibleLoyalisRequests.filter((request) =>
+      selectedLoyalisRequestIds.has(request.id),
+    ),
+    [bulkEligibleLoyalisRequests, selectedLoyalisRequestIds],
+  );
+
+  const allBulkLoyalisRequestsSelected =
+    bulkEligibleLoyalisRequests.length > 0 &&
+    selectedBulkLoyalisRequests.length === bulkEligibleLoyalisRequests.length;
+
   const periodRequests = useMemo(
     () => [
       ...(canAuditLoyalis && (selectedSource === 'all' || selectedSource === 'loyalis')
@@ -467,6 +487,29 @@ export default function PresenceCorrectionsAdminPage() {
         const key = blueCollarRequestKey(item);
         if (checked) next.add(key);
         else next.delete(key);
+      });
+      return next;
+    });
+  };
+
+  const toggleLoyalisRequestSelection = (
+    request: PresenceCorrectionRequest,
+    checked: boolean,
+  ) => {
+    setSelectedLoyalisRequestIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(request.id);
+      else next.delete(request.id);
+      return next;
+    });
+  };
+
+  const toggleAllLoyalisRequestSelection = (checked: boolean) => {
+    setSelectedLoyalisRequestIds((current) => {
+      const next = new Set(current);
+      bulkEligibleLoyalisRequests.forEach((request) => {
+        if (checked) next.add(request.id);
+        else next.delete(request.id);
       });
       return next;
     });
@@ -597,6 +640,125 @@ export default function PresenceCorrectionsAdminPage() {
     };
   };
 
+  const applyLoyalisApproval = async (req: PresenceCorrectionRequest) => {
+    const dateKey = parseDateToDDMMYYYY(req.date); // e.g. "01-06-2026"
+    if (!dateKey || !parseDateOnly(req.date)) {
+      throw new Error('Tanggal koreksi tidak valid.');
+    }
+
+    const periodToken = req.date.slice(0, 7).replace('-', '_'); // e.g. "2026_06"
+
+    // 1. Retrieve the existing monthly raw presence log document
+    const presenceRef = doc(db, 'LoyalisPresence', periodToken);
+    const presenceSnap = await getDoc(presenceRef);
+
+    if (!presenceSnap.exists()) {
+      throw new Error(`Data presensi untuk periode ${periodToken} belum dikonfigurasi/diunggah. Silakan minta admin mengunggah logs raw Excel terlebih dahulu.`);
+    }
+
+    const presenceData = presenceSnap.data() as LoyalisPresenceDocument;
+    const workingDays = typeof presenceData.workingDays === 'number' && presenceData.workingDays > 0
+      ? presenceData.workingDays
+      : 25;
+    const expectedHours = typeof presenceData.expectedHours === 'number' && presenceData.expectedHours > 0
+      ? presenceData.expectedHours
+      : 6.5;
+    const calcMode = presenceData.mode === 'absent' ? 'absent' : 'worked';
+    const entries = presenceData.entries || {};
+
+    let employeeEntry = entries[req.employeeId];
+
+    if (!employeeEntry) {
+      // If employee entry doesn't exist, build a default mock shell
+      employeeEntry = {
+        employeeId: req.employeeId,
+        employeeName: req.employeeName,
+        excelName: req.employeeName,
+        minutes: 0,
+        absenceMinutes: workingDays * expectedHours * 60,
+        stratum: 5,
+        deduction: 250000,
+        netBonus: 0,
+        isNotFoundInExcel: true,
+        activeDaysCount: 0,
+        incompleteDaysCount: 0,
+        absentDaysCount: 0,
+        dailyLogs: []
+      };
+    }
+
+    const dailyLogs: LoyalisRawLog[] = [...(employeeEntry.dailyLogs || [])];
+
+    // Find matching date log in dailyLogs
+    const dayLogIdx = dailyLogs.findIndex(log => log.Tanggal === dateKey);
+
+    if (dayLogIdx > -1) {
+      // Update existing daily logs
+      dailyLogs[dayLogIdx] = {
+        ...dailyLogs[dayLogIdx],
+        'Jam kerja': 'MASUK',
+        'Scan masuk': req.type === 'izin_resmi' ? '07:30' : (req.type !== 'tap_out' ? req.checkInTime : (dailyLogs[dayLogIdx]['Scan masuk'] || '')),
+        'Scan pulang': req.type === 'izin_resmi' ? '14:00' : (req.type !== 'tap_in' ? req.checkOutTime : (dailyLogs[dayLogIdx]['Scan pulang'] || '')),
+      };
+    } else {
+      // Add new log row if date does not exist
+      dailyLogs.push({
+        Tanggal: dateKey,
+        'Jam kerja': 'MASUK',
+        'Scan masuk': req.type === 'izin_resmi' ? '07:30' : (req.type !== 'tap_out' ? req.checkInTime : ''),
+        'Scan pulang': req.type === 'izin_resmi' ? '14:00' : (req.type !== 'tap_in' ? req.checkOutTime : ''),
+      });
+    }
+
+    // Sort logs by date again just in case
+    dailyLogs.sort((a, b) => parseDateKey(a.Tanggal) - parseDateKey(b.Tanggal));
+
+    // Recalculate summary details
+    const summary = recalculateSummary(dailyLogs, expectedHours);
+    const stratumCalc = calculatePresenceStratum(summary.minutes, calcMode, workingDays, expectedHours);
+
+    const updatedEmployeeEntry = {
+      ...employeeEntry,
+      ...summary,
+      ...stratumCalc,
+      isNotFoundInExcel: false
+    };
+
+    // Save updated presence map back to database
+    const updatedEntries = {
+      ...entries,
+      [req.employeeId]: updatedEmployeeEntry
+    };
+
+    // Payroll slips are intentionally not mutated here. Finance must refresh
+    // and save a draft through the protected lifecycle API; final snapshots
+    // remain immutable.
+
+    // Update the attendance document and request together so a network or
+    // permission failure cannot leave an applied correction marked pending.
+    const requestRef = doc(db, 'LoyalisPresenceCorrections', req.id);
+    const batch = writeBatch(db);
+    batch.update(presenceRef, {
+      entries: updatedEntries,
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(requestRef, {
+      period: req.date.slice(0, 7),
+      status: 'approved',
+      resolvedBy: profile?.email || 'Admin',
+      updatedAt: serverTimestamp(),
+    });
+    await batch.commit();
+
+    setAllRequests((current) => current.map((request) => request.id === req.id
+      ? { ...request, status: 'approved', resolvedBy: profile?.email || 'Admin' }
+      : request));
+    return {
+      dateKey,
+      successText: `Koreksi presensi ${req.employeeName || req.employeeId} untuk tanggal ${dateKey} berhasil disetujui dan diterapkan.`,
+    };
+  };
+
   const handleApprove = async (req: PresenceCorrectionRequest) => {
     setActionLoading(req.id);
     setMessage(null);
@@ -615,121 +777,9 @@ export default function PresenceCorrectionsAdminPage() {
       message: 'Menyimpan persetujuan koreksi presensi.',
     });
     try {
-      const dateKey = parseDateToDDMMYYYY(req.date); // e.g. "01-06-2026"
-      if (!dateKey || !parseDateOnly(req.date)) {
-        throw new Error('Tanggal koreksi tidak valid.');
-      }
-
-      const periodToken = req.date.slice(0, 7).replace('-', '_'); // e.g. "2026_06"
-
-      // 1. Retrieve the existing monthly raw presence log document
-      const presenceRef = doc(db, 'LoyalisPresence', periodToken);
-      const presenceSnap = await getDoc(presenceRef);
-
-      if (!presenceSnap.exists()) {
-        throw new Error(`Data presensi untuk periode ${periodToken} belum dikonfigurasi/diunggah. Silakan minta admin mengunggah logs raw Excel terlebih dahulu.`);
-      }
-
-      const presenceData = presenceSnap.data() as LoyalisPresenceDocument;
-      const workingDays = typeof presenceData.workingDays === 'number' && presenceData.workingDays > 0
-        ? presenceData.workingDays
-        : 25;
-      const expectedHours = typeof presenceData.expectedHours === 'number' && presenceData.expectedHours > 0
-        ? presenceData.expectedHours
-        : 6.5;
-      const calcMode = presenceData.mode === 'absent' ? 'absent' : 'worked';
-      const entries = presenceData.entries || {};
-
-      let employeeEntry = entries[req.employeeId];
-
-      if (!employeeEntry) {
-        // If employee entry doesn't exist, build a default mock shell
-        employeeEntry = {
-          employeeId: req.employeeId,
-          employeeName: req.employeeName,
-          excelName: req.employeeName,
-          minutes: 0,
-          absenceMinutes: workingDays * expectedHours * 60,
-          stratum: 5,
-          deduction: 250000,
-          netBonus: 0,
-          isNotFoundInExcel: true,
-          activeDaysCount: 0,
-          incompleteDaysCount: 0,
-          absentDaysCount: 0,
-          dailyLogs: []
-        };
-      }
-
-      const dailyLogs: LoyalisRawLog[] = [...(employeeEntry.dailyLogs || [])];
-      
-      // Find matching date log in dailyLogs
-      const dayLogIdx = dailyLogs.findIndex(log => log.Tanggal === dateKey);
-
-      if (dayLogIdx > -1) {
-        // Update existing daily logs
-        dailyLogs[dayLogIdx] = {
-          ...dailyLogs[dayLogIdx],
-          'Jam kerja': 'MASUK',
-          'Scan masuk': req.type === 'izin_resmi' ? '07:30' : (req.type !== 'tap_out' ? req.checkInTime : (dailyLogs[dayLogIdx]['Scan masuk'] || '')),
-          'Scan pulang': req.type === 'izin_resmi' ? '14:00' : (req.type !== 'tap_in' ? req.checkOutTime : (dailyLogs[dayLogIdx]['Scan pulang'] || '')),
-        };
-      } else {
-        // Add new log row if date does not exist
-        dailyLogs.push({
-          Tanggal: dateKey,
-          'Jam kerja': 'MASUK',
-          'Scan masuk': req.type === 'izin_resmi' ? '07:30' : (req.type !== 'tap_out' ? req.checkInTime : ''),
-          'Scan pulang': req.type === 'izin_resmi' ? '14:00' : (req.type !== 'tap_in' ? req.checkOutTime : ''),
-        });
-      }
-
-      // Sort logs by date again just in case
-      dailyLogs.sort((a, b) => parseDateKey(a.Tanggal) - parseDateKey(b.Tanggal));
-
-      // Recalculate summary details
-      const summary = recalculateSummary(dailyLogs, expectedHours);
-      const stratumCalc = calculatePresenceStratum(summary.minutes, calcMode, workingDays, expectedHours);
-
-      const updatedEmployeeEntry = {
-        ...employeeEntry,
-        ...summary,
-        ...stratumCalc,
-        isNotFoundInExcel: false
-      };
-
-      // Save updated presence map back to database
-      const updatedEntries = {
-        ...entries,
-        [req.employeeId]: updatedEmployeeEntry
-      };
-
-      // Payroll slips are intentionally not mutated here. Finance must refresh
-      // and save a draft through the protected lifecycle API; final snapshots
-      // remain immutable.
-
-      // Update the attendance document and request together so a network or
-      // permission failure cannot leave an applied correction marked pending.
-      const requestRef = doc(db, 'LoyalisPresenceCorrections', req.id);
-      const batch = writeBatch(db);
-      batch.update(presenceRef, {
-        entries: updatedEntries,
-        updatedAt: serverTimestamp(),
-      });
-      batch.update(requestRef, {
-        period: req.date.slice(0, 7),
-        status: 'approved',
-        resolvedBy: profile?.email || 'Admin',
-        updatedAt: serverTimestamp(),
-      });
-      await batch.commit();
-
-      setAllRequests((current) => current.map((request) => request.id === req.id
-        ? { ...request, status: 'approved', resolvedBy: profile?.email || 'Admin' }
-        : request));
+      const result = await applyLoyalisApproval(req);
       await fetchRequests(false);
-      const successText = `Koreksi presensi ${req.employeeName || req.employeeId} untuk tanggal ${dateKey} berhasil disetujui dan diterapkan.`;
-      setMessage({ type: 'success', text: successText });
+      setMessage({ type: 'success', text: result.successText });
       setReviewProgress({
         status: 'success',
         scope: 'single',
@@ -737,7 +787,7 @@ export default function PresenceCorrectionsAdminPage() {
         completed: 1,
         succeeded: 1,
         failed: 0,
-        message: successText,
+        message: result.successText,
       });
     } catch (err: unknown) {
       console.error(err);
@@ -756,6 +806,108 @@ export default function PresenceCorrectionsAdminPage() {
         message: errorText,
         errors: [errorText],
       });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const loyalisRequestLabel = (request: PresenceCorrectionRequest) =>
+    `${request.employeeName || request.employeeId} · ${formatPresenceDate(request.date, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })}`;
+
+  const handleBulkApproveLoyalisRequests = async () => {
+    const selectedRequests = bulkEligibleLoyalisRequests.filter((request) =>
+      selectedLoyalisRequestIds.has(request.id),
+    );
+    if (selectedRequests.length === 0) {
+      setMessage({ type: 'error', text: 'Pilih minimal satu pengajuan Loyalis untuk disetujui.' });
+      return;
+    }
+
+    setActionLoading('bulk-loyalis-approve');
+    setMessage(null);
+    setReviewProgress({
+      status: 'processing',
+      scope: 'bulk',
+      total: selectedRequests.length,
+      completed: 0,
+      succeeded: 0,
+      failed: 0,
+      currentLabel: loyalisRequestLabel(selectedRequests[0]),
+      message: `Menyimpan ${selectedRequests.length} persetujuan pengajuan Loyalis.`,
+    });
+
+    let succeeded = 0;
+    const errors: string[] = [];
+    try {
+      for (let index = 0; index < selectedRequests.length; index += 1) {
+        const request = selectedRequests[index];
+        setReviewProgress((current) => current
+          ? {
+              ...current,
+              currentLabel: loyalisRequestLabel(request),
+              message: `Menyimpan persetujuan ${index + 1} dari ${selectedRequests.length}.`,
+            }
+          : current);
+        try {
+          await applyLoyalisApproval(request);
+          succeeded += 1;
+        } catch (err: unknown) {
+          const errorText = err instanceof Error
+            ? err.message
+            : 'Gagal menyetujui pengajuan Loyalis.';
+          errors.push(`${loyalisRequestLabel(request)}: ${errorText}`);
+          console.error('Error bulk approving Loyalis request:', err);
+        }
+        setReviewProgress((current) => current
+          ? {
+              ...current,
+              completed: index + 1,
+              succeeded,
+              failed: index + 1 - succeeded,
+            }
+          : current);
+      }
+
+      setSelectedLoyalisRequestIds(new Set());
+      await fetchRequests(false);
+      const failed = errors.length;
+      const summaryMessage = failed === 0
+        ? `${succeeded} pengajuan Loyalis berhasil disetujui dan disimpan.`
+        : `${succeeded} pengajuan Loyalis berhasil disetujui; ${failed} pengajuan gagal diproses.`;
+      setReviewProgress({
+        status: failed === 0 ? 'success' : 'error',
+        scope: 'bulk',
+        total: selectedRequests.length,
+        completed: selectedRequests.length,
+        succeeded,
+        failed,
+        message: summaryMessage,
+        errors: failed > 0 ? errors : undefined,
+      });
+      setMessage({
+        type: failed === 0 ? 'success' : 'error',
+        text: summaryMessage,
+      });
+    } catch (err: unknown) {
+      const errorText = err instanceof Error
+        ? err.message
+        : 'Gagal menyelesaikan persetujuan massal Loyalis.';
+      console.error('Error finishing bulk Loyalis approval:', err);
+      setReviewProgress({
+        status: 'error',
+        scope: 'bulk',
+        total: selectedRequests.length,
+        completed: succeeded,
+        succeeded,
+        failed: selectedRequests.length - succeeded,
+        message: errorText,
+        errors: [...errors, errorText],
+      });
+      setMessage({ type: 'error', text: errorText });
     } finally {
       setActionLoading(null);
     }
@@ -1254,6 +1406,31 @@ export default function PresenceCorrectionsAdminPage() {
       {/* ── Loyalis Correction Table ───────────────────────────────── */}
       {canAuditLoyalis && (selectedSource === 'all' || selectedSource === 'loyalis') && (
       <Card className="bg-white rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.02)] border-none overflow-hidden">
+        <div className="border-b border-slate-100 px-5 py-4 lg:px-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="font-bold text-slate-800">Pengajuan Koreksi Presensi Loyalis</h2>
+              <p className="text-xs text-slate-500">
+                Pilih beberapa pengajuan tertunda untuk menyetujui dan menerapkan koreksi sekaligus.
+              </p>
+            </div>
+            {bulkEligibleLoyalisRequests.length > 0 && (
+              <Button
+                type="button"
+                onClick={() => void handleBulkApproveLoyalisRequests()}
+                disabled={actionLoading !== null || selectedBulkLoyalisRequests.length === 0}
+                className="h-9 rounded-xl bg-indigo-600 px-4 text-xs font-bold text-white shadow-sm hover:bg-indigo-700"
+              >
+                {actionLoading === 'bulk-loyalis-approve' ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Setujui Pengajuan Terpilih ({selectedBulkLoyalisRequests.length})
+              </Button>
+            )}
+          </div>
+        </div>
         <CardContent className="p-0">
           {loading ? (
             <div className="p-24 flex flex-col items-center text-slate-400">
@@ -1272,6 +1449,15 @@ export default function PresenceCorrectionsAdminPage() {
             <Table>
               <TableHeader className="bg-slate-50/60 sticky top-0 z-20">
                 <TableRow className="border-slate-100">
+                  <TableHead className="w-12 pl-5">
+                    <Checkbox
+                      checked={allBulkLoyalisRequestsSelected}
+                      onCheckedChange={(checked) => toggleAllLoyalisRequestSelection(checked === true)}
+                      disabled={bulkEligibleLoyalisRequests.length === 0 || actionLoading !== null}
+                      aria-label="Pilih semua pengajuan Loyalis tertunda"
+                    />
+                    <span className="sr-only">Pilih pengajuan Loyalis</span>
+                  </TableHead>
                   <TableHead className="font-bold text-slate-500">Nama Pegawai</TableHead>
                   <TableHead className="font-bold text-slate-500">Tanggal</TableHead>
                   <TableHead className="font-bold text-slate-500">Koreksi</TableHead>
@@ -1301,6 +1487,19 @@ export default function PresenceCorrectionsAdminPage() {
                         }}
                         className={`border-slate-100 cursor-pointer transition-colors ${isExpanded ? 'bg-indigo-50/50' : 'hover:bg-slate-50/60'}`}
                       >
+                        <TableCell
+                          className="w-12 pl-5"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {req.status === 'pending' && (
+                            <Checkbox
+                              checked={selectedLoyalisRequestIds.has(req.id)}
+                              onCheckedChange={(checked) => toggleLoyalisRequestSelection(req, checked === true)}
+                              disabled={actionLoading !== null}
+                              aria-label={`Pilih pengajuan Loyalis ${req.employeeName || req.employeeId}`}
+                            />
+                          )}
+                        </TableCell>
                         <TableCell className="min-w-48">
                           <div className="font-bold text-slate-800">{req.employeeName || req.employeeId || '—'}</div>
                           <div className="text-[10px] text-slate-400 font-semibold mt-1">Diajukan {formatCreatedAt(req.createdAt)}</div>
@@ -1337,7 +1536,7 @@ export default function PresenceCorrectionsAdminPage() {
 
                       {isExpanded && (
                         <TableRow className="border-slate-100 bg-white">
-                          <TableCell colSpan={5} className="p-0 whitespace-normal">
+                          <TableCell colSpan={6} className="p-0 whitespace-normal">
                             <div className="p-5 lg:p-6 space-y-5 animate-in fade-in slide-in-from-top-1 duration-200">
                               <div className="space-y-2">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Bandingkan Data Presensi</span>
